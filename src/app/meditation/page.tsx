@@ -1,0 +1,299 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { BottomNav, AudioVisualizer, useAudioPlayer } from "@/components";
+
+interface Meditation {
+    id: string;
+    title: string;
+    description: string;
+    duration: string;
+    category: string;
+    imageGradient: string;
+    audioFile: string;
+}
+
+const meditations: Meditation[] = [
+    {
+        id: "1",
+        title: "La Mosca",
+        description: "Una guía para soltar y relajarse profundamente",
+        duration: "~15 min",
+        category: "Deep Relaxation",
+        imageGradient: "from-purple-600 to-blue-600",
+        audioFile: "/audio/meditations/la_mosca.m4a",
+    },
+    {
+        id: "2",
+        title: "Humanosfera",
+        description: "Conecta con la esencia de la humanidad",
+        duration: "~15 min",
+        category: "Deep Relaxation",
+        imageGradient: "from-indigo-600 to-purple-800",
+        audioFile: "/audio/meditations/humanosfera.m4a",
+    },
+    {
+        id: "3",
+        title: "El Amor",
+        description: "Abre el corazón y encuentra paz interior",
+        duration: "~15 min",
+        category: "Deep Relaxation",
+        imageGradient: "from-rose-500 to-pink-600",
+        audioFile: "/audio/meditations/amor.m4a",
+    },
+];
+
+const categories = ["All", "Deep Relaxation"];
+
+export default function MeditationPage() {
+    const [selectedCategory, setSelectedCategory] = useState("All");
+    const [playingId, setPlayingId] = useState<string | null>(null);
+    const [progress, setProgress] = useState(0);
+    const [currentTime, setCurrentTime] = useState("0:00");
+    const [totalTime, setTotalTime] = useState("0:00");
+    const [audioError, setAudioError] = useState<string | null>(null);
+
+    const meditationAudioRef = useRef<HTMLAudioElement | null>(null);
+    const { isPlaying, togglePlay, setShowMiniPlayer, volume } = useAudioPlayer();
+
+    const formatTime = (seconds: number): string => {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, "0")}`;
+    };
+
+    // Handle meditation audio playback
+    useEffect(() => {
+        if (playingId) {
+            const meditation = meditations.find(m => m.id === playingId);
+            if (!meditation) return;
+
+            // Create meditation audio element
+            if (meditationAudioRef.current) {
+                meditationAudioRef.current.pause();
+            }
+
+            const audio = new Audio(meditation.audioFile);
+            meditationAudioRef.current = audio;
+
+            audio.addEventListener("loadedmetadata", () => {
+                setTotalTime(formatTime(audio.duration));
+                setAudioError(null);
+            });
+
+            audio.addEventListener("timeupdate", () => {
+                setProgress((audio.currentTime / audio.duration) * 100);
+                setCurrentTime(formatTime(audio.currentTime));
+            });
+
+            audio.addEventListener("ended", () => {
+                handleStopMeditation();
+            });
+
+            audio.addEventListener("error", () => {
+                setAudioError("Archivo de audio no encontrado. Añade tu audio a: public/audio/meditations/");
+            });
+
+            // Start playing meditation audio
+            audio.play().catch(() => {
+                setAudioError("Archivo de audio no encontrado. Añade tu audio a: public/audio/meditations/");
+            });
+
+            // Start background beacon audio
+            setShowMiniPlayer(true);
+            if (!isPlaying) {
+                togglePlay();
+            }
+        }
+
+        return () => {
+            if (meditationAudioRef.current) {
+                meditationAudioRef.current.pause();
+                meditationAudioRef.current = null;
+            }
+        };
+    }, [playingId]);
+
+    // Adjust meditation volume relative to beacon (meditation louder)
+    useEffect(() => {
+        if (meditationAudioRef.current) {
+            meditationAudioRef.current.volume = 1;
+        }
+    }, [volume]);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (meditationAudioRef.current) {
+                meditationAudioRef.current.pause();
+            }
+            setShowMiniPlayer(false);
+        };
+    }, [setShowMiniPlayer]);
+
+    const handleStopMeditation = () => {
+        if (meditationAudioRef.current) {
+            meditationAudioRef.current.pause();
+            meditationAudioRef.current = null;
+        }
+        setPlayingId(null);
+        setProgress(0);
+        setCurrentTime("0:00");
+        setAudioError(null);
+        if (isPlaying) {
+            togglePlay();
+        }
+        setShowMiniPlayer(false);
+    };
+
+    const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!meditationAudioRef.current) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const percent = (e.clientX - rect.left) / rect.width;
+        meditationAudioRef.current.currentTime = percent * meditationAudioRef.current.duration;
+    };
+
+    const filteredMeditations = selectedCategory === "All"
+        ? meditations
+        : meditations.filter((m) => m.category === selectedCategory);
+
+    const currentMeditation = playingId ? meditations.find(m => m.id === playingId) : null;
+
+    return (
+        <main className={`min-h-screen pb-28 ${playingId ? 'pt-20' : ''}`}>
+            {/* Header */}
+            <header className="p-6 pt-8">
+                <h1 className="text-2xl font-bold">Meditación</h1>
+                <p className="text-[var(--text-secondary)] text-sm mt-1">
+                    Sesiones guiadas sobre la resonancia armónica en vivo
+                </p>
+            </header>
+
+            {/* Category Pills */}
+            <section className="px-4 mb-6">
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    {categories.map((category) => (
+                        <button
+                            key={category}
+                            onClick={() => setSelectedCategory(category)}
+                            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${selectedCategory === category
+                                ? "bg-[var(--primary-600)] text-white"
+                                : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
+                                }`}
+                        >
+                            {category === "All" ? "Todas" : category}
+                        </button>
+                    ))}
+                </div>
+            </section>
+
+            {/* Now Playing */}
+            {playingId && currentMeditation && (
+                <section className="px-4 mb-6 animate-fade-in">
+                    <div className="glass-card p-4 border-[var(--primary-600)]">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${currentMeditation.imageGradient} flex items-center justify-center`}>
+                                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p className="font-semibold">{currentMeditation.title}</p>
+                                    <p className="text-xs text-[var(--text-muted)]">
+                                        {audioError ? "⚠️ Audio faltante" : "Reproduciendo con beacon en vivo"}
+                                    </p>
+                                </div>
+                            </div>
+                            <AudioVisualizer isPlaying={isPlaying && !audioError} bars={4} />
+                        </div>
+
+                        {/* Error message */}
+                        {audioError && (
+                            <div className="mt-3 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                                <p className="text-xs text-amber-400">{audioError}</p>
+                            </div>
+                        )}
+
+                        {/* Progress bar */}
+                        <div className="mt-4 flex items-center gap-3">
+                            <span className="text-xs text-[var(--text-muted)] w-10">{currentTime}</span>
+                            <div
+                                className="flex-1 h-1.5 bg-[var(--border-subtle)] rounded-full overflow-hidden cursor-pointer"
+                                onClick={handleSeek}
+                            >
+                                <div
+                                    className="h-full bg-gradient-to-r from-[var(--primary-500)] to-[var(--primary-400)] transition-all"
+                                    style={{ width: `${progress}%` }}
+                                />
+                            </div>
+                            <span className="text-xs text-[var(--text-muted)] w-10 text-right">{totalTime}</span>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="mt-4 flex items-center justify-center gap-4">
+                            <button
+                                onClick={handleStopMeditation}
+                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+                            >
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                    <rect x="6" y="6" width="12" height="12" rx="1" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            {/* Meditation Cards */}
+            <section className="px-4">
+                <div className="grid gap-4">
+                    {filteredMeditations.map((meditation, index) => (
+                        <div
+                            key={meditation.id}
+                            className={`meditation-card animate-fade-in ${playingId === meditation.id ? 'border-[var(--primary-500)]' : ''}`}
+                            style={{ opacity: 0, animationDelay: `${index * 0.1}s` }}
+                            onClick={() => setPlayingId(meditation.id)}
+                        >
+                            <div className="flex gap-4">
+                                {/* Thumbnail */}
+                                <div className={`w-20 h-20 rounded-xl bg-gradient-to-br ${meditation.imageGradient} flex items-center justify-center flex-shrink-0`}>
+                                    {playingId === meditation.id ? (
+                                        <AudioVisualizer isPlaying={true} bars={3} />
+                                    ) : (
+                                        <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z" />
+                                        </svg>
+                                    )}
+                                </div>
+
+                                {/* Info */}
+                                <div className="flex-1 relative z-10">
+                                    <div className="flex items-start justify-between">
+                                        <div>
+                                            <h3 className="font-semibold text-lg">{meditation.title}</h3>
+                                            <p className="text-sm text-[var(--text-muted)] mt-1">
+                                                {meditation.description}
+                                            </p>
+                                        </div>
+                                        <span className="text-xs text-[var(--text-muted)] bg-white/5 px-2 py-1 rounded-full">
+                                            {meditation.duration}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-3">
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--primary-700)]/30 text-[var(--primary-300)]">
+                                            {meditation.category}
+                                        </span>
+                                        <span className="text-xs text-[var(--text-muted)]">+ Beacon en vivo</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            <BottomNav />
+        </main>
+    );
+}

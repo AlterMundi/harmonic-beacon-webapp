@@ -1,3 +1,7 @@
+# Harmonic Beacon Web
+
+The web portal for the Harmonic Beacon ecosystemDesigned to provide an immersive, accessible entry point to the global resonance network. 
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
