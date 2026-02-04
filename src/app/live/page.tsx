@@ -1,143 +1,88 @@
 "use client";
 
-import { BottomNav, LiveBadge, AudioVisualizer } from "@/components";
+import { BottomNav, AudioVisualizer } from "@/components";
 import { useAudio } from "@/context/AudioContext";
 
 export default function LivePage() {
     const { isConnected, hasLiveStream, isPlaying, togglePlay } = useAudio();
 
     return (
-        <main className="min-h-screen pb-28">
-            {/* Header */}
-            <header className="p-6 pt-8">
-                <div className="flex items-center justify-between mb-2">
-                    <h1 className="text-2xl font-bold">Harmonic Beacon</h1>
-                    <LiveBadge isLive={hasLiveStream && isPlaying} />
-                </div>
-                <p className="text-[var(--text-secondary)] text-sm">
-                    {!isConnected
-                        ? "Connecting to LiveKit..."
-                        : hasLiveStream && isPlaying
-                            ? "🔴 Live harmonic resonance from the guitar"
-                            : hasLiveStream
-                                ? "Click to start listening"
-                                : "📻 Waiting for beacon to start broadcasting..."}
-                </p>
-            </header>
+        <main className="min-h-screen pb-28 relative overflow-hidden">
+            {/* Background video */}
+            <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="fixed inset-0 w-full h-full object-cover opacity-30"
+            >
+                <source src="/videos/beacon_ambient.mp4" type="video/mp4" />
+            </video>
 
-            {/* Status Card */}
-            <section className="px-4 animate-fade-in">
-                <div className="glass-card p-6 text-center">
-                    {!isConnected ? (
-                        <div>
-                            <p className="text-4xl animate-pulse">📡</p>
-                            <p className="mt-4">Connecting to LiveKit...</p>
-                        </div>
-                    ) : hasLiveStream && isPlaying ? (
-                        <div>
-                            <p className="text-6xl animate-pulse">🎸</p>
-                            <p className="text-xl mt-4 font-semibold text-green-400">Live Audio Playing!</p>
-                            <p className="text-sm text-[var(--text-muted)] mt-2">Listening to Harmonic Beacon</p>
-                            <button
-                                onClick={togglePlay}
-                                className="btn-secondary mt-6 px-8 py-3"
-                            >
-                                ⏸️ Pause
-                            </button>
-                        </div>
-                    ) : hasLiveStream ? (
-                        <div>
-                            <p className="text-6xl">🔊</p>
-                            <p className="text-xl mt-4">Beacon is broadcasting!</p>
-                            <button
-                                onClick={togglePlay}
-                                className="btn-primary mt-6 px-8 py-4 text-lg"
-                            >
-                                ▶️ Click to Listen
-                            </button>
-                        </div>
-                    ) : isPlaying ? (
-                        <div>
-                            <p className="text-4xl">📻</p>
-                            <p className="mt-4">Playing Lofi Radio</p>
-                            <p className="text-sm text-[var(--text-muted)] mt-2">Beacon offline - fallback mode</p>
-                            <button
-                                onClick={togglePlay}
-                                className="btn-secondary mt-6 px-8 py-3"
-                            >
-                                ⏸️ Pause
-                            </button>
-                        </div>
-                    ) : (
-                        <div>
-                            <p className="text-4xl">⏳</p>
-                            <p className="mt-4">Connected - waiting for beacon to broadcast</p>
-                            <p className="text-sm text-[var(--text-muted)] mt-2">Make sure the Pi broadcaster is running</p>
-                            <button
-                                onClick={togglePlay}
-                                className="btn-primary mt-6 px-8 py-4"
-                            >
-                                ▶️ Play Lofi Radio
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </section>
+            {/* Gradient overlay */}
+            <div className="fixed inset-0 bg-gradient-to-b from-[rgba(10,10,26,0.3)] via-[rgba(10,10,26,0.7)] to-[rgba(10,10,26,0.95)]" />
 
-            {/* Audio Info */}
-            <section className="px-4 mt-6 animate-fade-in stagger-1" style={{ opacity: 0 }}>
-                <div className="glass-card p-5">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h2 className="font-semibold text-lg">Harmonic Scale Resonance</h2>
-                            <p className="text-[var(--text-muted)] text-sm mt-1">
-                                {hasLiveStream && isPlaying
-                                    ? "Live from Raspberry Pi • A 432Hz"
+            {/* Content */}
+            <div className="relative z-10 flex flex-col h-screen pb-28 p-6">
+                {/* Header - centered */}
+                <header className="text-center pt-8">
+                    {/* Live Badge */}
+                    <div className="inline-flex items-center gap-2 bg-red-500/20 border border-red-500/40 px-3 py-1.5 rounded-full mb-4">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-red-500 text-xs font-bold tracking-wider">
+                            {hasLiveStream ? 'LIVE' : 'RADIO'}
+                        </span>
+                    </div>
+
+                    {/* Title */}
+                    <h1 className="text-4xl font-bold text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">
+                        Harmonic Beacon
+                    </h1>
+                </header>
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Audio Visualizer */}
+                <div className="h-20 flex items-center justify-center mb-6">
+                    <AudioVisualizer isPlaying={isPlaying} barCount={8} />
+                </div>
+
+                {/* Play Button - Always enabled to control audio */}
+                <div className="flex flex-col items-center mb-8">
+                    <button
+                        onClick={togglePlay}
+                        className="w-20 h-20 rounded-full bg-[rgba(99,70,255,0.8)] shadow-[0_0_30px_rgba(99,70,255,0.6)] flex items-center justify-center border-2 border-white/20 hover:scale-105 transition-transform active:scale-95"
+                    >
+                        {isPlaying ? (
+                            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                <rect x="7" y="5" width="3" height="14" rx="1" />
+                                <rect x="14" y="5" width="3" height="14" rx="1" />
+                            </svg>
+                        ) : (
+                            <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                        )}
+                    </button>
+
+                    {/* Status text */}
+                    <p className="text-[var(--text-muted)] text-sm italic text-center mt-5">
+                        {!isConnected
+                            ? "Connecting to Beacon..."
+                            : hasLiveStream && isPlaying
+                                ? "🔴 Live Resonance Active"
+                                : hasLiveStream && !isPlaying
+                                    ? "Live stream paused (connection maintained)"
                                     : isPlaying
-                                        ? "Lofi Radio Fallback • Relaxing vibes"
-                                        : "Continuous auto-strumming • A 432Hz"}
-                            </p>
-                        </div>
-                        <AudioVisualizer isPlaying={isPlaying} />
-                    </div>
+                                        ? "📻 Playing Backup Radio"
+                                        : "Ready to play"}
+                    </p>
                 </div>
-            </section>
 
-            {/* Benefits Section */}
-            <section className="px-4 mt-6 animate-fade-in stagger-2" style={{ opacity: 0 }}>
-                <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
-                    Benefits
-                </h3>
-                <div className="grid grid-cols-3 gap-3">
-                    {[
-                        { icon: "🧘", label: "Stress Relief" },
-                        { icon: "😴", label: "Better Sleep" },
-                        { icon: "🎯", label: "Focus" },
-                    ].map((benefit) => (
-                        <div key={benefit.label} className="glass-card p-4 text-center">
-                            <span className="text-2xl">{benefit.icon}</span>
-                            <p className="text-xs text-[var(--text-secondary)] mt-2">{benefit.label}</p>
-                        </div>
-                    ))}
-                </div>
-            </section>
-
-            {/* Connection Status */}
-            <section className="px-4 mt-6 animate-fade-in stagger-3" style={{ opacity: 0 }}>
-                <div className="glass-card p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isConnected ? 'bg-green-700' : 'bg-gray-700'}`}>
-                            <span className="text-xl">{isConnected ? '✓' : '○'}</span>
-                        </div>
-                        <div>
-                            <p className="font-semibold">{isConnected ? 'Connected to LiveKit' : 'Connecting...'}</p>
-                            <p className="text-xs text-[var(--text-muted)]">
-                                {hasLiveStream ? '🔴 Live beacon detected' : 'Waiting for broadcast'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </section>
+                {/* Bottom spacer for status */}
+                <div className="h-20" />
+            </div>
 
             <BottomNav />
         </main>
