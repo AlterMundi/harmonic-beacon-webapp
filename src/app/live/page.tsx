@@ -1,96 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { Room, RoomEvent, Track, RemoteTrack } from "livekit-client";
 import { BottomNav, LiveBadge, AudioVisualizer } from "@/components";
+import { useAudio } from "@/context/AudioContext";
 
 export default function LivePage() {
-    const [isConnected, setIsConnected] = useState(false);
-    const [hasLiveStream, setHasLiveStream] = useState(false);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [needsUserGesture, setNeedsUserGesture] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const roomRef = useRef<Room | null>(null);
-    const audioElementRef = useRef<HTMLAudioElement | null>(null);
-
-    const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
-    const LIVEKIT_TOKEN = process.env.NEXT_PUBLIC_LIVEKIT_TOKEN || "";
-
-    const playAudio = useCallback(async () => {
-        if (audioElementRef.current) {
-            try {
-                await audioElementRef.current.play();
-                setIsPlaying(true);
-                setNeedsUserGesture(false);
-                console.log("✓ Audio playing");
-            } catch (err) {
-                console.error("Failed to play audio:", err);
-            }
-        }
-    }, []);
-
-    useEffect(() => {
-        if (!LIVEKIT_TOKEN) {
-            setError("Missing NEXT_PUBLIC_LIVEKIT_TOKEN in .env.local");
-            return;
-        }
-
-        const room = new Room();
-        roomRef.current = room;
-
-        room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack) => {
-            if (track.kind === Track.Kind.Audio) {
-                console.log("✓ Subscribed to beacon audio track");
-                const audioElement = track.attach() as HTMLAudioElement;
-                audioElementRef.current = audioElement;
-                audioElement.style.display = "none";
-                document.body.appendChild(audioElement);
-                setHasLiveStream(true);
-
-                // Try to autoplay
-                try {
-                    await audioElement.play();
-                    setIsPlaying(true);
-                    console.log("✓ Audio autoplaying");
-                } catch {
-                    // Browser blocked autoplay - need user gesture
-                    console.log("⚠️ Autoplay blocked, waiting for user click");
-                    setNeedsUserGesture(true);
-                }
-            }
-        });
-
-        room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
-            if (track.kind === Track.Kind.Audio) {
-                console.log("✗ Beacon stopped broadcasting");
-                track.detach().forEach((el) => el.remove());
-                audioElementRef.current = null;
-                setHasLiveStream(false);
-                setIsPlaying(false);
-            }
-        });
-
-        room.on(RoomEvent.Disconnected, () => {
-            console.log("Disconnected from room");
-            setIsConnected(false);
-            setHasLiveStream(false);
-            setIsPlaying(false);
-        });
-
-        room.connect(LIVEKIT_URL, LIVEKIT_TOKEN)
-            .then(() => {
-                console.log("✓ Connected to LiveKit room");
-                setIsConnected(true);
-            })
-            .catch((err) => {
-                console.error("Failed to connect:", err);
-                setError(`Failed to connect: ${err.message}`);
-            });
-
-        return () => {
-            room.disconnect();
-        };
-    }, [LIVEKIT_URL, LIVEKIT_TOKEN]);
+    const { isConnected, hasLiveStream, isPlaying, togglePlay } = useAudio();
 
     return (
         <main className="min-h-screen pb-28">
@@ -114,12 +28,7 @@ export default function LivePage() {
             {/* Status Card */}
             <section className="px-4 animate-fade-in">
                 <div className="glass-card p-6 text-center">
-                    {error ? (
-                        <div className="text-red-400">
-                            <p className="text-lg">❌ Error</p>
-                            <p className="text-sm mt-2">{error}</p>
-                        </div>
-                    ) : !isConnected ? (
+                    {!isConnected ? (
                         <div>
                             <p className="text-4xl animate-pulse">📡</p>
                             <p className="mt-4">Connecting to LiveKit...</p>
@@ -129,16 +38,34 @@ export default function LivePage() {
                             <p className="text-6xl animate-pulse">🎸</p>
                             <p className="text-xl mt-4 font-semibold text-green-400">Live Audio Playing!</p>
                             <p className="text-sm text-[var(--text-muted)] mt-2">Listening to Harmonic Beacon</p>
+                            <button
+                                onClick={togglePlay}
+                                className="btn-secondary mt-6 px-8 py-3"
+                            >
+                                ⏸️ Pause
+                            </button>
                         </div>
-                    ) : hasLiveStream && needsUserGesture ? (
+                    ) : hasLiveStream ? (
                         <div>
                             <p className="text-6xl">🔊</p>
                             <p className="text-xl mt-4">Beacon is broadcasting!</p>
                             <button
-                                onClick={playAudio}
+                                onClick={togglePlay}
                                 className="btn-primary mt-6 px-8 py-4 text-lg"
                             >
                                 ▶️ Click to Listen
+                            </button>
+                        </div>
+                    ) : isPlaying ? (
+                        <div>
+                            <p className="text-4xl">📻</p>
+                            <p className="mt-4">Playing Lofi Radio</p>
+                            <p className="text-sm text-[var(--text-muted)] mt-2">Beacon offline - fallback mode</p>
+                            <button
+                                onClick={togglePlay}
+                                className="btn-secondary mt-6 px-8 py-3"
+                            >
+                                ⏸️ Pause
                             </button>
                         </div>
                     ) : (
@@ -146,6 +73,12 @@ export default function LivePage() {
                             <p className="text-4xl">⏳</p>
                             <p className="mt-4">Connected - waiting for beacon to broadcast</p>
                             <p className="text-sm text-[var(--text-muted)] mt-2">Make sure the Pi broadcaster is running</p>
+                            <button
+                                onClick={togglePlay}
+                                className="btn-primary mt-6 px-8 py-4"
+                            >
+                                ▶️ Play Lofi Radio
+                            </button>
                         </div>
                     )}
                 </div>
@@ -158,7 +91,11 @@ export default function LivePage() {
                         <div>
                             <h2 className="font-semibold text-lg">Harmonic Scale Resonance</h2>
                             <p className="text-[var(--text-muted)] text-sm mt-1">
-                                {isPlaying ? "Live from Raspberry Pi • A 432Hz" : "Continuous auto-strumming • A 432Hz"}
+                                {hasLiveStream && isPlaying
+                                    ? "Live from Raspberry Pi • A 432Hz"
+                                    : isPlaying
+                                        ? "Lofi Radio Fallback • Relaxing vibes"
+                                        : "Continuous auto-strumming • A 432Hz"}
                             </p>
                         </div>
                         <AudioVisualizer isPlaying={isPlaying} />
@@ -194,7 +131,9 @@ export default function LivePage() {
                         </div>
                         <div>
                             <p className="font-semibold">{isConnected ? 'Connected to LiveKit' : 'Connecting...'}</p>
-                            <p className="text-xs text-[var(--text-muted)]">{LIVEKIT_URL}</p>
+                            <p className="text-xs text-[var(--text-muted)]">
+                                {hasLiveStream ? '🔴 Live beacon detected' : 'Waiting for broadcast'}
+                            </p>
                         </div>
                     </div>
                 </div>
