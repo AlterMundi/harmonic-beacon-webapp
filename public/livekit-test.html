@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveKit Test - Harmonic Beacon</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #0a0a1a 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 { margin-bottom: 10px; }
+        .subtitle { color: rgba(255,255,255,0.6); margin-bottom: 30px; }
+        .status {
+            font-size: 3em;
+            margin: 30px 0;
+        }
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .connecting { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.5); }
+        .connected { background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.5); }
+        .live { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); }
+        .error { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); }
+        button {
+            background: linear-gradient(135deg, #6346ff 0%, #4614e3 100%);
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 1em;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(0,0,0,0.3);
+            color: white;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+        label { display: block; text-align: left; color: rgba(255,255,255,0.7); margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎸 Harmonic Beacon</h1>
+        <p class="subtitle">LiveKit Audio Test</p>
+        
+        <div id="status" class="status">📡</div>
+        <div id="message" class="message connecting">Enter your LiveKit credentials below</div>
+        
+        <label>LiveKit Server URL</label>
+        <input type="text" id="url" value="wss://live.altermundi.net" placeholder="wss://your-server.com">
+        
+        <label>Token</label>
+        <input type="text" id="token" placeholder="Paste your LiveKit token here">
+        
+        <button id="connectBtn" onclick="connect()">Connect</button>
+    </div>
+
+    <script type="module">
+        import { Room, RoomEvent, Track } from 'https://esm.sh/livekit-client@2.17.0';
+
+        let room = null;
+
+        window.connect = async function() {
+            const url = document.getElementById('url').value;
+            const token = document.getElementById('token').value;
+            const statusEl = document.getElementById('status');
+            const messageEl = document.getElementById('message');
+            const btn = document.getElementById('connectBtn');
+
+            if (!token) {
+                messageEl.textContent = '❌ Please enter a token';
+                messageEl.className = 'message error';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Connecting...';
+            statusEl.textContent = '⏳';
+            messageEl.textContent = 'Connecting to LiveKit...';
+            messageEl.className = 'message connecting';
+
+            try {
+                room = new Room();
+
+                room.on(RoomEvent.TrackSubscribed, (track) => {
+                    if (track.kind === Track.Kind.Audio) {
+                        const el = track.attach();
+                        document.body.appendChild(el);
+                        statusEl.textContent = '🎸';
+                        messageEl.textContent = '🔴 LIVE - Audio playing from Beacon!';
+                        messageEl.className = 'message live';
+                    }
+                });
+
+                room.on(RoomEvent.TrackUnsubscribed, (track) => {
+                    if (track.kind === Track.Kind.Audio) {
+                        track.detach().forEach(el => el.remove());
+                        statusEl.textContent = '⏸️';
+                        messageEl.textContent = 'Beacon stopped broadcasting';
+                        messageEl.className = 'message connected';
+                    }
+                });
+
+                room.on(RoomEvent.Disconnected, () => {
+                    statusEl.textContent = '❌';
+                    messageEl.textContent = 'Disconnected from room';
+                    messageEl.className = 'message error';
+                    btn.disabled = false;
+                    btn.textContent = 'Connect';
+                });
+
+                await room.connect(url, token);
+                
+                statusEl.textContent = '✅';
+                messageEl.textContent = 'Connected! Waiting for beacon to broadcast...';
+                messageEl.className = 'message connected';
+                btn.textContent = 'Connected';
+
+            } catch (error) {
+                console.error('Failed to connect:', error);
+                statusEl.textContent = '❌';
+                messageEl.textContent = 'Error: ' + error.message;
+                messageEl.className = 'message error';
+                btn.disabled = false;
+                btn.textContent = 'Connect';
+            }
+        };
+    </script>
+</body>
+</html>
