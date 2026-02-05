@@ -45,7 +45,7 @@ export default function LivePage() {
 
                 {/* Audio Visualizer */}
                 <div className="h-20 flex items-center justify-center mb-6">
-                    <AudioVisualizer isPlaying={isPlaying} barCount={8} />
+                    <AudioVisualizer isPlaying={isPlaying} bars={8} />
                 </div>
 
                 {/* Play Button - Always enabled to control audio */}
