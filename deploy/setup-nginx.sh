@@ -41,7 +41,7 @@ systemctl reload nginx
 
 echo ""
 echo "=== Setup Complete ==="
-echo "Nginx is configured to proxy beacon.altermundi.net -> localhost:3002"
+echo "Nginx is configured to proxy beacon.altermundi.net -> localhost:3003"
 echo ""
 echo "Next steps:"
 echo "1. Ensure DNS points beacon.altermundi.net to this server"
