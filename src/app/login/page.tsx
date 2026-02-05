@@ -79,11 +79,13 @@ export default function LoginPage() {
                         </svg>
                         <input
                             type="email"
+                            name="email"
+                            autoComplete="email"
                             placeholder="Email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             disabled={isDisabled}
-                            className="flex-1 bg-transparent outline-none text-white placeholder-[var(--text-muted)]"
+                            className="flex-1 bg-transparent text-white placeholder-[var(--text-muted)] focus-ring"
                         />
                     </div>
 
@@ -93,16 +95,18 @@ export default function LoginPage() {
                         </svg>
                         <input
                             type="password"
+                            name="password"
+                            autoComplete="current-password"
                             placeholder="Password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             disabled={isDisabled}
-                            className="flex-1 bg-transparent outline-none text-white placeholder-[var(--text-muted)]"
+                            className="flex-1 bg-transparent text-white placeholder-[var(--text-muted)] focus-ring"
                         />
                     </div>
 
                     <div className="text-right">
-                        <button type="button" className="text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+                        <button type="button" className="text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2 rounded">
                             Forgot Password?
                         </button>
                     </div>
@@ -136,7 +140,7 @@ export default function LoginPage() {
                         type="button"
                         onClick={handleGoogleSignIn}
                         disabled={isDisabled}
-                        className="w-full glass-card p-4 flex items-center justify-center gap-3 hover:bg-white/10 transition-colors disabled:opacity-60"
+                        className="w-full glass-card p-4 flex items-center justify-center gap-3 hover:bg-white/10 transition-colors disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2"
                     >
                         {isSocialLoading ? (
                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>

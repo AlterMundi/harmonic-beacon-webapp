@@ -194,7 +194,7 @@ body {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .glass-card:hover {
@@ -214,9 +214,14 @@ body {
   font-size: 0.95rem;
   border: none;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
   position: relative;
   overflow: hidden;
+}
+
+.btn-primary:focus-visible {
+  outline: 2px solid var(--primary-400);
+  outline-offset: 2px;
 }
 
 .btn-primary::before {
@@ -256,7 +261,12 @@ body {
   font-size: 0.95rem;
   border: 1px solid var(--border-subtle);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--primary-400);
+  outline-offset: 2px;
 }
 
 .btn-secondary:hover {
@@ -274,7 +284,16 @@ body {
   color: var(--text-primary);
   font-size: 1rem;
   width: 100%;
-  transition: all 0.3s ease;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Focus ring utility */
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
 }
 
 .input-field::placeholder {
@@ -317,6 +336,11 @@ body {
 .tab-item:hover {
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.03);
+}
+
+.tab-item:focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: -2px;
 }
 
 .tab-item.active {
@@ -406,7 +430,12 @@ body {
   border: 1px solid var(--border-subtle);
   padding: 20px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.meditation-card:focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
 }
 
 .meditation-card::before {
@@ -501,14 +530,41 @@ body {
   .glass-card {
     border-radius: 12px;
   }
-  
+
   .tab-item {
     padding: 10px 6px;
     font-size: 0.7rem;
   }
-  
+
   .tab-item svg {
     width: 20px;
     height: 20px;
+  }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-glow,
+  .animate-float,
+  .animate-breathe,
+  .audio-bar,
+  .animate-pulse {
+    animation: none;
+  }
+
+  .animate-fade-in,
+  .animate-slide-up {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .glass-card,
+  .btn-primary,
+  .btn-secondary,
+  .input-field,
+  .tab-item,
+  .meditation-card {
+    transition: none;
   }
 }

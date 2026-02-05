@@ -14,6 +14,8 @@ export default function LivePage() {
                 loop
                 muted
                 playsInline
+                width={1920}
+                height={1080}
                 className="fixed inset-0 w-full h-full object-cover opacity-30"
             >
                 <source src="/videos/beacon_ambient.mp4" type="video/mp4" />
@@ -52,7 +54,8 @@ export default function LivePage() {
                 <div className="flex flex-col items-center mb-8">
                     <button
                         onClick={togglePlay}
-                        className="w-20 h-20 rounded-full bg-[rgba(99,70,255,0.8)] shadow-[0_0_30px_rgba(99,70,255,0.6)] flex items-center justify-center border-2 border-white/20 hover:scale-105 transition-transform active:scale-95"
+                        aria-label={isPlaying ? "Pause audio" : "Play audio"}
+                        className="w-20 h-20 rounded-full bg-[rgba(99,70,255,0.8)] shadow-[0_0_30px_rgba(99,70,255,0.6)] flex items-center justify-center border-2 border-white/20 hover:scale-105 transition-transform active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-400)] focus-visible:outline-offset-2"
                     >
                         {isPlaying ? (
                             <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
