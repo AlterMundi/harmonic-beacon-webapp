@@ -54,6 +54,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const lofiAudioRef = useRef<HTMLAudioElement | null>(null);
     const meditationAudioRef = useRef<HTMLAudioElement | null>(null);
 
+    // Refs for values accessed in callbacks (to avoid reconnection loops)
+    const isPlayingRef = useRef(isPlaying);
+    const volumeRef = useRef(volume);
+
+    // Keep refs in sync with state
+    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+    useEffect(() => { volumeRef.current = volume; }, [volume]);
+
     const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
     const LIVEKIT_TOKEN = process.env.NEXT_PUBLIC_LIVEKIT_TOKEN || "";
     const LOFI_FALLBACK_URL = "https://streams.ilovemusic.de/iloveradio17.mp3";
@@ -62,13 +70,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         if (!lofiAudioRef.current) {
             const audio = new Audio(LOFI_FALLBACK_URL);
             audio.loop = true;
-            audio.volume = volume;
+            audio.volume = volumeRef.current;
             lofiAudioRef.current = audio;
         }
         lofiAudioRef.current.play().catch(console.error);
-    }, [volume, LOFI_FALLBACK_URL]);
+    }, [LOFI_FALLBACK_URL]);
 
-    // Initialize LiveKit connection
+    // Initialize LiveKit connection - runs once on mount
     useEffect(() => {
         if (!LIVEKIT_TOKEN) {
             console.error("Missing NEXT_PUBLIC_LIVEKIT_TOKEN");
@@ -83,7 +91,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 console.log("✓ Subscribed to beacon audio track");
                 const audioElement = track.attach() as HTMLAudioElement;
                 liveAudioRef.current = audioElement;
-                audioElement.volume = volume;
+                audioElement.volume = volumeRef.current;
                 audioElement.style.display = "none";
                 document.body.appendChild(audioElement);
                 setHasLiveStream(true);
@@ -94,7 +102,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 }
 
                 // Auto-play if user already toggled play
-                if (isPlaying) {
+                if (isPlayingRef.current) {
                     try {
                         await audioElement.play();
                     } catch {
@@ -112,7 +120,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 setHasLiveStream(false);
 
                 // Fallback to Lofi if user wants audio
-                if (isPlaying) {
+                if (isPlayingRef.current) {
                     playLofi();
                 }
             }
@@ -131,8 +139,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             })
             .catch((err) => {
                 console.error("Failed to connect to LiveKit:", err);
-                // Fallback to Lofi immediately
-                if (isPlaying) {
+                // Fallback to Lofi immediately if user wants audio
+                if (isPlayingRef.current) {
                     playLofi();
                 }
             });
@@ -144,7 +152,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 lofiAudioRef.current = null;
             }
         };
-    }, [LIVEKIT_URL, LIVEKIT_TOKEN, isPlaying, playLofi, volume]);
+    }, [LIVEKIT_URL, LIVEKIT_TOKEN, playLofi]);
 
     // Update volumes when changed
     useEffect(() => {
