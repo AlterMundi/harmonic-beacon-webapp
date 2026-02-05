@@ -14,6 +14,7 @@ interface AudioContextType {
 
     // Meditation Audio
     loadMeditation: (audioFile: string) => Promise<void>;
+    loadMeditationFromGo2rtc: (meditationId: string) => Promise<void>;
     unloadMeditation: () => void;
     meditationIsPlaying: boolean;
     meditationVolume: number;
@@ -53,6 +54,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const liveAudioRef = useRef<HTMLAudioElement | null>(null);
     const lofiAudioRef = useRef<HTMLAudioElement | null>(null);
     const meditationAudioRef = useRef<HTMLAudioElement | null>(null);
+    const meditationPeerConnectionRef = useRef<RTCPeerConnection | null>(null);
 
     // Refs for values accessed in callbacks (to avoid reconnection loops)
     const isPlayingRef = useRef(isPlaying);
@@ -65,6 +67,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
     const LIVEKIT_TOKEN = process.env.NEXT_PUBLIC_LIVEKIT_TOKEN || "";
     const LOFI_FALLBACK_URL = "https://streams.ilovemusic.de/iloveradio17.mp3";
+    const GO2RTC_URL = process.env.NEXT_PUBLIC_GO2RTC_URL || "http://localhost:1984";
 
     const playLofi = useCallback(() => {
         if (!lofiAudioRef.current) {
@@ -235,10 +238,119 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         }
     }, [meditationVolume, isPlaying, togglePlay]);
 
+    // Load meditation from go2rtc WebRTC stream
+    const loadMeditationFromGo2rtc = useCallback(async (meditationId: string) => {
+        try {
+            // Unload previous meditation
+            if (meditationAudioRef.current) {
+                meditationAudioRef.current.pause();
+                meditationAudioRef.current = null;
+            }
+            if (meditationPeerConnectionRef.current) {
+                meditationPeerConnectionRef.current.close();
+                meditationPeerConnectionRef.current = null;
+            }
+
+            // Step 1: Create stream in go2rtc via API
+            const createResponse = await fetch('/api/meditations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ meditationId }),
+            });
+
+            if (!createResponse.ok) {
+                throw new Error('Failed to create meditation stream');
+            }
+
+            const { streamName } = await createResponse.json();
+            // Set currentMeditationFile to match the audioFile format in meditation page
+            setCurrentMeditationFile(`/audio/meditations/${meditationId}.m4a`);
+
+            // Step 2: Create RTCPeerConnection
+            const pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+            });
+
+            meditationPeerConnectionRef.current = pc;
+
+            // Add transceiver to receive audio
+            pc.addTransceiver('audio', { direction: 'recvonly' });
+
+            // Handle incoming audio track
+            pc.ontrack = (event) => {
+                console.log('✓ Received meditation audio track from go2rtc');
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.volume = meditationVolume;
+                meditationAudioRef.current = audio;
+
+                audio.play().then(() => {
+                    setMeditationIsPlaying(true);
+                    console.log('✓ Meditation playing via go2rtc');
+
+                    // Start beacon in background if not already playing
+                    if (!isPlaying) {
+                        togglePlay();
+                    }
+                }).catch(err => {
+                    console.error('Failed to play meditation audio:', err);
+                });
+            };
+
+            // Step 3: Create offer and set local description
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            // Wait for ICE gathering to complete
+            await new Promise<void>((resolve) => {
+                if (pc.iceGatheringState === 'complete') {
+                    resolve();
+                } else {
+                    pc.onicegatheringstatechange = () => {
+                        if (pc.iceGatheringState === 'complete') {
+                            resolve();
+                        }
+                    };
+                }
+            });
+
+            // Step 4: Send offer to go2rtc and get answer (JSON format)
+            const webrtcUrl = `${GO2RTC_URL}/api/webrtc?src=${streamName}`;
+            const response = await fetch(webrtcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'offer',
+                    sdp: pc.localDescription?.sdp,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`go2rtc WebRTC error: ${response.status} - ${errorText}`);
+            }
+
+            // Step 5: Set remote description (answer from go2rtc)
+            const answer = await response.json();
+            await pc.setRemoteDescription({
+                type: 'answer',
+                sdp: answer.sdp,
+            });
+
+            console.log('✓ WebRTC connection established with go2rtc');
+        } catch (error) {
+            console.error('Failed to load meditation from go2rtc:', error);
+        }
+    }, [meditationVolume, isPlaying, togglePlay, GO2RTC_URL]);
+
     const unloadMeditation = useCallback(() => {
         if (meditationAudioRef.current) {
             meditationAudioRef.current.pause();
             meditationAudioRef.current = null;
+        }
+        if (meditationPeerConnectionRef.current) {
+            meditationPeerConnectionRef.current.close();
+            meditationPeerConnectionRef.current = null;
         }
         setMeditationIsPlaying(false);
         setMeditationPosition(0);
@@ -278,6 +390,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 togglePlay,
                 setVolume,
                 loadMeditation,
+                loadMeditationFromGo2rtc,
                 unloadMeditation,
                 meditationIsPlaying,
                 meditationVolume,

@@ -1,0 +1,19 @@
+api:
+    listen: :1984
+    origin: '*'
+ffmpeg:
+    bin: ffmpeg
+log:
+    format: text
+    level: info
+streams:
+    meditation-amor:
+        - ffmpeg:/home/annie/Documentos/ALTER/Beacon/harmonic-beacon-webapp/public/audio/meditations/amor.m4a#audio=opus
+    meditation-humanosfera:
+        - ffmpeg:/home/annie/Documentos/ALTER/Beacon/harmonic-beacon-webapp/public/audio/meditations/humanosfera.m4a#audio=opus
+    meditation-la_mosca:
+        - ffmpeg:/home/annie/Documentos/ALTER/Beacon/harmonic-beacon-webapp/public/audio/meditations/la_mosca.m4a#audio=opus
+webrtc:
+    candidates:
+        - stun:8555
+    listen: :8555

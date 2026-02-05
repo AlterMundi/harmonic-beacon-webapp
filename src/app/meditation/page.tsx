@@ -52,6 +52,7 @@ export default function MeditationPage() {
 
     const {
         loadMeditation,
+        loadMeditationFromGo2rtc,
         unloadMeditation,
         meditationIsPlaying,
         toggleMeditation,
@@ -94,10 +95,14 @@ export default function MeditationPage() {
     };
 
     const startMeditation = async (meditation: Meditation) => {
-        if (currentMeditationFile === meditation.audioFile) {
+        const meditationId = meditation.audioFile.replace('/audio/meditations/', '').replace('.m4a', '');
+        const streamName = `meditation-${meditationId}`;
+
+        if (currentMeditationFile === streamName) {
             toggleMeditation();
         } else {
-            await loadMeditation(meditation.audioFile);
+            // Use go2rtc WebRTC streaming
+            await loadMeditationFromGo2rtc(meditationId);
         }
     };
 
