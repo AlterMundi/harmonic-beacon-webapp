@@ -90,7 +90,8 @@ export function MiniPlayer() {
                 {/* Play/Pause Button */}
                 <button
                     onClick={togglePlay}
-                    className="w-10 h-10 rounded-full bg-[var(--primary-600)] flex items-center justify-center flex-shrink-0 hover:bg-[var(--primary-500)] transition-colors"
+                    aria-label={isPlaying ? "Pause audio" : "Play audio"}
+                    className="w-10 h-10 rounded-full bg-[var(--primary-600)] flex items-center justify-center flex-shrink-0 hover:bg-[var(--primary-500)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-400)] focus-visible:outline-offset-2"
                 >
                     {isPlaying ? (
                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -141,6 +142,7 @@ export function MiniPlayer() {
                         step="0.1"
                         value={volume}
                         onChange={(e) => setVolume(parseFloat(e.target.value))}
+                        aria-label="Volume control"
                         className="w-16 h-1 bg-[var(--border-subtle)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--primary-500)]"
                     />
                 </div>

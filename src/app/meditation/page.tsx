@@ -141,7 +141,7 @@ export default function MeditationPage() {
                         <button
                             key={category}
                             onClick={() => setSelectedCategory(category)}
-                            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${selectedCategory === category
+                            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2 ${selectedCategory === category
                                 ? "bg-[var(--primary-600)] text-white"
                                 : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
                                 }`}
@@ -192,7 +192,8 @@ export default function MeditationPage() {
                         <div className="mt-4 flex items-center justify-center gap-4">
                             <button
                                 onClick={toggleMeditation}
-                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+                                aria-label={meditationIsPlaying ? "Pause meditation" : "Play meditation"}
+                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2"
                             >
                                 {meditationIsPlaying ? (
                                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -207,7 +208,8 @@ export default function MeditationPage() {
                             </button>
                             <button
                                 onClick={handleStopMeditation}
-                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+                                aria-label="Stop meditation"
+                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2"
                             >
                                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                                     <rect x="6" y="6" width="12" height="12" rx="1" />
@@ -227,6 +229,7 @@ export default function MeditationPage() {
                                     step="0.01"
                                     value={mixValue}
                                     onChange={(e) => handleMixChange(parseFloat(e.target.value))}
+                                    aria-label="Audio mix: Beacon to Voice balance"
                                     className="flex-1 h-2 bg-[var(--border-subtle)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                                 />
                                 <span className="text-xs text-[var(--text-secondary)]">🧘 Voice</span>
@@ -240,9 +243,10 @@ export default function MeditationPage() {
             <section className="px-4">
                 <div className="grid gap-4">
                     {filteredMeditations.map((meditation, index) => (
-                        <div
+                        <button
+                            type="button"
                             key={meditation.id}
-                            className={`meditation-card animate-fade-in ${currentMeditationFile === meditation.audioFile ? 'border-[var(--primary-500)]' : ''}`}
+                            className={`meditation-card animate-fade-in text-left w-full ${currentMeditationFile === meditation.audioFile ? 'border-[var(--primary-500)]' : ''}`}
                             style={{ opacity: 0, animationDelay: `${index * 0.1}s` }}
                             onClick={() => startMeditation(meditation)}
                         >
@@ -279,7 +283,7 @@ export default function MeditationPage() {
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        </button>
                     ))}
                 </div>
             </section>
