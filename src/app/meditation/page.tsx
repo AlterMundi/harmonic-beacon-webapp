@@ -19,8 +19,8 @@ const meditations: Meditation[] = [
         id: "1",
         title: "La Mosca",
         description: "Una guía para soltar y relajarse profundamente",
-        duration: "~15 min",
-        category: "Deep Relaxation",
+        duration: "0:52",
+        category: "Spanish",
         imageGradient: "from-purple-600 to-blue-600",
         audioFile: "/audio/meditations/la_mosca.m4a",
     },
@@ -28,8 +28,8 @@ const meditations: Meditation[] = [
         id: "2",
         title: "Humanosfera",
         description: "Conecta con la esencia de la humanidad",
-        duration: "~15 min",
-        category: "Deep Relaxation",
+        duration: "2:03",
+        category: "Spanish",
         imageGradient: "from-indigo-600 to-purple-800",
         audioFile: "/audio/meditations/humanosfera.m4a",
     },
@@ -37,14 +37,14 @@ const meditations: Meditation[] = [
         id: "3",
         title: "El Amor",
         description: "Abre el corazón y encuentra paz interior",
-        duration: "~15 min",
-        category: "Deep Relaxation",
+        duration: "4:35",
+        category: "Spanish",
         imageGradient: "from-rose-500 to-pink-600",
         audioFile: "/audio/meditations/amor.m4a",
     },
 ];
 
-const categories = ["All", "Deep Relaxation"];
+const categories = ["All", "Spanish", "English"];
 
 export default function MeditationPage() {
     const [selectedCategory, setSelectedCategory] = useState("All");
