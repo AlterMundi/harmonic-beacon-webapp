@@ -157,7 +157,7 @@ export default function LoginPage() {
                 {/* Footer */}
                 <div className="text-center mt-8">
                     <p className="text-sm text-[var(--text-secondary)]">
-                        Don't have an account?{" "}
+                        Don&apos;t have an account?{" "}
                         <Link href="/signup" className="text-[var(--primary-400)] font-semibold hover:text-[var(--primary-300)]">
                             Sign Up
                         </Link>

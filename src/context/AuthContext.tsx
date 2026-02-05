@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
 
         // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, currentSession: any) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
             setSession(currentSession);
             setUser(currentSession?.user ?? null);
             setIsLoading(false);
@@ -78,8 +78,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return { error: error.message };
             }
             return { error: null };
-        } catch (err: any) {
-            return { error: err.message || 'An unexpected error occurred' };
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+            return { error: message };
         }
     };
 
@@ -99,8 +100,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return { error: error.message };
             }
             return { error: null };
-        } catch (err: any) {
-            return { error: err.message || 'An unexpected error occurred' };
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+            return { error: message };
         }
     };
 
@@ -126,9 +128,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return { error: error.message };
             }
             return { error: null };
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Google Sign-In error:', err);
-            return { error: err.message || 'An unexpected error occurred' };
+            const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+            return { error: message };
         }
     };
 

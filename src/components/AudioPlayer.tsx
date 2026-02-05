@@ -120,7 +120,7 @@ export function MiniPlayer() {
                                 key={i}
                                 className="w-1 bg-[var(--primary-400)] rounded-full"
                                 style={{
-                                    height: `${40 + Math.random() * 60}%`,
+                                    height: `${[70, 85, 55, 95][i]}%`,
                                     animation: `wave 1s ease-in-out infinite`,
                                     animationDelay: `${i * 0.1}s`,
                                 }}

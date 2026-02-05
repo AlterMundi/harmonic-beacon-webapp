@@ -58,6 +58,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const LIVEKIT_TOKEN = process.env.NEXT_PUBLIC_LIVEKIT_TOKEN || "";
     const LOFI_FALLBACK_URL = "https://streams.ilovemusic.de/iloveradio17.mp3";
 
+    const playLofi = useCallback(() => {
+        if (!lofiAudioRef.current) {
+            const audio = new Audio(LOFI_FALLBACK_URL);
+            audio.loop = true;
+            audio.volume = volume;
+            lofiAudioRef.current = audio;
+        }
+        lofiAudioRef.current.play().catch(console.error);
+    }, [volume, LOFI_FALLBACK_URL]);
+
     // Initialize LiveKit connection
     useEffect(() => {
         if (!LIVEKIT_TOKEN) {
@@ -87,7 +97,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 if (isPlaying) {
                     try {
                         await audioElement.play();
-                    } catch (err) {
+                    } catch {
                         console.log("Autoplay blocked, waiting for user gesture");
                     }
                 }
@@ -134,7 +144,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 lofiAudioRef.current = null;
             }
         };
-    }, [LIVEKIT_URL, LIVEKIT_TOKEN]);
+    }, [LIVEKIT_URL, LIVEKIT_TOKEN, isPlaying, playLofi, volume]);
 
     // Update volumes when changed
     useEffect(() => {
@@ -151,16 +161,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             meditationAudioRef.current.volume = meditationVolume;
         }
     }, [meditationVolume]);
-
-    const playLofi = useCallback(() => {
-        if (!lofiAudioRef.current) {
-            const audio = new Audio(LOFI_FALLBACK_URL);
-            audio.loop = true;
-            audio.volume = volume;
-            lofiAudioRef.current = audio;
-        }
-        lofiAudioRef.current.play().catch(console.error);
-    }, [volume, LOFI_FALLBACK_URL]);
 
     const togglePlay = useCallback(() => {
         if (isPlaying) {
