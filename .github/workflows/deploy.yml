@@ -34,12 +34,12 @@ jobs:
           docker run -d \
             --name harmonic-beacon \
             --restart unless-stopped \
-            -p 3001:3000 \
+            -p 3002:3000 \
             harmonic-beacon:latest
 
           # Wait for health check
           sleep 5
-          curl -f http://localhost:3001 || exit 1
+          curl -f http://localhost:3002 || exit 1
 
           # Cleanup old images (keep last 3)
           docker images harmonic-beacon --format '{{.ID}} {{.CreatedAt}}' | \
@@ -55,5 +55,5 @@ jobs:
           # Try to start previous image
           PREV_IMAGE=$(docker images harmonic-beacon --format '{{.ID}}' | sed -n '2p')
           if [ -n "$PREV_IMAGE" ]; then
-            docker run -d --name harmonic-beacon --restart unless-stopped -p 3001:3000 "$PREV_IMAGE"
+            docker run -d --name harmonic-beacon --restart unless-stopped -p 3002:3000 "$PREV_IMAGE"
           fi
