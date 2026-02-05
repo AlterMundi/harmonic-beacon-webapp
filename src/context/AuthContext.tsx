@@ -108,10 +108,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const signInWithGoogle = async (): Promise<{ error: string | null }> => {
         try {
-            // Explicitly set web redirect URL to prevent mobile deep link redirect
-            const redirectUrl = typeof window !== 'undefined'
-                ? `${window.location.origin}/auth/callback`
-                : 'http://localhost:3001/auth/callback';
+            // Use the current origin for redirect - this runs client-side only
+            const redirectUrl = `${window.location.origin}/auth/callback`;
 
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
