@@ -1,0 +1,59 @@
+name: Deploy
+
+on:
+  push:
+    branches: [release]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL="${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" \
+            --build-arg NEXT_PUBLIC_LIVEKIT_URL="${{ secrets.NEXT_PUBLIC_LIVEKIT_URL }}" \
+            -t harmonic-beacon:${{ github.sha }} \
+            -t harmonic-beacon:latest \
+            .
+
+      - name: Deploy container
+        run: |
+          # Stop existing container if running
+          docker stop harmonic-beacon 2>/dev/null || true
+          docker rm harmonic-beacon 2>/dev/null || true
+
+          # Start new container
+          docker run -d \
+            --name harmonic-beacon \
+            --restart unless-stopped \
+            -p 3001:3000 \
+            harmonic-beacon:latest
+
+          # Wait for health check
+          sleep 5
+          curl -f http://localhost:3001 || exit 1
+
+          # Cleanup old images (keep last 3)
+          docker images harmonic-beacon --format '{{.ID}} {{.CreatedAt}}' | \
+            sort -k2 -r | tail -n +4 | awk '{print $1}' | \
+            xargs -r docker rmi 2>/dev/null || true
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed, attempting rollback..."
+          docker stop harmonic-beacon 2>/dev/null || true
+          docker rm harmonic-beacon 2>/dev/null || true
+          # Try to start previous image
+          PREV_IMAGE=$(docker images harmonic-beacon --format '{{.ID}}' | sed -n '2p')
+          if [ -n "$PREV_IMAGE" ]; then
+            docker run -d --name harmonic-beacon --restart unless-stopped -p 3001:3000 "$PREV_IMAGE"
+          fi
