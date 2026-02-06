@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AudioProvider } from "@/context/AudioContext";
-import { AudioPlayerProvider, MiniPlayer } from "@/components";
 import { SessionProvider } from "next-auth/react";
 
 const inter = Inter({
@@ -39,21 +38,16 @@ export default function RootLayout({
       <body className={`${inter.variable} antialiased`}>
         <SessionProvider>
           <AudioProvider>
-            <AudioPlayerProvider>
               {/* Background orbs */}
               <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
                 <div className="bg-orb bg-orb-1" />
                 <div className="bg-orb bg-orb-2" />
               </div>
 
-              {/* Mini Player for background audio */}
-              <MiniPlayer />
-
               {/* Main content */}
               <div className="relative z-10">
                 {children}
               </div>
-            </AudioPlayerProvider>
           </AudioProvider>
         </SessionProvider>
       </body>
