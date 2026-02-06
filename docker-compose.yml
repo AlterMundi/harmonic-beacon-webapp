@@ -18,6 +18,7 @@ services:
       - AUTH_ZITADEL_ID=${AUTH_ZITADEL_ID}
       - AUTH_ZITADEL_ISSUER=${AUTH_ZITADEL_ISSUER:-https://auth.altermundi.net}
       - AUTH_TRUST_HOST=true
+      - AUTH_URL=${AUTH_URL:-https://beacon.altermundi.net}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
