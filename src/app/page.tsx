@@ -2,21 +2,19 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
+import { useSession } from "next-auth/react";
 
 export default function HomePage() {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
+  const { status } = useSession();
 
   useEffect(() => {
-    if (!isLoading) {
-      if (user) {
-        router.push('/live');
-      } else {
-        router.push('/login');
-      }
+    if (status === "authenticated") {
+      router.push('/live');
+    } else if (status === "unauthenticated") {
+      router.push('/login');
     }
-  }, [user, isLoading, router]);
+  }, [status, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">

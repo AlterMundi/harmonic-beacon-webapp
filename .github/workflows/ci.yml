@@ -23,7 +23,5 @@ jobs:
       - run: npm run lint
       - run: npm run build
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          NEXT_PUBLIC_LIVEKIT_URL: ${{ secrets.NEXT_PUBLIC_LIVEKIT_URL }}
-          NEXT_PUBLIC_LIVEKIT_TOKEN: ${{ secrets.NEXT_PUBLIC_LIVEKIT_TOKEN }}
+          NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
+          NEXT_PUBLIC_GO2RTC_URL: http://localhost:1984/api

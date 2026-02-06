@@ -1,33 +1,29 @@
 # go2rtc Production Configuration
-# Replace ${VARIABLES} with actual values or use environment substitution
+# Environment variables are substituted by entrypoint.sh or go2rtc itself
 
 api:
   listen: ":1984"
-  # Restrict CORS to your domains (replace with actual domains)
-  origin: "https://app.harmonic-beacon.com,https://harmonic-beacon.com"
-  base_path: ""
+  origin: "https://beacon.altermundi.net"
 
 webrtc:
-  listen: ":8554"
+  listen: ":8555"
   ice_servers:
     - urls:
         - stun:stun.l.google.com:19302
         - stun:stun1.l.google.com:19302
-  # CRITICAL: Replace with your server's public IP
   candidates:
-    - ${PUBLIC_IP}:8554
-
-# RTSP (optional - for debugging)
-rtsp:
-  listen: ":8555"
-
-ffmpeg:
-  bin: ffmpeg
+    - ${PUBLIC_IP}:8555
 
 log:
   level: info
   format: text
 
-# Streams are managed dynamically via API
-# Initial empty state - streams created on demand
-streams: {}
+# Pre-transcoded Opus streams - no runtime FFmpeg needed
+# Files are .ogg (Opus) served with #audio=copy (passthrough)
+streams:
+  meditation-amor:
+    - ffmpeg:/data/meditations/amor.ogg#audio=copy
+  meditation-humanosfera:
+    - ffmpeg:/data/meditations/humanosfera.ogg#audio=copy
+  meditation-la_mosca:
+    - ffmpeg:/data/meditations/la_mosca.ogg#audio=copy

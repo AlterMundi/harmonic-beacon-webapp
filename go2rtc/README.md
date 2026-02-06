@@ -1,80 +1,56 @@
-# go2rtc Meditation Streaming
+# go2rtc Local Development
 
-This directory contains the go2rtc binary and configuration for streaming meditation audio files via WebRTC.
+Local go2rtc setup for meditation streaming during development.
 
-## Architecture
+## Prerequisites
 
-```
-Meditation Files (*.m4a)
-  ↓
-go2rtc (FFmpeg processing)
-  ↓
-WebRTC Streams (Opus codec)
-  ↓
-Next.js API (/api/meditations)
-  ↓
-Web Client (AudioContext)
-```
+- [go2rtc](https://github.com/AlexxIT/go2rtc/releases) binary (v1.9.14+)
+- FFmpeg installed (`sudo apt install ffmpeg`)
 
-## Files
+## Setup
 
-- **go2rtc** - Binary executable (v1.9.14)
-- **go2rtc.yaml** - Configuration file
-- **start.sh** - Startup script
-- **README.md** - This file
-
-## Usage
-
-### Start go2rtc
-
+1. Download go2rtc binary:
 ```bash
-./start.sh
+wget -O go2rtc https://github.com/AlexxIT/go2rtc/releases/download/v1.9.14/go2rtc_linux_amd64
+chmod +x go2rtc
 ```
 
-Access web UI at: http://localhost:1984
+2. Start go2rtc:
+```bash
+cd go2rtc
+./go2rtc
+```
 
-### Configuration
+3. In another terminal, start Next.js:
+```bash
+npm run dev
+```
 
-Streams are created dynamically via the Next.js API. The `go2rtc.yaml` file contains minimal configuration:
+## Configuration
 
-- WebRTC on port 8555
-- API on port 1984
-- Auto-detect external IP via STUN
+`go2rtc.yaml` has pre-configured streams pointing to `../public/audio/meditations/`:
 
-### API Integration
-
-The Next.js API (`/api/meditations`) manages stream creation:
-
-1. Client requests meditation
-2. API calls go2rtc to create FFmpeg stream
-3. go2rtc processes meditation file
-4. Client connects via WebRTC
-
-### Adding New Meditations
-
-1. Add `.m4a` file to `public/audio/meditations/`
-2. Update metadata in `/src/app/api/meditations/route.ts`
-3. Restart Next.js dev server
-4. Stream will be created automatically when requested
+| Stream | File |
+|--------|------|
+| meditation-amor | amor.m4a |
+| meditation-humanosfera | humanosfera.m4a |
+| meditation-la_mosca | la_mosca.m4a |
 
 ## Ports
 
-- **1984** - go2rtc API and Web UI
+- **1984** - go2rtc API + Web UI (http://localhost:1984)
 - **8555** - WebRTC connections
 
-## Requirements
+## Testing
 
-- FFmpeg (for audio processing)
-- Ports 1984 and 8555 available
+1. Open http://localhost:3000/meditation
+2. Click any meditation card
+3. Browser console should show:
+   - "Received meditation audio track from go2rtc"
+   - "WebRTC connection established with go2rtc"
 
-## Production Deployment
+## Notes
 
-For production, update `go2rtc.yaml`:
-
-```yaml
-webrtc:
-  candidates:
-    - YOUR_SERVER_IP:8555
-```
-
-Or use STUN for dynamic IP detection (already configured).
+- The binary is `.gitignore`d - download it locally
+- In production, go2rtc runs in Docker (see `deploy/go2rtc/`)
+- Production uses pre-transcoded `.ogg` files with `#audio=copy`; dev uses runtime FFmpeg with `#audio=opus`

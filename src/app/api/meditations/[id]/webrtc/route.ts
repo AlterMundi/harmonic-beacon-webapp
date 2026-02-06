@@ -8,10 +8,10 @@ const GO2RTC_API_URL = process.env.GO2RTC_API_URL || 'http://localhost:1984';
  */
 export async function GET(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const meditationId = params.id;
+        const { id: meditationId } = await params;
         const streamName = `meditation-${meditationId}`;
 
         // Get WebRTC offer from go2rtc
