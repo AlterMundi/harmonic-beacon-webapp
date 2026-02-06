@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { BottomNav, AudioVisualizer, useAudioPlayer } from "@/components";
+import { BottomNav, AudioVisualizer } from "@/components";
+import { useAudio } from "@/context/AudioContext";
 
 interface SessionData {
     heartRate: number;
@@ -17,7 +18,7 @@ export default function SessionsPage() {
         hrv: 45,
         duration: 0,
     });
-    const { isPlaying, togglePlay, setShowMiniPlayer } = useAudioPlayer();
+    const { isPlaying, togglePlay } = useAudio();
 
     // Simulate heart rate fluctuations during session
     useEffect(() => {
@@ -45,8 +46,7 @@ export default function SessionsPage() {
         setIsSessionActive(true);
         setSessionData({ heartRate: 72, hrv: 45, duration: 0 });
 
-        // Start background audio
-        setShowMiniPlayer(true);
+        // Start beacon audio
         if (!isPlaying) {
             togglePlay();
         }
@@ -55,19 +55,11 @@ export default function SessionsPage() {
     const endSession = () => {
         setIsSessionActive(false);
 
-        // Stop background audio
+        // Stop beacon audio
         if (isPlaying) {
             togglePlay();
         }
-        setShowMiniPlayer(false);
     };
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            setShowMiniPlayer(false);
-        };
-    }, [setShowMiniPlayer]);
 
     return (
         <main className={`min-h-screen pb-28 ${isSessionActive ? 'pt-20' : ''}`}>
