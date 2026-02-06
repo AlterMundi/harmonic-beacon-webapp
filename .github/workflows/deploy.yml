@@ -30,6 +30,7 @@ jobs:
           AUTH_ZITADEL_ID=${{ secrets.AUTH_ZITADEL_ID }}
           AUTH_ZITADEL_ISSUER=${{ secrets.AUTH_ZITADEL_ISSUER }}
           AUTH_TRUST_HOST=true
+          AUTH_URL=https://beacon.altermundi.net
           LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}
           LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}
           LIVEKIT_ROOM_NAME=beacon
