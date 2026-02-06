@@ -84,6 +84,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
                 console.log(`✓ Subscribed to ${isLive ? 'LIVE' : 'playlist'} audio track (${identity})`);
 
+                track.setPlayoutDelay(0.5);  // 500ms jitter buffer — absorbs USB clock drift
                 const audioElement = track.attach() as HTMLAudioElement;
                 audioElement.volume = volumeRef.current;
                 audioElement.style.display = "none";
