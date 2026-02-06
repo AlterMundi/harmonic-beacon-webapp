@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readdir } from 'fs/promises';
-import { join } from 'path';
+import { readdir, stat } from 'fs/promises';
+import { join, basename } from 'path';
 
-const GO2RTC_API_URL = process.env.GO2RTC_API_URL || 'http://localhost:1984';
-const MEDITATIONS_PATH = join(process.cwd(), 'public/audio/meditations');
+// Configuration - supports both local dev and production server
+const GO2RTC_API_URL = process.env.GO2RTC_INTERNAL_URL || process.env.GO2RTC_API_URL || 'http://localhost:1984';
+
+// Storage path - local in dev, server path in production
+const MEDITATIONS_PATH = process.env.MEDITATIONS_STORAGE_PATH
+    || join(process.cwd(), 'public/audio/meditations');
 
 // Meditation metadata
 interface Meditation {
@@ -11,6 +15,7 @@ interface Meditation {
     name: string;
     fileName: string;
     streamName: string;
+    duration?: number;
 }
 
 // Hardcoded meditation metadata (can be moved to database later)
@@ -19,6 +24,14 @@ const MEDITATION_METADATA: Record<string, { name: string }> = {
     'humanosfera': { name: 'Humanosfera' },
     'la_mosca': { name: 'La Mosca' },
 };
+
+/**
+ * Sanitize path to prevent directory traversal attacks
+ */
+function sanitizePath(input: string): string {
+    // Remove any path components
+    return basename(input).replace(/[^a-zA-Z0-9_-]/g, '');
+}
 
 /**
  * GET /api/meditations
@@ -66,9 +79,18 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Sanitize meditation ID to prevent path traversal
+        const sanitizedId = sanitizePath(meditationId);
+        if (sanitizedId !== meditationId) {
+            return NextResponse.json(
+                { error: 'Invalid meditation ID' },
+                { status: 400 }
+            );
+        }
+
         // Get meditation file path
         const files = await readdir(MEDITATIONS_PATH);
-        const meditationFile = files.find(f => f.startsWith(meditationId));
+        const meditationFile = files.find(f => f.startsWith(sanitizedId));
 
         if (!meditationFile) {
             return NextResponse.json(
@@ -78,7 +100,20 @@ export async function POST(request: NextRequest) {
         }
 
         const filePath = join(MEDITATIONS_PATH, meditationFile);
-        const streamName = `meditation-${meditationId}`;
+        const streamName = `meditation-${sanitizedId}`;
+
+        // Verify file exists and is within storage path
+        try {
+            const fileStats = await stat(filePath);
+            if (!fileStats.isFile()) {
+                throw new Error('Not a file');
+            }
+        } catch {
+            return NextResponse.json(
+                { error: 'Meditation file not accessible' },
+                { status: 404 }
+            );
+        }
 
         // Create stream in go2rtc via API
         const go2rtcResponse = await fetch(`${GO2RTC_API_URL}/api/config`, {
@@ -96,14 +131,16 @@ export async function POST(request: NextRequest) {
         });
 
         if (!go2rtcResponse.ok) {
-            throw new Error(`go2rtc API error: ${go2rtcResponse.statusText}`);
+            const errorText = await go2rtcResponse.text();
+            console.error('go2rtc error:', errorText);
+            throw new Error(`go2rtc API error: ${go2rtcResponse.status}`);
         }
 
         return NextResponse.json({
             success: true,
             streamName,
-            meditationId,
-            name: MEDITATION_METADATA[meditationId]?.name || meditationId,
+            meditationId: sanitizedId,
+            name: MEDITATION_METADATA[sanitizedId]?.name || sanitizedId,
         });
     } catch (error) {
         console.error('Error creating meditation stream:', error);
@@ -113,3 +150,4 @@ export async function POST(request: NextRequest) {
         );
     }
 }
+
