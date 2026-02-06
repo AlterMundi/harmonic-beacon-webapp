@@ -1,0 +1,33 @@
+# go2rtc Production Configuration
+# Replace ${VARIABLES} with actual values or use environment substitution
+
+api:
+  listen: ":1984"
+  # Restrict CORS to your domains (replace with actual domains)
+  origin: "https://app.harmonic-beacon.com,https://harmonic-beacon.com"
+  base_path: ""
+
+webrtc:
+  listen: ":8554"
+  ice_servers:
+    - urls:
+        - stun:stun.l.google.com:19302
+        - stun:stun1.l.google.com:19302
+  # CRITICAL: Replace with your server's public IP
+  candidates:
+    - ${PUBLIC_IP}:8554
+
+# RTSP (optional - for debugging)
+rtsp:
+  listen: ":8555"
+
+ffmpeg:
+  bin: ffmpeg
+
+log:
+  level: info
+  format: text
+
+# Streams are managed dynamically via API
+# Initial empty state - streams created on demand
+streams: {}

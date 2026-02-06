@@ -1,0 +1,85 @@
+# Harmonic Beacon Streaming Infrastructure
+# Production deployment with go2rtc + Nginx reverse proxy
+
+services:
+  go2rtc:
+    build:
+      context: ./go2rtc
+      args:
+        GO2RTC_VERSION: 1.9.14
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    container_name: harmonic-beacon-go2rtc
+    restart: unless-stopped
+    
+    ports:
+      # API only accessible from localhost (proxied through Nginx)
+      - "127.0.0.1:1984:1984"
+      # WebRTC UDP/TCP - must be directly exposed (Nginx can't proxy UDP)
+      - "8554:8554/udp"
+      - "8554:8554/tcp"
+    
+    volumes:
+      # Meditation files - read only
+      - ${STORAGE_PATH:-/mnt/raid/storage/harmonic-beacon}:/data:ro
+      # Config file
+      - ./go2rtc/go2rtc.yaml:/etc/go2rtc/go2rtc.yaml:ro
+    
+    environment:
+      - TZ=${TZ:-America/Argentina/Buenos_Aires}
+      - PUBLIC_IP=${PUBLIC_IP}
+    
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:1984/api"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:alpine
+    container_name: harmonic-beacon-nginx
+    restart: unless-stopped
+    
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    
+    depends_on:
+      go2rtc:
+        condition: service_healthy
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge

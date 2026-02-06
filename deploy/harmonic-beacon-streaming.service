@@ -1,0 +1,29 @@
+[Unit]
+Description=Harmonic Beacon Streaming Service (go2rtc + Nginx)
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/harmonic-beacon-streaming
+EnvironmentFile=/opt/harmonic-beacon-streaming/.env
+
+# Use docker compose (v2 syntax)
+ExecStartPre=/usr/bin/docker compose pull
+ExecStart=/usr/bin/docker compose up --remove-orphans
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose restart
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=harmonic-beacon
+
+[Install]
+WantedBy=multi-user.target
