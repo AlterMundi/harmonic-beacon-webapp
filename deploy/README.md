@@ -1,107 +1,123 @@
-# Harmonic Beacon Streaming Deployment
+# Harmonic Beacon Production Deployment
 
-Production deployment for go2rtc meditation streaming service.
+Docker Compose deployment for Next.js app + go2rtc meditation streaming on `inference-public`.
 
-## Components
+## Architecture
 
-- **go2rtc**: Audio streaming server with WebRTC support
-- **Nginx**: Reverse proxy with SSL termination
-- **Systemd**: Service management
+```
+Client (beacon.altermundi.net)
+  ↓ HTTPS
+Host Nginx (SSL, reverse proxy)
+  ├── / → Next.js (port 3003)
+  ├── /api/stream/webrtc → go2rtc (port 1984)
+  └── /api/stream/streams → go2rtc (port 1984)
 
-## Quick Start
+WebRTC ICE traffic: UDP/TCP 8555 (direct to go2rtc container)
+```
 
-### 1. Prerequisites
+## Services
 
-```bash
-# Server requirements
+| Service | Container | Port | Purpose |
+|---------|-----------|------|---------|
+| `app` | harmonic-beacon | 3003:3000 | Next.js web app |
+| `go2rtc` | harmonic-beacon-go2rtc | 127.0.0.1:1984, 8555/tcp+udp | WebRTC streaming |
+
+## Prerequisites
+
 - Docker + Docker Compose v2
-- SSL certificates
-- Public IP for WebRTC
-- Firewall access to ports 80, 443, 8554 (TCP/UDP)
-```
+- Host nginx with SSL (Certbot) for `beacon.altermundi.net`
+- Firewall rules for port 8555 TCP/UDP
+- Zitadel OIDC application at `auth.altermundi.net`
+- Meditation files pre-transcoded to Opus (.ogg)
 
-### 2. Configure
+## Deployment
 
-```bash
-cp .env.example .env
-# Edit .env with your values:
-# - PUBLIC_IP: Your server's public IP
-# - STORAGE_PATH: Meditation files location
-# - Zitadel credentials
-```
+Deployment is automated via GitHub Actions (`.github/workflows/deploy.yml`):
 
-### 3. SSL Certificates
+1. Push to `release` branch triggers deploy
+2. CI pre-transcodes meditation files (`.m4a` → `.ogg`)
+3. Docker Compose builds both services
+4. Health checks verify both services are up
 
-```bash
-# Copy your SSL certificates
-cp /path/to/fullchain.pem nginx/ssl/
-cp /path/to/privkey.pem nginx/ssl/
-```
-
-### 4. Update Domains
-
-Edit these files with your domain:
-- `nginx/nginx.conf` - Replace `stream.harmonic-beacon.com`
-- `go2rtc/go2rtc.yaml` - Update CORS origins
-
-### 5. Deploy
+### Manual deploy
 
 ```bash
-sudo ./deploy.sh
+# On inference-public
+cd /home/github-runner/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp
+
+# Build and start
+docker compose build --no-cache
+docker compose up -d
+
+# Verify
+curl -f http://localhost:3003
+curl -f http://127.0.0.1:1984/api
 ```
 
-### 6. Start Service
+## Configuration
+
+### Environment Variables
+
+Create `.env` at project root (see `.env.example`):
 
 ```bash
-sudo systemctl start harmonic-beacon-streaming
-sudo systemctl status harmonic-beacon-streaming
+AUTH_SECRET=<generated-secret>
+AUTH_ZITADEL_ID=<oidc-client-id>
+AUTH_ZITADEL_ISSUER=https://auth.altermundi.net
+MEDITATIONS_PATH=/mnt/raid1/harmonic-beacon/meditations
+PUBLIC_IP=131.72.205.6
 ```
 
-## Firewall
+### Nginx
+
+Copy `deploy/nginx-harmonic-beacon.conf` to `/etc/nginx/sites-enabled/` and reload nginx.
+
+### Firewall
 
 ```bash
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 8554/tcp
-sudo ufw allow 8554/udp
+iptables -A INPUT -p tcp --dport 8555 -j ACCEPT
+iptables -A INPUT -p udp --dport 8555 -j ACCEPT
 ```
 
-## File Structure
+## Pre-transcoding Meditations
 
+```bash
+bash deploy/transcode-meditations.sh /mnt/raid1/harmonic-beacon/meditations
 ```
-/opt/harmonic-beacon-streaming/     # Deployment files
-/mnt/raid/storage/harmonic-beacon/  # Meditation files
-  ├── meditations/providers/        # Provider uploads
-  ├── sessions/                     # Session recordings
-  └── cache/                        # Transcoded cache
-```
+
+Converts `.m4a` → `.ogg` (Opus 64kbps). go2rtc serves with `#audio=copy` (no runtime FFmpeg).
 
 ## Monitoring
 
 ```bash
-# View logs
-sudo journalctl -u harmonic-beacon-streaming -f
+# Container status
+docker compose ps
 
-# Check containers
-docker ps
+# Logs
+docker compose logs -f app
+docker compose logs -f go2rtc
 
-# Test health
-curl https://stream.harmonic-beacon.com/health
+# go2rtc streams
+curl http://127.0.0.1:1984/api/streams
+
+# Health checks
+curl -f http://localhost:3003
+curl -f http://127.0.0.1:1984/api
 ```
 
 ## Troubleshooting
 
 ### WebRTC not connecting
-- Verify PUBLIC_IP is set correctly
-- Check firewall allows UDP 8554
-- Test STUN connectivity
+- Verify port 8555 TCP/UDP is open in iptables
+- Check `PUBLIC_IP` env var matches server's public IP
+- Test: `curl http://127.0.0.1:1984/api/webrtc?src=meditation-amor`
 
-### Stream not playing
-- Check go2rtc logs: `docker logs harmonic-beacon-go2rtc`
-- Verify file path is accessible
-- Ensure FFmpeg is working
+### Auth redirects failing
+- Verify Zitadel OIDC app redirect URI: `https://beacon.altermundi.net/api/auth/callback/zitadel`
+- Check `AUTH_SECRET` is set
+- Verify `AUTH_TRUST_HOST=true`
 
-### Auth errors
-- Verify Zitadel configuration
-- Check token expiration
-- Review Nginx logs
+### No audio
+- Check meditation files exist: `ls /mnt/raid1/harmonic-beacon/meditations/*.ogg`
+- Check go2rtc logs: `docker compose logs go2rtc`
+- Verify streams are configured: `curl http://127.0.0.1:1984/api/streams`

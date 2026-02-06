@@ -2,9 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AudioProvider } from "@/context/AudioContext";
-import { AuthProvider } from "@/context/AuthContext";
-import { AuthGuard } from "@/components/AuthGuard";
 import { AudioPlayerProvider, MiniPlayer } from "@/components";
+import { SessionProvider } from "next-auth/react";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -38,27 +37,25 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased`}>
-        <AuthProvider>
-          <AuthGuard>
-            <AudioProvider>
-              <AudioPlayerProvider>
-                {/* Background orbs */}
-                <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-                  <div className="bg-orb bg-orb-1" />
-                  <div className="bg-orb bg-orb-2" />
-                </div>
+        <SessionProvider>
+          <AudioProvider>
+            <AudioPlayerProvider>
+              {/* Background orbs */}
+              <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+                <div className="bg-orb bg-orb-1" />
+                <div className="bg-orb bg-orb-2" />
+              </div>
 
-                {/* Mini Player for background audio */}
-                <MiniPlayer />
+              {/* Mini Player for background audio */}
+              <MiniPlayer />
 
-                {/* Main content */}
-                <div className="relative z-10">
-                  {children}
-                </div>
-              </AudioPlayerProvider>
-            </AudioProvider>
-          </AuthGuard>
-        </AuthProvider>
+              {/* Main content */}
+              <div className="relative z-10">
+                {children}
+              </div>
+            </AudioPlayerProvider>
+          </AudioProvider>
+        </SessionProvider>
       </body>
     </html>
   );

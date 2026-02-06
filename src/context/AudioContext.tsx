@@ -1,12 +1,16 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { Room, RoomEvent, Track, RemoteTrack } from 'livekit-client';
+import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, RemoteTrackPublication } from 'livekit-client';
+
+// Participant identity for the live USB audio source
+const WANDA_IDENTITY = "wanda02";
 
 interface AudioContextType {
     // LiveKit / Beacon Audio
     isConnected: boolean;
     hasLiveStream: boolean;
+    hasPlaylistStream: boolean;
     isPlaying: boolean;
     volume: number;
     togglePlay: () => void;
@@ -40,6 +44,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // LiveKit / Beacon state
     const [isConnected, setIsConnected] = useState(false);
     const [hasLiveStream, setHasLiveStream] = useState(false);
+    const [hasPlaylistStream, setHasPlaylistStream] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [volume, setVolumeState] = useState(0.5);
 
@@ -51,8 +56,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const [currentMeditationFile, setCurrentMeditationFile] = useState<string | null>(null);
 
     const roomRef = useRef<Room | null>(null);
-    const liveAudioRef = useRef<HTMLAudioElement | null>(null);
-    const lofiAudioRef = useRef<HTMLAudioElement | null>(null);
+    // Track audio elements per participant identity
+    const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
     const meditationAudioRef = useRef<HTMLAudioElement | null>(null);
     const meditationPeerConnectionRef = useRef<RTCPeerConnection | null>(null);
 
@@ -65,43 +70,32 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => { volumeRef.current = volume; }, [volume]);
 
     const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
-    const LIVEKIT_TOKEN = process.env.NEXT_PUBLIC_LIVEKIT_TOKEN || "";
-    const LOFI_FALLBACK_URL = "https://streams.ilovemusic.de/iloveradio17.mp3";
     const GO2RTC_URL = process.env.NEXT_PUBLIC_GO2RTC_URL || "http://localhost:1984";
-
-    const playLofi = useCallback(() => {
-        if (!lofiAudioRef.current) {
-            const audio = new Audio(LOFI_FALLBACK_URL);
-            audio.loop = true;
-            audio.volume = volumeRef.current;
-            lofiAudioRef.current = audio;
-        }
-        lofiAudioRef.current.play().catch(console.error);
-    }, [LOFI_FALLBACK_URL]);
 
     // Initialize LiveKit connection - runs once on mount
     useEffect(() => {
-        if (!LIVEKIT_TOKEN) {
-            console.error("Missing NEXT_PUBLIC_LIVEKIT_TOKEN");
-            return;
-        }
-
         const room = new Room();
         roomRef.current = room;
 
-        room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack) => {
+        room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
             if (track.kind === Track.Kind.Audio) {
-                console.log("✓ Subscribed to beacon audio track");
+                const identity = participant.identity;
+                const isLive = identity === WANDA_IDENTITY;
+
+                console.log(`✓ Subscribed to ${isLive ? 'LIVE' : 'playlist'} audio track (${identity})`);
+
                 const audioElement = track.attach() as HTMLAudioElement;
-                liveAudioRef.current = audioElement;
                 audioElement.volume = volumeRef.current;
                 audioElement.style.display = "none";
                 document.body.appendChild(audioElement);
-                setHasLiveStream(true);
 
-                // Stop lofi fallback if playing
-                if (lofiAudioRef.current) {
-                    lofiAudioRef.current.pause();
+                // Store audio element by participant identity
+                audioElementsRef.current.set(identity, audioElement);
+
+                if (isLive) {
+                    setHasLiveStream(true);
+                } else {
+                    setHasPlaylistStream(true);
                 }
 
                 // Auto-play if user already toggled play
@@ -115,16 +109,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             }
         });
 
-        room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
             if (track.kind === Track.Kind.Audio) {
-                console.log("✗ Beacon stopped broadcasting");
-                track.detach().forEach((el) => el.remove());
-                liveAudioRef.current = null;
-                setHasLiveStream(false);
+                const identity = participant.identity;
+                const isLive = identity === WANDA_IDENTITY;
 
-                // Fallback to Lofi if user wants audio
-                if (isPlayingRef.current) {
-                    playLofi();
+                console.log(`✗ ${isLive ? 'LIVE' : 'Playlist'} audio track removed (${identity})`);
+
+                track.detach().forEach((el) => el.remove());
+                audioElementsRef.current.delete(identity);
+
+                if (isLive) {
+                    setHasLiveStream(false);
+                } else {
+                    setHasPlaylistStream(false);
                 }
             }
         });
@@ -133,38 +131,36 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             console.log("Disconnected from LiveKit room");
             setIsConnected(false);
             setHasLiveStream(false);
+            setHasPlaylistStream(false);
         });
 
-        room.connect(LIVEKIT_URL, LIVEKIT_TOKEN)
+        // Fetch token from server-side API and connect
+        fetch('/api/livekit/token')
+            .then((res) => res.json())
+            .then(({ token }) => room.connect(LIVEKIT_URL, token))
             .then(() => {
                 console.log("✓ Connected to LiveKit room");
                 setIsConnected(true);
             })
             .catch((err) => {
                 console.error("Failed to connect to LiveKit:", err);
-                // Fallback to Lofi immediately if user wants audio
-                if (isPlayingRef.current) {
-                    playLofi();
-                }
             });
 
         return () => {
             room.disconnect();
-            if (lofiAudioRef.current) {
-                lofiAudioRef.current.pause();
-                lofiAudioRef.current = null;
-            }
+            audioElementsRef.current.forEach((el) => {
+                el.pause();
+                el.remove();
+            });
+            audioElementsRef.current.clear();
         };
-    }, [LIVEKIT_URL, LIVEKIT_TOKEN, playLofi]);
+    }, [LIVEKIT_URL]);
 
     // Update volumes when changed
     useEffect(() => {
-        if (liveAudioRef.current) {
-            liveAudioRef.current.volume = volume;
-        }
-        if (lofiAudioRef.current) {
-            lofiAudioRef.current.volume = volume;
-        }
+        audioElementsRef.current.forEach((el) => {
+            el.volume = volume;
+        });
     }, [volume]);
 
     useEffect(() => {
@@ -175,24 +171,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
     const togglePlay = useCallback(() => {
         if (isPlaying) {
-            // Pause everything
-            if (liveAudioRef.current) {
-                liveAudioRef.current.pause();
-            }
-            if (lofiAudioRef.current) {
-                lofiAudioRef.current.pause();
-            }
+            // Pause all beacon audio elements
+            audioElementsRef.current.forEach((el) => el.pause());
             setIsPlaying(false);
         } else {
-            // Play live stream or fallback to lofi
-            if (liveAudioRef.current) {
-                liveAudioRef.current.play().catch(console.error);
-            } else {
-                playLofi();
-            }
+            // Play all beacon audio elements (only non-muted ones produce sound)
+            audioElementsRef.current.forEach((el) => {
+                el.play().catch(console.error);
+            });
             setIsPlaying(true);
         }
-    }, [isPlaying, playLofi]);
+    }, [isPlaying]);
 
     const setVolume = useCallback((v: number) => {
         setVolumeState(v);
@@ -263,8 +252,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             }
 
             const { streamName } = await createResponse.json();
-            // Set currentMeditationFile to match the audioFile format in meditation page
-            setCurrentMeditationFile(`/audio/meditations/${meditationId}.m4a`);
+            // Set currentMeditationFile to the streamName for consistent comparison
+            setCurrentMeditationFile(streamName);
 
             // Step 2: Create RTCPeerConnection
             const pc = new RTCPeerConnection({
@@ -315,7 +304,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             });
 
             // Step 4: Send offer to go2rtc and get answer (JSON format)
-            const webrtcUrl = `${GO2RTC_URL}/api/webrtc?src=${streamName}`;
+            const webrtcUrl = `${GO2RTC_URL}/webrtc?src=${streamName}`;
             const response = await fetch(webrtcUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -385,6 +374,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             value={{
                 isConnected,
                 hasLiveStream,
+                hasPlaylistStream,
                 isPlaying,
                 volume,
                 togglePlay,

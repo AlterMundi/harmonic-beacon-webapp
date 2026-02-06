@@ -5,7 +5,7 @@ import { join, basename } from 'path';
 // Configuration - supports both local dev and production server
 const GO2RTC_API_URL = process.env.GO2RTC_INTERNAL_URL || process.env.GO2RTC_API_URL || 'http://localhost:1984';
 
-// Storage path - local in dev, server path in production
+// Storage path - Docker volume in production, local in dev
 const MEDITATIONS_PATH = process.env.MEDITATIONS_STORAGE_PATH
     || join(process.cwd(), 'public/audio/meditations');
 
@@ -41,10 +41,10 @@ export async function GET() {
     try {
         // Read meditation files from directory
         const files = await readdir(MEDITATIONS_PATH);
-        const audioFiles = files.filter(f => f.endsWith('.m4a') || f.endsWith('.mp3'));
+        const audioFiles = files.filter(f => f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.ogg'));
 
         const meditations: Meditation[] = audioFiles.map(fileName => {
-            const id = fileName.replace(/\.(m4a|mp3)$/, '');
+            const id = fileName.replace(/\.(m4a|mp3|ogg)$/, '');
             return {
                 id,
                 name: MEDITATION_METADATA[id]?.name || id,
@@ -116,6 +116,8 @@ export async function POST(request: NextRequest) {
         }
 
         // Create stream in go2rtc via API
+        // Use #audio=copy for pre-transcoded .ogg files, #audio=opus for others
+        const audioFilter = meditationFile.endsWith('.ogg') ? '#audio=copy' : '#audio=opus';
         const go2rtcResponse = await fetch(`${GO2RTC_API_URL}/api/config`, {
             method: 'PATCH',
             headers: {
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify({
                 streams: {
                     [streamName]: [
-                        `ffmpeg:${filePath}#audio=opus`,
+                        `ffmpeg:${filePath}${audioFilter}`,
                     ],
                 },
             }),
@@ -150,4 +152,3 @@ export async function POST(request: NextRequest) {
         );
     }
 }
-

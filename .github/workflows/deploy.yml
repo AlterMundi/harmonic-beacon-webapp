@@ -14,47 +14,68 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
+      - name: Pre-transcode meditation files
         run: |
-          docker build --no-cache \
-            --build-arg NEXT_PUBLIC_SUPABASE_URL="${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" \
-            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" \
-            --build-arg NEXT_PUBLIC_LIVEKIT_URL="${{ secrets.NEXT_PUBLIC_LIVEKIT_URL }}" \
-            --build-arg NEXT_PUBLIC_LIVEKIT_TOKEN="${{ secrets.NEXT_PUBLIC_LIVEKIT_TOKEN }}" \
-            -t harmonic-beacon:${{ github.sha }} \
-            -t harmonic-beacon:latest \
-            .
+          MEDITATION_DIR="${MEDITATIONS_PATH:-/mnt/raid1/harmonic-beacon/meditations}"
+          if [ -d "$MEDITATION_DIR" ]; then
+            bash deploy/transcode-meditations.sh "$MEDITATION_DIR"
+          else
+            echo "Warning: Meditation directory $MEDITATION_DIR not found, skipping transcode"
+          fi
 
-      - name: Deploy container
+      - name: Create .env for runtime
         run: |
-          # Stop existing container if running
+          cat > .env <<EOF
+          AUTH_SECRET=${{ secrets.AUTH_SECRET }}
+          AUTH_ZITADEL_ID=${{ secrets.AUTH_ZITADEL_ID }}
+          AUTH_ZITADEL_ISSUER=${{ secrets.AUTH_ZITADEL_ISSUER }}
+          AUTH_TRUST_HOST=true
+          LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}
+          LIVEKIT_ROOM_NAME=beacon
+          GO2RTC_INTERNAL_URL=http://go2rtc:1984
+          MEDITATIONS_STORAGE_PATH=/data/meditations
+          MEDITATIONS_PATH=${MEDITATIONS_PATH:-/mnt/raid1/harmonic-beacon/meditations}
+          PUBLIC_IP=${{ secrets.PUBLIC_IP }}
+          TZ=America/Argentina/Buenos_Aires
+          EOF
+
+      - name: Build Docker images
+        run: |
+          docker compose build --no-cache \
+            --build-arg NEXT_PUBLIC_LIVEKIT_URL="${{ secrets.NEXT_PUBLIC_LIVEKIT_URL }}" \
+            --build-arg NEXT_PUBLIC_GO2RTC_URL="${{ secrets.NEXT_PUBLIC_GO2RTC_URL }}"
+
+      - name: Deploy services
+        run: |
+          # Stop old standalone container if it exists
           docker stop harmonic-beacon 2>/dev/null || true
           docker rm harmonic-beacon 2>/dev/null || true
 
-          # Start new container
-          docker run -d \
-            --name harmonic-beacon \
-            --restart unless-stopped \
-            -p 3003:3000 \
-            harmonic-beacon:latest
+          # Deploy with compose
+          docker compose up -d --remove-orphans
 
-          # Wait for health check
-          sleep 5
+          # Wait for services to be healthy
+          echo "Waiting for services to be healthy..."
+          sleep 10
+
+          # Verify app is responding
           curl -f http://localhost:3003 || exit 1
 
-          # Cleanup old images (keep last 3)
-          docker images harmonic-beacon --format '{{.ID}} {{.CreatedAt}}' | \
-            sort -k2 -r | tail -n +4 | awk '{print $1}' | \
-            xargs -r docker rmi 2>/dev/null || true
+          # Verify go2rtc is responding
+          curl -f http://127.0.0.1:1984/api || exit 1
+
+          echo "Deployment successful"
+
+      - name: Cleanup old images
+        if: success()
+        run: |
+          docker image prune -f --filter "until=168h" 2>/dev/null || true
 
       - name: Rollback on failure
         if: failure()
         run: |
           echo "Deployment failed, attempting rollback..."
-          docker stop harmonic-beacon 2>/dev/null || true
-          docker rm harmonic-beacon 2>/dev/null || true
-          # Try to start previous image
-          PREV_IMAGE=$(docker images harmonic-beacon --format '{{.ID}}' | sed -n '2p')
-          if [ -n "$PREV_IMAGE" ]; then
-            docker run -d --name harmonic-beacon --restart unless-stopped -p 3003:3000 "$PREV_IMAGE"
-          fi
+          docker compose down 2>/dev/null || true
+          # Try to restart with previous images
+          docker compose up -d 2>/dev/null || true

@@ -6,3 +6,5 @@ node_modules
 .env*
 Dockerfile
 .dockerignore
+go2rtc/
+deploy/

@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth/zitadel';
 
 // go2rtc internal API URL (not exposed to public)
 const GO2RTC_INTERNAL_URL = process.env.GO2RTC_INTERNAL_URL || 'http://localhost:1984';
 
 /**
  * GET /api/admin/go2rtc/config
- * Get current go2rtc configuration (admin only)
+ * Get current go2rtc configuration (admin only - protected by middleware)
  */
 export async function GET(request: NextRequest) {
-    const authResult = await requireAdmin(request);
-    if (authResult instanceof NextResponse) {
-        return authResult;
+    const userId = request.headers.get('x-user-id');
+    if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     try {
@@ -33,12 +32,12 @@ export async function GET(request: NextRequest) {
 
 /**
  * PATCH /api/admin/go2rtc/config
- * Update go2rtc configuration (admin only)
+ * Update go2rtc configuration (admin only - protected by middleware)
  */
 export async function PATCH(request: NextRequest) {
-    const authResult = await requireAdmin(request);
-    if (authResult instanceof NextResponse) {
-        return authResult;
+    const userId = request.headers.get('x-user-id');
+    if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     try {

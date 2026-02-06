@@ -4,7 +4,9 @@ import { BottomNav, AudioVisualizer } from "@/components";
 import { useAudio } from "@/context/AudioContext";
 
 export default function LivePage() {
-    const { isConnected, hasLiveStream, isPlaying, togglePlay } = useAudio();
+    const { isConnected, hasLiveStream, hasPlaylistStream, isPlaying, togglePlay } = useAudio();
+
+    const hasAnyStream = hasLiveStream || hasPlaylistStream;
 
     return (
         <main className="min-h-screen pb-28 relative overflow-hidden">
@@ -29,12 +31,22 @@ export default function LivePage() {
                 {/* Header - centered */}
                 <header className="text-center pt-8">
                     {/* Live Badge */}
-                    <div className="inline-flex items-center gap-2 bg-red-500/20 border border-red-500/40 px-3 py-1.5 rounded-full mb-4">
-                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                        <span className="text-red-500 text-xs font-bold tracking-wider">
-                            {hasLiveStream ? 'LIVE' : 'RADIO'}
-                        </span>
-                    </div>
+                    {hasLiveStream ? (
+                        <div className="inline-flex items-center gap-2 bg-red-500/20 border border-red-500/40 px-3 py-1.5 rounded-full mb-4">
+                            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                            <span className="text-red-500 text-xs font-bold tracking-wider">LIVE</span>
+                        </div>
+                    ) : hasPlaylistStream ? (
+                        <div className="inline-flex items-center gap-2 bg-amber-500/20 border border-amber-500/40 px-3 py-1.5 rounded-full mb-4">
+                            <div className="w-2 h-2 rounded-full bg-amber-400" />
+                            <span className="text-amber-400 text-xs font-bold tracking-wider">PLAYLIST</span>
+                        </div>
+                    ) : (
+                        <div className="inline-flex items-center gap-2 bg-gray-500/20 border border-gray-500/40 px-3 py-1.5 rounded-full mb-4">
+                            <div className="w-2 h-2 rounded-full bg-gray-400" />
+                            <span className="text-gray-400 text-xs font-bold tracking-wider">OFFLINE</span>
+                        </div>
+                    )}
 
                     {/* Title */}
                     <h1 className="text-4xl font-bold text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">
@@ -74,12 +86,14 @@ export default function LivePage() {
                         {!isConnected
                             ? "Connecting to Beacon..."
                             : hasLiveStream && isPlaying
-                                ? "🔴 Live Resonance Active"
+                                ? "Live Resonance Active"
                                 : hasLiveStream && !isPlaying
                                     ? "Live stream paused (connection maintained)"
-                                    : isPlaying
-                                        ? "📻 Playing Backup Radio"
-                                        : "Ready to play"}
+                                    : hasPlaylistStream && isPlaying
+                                        ? "Playing Beacon Records"
+                                        : hasAnyStream && !isPlaying
+                                            ? "Ready to play"
+                                            : "Waiting for stream..."}
                     </p>
                 </div>
 

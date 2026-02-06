@@ -30,7 +30,7 @@ RUN chmod +x /entrypoint.sh && \
 
 USER go2rtc
 
-EXPOSE 1984 8554/tcp 8554/udp
+EXPOSE 1984 8555/tcp 8555/udp
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["go2rtc", "-config", "/etc/go2rtc/go2rtc.yaml"]

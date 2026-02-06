@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { BottomNav, AudioVisualizer } from "@/components";
 import { useAudio } from "@/context/AudioContext";
 
@@ -46,12 +46,15 @@ const meditations: Meditation[] = [
 
 const categories = ["All", "Spanish", "English"];
 
+function getStreamName(m: Meditation): string {
+    return `meditation-${m.audioFile.replace('/audio/meditations/', '').replace('.m4a', '')}`;
+}
+
 export default function MeditationPage() {
     const [selectedCategory, setSelectedCategory] = useState("All");
     const [mixValue, setMixValue] = useState(0.5); // 0 = beacon only, 1 = meditation only
 
     const {
-        loadMeditation,
         loadMeditationFromGo2rtc,
         unloadMeditation,
         meditationIsPlaying,
@@ -62,9 +65,7 @@ export default function MeditationPage() {
         currentMeditationFile,
         isPlaying,
         togglePlay,
-        volume,
         setVolume,
-        meditationVolume,
         setMeditationVolume,
     } = useAudio();
 
@@ -124,7 +125,7 @@ export default function MeditationPage() {
         : meditations.filter((m) => m.category === selectedCategory);
 
     const currentMeditation = currentMeditationFile
-        ? meditations.find(m => m.audioFile === currentMeditationFile)
+        ? meditations.find(m => getStreamName(m) === currentMeditationFile)
         : null;
 
     const progress = meditationDuration > 0 ? (meditationPosition / meditationDuration) * 100 : 0;
@@ -251,14 +252,14 @@ export default function MeditationPage() {
                         <button
                             type="button"
                             key={meditation.id}
-                            className={`meditation-card animate-fade-in text-left w-full ${currentMeditationFile === meditation.audioFile ? 'border-[var(--primary-500)]' : ''}`}
+                            className={`meditation-card animate-fade-in text-left w-full ${currentMeditationFile === getStreamName(meditation) ? 'border-[var(--primary-500)]' : ''}`}
                             style={{ opacity: 0, animationDelay: `${index * 0.1}s` }}
                             onClick={() => startMeditation(meditation)}
                         >
                             <div className="flex gap-4">
                                 {/* Thumbnail */}
                                 <div className={`w-20 h-20 rounded-xl bg-gradient-to-br ${meditation.imageGradient} flex items-center justify-center flex-shrink-0`}>
-                                    {currentMeditationFile === meditation.audioFile && meditationIsPlaying ? (
+                                    {currentMeditationFile === getStreamName(meditation) && meditationIsPlaying ? (
                                         <AudioVisualizer isPlaying={true} bars={3} />
                                     ) : (
                                         <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">

@@ -1,21 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { BottomNav } from "@/components";
-import { useAuth } from "@/context/AuthContext";
+import { useSession, signOut } from "next-auth/react";
 
 export default function ProfilePage() {
-    const router = useRouter();
-    const { user, signOut, isLoading } = useAuth();
+    const { data: session, status } = useSession();
 
     const handleSignOut = async () => {
-        await signOut();
-        router.push('/login');
+        await signOut({ callbackUrl: '/login' });
     };
 
-    if (isLoading) {
+    if (status === "loading") {
         return (
             <main className="min-h-screen pb-28 flex items-center justify-center">
                 <div className="text-center">
@@ -25,6 +21,8 @@ export default function ProfilePage() {
             </main>
         );
     }
+
+    const user = session?.user;
 
     return (
         <main className="min-h-screen pb-28">
@@ -42,9 +40,9 @@ export default function ProfilePage() {
                     <section className="px-4 mb-6">
                         <div className="glass-card p-4 flex items-center gap-4">
                             <div className="w-14 h-14 rounded-full bg-[var(--primary-600)] flex items-center justify-center overflow-hidden">
-                                {user.user_metadata?.avatar_url ? (
+                                {user.image ? (
                                     <Image
-                                        src={user.user_metadata.avatar_url}
+                                        src={user.image}
                                         alt="Profile"
                                         width={56}
                                         height={56}
@@ -59,7 +57,7 @@ export default function ProfilePage() {
                             <div>
                                 <p className="text-xs text-[var(--text-secondary)]">Welcome back,</p>
                                 <p className="font-semibold">
-                                    {user.user_metadata?.full_name || user.user_metadata?.display_name || user.email || 'User'}
+                                    {user.name || user.email || 'User'}
                                 </p>
                                 {user.email && (
                                     <p className="text-xs text-[var(--text-muted)] mt-0.5">{user.email}</p>
@@ -106,30 +104,11 @@ export default function ProfilePage() {
                     </section>
                 </>
             ) : (
-                <>
-                    {/* Sign In CTA */}
-                    <section className="px-4 mb-6">
-                        <div className="glass-card p-6 text-center">
-                            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-[var(--primary-600)] to-[var(--primary-800)] flex items-center justify-center">
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                                </svg>
-                            </div>
-                            <h2 className="text-xl font-semibold mb-2">Welcome to Harmonic Beacon</h2>
-                            <p className="text-sm text-[var(--text-muted)] mb-6">
-                                Sign in to track your progress and sync across devices
-                            </p>
-                            <div className="flex flex-col gap-3">
-                                <Link href="/login" className="btn-primary w-full py-3 text-center">
-                                    Sign In
-                                </Link>
-                                <Link href="/signup" className="btn-secondary w-full py-3 text-center">
-                                    Create Account
-                                </Link>
-                            </div>
-                        </div>
-                    </section>
-                </>
+                <section className="px-4 mb-6">
+                    <div className="glass-card p-6 text-center">
+                        <p className="text-[var(--text-muted)]">Not signed in</p>
+                    </div>
+                </section>
             )}
 
             {/* Version */}

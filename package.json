@@ -10,9 +10,10 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.94.1",
     "livekit-client": "^2.17.0",
+    "livekit-server-sdk": "^2.15.0",
     "next": "16.1.2",
+    "next-auth": "^5.0.0-beta.30",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
