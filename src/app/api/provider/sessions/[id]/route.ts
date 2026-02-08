@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { getEgressClient } from '@/lib/livekit-server';
+import { existsSync } from 'fs';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,14 +120,36 @@ export async function PATCH(
                 { status: 400 },
             );
         }
+
+        // Stop active recording if any
+        if (scheduledSession.egressId) {
+            try {
+                const egressClient = getEgressClient();
+                await egressClient.stopEgress(scheduledSession.egressId);
+                // Wait for egress to finalize the file
+                await new Promise((r) => setTimeout(r, 2000));
+            } catch (e) {
+                console.error('Failed to stop recording on session end:', e);
+            }
+        }
+
         const now = new Date();
         const durationSeconds = scheduledSession.startedAt
             ? Math.floor((now.getTime() - scheduledSession.startedAt.getTime()) / 1000)
             : 0;
 
+        // Clean up recordingPath if file doesn't exist
+        const fileExists = scheduledSession.recordingPath && existsSync(scheduledSession.recordingPath);
+
         const updated = await prisma.scheduledSession.update({
             where: { id },
-            data: { status: 'ENDED', endedAt: now, durationSeconds },
+            data: {
+                status: 'ENDED',
+                endedAt: now,
+                durationSeconds,
+                egressId: null,
+                recordingPath: fileExists ? scheduledSession.recordingPath : null,
+            },
         });
         return NextResponse.json({ session: updated });
     }
