@@ -26,15 +26,11 @@ cd go2rtc
 npm run dev
 ```
 
-## Configuration
+## Stream Creation
 
-`go2rtc.yaml` has pre-configured streams pointing to `../public/audio/meditations/`:
+Streams are created on-demand by the app when a user plays a meditation. The app calls `PUT /api/streams` on go2rtc to register the FFmpeg source for each meditation file.
 
-| Stream | File |
-|--------|------|
-| meditation-amor | amor.m4a |
-| meditation-humanosfera | humanosfera.m4a |
-| meditation-la_mosca | la_mosca.m4a |
+No hardcoded streams are needed in `go2rtc.yaml`.
 
 ## Ports
 
@@ -45,12 +41,13 @@ npm run dev
 
 1. Open http://localhost:3000/meditation
 2. Click any meditation card
-3. Browser console should show:
+3. Check browser console for:
    - "Received meditation audio track from go2rtc"
+   - "Meditation playing via go2rtc"
    - "WebRTC connection established with go2rtc"
 
 ## Notes
 
 - The binary is `.gitignore`d - download it locally
 - In production, go2rtc runs in Docker (see `deploy/go2rtc/`)
-- Production uses pre-transcoded `.ogg` files with `#audio=copy`; dev uses runtime FFmpeg with `#audio=opus`
+- go2rtc transcodes via FFmpeg with `#audio=opus` at stream creation time

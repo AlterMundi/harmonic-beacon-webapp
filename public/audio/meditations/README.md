@@ -1,27 +1,19 @@
 # Meditation Audio Assets
 
-Place your guided meditation audio files in this folder.
+This directory stores meditation audio files on the local development server.
 
-## Your Meditations
-
-| Meditation | Expected Filename |
-|------------|-------------------|
-| La Mosca | `la_mosca.m4a` |
-| Humanosfera | `humanosfera.m4a` |
-| El Amor | `amor.m4a` |
+In production, files are stored at `/data/meditations` (bind-mounted volume) and managed via the Provider upload flow in the app.
 
 ## Supported Formats
-- `.mp3` (recommended)
-- `.wav`
-- `.ogg`
 - `.m4a`
+- `.mp3`
+- `.ogg`
 
 ## How It Works
-Once you add the files here, they will be available at:
-```
-/audio/meditations/la_mosca.mp3
-/audio/meditations/humanosfera.mp3
-/audio/meditations/el_amor.mp3
-```
 
-The app will automatically layer your guided meditation over the live beacon audio.
+1. Providers upload audio files through the Provider Studio (`/provider/upload`)
+2. Admins approve uploads via the Admin Panel (`/admin/moderation`)
+3. Approved files are moved to the meditations storage directory
+4. The app creates go2rtc streams on-demand via `PUT /api/streams`
+
+Audio files in this directory are `.gitignore`d — they exist only on each environment's storage.

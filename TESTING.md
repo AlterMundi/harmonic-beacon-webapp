@@ -23,7 +23,7 @@ npm run dev
 ### 3. Test the integration
 
 1. Open http://localhost:3000/meditation
-2. Click on any meditation (e.g., "La Mosca")
+2. Click on any meditation card
 3. Check browser console for:
    - "Received meditation audio track from go2rtc"
    - "Meditation playing via go2rtc"
@@ -42,7 +42,7 @@ curl http://localhost:3000/api/meditations
 ```bash
 curl -X POST http://localhost:3000/api/meditations \
   -H "Content-Type: application/json" \
-  -d '{"meditationId": "amor"}'
+  -d '{"meditationId": "<meditation-uuid-or-stream-name>"}'
 ```
 
 ### Verify stream in go2rtc

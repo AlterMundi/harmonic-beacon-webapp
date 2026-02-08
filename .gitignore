@@ -37,6 +37,11 @@ yarn-error.log*
 # go2rtc binary (download at runtime or build time)
 go2rtc/go2rtc
 
+# meditation audio files (stored on server, not in repo)
+public/audio/meditations/*.m4a
+public/audio/meditations/*.ogg
+public/audio/meditations/*.mp3
+
 # vercel
 .vercel
 

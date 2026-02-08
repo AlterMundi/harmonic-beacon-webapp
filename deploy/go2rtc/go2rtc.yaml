@@ -18,12 +18,5 @@ log:
   level: info
   format: text
 
-# Pre-transcoded Opus streams - no runtime FFmpeg needed
-# Files are .ogg (Opus) served with #audio=copy (passthrough)
-streams:
-  meditation-amor:
-    - ffmpeg:/data/meditations/amor.ogg#audio=copy
-  meditation-humanosfera:
-    - ffmpeg:/data/meditations/humanosfera.ogg#audio=copy
-  meditation-la_mosca:
-    - ffmpeg:/data/meditations/la_mosca.ogg#audio=copy
+# Streams are created on-demand via PUT /api/streams from the app
+streams: {}

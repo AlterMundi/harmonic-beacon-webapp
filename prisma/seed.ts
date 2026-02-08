@@ -67,64 +67,7 @@ async function main() {
     }
     console.log(`✓ Created ${tagData.length} tags`);
 
-    // Create existing meditations (migrating from hardcoded data)
-    const meditations = [
-        {
-            title: 'La Mosca',
-            description: 'Una guía para soltar y relajarse profundamente',
-            durationSeconds: 52,
-            filePath: 'la_mosca.ogg',
-            streamName: 'meditation-la_mosca',
-            tagSlugs: ['spanish', 'calm', 'guided', 'quick'],
-        },
-        {
-            title: 'El Amor',
-            description: 'Meditación guiada sobre el amor universal',
-            durationSeconds: 275,
-            filePath: 'amor.ogg',
-            streamName: 'meditation-amor',
-            tagSlugs: ['spanish', 'love', 'guided', 'medium'],
-        },
-    ];
-
-    for (const med of meditations) {
-        const { tagSlugs, ...meditationData } = med;
-
-        const meditation = await prisma.meditation.upsert({
-            where: { streamName: med.streamName },
-            update: {},
-            create: {
-                ...meditationData,
-                providerId: adminUser.id,
-                status: 'APPROVED',
-                isPublished: true,
-                reviewedAt: new Date(),
-            },
-        });
-
-        // Connect tags
-        const tagRecords = await prisma.tag.findMany({
-            where: { slug: { in: tagSlugs } },
-        });
-
-        for (const tag of tagRecords) {
-            await prisma.meditationTag.upsert({
-                where: {
-                    meditationId_tagId: {
-                        meditationId: meditation.id,
-                        tagId: tag.id,
-                    },
-                },
-                update: {},
-                create: {
-                    meditationId: meditation.id,
-                    tagId: tag.id,
-                },
-            });
-        }
-
-        console.log(`✓ Meditation: ${meditation.title} (${tagRecords.length} tags)`);
-    }
+    // Meditations are uploaded by providers via the app — no hardcoded entries
 
     console.log('🌱 Seeding complete!');
 }

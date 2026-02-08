@@ -15,13 +15,13 @@ export async function GET(request: Request) {
                 id: true,
                 name: true,
                 email: true,
-                image: true,
+                avatarUrl: true,
                 role: true,
                 createdAt: true,
                 _count: {
                     select: {
                         meditations: true,
-                        listeningSessions: true
+                        sessions: true
                     }
                 }
             }

@@ -28,15 +28,15 @@ WebRTC ICE traffic: UDP/TCP 8555 (direct to go2rtc container)
 - Host nginx with SSL (Certbot) for `beacon.altermundi.net`
 - Firewall rules for port 8555 TCP/UDP
 - Zitadel OIDC application at `auth.altermundi.net`
-- Meditation files pre-transcoded to Opus (.ogg)
+- Meditation files uploaded via Provider Studio and approved by admin
 
 ## Deployment
 
 Deployment is automated via GitHub Actions (`.github/workflows/deploy.yml`):
 
 1. Push to `release` branch triggers deploy
-2. CI pre-transcodes meditation files (`.m4a` → `.ogg`)
-3. Docker Compose builds both services
+2. Docker Compose builds both services
+3. Prisma migrations run automatically
 4. Health checks verify both services are up
 
 ### Manual deploy
@@ -79,14 +79,6 @@ iptables -A INPUT -p tcp --dport 8555 -j ACCEPT
 iptables -A INPUT -p udp --dport 8555 -j ACCEPT
 ```
 
-## Pre-transcoding Meditations
-
-```bash
-bash deploy/transcode-meditations.sh /mnt/raid1/harmonic-beacon/meditations
-```
-
-Converts `.m4a` → `.ogg` (Opus 64kbps). go2rtc serves with `#audio=copy` (no runtime FFmpeg).
-
 ## Monitoring
 
 ```bash
@@ -110,7 +102,7 @@ curl -f http://127.0.0.1:1984/api
 ### WebRTC not connecting
 - Verify port 8555 TCP/UDP is open in iptables
 - Check `PUBLIC_IP` env var matches server's public IP
-- Test: `curl http://127.0.0.1:1984/api/webrtc?src=meditation-amor`
+- Test: `curl http://127.0.0.1:1984/api/streams` to verify streams exist
 
 ### Auth redirects failing
 - Verify Zitadel OIDC app redirect URI: `https://beacon.altermundi.net/api/auth/callback/zitadel`
@@ -118,6 +110,6 @@ curl -f http://127.0.0.1:1984/api
 - Verify `AUTH_TRUST_HOST=true`
 
 ### No audio
-- Check meditation files exist: `ls /mnt/raid1/harmonic-beacon/meditations/*.ogg`
+- Check meditation files exist: `ls /mnt/n8n-data/harmonic-beacon/meditations/`
 - Check go2rtc logs: `docker compose logs go2rtc`
 - Verify streams are configured: `curl http://127.0.0.1:1984/api/streams`

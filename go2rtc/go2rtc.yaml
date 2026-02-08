@@ -12,10 +12,5 @@ log:
   format: text
   level: info
 
-streams:
-  meditation-amor:
-    - ffmpeg:../public/audio/meditations/amor.m4a#audio=opus
-  meditation-humanosfera:
-    - ffmpeg:../public/audio/meditations/humanosfera.m4a#audio=opus
-  meditation-la_mosca:
-    - ffmpeg:../public/audio/meditations/la_mosca.m4a#audio=opus
+# Streams are created on-demand via PUT /api/streams from the app
+streams: {}

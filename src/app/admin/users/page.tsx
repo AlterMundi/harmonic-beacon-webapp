@@ -8,12 +8,12 @@ interface User {
     id: string;
     name: string | null;
     email: string;
-    image: string | null;
+    avatarUrl: string | null;
     role: "ADMIN" | "PROVIDER" | "LISTENER" | "USER";
     createdAt: string;
     _count: {
         meditations: number;
-        listeningSessions: number;
+        sessions: number;
     };
 }
 
@@ -112,8 +112,8 @@ export default function UserManagementPage() {
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-full bg-[var(--primary-700)] overflow-hidden flex-shrink-0">
-                                                    {user.image ? (
-                                                        <Image src={user.image} alt="" width={40} height={40} className="w-full h-full object-cover" />
+                                                    {user.avatarUrl ? (
+                                                        <Image src={user.avatarUrl} alt="" width={40} height={40} className="w-full h-full object-cover" />
                                                     ) : (
                                                         <div className="w-full h-full flex items-center justify-center text-[var(--primary-300)] font-bold">
                                                             {user.name?.[0] || user.email[0].toUpperCase()}
@@ -140,7 +140,7 @@ export default function UserManagementPage() {
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-1 text-xs">
                                                 <span className="text-[var(--text-secondary)]">
-                                                    {user._count.listeningSessions} sessions
+                                                    {user._count.sessions} sessions
                                                 </span>
                                                 {user.role === 'PROVIDER' && (
                                                     <span className="text-purple-400">
