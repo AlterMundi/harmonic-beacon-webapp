@@ -51,11 +51,23 @@ export const authConfig: NextAuthConfig = {
                     // Silent fail - use profile data
                 }
 
+                // Extract role from userinfo (roles are in userinfo, not ID token)
+                const rolesClaim = process.env.ZITADEL_ROLES_CLAIM || 'urn:zitadel:iam:org:project:roles';
+                const roles = (userinfo[rolesClaim] || profile[rolesClaim]) as Record<string, unknown> | undefined;
+                console.log('[auth] userinfo roles:', JSON.stringify(roles));
+
+                let role: Role = 'USER';
+                if (roles) {
+                    if ('ADMIN' in roles) role = 'ADMIN';
+                    else if ('PROVIDER' in roles || 'certified_provider' in roles) role = 'PROVIDER';
+                }
+
                 return {
                     id: profile.sub,
                     email: (userinfo.email as string) || '',
                     name: (userinfo.name as string) || (userinfo.email as string) || '',
                     image: (userinfo.picture as string) || null,
+                    role,
                 };
             },
         }),
@@ -68,23 +80,12 @@ export const authConfig: NextAuthConfig = {
                 token.name = user.name || '';
                 token.picture = user.image || '';
 
-                // Extract role from Zitadel ID token claims
-                const rolesClaim = process.env.ZITADEL_ROLES_CLAIM || 'urn:zitadel:iam:org:project:roles';
-                const profileObj = profile as Record<string, unknown> | undefined;
-                console.log('[auth] profile keys:', profileObj ? Object.keys(profileObj) : 'none');
-                console.log('[auth] roles claim value:', JSON.stringify(profileObj?.[rolesClaim]));
-                const roles = profileObj?.[rolesClaim] as Record<string, unknown> | undefined;
-
-                let role: Role = 'USER';
-                if (roles) {
-                    if ('ADMIN' in roles) role = 'ADMIN';
-                    else if ('PROVIDER' in roles || 'certified_provider' in roles) role = 'PROVIDER';
-                }
-                token.role = role;
+                // Role already extracted from userinfo in profile() callback
+                token.role = (user.role as Role) || 'USER';
 
                 // Sync user to database with role from Zitadel claims
                 type UserRoleType = 'LISTENER' | 'PROVIDER' | 'ADMIN';
-                const dbRole: UserRoleType = role === 'ADMIN' ? 'ADMIN' : role === 'PROVIDER' ? 'PROVIDER' : 'LISTENER';
+                const dbRole: UserRoleType = token.role === 'ADMIN' ? 'ADMIN' : token.role === 'PROVIDER' ? 'PROVIDER' : 'LISTENER';
                 console.log(`[auth] jwt sync: sub=${token.sub} email=${token.email} role=${dbRole}`);
                 try {
                     const db = await import('@/lib/db');
