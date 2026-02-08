@@ -23,5 +23,6 @@ jobs:
       - run: npm run lint
       - run: npm run build
         env:
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
           NEXT_PUBLIC_GO2RTC_URL: http://localhost:1984/api

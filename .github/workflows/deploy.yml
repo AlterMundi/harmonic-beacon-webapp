@@ -14,32 +14,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Pre-transcode meditation files
         run: |
-          MEDITATION_DIR="${MEDITATIONS_PATH:-/mnt/raid1/harmonic-beacon/meditations}"
+          MEDITATION_DIR="/mnt/n8n-data/harmonic-beacon/meditations"
           if [ -d "$MEDITATION_DIR" ]; then
             bash deploy/transcode-meditations.sh "$MEDITATION_DIR"
           else
             echo "Warning: Meditation directory $MEDITATION_DIR not found, skipping transcode"
           fi
 
-      - name: Create .env for runtime
-        run: |
-          cat > .env <<EOF
-          AUTH_SECRET=${{ secrets.AUTH_SECRET }}
-          AUTH_ZITADEL_ID=${{ secrets.AUTH_ZITADEL_ID }}
-          AUTH_ZITADEL_ISSUER=${{ secrets.AUTH_ZITADEL_ISSUER }}
-          AUTH_TRUST_HOST=true
-          AUTH_URL=https://beacon.altermundi.net
-          LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}
-          LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}
-          LIVEKIT_ROOM_NAME=beacon
-          GO2RTC_INTERNAL_URL=http://go2rtc:1984
-          MEDITATIONS_STORAGE_PATH=/data/meditations
-          MEDITATIONS_PATH=${MEDITATIONS_PATH:-/mnt/raid1/harmonic-beacon/meditations}
-          PUBLIC_IP=${{ secrets.PUBLIC_IP }}
-          TZ=America/Argentina/Buenos_Aires
-          EOF
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql://beacon:${{ secrets.DB_PASSWORD }}@localhost:5432/harmonic_beacon?schema=public
+        run: npx prisma migrate deploy
+
+      - name: Seed database
+        env:
+          DATABASE_URL: postgresql://beacon:${{ secrets.DB_PASSWORD }}@localhost:5432/harmonic_beacon?schema=public
+        run: npx prisma db seed
 
       - name: Build Docker images
         run: |
@@ -48,12 +48,20 @@ jobs:
             --build-arg NEXT_PUBLIC_GO2RTC_URL="${{ secrets.NEXT_PUBLIC_GO2RTC_URL }}"
 
       - name: Deploy services
+        env:
+          DATABASE_URL: postgresql://beacon:${{ secrets.DB_PASSWORD }}@host.docker.internal:5432/harmonic_beacon?schema=public
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          AUTH_ZITADEL_ID: ${{ secrets.AUTH_ZITADEL_ID }}
+          AUTH_ZITADEL_ISSUER: ${{ secrets.AUTH_ZITADEL_ISSUER }}
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+          PUBLIC_IP: ${{ secrets.PUBLIC_IP }}
         run: |
           # Stop old standalone container if it exists
           docker stop harmonic-beacon 2>/dev/null || true
           docker rm harmonic-beacon 2>/dev/null || true
 
-          # Deploy with compose
+          # Deploy with compose (secrets passed via env vars, no .env file)
           docker compose up -d --remove-orphans
 
           # Wait for services to be healthy

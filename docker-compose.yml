@@ -1,54 +1,27 @@
 # Harmonic Beacon - Production Docker Compose
-# Next.js app + go2rtc meditation streaming + PostgreSQL
+# Next.js app + go2rtc meditation streaming
+# PostgreSQL runs on the host (not containerized)
+#
+# Prerequisites:
+#   - Host PostgreSQL with beacon user/db (see deploy/setup-host-postgres.sh)
+#   - All secrets set as GitHub Secrets (no .env files)
 #
 # Usage:
 #   docker compose build
 #   docker compose up -d
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: harmonic-beacon-db
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:5432:5432"
-    environment:
-      - POSTGRES_USER=beacon
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=harmonic_beacon
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - beacon
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U beacon -d harmonic_beacon"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   app:
     build: .
     container_name: harmonic-beacon
     restart: unless-stopped
     ports:
       - "3003:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://beacon:${DB_PASSWORD}@postgres:5432/harmonic_beacon?schema=public
+      - DATABASE_URL=${DATABASE_URL}
       - AUTH_SECRET=${AUTH_SECRET}
       - AUTH_ZITADEL_ID=${AUTH_ZITADEL_ID}
       - AUTH_ZITADEL_ISSUER=${AUTH_ZITADEL_ISSUER:-https://auth.altermundi.net}
@@ -62,13 +35,11 @@ services:
       - UPLOADS_PATH=/data/uploads
       - MAX_UPLOAD_SIZE_MB=100
     volumes:
-      - ${MEDITATIONS_PATH:-/mnt/raid1/harmonic-beacon/meditations}:/data/meditations:ro
-      - ${UPLOADS_PATH:-/mnt/raid1/harmonic-beacon/uploads}:/data/uploads
+      - /mnt/n8n-data/harmonic-beacon/meditations:/data/meditations:ro
+      - /mnt/n8n-data/harmonic-beacon/uploads:/data/uploads
     networks:
       - beacon
     depends_on:
-      postgres:
-        condition: service_healthy
       go2rtc:
         condition: service_healthy
     healthcheck:
@@ -91,7 +62,7 @@ services:
       - "8555:8555/udp"
       - "8555:8555/tcp"
     volumes:
-      - ${MEDITATIONS_PATH:-/mnt/raid1/harmonic-beacon/meditations}:/data/meditations:ro
+      - /mnt/n8n-data/harmonic-beacon/meditations:/data/meditations:ro
     environment:
       - TZ=${TZ:-America/Argentina/Buenos_Aires}
       - PUBLIC_IP=${PUBLIC_IP:-131.72.205.6}
@@ -116,9 +87,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  postgres_data:
 
 networks:
   beacon:
