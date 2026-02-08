@@ -22,15 +22,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Pre-transcode meditation files
-        run: |
-          MEDITATION_DIR="/mnt/n8n-data/harmonic-beacon/meditations"
-          if [ -d "$MEDITATION_DIR" ]; then
-            bash deploy/transcode-meditations.sh "$MEDITATION_DIR"
-          else
-            echo "Warning: Meditation directory $MEDITATION_DIR not found, skipping transcode"
-          fi
-
       - name: Run database migrations
         env:
           DATABASE_URL: postgresql://beacon:${{ secrets.DB_PASSWORD }}@localhost:5432/harmonic_beacon?schema=public

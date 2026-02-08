@@ -42,20 +42,24 @@ fi
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};"
 sudo -u postgres psql -d "${DB_NAME}" -c "GRANT ALL ON SCHEMA public TO ${DB_USER};"
 
-# Allow connections from Docker bridge network (for containers using host.docker.internal)
+# Allow connections from all Docker networks (default bridge + compose-created bridges)
+# Docker uses 172.16.0.0/12 for bridge networks by default
+PG_HBA=$(sudo -u postgres psql -tAc "SHOW hba_file")
+DOCKER_RANGE="172.16.0.0/12"
+
+if ! grep -q "${DB_NAME}.*${DOCKER_RANGE}" "$PG_HBA" 2>/dev/null; then
+    # Remove any old per-subnet rules for this database
+    sudo sed -i "/${DB_NAME}.*${DB_USER}.*172\./d" "$PG_HBA"
+    echo "Adding Docker network access to pg_hba.conf (${DOCKER_RANGE})..."
+    echo "host    ${DB_NAME}    ${DB_USER}    ${DOCKER_RANGE}    scram-sha-256" | sudo tee -a "$PG_HBA" > /dev/null
+    echo "Reloading PostgreSQL..."
+    sudo -u postgres psql -c "SELECT pg_reload_conf();"
+else
+    echo "pg_hba.conf already configured for ${DB_NAME} on Docker range"
+fi
+
 DOCKER_BRIDGE=$(ip -4 addr show docker0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' || echo "")
 if [ -n "$DOCKER_BRIDGE" ]; then
-    PG_HBA=$(sudo -u postgres psql -tAc "SHOW hba_file")
-    DOCKER_SUBNET=$(echo "$DOCKER_BRIDGE" | sed 's|/[0-9]*|/16|')
-
-    if ! grep -q "${DB_NAME}" "$PG_HBA" 2>/dev/null; then
-        echo "Adding Docker bridge access to pg_hba.conf..."
-        echo "host    ${DB_NAME}    ${DB_USER}    ${DOCKER_SUBNET}    scram-sha-256" | sudo tee -a "$PG_HBA" > /dev/null
-        echo "Reloading PostgreSQL..."
-        sudo -u postgres psql -c "SELECT pg_reload_conf();"
-    else
-        echo "pg_hba.conf already configured for ${DB_NAME}"
-    fi
 
     # Ensure PostgreSQL listens on Docker bridge interface
     PG_CONF=$(sudo -u postgres psql -tAc "SHOW config_file")
