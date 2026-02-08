@@ -1,0 +1,175 @@
+// Harmonic Beacon - Database Schema
+// PostgreSQL 16 + Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===================
+// ENUMS
+// ===================
+
+enum UserRole {
+  LISTENER
+  PROVIDER
+  ADMIN
+}
+
+enum SessionType {
+  LIVE
+  MEDITATION
+}
+
+enum TagCategory {
+  MOOD
+  TECHNIQUE
+  DURATION
+  LANGUAGE
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ===================
+// USER
+// ===================
+
+model User {
+  id            String    @id @default(uuid())
+  zitadelId     String    @unique @map("zitadel_id")
+  email         String    @unique
+  name          String?
+  avatarUrl     String?   @map("avatar_url")
+  role          UserRole  @default(LISTENER)
+  isVerified    Boolean   @default(false) @map("is_verified")
+  
+  // Timestamps
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  meditations   Meditation[]      @relation("ProviderMeditations")
+  sessions      ListeningSession[]
+  favorites     Favorite[]
+  
+  @@map("users")
+}
+
+// ===================
+// MEDITATION
+// ===================
+
+model Meditation {
+  id              String            @id @default(uuid())
+  title           String
+  description     String?
+  durationSeconds Int               @map("duration_seconds")
+  
+  // File storage
+  filePath        String            @map("file_path")    // e.g., "amor.ogg"
+  originalPath    String?           @map("original_path") // Original upload
+  streamName      String            @unique @map("stream_name") // go2rtc stream ID
+  
+  // Provider
+  providerId      String            @map("provider_id")
+  provider        User              @relation("ProviderMeditations", fields: [providerId], references: [id])
+  
+  // Moderation
+  status          ModerationStatus  @default(PENDING)
+  rejectionReason String?           @map("rejection_reason")
+  reviewedAt      DateTime?         @map("reviewed_at")
+  
+  // Visibility
+  isPublished     Boolean           @default(false) @map("is_published")
+  isFeatured      Boolean           @default(false) @map("is_featured")
+  
+  // Timestamps
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  
+  // Relations
+  tags            MeditationTag[]
+  sessions        ListeningSession[]
+  favorites       Favorite[]
+  
+  @@map("meditations")
+}
+
+// ===================
+// TAGS (Many-to-Many)
+// ===================
+
+model Tag {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  slug        String        @unique
+  category    TagCategory
+  sortOrder   Int           @default(0) @map("sort_order")
+  
+  // Relations
+  meditations MeditationTag[]
+  
+  @@map("tags")
+}
+
+model MeditationTag {
+  meditationId  String      @map("meditation_id")
+  tagId         String      @map("tag_id")
+  
+  meditation    Meditation  @relation(fields: [meditationId], references: [id], onDelete: Cascade)
+  tag           Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  
+  @@id([meditationId, tagId])
+  @@map("meditation_tags")
+}
+
+// ===================
+// LISTENING SESSIONS
+// ===================
+
+model ListeningSession {
+  id              String        @id @default(uuid())
+  
+  userId          String        @map("user_id")
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Nullable for live sessions
+  meditationId    String?       @map("meditation_id")
+  meditation      Meditation?   @relation(fields: [meditationId], references: [id], onDelete: SetNull)
+  
+  type            SessionType
+  durationSeconds Int           @map("duration_seconds")
+  completed       Boolean       @default(false)
+  
+  // Timestamps
+  startedAt       DateTime      @default(now()) @map("started_at")
+  endedAt         DateTime?     @map("ended_at")
+  
+  @@index([userId, startedAt])
+  @@index([meditationId])
+  @@map("listening_sessions")
+}
+
+// ===================
+// FAVORITES
+// ===================
+
+model Favorite {
+  userId        String      @map("user_id")
+  meditationId  String      @map("meditation_id")
+  
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meditation    Meditation  @relation(fields: [meditationId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime    @default(now()) @map("created_at")
+  
+  @@id([userId, meditationId])
+  @@map("favorites")
+}

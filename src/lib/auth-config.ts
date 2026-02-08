@@ -80,6 +80,47 @@ export const authConfig: NextAuthConfig = {
             }
             return token;
         },
+        async signIn({ user, account, profile }) {
+            // Sync user to database on every sign in
+            if (account?.provider === 'zitadel' && user.id && user.email) {
+                try {
+                    const db = await import('@/lib/db');
+                    const PrismaEnums = await import('@prisma/client');
+
+                    // Map auth role to Prisma enum
+                    const rolesClaim = 'urn:zitadel:iam:org:project:roles';
+                    const roles = (profile as Record<string, unknown>)?.[rolesClaim] as Record<string, unknown> | undefined;
+
+                    type UserRoleType = 'LISTENER' | 'PROVIDER' | 'ADMIN';
+                    let dbRole: UserRoleType = 'LISTENER';
+                    if (roles) {
+                        if ('ADMIN' in roles) dbRole = 'ADMIN';
+                        else if ('PROVIDER' in roles || 'certified_provider' in roles) dbRole = 'PROVIDER';
+                    }
+
+                    await db.prisma.user.upsert({
+                        where: { zitadelId: user.id },
+                        update: {
+                            email: user.email,
+                            name: user.name || null,
+                            avatarUrl: user.image || null,
+                            role: dbRole,
+                        },
+                        create: {
+                            zitadelId: user.id,
+                            email: user.email,
+                            name: user.name || null,
+                            avatarUrl: user.image || null,
+                            role: dbRole,
+                        },
+                    });
+                } catch (error) {
+                    console.error('Failed to sync user to database:', error);
+                    // Don't block sign in if DB sync fails
+                }
+            }
+            return true;
+        },
         session({ session, token }) {
             if (session.user) {
                 session.user.id = token.sub;
