@@ -6,7 +6,7 @@ import { requireRole } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-const UPLOADS_PATH = process.env.MEDITATIONS_STORAGE_PATH || join(process.cwd(), 'public/audio/meditations');
+const UPLOADS_PATH = process.env.UPLOADS_PATH || join(process.cwd(), 'uploads');
 
 /**
  * POST /api/meditations/upload

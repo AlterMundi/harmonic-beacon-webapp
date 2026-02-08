@@ -27,11 +27,6 @@ jobs:
           DATABASE_URL: postgresql://beacon:${{ secrets.DB_PASSWORD }}@localhost:5432/harmonic_beacon?schema=public
         run: npx prisma migrate deploy
 
-      - name: Seed database
-        env:
-          DATABASE_URL: postgresql://beacon:${{ secrets.DB_PASSWORD }}@localhost:5432/harmonic_beacon?schema=public
-        run: npx prisma db seed
-
       - name: Build Docker images
         run: |
           docker compose build --no-cache \
