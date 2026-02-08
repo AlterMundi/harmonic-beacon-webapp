@@ -195,14 +195,10 @@ export async function POST(request: NextRequest) {
  * Helper: Create stream in go2rtc
  */
 async function createGo2rtcStream(streamName: string, filePath: string, audioFilter: string) {
-    const response = await fetch(`${GO2RTC_API_URL}/api/config`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            streams: {
-                [streamName]: [`ffmpeg:${filePath}${audioFilter}`],
-            },
-        }),
+    const source = `ffmpeg:${filePath}${audioFilter}`;
+    const params = new URLSearchParams({ name: streamName, src: source });
+    const response = await fetch(`${GO2RTC_API_URL}/api/streams?${params}`, {
+        method: 'PUT',
     });
 
     if (!response.ok) {
