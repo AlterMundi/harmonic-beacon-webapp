@@ -18,6 +18,7 @@ interface MeditationItem {
     description: string | null;
     durationSeconds: number;
     streamName: string;
+    fileName: string;
     isFeatured: boolean;
     provider: { name: string | null; avatarUrl: string | null } | null;
     tags: { name: string; slug: string; category: string }[];
@@ -57,10 +58,9 @@ export default function MeditationPage() {
     const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [mixValue, setMixValue] = useState(0.5);
-
     const {
         loadMeditationFromGo2rtc,
+        loadMeditation,
         unloadMeditation,
         meditationIsPlaying,
         toggleMeditation,
@@ -72,6 +72,8 @@ export default function MeditationPage() {
         togglePlay,
         setVolume,
         setMeditationVolume,
+        mixValue,
+        setMixValue,
     } = useAudio();
 
     const formatTime = (ms: number): string => {
@@ -88,7 +90,7 @@ export default function MeditationPage() {
             .then((data) => {
                 if (data.all) setTags(data.all);
             })
-            .catch(() => {});
+            .catch(() => { });
     }, []);
 
     // Fetch meditations
@@ -122,7 +124,7 @@ export default function MeditationPage() {
                     setFavoriteIds(new Set(data.favorites.map((f: { meditationId: string }) => f.meditationId)));
                 }
             })
-            .catch(() => {});
+            .catch(() => { });
     }, [session]);
 
     const toggleFavorite = async (e: React.MouseEvent, meditationId: string) => {
@@ -155,26 +157,19 @@ export default function MeditationPage() {
         }
     };
 
-    const handleMixChange = (value: number) => {
-        setMixValue(value);
-        if (value <= 0.5) {
-            const beaconVol = 1.0 - (value * 0.3);
-            const medVol = value * 2;
-            setVolume(beaconVol);
-            setMeditationVolume(medVol);
-        } else {
-            const beaconVol = (1 - value) * 1.7;
-            setMeditationVolume(1.0);
-            setVolume(beaconVol);
-        }
-    };
+
 
     const startMeditation = async (meditation: MeditationItem) => {
-        if (currentMeditationFile === meditation.streamName) {
+        // Construct the expected file URL.
+        // NOTE: This assumes the files are served from /audio/meditations/ in public folder.
+        // If the API provided fileName is just the basename, this works.
+        const fileUrl = `/audio/meditations/${meditation.fileName}`;
+
+        if (currentMeditationFile === fileUrl) {
             toggleMeditation();
         } else {
-            const meditationId = meditation.streamName.replace('meditation-', '');
-            await loadMeditationFromGo2rtc(meditationId);
+            // Use standard audio loader which supports seeking and duration
+            await loadMeditation(fileUrl);
         }
     };
 
@@ -192,7 +187,7 @@ export default function MeditationPage() {
     };
 
     const currentMeditation = currentMeditationFile
-        ? meditations.find((m) => m.streamName === currentMeditationFile)
+        ? meditations.find((m) => `/audio/meditations/${m.fileName}` === currentMeditationFile)
         : null;
 
     const progress = meditationDuration > 0 ? (meditationPosition / meditationDuration) * 100 : 0;
@@ -219,11 +214,10 @@ export default function MeditationPage() {
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                     <button
                         onClick={() => setSelectedTag(null)}
-                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2 ${
-                            selectedTag === null
-                                ? "bg-[var(--primary-600)] text-white"
-                                : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
-                        }`}
+                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2 ${selectedTag === null
+                            ? "bg-[var(--primary-600)] text-white"
+                            : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
+                            }`}
                     >
                         Todas
                     </button>
@@ -232,11 +226,10 @@ export default function MeditationPage() {
                             <button
                                 key={tag.id}
                                 onClick={() => setSelectedTag(tag.slug === selectedTag ? null : tag.slug)}
-                                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2 ${
-                                    selectedTag === tag.slug
-                                        ? "bg-[var(--primary-600)] text-white"
-                                        : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
-                                }`}
+                                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2 ${selectedTag === tag.slug
+                                    ? "bg-[var(--primary-600)] text-white"
+                                    : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
+                                    }`}
                             >
                                 {tag.name}
                             </button>
@@ -321,7 +314,7 @@ export default function MeditationPage() {
                                     max="1"
                                     step="0.01"
                                     value={mixValue}
-                                    onChange={(e) => handleMixChange(parseFloat(e.target.value))}
+                                    onChange={(e) => setMixValue(parseFloat(e.target.value))}
                                     aria-label="Audio mix: Beacon to Voice balance"
                                     className="flex-1 h-2 bg-[var(--border-subtle)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                                 />
@@ -370,16 +363,15 @@ export default function MeditationPage() {
                             <button
                                 type="button"
                                 key={meditation.id}
-                                className={`meditation-card animate-fade-in text-left w-full ${
-                                    currentMeditationFile === meditation.streamName ? "border-[var(--primary-500)]" : ""
-                                }`}
+                                className={`meditation-card animate-fade-in text-left w-full ${currentMeditationFile === `/audio/meditations/${meditation.fileName}` ? "border-[var(--primary-500)]" : ""
+                                    }`}
                                 style={{ opacity: 0, animationDelay: `${index * 0.1}s` }}
                                 onClick={() => startMeditation(meditation)}
                             >
                                 <div className="flex gap-4">
                                     {/* Thumbnail */}
                                     <div className={`w-20 h-20 rounded-xl bg-gradient-to-br ${getGradient(meditation.id)} flex items-center justify-center flex-shrink-0`}>
-                                        {currentMeditationFile === meditation.streamName && meditationIsPlaying ? (
+                                        {currentMeditationFile === `/audio/meditations/${meditation.fileName}` && meditationIsPlaying ? (
                                             <AudioVisualizer isPlaying={true} bars={3} />
                                         ) : (
                                             <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">

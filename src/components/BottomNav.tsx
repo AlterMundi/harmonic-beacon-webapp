@@ -50,33 +50,8 @@ export default function BottomNav() {
     const userRole = session?.user?.role;
     const isProviderOrAdmin = userRole === "PROVIDER" || userRole === "ADMIN";
 
-    // Dynamic tabs based on role
-    const navTabs = [
-        ...tabs.slice(0, 3), // Live, Meditate, Sessions
-        ...(isProviderOrAdmin
-            ? [
-                {
-                    name: "Studio",
-                    href: "/provider/dashboard",
-                    icon: (
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                        </svg>
-                    ),
-                },
-            ]
-            : [
-                {
-                    name: "Profile",
-                    href: "/profile",
-                    icon: (
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                    ),
-                },
-            ]),
-    ];
+    // Always show strict tabs: Live, Meditate, Sessions, Profile
+    const navTabs = tabs;
 
     return (
         <nav className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">

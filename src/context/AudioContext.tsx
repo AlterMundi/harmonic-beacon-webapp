@@ -15,6 +15,8 @@ interface AudioContextType {
     volume: number;
     togglePlay: () => void;
     setVolume: (v: number) => void;
+    mixValue: number;
+    setMixValue: (v: number) => void;
 
     // Meditation Audio
     loadMeditation: (audioFile: string) => Promise<void>;
@@ -47,6 +49,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const [hasPlaylistStream, setHasPlaylistStream] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [volume, setVolumeState] = useState(0.5);
+    const [mixValue, setMixValueState] = useState(0.5);
 
     // Meditation state
     const [meditationIsPlaying, setMeditationIsPlaying] = useState(false);
@@ -185,6 +188,21 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
     const setVolume = useCallback((v: number) => {
         setVolumeState(v);
+    }, []);
+
+    const setMixValue = useCallback((v: number) => {
+        setMixValueState(v);
+        // Apply mix logic immediately
+        if (v <= 0.5) {
+            const beaconVol = 1.0 - (v * 0.3);
+            const medVol = v * 2;
+            setVolumeState(beaconVol);
+            setMeditationVolumeState(medVol);
+        } else {
+            const beaconVol = (1 - v) * 1.7;
+            setMeditationVolumeState(1.0);
+            setVolumeState(beaconVol);
+        }
     }, []);
 
     // Meditation controls
@@ -379,6 +397,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 volume,
                 togglePlay,
                 setVolume,
+                mixValue,
+                setMixValue,
                 loadMeditation,
                 loadMeditationFromGo2rtc,
                 unloadMeditation,

@@ -23,6 +23,7 @@ interface MeditationResponse {
     description: string | null;
     durationSeconds: number;
     streamName: string;
+    fileName: string;
     isFeatured: boolean;
     provider: { name: string | null; avatarUrl: string | null } | null;
     tags: { name: string; slug: string; category: string }[];
@@ -71,6 +72,7 @@ export async function GET(request: NextRequest) {
             description: m.description,
             durationSeconds: m.durationSeconds,
             streamName: m.streamName,
+            fileName: m.filePath,
             isFeatured: m.isFeatured,
             provider: m.provider,
             tags: m.tags.map((t) => ({
@@ -95,6 +97,7 @@ export async function GET(request: NextRequest) {
                     id,
                     title: id.replace(/_/g, ' '),
                     streamName: `meditation-${id}`,
+                    fileName: fileName,
                     tags: [],
                 };
             });
