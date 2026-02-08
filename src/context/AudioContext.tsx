@@ -30,6 +30,7 @@ interface AudioContextType {
     meditationDuration: number;
     seekMeditation: (time: number) => void;
     currentMeditationFile: string | null;
+
 }
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -386,6 +387,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             meditationAudioRef.current.currentTime = time / 1000; // Convert from ms to seconds
         }
     }, []);
+
 
     return (
         <AudioContext.Provider

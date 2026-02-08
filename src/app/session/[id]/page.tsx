@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, RemoteTrackPublication, LocalTrackPublication } from "livekit-client";
+import { useAudio } from "@/context/AudioContext";
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
 
@@ -20,6 +21,8 @@ export default function SessionRoomPage() {
     const router = useRouter();
     const inviteCode = searchParams.get("invite");
 
+    const { volume: beaconVolume, setVolume: setBeaconVolume } = useAudio();
+
     const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
@@ -28,9 +31,11 @@ export default function SessionRoomPage() {
     const [isMicOn, setIsMicOn] = useState(false);
     const [participantCount, setParticipantCount] = useState(0);
     const [volume, setVolume] = useState(0.8);
+    const [mix, setMix] = useState(0.8); // 0 = all beacon, 1 = all session
     const [duration, setDuration] = useState(0);
     const [isRecording, setIsRecording] = useState(false);
     const [recordingLoading, setRecordingLoading] = useState(false);
+    const [recordingError, setRecordingError] = useState<string | null>(null);
     const [endingSession, setEndingSession] = useState(false);
 
     const roomRef = useRef<Room | null>(null);
@@ -166,12 +171,15 @@ export default function SessionRoomPage() {
         };
     }, [isConnected]);
 
-    // Volume control
+    // Apply mix: distribute master volume between session and beacon
     useEffect(() => {
+        const sessionVol = volume * mix;
+        const beaconVol = volume * (1 - mix);
         audioElementsRef.current.forEach((el) => {
-            el.volume = volume;
+            el.volume = sessionVol;
         });
-    }, [volume]);
+        setBeaconVolume(beaconVol);
+    }, [volume, mix, setBeaconVolume]);
 
     const toggleMic = async () => {
         const room = roomRef.current;
@@ -223,6 +231,7 @@ export default function SessionRoomPage() {
     const toggleRecording = async () => {
         if (!sessionInfo || recordingLoading) return;
         setRecordingLoading(true);
+        setRecordingError(null);
         try {
             const action = isRecording ? "stop" : "start";
             const res = await fetch(`/api/provider/sessions/${id}/recording/${action}`, {
@@ -234,7 +243,9 @@ export default function SessionRoomPage() {
             }
             setIsRecording(!isRecording);
         } catch (e) {
-            console.error("Recording toggle failed:", e);
+            const msg = e instanceof Error ? e.message : "Recording action failed";
+            setRecordingError(msg);
+            setTimeout(() => setRecordingError(null), 5000);
         } finally {
             setRecordingLoading(false);
         }
@@ -306,8 +317,9 @@ export default function SessionRoomPage() {
                     </svg>
                 </div>
 
-                {/* Volume slider */}
-                <div className="w-full max-w-xs mb-8">
+                {/* Volume + Mix controls */}
+                <div className="w-full max-w-xs mb-8 space-y-4">
+                    {/* Master volume */}
                     <div className="flex items-center gap-3">
                         <svg className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
@@ -322,8 +334,31 @@ export default function SessionRoomPage() {
                             className="flex-1 accent-[var(--primary-500)]"
                         />
                     </div>
+                    {/* Crossfader: beacon <-> session */}
+                    <div>
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] text-[var(--text-muted)] w-12 text-right">Beacon</span>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={mix}
+                                onChange={(e) => setMix(parseFloat(e.target.value))}
+                                className="flex-1 accent-[var(--primary-500)]"
+                            />
+                            <span className="text-[10px] text-[var(--text-muted)] w-12">Session</span>
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            {/* Recording error toast */}
+            {recordingError && (
+                <div className="mx-4 mb-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400 text-center">
+                    {recordingError}
+                </div>
+            )}
 
             {/* Bottom controls */}
             <div className="p-6 border-t border-[var(--border-subtle)]">
