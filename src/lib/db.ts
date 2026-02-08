@@ -1,6 +1,7 @@
 // Prisma client singleton for Next.js
 // Prevents multiple instances in development due to hot reloading
 // Updated for Prisma 7 with PostgreSQL adapter
+// Lazy initialization to prevent build-time errors when DATABASE_URL is not set
 
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -11,7 +12,7 @@ const globalForPrisma = globalThis as unknown as {
     pool: Pool | undefined;
 };
 
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
     if (!process.env.DATABASE_URL) {
         throw new Error('DATABASE_URL environment variable is not set');
     }
@@ -30,10 +31,14 @@ function createPrismaClient() {
     return new PrismaClient({ adapter });
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== 'production') {
-    globalForPrisma.prisma = prisma;
-}
+// Lazy getter — only creates PrismaClient when first accessed at runtime
+export const prisma = new Proxy({} as PrismaClient, {
+    get(_target, prop) {
+        if (!globalForPrisma.prisma) {
+            globalForPrisma.prisma = createPrismaClient();
+        }
+        return Reflect.get(globalForPrisma.prisma, prop);
+    },
+});
 
 export default prisma;

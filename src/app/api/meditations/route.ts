@@ -3,6 +3,8 @@ import { readdir, stat } from 'fs/promises';
 import { join, basename } from 'path';
 import { prisma } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 // Configuration
 const GO2RTC_API_URL = process.env.GO2RTC_INTERNAL_URL || process.env.GO2RTC_API_URL || 'http://localhost:1984';
 const MEDITATIONS_PATH = process.env.MEDITATIONS_STORAGE_PATH || join(process.cwd(), 'public/audio/meditations');
