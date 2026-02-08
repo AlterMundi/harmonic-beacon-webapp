@@ -19,4 +19,4 @@ log:
   format: text
 
 # Streams are created on-demand via PUT /api/streams from the app
-streams: {}
+streams:
