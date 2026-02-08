@@ -82,24 +82,40 @@ export const authConfig: NextAuthConfig = {
                 // Sync user to database with role from Zitadel claims
                 type UserRoleType = 'LISTENER' | 'PROVIDER' | 'ADMIN';
                 const dbRole: UserRoleType = role === 'ADMIN' ? 'ADMIN' : role === 'PROVIDER' ? 'PROVIDER' : 'LISTENER';
+                console.log(`[auth] jwt sync: sub=${token.sub} email=${token.email} role=${dbRole}`);
                 try {
                     const db = await import('@/lib/db');
-                    await db.prisma.user.upsert({
-                        where: { zitadelId: token.sub },
-                        update: {
-                            email: token.email || undefined,
-                            name: token.name || null,
-                            avatarUrl: token.picture || null,
-                            role: dbRole,
-                        },
-                        create: {
-                            zitadelId: token.sub,
-                            email: token.email || '',
-                            name: token.name || null,
-                            avatarUrl: token.picture || null,
-                            role: dbRole,
+                    // Try by zitadelId first; if email conflict, update existing record
+                    const existing = await db.prisma.user.findFirst({
+                        where: {
+                            OR: [
+                                { zitadelId: token.sub },
+                                ...(token.email ? [{ email: token.email }] : []),
+                            ],
                         },
                     });
+                    if (existing) {
+                        await db.prisma.user.update({
+                            where: { id: existing.id },
+                            data: {
+                                zitadelId: token.sub,
+                                email: token.email || existing.email,
+                                name: token.name || null,
+                                avatarUrl: token.picture || null,
+                                role: dbRole,
+                            },
+                        });
+                    } else {
+                        await db.prisma.user.create({
+                            data: {
+                                zitadelId: token.sub,
+                                email: token.email || '',
+                                name: token.name || null,
+                                avatarUrl: token.picture || null,
+                                role: dbRole,
+                            },
+                        });
+                    }
                 } catch (error) {
                     console.error('Failed to sync user to database:', error);
                 }
