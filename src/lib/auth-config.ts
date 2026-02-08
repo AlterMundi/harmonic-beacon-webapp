@@ -70,7 +70,10 @@ export const authConfig: NextAuthConfig = {
 
                 // Extract role from Zitadel ID token claims
                 const rolesClaim = process.env.ZITADEL_ROLES_CLAIM || 'urn:zitadel:iam:org:project:roles';
-                const roles = (profile as Record<string, unknown>)?.[rolesClaim] as Record<string, unknown> | undefined;
+                const profileObj = profile as Record<string, unknown> | undefined;
+                console.log('[auth] profile keys:', profileObj ? Object.keys(profileObj) : 'none');
+                console.log('[auth] roles claim value:', JSON.stringify(profileObj?.[rolesClaim]));
+                const roles = profileObj?.[rolesClaim] as Record<string, unknown> | undefined;
 
                 let role: Role = 'USER';
                 if (roles) {
