@@ -3,6 +3,17 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
+interface ProviderSession {
+    id: string;
+    title: string;
+    status: string;
+    scheduledAt: string | null;
+    startedAt: string | null;
+    createdAt: string;
+    participantCount: number;
+    durationSeconds: number | null;
+}
+
 interface ProviderMeditation {
     id: string;
     title: string;
@@ -23,6 +34,13 @@ const statusConfig: Record<string, { label: string; color: string }> = {
     REJECTED: { label: "Rejected", color: "bg-red-500/20 text-red-400" },
 };
 
+const sessionStatusConfig: Record<string, { label: string; color: string }> = {
+    SCHEDULED: { label: "Scheduled", color: "bg-blue-500/20 text-blue-400" },
+    LIVE: { label: "Live", color: "bg-green-500/20 text-green-400" },
+    ENDED: { label: "Ended", color: "bg-gray-500/20 text-gray-400" },
+    CANCELLED: { label: "Cancelled", color: "bg-red-500/20 text-red-400" },
+};
+
 function formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -39,15 +57,19 @@ function formatDate(iso: string): string {
 
 export default function ProviderDashboard() {
     const [meditations, setMeditations] = useState<ProviderMeditation[]>([]);
+    const [scheduledSessions, setScheduledSessions] = useState<ProviderSession[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch("/api/provider/meditations")
-            .then((r) => r.json())
-            .then((data) => {
-                setMeditations(data.meditations || []);
+        Promise.all([
+            fetch("/api/provider/meditations").then((r) => r.json()),
+            fetch("/api/provider/sessions").then((r) => r.json()),
+        ])
+            .then(([medData, sessData]) => {
+                setMeditations(medData.meditations || []);
+                setScheduledSessions(sessData.sessions || []);
             })
-            .catch(() => { })
+            .catch(() => {})
             .finally(() => setLoading(false));
     }, []);
 
@@ -69,6 +91,56 @@ export default function ProviderDashboard() {
                         <p className="stat-label text-xs">Pending</p>
                     </div>
                 </div>
+            </section>
+
+            {/* Scheduled Sessions */}
+            <section className="px-4 mb-6">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider">
+                        Scheduled Sessions
+                    </h3>
+                    <Link
+                        href="/provider/sessions/new"
+                        className="text-xs px-3 py-1.5 rounded-full bg-[var(--primary-600)] hover:bg-[var(--primary-500)] transition-colors"
+                    >
+                        + New Session
+                    </Link>
+                </div>
+
+                {!loading && scheduledSessions.length === 0 ? (
+                    <div className="glass-card p-4 text-center">
+                        <p className="text-sm text-[var(--text-muted)] mb-3">No sessions yet</p>
+                        <Link href="/provider/sessions/new" className="btn-primary inline-block text-sm">
+                            <span>Create Your First Session</span>
+                        </Link>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {scheduledSessions.slice(0, 5).map((s) => {
+                            const sc = sessionStatusConfig[s.status] || sessionStatusConfig.SCHEDULED;
+                            return (
+                                <Link
+                                    key={s.id}
+                                    href={`/provider/sessions/${s.id}`}
+                                    className="glass-card p-3 block hover:bg-white/5 transition-colors"
+                                >
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                            <h4 className="font-medium text-sm truncate">{s.title}</h4>
+                                            <p className="text-xs text-[var(--text-muted)]">
+                                                {s.participantCount} participants
+                                                {s.scheduledAt && ` · ${formatDate(s.scheduledAt)}`}
+                                            </p>
+                                        </div>
+                                        <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${sc.color}`}>
+                                            {sc.label}
+                                        </span>
+                                    </div>
+                                </Link>
+                            );
+                        })}
+                    </div>
+                )}
             </section>
 
             {/* Meditation List */}

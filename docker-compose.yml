@@ -34,9 +34,11 @@ services:
       - MEDITATIONS_STORAGE_PATH=/data/meditations
       - UPLOADS_PATH=/data/uploads
       - MAX_UPLOAD_SIZE_MB=100
+      - RECORDINGS_PATH=/data/recordings
     volumes:
       - /mnt/n8n-data/harmonic-beacon/meditations:/data/meditations
       - /mnt/n8n-data/harmonic-beacon/uploads:/data/uploads
+      - /mnt/n8n-data/harmonic-beacon/recordings:/data/recordings
     networks:
       - beacon
     depends_on:

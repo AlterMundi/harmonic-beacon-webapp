@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { BottomNav, AudioVisualizer } from "@/components";
 import { useAudio } from "@/context/AudioContext";
 
@@ -14,6 +15,17 @@ interface SessionRecord {
     meditation: { title: string } | null;
 }
 
+interface ScheduledSessionItem {
+    id: string;
+    title: string;
+    description: string | null;
+    status: string;
+    scheduledAt: string | null;
+    startedAt: string | null;
+    provider: { id: string; name: string | null };
+    participantCount: number;
+}
+
 interface UserStats {
     totalSessions: number;
     totalMinutes: number;
@@ -25,6 +37,7 @@ export default function SessionsPage() {
     const [duration, setDuration] = useState(0);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [sessions, setSessions] = useState<SessionRecord[]>([]);
+    const [scheduledSessions, setScheduledSessions] = useState<ScheduledSessionItem[]>([]);
     const [stats, setStats] = useState<UserStats | null>(null);
     const [loadingSessions, setLoadingSessions] = useState(true);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -55,10 +68,17 @@ export default function SessionsPage() {
     const fetchSessions = useCallback(async () => {
         setLoadingSessions(true);
         try {
-            const res = await fetch("/api/sessions?limit=10");
-            if (res.ok) {
-                const data = await res.json();
+            const [sessRes, schedRes] = await Promise.all([
+                fetch("/api/sessions?limit=10"),
+                fetch("/api/scheduled-sessions?status=LIVE,SCHEDULED"),
+            ]);
+            if (sessRes.ok) {
+                const data = await sessRes.json();
                 setSessions(data.sessions || []);
+            }
+            if (schedRes.ok) {
+                const data = await schedRes.json();
+                setScheduledSessions(data.sessions || []);
             }
         } catch {
             // Silently fail
@@ -301,22 +321,60 @@ export default function SessionsPage() {
                 )}
             </section>
 
-            {/* Scheduled Sessions CTA */}
+            {/* Scheduled Sessions */}
             <section className="px-4 mt-6">
-                <div className="glass-card p-5 border-dashed">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-[var(--primary-700)]/30 flex items-center justify-center">
-                            <svg className="w-6 h-6 text-[var(--primary-400)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                        </div>
-                        <div className="flex-1">
-                            <p className="font-medium">Scheduled Sessions</p>
-                            <p className="text-xs text-[var(--text-muted)]">Join group sessions with others</p>
-                        </div>
-                        <span className="text-xs text-[var(--text-muted)] px-2 py-1 rounded bg-white/5">Coming Soon</span>
+                <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
+                    Scheduled Sessions
+                </h3>
+                {scheduledSessions.length === 0 ? (
+                    <div className="glass-card p-4 text-center">
+                        <p className="text-sm text-[var(--text-muted)]">No upcoming sessions right now</p>
                     </div>
-                </div>
+                ) : (
+                    <div className="space-y-3">
+                        {scheduledSessions.map((s, i) => (
+                            <Link
+                                key={s.id}
+                                href={`/session/${s.id}`}
+                                className="glass-card p-4 block hover:bg-white/5 transition-colors animate-fade-in"
+                                style={{ opacity: 0, animationDelay: `${i * 0.1}s` }}
+                            >
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <h4 className="font-medium truncate">{s.title}</h4>
+                                            {s.status === "LIVE" && (
+                                                <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 flex-shrink-0 flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+                                                    Live
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-[var(--text-muted)]">
+                                            {s.provider.name || "Provider"}
+                                            {" · "}
+                                            {s.participantCount} listener{s.participantCount !== 1 ? "s" : ""}
+                                            {s.scheduledAt && s.status === "SCHEDULED" && (
+                                                <>
+                                                    {" · "}
+                                                    {new Date(s.scheduledAt).toLocaleString("en-US", {
+                                                        month: "short",
+                                                        day: "numeric",
+                                                        hour: "numeric",
+                                                        minute: "2-digit",
+                                                    })}
+                                                </>
+                                            )}
+                                        </p>
+                                    </div>
+                                    <svg className="w-5 h-5 text-[var(--text-muted)] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                )}
             </section>
 
             <BottomNav />

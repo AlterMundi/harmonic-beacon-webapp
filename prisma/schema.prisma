@@ -22,6 +22,14 @@ enum UserRole {
 enum SessionType {
   LIVE
   MEDITATION
+  SCHEDULED_SESSION
+}
+
+enum ScheduledSessionStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
 }
 
 enum TagCategory {
@@ -55,10 +63,12 @@ model User {
   updatedAt     DateTime  @updatedAt @map("updated_at")
   
   // Relations
-  meditations   Meditation[]      @relation("ProviderMeditations")
-  sessions      ListeningSession[]
-  favorites     Favorite[]
-  
+  meditations           Meditation[]           @relation("ProviderMeditations")
+  sessions              ListeningSession[]
+  favorites             Favorite[]
+  scheduledSessions     ScheduledSession[]     @relation("ProviderScheduledSessions")
+  sessionParticipations SessionParticipant[]
+
   @@map("users")
 }
 
@@ -143,7 +153,11 @@ model ListeningSession {
   // Nullable for live sessions
   meditationId    String?       @map("meditation_id")
   meditation      Meditation?   @relation(fields: [meditationId], references: [id], onDelete: SetNull)
-  
+
+  // Nullable for scheduled sessions
+  scheduledSessionId String?           @map("scheduled_session_id")
+  scheduledSession   ScheduledSession? @relation(fields: [scheduledSessionId], references: [id], onDelete: SetNull)
+
   type            SessionType
   durationSeconds Int           @map("duration_seconds")
   completed       Boolean       @default(false)
@@ -154,6 +168,7 @@ model ListeningSession {
   
   @@index([userId, startedAt])
   @@index([meditationId])
+  @@index([scheduledSessionId])
   @@map("listening_sessions")
 }
 
@@ -164,12 +179,85 @@ model ListeningSession {
 model Favorite {
   userId        String      @map("user_id")
   meditationId  String      @map("meditation_id")
-  
+
   user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   meditation    Meditation  @relation(fields: [meditationId], references: [id], onDelete: Cascade)
-  
+
   createdAt     DateTime    @default(now()) @map("created_at")
-  
+
   @@id([userId, meditationId])
   @@map("favorites")
+}
+
+// ===================
+// SCHEDULED SESSIONS
+// ===================
+
+model ScheduledSession {
+  id              String                  @id @default(uuid())
+  title           String
+  description     String?
+  roomName        String                  @unique @map("room_name")
+
+  // Provider (host)
+  providerId      String                  @map("provider_id")
+  provider        User                    @relation("ProviderScheduledSessions", fields: [providerId], references: [id])
+
+  // Scheduling
+  scheduledAt     DateTime?               @map("scheduled_at")
+  startedAt       DateTime?               @map("started_at")
+  endedAt         DateTime?               @map("ended_at")
+  status          ScheduledSessionStatus  @default(SCHEDULED)
+
+  // Recording
+  recordingPath   String?                 @map("recording_path")
+  durationSeconds Int?                    @map("duration_seconds")
+  egressId        String?                 @map("egress_id")
+
+  // Timestamps
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  // Relations
+  invites         SessionInvite[]
+  participants    SessionParticipant[]
+  listeningSessions ListeningSession[]
+
+  @@index([providerId])
+  @@index([status])
+  @@map("scheduled_sessions")
+}
+
+model SessionInvite {
+  id          String            @id @default(uuid())
+  code        String            @unique
+  sessionId   String            @map("session_id")
+  session     ScheduledSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  maxUses     Int               @default(0) @map("max_uses")  // 0 = unlimited
+  usedCount   Int               @default(0) @map("used_count")
+  expiresAt   DateTime?         @map("expires_at")
+  canPublish  Boolean           @default(false) @map("can_publish")
+
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@index([sessionId])
+  @@map("session_invites")
+}
+
+model SessionParticipant {
+  id              String            @id @default(uuid())
+  sessionId       String            @map("session_id")
+  session         ScheduledSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  userId          String            @map("user_id")
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt        DateTime          @default(now()) @map("joined_at")
+  leftAt          DateTime?         @map("left_at")
+  durationSeconds Int?              @map("duration_seconds")
+
+  @@unique([sessionId, userId])
+  @@index([userId])
+  @@map("session_participants")
 }
