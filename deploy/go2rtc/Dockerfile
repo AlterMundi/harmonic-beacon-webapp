@@ -5,6 +5,7 @@ RUN apk add --no-cache \
     ffmpeg \
     ca-certificates \
     tzdata \
+    gettext \
     wget
 
 # Download go2rtc binary
