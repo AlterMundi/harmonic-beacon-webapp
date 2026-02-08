@@ -218,7 +218,7 @@ export default function SessionManagePage() {
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="grid grid-cols-4 gap-3 mb-6">
                     <div className="stat-card">
                         <span className="stat-value text-lg">{session._count.participants}</span>
                         <p className="stat-label text-xs">Participants</p>
@@ -232,6 +232,20 @@ export default function SessionManagePage() {
                             {session.durationSeconds ? formatDuration(session.durationSeconds) : "--"}
                         </span>
                         <p className="stat-label text-xs">Duration</p>
+                    </div>
+                    <div className="stat-card">
+                        <span className="stat-value text-lg flex items-center justify-center gap-1">
+                            {session.egressId ? (
+                                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                            ) : session.recordingPath ? (
+                                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            ) : (
+                                "--"
+                            )}
+                        </span>
+                        <p className="stat-label text-xs">Recording</p>
                     </div>
                 </div>
 
@@ -264,6 +278,32 @@ export default function SessionManagePage() {
                         </div>
                     )}
                 </div>
+
+                {/* Recording info + player */}
+                {(session.egressId || session.recordingPath) && (
+                    <div className="glass-card p-4 mb-4">
+                        <div className="flex items-center gap-2 mb-3">
+                            {session.egressId ? (
+                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                            ) : (
+                                <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="6" fill="currentColor" />
+                                </svg>
+                            )}
+                            <span className="text-sm font-medium">
+                                {session.egressId ? "Recording in progress" : "Recording"}
+                            </span>
+                        </div>
+                        {session.recordingPath && !session.egressId && (
+                            <audio
+                                controls
+                                preload="metadata"
+                                src={`/api/provider/sessions/${session.id}/recording`}
+                                className="w-full h-10"
+                            />
+                        )}
+                    </div>
+                )}
 
                 {/* Error */}
                 {error && (
