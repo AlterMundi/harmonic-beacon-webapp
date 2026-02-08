@@ -61,14 +61,15 @@ export const authConfig: NextAuthConfig = {
         }),
     ],
     callbacks: {
-        jwt({ token, account, profile, user }) {
+        async jwt({ token, account, profile, user }) {
             if (account && user) {
                 token.sub = user.id || '';
                 token.email = user.email || '';
                 token.name = user.name || '';
                 token.picture = user.image || '';
 
-                const rolesClaim = 'urn:zitadel:iam:org:project:roles';
+                // Extract role from Zitadel ID token claims
+                const rolesClaim = process.env.ZITADEL_ROLES_CLAIM || 'urn:zitadel:iam:org:project:roles';
                 const roles = (profile as Record<string, unknown>)?.[rolesClaim] as Record<string, unknown> | undefined;
 
                 let role: Role = 'USER';
@@ -77,49 +78,33 @@ export const authConfig: NextAuthConfig = {
                     else if ('PROVIDER' in roles || 'certified_provider' in roles) role = 'PROVIDER';
                 }
                 token.role = role;
-            }
-            return token;
-        },
-        async signIn({ user, account, profile }) {
-            // Sync user to database on every sign in
-            if (account?.provider === 'zitadel' && user.id && user.email) {
+
+                // Sync user to database with role from Zitadel claims
+                type UserRoleType = 'LISTENER' | 'PROVIDER' | 'ADMIN';
+                const dbRole: UserRoleType = role === 'ADMIN' ? 'ADMIN' : role === 'PROVIDER' ? 'PROVIDER' : 'LISTENER';
                 try {
                     const db = await import('@/lib/db');
-                    const PrismaEnums = await import('@prisma/client');
-
-                    // Map auth role to Prisma enum
-                    const rolesClaim = 'urn:zitadel:iam:org:project:roles';
-                    const roles = (profile as Record<string, unknown>)?.[rolesClaim] as Record<string, unknown> | undefined;
-
-                    type UserRoleType = 'LISTENER' | 'PROVIDER' | 'ADMIN';
-                    let dbRole: UserRoleType = 'LISTENER';
-                    if (roles) {
-                        if ('ADMIN' in roles) dbRole = 'ADMIN';
-                        else if ('PROVIDER' in roles || 'certified_provider' in roles) dbRole = 'PROVIDER';
-                    }
-
                     await db.prisma.user.upsert({
-                        where: { zitadelId: user.id },
+                        where: { zitadelId: token.sub },
                         update: {
-                            email: user.email,
-                            name: user.name || null,
-                            avatarUrl: user.image || null,
+                            email: token.email || undefined,
+                            name: token.name || null,
+                            avatarUrl: token.picture || null,
                             role: dbRole,
                         },
                         create: {
-                            zitadelId: user.id,
-                            email: user.email,
-                            name: user.name || null,
-                            avatarUrl: user.image || null,
+                            zitadelId: token.sub,
+                            email: token.email || '',
+                            name: token.name || null,
+                            avatarUrl: token.picture || null,
                             role: dbRole,
                         },
                     });
                 } catch (error) {
                     console.error('Failed to sync user to database:', error);
-                    // Don't block sign in if DB sync fails
                 }
             }
-            return true;
+            return token;
         },
         session({ session, token }) {
             if (session.user) {
