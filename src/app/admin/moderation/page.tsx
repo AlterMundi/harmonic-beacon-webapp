@@ -199,6 +199,14 @@ export default function AdminModerationPage() {
                                     )}
                                 </div>
 
+                                {/* Audio Preview */}
+                                <audio
+                                    controls
+                                    preload="none"
+                                    src={`/api/admin/meditations/${m.id}/audio`}
+                                    className="w-full h-8 mt-2"
+                                />
+
                                 {/* Actions */}
                                 {activeTab === "PENDING" && (
                                     <div className="flex gap-2 pt-3 border-t border-[var(--border-subtle)]">
