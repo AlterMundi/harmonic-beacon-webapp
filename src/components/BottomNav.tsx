@@ -51,11 +51,23 @@ export default function BottomNav() {
     const isProviderOrAdmin = userRole === "PROVIDER" || userRole === "ADMIN";
 
     // Always show strict tabs: Live, Meditate, Sessions, Profile
-    const navTabs = tabs;
+    const navTabs = [...tabs];
+
+    if (isProviderOrAdmin) {
+        navTabs.splice(2, 0, {
+            name: "Studio",
+            href: "/provider/dashboard",
+            icon: (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+            ),
+        });
+    }
 
     return (
         <nav className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-            <div className="max-w-lg mx-auto flex justify-center gap-1 p-1 bg-black/20 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl">
+            <div className={`max-w-lg mx-auto flex justify-center gap-1 p-1 bg-black/20 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl`}>
                 {navTabs.map((tab) => {
                     const isActive = pathname === tab.href || (pathname === "/" && tab.href === "/live");
                     return (
