@@ -79,26 +79,16 @@ export default function ProviderDashboard() {
 
     return (
         <main className="pb-8">
-            {/* Stats Bar */}
-            <section className="px-4 py-4">
-                <div className="grid grid-cols-3 gap-3">
-                    <div className="stat-card">
-                        <span className="stat-value text-lg">{meditations.length}</span>
-                        <p className="stat-label text-xs">Total</p>
-                    </div>
-                    <div className="stat-card">
-                        <span className="stat-value text-lg">{meditations.filter((m) => m.status === "APPROVED").length}</span>
-                        <p className="stat-label text-xs">Published</p>
-                    </div>
-                    <div className="stat-card">
-                        <span className="stat-value text-lg">{meditations.filter((m) => m.status === "PENDING").length}</span>
-                        <p className="stat-label text-xs">Pending</p>
-                    </div>
-                </div>
-            </section>
+            {/* Header */}
+            <header className="p-6 pt-8">
+                <h1 className="text-3xl font-bold tracking-tight drop-shadow-md">Studio</h1>
+                <p className="text-[var(--text-secondary)] text-sm mt-2 font-medium">
+                    Manage your content and sessions
+                </p>
+            </header>
 
             {/* Scheduled Sessions */}
-            <section className="px-4 mb-6">
+            <section className="px-4 mb-8">
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider">
                         Scheduled Sessions
@@ -152,6 +142,22 @@ export default function ProviderDashboard() {
                 <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
                     Your Meditations
                 </h3>
+
+                {/* Stats Bar (Moved here) */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="stat-card">
+                        <span className="stat-value text-lg">{meditations.length}</span>
+                        <p className="stat-label text-xs">Total</p>
+                    </div>
+                    <div className="stat-card">
+                        <span className="stat-value text-lg">{meditations.filter((m) => m.status === "APPROVED").length}</span>
+                        <p className="stat-label text-xs">Published</p>
+                    </div>
+                    <div className="stat-card">
+                        <span className="stat-value text-lg">{meditations.filter((m) => m.status === "PENDING").length}</span>
+                        <p className="stat-label text-xs">Pending</p>
+                    </div>
+                </div>
 
                 {loading ? (
                     <div className="flex justify-center py-12">
