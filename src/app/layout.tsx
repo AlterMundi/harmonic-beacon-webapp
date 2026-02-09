@@ -38,16 +38,16 @@ export default function RootLayout({
       <body className={`${inter.variable} antialiased`}>
         <SessionProvider>
           <AudioProvider>
-              {/* Background orbs */}
-              <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-                <div className="bg-orb bg-orb-1" />
-                <div className="bg-orb bg-orb-2" />
-              </div>
+            {/* Background orbs - Adjusted for deep space feel */}
+            <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+              <div className="bg-orb bg-orb-1 opacity-20 mix-blend-screen" />
+              <div className="bg-orb bg-orb-2 opacity-15 mix-blend-screen" />
+            </div>
 
-              {/* Main content */}
-              <div className="relative z-10">
-                {children}
-              </div>
+            {/* Main content */}
+            <div className="relative z-10">
+              {children}
+            </div>
           </AudioProvider>
         </SessionProvider>
       </body>

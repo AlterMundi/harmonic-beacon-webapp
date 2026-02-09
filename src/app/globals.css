@@ -189,19 +189,29 @@ body {
 
 /* Glass card effect */
 .glass-card {
-  background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02); /* More translucent */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 20px; /* Softer corners */
   transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .glass-card:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--border-active);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+/* Page Gradient Overlay - Simulates the Live page depth */
+.page-gradient {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(99, 70, 255, 0.15), transparent 70%),
+              linear-gradient(180deg, rgba(10, 10, 26, 0.8) 0%, var(--bg-dark) 100%);
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* Primary button */

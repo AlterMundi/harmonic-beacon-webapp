@@ -196,46 +196,49 @@ export default function SessionsPage() {
 
     return (
         <main className={`min-h-screen pb-28 ${isSessionActive ? "pt-20" : ""}`}>
+            {/* Ambient background */}
+            <div className="page-gradient" />
+
             {/* Header */}
-            <header className="p-6 pt-8">
-                <h1 className="text-2xl font-bold">Sessions</h1>
-                <p className="text-[var(--text-secondary)] text-sm mt-1">
+            <header className="relative z-10 p-6 pt-8">
+                <h1 className="text-3xl font-bold tracking-tight drop-shadow-md">Sessions</h1>
+                <p className="text-white/70 text-sm mt-2 font-medium">
                     Track your wellness journey with the beacon
                 </p>
             </header>
 
             {/* Stats Summary */}
             {stats && (
-                <section className="px-4 mb-6">
+                <section className="relative z-10 px-4 mb-6">
                     <div className="grid grid-cols-3 gap-3">
-                        <div className="stat-card">
-                            <span className="stat-value text-xl">{stats.totalSessions}</span>
-                            <p className="stat-label text-xs">Sessions</p>
+                        <div className="glass-card p-4 text-center">
+                            <span className="text-2xl font-bold bg-gradient-to-br from-white to-white/70 bg-clip-text text-transparent">{stats.totalSessions}</span>
+                            <p className="text-xs text-white/50 uppercase tracking-widest mt-1">Sessions</p>
                         </div>
-                        <div className="stat-card">
-                            <span className="stat-value text-xl">{stats.totalMinutes}</span>
-                            <p className="stat-label text-xs">Minutes</p>
+                        <div className="glass-card p-4 text-center">
+                            <span className="text-2xl font-bold bg-gradient-to-br from-white to-white/70 bg-clip-text text-transparent">{stats.totalMinutes}</span>
+                            <p className="text-xs text-white/50 uppercase tracking-widest mt-1">Minutes</p>
                         </div>
-                        <div className="stat-card">
-                            <span className="stat-value text-xl">{stats.favoritesCount}</span>
-                            <p className="stat-label text-xs">Favorites</p>
+                        <div className="glass-card p-4 text-center">
+                            <span className="text-2xl font-bold bg-gradient-to-br from-white to-white/70 bg-clip-text text-transparent">{stats.favoritesCount}</span>
+                            <p className="text-xs text-white/50 uppercase tracking-widest mt-1">Favorites</p>
                         </div>
                     </div>
                 </section>
             )}
 
             {/* Active Session or Start Button */}
-            <section className="px-4 mb-6">
+            <section className="relative z-10 px-4 mb-6">
                 {isSessionActive ? (
-                    <div className="glass-card p-6 border-[var(--primary-600)] animate-fade-in">
+                    <div className="glass-card p-6 border-white/10 bg-black/40 animate-fade-in text-center">
                         {/* Timer Ring */}
-                        <div className="flex flex-col items-center mb-6">
-                            <div className="relative w-48 h-48">
-                                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                        <div className="flex flex-col items-center mb-8">
+                            <div className="relative w-56 h-56">
+                                <svg className="w-full h-full transform -rotate-90 drop-shadow-[0_0_15px_rgba(99,70,255,0.3)]" viewBox="0 0 100 100">
                                     <defs>
-                                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                            <stop offset="0%" stopColor="var(--primary-500)" />
-                                            <stop offset="100%" stopColor="var(--accent-500)" />
+                                        <linearGradient id="sessionGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                            <stop offset="0%" stopColor="#6346ff" />
+                                            <stop offset="100%" stopColor="#f59e0b" />
                                         </linearGradient>
                                     </defs>
                                     <circle
@@ -243,7 +246,7 @@ export default function SessionsPage() {
                                         cy="50"
                                         r="45"
                                         fill="none"
-                                        stroke="var(--border-subtle)"
+                                        stroke="rgba(255,255,255,0.05)"
                                         strokeWidth="4"
                                     />
                                     <circle
@@ -251,42 +254,45 @@ export default function SessionsPage() {
                                         cy="50"
                                         r="45"
                                         fill="none"
-                                        stroke="url(#gradient)"
+                                        stroke="url(#sessionGradient)"
                                         strokeWidth="4"
                                         strokeLinecap="round"
                                         strokeDasharray={`${(duration % 60) * 4.71} 283`}
+                                        className="transition-all duration-1000 ease-linear"
                                     />
                                 </svg>
                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                    <span className="text-4xl font-bold">{formatTime(duration)}</span>
-                                    <span className="text-xs text-[var(--text-muted)] mt-1">Session Time</span>
+                                    <span className="text-5xl font-mono font-bold tracking-tight text-white">{formatTime(duration)}</span>
+                                    <span className="text-xs text-white/50 mt-2 uppercase tracking-widest">Session Time</span>
                                 </div>
                             </div>
-                            <AudioVisualizer isPlaying={isPlaying} bars={7} className="mt-4" />
-                            <p className="text-xs text-[var(--text-muted)] mt-2">Live beacon audio playing</p>
+                            <AudioVisualizer isPlaying={isPlaying} bars={7} className="mt-6" />
+                            <p className="text-xs text-white/60 mt-4 font-medium px-4 py-1 rounded-full bg-white/5">
+                                Live beacon audio playing
+                            </p>
                         </div>
 
                         {/* End Session Button */}
                         <button
                             onClick={endSession}
-                            className="w-full py-4 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 font-medium hover:bg-red-500/30 transition-all"
+                            className="w-full py-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-medium hover:bg-red-500/20 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500"
                         >
                             End Session
                         </button>
                     </div>
                 ) : (
-                    <div className="glass-card p-6 text-center">
-                        <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-[var(--primary-600)] to-[var(--primary-800)] flex items-center justify-center animate-breathe">
-                            <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <div className="glass-card p-8 text-center border-white/10 bg-gradient-to-b from-white/5 to-transparent">
+                        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-[var(--primary-600)] to-[var(--primary-800)] flex items-center justify-center animate-breathe shadow-lg shadow-[var(--primary-600)]/30">
+                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                         </div>
-                        <h2 className="text-xl font-semibold mb-2">Start a Session</h2>
-                        <p className="text-sm text-[var(--text-muted)] mb-6">
-                            Listen to the live beacon and track your session
+                        <h2 className="text-xl font-bold mb-2">Start a Session</h2>
+                        <p className="text-sm text-white/60 mb-8 max-w-xs mx-auto leading-relaxed">
+                            Listen to the live beacon and track your session to deepen your practice
                         </p>
-                        <button onClick={startSession} className="btn-primary w-full py-4">
+                        <button onClick={startSession} className="btn-primary w-full py-4 font-semibold text-lg shadow-xl shadow-[var(--primary-600)]/20">
                             <span>Begin Solo Session</span>
                         </button>
                     </div>
@@ -294,40 +300,44 @@ export default function SessionsPage() {
             </section>
 
             {/* Recent Sessions */}
-            <section className="px-4">
-                <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
+            <section className="relative z-10 px-4">
+                <h3 className="text-white/40 text-xs uppercase tracking-wider mb-3 font-medium">
                     Recent Sessions
                 </h3>
                 {loadingSessions ? (
                     <div className="flex justify-center py-6">
-                        <div className="animate-spin w-6 h-6 border-2 border-[var(--primary-500)] border-t-transparent rounded-full"></div>
+                        <div className="animate-spin w-6 h-6 border-2 border-white/20 border-t-white rounded-full"></div>
                     </div>
                 ) : sessions.length === 0 ? (
-                    <div className="glass-card p-4 text-center">
-                        <p className="text-sm text-[var(--text-muted)]">No sessions yet. Start your first one!</p>
+                    <div className="glass-card p-6 text-center border-white/5 bg-white/5">
+                        <p className="text-sm text-white/50">No sessions yet. Start your first one!</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
                         {sessions.map((s, i) => (
                             <div
                                 key={s.id}
-                                className="glass-card p-4 animate-fade-in"
-                                style={{ opacity: 0, animationDelay: `${i * 0.1}s` }}
+                                className="glass-card p-4 flex items-center justify-between animate-fade-in border-white/5 hover:bg-white/5 transition-colors"
+                                style={{ animationDelay: `${i * 0.05}s` }}
                             >
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="font-medium">{formatDate(s.startedAt)}</p>
-                                        <p className="text-xs text-[var(--text-muted)]">
-                                            {formatSessionDuration(s.durationSeconds)}
-                                            {s.meditation ? ` \u2022 ${s.meditation.title}` : ` \u2022 ${s.type === "LIVE" ? "Live Beacon" : "Meditation"}`}
-                                        </p>
-                                    </div>
-                                    <span className={`text-xs px-2 py-1 rounded-full ${
-                                        s.completed
-                                            ? "bg-green-500/20 text-green-400"
-                                            : "bg-yellow-500/20 text-yellow-400"
-                                    }`}>
-                                        {s.completed ? "Completed" : "Partial"}
+                                <div>
+                                    <p className="font-medium text-white text-base">
+                                        {new Date(s.startedAt).toLocaleDateString(undefined, {
+                                            weekday: 'long',
+                                            month: 'short',
+                                            day: 'numeric'
+                                        })}
+                                    </p>
+                                    <p className="text-xs text-white/50 mt-1">
+                                        {new Date(s.startedAt).toLocaleTimeString(undefined, {
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                        })}
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-lg font-mono font-bold text-white block">
+                                        {Math.floor(s.durationSeconds / 60)}m
                                     </span>
                                 </div>
                             </div>

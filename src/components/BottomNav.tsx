@@ -55,7 +55,7 @@ export default function BottomNav() {
 
     return (
         <nav className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-            <div className="max-w-lg mx-auto tab-nav">
+            <div className="max-w-lg mx-auto flex justify-center gap-1 p-1 bg-black/20 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl">
                 {navTabs.map((tab) => {
                     const isActive = pathname === tab.href || (pathname === "/" && tab.href === "/live");
                     return (

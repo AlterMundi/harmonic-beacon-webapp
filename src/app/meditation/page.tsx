@@ -201,22 +201,25 @@ export default function MeditationPage() {
 
     return (
         <main className={`min-h-screen pb-28 ${currentMeditation ? "pt-20" : ""}`}>
+            {/* Ambient background */}
+            <div className="page-gradient" />
+
             {/* Header */}
-            <header className="p-6 pt-8">
-                <h1 className="text-2xl font-bold">Meditación</h1>
-                <p className="text-[var(--text-secondary)] text-sm mt-1">
+            <header className="relative z-10 p-6 pt-8">
+                <h1 className="text-3xl font-bold tracking-tight drop-shadow-md">Meditación</h1>
+                <p className="text-white/70 text-sm mt-2 font-medium">
                     Sesiones guiadas sobre la resonancia armónica en vivo
                 </p>
             </header>
 
             {/* Tag Filter Pills */}
-            <section className="px-4 mb-6">
+            <section className="relative z-10 px-4 mb-6">
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                     <button
                         onClick={() => setSelectedTag(null)}
-                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2 ${selectedTag === null
-                            ? "bg-[var(--primary-600)] text-white"
-                            : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
+                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/50 ${selectedTag === null
+                            ? "bg-[var(--primary-600)]/80 text-white border border-white/10 shadow-lg shadow-[var(--primary-600)]/20"
+                            : "bg-white/5 text-white/70 border border-white/5 hover:bg-white/10"
                             }`}
                     >
                         Todas
@@ -226,9 +229,9 @@ export default function MeditationPage() {
                             <button
                                 key={tag.id}
                                 onClick={() => setSelectedTag(tag.slug === selectedTag ? null : tag.slug)}
-                                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2 ${selectedTag === tag.slug
-                                    ? "bg-[var(--primary-600)] text-white"
-                                    : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
+                                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/50 ${selectedTag === tag.slug
+                                    ? "bg-[var(--primary-600)]/80 text-white border border-white/10 shadow-lg shadow-[var(--primary-600)]/20"
+                                    : "bg-white/5 text-white/70 border border-white/5 hover:bg-white/10"
                                     }`}
                             >
                                 {tag.name}
@@ -240,18 +243,18 @@ export default function MeditationPage() {
 
             {/* Now Playing */}
             {currentMeditation && (
-                <section className="px-4 mb-6 animate-fade-in">
-                    <div className="glass-card p-4 border-[var(--primary-600)]">
+                <section className="relative z-10 px-4 mb-6 animate-fade-in">
+                    <div className="glass-card p-4 border-white/10 bg-black/40">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${getGradient(currentMeditation.id)} flex items-center justify-center`}>
+                                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${getGradient(currentMeditation.id)} flex items-center justify-center shadow-lg`}>
                                     <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
                                         <path d="M8 5v14l11-7z" />
                                     </svg>
                                 </div>
                                 <div>
-                                    <p className="font-semibold">{currentMeditation.title}</p>
-                                    <p className="text-xs text-[var(--text-muted)]">
+                                    <p className="font-semibold text-white">{currentMeditation.title}</p>
+                                    <p className="text-xs text-white/60">
                                         Reproduciendo con beacon en vivo
                                     </p>
                                 </div>
@@ -261,17 +264,17 @@ export default function MeditationPage() {
 
                         {/* Progress bar */}
                         <div className="mt-4 flex items-center gap-3">
-                            <span className="text-xs text-[var(--text-muted)] w-10">{formatTime(meditationPosition)}</span>
+                            <span className="text-xs text-white/50 w-10">{formatTime(meditationPosition)}</span>
                             <div
-                                className="flex-1 h-1.5 bg-[var(--border-subtle)] rounded-full overflow-hidden cursor-pointer"
+                                className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden cursor-pointer"
                                 onClick={handleSeek}
                             >
                                 <div
-                                    className="h-full bg-gradient-to-r from-[var(--primary-500)] to-[var(--primary-400)] transition-all"
+                                    className="h-full bg-gradient-to-r from-[var(--primary-400)] to-[var(--accent-400)] transition-all"
                                     style={{ width: `${progress}%` }}
                                 />
                             </div>
-                            <span className="text-xs text-[var(--text-muted)] w-10 text-right">{formatTime(meditationDuration)}</span>
+                            <span className="text-xs text-white/50 w-10 text-right">{formatTime(meditationDuration)}</span>
                         </div>
 
                         {/* Controls */}
@@ -279,7 +282,7 @@ export default function MeditationPage() {
                             <button
                                 onClick={toggleMeditation}
                                 aria-label={meditationIsPlaying ? "Pause meditation" : "Play meditation"}
-                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2"
+                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
                             >
                                 {meditationIsPlaying ? (
                                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -295,7 +298,7 @@ export default function MeditationPage() {
                             <button
                                 onClick={handleStopMeditation}
                                 aria-label="Stop meditation"
-                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-2"
+                                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
                             >
                                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                                     <rect x="6" y="6" width="12" height="12" rx="1" />
@@ -304,10 +307,10 @@ export default function MeditationPage() {
                         </div>
 
                         {/* Audio Mix Slider */}
-                        <div className="mt-6 pt-4 border-t border-[var(--border-subtle)]">
-                            <p className="text-xs text-[var(--text-muted)] text-center mb-3">Audio Mix</p>
+                        <div className="mt-6 pt-4 border-t border-white/5">
+                            <p className="text-xs text-white/40 text-center mb-3">Audio Mix</p>
                             <div className="flex items-center gap-3">
-                                <span className="text-xs text-[var(--text-secondary)]">Beacon</span>
+                                <span className="text-xs text-white/60">Beacon</span>
                                 <input
                                     type="range"
                                     min="0"
@@ -316,9 +319,9 @@ export default function MeditationPage() {
                                     value={mixValue}
                                     onChange={(e) => setMixValue(parseFloat(e.target.value))}
                                     aria-label="Audio mix: Beacon to Voice balance"
-                                    className="flex-1 h-2 bg-[var(--border-subtle)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                                    className="flex-1 h-2 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                                 />
-                                <span className="text-xs text-[var(--text-secondary)]">Voice</span>
+                                <span className="text-xs text-white/60">Voice</span>
                             </div>
                         </div>
                     </div>
@@ -357,20 +360,22 @@ export default function MeditationPage() {
 
             {/* Meditation Cards */}
             {!loading && !error && meditations.length > 0 && (
-                <section className="px-4">
-                    <div className="grid gap-4">
+                <section className="relative z-10 px-4">
+                    <div className="grid gap-3">
                         {meditations.map((meditation, index) => (
                             <button
                                 type="button"
                                 key={meditation.id}
-                                className={`meditation-card animate-fade-in text-left w-full ${currentMeditationFile === `/audio/meditations/${meditation.fileName}` ? "border-[var(--primary-500)]" : ""
+                                className={`meditation-card animate-fade-in text-left w-full group ${currentMeditationFile === `/audio/meditations/${meditation.fileName}`
+                                        ? "border-primary-500/50 bg-primary-500/10"
+                                        : "hover:bg-white/5"
                                     }`}
                                 style={{ opacity: 0, animationDelay: `${index * 0.1}s` }}
                                 onClick={() => startMeditation(meditation)}
                             >
                                 <div className="flex gap-4">
                                     {/* Thumbnail */}
-                                    <div className={`w-20 h-20 rounded-xl bg-gradient-to-br ${getGradient(meditation.id)} flex items-center justify-center flex-shrink-0`}>
+                                    <div className={`w-20 h-20 rounded-xl bg-gradient-to-br ${getGradient(meditation.id)} flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-105 transition-transform duration-300`}>
                                         {currentMeditationFile === `/audio/meditations/${meditation.fileName}` && meditationIsPlaying ? (
                                             <AudioVisualizer isPlaying={true} bars={3} />
                                         ) : (
@@ -381,17 +386,17 @@ export default function MeditationPage() {
                                     </div>
 
                                     {/* Info */}
-                                    <div className="flex-1 relative z-10 min-w-0">
+                                    <div className="flex-1 relative z-10 min-w-0 py-1">
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="min-w-0">
-                                                <h3 className="font-semibold text-lg">{meditation.title}</h3>
+                                                <h3 className="font-semibold text-white text-base leading-tight">{meditation.title}</h3>
                                                 {meditation.provider?.name && (
-                                                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                                                    <p className="text-xs text-white/50 mt-1">
                                                         {meditation.provider.name}
                                                     </p>
                                                 )}
                                                 {meditation.description && (
-                                                    <p className="text-sm text-[var(--text-muted)] mt-1 truncate">
+                                                    <p className="text-xs text-white/60 mt-1 truncate">
                                                         {meditation.description}
                                                     </p>
                                                 )}
@@ -399,13 +404,13 @@ export default function MeditationPage() {
                                             <div className="flex items-center gap-2 flex-shrink-0">
                                                 {/* Favorite button */}
                                                 {session?.user && (
-                                                    <button
+                                                    <div
+                                                        role="button"
                                                         onClick={(e) => toggleFavorite(e, meditation.id)}
-                                                        aria-label={favoriteIds.has(meditation.id) ? "Unfavorite" : "Favorite"}
-                                                        className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                                                        className="p-1.5 hover:bg-white/10 rounded-full transition-colors z-20"
                                                     >
                                                         <svg
-                                                            className={`w-5 h-5 ${favoriteIds.has(meditation.id) ? "text-red-400 fill-red-400" : "text-[var(--text-muted)]"}`}
+                                                            className={`w-4 h-4 ${favoriteIds.has(meditation.id) ? "text-red-400 fill-red-400" : "text-white/30"}`}
                                                             fill={favoriteIds.has(meditation.id) ? "currentColor" : "none"}
                                                             stroke="currentColor"
                                                             strokeWidth="2"
@@ -413,28 +418,12 @@ export default function MeditationPage() {
                                                         >
                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                                                         </svg>
-                                                    </button>
+                                                    </div>
                                                 )}
-                                                <span className="text-xs text-[var(--text-muted)] bg-white/5 px-2 py-1 rounded-full">
+                                                <span className="text-xs text-white/40 bg-white/5 px-2 py-0.5 rounded-full font-mono">
                                                     {formatDuration(meditation.durationSeconds)}
                                                 </span>
                                             </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                            {meditation.tags.slice(0, 3).map((tag) => (
-                                                <span
-                                                    key={tag.slug}
-                                                    className="text-xs px-2 py-0.5 rounded-full bg-[var(--primary-700)]/30 text-[var(--primary-300)]"
-                                                >
-                                                    {tag.name}
-                                                </span>
-                                            ))}
-                                            {meditation.isFeatured && (
-                                                <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--accent-500)]/20 text-[var(--accent-400)]">
-                                                    Featured
-                                                </span>
-                                            )}
-                                            <span className="text-xs text-[var(--text-muted)]">+ Beacon en vivo</span>
                                         </div>
                                     </div>
                                 </div>

@@ -44,7 +44,7 @@ export default function ProfilePage() {
                 setStats(data.stats);
                 setDbRole(data.user?.role || null);
             })
-            .catch(() => {});
+            .catch(() => { });
 
         // Fetch favorites
         fetch("/api/favorites")
@@ -52,7 +52,7 @@ export default function ProfilePage() {
             .then((data) => {
                 if (data.favorites) setFavorites(data.favorites);
             })
-            .catch(() => {});
+            .catch(() => { });
     }, [session]);
 
     const handleSignOut = async () => {
