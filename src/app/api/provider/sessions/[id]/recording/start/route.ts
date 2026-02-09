@@ -103,6 +103,10 @@ export async function POST(
             true,      // audioOnly
         );
 
+        // Wait for LiveKit to assign the first egress to a node before
+        // requesting the second — prevents both landing on the same instance
+        await new Promise((r) => setTimeout(r, 3000));
+
         // Beacon egress
         const beaconFilepath = `${RECORDINGS_PATH}/beacon-${scheduledSession.roomName}-${timestamp}.ogg`;
         const beaconOutput = new EncodedFileOutput({
