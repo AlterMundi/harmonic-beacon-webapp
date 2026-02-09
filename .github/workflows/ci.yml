@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   lint-and-build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
@@ -26,3 +26,26 @@ jobs:
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
           NEXT_PUBLIC_GO2RTC_URL: http://localhost:1984/api
+
+  test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run test:coverage
+        env:
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+          NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
+          NEXT_PUBLIC_GO2RTC_URL: http://localhost:1984/api
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
