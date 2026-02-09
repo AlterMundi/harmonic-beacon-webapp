@@ -157,11 +157,10 @@ export async function POST(
 
         // Snapshot all publishers
         const targets = await snapshotPublishers(scheduledSession.roomName);
-        const sessionTargets = targets.filter((t) => t.category === 'SESSION');
 
-        if (sessionTargets.length === 0) {
+        if (targets.length === 0) {
             return NextResponse.json(
-                { error: 'No audio tracks publishing in session room' },
+                { error: 'No audio tracks found to record' },
                 { status: 400 },
             );
         }
@@ -194,13 +193,11 @@ export async function POST(
             })),
         );
 
-        // Require at least 1 SESSION track to be active
-        const activeSessionTracks = pollResults.filter(
-            (r) => r.target.category === 'SESSION' && r.active,
-        );
+        // Require at least 1 track to be active
+        const activeTracks = pollResults.filter((r) => r.active);
 
-        if (activeSessionTracks.length === 0) {
-            // All session tracks failed — stop everything and bail
+        if (activeTracks.length === 0) {
+            // All tracks failed — stop everything and bail
             await Promise.allSettled(
                 pollResults.map((r) =>
                     egressClient.stopEgress(r.egress.egressId).catch(() => {}),
