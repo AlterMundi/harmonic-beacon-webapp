@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import CutDialog from "./CutDialog";
 
 export interface RecordingTrack {
     id: string;
@@ -11,6 +12,8 @@ export interface RecordingTrack {
 interface CompositePlayerProps {
     sessionId: string;
     recordings: RecordingTrack[];
+    enableCutControls?: boolean;
+    onCutCreated?: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -27,6 +30,8 @@ function formatTime(seconds: number): string {
 export default function CompositePlayer({
     sessionId,
     recordings,
+    enableCutControls,
+    onCutCreated,
 }: CompositePlayerProps) {
     const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
 
@@ -36,6 +41,11 @@ export default function CompositePlayer({
     const [volume, setVolume] = useState(0.8);
     const [mix, setMix] = useState(0.8); // 0 = all beacon, 1 = all session
     const [seeking, setSeeking] = useState(false);
+
+    // Cut controls state
+    const [inPoint, setInPoint] = useState<number | null>(null);
+    const [outPoint, setOutPoint] = useState<number | null>(null);
+    const [showCutDialog, setShowCutDialog] = useState(false);
 
     const sessionTracks = recordings.filter((r) => r.category === "SESSION");
     const beaconTracks = recordings.filter((r) => r.category === "BEACON");
@@ -159,6 +169,9 @@ export default function CompositePlayer({
     }
 
     const seekPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+    const inPercent = duration > 0 && inPoint !== null ? (inPoint / duration) * 100 : null;
+    const outPercent = duration > 0 && outPoint !== null ? (outPoint / duration) * 100 : null;
+    const canCreateCut = enableCutControls && inPoint !== null && outPoint !== null && outPoint > inPoint;
 
     return (
         <div className="glass-card p-4 space-y-4">
@@ -196,22 +209,50 @@ export default function CompositePlayer({
                 </div>
             )}
 
-            {/* Seek bar */}
+            {/* Seek bar with In/Out markers */}
             <div className="space-y-1">
-                <input
-                    type="range"
-                    min={0}
-                    max={duration || 0}
-                    step={0.1}
-                    value={currentTime}
-                    onChange={(e) => handleSeek(parseFloat(e.target.value))}
-                    onMouseUp={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
-                    onTouchEnd={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
-                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                    style={{
-                        background: `linear-gradient(to right, var(--primary-500) ${seekPercent}%, var(--border-subtle) ${seekPercent}%)`,
-                    }}
-                />
+                <div className="relative">
+                    <input
+                        type="range"
+                        min={0}
+                        max={duration || 0}
+                        step={0.1}
+                        value={currentTime}
+                        onChange={(e) => handleSeek(parseFloat(e.target.value))}
+                        onMouseUp={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
+                        onTouchEnd={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
+                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer relative z-10"
+                        style={{
+                            background: `linear-gradient(to right, var(--primary-500) ${seekPercent}%, var(--border-subtle) ${seekPercent}%)`,
+                        }}
+                    />
+                    {/* In/Out markers overlay */}
+                    {enableCutControls && (inPercent !== null || outPercent !== null) && (
+                        <div className="absolute inset-0 pointer-events-none" style={{ top: 0, height: "6px", marginTop: "5px" }}>
+                            {/* Shaded region between In and Out */}
+                            {inPercent !== null && outPercent !== null && (
+                                <div
+                                    className="absolute h-full bg-[var(--accent-500)]/25 rounded"
+                                    style={{ left: `${inPercent}%`, width: `${outPercent - inPercent}%` }}
+                                />
+                            )}
+                            {/* In marker */}
+                            {inPercent !== null && (
+                                <div
+                                    className="absolute w-0.5 bg-green-400"
+                                    style={{ left: `${inPercent}%`, height: "14px", top: "-4px" }}
+                                />
+                            )}
+                            {/* Out marker */}
+                            {outPercent !== null && (
+                                <div
+                                    className="absolute w-0.5 bg-red-400"
+                                    style={{ left: `${outPercent}%`, height: "14px", top: "-4px" }}
+                                />
+                            )}
+                        </div>
+                    )}
+                </div>
                 <div className="flex justify-between text-xs text-[var(--text-muted)]">
                     <span>{formatTime(currentTime)}</span>
                     <span>{formatTime(duration)}</span>
@@ -277,6 +318,58 @@ export default function CompositePlayer({
                         }}
                     />
                 </div>
+            )}
+
+            {/* Cut controls — Mark In / Mark Out */}
+            {enableCutControls && (
+                <div className="space-y-3 pt-1 border-t border-[var(--border-subtle)]">
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setInPoint(currentTime)}
+                            className="flex-1 py-2 rounded-xl text-sm font-medium bg-green-500/15 border border-green-500/30 text-green-400 hover:bg-green-500/25 transition-colors"
+                        >
+                            Mark In{inPoint !== null && ` · ${formatTime(inPoint)}`}
+                        </button>
+                        <button
+                            onClick={() => setOutPoint(currentTime)}
+                            className="flex-1 py-2 rounded-xl text-sm font-medium bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 transition-colors"
+                        >
+                            Mark Out{outPoint !== null && ` · ${formatTime(outPoint)}`}
+                        </button>
+                    </div>
+
+                    {/* Create Cut section */}
+                    {canCreateCut && (
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-xs text-[var(--text-muted)]">
+                                Selection: {formatTime(outPoint! - inPoint!)}
+                            </span>
+                            <button
+                                onClick={() => setShowCutDialog(true)}
+                                className="btn-primary px-4 py-2 text-sm"
+                            >
+                                Create Cut
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* CutDialog */}
+            {showCutDialog && inPoint !== null && outPoint !== null && (
+                <CutDialog
+                    sessionId={sessionId}
+                    inSeconds={inPoint}
+                    outSeconds={outPoint}
+                    mix={mix}
+                    onClose={() => setShowCutDialog(false)}
+                    onSuccess={() => {
+                        setShowCutDialog(false);
+                        setInPoint(null);
+                        setOutPoint(null);
+                        onCutCreated?.();
+                    }}
+                />
             )}
         </div>
     );

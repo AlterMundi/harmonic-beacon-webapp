@@ -317,6 +317,7 @@ export default function SessionManagePage() {
                             <CompositePlayer
                                 sessionId={session.id}
                                 recordings={completedRecordings}
+                                enableCutControls={session.status === "ENDED"}
                             />
                         )}
                     </div>
