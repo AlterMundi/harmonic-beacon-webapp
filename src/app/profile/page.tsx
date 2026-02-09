@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { BottomNav } from "@/components";
 import { useSession, signOut } from "next-auth/react";
+import { toast } from "sonner";
 
 interface UserStats {
     totalSessions: number;
@@ -21,8 +23,16 @@ function formatDuration(seconds: number): string {
 
 export default function ProfilePage() {
     const { data: session, status } = useSession();
+    const searchParams = useSearchParams();
     const [stats, setStats] = useState<UserStats | null>(null);
     const [dbRole, setDbRole] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (searchParams.get('unauthorized')) {
+            toast.error("You don't have permission to access that page");
+            window.history.replaceState(null, '', '/profile');
+        }
+    }, [searchParams]);
 
     useEffect(() => {
         if (!session?.user) return;

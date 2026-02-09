@@ -89,7 +89,7 @@ export default function TagManagementPage() {
     }, {});
 
     return (
-        <main className="pb-28 p-6">
+        <main className="p-6">
             <header className="mb-6">
                 <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-2">
                     <Link href="/admin" className="hover:text-white">Admin</Link>

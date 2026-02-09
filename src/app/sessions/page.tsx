@@ -36,20 +36,14 @@ interface RecordedSessionItem {
     trackCount: number;
 }
 
-interface UserStats {
-    totalSessions: number;
-    totalMinutes: number;
-    favoritesCount: number;
-}
-
 export default function SessionsPage() {
+    const [activeTab, setActiveTab] = useState<'practice' | 'events'>('practice');
     const [isSessionActive, setIsSessionActive] = useState(false);
     const [duration, setDuration] = useState(0);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [sessions, setSessions] = useState<SessionRecord[]>([]);
     const [scheduledSessions, setScheduledSessions] = useState<ScheduledSessionItem[]>([]);
     const [recordedSessions, setRecordedSessions] = useState<RecordedSessionItem[]>([]);
-    const [stats, setStats] = useState<UserStats | null>(null);
     const [loadingSessions, setLoadingSessions] = useState(true);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -103,22 +97,9 @@ export default function SessionsPage() {
         }
     }, []);
 
-    const fetchStats = useCallback(async () => {
-        try {
-            const res = await fetch("/api/users/me");
-            if (res.ok) {
-                const data = await res.json();
-                setStats(data.stats);
-            }
-        } catch {
-            // Silently fail
-        }
-    }, []);
-
     useEffect(() => {
         fetchSessions();
-        fetchStats();
-    }, [fetchSessions, fetchStats]);
+    }, [fetchSessions]);
 
     // Timer for active session
     useEffect(() => {
@@ -192,7 +173,6 @@ export default function SessionsPage() {
 
         // Refresh data
         fetchSessions();
-        fetchStats();
     };
 
     return (
@@ -208,26 +188,35 @@ export default function SessionsPage() {
                 </p>
             </header>
 
-            {/* Stats Summary */}
-            {stats && (
-                <section className="relative z-10 px-4 mb-6">
-                    <div className="grid grid-cols-3 gap-3">
-                        <div className="glass-card p-4 text-center">
-                            <span className="text-2xl font-bold bg-gradient-to-br from-white to-white/70 bg-clip-text text-transparent">{stats.totalSessions}</span>
-                            <p className="text-xs text-white/50 uppercase tracking-widest mt-1">Sessions</p>
-                        </div>
-                        <div className="glass-card p-4 text-center">
-                            <span className="text-2xl font-bold bg-gradient-to-br from-white to-white/70 bg-clip-text text-transparent">{stats.totalMinutes}</span>
-                            <p className="text-xs text-white/50 uppercase tracking-widest mt-1">Minutes</p>
-                        </div>
-                        <div className="glass-card p-4 text-center">
-                            <span className="text-2xl font-bold bg-gradient-to-br from-white to-white/70 bg-clip-text text-transparent">{stats.favoritesCount}</span>
-                            <p className="text-xs text-white/50 uppercase tracking-widest mt-1">Favorites</p>
-                        </div>
-                    </div>
-                </section>
-            )}
+            {/* Tab Bar */}
+            <div className="relative z-10 px-4 mb-6">
+                <div className="flex gap-2 p-1 bg-white/5 rounded-xl">
+                    <button
+                        onClick={() => setActiveTab('practice')}
+                        className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
+                            activeTab === 'practice'
+                                ? 'bg-[var(--primary-700)] text-white shadow-lg'
+                                : 'text-white/50 hover:text-white/70'
+                        }`}
+                    >
+                        Practice
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('events')}
+                        className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
+                            activeTab === 'events'
+                                ? 'bg-[var(--primary-700)] text-white shadow-lg'
+                                : 'text-white/50 hover:text-white/70'
+                        }`}
+                    >
+                        Events
+                    </button>
+                </div>
+            </div>
 
+            {/* Practice Tab */}
+            {activeTab === 'practice' && (
+            <>
             {/* Active Session or Start Button */}
             <section className="relative z-10 px-4 mb-6">
                 {isSessionActive ? (
@@ -346,10 +335,15 @@ export default function SessionsPage() {
                     </div>
                 )}
             </section>
+            </>
+            )}
 
+            {/* Events Tab */}
+            {activeTab === 'events' && (
+            <>
             {/* Recorded Sessions */}
             {recordedSessions.length > 0 && (
-                <section className="px-4 mt-6">
+                <section className="relative z-10 px-4 mb-6">
                     <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
                         Recorded Sessions
                     </h3>
@@ -397,7 +391,7 @@ export default function SessionsPage() {
             )}
 
             {/* Scheduled Sessions */}
-            <section className="px-4 mt-6">
+            <section className="relative z-10 px-4">
                 <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
                     Scheduled Sessions
                 </h3>
@@ -451,6 +445,8 @@ export default function SessionsPage() {
                     </div>
                 )}
             </section>
+            </>
+            )}
 
             <BottomNav />
         </main>

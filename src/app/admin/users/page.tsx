@@ -63,7 +63,7 @@ export default function UserManagementPage() {
     );
 
     return (
-        <main className="pb-28 p-6">
+        <main className="p-6">
             <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-2">

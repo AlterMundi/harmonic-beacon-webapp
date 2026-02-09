@@ -4,7 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 
-const tabs = [
+interface Tab {
+    name: string;
+    href: string;
+    prefix?: string;
+    icon: React.ReactNode;
+}
+
+const tabs: Tab[] = [
     {
         name: "Live",
         href: "/live",
@@ -51,15 +58,30 @@ export default function BottomNav() {
     const isProviderOrAdmin = userRole === "PROVIDER" || userRole === "ADMIN";
 
     // Always show strict tabs: Live, Meditate, Sessions, Profile
-    const navTabs = [...tabs];
+    const navTabs: Tab[] = [...tabs];
 
     if (isProviderOrAdmin) {
         navTabs.splice(2, 0, {
             name: "Studio",
             href: "/provider/dashboard",
+            prefix: "/provider",
             icon: (
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+            ),
+        });
+    }
+
+    if (userRole === "ADMIN") {
+        // Insert Admin before Profile (last item)
+        navTabs.splice(navTabs.length - 1, 0, {
+            name: "Admin",
+            href: "/admin",
+            prefix: "/admin",
+            icon: (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                 </svg>
             ),
         });
@@ -69,7 +91,9 @@ export default function BottomNav() {
         <nav className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <div className={`max-w-lg mx-auto flex justify-center gap-1 p-1 bg-black/20 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl`}>
                 {navTabs.map((tab) => {
-                    const isActive = pathname === tab.href || (pathname === "/" && tab.href === "/live");
+                    const isActive = pathname === tab.href
+                        || (pathname === "/" && tab.href === "/live")
+                        || (tab.prefix ? pathname.startsWith(tab.prefix) : false);
                     return (
                         <Link
                             key={tab.name}

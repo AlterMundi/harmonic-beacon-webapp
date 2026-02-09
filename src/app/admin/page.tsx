@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { BottomNav } from "@/components";
+
 
 interface AdminStats {
     totalUsers: number;
@@ -62,14 +62,14 @@ export default function AdminDashboard() {
 
     if (loading) {
         return (
-            <main className="pb-28 flex justify-center py-12">
+            <main className="flex justify-center py-12">
                 <div className="animate-spin w-8 h-8 border-2 border-[var(--primary-500)] border-t-transparent rounded-full"></div>
             </main>
         );
     }
 
     return (
-        <main className="pb-28 p-6">
+        <main className="p-6">
             <h1 className="text-2xl font-bold mb-6">Platform Overview</h1>
 
             {/* Stats Grid */}

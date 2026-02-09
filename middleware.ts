@@ -19,7 +19,7 @@ export default auth((req) => {
             return NextResponse.redirect(new URL('/login', req.url));
         }
         if (session.user.role !== 'PROVIDER' && session.user.role !== 'ADMIN') {
-            return NextResponse.redirect(new URL('/profile', req.url));
+            return NextResponse.redirect(new URL('/profile?unauthorized=1', req.url));
         }
     }
 
@@ -29,7 +29,7 @@ export default auth((req) => {
             return NextResponse.redirect(new URL('/login', req.url));
         }
         if (session.user.role !== 'ADMIN') {
-            return NextResponse.redirect(new URL('/profile', req.url));
+            return NextResponse.redirect(new URL('/profile?unauthorized=1', req.url));
         }
     }
 
