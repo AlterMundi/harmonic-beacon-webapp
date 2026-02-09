@@ -6,8 +6,8 @@ import { streamFile } from '@/lib/stream-file';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/provider/sessions/[id]/recording
- * Stream the session recording file (OGG) to the provider.
+ * GET /api/provider/sessions/[id]/recording?recordingId=UUID
+ * Stream a specific recording track file (OGG) to the provider.
  * Supports Range requests for seeking.
  */
 export async function GET(
@@ -28,23 +28,31 @@ export async function GET(
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const scheduledSession = await prisma.scheduledSession.findUnique({
-        where: { id },
-    });
-
-    if (!scheduledSession) {
-        return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    const recordingId = request.nextUrl.searchParams.get('recordingId');
+    if (!recordingId) {
+        return NextResponse.json({ error: 'recordingId required' }, { status: 400 });
     }
 
-    if (scheduledSession.providerId !== user.id) {
+    const recording = await prisma.sessionRecording.findUnique({
+        where: { id: recordingId },
+        include: {
+            session: { select: { providerId: true } },
+        },
+    });
+
+    if (!recording || recording.sessionId !== id) {
+        return NextResponse.json({ error: 'Recording not found' }, { status: 404 });
+    }
+
+    if (recording.session.providerId !== user.id) {
         return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-    if (!scheduledSession.recordingPath) {
-        return NextResponse.json({ error: 'No recording available' }, { status: 404 });
+    if (!recording.filePath) {
+        return NextResponse.json({ error: 'No recording file available' }, { status: 404 });
     }
 
-    const response = streamFile(scheduledSession.recordingPath, request.headers.get('range'));
+    const response = streamFile(recording.filePath, request.headers.get('range'));
     if (!response) {
         return NextResponse.json({ error: 'Recording file not found' }, { status: 404 });
     }

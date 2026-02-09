@@ -210,11 +210,7 @@ model ScheduledSession {
   status          ScheduledSessionStatus  @default(SCHEDULED)
 
   // Recording
-  recordingPath        String?            @map("recording_path")
   durationSeconds      Int?               @map("duration_seconds")
-  egressId             String?            @map("egress_id")
-  beaconRecordingPath  String?            @map("beacon_recording_path")
-  beaconEgressId       String?            @map("beacon_egress_id")
 
   // Timestamps
   createdAt       DateTime                @default(now()) @map("created_at")
@@ -224,10 +220,29 @@ model ScheduledSession {
   invites         SessionInvite[]
   participants    SessionParticipant[]
   listeningSessions ListeningSession[]
+  recordings      SessionRecording[]
 
   @@index([providerId])
   @@index([status])
   @@map("scheduled_sessions")
+}
+
+model SessionRecording {
+  id                  String           @id @default(uuid())
+  sessionId           String           @map("session_id")
+  session             ScheduledSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  egressId            String           @map("egress_id")
+  trackSid            String           @map("track_sid")
+  roomName            String           @map("room_name")
+  participantIdentity String           @map("participant_identity")
+  category            String           // 'SESSION' | 'BEACON'
+  filePath            String?          @map("file_path")
+  active              Boolean          @default(true)
+  startedAt           DateTime         @default(now()) @map("started_at")
+  stoppedAt           DateTime?        @map("stopped_at")
+
+  @@index([sessionId])
+  @@map("session_recordings")
 }
 
 model SessionInvite {

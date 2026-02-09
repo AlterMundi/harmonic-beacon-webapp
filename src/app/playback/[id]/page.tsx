@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { CompositePlayer } from "@/components";
+import type { RecordingTrack } from "@/components/CompositePlayer";
 
 interface SessionMeta {
     id: string;
@@ -12,8 +13,7 @@ interface SessionMeta {
     durationSeconds: number | null;
     startedAt: string | null;
     endedAt: string | null;
-    hasSessionRecording: boolean;
-    hasBeaconRecording: boolean;
+    recordings: RecordingTrack[];
 }
 
 function formatDate(iso: string): string {
@@ -85,6 +85,8 @@ export default function PlaybackPage() {
         );
     }
 
+    const hasBeacon = session.recordings.some((r) => r.category === "BEACON");
+
     return (
         <main className="pb-8">
             <section className="px-4 py-4">
@@ -120,18 +122,24 @@ export default function PlaybackPage() {
                             </>
                         )}
                     </div>
-                    {session.hasBeaconRecording && (
-                        <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded-full bg-[var(--accent-500)]/20 text-[var(--accent-400)]">
-                            +Beacon
-                        </span>
-                    )}
+                    <div className="flex items-center gap-2 mt-2">
+                        {hasBeacon && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--accent-500)]/20 text-[var(--accent-400)]">
+                                +Beacon
+                            </span>
+                        )}
+                        {session.recordings.length > 1 && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--primary-500)]/20 text-[var(--primary-400)]">
+                                {session.recordings.length} tracks
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 {/* Player */}
                 <CompositePlayer
                     sessionId={session.id}
-                    hasSessionRecording={session.hasSessionRecording}
-                    hasBeaconRecording={session.hasBeaconRecording}
+                    recordings={session.recordings}
                 />
             </section>
         </main>

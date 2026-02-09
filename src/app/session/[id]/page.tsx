@@ -12,7 +12,7 @@ interface SessionInfo {
     title: string;
     status: string;
     startedAt: string | null;
-    egressId: string | null;
+    isRecording: boolean;
 }
 
 export default function SessionRoomPage() {
@@ -80,7 +80,7 @@ export default function SessionRoomPage() {
 
                 setSessionInfo(data.session);
                 setCanPublish(data.canPublish);
-                if (data.session.egressId) {
+                if (data.session.isRecording) {
                     setIsRecording(true);
                 }
                 // Initialize timer from session startedAt

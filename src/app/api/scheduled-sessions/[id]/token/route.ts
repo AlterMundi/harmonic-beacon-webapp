@@ -128,6 +128,12 @@ export async function GET(
         canPublish,
     );
 
+    // Check if recording is active
+    const activeRecording = await prisma.sessionRecording.findFirst({
+        where: { sessionId: id, active: true },
+        select: { id: true },
+    });
+
     return NextResponse.json({
         token,
         identity,
@@ -138,7 +144,7 @@ export async function GET(
             title: scheduledSession.title,
             status: scheduledSession.status,
             startedAt: scheduledSession.startedAt?.toISOString() ?? null,
-            egressId: scheduledSession.egressId ?? null,
+            isRecording: !!activeRecording,
         },
     });
 }

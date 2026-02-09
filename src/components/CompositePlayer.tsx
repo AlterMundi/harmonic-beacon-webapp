@@ -2,10 +2,15 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
+export interface RecordingTrack {
+    id: string;
+    participantIdentity: string;
+    category: "SESSION" | "BEACON";
+}
+
 interface CompositePlayerProps {
     sessionId: string;
-    hasSessionRecording: boolean;
-    hasBeaconRecording: boolean;
+    recordings: RecordingTrack[];
 }
 
 function formatTime(seconds: number): string {
@@ -21,11 +26,9 @@ function formatTime(seconds: number): string {
 
 export default function CompositePlayer({
     sessionId,
-    hasSessionRecording,
-    hasBeaconRecording,
+    recordings,
 }: CompositePlayerProps) {
-    const sessionRef = useRef<HTMLAudioElement>(null);
-    const beaconRef = useRef<HTMLAudioElement>(null);
+    const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
 
     const [playing, setPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
@@ -34,81 +37,101 @@ export default function CompositePlayer({
     const [mix, setMix] = useState(0.8); // 0 = all beacon, 1 = all session
     const [seeking, setSeeking] = useState(false);
 
-    const sessionUrl = `/api/sessions/${sessionId}/recording?track=session`;
-    const beaconUrl = `/api/sessions/${sessionId}/recording?track=beacon`;
+    const sessionTracks = recordings.filter((r) => r.category === "SESSION");
+    const beaconTracks = recordings.filter((r) => r.category === "BEACON");
+    const hasBeacon = beaconTracks.length > 0;
 
-    // Apply volume/mix to audio elements
+    // Primary track = first SESSION track (drives seek bar + time display)
+    const primaryTrack = sessionTracks[0];
+
+    // Apply volume/mix to all audio elements
     const applyVolumes = useCallback(() => {
-        if (sessionRef.current) {
-            sessionRef.current.volume = volume * mix;
+        for (const track of recordings) {
+            const el = audioRefs.current.get(track.id);
+            if (!el) continue;
+            if (track.category === "SESSION") {
+                el.volume = volume * mix;
+            } else {
+                el.volume = volume * (1 - mix);
+            }
         }
-        if (beaconRef.current && hasBeaconRecording) {
-            beaconRef.current.volume = volume * (1 - mix);
-        }
-    }, [volume, mix, hasBeaconRecording]);
+    }, [volume, mix, recordings]);
 
     useEffect(() => {
         applyVolumes();
     }, [applyVolumes]);
 
-    // Session audio timeupdate — drives seek bar + drift correction
+    // Primary track timeupdate — drives seek bar + drift correction on others
     useEffect(() => {
-        const session = sessionRef.current;
-        const beacon = beaconRef.current;
-        if (!session) return;
+        if (!primaryTrack) return;
+        const primary = audioRefs.current.get(primaryTrack.id);
+        if (!primary) return;
 
         const onTimeUpdate = () => {
             if (!seeking) {
-                setCurrentTime(session.currentTime);
+                setCurrentTime(primary.currentTime);
             }
-            // Drift correction for beacon
-            if (beacon && hasBeaconRecording && !beacon.paused) {
-                const drift = Math.abs(beacon.currentTime - session.currentTime);
+            // Drift correction for all other tracks
+            for (const track of recordings) {
+                if (track.id === primaryTrack.id) continue;
+                const el = audioRefs.current.get(track.id);
+                if (!el || el.paused) continue;
+                const drift = Math.abs(el.currentTime - primary.currentTime);
                 if (drift > 0.15) {
-                    beacon.currentTime = session.currentTime;
+                    el.currentTime = primary.currentTime;
                 }
             }
         };
 
         const onDurationChange = () => {
-            if (session.duration && isFinite(session.duration)) {
-                setDuration(session.duration);
+            if (primary.duration && isFinite(primary.duration)) {
+                setDuration(primary.duration);
             }
         };
 
         const onEnded = () => {
             setPlaying(false);
-            if (beacon) beacon.pause();
+            for (const track of recordings) {
+                const el = audioRefs.current.get(track.id);
+                if (el) el.pause();
+            }
         };
 
-        session.addEventListener("timeupdate", onTimeUpdate);
-        session.addEventListener("durationchange", onDurationChange);
-        session.addEventListener("loadedmetadata", onDurationChange);
-        session.addEventListener("ended", onEnded);
+        primary.addEventListener("timeupdate", onTimeUpdate);
+        primary.addEventListener("durationchange", onDurationChange);
+        primary.addEventListener("loadedmetadata", onDurationChange);
+        primary.addEventListener("ended", onEnded);
 
         return () => {
-            session.removeEventListener("timeupdate", onTimeUpdate);
-            session.removeEventListener("durationchange", onDurationChange);
-            session.removeEventListener("loadedmetadata", onDurationChange);
-            session.removeEventListener("ended", onEnded);
+            primary.removeEventListener("timeupdate", onTimeUpdate);
+            primary.removeEventListener("durationchange", onDurationChange);
+            primary.removeEventListener("loadedmetadata", onDurationChange);
+            primary.removeEventListener("ended", onEnded);
         };
-    }, [seeking, hasBeaconRecording]);
+    }, [seeking, primaryTrack, recordings]);
 
     const togglePlay = async () => {
-        const session = sessionRef.current;
-        const beacon = beaconRef.current;
-        if (!session) return;
+        if (!primaryTrack) return;
+        const primary = audioRefs.current.get(primaryTrack.id);
+        if (!primary) return;
 
         if (playing) {
-            session.pause();
-            if (beacon && hasBeaconRecording) beacon.pause();
+            for (const track of recordings) {
+                const el = audioRefs.current.get(track.id);
+                if (el) el.pause();
+            }
             setPlaying(false);
         } else {
             applyVolumes();
-            await session.play();
-            if (beacon && hasBeaconRecording) {
-                beacon.currentTime = session.currentTime;
-                await beacon.play().catch(() => {});
+            // Sync all to primary time, then play
+            const t = primary.currentTime;
+            for (const track of recordings) {
+                const el = audioRefs.current.get(track.id);
+                if (!el) continue;
+                if (track.id !== primaryTrack.id) {
+                    el.currentTime = t;
+                }
+                await el.play().catch(() => {});
             }
             setPlaying(true);
         }
@@ -120,18 +143,14 @@ export default function CompositePlayer({
     };
 
     const handleSeekCommit = (value: number) => {
-        const session = sessionRef.current;
-        const beacon = beaconRef.current;
-        if (session) {
-            session.currentTime = value;
-        }
-        if (beacon && hasBeaconRecording) {
-            beacon.currentTime = value;
+        for (const track of recordings) {
+            const el = audioRefs.current.get(track.id);
+            if (el) el.currentTime = value;
         }
         setSeeking(false);
     };
 
-    if (!hasSessionRecording) {
+    if (recordings.length === 0) {
         return (
             <div className="glass-card p-4 text-center">
                 <p className="text-sm text-[var(--text-muted)]">No recording available</p>
@@ -143,10 +162,38 @@ export default function CompositePlayer({
 
     return (
         <div className="glass-card p-4 space-y-4">
-            {/* Hidden audio elements */}
-            <audio ref={sessionRef} preload="metadata" src={sessionUrl} />
-            {hasBeaconRecording && (
-                <audio ref={beaconRef} preload="metadata" src={beaconUrl} />
+            {/* Hidden audio elements — one per track */}
+            {recordings.map((track) => (
+                <audio
+                    key={track.id}
+                    ref={(el) => {
+                        if (el) {
+                            audioRefs.current.set(track.id, el);
+                        } else {
+                            audioRefs.current.delete(track.id);
+                        }
+                    }}
+                    preload="metadata"
+                    src={`/api/sessions/${sessionId}/recording?recordingId=${track.id}`}
+                />
+            ))}
+
+            {/* Track info */}
+            {recordings.length > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                    {recordings.map((track) => (
+                        <span
+                            key={track.id}
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                                track.category === "BEACON"
+                                    ? "bg-[var(--accent-500)]/20 text-[var(--accent-400)]"
+                                    : "bg-[var(--primary-500)]/20 text-[var(--primary-400)]"
+                            }`}
+                        >
+                            {track.participantIdentity}
+                        </span>
+                    ))}
+                </div>
             )}
 
             {/* Seek bar */}
@@ -211,7 +258,7 @@ export default function CompositePlayer({
             </div>
 
             {/* Crossfader — only when beacon recording exists */}
-            {hasBeaconRecording && (
+            {hasBeacon && (
                 <div className="space-y-1.5">
                     <div className="flex justify-between text-xs text-[var(--text-muted)]">
                         <span>Beacon</span>

@@ -31,6 +31,14 @@ export async function GET(
         where: { id },
         include: {
             provider: { select: { name: true } },
+            recordings: {
+                where: { active: false },
+                select: {
+                    id: true,
+                    participantIdentity: true,
+                    category: true,
+                },
+            },
         },
     });
 
@@ -63,8 +71,7 @@ export async function GET(
             durationSeconds: scheduledSession.durationSeconds,
             startedAt: scheduledSession.startedAt?.toISOString() ?? null,
             endedAt: scheduledSession.endedAt?.toISOString() ?? null,
-            hasSessionRecording: !!scheduledSession.recordingPath,
-            hasBeaconRecording: !!scheduledSession.beaconRecordingPath,
+            recordings: scheduledSession.recordings,
         },
     });
 }

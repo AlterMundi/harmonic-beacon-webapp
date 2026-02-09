@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/sessions/my-recordings
- * List ended sessions with recordings that the user participated in or provided.
+ * List ended sessions with completed recordings that the user participated in or provided.
  */
 export async function GET() {
     const [session, errorResponse] = await requireAuth();
@@ -24,7 +24,7 @@ export async function GET() {
     const sessions = await prisma.scheduledSession.findMany({
         where: {
             status: 'ENDED',
-            recordingPath: { not: null },
+            recordings: { some: { active: false } },
             OR: [
                 { providerId: user.id },
                 { participants: { some: { userId: user.id } } },
@@ -35,8 +35,11 @@ export async function GET() {
             title: true,
             endedAt: true,
             durationSeconds: true,
-            beaconRecordingPath: true,
             provider: { select: { name: true } },
+            recordings: {
+                where: { active: false },
+                select: { id: true, category: true },
+            },
         },
         orderBy: { endedAt: 'desc' },
         take: 20,
@@ -49,7 +52,8 @@ export async function GET() {
             providerName: s.provider.name,
             endedAt: s.endedAt?.toISOString() ?? null,
             durationSeconds: s.durationSeconds,
-            hasBeaconRecording: !!s.beaconRecordingPath,
+            hasBeaconRecording: s.recordings.some((r) => r.category === 'BEACON'),
+            trackCount: s.recordings.length,
         })),
     });
 }

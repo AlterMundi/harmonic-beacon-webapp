@@ -8,8 +8,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/provider/sessions/[id]/recording/stop
- * Stop both session and beacon egress recordings.
- * Verifies both files were written; cleans up paths if not.
+ * Stop all active track egress recordings for this session.
  */
 export async function POST(
     _request: NextRequest,
@@ -41,7 +40,11 @@ export async function POST(
         return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-    if (!scheduledSession.egressId && !scheduledSession.beaconEgressId) {
+    const activeRecordings = await prisma.sessionRecording.findMany({
+        where: { sessionId: id, active: true },
+    });
+
+    if (activeRecordings.length === 0) {
         return NextResponse.json(
             { error: 'No recording in progress' },
             { status: 400 },
@@ -50,47 +53,43 @@ export async function POST(
 
     const egressClient = getEgressClient();
 
-    // Stop both egresses in parallel
-    await Promise.allSettled([
-        scheduledSession.egressId
-            ? egressClient.stopEgress(scheduledSession.egressId).catch((e: unknown) => {
-                console.error('Failed to stop session egress:', e);
-            })
-            : Promise.resolve(),
-        scheduledSession.beaconEgressId
-            ? egressClient.stopEgress(scheduledSession.beaconEgressId).catch((e: unknown) => {
-                console.error('Failed to stop beacon egress:', e);
-            })
-            : Promise.resolve(),
-    ]);
+    // Stop all egresses in parallel
+    await Promise.allSettled(
+        activeRecordings.map((r) =>
+            egressClient.stopEgress(r.egressId).catch((e: unknown) => {
+                console.error(`Failed to stop egress ${r.egressId}:`, e);
+            }),
+        ),
+    );
 
-    // Wait briefly for egresses to finalize files
+    // Wait for egresses to finalize files
     await new Promise((r) => setTimeout(r, 2000));
 
-    // Verify files exist
-    const sessionFileExists = scheduledSession.recordingPath && existsSync(scheduledSession.recordingPath);
-    const beaconFileExists = scheduledSession.beaconRecordingPath && existsSync(scheduledSession.beaconRecordingPath);
+    // Verify files and update records
+    const now = new Date();
+    const results = await Promise.all(
+        activeRecordings.map(async (r) => {
+            const fileExists = r.filePath && existsSync(r.filePath);
+            if (fileExists) {
+                return prisma.sessionRecording.update({
+                    where: { id: r.id },
+                    data: { active: false, stoppedAt: now },
+                });
+            } else {
+                await prisma.sessionRecording.delete({ where: { id: r.id } });
+                return null;
+            }
+        }),
+    );
 
-    await prisma.scheduledSession.update({
-        where: { id },
-        data: {
-            egressId: null,
-            beaconEgressId: null,
-            recordingPath: sessionFileExists ? scheduledSession.recordingPath : null,
-            beaconRecordingPath: beaconFileExists ? scheduledSession.beaconRecordingPath : null,
-        },
-    });
-
-    if (!sessionFileExists) {
-        return NextResponse.json({
-            ok: false,
-            error: 'Recording stopped but session file was not produced',
-        }, { status: 500 });
-    }
+    const finalRecordings = results.filter(Boolean);
 
     return NextResponse.json({
         ok: true,
-        recordingPath: scheduledSession.recordingPath,
-        beaconRecordingPath: beaconFileExists ? scheduledSession.beaconRecordingPath : null,
+        recordings: finalRecordings.map((r) => ({
+            id: r!.id,
+            participantIdentity: r!.participantIdentity,
+            category: r!.category,
+        })),
     });
 }

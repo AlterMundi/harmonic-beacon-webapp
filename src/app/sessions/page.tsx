@@ -33,6 +33,7 @@ interface RecordedSessionItem {
     endedAt: string | null;
     durationSeconds: number | null;
     hasBeaconRecording: boolean;
+    trackCount: number;
 }
 
 interface UserStats {
@@ -367,6 +368,11 @@ export default function SessionsPage() {
                                             {s.hasBeaconRecording && (
                                                 <span className="text-xs px-1.5 py-0.5 rounded-full bg-[var(--accent-500)]/20 text-[var(--accent-400)] flex-shrink-0">
                                                     +Beacon
+                                                </span>
+                                            )}
+                                            {s.trackCount > 1 && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded-full bg-[var(--primary-500)]/20 text-[var(--primary-400)] flex-shrink-0">
+                                                    {s.trackCount} tracks
                                                 </span>
                                             )}
                                         </div>

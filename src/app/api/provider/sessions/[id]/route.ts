@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/provider/sessions/[id]
- * Get session detail with invites and participants.
+ * Get session detail with invites, participants, and recordings.
  */
 export async function GET(
     _request: NextRequest,
@@ -39,6 +39,15 @@ export async function GET(
                     user: { select: { id: true, name: true, email: true } },
                 },
                 orderBy: { joinedAt: 'desc' },
+            },
+            recordings: {
+                select: {
+                    id: true,
+                    participantIdentity: true,
+                    category: true,
+                    active: true,
+                    egressId: true,
+                },
             },
             _count: {
                 select: { participants: true },
@@ -121,23 +130,38 @@ export async function PATCH(
             );
         }
 
-        // Stop active recordings if any (session + beacon)
-        if (scheduledSession.egressId || scheduledSession.beaconEgressId) {
+        // Stop active recordings if any
+        const activeRecordings = await prisma.sessionRecording.findMany({
+            where: { sessionId: id, active: true },
+        });
+
+        if (activeRecordings.length > 0) {
             const egressClient = getEgressClient();
-            await Promise.allSettled([
-                scheduledSession.egressId
-                    ? egressClient.stopEgress(scheduledSession.egressId).catch((e: unknown) => {
-                        console.error('Failed to stop session recording on end:', e);
-                    })
-                    : Promise.resolve(),
-                scheduledSession.beaconEgressId
-                    ? egressClient.stopEgress(scheduledSession.beaconEgressId).catch((e: unknown) => {
-                        console.error('Failed to stop beacon recording on end:', e);
-                    })
-                    : Promise.resolve(),
-            ]);
+            await Promise.allSettled(
+                activeRecordings.map((r) =>
+                    egressClient.stopEgress(r.egressId).catch((e: unknown) => {
+                        console.error(`Failed to stop egress ${r.egressId} on end:`, e);
+                    }),
+                ),
+            );
             // Wait for egresses to finalize files
             await new Promise((r) => setTimeout(r, 2000));
+
+            // Verify files and update records
+            const now = new Date();
+            await Promise.all(
+                activeRecordings.map(async (r) => {
+                    const fileExists = r.filePath && existsSync(r.filePath);
+                    if (fileExists) {
+                        await prisma.sessionRecording.update({
+                            where: { id: r.id },
+                            data: { active: false, stoppedAt: now },
+                        });
+                    } else {
+                        await prisma.sessionRecording.delete({ where: { id: r.id } });
+                    }
+                }),
+            );
         }
 
         const now = new Date();
@@ -145,20 +169,12 @@ export async function PATCH(
             ? Math.floor((now.getTime() - scheduledSession.startedAt.getTime()) / 1000)
             : 0;
 
-        // Clean up recording paths if files don't exist
-        const sessionFileExists = scheduledSession.recordingPath && existsSync(scheduledSession.recordingPath);
-        const beaconFileExists = scheduledSession.beaconRecordingPath && existsSync(scheduledSession.beaconRecordingPath);
-
         const updated = await prisma.scheduledSession.update({
             where: { id },
             data: {
                 status: 'ENDED',
                 endedAt: now,
                 durationSeconds,
-                egressId: null,
-                beaconEgressId: null,
-                recordingPath: sessionFileExists ? scheduledSession.recordingPath : null,
-                beaconRecordingPath: beaconFileExists ? scheduledSession.beaconRecordingPath : null,
             },
         });
         return NextResponse.json({ session: updated });

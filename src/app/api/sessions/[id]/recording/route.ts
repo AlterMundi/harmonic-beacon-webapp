@@ -6,8 +6,8 @@ import { streamFile } from '@/lib/stream-file';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/sessions/[id]/recording?track=session|beacon
- * Stream session or beacon recording to authorized users.
+ * GET /api/sessions/[id]/recording?recordingId=UUID
+ * Stream a specific recording track to authorized users.
  * Access: provider, session participant, or admin.
  */
 export async function GET(
@@ -28,22 +28,24 @@ export async function GET(
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const scheduledSession = await prisma.scheduledSession.findUnique({
-        where: { id },
-        select: {
-            id: true,
-            providerId: true,
-            recordingPath: true,
-            beaconRecordingPath: true,
+    const recordingId = request.nextUrl.searchParams.get('recordingId');
+    if (!recordingId) {
+        return NextResponse.json({ error: 'recordingId required' }, { status: 400 });
+    }
+
+    const recording = await prisma.sessionRecording.findUnique({
+        where: { id: recordingId },
+        include: {
+            session: { select: { id: true, providerId: true } },
         },
     });
 
-    if (!scheduledSession) {
-        return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    if (!recording || recording.sessionId !== id) {
+        return NextResponse.json({ error: 'Recording not found' }, { status: 404 });
     }
 
     // Access check: provider, participant, or admin
-    const isProvider = scheduledSession.providerId === user.id;
+    const isProvider = recording.session.providerId === user.id;
     const isAdmin = user.role === 'ADMIN';
 
     if (!isProvider && !isAdmin) {
@@ -58,16 +60,11 @@ export async function GET(
         }
     }
 
-    const track = request.nextUrl.searchParams.get('track') || 'session';
-    const filePath = track === 'beacon'
-        ? scheduledSession.beaconRecordingPath
-        : scheduledSession.recordingPath;
-
-    if (!filePath) {
+    if (!recording.filePath) {
         return NextResponse.json({ error: 'No recording available' }, { status: 404 });
     }
 
-    const response = streamFile(filePath, request.headers.get('range'));
+    const response = streamFile(recording.filePath, request.headers.get('range'));
     if (!response) {
         return NextResponse.json({ error: 'Recording file not found' }, { status: 404 });
     }

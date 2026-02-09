@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { CompositePlayer } from "@/components";
+import type { RecordingTrack } from "@/components/CompositePlayer";
 
 interface Invite {
     id: string;
@@ -23,6 +24,14 @@ interface Participant {
     user: { id: string; name: string | null; email: string };
 }
 
+interface SessionRecordingInfo {
+    id: string;
+    participantIdentity: string;
+    category: string;
+    active: boolean;
+    egressId: string;
+}
+
 interface SessionDetail {
     id: string;
     title: string;
@@ -33,12 +42,10 @@ interface SessionDetail {
     startedAt: string | null;
     endedAt: string | null;
     durationSeconds: number | null;
-    egressId: string | null;
-    recordingPath: string | null;
-    beaconRecordingPath: string | null;
     createdAt: string;
     invites: Invite[];
     participants: Participant[];
+    recordings: SessionRecordingInfo[];
     _count: { participants: number };
 }
 
@@ -142,12 +149,14 @@ export default function SessionManagePage() {
         }
     };
 
+    const isRecording = session?.recordings.some((r) => r.active) ?? false;
+
     const toggleRecording = async () => {
         if (!session) return;
         setRecordingLoading(true);
         setError(null);
         try {
-            const action = session.egressId ? "stop" : "start";
+            const action = isRecording ? "stop" : "start";
             const res = await fetch(`/api/provider/sessions/${id}/recording/${action}`, {
                 method: "POST",
             });
@@ -202,6 +211,14 @@ export default function SessionManagePage() {
     }
 
     const sc = statusConfig[session.status] || statusConfig.SCHEDULED;
+    const completedRecordings: RecordingTrack[] = session.recordings
+        .filter((r) => !r.active)
+        .map((r) => ({
+            id: r.id,
+            participantIdentity: r.participantIdentity,
+            category: r.category as "SESSION" | "BEACON",
+        }));
+    const hasCompletedRecordings = completedRecordings.length > 0;
 
     return (
         <main className="pb-8">
@@ -237,9 +254,9 @@ export default function SessionManagePage() {
                     </div>
                     <div className="stat-card">
                         <span className="stat-value text-lg flex items-center justify-center gap-1">
-                            {session.egressId ? (
+                            {isRecording ? (
                                 <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
-                            ) : session.recordingPath ? (
+                            ) : hasCompletedRecordings ? (
                                 <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                 </svg>
@@ -282,10 +299,10 @@ export default function SessionManagePage() {
                 </div>
 
                 {/* Recording info + player */}
-                {(session.egressId || session.recordingPath) && (
+                {(isRecording || hasCompletedRecordings) && (
                     <div className="glass-card p-4 mb-4">
                         <div className="flex items-center gap-2 mb-3">
-                            {session.egressId ? (
+                            {isRecording ? (
                                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                             ) : (
                                 <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -293,14 +310,13 @@ export default function SessionManagePage() {
                                 </svg>
                             )}
                             <span className="text-sm font-medium">
-                                {session.egressId ? "Recording in progress" : "Recording"}
+                                {isRecording ? "Recording in progress" : "Recording"}
                             </span>
                         </div>
-                        {session.recordingPath && !session.egressId && (
+                        {hasCompletedRecordings && !isRecording && (
                             <CompositePlayer
                                 sessionId={session.id}
-                                hasSessionRecording={!!session.recordingPath}
-                                hasBeaconRecording={!!session.beaconRecordingPath}
+                                recordings={completedRecordings}
                             />
                         )}
                     </div>
@@ -346,15 +362,15 @@ export default function SessionManagePage() {
                                     onClick={toggleRecording}
                                     disabled={recordingLoading}
                                     className={`flex-1 py-3 rounded-xl font-medium transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
-                                        session.egressId
+                                        isRecording
                                             ? "bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30"
                                             : "bg-white/10 border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-white/20"
                                     }`}
                                 >
-                                    {session.egressId && (
+                                    {isRecording && (
                                         <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                                     )}
-                                    {recordingLoading ? "..." : session.egressId ? "Stop Recording" : "Record"}
+                                    {recordingLoading ? "..." : isRecording ? "Stop Recording" : "Record"}
                                 </button>
                                 <button
                                     onClick={() => handleAction("end")}
