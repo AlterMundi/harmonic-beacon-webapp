@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, RemoteTrackPublication } from 'livekit-client';
 
 // Participant identity for the live USB audio source
-const WANDA_IDENTITY = "wanda02";
+const BEACON_IDENTITY = "beacon01";
 
 interface AudioContextType {
     // LiveKit / Beacon Audio
@@ -84,7 +84,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
             if (track.kind === Track.Kind.Audio) {
                 const identity = participant.identity;
-                const isLive = identity === WANDA_IDENTITY;
+                const isLive = identity === BEACON_IDENTITY;
 
                 console.log(`✓ Subscribed to ${isLive ? 'LIVE' : 'playlist'} audio track (${identity})`);
 
@@ -116,7 +116,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
             if (track.kind === Track.Kind.Audio) {
                 const identity = participant.identity;
-                const isLive = identity === WANDA_IDENTITY;
+                const isLive = identity === BEACON_IDENTITY;
 
                 console.log(`✗ ${isLive ? 'LIVE' : 'Playlist'} audio track removed (${identity})`);
 
