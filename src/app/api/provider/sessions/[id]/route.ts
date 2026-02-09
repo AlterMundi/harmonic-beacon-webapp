@@ -121,16 +121,23 @@ export async function PATCH(
             );
         }
 
-        // Stop active recording if any
-        if (scheduledSession.egressId) {
-            try {
-                const egressClient = getEgressClient();
-                await egressClient.stopEgress(scheduledSession.egressId);
-                // Wait for egress to finalize the file
-                await new Promise((r) => setTimeout(r, 2000));
-            } catch (e) {
-                console.error('Failed to stop recording on session end:', e);
-            }
+        // Stop active recordings if any (session + beacon)
+        if (scheduledSession.egressId || scheduledSession.beaconEgressId) {
+            const egressClient = getEgressClient();
+            await Promise.allSettled([
+                scheduledSession.egressId
+                    ? egressClient.stopEgress(scheduledSession.egressId).catch((e: unknown) => {
+                        console.error('Failed to stop session recording on end:', e);
+                    })
+                    : Promise.resolve(),
+                scheduledSession.beaconEgressId
+                    ? egressClient.stopEgress(scheduledSession.beaconEgressId).catch((e: unknown) => {
+                        console.error('Failed to stop beacon recording on end:', e);
+                    })
+                    : Promise.resolve(),
+            ]);
+            // Wait for egresses to finalize files
+            await new Promise((r) => setTimeout(r, 2000));
         }
 
         const now = new Date();
@@ -138,8 +145,9 @@ export async function PATCH(
             ? Math.floor((now.getTime() - scheduledSession.startedAt.getTime()) / 1000)
             : 0;
 
-        // Clean up recordingPath if file doesn't exist
-        const fileExists = scheduledSession.recordingPath && existsSync(scheduledSession.recordingPath);
+        // Clean up recording paths if files don't exist
+        const sessionFileExists = scheduledSession.recordingPath && existsSync(scheduledSession.recordingPath);
+        const beaconFileExists = scheduledSession.beaconRecordingPath && existsSync(scheduledSession.beaconRecordingPath);
 
         const updated = await prisma.scheduledSession.update({
             where: { id },
@@ -148,7 +156,9 @@ export async function PATCH(
                 endedAt: now,
                 durationSeconds,
                 egressId: null,
-                recordingPath: fileExists ? scheduledSession.recordingPath : null,
+                beaconEgressId: null,
+                recordingPath: sessionFileExists ? scheduledSession.recordingPath : null,
+                beaconRecordingPath: beaconFileExists ? scheduledSession.beaconRecordingPath : null,
             },
         });
         return NextResponse.json({ session: updated });

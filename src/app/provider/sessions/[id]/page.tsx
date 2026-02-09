@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { CompositePlayer } from "@/components";
 
 interface Invite {
     id: string;
@@ -34,6 +35,7 @@ interface SessionDetail {
     durationSeconds: number | null;
     egressId: string | null;
     recordingPath: string | null;
+    beaconRecordingPath: string | null;
     createdAt: string;
     invites: Invite[];
     participants: Participant[];
@@ -295,11 +297,10 @@ export default function SessionManagePage() {
                             </span>
                         </div>
                         {session.recordingPath && !session.egressId && (
-                            <audio
-                                controls
-                                preload="metadata"
-                                src={`/api/provider/sessions/${session.id}/recording`}
-                                className="w-full h-10"
+                            <CompositePlayer
+                                sessionId={session.id}
+                                hasSessionRecording={!!session.recordingPath}
+                                hasBeaconRecording={!!session.beaconRecordingPath}
                             />
                         )}
                     </div>

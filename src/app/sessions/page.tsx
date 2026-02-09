@@ -26,6 +26,15 @@ interface ScheduledSessionItem {
     participantCount: number;
 }
 
+interface RecordedSessionItem {
+    id: string;
+    title: string;
+    providerName: string | null;
+    endedAt: string | null;
+    durationSeconds: number | null;
+    hasBeaconRecording: boolean;
+}
+
 interface UserStats {
     totalSessions: number;
     totalMinutes: number;
@@ -38,6 +47,7 @@ export default function SessionsPage() {
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [sessions, setSessions] = useState<SessionRecord[]>([]);
     const [scheduledSessions, setScheduledSessions] = useState<ScheduledSessionItem[]>([]);
+    const [recordedSessions, setRecordedSessions] = useState<RecordedSessionItem[]>([]);
     const [stats, setStats] = useState<UserStats | null>(null);
     const [loadingSessions, setLoadingSessions] = useState(true);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -68,9 +78,10 @@ export default function SessionsPage() {
     const fetchSessions = useCallback(async () => {
         setLoadingSessions(true);
         try {
-            const [sessRes, schedRes] = await Promise.all([
+            const [sessRes, schedRes, recRes] = await Promise.all([
                 fetch("/api/sessions?limit=10"),
                 fetch("/api/scheduled-sessions?status=LIVE,SCHEDULED"),
+                fetch("/api/sessions/my-recordings"),
             ]);
             if (sessRes.ok) {
                 const data = await sessRes.json();
@@ -79,6 +90,10 @@ export default function SessionsPage() {
             if (schedRes.ok) {
                 const data = await schedRes.json();
                 setScheduledSessions(data.sessions || []);
+            }
+            if (recRes.ok) {
+                const data = await recRes.json();
+                setRecordedSessions(data.sessions || []);
             }
         } catch {
             // Silently fail
@@ -320,6 +335,50 @@ export default function SessionsPage() {
                     </div>
                 )}
             </section>
+
+            {/* Recorded Sessions */}
+            {recordedSessions.length > 0 && (
+                <section className="px-4 mt-6">
+                    <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
+                        Recorded Sessions
+                    </h3>
+                    <div className="space-y-3">
+                        {recordedSessions.map((s, i) => (
+                            <Link
+                                key={s.id}
+                                href={`/playback/${s.id}`}
+                                className="glass-card p-4 block hover:bg-white/5 transition-colors animate-fade-in"
+                                style={{ opacity: 0, animationDelay: `${i * 0.1}s` }}
+                            >
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <h4 className="font-medium truncate">{s.title}</h4>
+                                            {s.hasBeaconRecording && (
+                                                <span className="text-xs px-1.5 py-0.5 rounded-full bg-[var(--accent-500)]/20 text-[var(--accent-400)] flex-shrink-0">
+                                                    +Beacon
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-[var(--text-muted)]">
+                                            {s.providerName || "Provider"}
+                                            {s.durationSeconds != null && (
+                                                <> &middot; {formatSessionDuration(s.durationSeconds)}</>
+                                            )}
+                                            {s.endedAt && (
+                                                <> &middot; {formatDate(s.endedAt)}</>
+                                            )}
+                                        </p>
+                                    </div>
+                                    <svg className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    </svg>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                </section>
+            )}
 
             {/* Scheduled Sessions */}
             <section className="px-4 mt-6">

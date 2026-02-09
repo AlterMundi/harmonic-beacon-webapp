@@ -6,7 +6,7 @@ export default auth((req) => {
     const session = req.auth;
 
     // Protected page routes: redirect to login
-    const protectedPages = ['/live', '/meditation', '/profile', '/sessions', '/join', '/session'];
+    const protectedPages = ['/live', '/meditation', '/profile', '/sessions', '/join', '/session', '/playback'];
     const isProtectedPage = protectedPages.some(r => pathname.startsWith(r));
 
     if (isProtectedPage && !session?.user) {
@@ -81,6 +81,7 @@ export const config = {
         '/sessions/:path*',
         '/join/:path*',
         '/session/:path*',
+        '/playback/:path*',
         '/provider/:path*',
         '/admin/:path*',
         '/login',

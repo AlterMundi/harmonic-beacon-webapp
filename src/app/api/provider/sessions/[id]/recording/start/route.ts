@@ -2,15 +2,44 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { getEgressClient } from '@/lib/livekit-server';
-import { EncodedFileOutput, EncodedFileType } from 'livekit-server-sdk';
+import { EncodedFileOutput, EncodedFileType, type EgressClient, type EgressInfo } from 'livekit-server-sdk';
 
 export const dynamic = 'force-dynamic';
 
 const RECORDINGS_PATH = process.env.RECORDINGS_PATH || '/data/recordings';
+const BEACON_ROOM = process.env.LIVEKIT_ROOM_NAME || 'beacon';
+
+/**
+ * Poll until an egress reaches ACTIVE status (1) or fails.
+ * Returns true if active, false otherwise.
+ */
+async function pollEgressActive(
+    client: EgressClient,
+    egressId: string,
+    maxWait = 30000,
+): Promise<boolean> {
+    const POLL_INTERVAL = 1000;
+    let elapsed = 0;
+
+    while (elapsed < maxWait) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+        elapsed += POLL_INTERVAL;
+
+        try {
+            const list = await client.listEgress({ egressId });
+            const info: EgressInfo | undefined = list[0];
+            if (info && info.status === 1) return true;   // EGRESS_ACTIVE
+            if (info && info.status > 1) return false;     // Failed/ended
+        } catch {
+            // Polling error, keep trying
+        }
+    }
+    return false;
+}
 
 /**
  * POST /api/provider/sessions/[id]/recording/start
- * Start room composite egress recording (audio-only OGG).
+ * Start dual room composite egress recording (session + beacon, audio-only OGG).
  */
 export async function POST(
     _request: NextRequest,
@@ -59,58 +88,62 @@ export async function POST(
     try {
         const egressClient = getEgressClient();
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filepath = `${RECORDINGS_PATH}/${scheduledSession.roomName}-${timestamp}.ogg`;
 
-        const output = new EncodedFileOutput({
+        // Session egress
+        const sessionFilepath = `${RECORDINGS_PATH}/${scheduledSession.roomName}-${timestamp}.ogg`;
+        const sessionOutput = new EncodedFileOutput({
             fileType: EncodedFileType.OGG,
-            filepath,
+            filepath: sessionFilepath,
         });
-
-        const egress = await egressClient.startRoomCompositeEgress(
+        const sessionEgress = await egressClient.startRoomCompositeEgress(
             scheduledSession.roomName,
-            output,
-            '',       // layout
+            sessionOutput,
+            '',        // layout
             undefined, // encoding options
-            true,     // audioOnly
+            true,      // audioOnly
         );
 
-        // Save egressId immediately so we can stop it if needed
+        // Beacon egress
+        const beaconFilepath = `${RECORDINGS_PATH}/beacon-${scheduledSession.roomName}-${timestamp}.ogg`;
+        const beaconOutput = new EncodedFileOutput({
+            fileType: EncodedFileType.OGG,
+            filepath: beaconFilepath,
+        });
+        const beaconEgress = await egressClient.startRoomCompositeEgress(
+            BEACON_ROOM,
+            beaconOutput,
+            '',        // layout
+            undefined, // encoding options
+            true,      // audioOnly
+        );
+
+        // Save both egress IDs immediately
         await prisma.scheduledSession.update({
             where: { id },
-            data: { egressId: egress.egressId },
+            data: {
+                egressId: sessionEgress.egressId,
+                beaconEgressId: beaconEgress.egressId,
+            },
         });
 
-        // Poll until egress is actually active (status 1 = EGRESS_ACTIVE)
-        const POLL_INTERVAL = 1000;
-        const MAX_WAIT = 30000;
-        let elapsed = 0;
-        let active = false;
+        // Poll both in parallel
+        const [sessionActive, beaconActive] = await Promise.all([
+            pollEgressActive(egressClient, sessionEgress.egressId),
+            pollEgressActive(egressClient, beaconEgress.egressId),
+        ]);
 
-        while (elapsed < MAX_WAIT) {
-            await new Promise((r) => setTimeout(r, POLL_INTERVAL));
-            elapsed += POLL_INTERVAL;
-
-            try {
-                const list = await egressClient.listEgress({ egressId: egress.egressId });
-                const info = list[0];
-                if (info && info.status === 1) {
-                    active = true;
-                    break;
-                }
-                // Status 0 = STARTING, keep polling
-                // Any other status means it failed
-                if (info && info.status > 1) break;
-            } catch {
-                // Polling error, keep trying
-            }
-        }
-
-        if (!active) {
-            // Egress didn't start — attempt cleanup
-            try { await egressClient.stopEgress(egress.egressId); } catch { /* ignore */ }
+        if (!sessionActive) {
+            // Session egress failed — clean up both
+            try { await egressClient.stopEgress(sessionEgress.egressId); } catch { /* ignore */ }
+            try { await egressClient.stopEgress(beaconEgress.egressId); } catch { /* ignore */ }
             await prisma.scheduledSession.update({
                 where: { id },
-                data: { egressId: null, recordingPath: null },
+                data: {
+                    egressId: null,
+                    recordingPath: null,
+                    beaconEgressId: null,
+                    beaconRecordingPath: null,
+                },
             });
             return NextResponse.json(
                 { error: 'Recording failed to start — try again' },
@@ -118,15 +151,39 @@ export async function POST(
             );
         }
 
-        // Egress is active — now save the recording path
+        // Session OK — save session recording path
+        // Handle beacon result: save path if active, clear fields if not
+        if (!beaconActive) {
+            try { await egressClient.stopEgress(beaconEgress.egressId); } catch { /* ignore */ }
+            await prisma.scheduledSession.update({
+                where: { id },
+                data: {
+                    recordingPath: sessionFilepath,
+                    beaconEgressId: null,
+                    beaconRecordingPath: null,
+                },
+            });
+            return NextResponse.json({
+                egressId: sessionEgress.egressId,
+                recordingPath: sessionFilepath,
+                beaconRecordingFailed: true,
+            });
+        }
+
+        // Both OK
         await prisma.scheduledSession.update({
             where: { id },
-            data: { recordingPath: filepath },
+            data: {
+                recordingPath: sessionFilepath,
+                beaconRecordingPath: beaconFilepath,
+            },
         });
 
         return NextResponse.json({
-            egressId: egress.egressId,
-            recordingPath: filepath,
+            egressId: sessionEgress.egressId,
+            recordingPath: sessionFilepath,
+            beaconEgressId: beaconEgress.egressId,
+            beaconRecordingPath: beaconFilepath,
         });
     } catch (e) {
         console.error('Failed to start recording:', e);
