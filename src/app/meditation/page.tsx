@@ -55,6 +55,7 @@ export default function MeditationPage() {
     const [meditations, setMeditations] = useState<MeditationItem[]>([]);
     const [tags, setTags] = useState<TagItem[]>([]);
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
+    const [showFavorites, setShowFavorites] = useState(false);
     const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -199,6 +200,10 @@ export default function MeditationPage() {
         return acc;
     }, {});
 
+    const displayedMeditations = showFavorites
+        ? meditations.filter((m) => favoriteIds.has(m.id))
+        : meditations;
+
     return (
         <main className={`min-h-screen pb-28 ${currentMeditation ? "pt-20" : ""}`}>
             {/* Ambient background */}
@@ -216,13 +221,31 @@ export default function MeditationPage() {
             <section className="relative z-10 px-4 mb-6">
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                     <button
-                        onClick={() => setSelectedTag(null)}
-                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/50 ${selectedTag === null
+                        onClick={() => {
+                            setShowFavorites(false);
+                            setSelectedTag(null);
+                        }}
+                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/50 ${!selectedTag && !showFavorites
                             ? "bg-[var(--primary-600)]/80 text-white border border-white/10 shadow-lg shadow-[var(--primary-600)]/20"
                             : "bg-white/5 text-white/70 border border-white/5 hover:bg-white/10"
                             }`}
                     >
                         Todas
+                    </button>
+                    <button
+                        onClick={() => {
+                            setShowFavorites(!showFavorites);
+                            if (!showFavorites) setSelectedTag(null);
+                        }}
+                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/50 flex items-center gap-2 ${showFavorites
+                            ? "bg-red-500/20 text-red-400 border border-red-500/30 shadow-lg shadow-red-500/10"
+                            : "bg-white/5 text-white/70 border border-white/5 hover:bg-white/10"
+                            }`}
+                    >
+                        <svg className="w-4 h-4" fill={showFavorites ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                        Favoritos
                     </button>
                     {Object.entries(tagCategories).map(([, categoryTags]) =>
                         categoryTags.map((tag) => (
@@ -348,27 +371,31 @@ export default function MeditationPage() {
             )}
 
             {/* Empty State */}
-            {!loading && !error && meditations.length === 0 && (
+            {!loading && !error && displayedMeditations.length === 0 && (
                 <div className="px-4">
                     <div className="glass-card p-6 text-center">
                         <p className="text-[var(--text-muted)]">
-                            {selectedTag ? "No meditations found for this filter" : "No meditations available yet"}
+                            {showFavorites
+                                ? "No favorites yet"
+                                : selectedTag
+                                    ? "No meditations found for this filter"
+                                    : "No meditations available yet"}
                         </p>
                     </div>
                 </div>
             )}
 
             {/* Meditation Cards */}
-            {!loading && !error && meditations.length > 0 && (
+            {!loading && !error && displayedMeditations.length > 0 && (
                 <section className="relative z-10 px-4">
                     <div className="grid gap-3">
-                        {meditations.map((meditation, index) => (
+                        {displayedMeditations.map((meditation, index) => (
                             <button
                                 type="button"
                                 key={meditation.id}
                                 className={`meditation-card animate-fade-in text-left w-full group ${currentMeditationFile === `/audio/meditations/${meditation.fileName}`
-                                        ? "border-primary-500/50 bg-primary-500/10"
-                                        : "hover:bg-white/5"
+                                    ? "border-primary-500/50 bg-primary-500/10"
+                                    : "hover:bg-white/5"
                                     }`}
                                 style={{ opacity: 0, animationDelay: `${index * 0.1}s` }}
                                 onClick={() => startMeditation(meditation)}

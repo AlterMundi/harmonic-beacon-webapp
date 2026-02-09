@@ -12,15 +12,6 @@ interface UserStats {
     favoritesCount: number;
 }
 
-interface FavoriteItem {
-    meditationId: string;
-    meditation: {
-        id: string;
-        title: string;
-        streamName: string;
-        durationSeconds: number;
-    };
-}
 
 function formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -31,7 +22,6 @@ function formatDuration(seconds: number): string {
 export default function ProfilePage() {
     const { data: session, status } = useSession();
     const [stats, setStats] = useState<UserStats | null>(null);
-    const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
     const [dbRole, setDbRole] = useState<string | null>(null);
 
     useEffect(() => {
@@ -43,14 +33,6 @@ export default function ProfilePage() {
             .then((data) => {
                 setStats(data.stats);
                 setDbRole(data.user?.role || null);
-            })
-            .catch(() => { });
-
-        // Fetch favorites
-        fetch("/api/favorites")
-            .then((r) => r.json())
-            .then((data) => {
-                if (data.favorites) setFavorites(data.favorites);
             })
             .catch(() => { });
     }, [session]);
@@ -148,38 +130,6 @@ export default function ProfilePage() {
                         </section>
                     )}
 
-                    {/* Favorites */}
-                    {favorites.length > 0 && (
-                        <section className="px-4 mb-6">
-                            <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
-                                Favorites
-                            </h3>
-                            <div className="space-y-2">
-                                {favorites.map((fav) => (
-                                    <Link
-                                        key={fav.meditationId}
-                                        href="/meditation"
-                                        className="glass-card p-3 flex items-center gap-3"
-                                    >
-                                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[var(--primary-600)] to-[var(--primary-800)] flex items-center justify-center flex-shrink-0">
-                                            <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z" />
-                                            </svg>
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-sm truncate">{fav.meditation.title}</p>
-                                            <p className="text-xs text-[var(--text-muted)]">
-                                                {formatDuration(fav.meditation.durationSeconds)}
-                                            </p>
-                                        </div>
-                                        <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
-                                            <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                        </svg>
-                                    </Link>
-                                ))}
-                            </div>
-                        </section>
-                    )}
 
                     {/* Menu Items */}
                     <section className="px-4 mb-6">
@@ -194,24 +144,6 @@ export default function ProfilePage() {
                                 <span className="flex-1 text-left">App Settings</span>
                             </button>
 
-
-                            {/* Admin Panel — visible for ADMIN */}
-                            {role === "ADMIN" && (
-                                <Link
-                                    href="/admin/moderation"
-                                    className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-500)] focus-visible:outline-offset-[-2px]"
-                                >
-                                    <div className="w-9 h-9 rounded-lg bg-red-500/20 flex items-center justify-center">
-                                        <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-                                        </svg>
-                                    </div>
-                                    <span className="flex-1 text-left">Admin Panel</span>
-                                    <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                                    </svg>
-                                </Link>
-                            )}
                         </div>
                     </section>
 
