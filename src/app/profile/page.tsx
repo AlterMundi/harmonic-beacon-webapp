@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -21,11 +21,8 @@ function formatDuration(seconds: number): string {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-export default function ProfilePage() {
-    const { data: session, status } = useSession();
+function UnauthorizedToast() {
     const searchParams = useSearchParams();
-    const [stats, setStats] = useState<UserStats | null>(null);
-    const [dbRole, setDbRole] = useState<string | null>(null);
 
     useEffect(() => {
         if (searchParams.get('unauthorized')) {
@@ -33,6 +30,14 @@ export default function ProfilePage() {
             window.history.replaceState(null, '', '/profile');
         }
     }, [searchParams]);
+
+    return null;
+}
+
+function ProfileContent() {
+    const { data: session, status } = useSession();
+    const [stats, setStats] = useState<UserStats | null>(null);
+    const [dbRole, setDbRole] = useState<string | null>(null);
 
     useEffect(() => {
         if (!session?.user) return;
@@ -193,5 +198,21 @@ export default function ProfilePage() {
 
             <BottomNav />
         </main>
+    );
+}
+
+export default function ProfilePage() {
+    return (
+        <Suspense fallback={
+            <main className="min-h-screen pb-28 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin w-8 h-8 border-2 border-[var(--primary-500)] border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <p className="text-[var(--text-muted)]">Loading...</p>
+                </div>
+            </main>
+        }>
+            <UnauthorizedToast />
+            <ProfileContent />
+        </Suspense>
     );
 }
