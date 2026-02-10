@@ -16,7 +16,7 @@ FROM node:22-slim
 
 # ffmpeg for OGG→PCM decoding; libstdc++6 for @livekit/rtc-node native bindings
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg libstdc++6 && \
+    apt-get install -y --no-install-recommends ffmpeg libstdc++6 ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
