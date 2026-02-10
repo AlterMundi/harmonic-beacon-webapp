@@ -94,8 +94,10 @@ services:
     build: ./services/playlist-bot
     container_name: harmonic-beacon-playlist-bot
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      - LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL:-wss://live.altermundi.net}
+      - LIVEKIT_URL=${LIVEKIT_INTERNAL_URL:-ws://host.docker.internal:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
