@@ -130,6 +130,7 @@ describe('POST /api/meditations/upload', () => {
         formData.append('file', file);
         formData.append('title', 'Ocean Waves');
         formData.append('description', 'Relaxing ocean sounds');
+        formData.append('defaultMix', '0.7');
 
         const response = await POST(makeFormDataRequest(formData));
         const { status, body } = await parseResponse(response);
@@ -143,9 +144,33 @@ describe('POST /api/meditations/upload', () => {
                 data: expect.objectContaining({
                     title: 'Ocean Waves',
                     description: 'Relaxing ocean sounds',
+                    defaultMix: 0.7,
                     status: 'PENDING',
                     isPublished: false,
                     providerId: 'db-uuid-1',
+                }),
+            }),
+        );
+    });
+
+    it('defaults to 0.5 when defaultMix is omitted', async () => {
+        const { mockPrisma } = setupMocks();
+
+        const { POST } = await import('../route');
+
+        const file = new File(['audio data'], 'silent.ogg', { type: 'audio/ogg' });
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('title', 'Silent Meditation');
+
+        const response = await POST(makeFormDataRequest(formData));
+        const { status } = await parseResponse(response);
+
+        expect(status).toBe(200);
+        expect(mockPrisma.meditation.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    defaultMix: 0.5,
                 }),
             }),
         );

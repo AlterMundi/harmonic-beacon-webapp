@@ -16,6 +16,7 @@ describe('GET /api/meditations', () => {
             filePath: 'morning_calm.m4a',
             isFeatured: false,
             isPublished: true,
+            defaultMix: 0.7,
             status: 'APPROVED',
             createdAt: new Date('2025-01-01'),
             provider: { name: 'Test Provider', avatarUrl: null },
@@ -40,8 +41,9 @@ describe('GET /api/meditations', () => {
         const { status, body } = await parseResponse(response);
 
         expect(status).toBe(200);
-        const data = body as { meditations: unknown[] };
+        const data = body as { meditations: Array<{ defaultMix: number }> };
         expect(data.meditations).toHaveLength(1);
+        expect(data.meditations[0].defaultMix).toBe(0.7);
 
         // Verify prisma was called with correct where clause
         expect(mockPrisma.meditation.findMany).toHaveBeenCalledWith(

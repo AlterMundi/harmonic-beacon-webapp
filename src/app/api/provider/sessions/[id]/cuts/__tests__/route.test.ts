@@ -217,6 +217,7 @@ describe('POST /api/provider/sessions/[id]/cuts', () => {
                     isPublished: false,
                     providerId: 'db-uuid-1',
                     durationSeconds: 110, // floor(120 - 10)
+                    defaultMix: 0.7, // matches mix from request body
                 }),
             }),
         );

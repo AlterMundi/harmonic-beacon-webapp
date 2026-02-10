@@ -58,6 +58,11 @@ describe('CutDialog', () => {
         expect(screen.getByText('1:00')).toBeInTheDocument();
     });
 
+    it('renders mix ratio info text', () => {
+        render(<CutDialog {...defaultProps} />);
+        expect(screen.getByText(/80% voice/)).toBeInTheDocument();
+    });
+
     it('submit button shows "Create Cut"', () => {
         render(<CutDialog {...defaultProps} />);
         expect(screen.getByRole('button', { name: 'Create Cut' })).toBeInTheDocument();

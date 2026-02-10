@@ -67,6 +67,7 @@ describe('GET /api/provider/meditations/[id]', () => {
             status: 'APPROVED',
             isPublished: true,
             isFeatured: false,
+            defaultMix: 0.5,
             providerId: 'zitadel-prov-123', // matches session.user.id initially
             tags: [
                 { tag: { id: 'tag-1', name: 'Calm', slug: 'calm', category: 'mood' } },
@@ -306,5 +307,85 @@ describe('PATCH /api/provider/meditations/[id]', () => {
 
         expect(status).toBe(403);
         expect(body).toEqual({ error: 'Unauthorized' });
+    });
+
+    it('updates defaultMix when valid', async () => {
+        vi.doMock('@/auth', () => ({
+            auth: vi.fn().mockResolvedValue({
+                user: { id: 'zitadel-prov-123', email: 'provider@example.com', name: 'Provider', role: 'PROVIDER' },
+            }),
+        }));
+
+        const mockMeditation = {
+            id: 'med-1',
+            providerId: 'db-uuid-1',
+        };
+
+        const mockPrisma = {
+            user: { findUnique: vi.fn().mockResolvedValue({ id: 'db-uuid-1' }) },
+            meditation: {
+                findUnique: vi.fn().mockResolvedValue(mockMeditation),
+                update: vi.fn().mockResolvedValue({ ...mockMeditation, title: 'T', defaultMix: 0.8 }),
+            },
+            meditationTag: {
+                deleteMany: vi.fn(),
+                createMany: vi.fn(),
+            },
+        };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma }));
+
+        const { PATCH } = await import('../route');
+        const request = createRequest('/api/provider/meditations/med-1', {
+            method: 'PATCH',
+            body: { title: 'T', description: 'D', defaultMix: 0.8 },
+        });
+        const response = await PATCH(request, mockParams({ id: 'med-1' }));
+        const { status } = await parseResponse(response);
+
+        expect(status).toBe(200);
+        expect(mockPrisma.meditation.update).toHaveBeenCalledWith({
+            where: { id: 'med-1' },
+            data: { title: 'T', description: 'D', defaultMix: 0.8 },
+        });
+    });
+
+    it('ignores invalid defaultMix', async () => {
+        vi.doMock('@/auth', () => ({
+            auth: vi.fn().mockResolvedValue({
+                user: { id: 'zitadel-prov-123', email: 'provider@example.com', name: 'Provider', role: 'PROVIDER' },
+            }),
+        }));
+
+        const mockMeditation = {
+            id: 'med-1',
+            providerId: 'db-uuid-1',
+        };
+
+        const mockPrisma = {
+            user: { findUnique: vi.fn().mockResolvedValue({ id: 'db-uuid-1' }) },
+            meditation: {
+                findUnique: vi.fn().mockResolvedValue(mockMeditation),
+                update: vi.fn().mockResolvedValue({ ...mockMeditation, title: 'T' }),
+            },
+            meditationTag: {
+                deleteMany: vi.fn(),
+                createMany: vi.fn(),
+            },
+        };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma }));
+
+        const { PATCH } = await import('../route');
+        const request = createRequest('/api/provider/meditations/med-1', {
+            method: 'PATCH',
+            body: { title: 'T', description: 'D', defaultMix: 1.5 },
+        });
+        const response = await PATCH(request, mockParams({ id: 'med-1' }));
+        const { status } = await parseResponse(response);
+
+        expect(status).toBe(200);
+        expect(mockPrisma.meditation.update).toHaveBeenCalledWith({
+            where: { id: 'med-1' },
+            data: { title: 'T', description: 'D' },
+        });
     });
 });
