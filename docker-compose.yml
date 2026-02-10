@@ -90,6 +90,41 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  playlist-bot:
+    build: ./services/playlist-bot
+    container_name: harmonic-beacon-playlist-bot
+    restart: unless-stopped
+    environment:
+      - LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL:-wss://live.altermundi.net}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
+      - BOT_IDENTITY=playlist-bot
+      - BEACON_RECORDS_PATH=/data/beacon-records
+    volumes:
+      - /mnt/n8n-data/harmonic-beacon/beacon-records:/data/beacon-records:ro
+    networks:
+      - beacon
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('fs');const t=Number(fs.readFileSync('/tmp/playlist-bot-heartbeat','utf8'));if(Date.now()-t>60000)process.exit(1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   beacon:
     driver: bridge

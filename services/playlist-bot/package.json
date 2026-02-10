@@ -1,0 +1,21 @@
+{
+  "name": "harmonic-beacon-playlist-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LiveKit bot that publishes recorded beacon audio when beacon01 is offline",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@livekit/rtc-node": "^0.13.0",
+    "livekit-server-sdk": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
