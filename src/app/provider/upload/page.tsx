@@ -18,6 +18,7 @@ export default function ProviderUploadPage() {
     const [file, setFile] = useState<File | null>(null);
     const [tags, setTags] = useState<TagItem[]>([]);
     const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
+    const [defaultMix, setDefaultMix] = useState(0.5);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
@@ -53,6 +54,7 @@ export default function ProviderUploadPage() {
             formData.append("title", title.trim());
             if (description.trim()) formData.append("description", description.trim());
             formData.append("tagIds", JSON.stringify(Array.from(selectedTagIds)));
+            formData.append("defaultMix", String(defaultMix));
 
             const res = await fetch("/api/meditations/upload", {
                 method: "POST",
@@ -169,6 +171,28 @@ export default function ProviderUploadPage() {
                             rows={3}
                             className="input-field resize-none"
                         />
+                    </div>
+
+                    {/* Default Mix */}
+                    <div>
+                        <label className="block text-sm font-medium mb-2">Default Beacon/Voice Mix</label>
+                        <p className="text-xs text-[var(--text-muted)] mb-3">
+                            Set the initial mix balance listeners will hear. Drag toward Voice for guided content, toward Beacon for ambient.
+                        </p>
+                        <div className="flex items-center gap-3">
+                            <span className="text-xs text-[var(--text-muted)]">Beacon</span>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={defaultMix}
+                                onChange={(e) => setDefaultMix(parseFloat(e.target.value))}
+                                aria-label="Default beacon/voice mix"
+                                className="flex-1 h-2 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                            />
+                            <span className="text-xs text-[var(--text-muted)]">Voice</span>
+                        </div>
                     </div>
 
                     {/* Tags */}

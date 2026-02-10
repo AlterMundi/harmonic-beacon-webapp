@@ -21,6 +21,7 @@ export default function EditMeditationPage() {
     const [description, setDescription] = useState("");
     const [status, setStatus] = useState<string>("");
     const [loading, setLoading] = useState(true);
+    const [defaultMix, setDefaultMix] = useState(0.5);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -47,9 +48,10 @@ export default function EditMeditationPage() {
                     setTitle(m.title);
                     setDescription(m.description || "");
                     setStatus(m.status);
+                    setDefaultMix(m.defaultMix ?? 0.5);
 
                     // Set selected tags
-                    const tagIds = new Set<string>(m.tags.map((t: any) => t.id as string));
+                    const tagIds = new Set<string>(m.tags.map((t: { id: string }) => t.id));
                     setSelectedTags(tagIds);
 
                     setLoading(false);
@@ -87,6 +89,7 @@ export default function EditMeditationPage() {
                 body: JSON.stringify({
                     title,
                     description,
+                    defaultMix,
                     tagIds: Array.from(selectedTags),
                 }),
             });
@@ -170,6 +173,28 @@ export default function EditMeditationPage() {
                         className="w-full bg-black/20 border border-[var(--border-subtle)] rounded-lg p-3 focus:border-[var(--primary-500)] outline-none h-32"
                         placeholder="Describe the meditation..."
                     />
+                </div>
+
+                {/* Default Mix */}
+                <div>
+                    <label className="block text-sm font-medium mb-2">Default Beacon/Voice Mix</label>
+                    <p className="text-xs text-[var(--text-muted)] mb-3">
+                        Set the initial mix balance listeners will hear.
+                    </p>
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs text-[var(--text-muted)]">Beacon</span>
+                        <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={defaultMix}
+                            onChange={(e) => setDefaultMix(parseFloat(e.target.value))}
+                            aria-label="Default beacon/voice mix"
+                            className="flex-1 h-2 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                        />
+                        <span className="text-xs text-[var(--text-muted)]">Voice</span>
+                    </div>
                 </div>
 
                 {/* Tags */}

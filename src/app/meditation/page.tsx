@@ -21,6 +21,7 @@ interface MeditationItem {
     streamName: string;
     fileName: string;
     isFeatured: boolean;
+    defaultMix: number;
     provider: { name: string | null; avatarUrl: string | null } | null;
     tags: { name: string; slug: string; category: string }[];
 }
@@ -136,6 +137,8 @@ export default function MeditationPage() {
         if (currentMeditationFile === fileUrl) {
             toggleMeditation();
         } else {
+            // Apply the provider's default mix ratio
+            setMixValue(meditation.defaultMix ?? 0.5);
             // Use standard audio loader which supports seeking and duration
             await loadMeditation(fileUrl);
         }

@@ -45,6 +45,7 @@ export async function GET() {
             status: m.status,
             isPublished: m.isPublished,
             isFeatured: m.isFeatured,
+            defaultMix: m.defaultMix,
             rejectionReason: m.rejectionReason,
             createdAt: m.createdAt.toISOString(),
             playCount: m._count.sessions,

@@ -66,7 +66,7 @@ export async function PATCH(
 
     try {
         const body = await request.json();
-        const { title, description, tagIds } = body;
+        const { title, description, tagIds, defaultMix } = body;
 
         // Verify ownership
         const dbUser = await prisma.user.findUnique({ where: { zitadelId: session.user.id } });
@@ -85,8 +85,9 @@ export async function PATCH(
             data: {
                 title,
                 description,
-                // If previously rejected, move back to pending on update?
-                // status: meditation.status === 'REJECTED' ? 'PENDING' : meditation.status
+                ...(typeof defaultMix === 'number' && defaultMix >= 0 && defaultMix <= 1
+                    ? { defaultMix }
+                    : {}),
             }
         });
 

@@ -118,6 +118,7 @@ export async function POST(
                 filePath: fileName,
                 originalPath: `session:${id}`,
                 streamName,
+                defaultMix: mix,
                 providerId: user.id,
                 status: 'PENDING',
                 isPublished: false,

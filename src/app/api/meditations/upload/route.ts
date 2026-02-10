@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
     const title = formData.get('title') as string | null;
     const description = formData.get('description') as string | null;
     const tagIdsRaw = formData.get('tagIds') as string | null;
+    const defaultMixRaw = formData.get('defaultMix') as string | null;
 
     if (!file) {
         return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
@@ -43,6 +44,15 @@ export async function POST(request: NextRequest) {
             tagIds = JSON.parse(tagIdsRaw);
         } catch {
             return NextResponse.json({ error: 'Invalid tagIds format' }, { status: 400 });
+        }
+    }
+
+    // Parse default mix
+    let defaultMix = 0.5;
+    if (defaultMixRaw) {
+        const parsed = parseFloat(defaultMixRaw);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+            defaultMix = parsed;
         }
     }
 
@@ -82,6 +92,7 @@ export async function POST(request: NextRequest) {
             filePath: fileName,
             originalPath: file.name,
             streamName,
+            defaultMix,
             providerId: user.id,
             status: 'PENDING',
             isPublished: false,

@@ -25,6 +25,7 @@ interface MeditationResponse {
     streamName: string;
     fileName: string;
     isFeatured: boolean;
+    defaultMix: number;
     provider: { name: string | null; avatarUrl: string | null } | null;
     tags: { name: string; slug: string; category: string }[];
 }
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
             streamName: m.streamName,
             fileName: m.filePath,
             isFeatured: m.isFeatured,
+            defaultMix: m.defaultMix,
             provider: m.provider,
             tags: m.tags.map((t) => ({
                 name: t.tag.name,

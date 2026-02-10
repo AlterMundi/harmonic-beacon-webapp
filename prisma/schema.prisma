@@ -96,6 +96,9 @@ model Meditation {
   rejectionReason String?           @map("rejection_reason")
   reviewedAt      DateTime?         @map("reviewed_at")
   
+  // Playback
+  defaultMix      Float             @default(0.5) @map("default_mix")
+
   // Visibility
   isPublished     Boolean           @default(false) @map("is_published")
   isFeatured      Boolean           @default(false) @map("is_featured")
