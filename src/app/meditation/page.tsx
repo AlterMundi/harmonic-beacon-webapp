@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { BottomNav, AudioVisualizer } from "@/components";
 import { useAudio } from "@/context/AudioContext";
+import { getGradient, formatDuration, formatTimeMs } from "@/lib/format";
 
 interface TagItem {
     id: string;
@@ -22,32 +23,6 @@ interface MeditationItem {
     isFeatured: boolean;
     provider: { name: string | null; avatarUrl: string | null } | null;
     tags: { name: string; slug: string; category: string }[];
-}
-
-// Deterministic gradient from meditation ID
-function getGradient(id: string): string {
-    const gradients = [
-        "from-purple-600 to-blue-600",
-        "from-indigo-600 to-purple-800",
-        "from-rose-500 to-pink-600",
-        "from-emerald-600 to-teal-600",
-        "from-amber-500 to-orange-600",
-        "from-cyan-500 to-blue-600",
-        "from-fuchsia-600 to-purple-600",
-        "from-violet-600 to-indigo-600",
-    ];
-    let hash = 0;
-    for (let i = 0; i < id.length; i++) {
-        hash = ((hash << 5) - hash) + id.charCodeAt(i);
-        hash |= 0;
-    }
-    return gradients[Math.abs(hash) % gradients.length];
-}
-
-function formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 export default function MeditationPage() {
@@ -77,12 +52,7 @@ export default function MeditationPage() {
         setMixValue,
     } = useAudio();
 
-    const formatTime = (ms: number): string => {
-        const seconds = Math.floor(ms / 1000);
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, "0")}`;
-    };
+    const formatTime = formatTimeMs;
 
     // Fetch tags
     useEffect(() => {
@@ -161,10 +131,7 @@ export default function MeditationPage() {
 
 
     const startMeditation = async (meditation: MeditationItem) => {
-        // Construct the expected file URL.
-        // NOTE: This assumes the files are served from /audio/meditations/ in public folder.
-        // If the API provided fileName is just the basename, this works.
-        const fileUrl = `/audio/meditations/${meditation.fileName}`;
+        const fileUrl = `/api/meditations/${meditation.id}/audio`;
 
         if (currentMeditationFile === fileUrl) {
             toggleMeditation();
@@ -188,7 +155,7 @@ export default function MeditationPage() {
     };
 
     const currentMeditation = currentMeditationFile
-        ? meditations.find((m) => `/audio/meditations/${m.fileName}` === currentMeditationFile)
+        ? meditations.find((m) => `/api/meditations/${m.id}/audio` === currentMeditationFile)
         : null;
 
     const progress = meditationDuration > 0 ? (meditationPosition / meditationDuration) * 100 : 0;
@@ -393,7 +360,7 @@ export default function MeditationPage() {
                             <button
                                 type="button"
                                 key={meditation.id}
-                                className={`meditation-card animate-fade-in text-left w-full group ${currentMeditationFile === `/audio/meditations/${meditation.fileName}`
+                                className={`meditation-card animate-fade-in text-left w-full group ${currentMeditationFile === `/api/meditations/${meditation.id}/audio`
                                     ? "border-primary-500/50 bg-primary-500/10"
                                     : "hover:bg-white/5"
                                     }`}
@@ -403,7 +370,7 @@ export default function MeditationPage() {
                                 <div className="flex gap-4">
                                     {/* Thumbnail */}
                                     <div className={`w-20 h-20 rounded-xl bg-gradient-to-br ${getGradient(meditation.id)} flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-105 transition-transform duration-300`}>
-                                        {currentMeditationFile === `/audio/meditations/${meditation.fileName}` && meditationIsPlaying ? (
+                                        {currentMeditationFile === `/api/meditations/${meditation.id}/audio` && meditationIsPlaying ? (
                                             <AudioVisualizer isPlaying={true} bars={3} />
                                         ) : (
                                             <svg className="w-8 h-8 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">

@@ -24,7 +24,7 @@ export async function GET() {
     const sessions = await prisma.scheduledSession.findMany({
         where: {
             status: 'ENDED',
-            recordings: { some: { active: false } },
+            recordings: { some: {} },
             OR: [
                 { providerId: user.id },
                 { participants: { some: { userId: user.id } } },
@@ -37,7 +37,6 @@ export async function GET() {
             durationSeconds: true,
             provider: { select: { name: true } },
             recordings: {
-                where: { active: false },
                 select: { id: true, category: true },
             },
         },

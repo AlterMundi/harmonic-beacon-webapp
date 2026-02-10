@@ -5,7 +5,7 @@ import { Readable } from 'stream';
  * Stream a file as a Response with Range request support.
  * Returns null if the file doesn't exist.
  */
-export function streamFile(filePath: string, rangeHeader: string | null): Response | null {
+export function streamFile(filePath: string, rangeHeader: string | null, contentType = 'audio/ogg'): Response | null {
     let stat;
     try {
         stat = statSync(filePath);
@@ -28,7 +28,7 @@ export function streamFile(filePath: string, rangeHeader: string | null): Respon
             return new Response(webStream, {
                 status: 206,
                 headers: {
-                    'Content-Type': 'audio/ogg',
+                    'Content-Type': contentType,
                     'Content-Length': String(chunkSize),
                     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                     'Accept-Ranges': 'bytes',
@@ -44,7 +44,7 @@ export function streamFile(filePath: string, rangeHeader: string | null): Respon
     return new Response(webStream, {
         status: 200,
         headers: {
-            'Content-Type': 'audio/ogg',
+            'Content-Type': contentType,
             'Content-Length': String(fileSize),
             'Accept-Ranges': 'bytes',
             'Cache-Control': 'private, max-age=3600',

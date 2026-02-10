@@ -120,7 +120,7 @@ describe('POST /api/provider/sessions/[id]/recording/stop', () => {
         expect(mockPrisma.sessionRecording.update).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: { id: 'rec-1' },
-                data: { active: false, stoppedAt: expect.any(Date) },
+                data: { active: false, stoppedAt: expect.any(Date), filePath: '/data/recordings/test.ogg' },
             }),
         );
     });

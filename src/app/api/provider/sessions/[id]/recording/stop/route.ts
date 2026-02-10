@@ -65,31 +65,28 @@ export async function POST(
     // Wait for egresses to finalize files
     await new Promise((r) => setTimeout(r, 2000));
 
-    // Verify files and update records
+    // Verify files and update records — always deactivate, never delete
     const now = new Date();
-    const results = await Promise.all(
+    const finalRecordings = await Promise.all(
         activeRecordings.map(async (r) => {
             const fileExists = r.filePath && existsSync(r.filePath);
-            if (fileExists) {
-                return prisma.sessionRecording.update({
-                    where: { id: r.id },
-                    data: { active: false, stoppedAt: now },
-                });
-            } else {
-                await prisma.sessionRecording.delete({ where: { id: r.id } });
-                return null;
-            }
+            return prisma.sessionRecording.update({
+                where: { id: r.id },
+                data: {
+                    active: false,
+                    stoppedAt: now,
+                    filePath: fileExists ? r.filePath : null,
+                },
+            });
         }),
     );
-
-    const finalRecordings = results.filter(Boolean);
 
     return NextResponse.json({
         ok: true,
         recordings: finalRecordings.map((r) => ({
-            id: r!.id,
-            participantIdentity: r!.participantIdentity,
-            category: r!.category,
+            id: r.id,
+            participantIdentity: r.participantIdentity,
+            category: r.category,
         })),
     });
 }
