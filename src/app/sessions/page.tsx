@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { BottomNav, AudioVisualizer } from "@/components";
 import { useAudio } from "@/context/AudioContext";
+import { formatTime as formatTimeFn, formatDate as formatDateFn, formatDuration as formatDurationFn } from "@/lib/format";
 
 interface SessionRecord {
     id: string;
@@ -49,26 +50,9 @@ export default function SessionsPage() {
 
     const { isPlaying, togglePlay, currentMeditationFile } = useAudio();
 
-    const formatTime = (seconds: number): string => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-    };
-
-    const formatDate = (iso: string): string => {
-        const date = new Date(iso);
-        const now = new Date();
-        const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays === 0) return "Today";
-        if (diffDays === 1) return "Yesterday";
-        return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    };
-
-    const formatSessionDuration = (seconds: number): string => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, "0")}`;
-    };
+    const formatTime = formatTimeFn;
+    const formatDate = formatDateFn;
+    const formatSessionDuration = formatDurationFn;
 
     const fetchSessions = useCallback(async () => {
         setLoadingSessions(true);

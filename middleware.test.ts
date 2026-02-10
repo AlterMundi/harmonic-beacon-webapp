@@ -198,5 +198,79 @@ describe('middleware', () => {
             const res = await runMiddleware('/api/meditations', session, 'POST');
             expect(res.status).toBe(200);
         });
+
+        it('allows unauthenticated GET to /api/meditations', async () => {
+            const res = await runMiddleware('/api/meditations', null, 'GET');
+            expect(res.status).toBe(200);
+        });
+    });
+
+    describe('additional protected pages', () => {
+        it('redirects /join to /login when not authenticated', async () => {
+            const res = await runMiddleware('/join', null);
+            expect(res.status).toBe(307);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+        });
+
+        it('redirects /session to /login when not authenticated', async () => {
+            const res = await runMiddleware('/session', null);
+            expect(res.status).toBe(307);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+        });
+
+        it('redirects /playback to /login when not authenticated', async () => {
+            const res = await runMiddleware('/playback', null);
+            expect(res.status).toBe(307);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+        });
+
+        it('allows /join for authenticated user', async () => {
+            const session = { user: { id: 'u1', email: 'u@e.com', name: 'U', role: 'LISTENER' } };
+            const res = await runMiddleware('/join', session);
+            expect(res.status).toBe(200);
+        });
+    });
+
+    describe('nested route protection', () => {
+        it('protects /live/sub-path for unauthenticated', async () => {
+            const res = await runMiddleware('/live/sub-path', null);
+            expect(res.status).toBe(307);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+        });
+
+        it('protects /provider/dashboard for LISTENER role', async () => {
+            const session = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
+            const res = await runMiddleware('/provider/dashboard', session);
+            expect(res.status).toBe(307);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/profile');
+        });
+
+        it('redirects USER to /profile?unauthorized=1 for admin pages', async () => {
+            const session = { user: { id: 'u1', email: 'u@e.com', name: 'U', role: 'USER' } };
+            const res = await runMiddleware('/admin/users', session);
+            expect(res.status).toBe(307);
+            const loc = new URL(res.headers.get('location')!);
+            expect(loc.pathname).toBe('/profile');
+            expect(loc.searchParams.get('unauthorized')).toBe('1');
+        });
+
+        it('passes x-user-email header for admin API', async () => {
+            const session = { user: { id: 'a1', email: 'admin@e.com', name: 'A', role: 'ADMIN' } };
+            const res = await runMiddleware('/api/admin/users', session);
+            expect(res.status).toBe(200);
+            expect(res.headers.get('x-middleware-request-x-user-email')).toBe('admin@e.com');
+        });
+
+        it('returns 403 for LISTENER on provider API', async () => {
+            const session = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
+            const res = await runMiddleware('/api/provider/sessions', session);
+            expect(res.status).toBe(403);
+        });
+
+        it('allows ADMIN on provider API routes', async () => {
+            const session = { user: { id: 'a1', email: 'a@e.com', name: 'A', role: 'ADMIN' } };
+            const res = await runMiddleware('/api/provider/sessions', session);
+            expect(res.status).toBe(200);
+        });
     });
 });
