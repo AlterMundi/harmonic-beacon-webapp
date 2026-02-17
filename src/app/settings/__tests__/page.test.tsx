@@ -21,18 +21,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Preferences & Config')).toBeInTheDocument();
     });
 
-    it('renders General section with Theme and Language', () => {
+    it('renders General section with Language selector', () => {
         render(<SettingsPage />);
         expect(screen.getByText('General')).toBeInTheDocument();
-        expect(screen.getByText('Theme')).toBeInTheDocument();
         expect(screen.getByText('Language')).toBeInTheDocument();
-    });
-
-    it('renders Notifications section', () => {
-        render(<SettingsPage />);
-        expect(screen.getByText('Notifications')).toBeInTheDocument();
-        expect(screen.getByText('Push Notifications')).toBeInTheDocument();
-        expect(screen.getByText('Alerts for new sessions')).toBeInTheDocument();
     });
 
     it('renders About section with version', () => {
@@ -72,25 +64,9 @@ describe('SettingsPage', () => {
         expect(mockBack).toHaveBeenCalledOnce();
     });
 
-    it('toggles notification switch', () => {
+    it('does not render Theme toggle or Notifications', () => {
         render(<SettingsPage />);
-        const buttons = screen.getAllByRole('button');
-        // The notification toggle is one of the buttons
-        // Find the one that's in the Notifications section
-        const notifToggle = buttons.find(b =>
-            b.className.includes('rounded-full') && b.className.includes('w-11')
-        );
-        expect(notifToggle).toBeDefined();
-
-        // Initially enabled (primary color)
-        expect(notifToggle!.className).toContain('primary-600');
-
-        // Click to disable
-        fireEvent.click(notifToggle!);
-        expect(notifToggle!.className).not.toContain('primary-600');
-
-        // Click to re-enable
-        fireEvent.click(notifToggle!);
-        expect(notifToggle!.className).toContain('primary-600');
+        expect(screen.queryByText('Theme')).not.toBeInTheDocument();
+        expect(screen.queryByText('Push Notifications')).not.toBeInTheDocument();
     });
 });
