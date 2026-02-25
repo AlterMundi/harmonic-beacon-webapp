@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
 
 interface ProviderSession {
     id: string;
@@ -57,12 +56,9 @@ function formatDate(iso: string): string {
 }
 
 export default function ProviderDashboard() {
-    const { data: session } = useSession();
     const [meditations, setMeditations] = useState<ProviderMeditation[]>([]);
     const [scheduledSessions, setScheduledSessions] = useState<ProviderSession[]>([]);
     const [loading, setLoading] = useState(true);
-
-    const isAdmin = session?.user?.role === "ADMIN";
 
     useEffect(() => {
         Promise.all([
@@ -243,58 +239,6 @@ export default function ProviderDashboard() {
                     </div>
                 )}
             </section>
-
-            {/* Admin Tools */}
-            {isAdmin && (
-                <section className="px-4 mb-24">
-                    <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
-                        Admin Tools
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3">
-                        <Link
-                            href="/admin/moderation"
-                            className="glass-card p-4 hover:bg-white/5 transition-colors flex flex-col items-center justify-center gap-2 text-center"
-                        >
-                            <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
-                                <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
-                            </div>
-                            <span className="text-sm font-medium">Moderation</span>
-                        </Link>
-                        <Link
-                            href="/admin/users"
-                            className="glass-card p-4 hover:bg-white/5 transition-colors flex flex-col items-center justify-center gap-2 text-center"
-                        >
-                            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
-                                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                                </svg>
-                            </div>
-                            <span className="text-sm font-medium">Users</span>
-                        </Link>
-                    </div>
-                    <div className="mt-3">
-                        <Link
-                            href="/admin"
-                            className="glass-card p-3 flex items-center justify-center hover:bg-white/5 transition-colors text-sm text-[var(--text-muted)]"
-                        >
-                            View Full Admin Dashboard
-                        </Link>
-                    </div>
-                </section>
-            )}
-
-            {/* FAB */}
-            <Link
-                href="/provider/upload"
-                className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-br from-[var(--primary-600)] to-[var(--primary-700)] flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 transition-all z-50"
-                aria-label="Upload new meditation"
-            >
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-            </Link>
         </main>
     );
 }

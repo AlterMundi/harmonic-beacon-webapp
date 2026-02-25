@@ -181,9 +181,9 @@ export default function MeditationPage() {
 
             {/* Header */}
             <header className="relative z-10 p-6 pt-8">
-                <h1 className="text-3xl font-bold tracking-tight drop-shadow-md">Meditación</h1>
+                <h1 className="text-3xl font-bold tracking-tight drop-shadow-md">Meditation</h1>
                 <p className="text-white/70 text-sm mt-2 font-medium">
-                    Sesiones guiadas sobre la resonancia armónica en vivo
+                    Guided sessions over the live harmonic resonance
                 </p>
             </header>
 
@@ -200,7 +200,7 @@ export default function MeditationPage() {
                             : "bg-white/5 text-white/70 border border-white/5 hover:bg-white/10"
                             }`}
                     >
-                        Todas
+                        All
                     </button>
                     <button
                         onClick={() => {
@@ -215,7 +215,7 @@ export default function MeditationPage() {
                         <svg className="w-4 h-4" fill={showFavorites ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                         </svg>
-                        Favoritos
+                        Favorites
                     </button>
                     {Object.entries(tagCategories).map(([, categoryTags]) =>
                         categoryTags.map((tag) => (
@@ -248,7 +248,7 @@ export default function MeditationPage() {
                                 <div>
                                     <p className="font-semibold text-white">{currentMeditation.title}</p>
                                     <p className="text-xs text-white/60">
-                                        Reproduciendo con beacon en vivo
+                                        Playing with live beacon
                                     </p>
                                 </div>
                             </div>
