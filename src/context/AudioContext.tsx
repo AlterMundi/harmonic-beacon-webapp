@@ -68,10 +68,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // Refs for values accessed in callbacks (to avoid reconnection loops)
     const isPlayingRef = useRef(isPlaying);
     const volumeRef = useRef(volume);
+    const hasLiveStreamRef = useRef(hasLiveStream);
 
     // Keep refs in sync with state
     useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
     useEffect(() => { volumeRef.current = volume; }, [volume]);
+    useEffect(() => { hasLiveStreamRef.current = hasLiveStream; }, [hasLiveStream]);
 
     const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
     const GO2RTC_URL = process.env.NEXT_PUBLIC_GO2RTC_URL || "http://localhost:1984";
@@ -98,8 +100,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
                 if (isLive) {
                     setHasLiveStream(true);
+                    // Beacon just went live — mute all playlist audio elements
+                    audioElementsRef.current.forEach((el, id) => {
+                        if (id !== BEACON_IDENTITY) {
+                            el.muted = true;
+                        }
+                    });
                 } else {
                     setHasPlaylistStream(true);
+                    // If beacon is already live, mute this playlist track immediately
+                    if (hasLiveStreamRef.current) {
+                        audioElement.muted = true;
+                    }
                 }
 
                 // Auto-play if user already toggled play
@@ -125,6 +137,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
                 if (isLive) {
                     setHasLiveStream(false);
+                    // Beacon went offline — unmute all playlist audio elements
+                    audioElementsRef.current.forEach((el, id) => {
+                        if (id !== BEACON_IDENTITY) {
+                            el.muted = false;
+                        }
+                    });
                 } else {
                     setHasPlaylistStream(false);
                 }
@@ -159,6 +177,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             audioElementsRef.current.clear();
         };
     }, [LIVEKIT_URL]);
+
+    // When beacon goes live, mute playlist audio; unmute when beacon goes offline
+    useEffect(() => {
+        audioElementsRef.current.forEach((el, identity) => {
+            if (identity !== BEACON_IDENTITY) {
+                el.muted = hasLiveStream;
+            }
+        });
+    }, [hasLiveStream]);
 
     // Update volumes when changed
     useEffect(() => {
