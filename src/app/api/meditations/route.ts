@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
             where: {
                 isPublished: true,
                 status: 'APPROVED',
+                isHidden: false,
                 ...(tagSlug ? {
                     tags: {
                         some: {

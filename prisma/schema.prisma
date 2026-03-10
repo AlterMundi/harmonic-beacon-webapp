@@ -102,6 +102,7 @@ model Meditation {
   // Visibility
   isPublished     Boolean           @default(false) @map("is_published")
   isFeatured      Boolean           @default(false) @map("is_featured")
+  isHidden        Boolean           @default(false) @map("is_hidden")
   
   // Timestamps
   createdAt       DateTime          @default(now()) @map("created_at")
