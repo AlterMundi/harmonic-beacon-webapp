@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
             status: m.status,
             isPublished: m.isPublished,
             isFeatured: m.isFeatured,
+            isHidden: m.isHidden,
             rejectionReason: m.rejectionReason,
             createdAt: m.createdAt.toISOString(),
             reviewedAt: m.reviewedAt?.toISOString() ?? null,
