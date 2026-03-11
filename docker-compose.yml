@@ -4,7 +4,8 @@
 #
 # Prerequisites:
 #   - Host PostgreSQL with beacon user/db (see deploy/setup-host-postgres.sh)
-#   - All secrets set as GitHub Secrets (no .env files)
+#   - Secrets persisted in /etc/sai-harmonic-beacon/production.env
+#     (written by deploy workflow, survives container restarts)
 #
 # Usage:
 #   docker compose build
@@ -19,16 +20,13 @@ services:
       - "3003:3000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    env_file:
+      - /etc/sai-harmonic-beacon/production.env
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
-      - AUTH_SECRET=${AUTH_SECRET}
-      - AUTH_ZITADEL_ID=${AUTH_ZITADEL_ID}
       - AUTH_ZITADEL_ISSUER=${AUTH_ZITADEL_ISSUER:-https://auth.altermundi.net}
       - AUTH_TRUST_HOST=true
       - AUTH_URL=${AUTH_URL:-https://beacon.altermundi.net}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
       - GO2RTC_INTERNAL_URL=http://go2rtc:1984
       - MEDITATIONS_STORAGE_PATH=/data/meditations
@@ -65,9 +63,10 @@ services:
       - "8555:8555/tcp"
     volumes:
       - /mnt/n8n-data/harmonic-beacon/meditations:/data/meditations:ro
+    env_file:
+      - /etc/sai-harmonic-beacon/production.env
     environment:
       - TZ=${TZ:-America/Argentina/Buenos_Aires}
-      - PUBLIC_IP=${PUBLIC_IP:-131.72.205.6}
     networks:
       - beacon
     healthcheck:
@@ -96,10 +95,10 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    env_file:
+      - /etc/sai-harmonic-beacon/production.env
     environment:
       - LIVEKIT_URL=${LIVEKIT_INTERNAL_URL:-ws://host.docker.internal:7880}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
       - BOT_IDENTITY=playlist-bot
       - BEACON_RECORDS_PATH=/data/beacon-records
