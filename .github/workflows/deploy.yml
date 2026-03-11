@@ -29,7 +29,7 @@ jobs:
 
       - name: Build Docker images
         run: |
-          docker compose build --no-cache \
+          docker compose build \
             --build-arg NEXT_PUBLIC_LIVEKIT_URL="${{ secrets.NEXT_PUBLIC_LIVEKIT_URL }}" \
             --build-arg NEXT_PUBLIC_GO2RTC_URL="${{ secrets.NEXT_PUBLIC_GO2RTC_URL }}"
 
