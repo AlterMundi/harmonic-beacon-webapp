@@ -58,8 +58,8 @@ export const authConfig: NextAuthConfig = {
 
                 let role: Role = 'USER';
                 if (roles) {
-                    if ('ADMIN' in roles) role = 'ADMIN';
-                    else if ('PROVIDER' in roles || 'certified_provider' in roles) role = 'PROVIDER';
+                    if ('BEAC_ADMIN' in roles) role = 'ADMIN';
+                    else if ('BEAC_PROVIDER' in roles || 'certified_provider' in roles) role = 'PROVIDER';
                 }
 
                 return {
