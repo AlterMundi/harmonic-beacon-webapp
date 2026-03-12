@@ -11,8 +11,8 @@ const MEDITATIONS_PATH = process.env.MEDITATIONS_STORAGE_PATH || join(process.cw
 
 /**
  * PATCH /api/admin/meditations/[id]
- * Approve or reject a meditation
- * Body: { status: "APPROVED" | "REJECTED", rejectionReason?: string, isFeatured?: boolean }
+ * Update meditation status, featured flag, or hidden flag
+ * Body: { status?: "APPROVED" | "REJECTED", rejectionReason?: string, isFeatured?: boolean, isHidden?: boolean }
  * Auth: ADMIN only
  */
 export async function PATCH(
@@ -25,15 +25,34 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const { status, rejectionReason, isFeatured } = body;
-
-    if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
-        return NextResponse.json({ error: 'status must be APPROVED or REJECTED' }, { status: 400 });
-    }
+    const { status, rejectionReason, isFeatured, isHidden } = body;
 
     const meditation = await prisma.meditation.findUnique({ where: { id } });
     if (!meditation) {
         return NextResponse.json({ error: 'Meditation not found' }, { status: 404 });
+    }
+
+    // If only toggling visibility flags (no status change required)
+    if (isHidden !== undefined && status === undefined) {
+        const updated = await prisma.meditation.update({
+            where: { id },
+            data: {
+                isHidden,
+                ...(isFeatured !== undefined ? { isFeatured } : {}),
+            },
+        });
+        return NextResponse.json({
+            meditation: {
+                id: updated.id,
+                isHidden: updated.isHidden,
+                isFeatured: updated.isFeatured,
+            },
+        });
+    }
+
+    // Status-based moderation update
+    if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
+        return NextResponse.json({ error: 'status must be APPROVED or REJECTED' }, { status: 400 });
     }
 
     // On approve, move file from uploads to meditations directory
@@ -73,6 +92,7 @@ export async function PATCH(
             reviewedAt: updated.reviewedAt?.toISOString() ?? null,
             isPublished: updated.isPublished,
             isFeatured: updated.isFeatured,
+            isHidden: updated.isHidden,
         },
     });
 }

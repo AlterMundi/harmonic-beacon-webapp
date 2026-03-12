@@ -11,6 +11,7 @@ interface AdminMeditation {
     status: string;
     isPublished: boolean;
     isFeatured: boolean;
+    isHidden: boolean;
     rejectionReason: string | null;
     createdAt: string;
     reviewedAt: string | null;
@@ -122,6 +123,26 @@ export default function AdminModerationPage() {
         }
     };
 
+    const handleToggleHidden = async (id: string, currentHidden: boolean) => {
+        setActionLoading(id);
+        try {
+            const res = await fetch(`/api/admin/meditations/${id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isHidden: !currentHidden }),
+            });
+            if (res.ok) {
+                setMeditations((prev) =>
+                    prev.map((m) => (m.id === id ? { ...m, isHidden: !currentHidden } : m))
+                );
+            }
+        } catch {
+            // Silently fail
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
     return (
         <main className="pb-8">
             {/* Tab Filter */}
@@ -131,11 +152,10 @@ export default function AdminModerationPage() {
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
-                            className={`flex-1 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                                activeTab === tab
+                            className={`flex-1 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === tab
                                     ? "bg-[var(--primary-600)] text-white"
                                     : "bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
-                            }`}
+                                }`}
                         >
                             {tab === "PENDING" ? "Pending" : tab === "APPROVED" ? "Approved" : "Rejected"}
                         </button>
@@ -253,23 +273,46 @@ export default function AdminModerationPage() {
                                     </div>
                                 )}
 
-                                {/* Featured toggle for approved */}
+                                {/* Featured + Visibility toggles for approved */}
                                 {activeTab === "APPROVED" && (
-                                    <div className="flex items-center justify-between pt-3 border-t border-[var(--border-subtle)]">
-                                        <span className="text-sm text-[var(--text-secondary)]">Featured</span>
-                                        <button
-                                            onClick={() => handleToggleFeatured(m.id, m.isFeatured)}
-                                            disabled={actionLoading === m.id}
-                                            className={`w-11 h-6 rounded-full transition-colors relative ${
-                                                m.isFeatured ? "bg-[var(--accent-500)]" : "bg-white/10"
-                                            }`}
-                                        >
-                                            <div
-                                                className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${
-                                                    m.isFeatured ? "translate-x-5" : "translate-x-0.5"
-                                                }`}
-                                            />
-                                        </button>
+                                    <div className="pt-3 border-t border-[var(--border-subtle)] space-y-3">
+                                        {/* Featured */}
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm text-[var(--text-secondary)]">Featured</span>
+                                            <button
+                                                onClick={() => handleToggleFeatured(m.id, m.isFeatured)}
+                                                disabled={actionLoading === m.id}
+                                                aria-label={m.isFeatured ? "Remove from featured" : "Mark as featured"}
+                                                className={`w-11 h-6 rounded-full transition-colors relative ${m.isFeatured ? "bg-[var(--accent-500)]" : "bg-white/10"
+                                                    }`}
+                                            >
+                                                <div
+                                                    className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${m.isFeatured ? "translate-x-5" : "translate-x-0.5"
+                                                        }`}
+                                                />
+                                            </button>
+                                        </div>
+                                        {/* Visible in public tab */}
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <span className="text-sm text-[var(--text-secondary)]">Visible to users</span>
+                                                {m.isHidden && (
+                                                    <p className="text-xs text-yellow-500 mt-0.5">Hidden from public</p>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={() => handleToggleHidden(m.id, m.isHidden)}
+                                                disabled={actionLoading === m.id}
+                                                aria-label={m.isHidden ? "Make visible" : "Hide from public"}
+                                                className={`w-11 h-6 rounded-full transition-colors relative ${!m.isHidden ? "bg-green-500" : "bg-white/10"
+                                                    }`}
+                                            >
+                                                <div
+                                                    className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${!m.isHidden ? "translate-x-5" : "translate-x-0.5"
+                                                        }`}
+                                                />
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>

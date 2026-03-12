@@ -1,11 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+
+const LANGUAGE_STORAGE_KEY = "app_language";
+
+const LANGUAGES = [
+    { value: "en", label: "English" },
+    { value: "es", label: "Español" },
+];
 
 export default function SettingsPage() {
     const router = useRouter();
-    const [language, setLanguage] = useState("en");
+    // Lazy initializer reads localStorage synchronously on first render (SSR-safe)
+    const [language, setLanguage] = useState<string>(() => {
+        if (typeof window === "undefined") return "en";
+        return localStorage.getItem(LANGUAGE_STORAGE_KEY) ?? "en";
+    });
+
+    // Sync the HTML lang attribute whenever language changes
+    useEffect(() => {
+        document.documentElement.lang = language;
+    }, [language]);
+
+    const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newLang = e.target.value;
+        setLanguage(newLang);
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, newLang);
+        document.documentElement.lang = newLang;
+    };
 
     return (
         <main className="min-h-screen pb-28">
@@ -14,6 +37,7 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-3 p-4">
                     <button
                         onClick={() => router.back()}
+                        aria-label="Go back"
                         className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -22,7 +46,7 @@ export default function SettingsPage() {
                     </button>
                     <div>
                         <h1 className="font-semibold">App Settings</h1>
-                        <p className="text-xs text-[var(--text-muted)]">Preferences & Config</p>
+                        <p className="text-xs text-[var(--text-muted)]">Preferences &amp; Config</p>
                     </div>
                 </div>
             </header>
@@ -35,14 +59,23 @@ export default function SettingsPage() {
                     </h3>
                     <div className="glass-card overflow-hidden">
                         <div className="p-4 flex items-center justify-between">
-                            <span className="text-sm font-medium">Language</span>
+                            <div>
+                                <span className="text-sm font-medium">Language</span>
+                                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                                    {LANGUAGES.find(l => l.value === language)?.label ?? "English"}
+                                </p>
+                            </div>
                             <select
                                 value={language}
-                                onChange={(e) => setLanguage(e.target.value)}
-                                className="bg-transparent text-sm text-[var(--text-secondary)] focus:outline-none"
+                                onChange={handleLanguageChange}
+                                aria-label="Select language"
+                                className="bg-transparent text-sm text-[var(--text-secondary)] focus:outline-none cursor-pointer"
                             >
-                                <option value="en" className="bg-[var(--bg-dark)]">English</option>
-                                <option value="es" className="bg-[var(--bg-dark)]">Español</option>
+                                {LANGUAGES.map((l) => (
+                                    <option key={l.value} value={l.value} className="bg-[var(--bg-dark)]">
+                                        {l.label}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                     </div>

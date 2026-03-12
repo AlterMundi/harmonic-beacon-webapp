@@ -48,7 +48,7 @@ describe('GET /api/meditations', () => {
         // Verify prisma was called with correct where clause
         expect(mockPrisma.meditation.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: { isPublished: true, status: 'APPROVED' },
+                where: { isPublished: true, status: 'APPROVED', isHidden: false },
             }),
         );
     });
@@ -90,6 +90,7 @@ describe('GET /api/meditations', () => {
                 where: {
                     isPublished: true,
                     status: 'APPROVED',
+                    isHidden: false,
                     tags: { some: { tag: { slug: 'calm' } } },
                 },
             }),
