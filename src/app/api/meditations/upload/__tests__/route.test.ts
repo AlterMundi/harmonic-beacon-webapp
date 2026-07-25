@@ -7,7 +7,17 @@ describe('POST /api/meditations/upload', () => {
         vi.resetModules();
     });
 
-    function setupMocks() {
+    function setupMocks(duration: { seconds?: number; fails?: boolean } = {}) {
+        // Stubbed so the suite neither shells out nor depends on ffmpeg being
+        // installed. The probe itself is covered for real against generated
+        // audio in src/lib/__tests__/audio-duration.test.ts.
+        vi.doMock('@/lib/audio-duration', () => ({
+            AudioDurationError: class extends Error {},
+            getAudioDurationSeconds: duration.fails
+                ? vi.fn().mockRejectedValue(new Error('ffprobe failed'))
+                : vi.fn().mockResolvedValue(duration.seconds ?? 300),
+        }));
+
         vi.doMock('@/auth', () => ({
             auth: vi.fn().mockResolvedValue({
                 user: { id: 'zitadel-prov-123', email: 'provider@example.com', name: 'Provider', role: 'PROVIDER' },
@@ -225,5 +235,38 @@ describe('POST /api/meditations/upload', () => {
         // streamName should also be safe
         const streamName = createCall.data.streamName as string;
         expect(streamName).toMatch(/^meditation-my_special_meditation_\d+$/);
+    });
+
+    it('stores the probed duration', async () => {
+        // Every upload used to store 0, which made the `completed` rule in
+        // BUSINESS_RULES 2.3 unenforceable — it is a fraction of this value.
+        const { mockPrisma } = setupMocks({ seconds: 754 });
+        const { POST } = await import('../route');
+
+        const formData = new FormData();
+        formData.append('file', new File(['audio data'], 'x.ogg', { type: 'audio/ogg' }));
+        formData.append('title', 'Probed');
+
+        const { status } = await parseResponse(await POST(makeFormDataRequest(formData)));
+
+        expect(status).toBe(200);
+        expect(mockPrisma.meditation.create.mock.calls[0][0].data.durationSeconds).toBe(754);
+    });
+
+    it('still accepts the upload when the probe fails, recording duration 0', async () => {
+        // A file that plays fine can still confuse ffprobe. Losing a provider's
+        // submission over that would be worse than an unknown duration, and 0
+        // keeps its old meaning of "not measured" for a later backfill.
+        const { mockPrisma } = setupMocks({ fails: true });
+        const { POST } = await import('../route');
+
+        const formData = new FormData();
+        formData.append('file', new File(['audio data'], 'y.ogg', { type: 'audio/ogg' }));
+        formData.append('title', 'Unprobeable');
+
+        const { status } = await parseResponse(await POST(makeFormDataRequest(formData)));
+
+        expect(status).toBe(200);
+        expect(mockPrisma.meditation.create.mock.calls[0][0].data.durationSeconds).toBe(0);
     });
 });

@@ -3,6 +3,8 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join, extname } from 'path';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { getAudioDurationSeconds } from '@/lib/audio-duration';
+import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,8 +82,16 @@ export async function POST(request: NextRequest) {
     const filePath = join(UPLOADS_PATH, fileName);
     await writeFile(filePath, Buffer.from(bytes));
 
-    // Estimate duration (0 for now — could use ffprobe in future)
-    const durationSeconds = 0;
+    // A probe failure must not fail the upload: a file that plays fine can still
+    // confuse ffprobe, and losing the submission is worse than an unknown
+    // duration. 0 keeps the previous meaning — "not measured" — and is the value
+    // a backfill looks for.
+    let durationSeconds = 0;
+    try {
+        durationSeconds = await getAudioDurationSeconds(filePath);
+    } catch (error) {
+        console.error('Could not read audio duration on upload:', redactErrorDetail(error));
+    }
 
     // Create meditation record
     const meditation = await prisma.meditation.create({
