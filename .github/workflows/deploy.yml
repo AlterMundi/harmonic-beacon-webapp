@@ -63,7 +63,7 @@ jobs:
           sleep 10
 
           # Verify app is responding
-          curl -f http://localhost:3003 || exit 1
+          curl -f http://localhost:3003/api/health || exit 1
 
           # Verify go2rtc is responding
           curl -f http://127.0.0.1:1984/api || exit 1
