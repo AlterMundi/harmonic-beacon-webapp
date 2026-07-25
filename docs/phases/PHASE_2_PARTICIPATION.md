@@ -182,7 +182,7 @@ Phase 3 begins when:
 - All eight Phase 2 success criteria are met.
 - The patronage model has run for at least 4 complete monthly cycles without material incidents.
 - Ethics-review engagement (started in Phase 1) has produced either an IRB-equivalent approval or a clear route to one.
-- The Flutter migration on `feat/flutter-migration` is either merged to `main` or in a merge-ready state with a PR open.
+- The Flutter migration — on a `feat/flutter-migration` branch that does not exist yet; there is no Flutter or Expo code anywhere in the repo's history as of this writing — is either merged to `main` or in a merge-ready state with a PR open.
 - There is team capacity for two parallel tracks in Phase 3 (mobile + research).
 
 If the research track isn't ready, consider splitting Phase 3 into "Mobile GA" first and "Research GA" after. Do not launch a research surface that isn't IRB-backed.

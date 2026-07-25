@@ -78,18 +78,32 @@ npm run test:coverage    # coverage report
 
 ## Operational commitments
 
-The product makes public commitments that are documented and enforceable:
+The product makes public commitments in its policy corpus. They are documented, and they will bind us as they are ratified and shipped — every doc linked below is currently marked "Draft · pending validation" (see [docs/README.md](./docs/README.md)):
 
-- **[The Covenant of Continuity](./docs/SLO.md)**: the beacon never goes dark.
-- **[Trust & Safety](./docs/TRUST_AND_SAFETY.md)**: reports acknowledged within 24 hours, S1 postmortems published publicly.
-- **[Research ethics](./docs/RESEARCH_PROTOCOL.md)**: informed consent, revocable participation, preregistered protocols, de-identified public aggregates.
-- **[Content policy](./docs/CONTENT_POLICY.md)**: no therapeutic claims, rule-cited moderation, appeals available.
-- **[Monetization](./docs/MONETIZATION.md)**: patronage-not-paywall, core experience free forever.
+- **[The Covenant of Continuity](./docs/SLO.md)**: the beacon never goes dark — a covenant of intent, not an uptime warranty; the published target permits measured, reported downtime ([BUSINESS_RULES.md §8.1](./BUSINESS_RULES.md)).
+- **[Trust & Safety](./docs/TRUST_AND_SAFETY.md)**: reports will be acknowledged within 24 hours and S1 incidents will get a public postmortem. Neither exists yet — there is no report model and no incidents page. **[Planned — Phase 1]**
+- **[Research ethics](./docs/RESEARCH_PROTOCOL.md)**: informed consent, revocable participation, preregistered protocols, de-identified public aggregates — the standard the research protocol will be held to once it starts enrolling. No research data is collected today. **[Planned — Phase 3]**
+- **[Content policy](./docs/CONTENT_POLICY.md)**: no therapeutic claims is a standing rule enforced today through moderation review; appeals of a moderation decision are not yet available. **[Planned — Phase 2]**
+- **[Monetization](./docs/MONETIZATION.md)**: patronage-not-paywall, core experience free forever. No payment processing or entitlement model exists yet, so every published meditation is free to everyone today by default rather than by an enforced floor. **[Planned — Phase 2]**
+
+What's live today:
+
+- **Health checks**: `/api/health` (liveness) and `/api/health/ready` (readiness — verifies the database, bounded by a timeout) are implemented and back the deploy's container healthchecks.
+- **Log hygiene**: credentials in connection strings and signed-URL tokens are stripped from every log line before it's written (`src/lib/redact.ts`), and a test walks every `console.*` call in `src/` to catch PII-bearing fields (`src/lib/__tests__/no-pii-in-logs.test.ts`).
 
 ## Deploy
 
 Production deploys run on a managed host with Postgres on the host and Next.js + go2rtc in Docker Compose. See `deploy/README.md` for the deployment runbook.
 
 ## License & ownership
+
+> **Open decision — blocked on counsel.** This repo has no `LICENSE` file and
+> `package.json` declares no `license` field. "All rights reserved" below is
+> the default posture in the absence of a chosen license, not a considered
+> one, and it has not yet been reconciled with a repo being prepared for
+> public release. Do not read this repo's visibility, or the line below, as a
+> license grant or an open-source signal either way — AlterMundi and counsel
+> have not yet decided the licensing posture. This is a blocker ahead of any
+> change in visibility, tracked outside this file.
 
 © 2026 AlterMundi. All rights reserved. Content and code ownership details are maintained in separate legal agreements; Provider content terms are summarized in [CONTENT_POLICY.md §7](./docs/CONTENT_POLICY.md).

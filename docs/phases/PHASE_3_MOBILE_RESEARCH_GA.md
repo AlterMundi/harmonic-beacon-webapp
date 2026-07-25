@@ -25,7 +25,10 @@ Three tracks.
 
 ### 2.1 Land the Flutter migration
 
-- [ ] Review `feat/flutter-migration` against current business rules (post-Phase-1/2 additions)
+As of this writing there is no `feat/flutter-migration` branch and no Flutter or Expo code anywhere in the repo's history — the PoC referenced below has not been built yet. This workstream assumes it is built during Phase 1 or Phase 2, off this roadmap's critical path, so that "landing" it is what remains by Phase 3; that assumption is not itself a commitment made anywhere else in this corpus and should be treated as an open scheduling question, not a given.
+
+- [ ] Create `feat/flutter-migration` and build the PoC, if it does not already exist by the start of this phase
+- [ ] Review the branch against current business rules (post-Phase-1/2 additions)
 - [ ] Merge-ready PR: resolve any drift from the webapp API contracts since the PoC
 - [ ] Address every "pending validation" note left during the PoC (audio session re-apply, token refresh, background lifecycle across device matrix)
 - [ ] Merge to `main` with the Expo shell retired or archived as a separate directory
@@ -178,6 +181,15 @@ Phase 3 is done when:
 - No geographic expansion beyond EN/ES regions.
 - No open-source / self-hostable release of the platform.
 
+> **Unresolved:** this document's "no generative-AI-produced content" is a
+> flat ban. [CONTENT_POLICY.md §3.6](../CONTENT_POLICY.md) requires AI-generated
+> content to be disclosed in a labelled field at upload — which presupposes
+> it is permitted, not banned. [BUSINESS_RULES.md §11](../BUSINESS_RULES.md)
+> takes a third position: it refuses "hidden AI synthesis" specifically,
+> implying disclosed synthesis is acceptable. Three documents, three different
+> rules on the same question. This is not resolved here; whoever owns the
+> content-policy line is the one to reconcile it.
+
 ---
 
 ## 7. Risks and mitigations
@@ -187,7 +199,7 @@ Phase 3 is done when:
 | Apple App Store review rejects subscription model citing medical or health-app rules | Med | Submit early TestFlight, engage App Review proactively via Review notes, have alternate copy framings ready (remove any clinical verbs in store copy first) |
 | Google Play rejects for user-generated live audio without adequate moderation evidence | Med | Moderation tooling from Phase 2 provides the evidence; prepare a written policy summary for review |
 | IRB turnaround stretches past Phase 3 window | Med-High | Begin engagement in Phase 1; negotiate a phased approval (low-risk instruments first) if needed; do not launch research without coverage |
-| Flutter migration reveals issues not seen in the PoC | Med | Allocate 2 weeks in the phase for "adverse discovery" buffer; be willing to ship research-only first if mobile slips |
+| Flutter migration reveals issues not seen in the PoC — or the PoC itself hasn't happened yet by the time this phase starts (see §2.1) | Med | Allocate 2 weeks in the phase for "adverse discovery" buffer; be willing to ship research-only first if mobile slips |
 | Research participants drop off at the consent screen | Med | Treat consent as a UX design problem, not a legal one; A/B test copy under IRB approval; measure enrollment funnel |
 | Revshare reconciles with mobile IAP messy because of 15–30% store cuts | High | Document the cut clearly in Provider statements; do not attempt to push cut onto Providers; absorb at the platform level |
 | Multi-region adds bandwidth cost and complexity | Med | Second region is for fallback only, not load-balancing; keep scope minimal (one region, one SFU, no cross-region publishing) |
