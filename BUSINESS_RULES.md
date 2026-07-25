@@ -334,14 +334,20 @@ The rules below are the intended client contract. Retry backoff and local cachin
 
 ### 9.1 Listener data
 
-> **Neither endpoint below exists yet.** These are the platform's central
-> data-rights guarantees and they are the first thing being built; until they
-> merge, this section describes a commitment and not a capability. **[Planned —
-> Phase 1]**
+> **Both endpoints exist.** The API is built; no UI calls it yet, so a Listener
+> exercising either right currently needs someone to call it for them. The
+> buttons are **[Planned — Phase 1]**. One part of the deletion promise is not
+> yet kept, and it is stated below rather than in a footnote.
 
-- **Access**: a Listener will be able to download their profile, listening history, favourites, research participations and responses, and patronage status as structured JSON. Audio files are not included in the export.
-- **Deletion**: a Listener will be able to delete their account at any time, purging identifiable data within 30 days. Aggregate, de-identified data already mixed into research datasets may be retained unless the Listener specifies erasure at withdrawal. Deletion must also purge stored audio and any cached copies of it, which is why the deletion design and the object-storage layout are being decided together.
-- **Portability**: the export format will be documented and stable across versions.
+- **Access**: a Listener may download, via `GET /api/users/me/export`, their profile, listening history, favourites and session participation as structured JSON. Audio files are not included. Research participations and patronage are named here because this section promises them; both surfaces are unbuilt, so the export carries those keys empty rather than omitting them.
+- **Deletion**: a Listener may delete their account at any time, via `DELETE /api/users/me`. Identifying data — email, name, avatar, identity-provider subject — is purged on request rather than within 30 days, along with favourites, listening history and session participation.
+
+  The account row itself is retained in anonymised form. It cannot be dropped: published content and other Listeners' history reference it, and the row is what keeps those references intact. It holds nothing that identifies the person after deletion.
+
+  **Stored audio is not yet purged.** Deletion should remove a Listener's audio and any cached copies, and today it cannot — the files sit on the host filesystem with no object-storage driver to delete them through. This is a known gap against the promise above, it is stated in the endpoint's own response so a caller is not misled, and it closes when the storage driver lands. **[Planned — Phase 1]**
+
+  Aggregate, de-identified data already mixed into research datasets may be retained unless the Listener specifies erasure at withdrawal. No such data exists yet.
+- **Portability**: the export declares a `formatVersion`, which is what makes the promise of a stable documented format keepable across changes.
 
 ### 9.2 Provider data
 
