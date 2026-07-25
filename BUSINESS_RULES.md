@@ -1,5 +1,12 @@
 # Harmonic Beacon — Business Rules
 
+> **Status: Draft — pending validation.** Nothing here is ratified. Claims about
+> systems that do not yet exist are written in the future tense and tagged
+> `[Planned — Phase N]`, per the convention in
+> [docs/README.md](./docs/README.md#describing-what-is-not-built-yet). A
+> present-tense statement in this document is a claim about code that exists
+> today; if you find one that is not, that is a bug in this document.
+
 *Canonical policy document · Draft 2026-04-12 · pending validation*
 
 This document is the authoritative source for the policies that govern behaviour in the Harmonic Beacon system. Where code conflicts with these rules, code is wrong. Where rules conflict with each other, [VISION.md](./docs/VISION.md) and [PRODUCT_PRINCIPLES.md](./docs/PRODUCT_PRINCIPLES.md) arbitrate.
@@ -10,7 +17,9 @@ Detail for most sections lives in dedicated docs inside `docs/`. This file is th
 
 ## 1. Roles
 
-The system is built around three primary user roles, stored in the `UserRole` enum in Postgres and synchronized via Zitadel (`BEAC_ADMIN`, `BEAC_PROVIDER`, `BEAC_LISTENER`).
+The system is built around three primary user roles, stored in the `UserRole` enum in Postgres and derived from Zitadel project-role claims at sign-in.
+
+`BEAC_ADMIN` grants ADMIN and `BEAC_PROVIDER` grants PROVIDER. LISTENER is the default and requires no claim — the absence of the other two is what confers it, so no `BEAC_LISTENER` claim is read. A legacy `certified_provider` claim is also accepted as a PROVIDER grant; whether that path remains valid is an open decision, and an undocumented role-granting claim is exactly what §2.2 of [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md) should not tolerate.
 
 ### 1.1 LISTENER (default)
 
@@ -22,12 +31,12 @@ The standard end-user. Anyone who signs up is a Listener by default.
 - Participate, via opt-in, in the research protocol (see [RESEARCH_PROTOCOL.md](./docs/RESEARCH_PROTOCOL.md)).
 - Become a Patron at any supported tier (see [MONETIZATION.md](./docs/MONETIZATION.md)).
 - Join scheduled sessions they've been invited to.
-- Report content or live-session behaviour (see [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md)).
+- Will be able to report content or live-session behaviour (see [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md)). **[Planned — Phase 1]**
 
 **Guarantees owed to a Listener:**
 - Access to the live beacon and at least one approved overlay is always free, always available within SLO.
 - No advertising of any kind.
-- One-click account export; one-click account deletion.
+- One-click account export and one-click account deletion. **[Planned — Phase 1]**
 - No unsolicited changes to pricing, patronage tiers, or research participation.
 
 ### 1.2 PROVIDER
@@ -55,11 +64,11 @@ System administrator. Inherits all Listener and Provider capabilities.
 - Superuser access to sessions and resources.
 - Grant or revoke PROVIDER role.
 - Approve, reject, un-publish, or hide any content.
-- Hold kill-switch authority on any live session (see [TRUST_AND_SAFETY.md §4](./docs/TRUST_AND_SAFETY.md)).
-- Read-only view of aggregated but not raw research data (raw data access requires separate Research role; see §6).
+- Will hold kill-switch authority on any live session (see [TRUST_AND_SAFETY.md §4](./docs/TRUST_AND_SAFETY.md)). Today the only path that ends a session is the hosting Provider ending their own. **[Planned — Phase 1]**
+- Read-only view of aggregated but not raw research data (raw data access will require a separate Research role; see §6). **[Planned — Phase 3]**
 
 **Obligations:**
-- Every administrative action is written to the audit log.
+- Every administrative action will be written to the audit log. **[Planned — Phase 1]**
 - No admin reads identifiable research data without the Research role.
 - No admin communicates with a user using their personal account for business purposes; use role-scoped channels.
 
@@ -92,29 +101,44 @@ A `Meditation` is a piece of pre-recorded audio or video content uploaded by a P
 | Featured | `APPROVED` | true | false | Everyone, surfaced first |
 | Hidden | `APPROVED` | true | true | Admin only (Provider sees stub + reason) |
 
+> **Unresolved:** the Hidden row above keeps `isPublished: true`, but the takedown
+> workflow in [CONTENT_POLICY.md §takedown](./docs/CONTENT_POLICY.md) sets
+> `isPublished=false`. The two are different flag combinations, and a visibility
+> filter written from one behaves differently under the other. The invariant has
+> not been chosen yet; do not write a query against either until it is.
+
 - `defaultMix` (Float, 0–1) is an advisory crossfader position stored with the meditation. The client uses it as the starting position; the listener can override.
 - A meditation must carry a `TagCategory.LANGUAGE` tag at publication time.
 - A meditation must carry at least one of `MOOD`, `TECHNIQUE`, or `DURATION` tags at publication time.
+- The two tag rules above are policy, not yet enforcement: the approval endpoint performs no tag validation, so an Admin can currently publish a meditation that satisfies neither. **[Planned — Phase 1]**
 - `originalPath` retains the original upload; `filePath` may be a transcoded derivative. Original files are never exposed to Listeners.
 
 ### 2.2 Scheduled sessions
 
 A `ScheduledSession` is a live, interactive event hosted by a Provider. Status transitions: `SCHEDULED → LIVE → ENDED | CANCELLED`.
 
-- A session cannot transition `SCHEDULED → LIVE` more than 10 minutes before `scheduledAt`, or 60 minutes after, without Admin override.
-- A session may be recorded (`SessionRecording`). Recording is disclosed in-UI to participants before they join.
+- A session will not transition `SCHEDULED → LIVE` more than 10 minutes before `scheduledAt`, or 60 minutes after, without Admin override. The start action currently checks only that status is `SCHEDULED`. **[Planned — Phase 1]**
+- A session may be recorded (`SessionRecording`). Recording will be disclosed in-UI before joining, and joining will require affirmative consent — an explicit accept, not participation treated as agreement. **[Planned — Phase 1]**
 - Session invites (`SessionInvite`) expire (`expiresAt`) or exhaust uses (`maxUses`) and are atomic.
-- A session that exceeds its declared duration by 100% is automatically flagged for review.
-- The Provider retains ownership of the resulting recording; the platform retains a perpetual, royalty-free license to serve it to authorized Listeners. Details in the Provider Content Agreement.
+- A session that exceeds its declared duration by 100% will be automatically flagged for review. **[Planned — unscheduled]**
+- The Provider retains ownership of the resulting recording; the platform holds a non-exclusive, royalty-free license to serve it to authorized Listeners.
+
+> **Unresolved:** the term of that license is stated inconsistently across this
+> document and [CONTENT_POLICY.md](./docs/CONTENT_POLICY.md) — "perpetual" in one
+> place, "terminates on removal" in another. These are different deal terms. The
+> Provider Content Agreement decides it, and all locations get rewritten from
+> that single source; until then no term should be quoted to a Provider. The
+> Agreement should also address the rights of Listener participants whose voices
+> appear in a recording, which none of the current wording covers.
 
 ### 2.3 Listening sessions
 
 A `ListeningSession` is a record of a Listener consuming content. Types: `LIVE`, `MEDITATION`, `SCHEDULED_SESSION`. Tracks `durationSeconds` and `completed`.
 
-- A ListeningSession is created on play and finalized on natural end or a 30-minute inactivity window.
-- `completed` = true when `durationSeconds ≥ 0.85 × meditation.durationSeconds` for a MEDITATION type, or the event ended naturally for a SCHEDULED_SESSION, or on any ≥60s LIVE listen.
+- A ListeningSession is created on play. It will be finalized on natural end or a 30-minute inactivity window; no inactivity finalizer exists yet. **[Planned — Phase 1]**
+- `completed` will be computed server-side as `durationSeconds ≥ 0.85 × meditation.durationSeconds` for a MEDITATION type, the event ending naturally for a SCHEDULED_SESSION, or any ≥60s LIVE listen. **Today the client asserts `completed` and the server stores it unvalidated**, so the value is not currently trustworthy — which matters because [MONETIZATION.md](./docs/MONETIZATION.md) describes revenue attribution as auditable from this ledger, and the research protocol treats it as an observation. **[Planned — Phase 1]**
 - `ListeningSession` powers research, aggregate analytics, and personal history. It is **never** sold or shared with third-party analytics vendors.
-- A Listener may delete their own ListeningSessions. Deletion cascades to Research observations (see §6).
+- A Listener will be able to delete their own ListeningSessions, cascading to Research observations (see §6). **[Planned — Phase 1]**
 
 ---
 
@@ -145,9 +169,11 @@ A Provider may be offboarded by:
 - Policy breach (Admin-initiated). Three categories:
   - **Soft breach**: content style drift, unpaid invoices, slow report response. Results in warning + content re-review.
   - **Hard breach**: therapeutic claims, harassment, repeat takedown triggers. Results in role revocation + content un-publication.
-  - **Severe breach**: abuse of minors, impersonation, deliberate fraud. Results in permanent ban, legal escalation, public disclosure where legally permissible.
+  - **Severe breach**: abuse of minors, impersonation, deliberate fraud. Results in permanent ban and legal escalation. Naming an offboarded Provider publicly carries defamation exposure and requires counsel sign-off per instance; it is not an automatic consequence.
 
-All offboardings are logged. Affected providers have a right to reply and to request review.
+A Provider may also be placed on **probation** — a reviewable state in which their content returns to pre-publication review. See [CONTENT_POLICY.md](./docs/CONTENT_POLICY.md) for entry and exit conditions.
+
+All offboardings will be logged to the audit log (§1.3). Affected providers have a right to reply and to request review. **[Planned — Phase 1]**
 
 ---
 
@@ -156,11 +182,11 @@ All offboardings are logged. Affected providers have a right to reply and to req
 Detail: [CONTENT_POLICY.md §4](./docs/CONTENT_POLICY.md).
 
 - All new content is `PENDING` until a qualified reviewer moves it to `APPROVED` or `REJECTED`.
-- At launch, moderation is a two-person review for first-time Providers, single-reviewer for returning Providers in good standing.
-- SLA: initial review within 5 business days. Emergency takedown decisions within 24 hours.
-- Takedown triggers: copyright complaint (DMCA path), safety concern, policy breach, erroneous approval. Each has a documented workflow in [CONTENT_POLICY.md](./docs/CONTENT_POLICY.md).
+- Moderation will be a two-person review for first-time Providers and single-reviewer for returning Providers in good standing. The current tooling supports a single approver only. **[Planned — Phase 2]**
+- Target SLA: initial review within 5 business days, emergency takedown decisions within 24 hours. These are targets, not yet measured — publishing them as guarantees requires the queue instrumentation that comes with the moderation tooling. **[Planned — Phase 2]**
+- Takedown triggers: copyright complaint, safety concern, policy breach, erroneous approval. Each has a documented workflow in [CONTENT_POLICY.md](./docs/CONTENT_POLICY.md). The applicable notice-and-takedown framework is a counsel decision and is **not** assumed to be the US DMCA: the platform is operated from Argentina for an international audience, and DMCA safe harbour would require a registered US agent.
 - A Provider whose content is taken down receives a rejection reason, linked to the specific rule violated.
-- Listeners may report content or sessions. Reports are triaged by the Steward role (when available) or Admin.
+- Listeners will be able to report content or sessions, triaged by the Steward role (when it exists) or Admin. **[Planned — Phase 1]**
 
 ---
 
@@ -168,12 +194,18 @@ Detail: [CONTENT_POLICY.md §4](./docs/CONTENT_POLICY.md).
 
 Detail: [MONETIZATION.md](./docs/MONETIZATION.md).
 
-Authoritative rules:
+> **Nothing in this section is live.** No payment processing, entitlement model,
+> patron/free distinction or payout mechanism exists in code. Every published
+> meditation is currently available to everyone, which exceeds the Commons
+> commitment below but means the floor it describes is not enforced anywhere.
+> The whole section is **[Planned — Phase 2]**.
+
+Authoritative rules, to take effect when patronage ships:
 
 ### 5.1 What stays free, always
 
 - Live beacon listening at full quality.
-- A rotating set of published meditations (the "Commons") — minimum 15 at any time across the top tag categories.
+- A rotating set of published meditations (the "Commons") — minimum 15 at any time across the top tag categories. When patronage ships this floor needs an actual guard, or the commitment becomes silently breachable.
 - Account creation, listening history, data export, account deletion.
 - Participation in the research protocol.
 
@@ -199,7 +231,18 @@ Patronage does **not** gate the core experience. It supports the instrument and 
 Two pathways, chosen by the Provider at onboarding:
 
 - **Contribution model**: content is contributed freely; no payout.
-- **Revshare model**: a defined share (default 50%, configurable per-provider) of *attributable patronage revenue* is paid monthly, subject to a minimum payout threshold. Attribution is by normalized listening time on that Provider's content.
+- **Revshare model**: a share of patronage revenue paid monthly, subject to a minimum payout threshold, attributed by normalized listening time on that Provider's content.
+
+> **Unresolved — do not quote a percentage to a Provider.** This document and
+> [MONETIZATION.md](./docs/MONETIZATION.md) describe two materially different
+> models under the same headline number: a per-provider share of revenue
+> attributable to that provider, versus a common pool computed after platform
+> operating costs and split pro-rata. The second can be an arbitrarily smaller
+> amount than the first. One model must be chosen, "net" defined exhaustively,
+> and both documents rewritten from that single definition.
+>
+> Attribution also depends on the `ListeningSession` ledger being trustworthy,
+> which per §2.3 it is not yet.
 
 Institutional licensing revenue is considered at the platform level unless a specific arrangement states otherwise.
 
@@ -209,13 +252,24 @@ Institutional licensing revenue is considered at the platform level unless a spe
 
 Detail: [RESEARCH_PROTOCOL.md](./docs/RESEARCH_PROTOCOL.md).
 
+> **No research data is collected today.** No consent, participant, survey or
+> response models exist in the schema, and no instrument is administered. The
+> rules below are the standard the protocol will be held to when it begins
+> enrolling, gated on ethics review and a named Principal Investigator. The whole
+> section is **[Planned — Phase 3]**.
+>
+> Because mood and anxiety instruments produce health data — a special category
+> under GDPR Art. 9, with an analogous category under Argentina's Ley 25.326 —
+> the protocol needs a documented lawful basis, and pseudonymized data must be
+> treated as still personal. That analysis gates the phase.
+
 ### 6.1 Core rules
 
-- Participation is strictly opt-in with informed consent. Default is non-participation.
-- Withdrawal is possible at any time and always without penalty.
-- A participant can choose, at withdrawal, to erase their data or to retain it in de-identified form in the research record.
-- No research instrument collects biological markers without a separate, explicit, device-level consent.
-- De-identified aggregates may be published (and we intend to publish them regularly). Identifiable data never leaves the platform except under a data-use agreement signed by a registered researcher under the (future) RESEARCHER role.
+- Participation will be strictly opt-in with informed consent. Default is non-participation.
+- Withdrawal will be possible at any time and always without penalty.
+- A participant will be able to choose, at withdrawal, to erase their data or to retain it in de-identified form in the research record.
+- No research instrument will collect biological markers without a separate, explicit, device-level consent.
+- De-identified aggregates may be published, and we intend to publish them regularly. Identifiable data will not leave the platform except under a data-use agreement signed by a registered researcher under the RESEARCHER role, which does not exist yet.
 
 ### 6.2 Data minimization
 
@@ -232,8 +286,8 @@ Protocol changes are preregistered publicly before deployment. Where preregistra
 ### 7.1 The Beacon (live)
 
 - `wss://live.altermundi.net`, room `beacon`, primary source identity `beacon01`.
-- A playlist-bot fallback fills the stream when `beacon01` is offline. The fallback is muted by default in clients and surfaced to the listener as a "Beacon in transit" state.
-- Listeners see the source state (live vs. fallback) transparently. We do not pretend the beacon is live when it isn't.
+- A playlist-bot fallback fills the stream when `beacon01` is offline. The client detects the switch and manages audio accordingly.
+- The fallback will be surfaced to the listener as a "Beacon in transit" state. **Today it is not**: the client mutes and unmutes fallback audio silently, so a listener hearing the playlist has no indication the source is not live. Until that UI ships, this document should not be read as describing current behaviour — and the gap is precisely the one [SLO.md](./docs/SLO.md) calls deception. **[Planned — Phase 1]**
 
 ### 7.2 Sittings (planned feature; Phase 2)
 
@@ -241,7 +295,9 @@ A **sitting** is a scheduled synchronous listening event with no host and no tal
 
 ### 7.3 Resonance Journal (planned; Phase 2)
 
-A Listener-owned journal for notes after a session. Never shared unless the Listener explicitly publishes an entry. Journals are encrypted at rest such that only the Listener (and, with opted-in consent, the research layer) can read them. Research access is by-field, not by-entry (e.g. a validated mood score, yes; the free-form body, no).
+A Listener-owned journal for notes after a session. Never shared unless the Listener explicitly publishes an entry. Research access will be by-field, not by-entry: a validated mood score, with consent, yes; the free-form body, no.
+
+The encryption design is unresolved. Earlier drafts specified a key derived from the user's password, which this architecture cannot provide — authentication is Zitadel OIDC with PKCE and the application never possesses a password. Either client-held key material with a recovery phrase, or app-managed encryption described honestly as Admin-resistant rather than Admin-proof. The claim must match whichever is built. **[Planned — Phase 2]**
 
 ### 7.4 Constellation (planned; long-horizon)
 
@@ -257,18 +313,20 @@ Detail: [SLO.md](./docs/SLO.md).
 
 > *The beacon never goes dark.*
 
-This is a brand promise. It binds us to:
+This is a brand promise, and it is a covenant rather than a warranty: the uptime target in [SLO.md](./docs/SLO.md) allows for measured, reported downtime. Terms of Service govern availability; this line governs intent. It binds us to:
 
-- A documented hierarchy of audio sources: live `beacon01` → warm-standby upstream → playlist fallback.
-- A minimum uptime target we publish in [SLO.md](./docs/SLO.md) and report against quarterly.
-- A graceful-degradation contract for clients: when the live beacon is unavailable the app transitions to the fallback within 10 seconds, announces the transition in-UI, and attempts to re-join the live source.
-- Post-incident: every continuity breach of ≥5 minutes is written up as a public postmortem.
+- A hierarchy of audio sources: live `beacon01` → playlist fallback. A warm-standby upstream (`beacon02`) will sit between them; it does not exist yet, so today the hierarchy has two levels, not three. **[Planned — Phase 1]**
+- A minimum uptime target published in [SLO.md](./docs/SLO.md) and reported against quarterly. **[Planned — Phase 1]** — the measurement apparatus is part of the observability work; a target without measurement cannot be reported against.
+- A graceful-degradation contract for clients: on loss of the live beacon, transition to the fallback, announce the transition in-UI, and attempt to re-join. The switchover is implemented; the announcement is not, and the handover time has not been measured, so no bound is claimed here. **[Planned — Phase 1]**
+- Post-incident: every continuity breach of ≥5 minutes written up as a public postmortem. **[Planned — Phase 1]**
 
 ### 8.2 Client behaviour under degradation
 
-- Clients retry with exponential backoff up to 15 minutes before surfacing an error state.
-- On token expiry, clients transparently refresh; failure to refresh triggers a friendly re-auth without user-visible errors beyond a single toast.
-- Clients never blame the user for a server or network failure.
+The rules below are the intended client contract. Retry backoff and local caching are not implemented; token refresh is whatever the LiveKit SDK does by default. **[Planned — Phase 1]**
+
+- Clients will retry with exponential backoff up to 15 minutes before surfacing an error state.
+- On token expiry, clients will transparently refresh; failure to refresh triggers a friendly re-auth without user-visible errors beyond a single toast.
+- Clients never blame the user for a server or network failure. *(This one holds today.)*
 
 ---
 
@@ -276,14 +334,19 @@ This is a brand promise. It binds us to:
 
 ### 9.1 Listener data
 
-- **Access**: a Listener may download, via `/api/users/me/export`, their profile, listening history, favourites, research participations and responses, patronage status, and journal entries, in a structured format (JSON for data; original audio not included for journal-attached recordings that don't exist yet).
-- **Deletion**: a Listener may delete their account at any time via `/api/users/me`. Deletion purges identifiable data within 30 days. Aggregate, de-identified data already mixed into research datasets may be retained unless the Listener specifies erasure at withdrawal.
-- **Portability**: the export format is documented and stable across versions.
+> **Neither endpoint below exists yet.** These are the platform's central
+> data-rights guarantees and they are the first thing being built; until they
+> merge, this section describes a commitment and not a capability. **[Planned —
+> Phase 1]**
+
+- **Access**: a Listener will be able to download their profile, listening history, favourites, research participations and responses, and patronage status as structured JSON. Audio files are not included in the export.
+- **Deletion**: a Listener will be able to delete their account at any time, purging identifiable data within 30 days. Aggregate, de-identified data already mixed into research datasets may be retained unless the Listener specifies erasure at withdrawal. Deletion must also purge stored audio and any cached copies of it, which is why the deletion design and the object-storage layout are being decided together.
+- **Portability**: the export format will be documented and stable across versions.
 
 ### 9.2 Provider data
 
 - A Provider who offboards may remove their content. A tombstone record is retained for Listener-history integrity (a past `ListeningSession` references a `meditationId` that may be gone).
-- Session recordings remain property of the Provider; the platform's license to serve them is revoked on removal unless otherwise agreed.
+- Session recordings remain property of the Provider. The term of the platform's license to serve them is the unresolved question flagged in §2.2, and the two documents currently disagree; it is settled in the Provider Content Agreement, not here.
 
 ### 9.3 Data we do not collect
 
@@ -297,12 +360,23 @@ This is a brand promise. It binds us to:
 
 Detail: [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md).
 
-Authoritative rules:
+> **None of the four rules below is implemented.** There is no report model, no
+> report button on any surface, and no Admin path to terminate a session — the
+> only way a live session ends is the hosting Provider ending it. For a platform
+> inviting people into a vulnerable state, these are the affordances the safety
+> posture rests on, and they are required before open signup rather than merely
+> desirable. **[Planned — Phase 1]**
+>
+> The response times below are targets. Once published they read as
+> quasi-contractual, so they should not appear on a public surface until the
+> queue that measures them exists.
 
-- Every scheduled session has an Admin-accessible kill-switch.
-- Every content surface (meditations, sessions, profiles) has a report button.
-- Reports are acknowledged within 24 hours and triaged within 5 business days.
-- Incidents of severity S1 or S2 (user-visible harm, data incident, safety breach) trigger the incident playbook and, when legally permissible, a public postmortem.
+Authoritative rules, to take effect as each ships:
+
+- Every scheduled session will have an Admin-accessible kill-switch.
+- Every content surface (meditations, sessions, profiles) will have a report button.
+- Reports will be acknowledged within 24 hours and triaged within 5 business days.
+- Incidents of severity S1 or S2 (user-visible harm, data incident, safety breach) will trigger the incident playbook and, when legally permissible, a public postmortem.
 
 ---
 
