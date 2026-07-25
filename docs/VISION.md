@@ -1,12 +1,24 @@
 # Vision
 
+> **Status: Draft — pending validation.** Nothing here is ratified. This document
+> is the frame rather than a description of the running system, and the
+> trajectories under [Long horizon](#long-horizon) are directional by design.
+> Where a sentence below asserts a *state* of the product rather than an
+> intention, it is a claim about code that exists today; where such a claim is
+> not yet true it is written in the future tense and tagged `[Planned — Phase N]`,
+> per the convention in
+> [README.md](./README.md#describing-what-is-not-built-yet).
+>
+> Promise 7 is the standard that convention applies. It is applied here to this
+> document as strictly as to any page of marketing copy.
+
 *Draft · 2026-04-12 · author: product design, pending validation*
 
 ## What Harmonic Beacon is
 
-Harmonic Beacon is a **24/7 continuous broadcast of natural harmonics**, paired with curated audio overlays, delivered through a web and mobile client that lets each listener mix the live beacon against voice and instrument layers. The public frame is not wellness — it is *Harmonic Information Theory*: a proposition that reality encodes itself in ratios, that systems of all scales resonate, and that a carefully constructed acoustic reference can help a human being remember a state of **spiritual homeostasis** — a natural enharmony with the whole.
+Harmonic Beacon is a **24/7 continuous broadcast of natural harmonics**, paired with curated audio overlays, delivered through a client that lets each listener mix the live beacon against voice and instrument layers. That client is a web application today; the mobile app is a later phase and no mobile code exists yet. **[Planned — Phase 3]** The public frame is not wellness — it is *Harmonic Information Theory*: a proposition that reality encodes itself in ratios, that systems of all scales resonate, and that a carefully constructed acoustic reference can help a human being remember a state of **spiritual homeostasis** — a natural enharmony with the whole.
 
-The product is a research instrument as much as it is a listening experience. Every listener can, if they choose, participate in a longitudinal protocol that pairs their time on the beacon with validated psychological surveys and optional biological markers, contributing to a decentralized scientific effort that tries to make harmonic awareness measurable.
+The product is a research instrument as much as it is a listening experience. Every listener will be able, if they choose, to participate in a longitudinal protocol that pairs their time on the beacon with validated psychological surveys and optional biological markers, contributing to a decentralized scientific effort that tries to make harmonic awareness measurable. That protocol is not open: no survey is administered to anyone today, and enrollment waits on ethics review, a named investigator, and a documented lawful basis for handling what mood and anxiety instruments produce. See [RESEARCH_PROTOCOL.md](./RESEARCH_PROTOCOL.md). **[Planned — Phase 3]**
 
 ## What Harmonic Beacon is not
 
@@ -42,13 +54,15 @@ When we write in the voice of the brand we aim for three qualities:
 
 Because the positioning is unusual, our promises must be explicit so we can be held to them and so internal decisions can be checked against them.
 
-1. **The beacon never goes dark.** Whatever it takes — redundant upstream sources, a playlist fallback — the stream remains audible. Continuity is a brand promise, not a nice-to-have. See [SLO.md](./SLO.md) and the Covenant of Continuity.
+1. **The beacon never goes dark.** Whatever it takes — redundant upstream sources, a playlist fallback — the stream remains audible. Continuity is a brand promise, not a nice-to-have. The playlist fallback exists; the redundant upstream does not yet, so today the hierarchy has two levels rather than three. See [SLO.md](./SLO.md) and the Covenant of Continuity, which set out what "dark" means and what the uptime target actually allows. **[Planned — Phase 1]**
 2. **We do not sell access to presence.** Core listening (live beacon + a rotating set of overlays) stays free forever. Patronage supports the instrument; it does not gate the experience.
-3. **We make no therapeutic claims.** The Analysis pillar frames research as exploration, never as treatment. Copy is audited against this before publication.
-4. **Participants own their data.** Research participation is opt-in, consented per protocol, revocable at any time, and exportable in a structured format. De-identified aggregates may be published; identifiable data never leaves under any condition we choose alone.
+3. **We make no therapeutic claims.** The Analysis pillar frames research as exploration, never as treatment. Copy will be audited against this before publication; there is no audit step in the publishing path yet, and the 2026-06-09 review found a claim of this exact kind inside our own principles document. See [PRODUCT_PRINCIPLES.md §10](./PRODUCT_PRINCIPLES.md). **[Planned — unscheduled]**
+4. **Participants own their data.** Research participation will be opt-in, consented per protocol, revocable at any time, and exportable in a structured format. De-identified aggregates may be published; identifiable data never leaves under any condition we choose alone. Ownership is only as real as the mechanics that deliver it, and two of those are still to be built: there is no export endpoint and no deletion endpoint yet. **[Planned — Phase 1]**
 5. **Providers are vetted, not gate-kept.** The threshold is alignment with the frame, not credentials. Vetting is transparent. Appeals are possible.
-6. **The instrument is observable.** The theory asks us to measure. Our own uptime, our own aggregate listener metrics, our own provider count — these are public.
+6. **The instrument is observable.** The theory asks us to measure. Our own uptime, our own aggregate listener metrics, our own provider count — these will be public. None of the three is published today. There is no status page and no public metrics page; the listener and content counts exist only behind an admin-only endpoint, and uptime is not measured at all, only reported as a process counter by a liveness probe. A number that is not measured cannot be published, so this promise is owed the measurement work before it is owed a page. **[Planned — Phase 1]**
 7. **We are honest about what we don't yet know.** "We believe" and "we hope to prove" are never replaced with "we have proven" without evidence we can point to.
+
+Promise 7 is the one that governs the other six, and it governs this repository as well as the product. The 2026-06-09 audit found the corpus asserting controls, endpoints and guarantees in the present tense that do not exist in code — the documents had quietly done to themselves what promise 7 forbids doing to a reader. The convention in [README.md](./README.md#describing-what-is-not-built-yet) is that promise applied reflexively: change the tense, then tag, and let the tags be the checklist.
 
 ## Where the brand ends
 
