@@ -96,12 +96,33 @@ export async function DELETE() {
         const placeholderEmail = `deleted-${user.id}@deleted.invalid`;
         const placeholderZitadelId = `deleted-${user.id}`;
 
-        // TODO(storage): stored audio for any authored meditation is still on
-        // the local filesystem under `Meditation.filePath` / `originalPath`, and
-        // session recordings under `SessionRecording.filePath`. When the
-        // object-storage driver lands, the deletes for those objects hook in
-        // here, inside this transaction's failure path — BUSINESS_RULES.md 9.1
-        // requires deletion to purge stored audio and cached copies of it.
+        // Stored audio: nothing to purge *here*, and that is a design conclusion
+        // rather than an omission. The key layout in CLOUD_MIGRATION_PLAN.md 4.1
+        // (branch `feat/cloud-migration`) keys every object by content, never by
+        // user:
+        //
+        //   uploads/{meditationId}/{filename}       PENDING / REJECTED
+        //   meditations/{meditationId}/{filename}   APPROVED
+        //   recordings/{sessionId}/{trackId}.ogg    egress
+        //   beacon-records/{yyyy-mm-dd}/{file}.ogg  playlist source
+        //
+        // A Listener owns no objects under any of those prefixes. A Provider's
+        // objects hang off meditations and sessions this endpoint deliberately
+        // retains (see the takedown TODO below), so purging them here would
+        // delete content we just promised to keep serving. The audio-purge
+        // obligation in BUSINESS_RULES.md 9.1 is therefore discharged by the
+        // takedown path, not by account deletion — and the key layout needs no
+        // user-keyed prefix added to support it, because both meditation keys
+        // are derivable from the Meditation row.
+        //
+        // TODO(storage): when the driver lands, takedown deletes
+        // `uploads/{id}/*` and `meditations/{id}/*` for each meditation and
+        // `recordings/{sessionId}/*` for each hosted session. Two ordering
+        // traps from 4.4: presigned GETs already issued stay valid until their
+        // TTL expires, so a purge is not effective until the longest outstanding
+        // TTL has passed; and the object delete must follow the DB commit, never
+        // precede it, or a failed transaction leaves a row pointing at a key
+        // that is gone.
 
         await prisma.$transaction([
             prisma.favorite.deleteMany({ where: { userId: user.id } }),

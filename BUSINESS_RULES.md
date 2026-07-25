@@ -344,7 +344,9 @@ The rules below are the intended client contract. Retry backoff and local cachin
 
   The account row itself is retained in anonymised form. It cannot be dropped: published content and other Listeners' history reference it, and the row is what keeps those references intact. It holds nothing that identifies the person after deletion.
 
-  **Stored audio is not yet purged.** Deletion should remove a Listener's audio and any cached copies, and today it cannot — the files sit on the host filesystem with no object-storage driver to delete them through. This is a known gap against the promise above, it is stated in the endpoint's own response so a caller is not misled, and it closes when the storage driver lands. **[Planned — Phase 1]**
+  **One category of stored audio is not purged, and it is the sensitive one.** Meditation audio is filed against the content that owns it rather than against a person, so a deleting Listener has none of it and a deleting Provider's files belong to content this endpoint deliberately retains — removing that audio is the takedown path's job, not deletion's.
+
+  Session recordings are different. Recording is per-participant: someone who joined a recorded session has an audio file of their own voice, filed under their user id. That survives deletion today, and it is the most sensitive data the platform holds. It also sits on a genuine conflict — §2.2 gives the Provider ownership of the recording, while the Listener has an erasure right over their own voice, and one participant's track cannot be removed without altering a recording someone else owns. The conflict is unresolved; until it is, a participant is owed the plain fact before they join rather than a promise afterwards. **[Planned — Phase 1]**
 
   Aggregate, de-identified data already mixed into research datasets may be retained unless the Listener specifies erasure at withdrawal. No such data exists yet.
 - **Portability**: the export declares a `formatVersion`, which is what makes the promise of a stable documented format keepable across changes.
