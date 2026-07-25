@@ -65,6 +65,15 @@ export default auth((req) => {
         }
     }
 
+    // User API: require authentication. Covers the data-rights endpoints
+    // (/api/users/me/export, DELETE /api/users/me) — nothing under /api/users
+    // is public.
+    if (pathname.startsWith('/api/users')) {
+        if (!session?.user) {
+            return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+        }
+    }
+
     // Redirect authenticated users away from login
     if (pathname === '/login' && session?.user) {
         return NextResponse.redirect(new URL('/live', req.url));
@@ -88,5 +97,6 @@ export const config = {
         '/api/admin/:path*',
         '/api/provider/:path*',
         '/api/meditations',
+        '/api/users/:path*',
     ],
 };

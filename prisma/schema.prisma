@@ -57,7 +57,12 @@ model User {
   avatarUrl     String?   @map("avatar_url")
   role          UserRole  @default(LISTENER)
   isVerified    Boolean   @default(false) @map("is_verified")
-  
+
+  // Set when the account holder requests deletion. The row survives because
+  // Meditation.provider and ScheduledSession.provider restrict on delete; the
+  // identifying columns above are overwritten instead.
+  deletedAt     DateTime? @map("deleted_at")
+
   // Timestamps
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
