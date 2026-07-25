@@ -1,5 +1,12 @@
 # Trust & Safety
 
+> **Status: Draft — pending validation.** Nothing here is ratified. Claims about
+> systems that do not yet exist are written in the future tense and tagged
+> `[Planned — Phase N]`, per the convention in
+> [README.md](./README.md#describing-what-is-not-built-yet). A present-tense
+> statement in this document is a claim about code that exists today; if you find
+> one that is not, that is a bug in this document.
+
 *Draft · 2026-04-12 · author: product design, pending validation*
 
 Authoritative rules live in [BUSINESS_RULES.md §10](../BUSINESS_RULES.md). This document is the operational detail: incident classifications, playbooks, controls, and the specific affordances we ship to make the platform safe.
@@ -29,18 +36,31 @@ Lower-probability, higher-severity: involvement of minors in any surface (we blo
 
 ### 2.1 Account-creation controls
 
-- CAPTCHA on signup (hCaptcha, Turnstile, or equivalent).
-- Email verification required before first listen.
-- Per-IP rate limit on signup attempts.
-- Silent email-domain risk scoring (disposable-email detection) used to flag, not block.
-- Zitadel handles password policy and auth flows; we don't roll our own.
+Zitadel handles password policy and authentication flows; we don't roll our own. Sign-up and sign-in are Zitadel-hosted — the application has no signup route of its own. **[Delegated — Zitadel]**
+
+The controls below are the intended posture. None of them is implemented in this codebase, and none has been confirmed in the Zitadel instance either. Some of them — CAPTCHA, email verification, signup rate limiting — are the kind of thing Zitadel can enforce, so the first step is not to build them but to inspect the instance configuration and record what it actually does; whatever is not covered there is app-level work. Until that inspection happens, treat all four as absent.
+
+- A CAPTCHA will gate signup (hCaptcha, Turnstile, or the Zitadel equivalent). **[Planned — Phase 1]**
+- Email verification will be required before first listen. The listen-gating half is app-level regardless of where verification happens, and does not exist. **[Planned — Phase 1]**
+- A per-IP rate limit will apply to signup attempts. The nginx rate limits in §2.7 cover this app's own routes, not the Zitadel-hosted signup form, so they do not provide this. **[Planned — Phase 1]**
+- Silent email-domain risk scoring (disposable-email detection) will be used to flag, not block. **[Planned — unscheduled]**
+- An age gate (affirmation of 18+) will be applied at signup. It does not exist, which matters beyond signup: [RESEARCH_PROTOCOL.md](./RESEARCH_PROTOCOL.md) relies on it to exclude minors from research, so the research consent flow cannot be built on top of it until it is real. **[Planned — Phase 1]**
 
 ### 2.2 Role controls
 
-- PROVIDER role granted by named Admin action only, logged.
-- ADMIN role changes require two-Admin approval (one initiator, one validator) in the audit log.
-- Future RESEARCHER role change requires a signed data-use agreement reference.
-- All role changes emit an event visible in the audit log.
+Role changes are Admin-gated in code today: only an ADMIN can change a user's role. Everything else in this section — the logging, the second pair of eyes, the emitted events — depends on the audit log, which does not exist. A role change today is a single Admin's `PATCH` leaving no trace.
+
+- PROVIDER role granted by named Admin action only. *(Admin-gating holds today.)* That action will be logged. **[Planned — Phase 1]**
+- ADMIN role changes will require two-Admin approval (one initiator, one validator) in the audit log. **[Planned — Phase 1]**
+- Future RESEARCHER role change will require a signed data-use agreement reference. **[Planned — Phase 3]**
+- All role changes will emit an event visible in the audit log. **[Planned — Phase 1]**
+
+> **Unresolved:** the sign-in path also accepts a legacy, undocumented
+> `certified_provider` claim as a PROVIDER grant, alongside `BEAC_PROVIDER`. An
+> undocumented role-granting claim is exactly what this section's posture should
+> not tolerate. Whether that path stays valid is a decision for the product lead
+> with Admin-team input; it is flagged in
+> [BUSINESS_RULES.md §1](../BUSINESS_RULES.md) as well.
 
 ### 2.3 Content controls
 
@@ -48,31 +68,39 @@ Per [CONTENT_POLICY.md](./CONTENT_POLICY.md) — moderation, review, takedown, a
 
 ### 2.4 Live-session controls
 
-- Every scheduled session has a Session Kill Switch (see §4 below).
-- Every participant in a session may raise a hand / request to speak; a Provider does not unilaterally unmute a participant — consent happens in-client.
-- Recordings are disclosed to participants before joining. Participation implies consent to recording.
-- Participant-muting is a Provider capability; banning is an Admin capability; the Provider can flag a participant and escalate.
-- Session chat (if/when we build it) uses a character-frequency anti-flood control and a report-this-message UI.
+Publish rights are decided once, when the join token is issued: a Provider gets `canPublish`, a Listener does not unless their invite grants it. That is the whole of the live-session control surface today. There is no mid-session path to grant or withdraw a voice, and no Admin path into a session at all.
+
+- Every scheduled session will have a Session Kill Switch (see §4 below). **[Planned — Phase 1]**
+- Every participant in a session will be able to raise a hand / request to speak; a Provider will not unilaterally unmute a participant — consent happens in-client. Neither the hand nor the mid-session grant exists; the practical effect today is that a Listener simply cannot be unmuted, which satisfies the consent half by accident and not the affordance. **[Planned — Phase 2]**
+- Recording will be disclosed in-UI before joining, and joining will require affirmative consent — an explicit accept, not participation treated as agreement. Today there is no pre-join disclosure at all, and the in-session recording indicator renders only for publishers, so a Listener in a recorded session is not told. **[Planned — Phase 1]**
+- Participant-muting will be a Provider capability; banning will be an Admin capability; the Provider will be able to flag a participant and escalate. **[Planned — Phase 2]**
+- Session chat (if/when we build it) uses a character-frequency anti-flood control and a report-this-message UI. **[Planned — unscheduled]**
 
 ### 2.5 Report capture
 
-- A report button is on every content surface, every Provider profile, every live-session UI, and every participant row in a session.
-- A report captures: reporter (if logged in), target (user/content/session), category, free-form context, context metadata (timestamp, URL), and whether the reporter wants a response.
-- Reports emit to a queue that routes to Steward or Admin.
+> **Nothing in this section exists.** There is no `Report` model in the schema, no
+> report endpoint, and no report button on any surface. For a platform inviting
+> people into a vulnerable state this is the affordance the rest of the safety
+> posture rests on — the playbook in §5.1 begins with "a report arrives", and
+> today none can. Required before open signup. **[Planned — Phase 1]**
+
+- A report button will be on every content surface, every Provider profile, every live-session UI, and every participant row in a session.
+- A report will capture: reporter (if logged in), target (user/content/session), category, free-form context, context metadata (timestamp, URL), and whether the reporter wants a response.
+- Reports will emit to a queue that routes to Steward or Admin.
 
 ### 2.6 Data controls
 
-- At-rest encryption on Postgres.
-- PII in logs is mechanically filtered; structured logging with field-level tagging prevents accidental leakage.
+- PII in logs is mechanically filtered. Every raw error on its way to a log passes through a redactor that strips credentials from connection strings and signatures from presigned URLs, the auth path no longer logs an email address, and a test walks every `console.*` call in `src/` and fails the build on a PII-bearing field. This is enforcement, not a convention. Field-level tagging arrives with structured logging, which does not exist yet ([SLO.md §9](./SLO.md)). **[Planned — Phase 1]** *(for structured logging only)*
+- At-rest encryption on Postgres **will be** verified and documented. Nothing in this repo establishes it — it is a property of the host and the volume, not of the application, and no one has checked. Do not repeat the claim until someone has. **[Planned — Phase 1]**
 - Secrets in `/etc/sai-harmonic-beacon/production.env`, readable only by the runtime user; rotation policy in §6.
 - Research data handled per [RESEARCH_PROTOCOL.md](./RESEARCH_PROTOCOL.md).
 
 ### 2.7 Infra controls
 
-- Healthchecks at container and process level.
-- External uptime monitor pinging beacon and app.
-- WAF / rate-limit at nginx layer (details in ops runbook).
-- Staged deployment with pre-production environment before prod push (Phase 1 deliverable; not yet in place).
+- Healthchecks at container level, backed by a liveness probe (`/api/health`, which deliberately does not touch the database) and a readiness probe (`/api/health/ready`, which does, under a short timeout). The app, go2rtc and the playlist bot each have one.
+- Rate limiting at the nginx layer: per-IP zones on the streaming and API paths (details in ops runbook). A WAF **will** sit in front of it; there is none today, and the rate limits are not one. **[Planned — unscheduled]**
+- An external uptime monitor will ping the beacon and the app. Nothing monitors either from outside the host today, which is why the audibility number in [SLO.md §2](./SLO.md) cannot be reported. **[Planned — Phase 1]**
+- Staged deployment with pre-production environment before prod push. Deployment goes straight to production today. **[Planned — Phase 1]**
 
 ---
 
@@ -87,10 +115,23 @@ Per [CONTENT_POLICY.md](./CONTENT_POLICY.md) — moderation, review, takedown, a
 | **S2** | Moderate — contained harm or potential exposure | Provider policy hard breach; moderation backlog > SLA; a user's data deleted by mistake | Admin within 24h, user comms within 48h if affected |
 | **S3** | Low — user-affecting but limited | One meditation wrongly approved; single report stalled; a feature regression with safe fallback | Routine triage, SLA in normal workflow |
 
+The Response column names an on-call rotation and an Operator role, neither of which exists — the OPERATOR role is scaffolded in [BUSINESS_RULES.md §1.4](../BUSINESS_RULES.md) and the rotation is a Phase 2 commitment (§6.3). Read the column as the intended response, staffed today by whoever is available. **[Planned — Phase 2]**
+
+The response times in the table are targets. Once published they read as quasi-contractual, so they should not appear on a public surface before there is a queue that measures them.
+
+> **Unresolved:** S1 communication timing is stated twice and differently — "public/user
+> comms within 6h" in the table above, and an acknowledgement email to affected
+> participants "within 24h" in the playbook at §5.1. These may be two different
+> obligations (a public statement versus a direct notification to identified
+> participants) or they may be one obligation written down twice with a
+> contradiction in it. No number should be inferred from this document until it is
+> settled. The product lead decides, with counsel review before either figure is
+> published, since both become the standard we are judged against.
+
 ### 3.2 Public disclosure
 
-- S0 and S1 are disclosed publicly within 14 days of resolution, via a postmortem at `/incidents`.
-- S2 is disclosed publicly only if multiple users were affected or the incident has systemic learning.
+- S0 and S1 will be disclosed publicly within 14 days of resolution, via a postmortem on the public incidents page. That page does not exist. **[Planned — Phase 1]**
+- S2 will be disclosed publicly only if multiple users were affected or the incident has systemic learning. **[Planned — Phase 1]**
 - S3 is logged internally, not publicly disclosed.
 
 Legal and privacy considerations may delay disclosure; they never eliminate it.
@@ -99,22 +140,28 @@ Legal and privacy considerations may delay disclosure; they never eliminate it.
 
 ## 4. The Session Kill Switch
 
-A single-click control, available to Admin on any live `ScheduledSession`, that:
+> **The Kill Switch does not exist.** There is no Admin path to end a session:
+> the only way a live session stops is the hosting Provider ending their own. If
+> the Provider is the problem — a compromised account, abuse from the host mic —
+> there is no control at all. This is the single most load-bearing absence in the
+> document and it is required before open signup. **[Planned — Phase 1]**
 
-1. Terminates the LiveKit room, disconnecting all participants.
-2. Locks the session to prevent restart from the UI.
-3. Suspends the Provider's ability to start new sessions pending review.
-4. Captures a snapshot of the session metadata for incident records.
-5. Surfaces a generic "session ended" message to participants.
+A single-click control, available to Admin on any live `ScheduledSession`, that will:
 
-The Kill Switch is used in response to:
+1. Terminate the LiveKit room, disconnecting all participants.
+2. Lock the session to prevent restart from the UI.
+3. Suspend the Provider's ability to start new sessions pending review.
+4. Capture a snapshot of the session metadata for incident records.
+5. Surface a generic "session ended" message to participants.
+
+The Kill Switch will be used in response to:
 
 - Imminent harm (hate speech, sexual content, threats).
 - Compromised Provider account (suspected takeover mid-session).
 - Legal compulsion.
 - Severe technical malfunction (inaudible, looping, or corrupted output).
 
-Use of the Kill Switch is logged with the Admin identity, the timestamp, and the declared reason, and is reviewed by a second Admin post-incident.
+Use of the Kill Switch will be logged with the Admin identity, the timestamp, and the declared reason, and reviewed by a second Admin post-incident. That logging is the audit log of [BUSINESS_RULES.md §1.3](../BUSINESS_RULES.md), which does not exist either; the two ship together or the control ships unaccountable. **[Planned — Phase 1]**
 
 ---
 
