@@ -55,7 +55,9 @@ export const authConfig: NextAuthConfig = {
                 // Extract role from userinfo (roles are in userinfo, not ID token)
                 const rolesClaim = process.env.ZITADEL_ROLES_CLAIM || 'urn:zitadel:iam:org:project:roles';
                 const roles = (userinfo[rolesClaim] || profile[rolesClaim]) as Record<string, unknown> | undefined;
-                console.log('[auth] userinfo roles:', JSON.stringify(roles));
+                // Role *names* only. The claim's values carry org and project ids,
+                // and in some Zitadel configurations identity-bearing keys.
+                console.log('[auth] userinfo roles:', roles ? Object.keys(roles).join(',') : '(none)');
 
                 let role: Role = 'USER';
                 if (roles) {
@@ -87,7 +89,10 @@ export const authConfig: NextAuthConfig = {
                 // Sync user to database with role from Zitadel claims
                 type UserRoleType = 'LISTENER' | 'PROVIDER' | 'ADMIN';
                 const dbRole: UserRoleType = token.role === 'ADMIN' ? 'ADMIN' : token.role === 'PROVIDER' ? 'PROVIDER' : 'LISTENER';
-                console.log(`[auth] jwt sync: sub=${token.sub} email=${token.email} role=${dbRole}`);
+                // No email: PRODUCT_PRINCIPLES.md forbids logging PII anywhere we
+                // cannot purge, and container stdout is exactly that. `sub` is the
+                // pseudonymous Zitadel subject and is enough to correlate a sync.
+                console.log(`[auth] jwt sync: sub=${token.sub} role=${dbRole}`);
                 try {
                     const db = await import('@/lib/db');
                     // Try by zitadelId first; if email conflict, update existing record
