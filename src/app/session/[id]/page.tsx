@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, RemoteTrackPublication, LocalTrackPublication } from "livekit-client";
 import { useAudio } from "@/context/AudioContext";
+import { redactErrorDetail } from '@/lib/redact';
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
 
@@ -200,7 +201,7 @@ export default function SessionRoomPage() {
                 await room.localParticipant.setMicrophoneEnabled(true);
                 setIsMicOn(true);
             } catch (e) {
-                console.error("Failed to enable mic:", e);
+                console.error("Failed to enable mic:", redactErrorDetail(e));
             }
         }
     };
@@ -223,7 +224,7 @@ export default function SessionRoomPage() {
             }
             router.push("/sessions");
         } catch (e) {
-            console.error("Failed to end session:", e);
+            console.error("Failed to end session:", redactErrorDetail(e));
             setEndingSession(false);
         }
     };

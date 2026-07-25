@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, RemoteTrackPublication } from 'livekit-client';
+import { redactErrorDetail } from '@/lib/redact';
 
 // Participant identity for the live USB audio source
 const BEACON_IDENTITY = "beacon01";
@@ -165,7 +166,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 setIsConnected(true);
             })
             .catch((err) => {
-                console.error("Failed to connect to LiveKit:", err);
+                console.error("Failed to connect to LiveKit:", redactErrorDetail(err));
             });
 
         return () => {
@@ -269,7 +270,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 togglePlay();
             }
         } catch (err) {
-            console.error("Failed to play meditation:", err);
+            console.error("Failed to play meditation:", redactErrorDetail(err));
         }
     }, [meditationVolume, isPlaying, togglePlay]);
 
@@ -328,7 +329,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                         togglePlay();
                     }
                 }).catch(err => {
-                    console.error('Failed to play meditation audio:', err);
+                    console.error('Failed to play meditation audio:', redactErrorDetail(err));
                 });
             };
 
@@ -374,7 +375,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
             console.log('✓ WebRTC connection established with go2rtc');
         } catch (error) {
-            console.error('Failed to load meditation from go2rtc:', error);
+            console.error('Failed to load meditation from go2rtc:', redactErrorDetail(error));
         }
     }, [meditationVolume, isPlaying, togglePlay, GO2RTC_URL]);
 
