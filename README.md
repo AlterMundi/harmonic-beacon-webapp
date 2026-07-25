@@ -97,13 +97,16 @@ Production deploys run on a managed host with Postgres on the host and Next.js +
 
 ## License & ownership
 
-> **Open decision — blocked on counsel.** This repo has no `LICENSE` file and
-> `package.json` declares no `license` field. "All rights reserved" below is
-> the default posture in the absence of a chosen license, not a considered
-> one, and it has not yet been reconciled with a repo being prepared for
-> public release. Do not read this repo's visibility, or the line below, as a
-> license grant or an open-source signal either way — AlterMundi and counsel
-> have not yet decided the licensing posture. This is a blocker ahead of any
-> change in visibility, tracked outside this file.
+> **Open decision — and this repository is already public.** It has been public
+> since 2026-01-23 with no `LICENSE` file and no `license` field in
+> `package.json`. That is not a considered posture; it is the absence of one,
+> and it is the least useful state to be in: visitors can read and fork the
+> source but have no right to run, modify or deploy it, and a contribution
+> arriving by pull request carries no grant to AlterMundi, because GitHub's
+> inbound=outbound terms apply only to a repository that states a license.
+>
+> Do not read this repo's visibility, or the line below, as a license grant.
+> Choosing a license is AlterMundi's decision and is being made; adding one only
+> reduces ambiguity, so nothing here is waiting on counsel.
 
 © 2026 AlterMundi. All rights reserved. Content and code ownership details are maintained in separate legal agreements; Provider content terms are summarized in [CONTENT_POLICY.md §7](./docs/CONTENT_POLICY.md).
