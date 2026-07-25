@@ -8,6 +8,7 @@ import {
     type EgressClient,
     type EgressInfo,
 } from 'livekit-server-sdk';
+import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +73,7 @@ async function snapshotPublishers(sessionRoomName: string): Promise<TrackTarget[
             }
         }
     } catch (e) {
-        console.error('Failed to list session room participants:', e);
+        console.error('Failed to list session room participants:', redactErrorDetail(e));
     }
 
     // Beacon room — beacon01 participant
@@ -93,7 +94,7 @@ async function snapshotPublishers(sessionRoomName: string): Promise<TrackTarget[
             }
         }
     } catch (e) {
-        console.error('Failed to list beacon room participants:', e);
+        console.error('Failed to list beacon room participants:', redactErrorDetail(e));
     }
 
     return targets;
@@ -246,7 +247,7 @@ export async function POST(
             })),
         });
     } catch (e) {
-        console.error('Failed to start recording:', e);
+        console.error('Failed to start recording:', redactErrorDetail(e));
         return NextResponse.json(
             { error: 'Failed to start recording' },
             { status: 500 },

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,7 @@ export async function GET() {
 
         return NextResponse.json({ tags: grouped, all });
     } catch (error) {
-        console.error('Error listing tags:', error);
+        console.error('Error listing tags:', redactErrorDetail(error));
         return NextResponse.json({ error: 'Failed to list tags' }, { status: 500 });
     }
 }

@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from 'next-auth';
 import Zitadel from 'next-auth/providers/zitadel';
+import { redactErrorDetail } from './redact';
 
 export type Role = 'ADMIN' | 'PROVIDER' | 'USER';
 
@@ -121,7 +122,7 @@ export const authConfig: NextAuthConfig = {
                         });
                     }
                 } catch (error) {
-                    console.error('Failed to sync user to database:', error);
+                    console.error('Failed to sync user to database:', redactErrorDetail(error));
                 }
             }
             return token;

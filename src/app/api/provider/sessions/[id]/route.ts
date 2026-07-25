@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { getEgressClient } from '@/lib/livekit-server';
 import { existsSync } from 'fs';
+import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -140,7 +141,7 @@ export async function PATCH(
             await Promise.allSettled(
                 activeRecordings.map((r) =>
                     egressClient.stopEgress(r.egressId).catch((e: unknown) => {
-                        console.error(`Failed to stop egress ${r.egressId} on end:`, e);
+                        console.error(`Failed to stop egress ${r.egressId} on end:`, redactErrorDetail(e));
                     }),
                 ),
             );

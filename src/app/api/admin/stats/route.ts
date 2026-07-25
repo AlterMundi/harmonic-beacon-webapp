@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +40,7 @@ export async function GET() {
             }
         });
     } catch (error) {
-        console.error('Admin stats error:', error);
+        console.error('Admin stats error:', redactErrorDetail(error));
         return NextResponse.json({ error: 'Failed to load stats' }, { status: 500 });
     }
 }

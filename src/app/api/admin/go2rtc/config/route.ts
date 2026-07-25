@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { redactErrorDetail } from '@/lib/redact';
 
 // go2rtc internal API URL (not exposed to public)
 const GO2RTC_INTERNAL_URL = process.env.GO2RTC_INTERNAL_URL || 'http://localhost:1984';
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
         const config = await response.json();
         return NextResponse.json(config);
     } catch (error) {
-        console.error('Error fetching go2rtc config:', error);
+        console.error('Error fetching go2rtc config:', redactErrorDetail(error));
         return NextResponse.json(
             { error: 'Failed to fetch go2rtc configuration' },
             { status: 500 }
@@ -57,7 +58,7 @@ export async function PATCH(request: NextRequest) {
         const result = await response.json();
         return NextResponse.json(result);
     } catch (error) {
-        console.error('Error updating go2rtc config:', error);
+        console.error('Error updating go2rtc config:', redactErrorDetail(error));
         return NextResponse.json(
             { error: 'Failed to update go2rtc configuration' },
             { status: 500 }

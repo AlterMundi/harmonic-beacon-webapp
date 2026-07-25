@@ -91,4 +91,33 @@ describe('GET /api/tags', () => {
         expect(status).toBe(500);
         expect(body).toEqual({ error: 'Failed to list tags' });
     });
+
+    it('does not log the database password when the query fails', async () => {
+        // Guards the redaction pattern at an ordinary route, not just at the
+        // health probe: a pg auth failure carries the whole connection string in
+        // error.message, and stdout is shipped to a log aggregator in the cloud
+        // deploy. If someone reverts a redactErrorDetail() call, this fails.
+        const mockPrisma = {
+            tag: {
+                findMany: vi.fn().mockRejectedValue(
+                    new Error('auth failed for postgresql://beacon:hunter2@db.internal:5432/harmonic_beacon'),
+                ),
+            },
+        };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const { GET } = await import('../route');
+            await GET();
+
+            expect(errorSpy).toHaveBeenCalled();
+            const logged = errorSpy.mock.calls.flat().map(String).join(' ');
+            expect(logged).not.toContain('hunter2');
+            // Host and user survive, so the line is still diagnostic.
+            expect(logged).toContain('db.internal:5432');
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
 });

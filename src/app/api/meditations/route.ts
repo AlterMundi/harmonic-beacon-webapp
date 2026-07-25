@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readdir, stat } from 'fs/promises';
 import { join, basename } from 'path';
 import { prisma } from '@/lib/db';
+import { redactErrorDetail, redactSecrets } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ meditations: response });
     } catch (error) {
-        console.error('Error listing meditations:', error);
+        console.error('Error listing meditations:', redactErrorDetail(error));
 
         // Fallback to file system if database is unavailable
         try {
@@ -192,7 +193,7 @@ export async function POST(request: NextRequest) {
             title: meditation.title,
         });
     } catch (error) {
-        console.error('Error creating meditation stream:', error);
+        console.error('Error creating meditation stream:', redactErrorDetail(error));
         return NextResponse.json({ error: 'Failed to create meditation stream' }, { status: 500 });
     }
 }
@@ -209,7 +210,9 @@ async function createGo2rtcStream(streamName: string, filePath: string, audioFil
 
     if (!response.ok) {
         const errorText = await response.text();
-        console.error('go2rtc error:', errorText);
+        // A response body, not an Error — go2rtc echoes back the stream source,
+        // so run it through the redactor rather than logging it verbatim.
+        console.error('go2rtc error:', redactSecrets(errorText));
         throw new Error(`go2rtc API error: ${response.status}`);
     }
 }

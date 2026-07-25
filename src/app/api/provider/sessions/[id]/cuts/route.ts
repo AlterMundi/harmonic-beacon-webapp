@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { renderMixdown } from '@/lib/ffmpeg-mix';
 import type { MixTrack } from '@/lib/ffmpeg-mix';
+import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,7 +144,7 @@ export async function POST(
             // File may not exist
         }
 
-        console.error('Cut creation failed:', err);
+        console.error('Cut creation failed:', redactErrorDetail(err));
         return NextResponse.json(
             { error: 'Failed to render mixdown' },
             { status: 500 },

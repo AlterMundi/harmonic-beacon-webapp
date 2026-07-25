@@ -58,21 +58,46 @@ export function redactSecrets(input: string): string {
 }
 
 /**
- * Render an unknown thrown value as a redacted, log-safe string.
+ * Render an unknown thrown value as a redacted, log-safe one-liner.
  *
- * Deliberately drops the stack trace: driver stacks can carry connection
- * details in frame arguments, and a redacted message plus the error name is
- * enough to diagnose a probe failure.
+ * Omits the stack trace — not for safety (see `redactErrorDetail`) but for
+ * volume. Use this on paths that run on a timer, such as the readiness probe a
+ * load balancer hits every 30 seconds: during an outage every one of those
+ * would otherwise emit a full stack.
+ *
+ * For a one-off failure you want to debug, prefer `redactErrorDetail`.
  */
 export function redactError(error: unknown): string {
     if (error instanceof Error) {
         return `${error.name}: ${redactSecrets(error.message)}`;
     }
-    if (typeof error === 'string') {
-        return redactSecrets(error);
+    return redactUnknown(error);
+}
+
+/**
+ * Same as `redactError`, but keeps the stack trace — redacted.
+ *
+ * A V8 stack is function names and source locations; it does not include
+ * argument values, so running the redactor over the whole string covers it as
+ * completely as it covers the message. Preferred for one-off error paths, where
+ * losing the stack costs real debuggability and gains nothing.
+ */
+export function redactErrorDetail(error: unknown): string {
+    if (error instanceof Error) {
+        // error.stack already begins with "Name: message".
+        return error.stack
+            ? redactSecrets(error.stack)
+            : `${error.name}: ${redactSecrets(error.message)}`;
+    }
+    return redactUnknown(error);
+}
+
+function redactUnknown(value: unknown): string {
+    if (typeof value === 'string') {
+        return redactSecrets(value);
     }
     try {
-        return redactSecrets(JSON.stringify(error) ?? String(error));
+        return redactSecrets(JSON.stringify(value) ?? String(value));
     } catch {
         return '[unserializable error]';
     }

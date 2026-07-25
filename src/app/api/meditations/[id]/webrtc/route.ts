@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { redactErrorDetail } from '@/lib/redact';
 
 const GO2RTC_API_URL = process.env.GO2RTC_API_URL || 'http://localhost:1984';
 
@@ -23,7 +24,7 @@ export async function GET(
             meditationId,
         });
     } catch (error) {
-        console.error('Error getting WebRTC info:', error);
+        console.error('Error getting WebRTC info:', redactErrorDetail(error));
         return NextResponse.json(
             { error: 'Failed to get WebRTC info' },
             { status: 500 }

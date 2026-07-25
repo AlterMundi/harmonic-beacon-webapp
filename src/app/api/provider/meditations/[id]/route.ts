@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,7 +112,7 @@ export async function PATCH(
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error('Update error:', error);
+        console.error('Update error:', redactErrorDetail(error));
         return NextResponse.json({ error: 'Failed to update meditation' }, { status: 500 });
     }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redactSecrets, redactError, REDACTED } from '../redact';
+import { redactSecrets, redactError, redactErrorDetail, REDACTED } from '../redact';
 
 describe('redactSecrets', () => {
     it('redacts the password from a postgres connection string', () => {
@@ -65,13 +65,41 @@ describe('redactSecrets', () => {
     });
 });
 
+describe('redactErrorDetail', () => {
+    it('keeps the stack trace', () => {
+        const out = redactErrorDetail(new Error('boom'));
+        expect(out).toContain('Error: boom');
+        expect(out).toContain('at ');
+    });
+
+    it('redacts credentials inside the stack, not just the message', () => {
+        const err = new Error('auth failed');
+        err.stack = 'Error: auth failed\n    at connect (postgres://u:hunter2@h:5432/db:1:1)';
+        const out = redactErrorDetail(err);
+        expect(out).not.toContain('hunter2');
+        expect(out).toContain('at connect');
+    });
+
+    it('falls back to name and message when there is no stack', () => {
+        const err = new Error('postgres://u:pw@h/db');
+        err.stack = undefined;
+        const out = redactErrorDetail(err);
+        expect(out).toBe(`Error: postgres://u:${REDACTED}@h/db`);
+    });
+
+    it('handles non-Error values like redactError does', () => {
+        expect(redactErrorDetail('postgres://u:pw@h/db')).not.toContain('pw');
+        expect(redactErrorDetail(null)).toBe('null');
+    });
+});
+
 describe('redactError', () => {
     it('renders an Error as name plus redacted message', () => {
         const out = redactError(new Error('fail postgres://u:p@h/db'));
         expect(out).toBe(`Error: fail postgres://u:${REDACTED}@h/db`);
     });
 
-    it('omits the stack trace', () => {
+    it('omits the stack trace to keep timer-driven paths quiet', () => {
         const err = new Error('boom');
         const out = redactError(err);
         expect(out).not.toContain('at ');

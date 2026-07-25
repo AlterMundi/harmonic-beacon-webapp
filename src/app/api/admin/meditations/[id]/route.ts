@@ -3,6 +3,7 @@ import { rename, copyFile, unlink, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,7 +70,7 @@ export async function PATCH(
                 await unlink(src);
             }
         } catch (err) {
-            console.error('Failed to move file to meditations:', err);
+            console.error('Failed to move file to meditations:', redactErrorDetail(err));
             return NextResponse.json({ error: 'Failed to publish meditation file' }, { status: 500 });
         }
     }
