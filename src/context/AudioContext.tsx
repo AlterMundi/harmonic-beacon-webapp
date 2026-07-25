@@ -159,7 +159,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
         // Fetch token from server-side API and connect
         fetch('/api/livekit/token')
-            .then((res) => res.json())
+            .then((res) => {
+                // The endpoint requires a session. Without this check a 401 body
+                // has no `token`, and the failure surfaces as an opaque connect
+                // error against an undefined token rather than as "not signed in".
+                if (!res.ok) {
+                    throw new Error(`token request failed: ${res.status}`);
+                }
+                return res.json();
+            })
             .then(({ token }) => room.connect(LIVEKIT_URL, token))
             .then(() => {
                 console.log("✓ Connected to LiveKit room");
