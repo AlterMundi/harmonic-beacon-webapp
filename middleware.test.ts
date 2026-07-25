@@ -32,7 +32,10 @@ describe('middleware', () => {
         const middlewareModule = await import('./middleware');
         const middleware = middlewareModule.default;
         const req = createMiddlewareRequest(pathname, { method });
-        return middleware(req) as NextResponse;
+        // The @/auth mock above substitutes a single-argument function, so the
+        // context is unused at runtime — but the declared type still comes from
+        // the real auth() wrapper, which takes it.
+        return middleware(req, { params: Promise.resolve({}) }) as NextResponse;
     }
 
     describe('protected pages (unauthenticated)', () => {

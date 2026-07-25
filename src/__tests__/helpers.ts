@@ -15,7 +15,10 @@ export function createRequest(url: string, options: RequestOptions = {}): NextRe
         fullUrl.searchParams.set(key, value);
     }
 
-    const init: RequestInit = {
+    // Derived from the constructor rather than the DOM `RequestInit`: NextRequest
+    // takes its own RequestInit, and the two are not assignable. Deriving it here
+    // avoids a deep import from next/dist that would break on upgrade.
+    const init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = {
         method,
         headers: new Headers(headers),
     };
@@ -43,7 +46,11 @@ export async function parseResponse(response: Response): Promise<{ status: numbe
     return { status, body };
 }
 
-// Next.js 16 uses async params in route handlers
-export function mockParams(params: Record<string, string>): { params: Promise<Record<string, string>> } {
+// Next.js 16 uses async params in route handlers.
+// Generic in T so the specific key survives: a route declaring
+// `{ params: Promise<{ id: string }> }` will not accept a widened
+// `Promise<Record<string, string>>`, which is what a non-generic return type
+// produced — and it accounted for ~100 type errors across the route tests.
+export function mockParams<T extends Record<string, string>>(params: T): { params: Promise<T> } {
     return { params: Promise.resolve(params) };
 }
