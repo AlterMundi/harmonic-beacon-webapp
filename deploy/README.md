@@ -1,6 +1,26 @@
 # Harmonic Beacon Production Deployment
 
-Docker Compose deployment for Next.js app + go2rtc meditation streaming on `inference-public`.
+> **This file is public, and it is a decision nobody has made.** The repository
+> has been public since 2026-01-23, so everything below is too: the production
+> IP, the CI runner's filesystem path, internal port assignments, and the host
+> storage layout. None of it is a secret — the git history was scanned and holds
+> no credentials — but together they are a tidy reconnaissance page for anyone
+> deciding where to point a scanner.
+>
+> Three options, and the choice is deliberate either way: keep it public and
+> accept that (defensible — the information has limited value on its own),
+> genericise it so the runbook survives without the specifics, or move `deploy/`
+> to a private ops repository. What should not continue is the current state,
+> where it is public because nobody chose. Tracked as TECH_AUDIT Appendix A.3.
+
+Docker Compose deployment for Next.js app + go2rtc meditation streaming.
+
+> **Note on go2rtc.** The migration plan retires it: meditation playback already
+> runs over plain HTTP with Range requests, and `loadMeditationFromGo2rtc` in the
+> client is dead code that nothing calls. Until that removal lands, go2rtc is
+> still deployed and this runbook still describes it — but do not build anything
+> new against it. See `docs/CLOUD_MIGRATION_PLAN.md` on the `feat/cloud-migration`
+> branch, decision D1.
 
 ## Architecture
 
@@ -41,16 +61,28 @@ Deployment is automated via GitHub Actions (`.github/workflows/deploy.yml`):
 
 ### Manual deploy
 
+Note where migrations run. CI applies them **on the host, before the containers
+start** — they are not part of the compose lifecycle, so `docker compose up`
+alone will start an app against an un-migrated database. A manual deploy has to
+run the migrate step itself; omitting it is the foot-gun this section used to
+have.
+
 ```bash
-# On inference-public
+# On the deploy host
 cd /home/github-runner/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp
 
-# Build and start
+# 1. Migrations FIRST, against the host Postgres. Not optional.
+DATABASE_URL="postgresql://beacon:<password>@localhost:5432/harmonic_beacon?schema=public" \
+  npx prisma migrate deploy
+
+# 2. Build and start
 docker compose build --no-cache
 docker compose up -d
 
-# Verify
-curl -f http://localhost:3003
+# 3. Verify — /api/health is a real liveness endpoint; / is a DB-backed page and
+#    a poor health signal
+curl -f http://localhost:3003/api/health
+curl -f http://localhost:3003/api/health/ready    # 503 if the DB is unreachable
 curl -f http://127.0.0.1:1984/api
 ```
 
@@ -58,15 +90,30 @@ curl -f http://127.0.0.1:1984/api
 
 ### Environment Variables
 
-Create `.env` at project root (see `.env.example`):
+**There is no `.env` file on the server, and creating one is not how this
+deploys.** The deploy workflow writes `/etc/sai-harmonic-beacon/production.env`
+from GitHub Secrets (`.github/workflows/deploy.yml`), and both compose services
+read it via `env_file`. That file survives container restarts and is owned
+`root:github-runner` at mode 0640. `.env.example` documents the variable surface
+for local development only.
+
+An earlier version of this section told you to create `.env` at the project root
+with these values:
 
 ```bash
-AUTH_SECRET=<generated-secret>
-AUTH_ZITADEL_ID=<oidc-client-id>
-AUTH_ZITADEL_ISSUER=https://auth.altermundi.net
-MEDITATIONS_PATH=/mnt/raid1/harmonic-beacon/meditations
-PUBLIC_IP=131.72.205.6
+MEDITATIONS_PATH=/mnt/raid1/harmonic-beacon/meditations   # WRONG on both counts
 ```
+
+Both halves were wrong and following them breaks the deploy silently: the code
+reads **`MEDITATIONS_STORAGE_PATH`**, not `MEDITATIONS_PATH`, and production
+mounts **`/mnt/n8n-data/harmonic-beacon/meditations`**, not `/mnt/raid1/...`
+(`docker-compose.yml:32,37`). The troubleshooting section further down this file
+had the correct path all along, which is how the error survived.
+
+The authoritative list of what must be in `production.env` is the "Persist
+secrets to env file" step of the deploy workflow. To add a variable: add it to
+GitHub Secrets, add it to that heredoc, and add it to `.env.example` with a
+comment.
 
 ### Nginx
 
