@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { displayName } from '@/lib/user-display';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
             status: { in: statuses as ('SCHEDULED' | 'LIVE' | 'ENDED')[] },
         },
         include: {
-            provider: { select: { id: true, name: true } },
+            provider: { select: { id: true, name: true, deletedAt: true } },
             _count: { select: { participants: true } },
         },
         orderBy: [
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
             status: s.status,
             scheduledAt: s.scheduledAt?.toISOString() ?? null,
             startedAt: s.startedAt?.toISOString() ?? null,
-            provider: s.provider,
+            provider: { id: s.provider.id, name: displayName(s.provider) },
             participantCount: s._count.participants,
         })),
     });

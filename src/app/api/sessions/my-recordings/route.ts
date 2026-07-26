@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { displayName } from '@/lib/user-display';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,7 @@ export async function GET() {
             title: true,
             endedAt: true,
             durationSeconds: true,
-            provider: { select: { name: true } },
+            provider: { select: { name: true, deletedAt: true } },
             recordings: {
                 select: { id: true, category: true },
             },
@@ -48,7 +49,7 @@ export async function GET() {
         sessions: sessions.map((s) => ({
             id: s.id,
             title: s.title,
-            providerName: s.provider.name,
+            providerName: displayName(s.provider),
             endedAt: s.endedAt?.toISOString() ?? null,
             durationSeconds: s.durationSeconds,
             hasBeaconRecording: s.recordings.some((r) => r.category === 'BEACON'),

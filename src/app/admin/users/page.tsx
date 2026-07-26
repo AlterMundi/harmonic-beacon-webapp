@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { DELETED_ACCOUNT_LABEL, ANONYMOUS_LABEL } from "@/lib/user-display";
 
 interface User {
     id: string;
@@ -11,6 +12,7 @@ interface User {
     avatarUrl: string | null;
     role: "ADMIN" | "PROVIDER" | "LISTENER" | "USER";
     createdAt: string;
+    deletedAt: string | null;
     _count: {
         meditations: number;
         sessions: number;
@@ -99,8 +101,19 @@ export default function UserManagementPage() {
                                                     )}
                                                 </div>
                                                 <div>
-                                                    <div className="font-medium text-white">{user.name || "Unknown"}</div>
-                                                    <div className="text-[var(--text-muted)] text-xs">{user.email}</div>
+                                                    <div className="font-medium text-white">
+                                                        {user.deletedAt ? DELETED_ACCOUNT_LABEL : (user.name || ANONYMOUS_LABEL)}
+                                                        {user.deletedAt && (
+                                                            <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-white/10 text-[var(--text-muted)]">
+                                                                Deleted
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-[var(--text-muted)] text-xs">
+                                                        {user.deletedAt
+                                                            ? `Deleted ${new Date(user.deletedAt).toLocaleDateString()} — identifiers purged`
+                                                            : user.email}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>

@@ -18,6 +18,11 @@ export async function GET(request: Request) {
                 avatarUrl: true,
                 role: true,
                 createdAt: true,
+                // Deleted accounts stay in this list rather than being filtered
+                // out. An Admin looking into a report needs to know the account
+                // existed; hiding it would misrepresent the history as much as
+                // showing a nameless row does.
+                deletedAt: true,
                 _count: {
                     select: {
                         meditations: true,
