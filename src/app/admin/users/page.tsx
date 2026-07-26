@@ -20,7 +20,6 @@ interface User {
 export default function UserManagementPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
-    const [updating, setUpdating] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
 
     useEffect(() => {
@@ -34,27 +33,6 @@ export default function UserManagementPage() {
                 if (data.users) setUsers(data.users);
             })
             .finally(() => setLoading(false));
-    };
-
-    const handleRoleChange = async (userId: string, newRole: string) => {
-        if (!confirm(`Are you sure you want to change this user's role to ${newRole}?`)) return;
-
-        setUpdating(userId);
-        try {
-            const res = await fetch(`/api/admin/users/${userId}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ role: newRole }),
-            });
-
-            if (res.ok) {
-                fetchUsers(); // Refresh list
-            }
-        } catch (error) {
-            console.error("Failed to update role");
-        } finally {
-            setUpdating(null);
-        }
     };
 
     const filteredUsers = users.filter(user =>
@@ -152,31 +130,31 @@ export default function UserManagementPage() {
                                         <td className="px-6 py-4 text-right">
                                             <div className="relative inline-block text-left group">
                                                 <button
-                                                    disabled={updating === user.id}
-                                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50"
+                                                    type="button"
+                                                    aria-label={`Where ${user.name || user.email}'s role is granted`}
+                                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                                                 >
                                                     <svg className="w-5 h-5 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                                                     </svg>
                                                 </button>
 
-                                                {/* Dropdown Menu */}
-                                                <div className="absolute right-0 mt-2 w-48 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-                                                    <div className="p-1">
-                                                        <p className="px-3 py-2 text-xs text-[var(--text-muted)] border-b border-[var(--border-subtle)] mb-1">
-                                                            Change Role
+                                                {/* Roles are granted in Zitadel, not here. This used to be a
+                                                    list of buttons that appeared to work and then reverted at
+                                                    the user's next sign-in, because the role is re-read from
+                                                    the Zitadel claim every time. Showing where the change
+                                                    belongs is more use than a control that undoes itself. */}
+                                                <div className="absolute right-0 mt-2 w-64 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                                                    <div className="p-3 space-y-2">
+                                                        <p className="text-xs font-medium text-[var(--text-secondary)]">
+                                                            Role: {user.role}
                                                         </p>
-                                                        {['LISTENER', 'PROVIDER', 'ADMIN'].map((role) => (
-                                                            <button
-                                                                key={role}
-                                                                onClick={() => handleRoleChange(user.id, role)}
-                                                                disabled={user.role === role}
-                                                                className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-white/5 ${user.role === role ? 'text-[var(--primary-500)] cursor-default' : 'text-[var(--text-secondary)]'
-                                                                    }`}
-                                                            >
-                                                                {role}
-                                                            </button>
-                                                        ))}
+                                                        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                                                            Roles are granted in Zitadel and read from its claim at
+                                                            sign-in. Change it there — <code className="text-[var(--primary-500)]">BEAC_ADMIN</code> or{' '}
+                                                            <code className="text-[var(--primary-500)]">BEAC_PROVIDER</code> — and it
+                                                            takes effect when this person next signs in.
+                                                        </p>
                                                     </div>
                                                 </div>
                                             </div>

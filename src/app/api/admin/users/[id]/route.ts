@@ -6,6 +6,23 @@ import { redactErrorDetail } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * PATCH /api/admin/users/[id]
+ *
+ * Refuses. Roles are granted in Zitadel, not here.
+ *
+ * `User.role` is a projection of the Zitadel project-role claim, rewritten from
+ * that claim on every fresh sign-in (`src/lib/auth-config.ts`). Writing it here
+ * used to appear to work and then revert: an Admin got a success response, the
+ * table showed the new role, and the grant vanished the next time that person
+ * signed in, with nothing recording that it had. A control that silently undoes
+ * itself is worse than one that refuses, because the refusal is at least visible
+ * at the moment of the decision.
+ *
+ * The attempt is still audited. An Admin reaching for this is a fact worth
+ * having — it says the UI is still steering someone toward a control that should
+ * no longer be reachable.
+ */
 export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -15,16 +32,14 @@ export async function PATCH(
     if (!session) return errorResponse;
 
     try {
-        const { role } = await request.json();
-
-        // Validation
-        if (!['USER', 'LISTENER', 'PROVIDER', 'ADMIN'].includes(role)) {
-            return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+        let requestedRole: unknown;
+        try {
+            ({ role: requestedRole } = await request.json());
+        } catch {
+            // A malformed or body-less request gets the same refusal. What matters
+            // is where roles are granted, not whether this particular one parsed.
         }
 
-        // Read the outgoing role before overwriting it: TRUST_AND_SAFETY.md §2.2
-        // wants the role change itself in the log, and "granted PROVIDER" is only
-        // meaningful next to what the account held before.
         const target = await prisma.user.findUnique({
             where: { id },
             select: { role: true },
@@ -34,23 +49,33 @@ export async function PATCH(
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
-        // Prevent self-demotion if last admin (optional check, good practice)
-        // For simplicity, just update
-        await prisma.user.update({
-            where: { id },
-            data: { role }
-        });
-
         await logAdminAction(session, {
-            action: 'user.role_change',
+            action: 'user.role_change_refused',
             targetType: 'USER',
             targetId: id,
-            metadata: { previousRole: target.role, newRole: role },
+            metadata: {
+                currentRole: target.role,
+                requestedRole: typeof requestedRole === 'string' ? requestedRole : null,
+                reason: 'roles are granted in Zitadel',
+            },
         });
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json(
+            {
+                error: 'Roles are not granted here',
+                detail:
+                    'This platform reads roles from the Zitadel project-role claim and refreshes ' +
+                    'them at sign-in, so a role written here would be overwritten the next time ' +
+                    'this person signs in. Grant or revoke the role in Zitadel — it takes effect ' +
+                    'on their next sign-in.',
+                grantIn: process.env.AUTH_ZITADEL_ISSUER ?? null,
+                claims: { ADMIN: 'BEAC_ADMIN', PROVIDER: 'BEAC_PROVIDER' },
+                currentRole: target.role,
+            },
+            { status: 409 },
+        );
     } catch (error) {
-        console.error('Failed to update user role:', redactErrorDetail(error));
-        return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
+        console.error('Role change refusal failed:', redactErrorDetail(error));
+        return NextResponse.json({ error: 'Failed to read user' }, { status: 500 });
     }
 }

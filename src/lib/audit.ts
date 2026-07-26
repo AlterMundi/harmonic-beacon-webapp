@@ -25,7 +25,10 @@ export type AuditAction =
     | 'meditation.unfeature'
     | 'meditation.hide'
     | 'meditation.unhide'
-    | 'user.role_change'
+    // Roles are granted in Zitadel, so nothing in this app changes one. The
+    // refusal is recorded rather than the change: an Admin reaching for a control
+    // that should not be reachable is the fact worth having.
+    | 'user.role_change_refused'
     | 'tag.create'
     | 'tag.delete'
     | 'report.triage'
