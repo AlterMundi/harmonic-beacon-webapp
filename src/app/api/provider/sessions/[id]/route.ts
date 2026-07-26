@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
-import { getEgressClient } from '@/lib/livekit-server';
-import { existsSync } from 'fs';
-import { redactErrorDetail } from '@/lib/redact';
+import { endLiveSession } from '@/lib/session-lifecycle';
 
 export const dynamic = 'force-dynamic';
 
@@ -131,53 +129,9 @@ export async function PATCH(
             );
         }
 
-        // Stop active recordings if any
-        const activeRecordings = await prisma.sessionRecording.findMany({
-            where: { sessionId: id, active: true },
-        });
-
-        if (activeRecordings.length > 0) {
-            const egressClient = getEgressClient();
-            await Promise.allSettled(
-                activeRecordings.map((r) =>
-                    egressClient.stopEgress(r.egressId).catch((e: unknown) => {
-                        console.error(`Failed to stop egress ${r.egressId} on end:`, redactErrorDetail(e));
-                    }),
-                ),
-            );
-            // Wait for egresses to finalize files
-            await new Promise((r) => setTimeout(r, 2000));
-
-            // Verify files and update records
-            const now = new Date();
-            await Promise.all(
-                activeRecordings.map(async (r) => {
-                    const fileExists = r.filePath && existsSync(r.filePath);
-                    if (fileExists) {
-                        await prisma.sessionRecording.update({
-                            where: { id: r.id },
-                            data: { active: false, stoppedAt: now },
-                        });
-                    } else {
-                        await prisma.sessionRecording.delete({ where: { id: r.id } });
-                    }
-                }),
-            );
-        }
-
-        const now = new Date();
-        const durationSeconds = scheduledSession.startedAt
-            ? Math.floor((now.getTime() - scheduledSession.startedAt.getTime()) / 1000)
-            : 0;
-
-        const updated = await prisma.scheduledSession.update({
-            where: { id },
-            data: {
-                status: 'ENDED',
-                endedAt: now,
-                durationSeconds,
-            },
-        });
+        // Recording teardown and the ENDED transition are shared with the Admin
+        // kill switch — see src/lib/session-lifecycle.ts.
+        const { session: updated } = await endLiveSession(id, scheduledSession.startedAt);
         return NextResponse.json({ session: updated });
     }
 

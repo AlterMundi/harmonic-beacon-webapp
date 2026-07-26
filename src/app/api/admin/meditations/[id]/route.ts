@@ -3,7 +3,9 @@ import { rename, copyFile, unlink, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { logAdminAction } from '@/lib/audit';
 import { redactErrorDetail } from '@/lib/redact';
+import { findMissingPublicationTags } from '@/lib/publication-tags';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +22,8 @@ export async function PATCH(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const [, errorResponse] = await requireRole('ADMIN');
-    if (errorResponse) return errorResponse;
+    const [session, errorResponse] = await requireRole('ADMIN');
+    if (!session) return errorResponse;
 
     const { id } = await params;
     const body = await request.json();
@@ -42,6 +44,25 @@ export async function PATCH(
                 ...(isFeatured !== undefined ? { isFeatured } : {}),
             },
         });
+
+        // One entry per semantic change rather than one per request, so the log
+        // stays filterable by action: an incident review asking "who hid this"
+        // should not have to unpack a combined visibility payload.
+        await logAdminAction(session, {
+            action: isHidden ? 'meditation.hide' : 'meditation.unhide',
+            targetType: 'MEDITATION',
+            targetId: id,
+            metadata: { previousIsHidden: meditation.isHidden },
+        });
+        if (isFeatured !== undefined) {
+            await logAdminAction(session, {
+                action: isFeatured ? 'meditation.feature' : 'meditation.unfeature',
+                targetType: 'MEDITATION',
+                targetId: id,
+                metadata: { previousIsFeatured: meditation.isFeatured },
+            });
+        }
+
         return NextResponse.json({
             meditation: {
                 id: updated.id,
@@ -54,6 +75,24 @@ export async function PATCH(
     // Status-based moderation update
     if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
         return NextResponse.json({ error: 'status must be APPROVED or REJECTED' }, { status: 400 });
+    }
+
+    // BUSINESS_RULES.md §2.1: publication requires a LANGUAGE tag plus at least one
+    // of MOOD, TECHNIQUE or DURATION. Scoped to the write that actually publishes,
+    // because the Featured toggle in the moderation UI also PATCHes
+    // status: 'APPROVED' — an already-published meditation should not have that
+    // action fail on a rule about publication. Checked before the file moves, so a
+    // refused approval leaves nothing half-done.
+    const publishes = status === 'APPROVED' && !(meditation.isPublished && meditation.status === 'APPROVED');
+    if (publishes) {
+        const meditationTags = await prisma.meditationTag.findMany({
+            where: { meditationId: id },
+            select: { tag: { select: { category: true } } },
+        });
+        const tagError = findMissingPublicationTags(meditationTags.map((mt) => mt.tag.category));
+        if (tagError) {
+            return NextResponse.json({ error: tagError }, { status: 400 });
+        }
     }
 
     // On approve, move file from uploads to meditations directory
@@ -85,6 +124,25 @@ export async function PATCH(
             ...(isFeatured !== undefined ? { isFeatured } : {}),
         },
     });
+
+    await logAdminAction(session, {
+        action: status === 'APPROVED' ? 'meditation.approve' : 'meditation.reject',
+        targetType: 'MEDITATION',
+        targetId: id,
+        metadata: {
+            previousStatus: meditation.status,
+            published: updated.isPublished,
+            ...(status === 'REJECTED' ? { rejectionReason: rejectionReason || null } : {}),
+        },
+    });
+    if (isFeatured !== undefined) {
+        await logAdminAction(session, {
+            action: isFeatured ? 'meditation.feature' : 'meditation.unfeature',
+            targetType: 'MEDITATION',
+            targetId: id,
+            metadata: { previousIsFeatured: meditation.isFeatured },
+        });
+    }
 
     return NextResponse.json({
         meditation: {

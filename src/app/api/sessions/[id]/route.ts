@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { computeCompleted } from '@/lib/session-completion';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,17 +80,17 @@ export async function GET(
 /**
  * PATCH /api/sessions/[id]
  * End a session — set endedAt, durationSeconds, completed
- * Body: { completed?: boolean }
+ * Body: ignored. `completed` is computed server-side per BUSINESS_RULES.md §2.3;
+ * a client-supplied value is discarded.
  */
 export async function PATCH(
-    request: NextRequest,
+    _request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     const [session, errorResponse] = await requireAuth();
     if (!session) return errorResponse;
 
     const { id } = await params;
-    const body = await request.json();
 
     const user = await prisma.user.findUnique({
         where: { zitadelId: session.user.id },
@@ -103,6 +104,10 @@ export async function PATCH(
     // Find the session and verify ownership
     const listeningSession = await prisma.listeningSession.findUnique({
         where: { id },
+        include: {
+            meditation: { select: { durationSeconds: true } },
+            scheduledSession: { select: { status: true } },
+        },
     });
 
     if (!listeningSession) {
@@ -117,12 +122,21 @@ export async function PATCH(
     const now = new Date();
     const durationSeconds = Math.floor((now.getTime() - listeningSession.startedAt.getTime()) / 1000);
 
+    // BUSINESS_RULES.md §2.3: derived from the server's own facts, never asserted
+    // by the client. See src/lib/session-completion.ts for the unknown-duration case.
+    const completed = computeCompleted({
+        type: listeningSession.type,
+        durationSeconds,
+        meditationDurationSeconds: listeningSession.meditation?.durationSeconds ?? null,
+        scheduledSessionStatus: listeningSession.scheduledSession?.status ?? null,
+    });
+
     const updated = await prisma.listeningSession.update({
         where: { id },
         data: {
             endedAt: now,
             durationSeconds,
-            completed: body.completed ?? true,
+            completed,
         },
     });
 

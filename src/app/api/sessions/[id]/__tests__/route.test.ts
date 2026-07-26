@@ -169,7 +169,10 @@ describe('PATCH /api/sessions/[id]', () => {
                 findUnique: vi.fn().mockResolvedValue({
                     id: 'session-1',
                     userId: 'db-user-1',
+                    type: 'LIVE',
                     startedAt,
+                    meditation: null,
+                    scheduledSession: null,
                 }),
                 update: vi.fn().mockResolvedValue(updatedSession),
             },
@@ -225,21 +228,31 @@ describe('PATCH /api/sessions/[id]', () => {
         expect(body).toEqual({ error: 'Session not found' });
     });
 
-    it('sets completed flag from body', async () => {
+});
+
+// BUSINESS_RULES.md §2.3. The client used to assert `completed`; the server now
+// derives it. Each case fixes the elapsed listen time by backdating startedAt,
+// since the route computes the duration itself from startedAt to now.
+describe('PATCH /api/sessions/[id] - server-computed completed', () => {
+    beforeEach(() => {
+        vi.resetModules();
+    });
+
+    interface ListenOptions {
+        type: 'LIVE' | 'MEDITATION' | 'SCHEDULED_SESSION';
+        elapsedSeconds: number;
+        meditationDurationSeconds?: number | null;
+        scheduledSessionStatus?: string | null;
+    }
+
+    function setupMocks(options: ListenOptions) {
         vi.doMock('@/auth', () => ({
             auth: vi.fn().mockResolvedValue({
                 user: { id: 'zitadel-user-123', email: 'user@example.com', name: 'Test User', role: 'USER' },
             }),
         }));
 
-        const startedAt = new Date('2025-01-01T10:00:00Z');
-        const updatedSession = {
-            id: 'session-1',
-            durationSeconds: 300,
-            completed: false,
-            startedAt,
-            endedAt: new Date('2025-01-01T10:05:00Z'),
-        };
+        const startedAt = new Date(Date.now() - options.elapsedSeconds * 1000);
 
         const mockPrisma = {
             user: { findUnique: vi.fn().mockResolvedValue({ id: 'db-user-1' }) },
@@ -247,33 +260,138 @@ describe('PATCH /api/sessions/[id]', () => {
                 findUnique: vi.fn().mockResolvedValue({
                     id: 'session-1',
                     userId: 'db-user-1',
+                    type: options.type,
                     startedAt,
+                    meditation:
+                        options.meditationDurationSeconds === undefined ||
+                        options.meditationDurationSeconds === null
+                            ? null
+                            : { durationSeconds: options.meditationDurationSeconds },
+                    scheduledSession: options.scheduledSessionStatus
+                        ? { status: options.scheduledSessionStatus }
+                        : null,
                 }),
-                update: vi.fn().mockResolvedValue(updatedSession),
+                // Echoes back what the route asked for, so the response reflects
+                // the computed value rather than a fixture.
+                update: vi.fn().mockImplementation(({ data }) =>
+                    Promise.resolve({
+                        id: 'session-1',
+                        durationSeconds: data.durationSeconds,
+                        completed: data.completed,
+                        startedAt,
+                        endedAt: data.endedAt,
+                    }),
+                ),
             },
         };
         vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
 
+        return { mockPrisma };
+    }
+
+    async function patch(body: unknown = {}) {
         const { PATCH } = await import('../route');
-        const res = await PATCH(
-            createRequest('/api/sessions/session-1', {
-                method: 'PATCH',
-                body: { completed: false },
-            }),
+        return PATCH(
+            createRequest('/api/sessions/session-1', { method: 'PATCH', body }),
             mockParams({ id: 'session-1' }),
         );
-        const { status, body } = await parseResponse(res);
+    }
+
+    it('ignores a client-supplied completed: true on a short listen', async () => {
+        const { mockPrisma } = setupMocks({ type: 'MEDITATION', elapsedSeconds: 10, meditationDurationSeconds: 600 });
+
+        const { status, body } = await parseResponse(await patch({ completed: true }));
 
         expect(status).toBe(200);
-        const data = body as { session: { completed: boolean } };
-        expect(data.session.completed).toBe(false);
-
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(false);
         expect(mockPrisma.listeningSession.update).toHaveBeenCalledWith(
-            expect.objectContaining({
-                data: expect.objectContaining({
-                    completed: false,
-                }),
-            }),
+            expect.objectContaining({ data: expect.objectContaining({ completed: false }) }),
         );
+    });
+
+    it('ignores a client-supplied completed: false on a full listen', async () => {
+        setupMocks({ type: 'MEDITATION', elapsedSeconds: 590, meditationDurationSeconds: 600 });
+
+        const { status, body } = await parseResponse(await patch({ completed: false }));
+
+        expect(status).toBe(200);
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(true);
+    });
+
+    it('completes a MEDITATION at 85% of the track', async () => {
+        setupMocks({ type: 'MEDITATION', elapsedSeconds: 510, meditationDurationSeconds: 600 });
+
+        const { body } = await parseResponse(await patch());
+
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(true);
+    });
+
+    it('does not complete a MEDITATION below 85% of the track', async () => {
+        setupMocks({ type: 'MEDITATION', elapsedSeconds: 480, meditationDurationSeconds: 600 });
+
+        const { body } = await parseResponse(await patch());
+
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(false);
+    });
+
+    it('falls back to the 60s floor for a 0-duration (pre-backfill) meditation', async () => {
+        setupMocks({ type: 'MEDITATION', elapsedSeconds: 300, meditationDurationSeconds: 0 });
+
+        const { body } = await parseResponse(await patch());
+
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(true);
+    });
+
+    it('does not complete a sub-60s listen of a 0-duration meditation', async () => {
+        setupMocks({ type: 'MEDITATION', elapsedSeconds: 30, meditationDurationSeconds: 0 });
+
+        const { body } = await parseResponse(await patch());
+
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(false);
+    });
+
+    it('completes a SCHEDULED_SESSION listen when the event ended', async () => {
+        setupMocks({ type: 'SCHEDULED_SESSION', elapsedSeconds: 30, scheduledSessionStatus: 'ENDED' });
+
+        const { body } = await parseResponse(await patch());
+
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(true);
+    });
+
+    it('does not complete a SCHEDULED_SESSION listen while the event is still live', async () => {
+        setupMocks({ type: 'SCHEDULED_SESSION', elapsedSeconds: 3600, scheduledSessionStatus: 'LIVE' });
+
+        const { body } = await parseResponse(await patch());
+
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(false);
+    });
+
+    it('completes a LIVE listen of at least 60 seconds', async () => {
+        setupMocks({ type: 'LIVE', elapsedSeconds: 90 });
+
+        const { body } = await parseResponse(await patch());
+
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(true);
+    });
+
+    it('does not complete a LIVE listen under 60 seconds', async () => {
+        setupMocks({ type: 'LIVE', elapsedSeconds: 20 });
+
+        const { body } = await parseResponse(await patch());
+
+        expect((body as { session: { completed: boolean } }).session.completed).toBe(false);
+    });
+
+    it('accepts a request with no JSON body at all', async () => {
+        setupMocks({ type: 'LIVE', elapsedSeconds: 90 });
+
+        const { PATCH } = await import('../route');
+        const res = await PATCH(
+            createRequest('/api/sessions/session-1', { method: 'PATCH' }),
+            mockParams({ id: 'session-1' }),
+        );
+        const { status } = await parseResponse(res);
+
+        expect(status).toBe(200);
     });
 });

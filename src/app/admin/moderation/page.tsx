@@ -42,6 +42,9 @@ export default function AdminModerationPage() {
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [rejectingId, setRejectingId] = useState<string | null>(null);
     const [rejectReason, setRejectReason] = useState("");
+    // Approval can fail on the §2.1 tag requirements. The admin needs to be told
+    // which tag is missing, not left with a button that appears to do nothing.
+    const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
 
     const fetchMeditations = useCallback(async () => {
         setLoading(true);
@@ -64,6 +67,7 @@ export default function AdminModerationPage() {
 
     const handleApprove = async (id: string) => {
         setActionLoading(id);
+        setActionError(null);
         try {
             const res = await fetch(`/api/admin/meditations/${id}`, {
                 method: "PATCH",
@@ -72,9 +76,12 @@ export default function AdminModerationPage() {
             });
             if (res.ok) {
                 setMeditations((prev) => prev.filter((m) => m.id !== id));
+            } else {
+                const data = await res.json().catch(() => null);
+                setActionError({ id, message: data?.error || "Approval failed" });
             }
         } catch {
-            // Silently fail
+            setActionError({ id, message: "Approval failed - could not reach the server" });
         } finally {
             setActionLoading(null);
         }
@@ -226,6 +233,12 @@ export default function AdminModerationPage() {
                                     src={`/api/admin/meditations/${m.id}/audio`}
                                     className="w-full h-8 mt-2"
                                 />
+
+                                {actionError?.id === m.id && (
+                                    <p role="alert" className="text-xs text-red-400 mt-2">
+                                        {actionError.message}
+                                    </p>
+                                )}
 
                                 {/* Actions */}
                                 {activeTab === "PENDING" && (

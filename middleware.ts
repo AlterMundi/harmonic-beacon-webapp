@@ -74,6 +74,16 @@ export default auth((req) => {
         }
     }
 
+    // Report filing: require authentication. TRUST_AND_SAFETY.md §2.5 wants the
+    // reporter captured when they are logged in, and an anonymous report has no
+    // duplicate-suppression handle, so the route requires a session and this
+    // rejects before it is reached.
+    if (pathname.startsWith('/api/reports')) {
+        if (!session?.user) {
+            return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+        }
+    }
+
     // Redirect authenticated users away from login
     if (pathname === '/login' && session?.user) {
         return NextResponse.redirect(new URL('/live', req.url));
@@ -98,5 +108,6 @@ export const config = {
         '/api/provider/:path*',
         '/api/meditations',
         '/api/users/:path*',
+        '/api/reports/:path*',
     ],
 };

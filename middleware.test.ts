@@ -276,4 +276,30 @@ describe('middleware', () => {
             expect(res.status).toBe(200);
         });
     });
+
+    describe('reports API', () => {
+        it('returns 401 JSON for unauthenticated report filing', async () => {
+            const res = await runMiddleware('/api/reports', null, 'POST');
+            expect(res.status).toBe(401);
+            expect(await res.json()).toEqual({ error: 'Authentication required' });
+        });
+
+        it('allows an authenticated LISTENER to reach the report route', async () => {
+            const session = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
+            const res = await runMiddleware('/api/reports', session, 'POST');
+            expect(res.status).toBe(200);
+        });
+
+        it('returns 403 for a LISTENER on the admin triage queue', async () => {
+            const session = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
+            const res = await runMiddleware('/api/admin/reports', session);
+            expect(res.status).toBe(403);
+        });
+
+        it('returns 403 for a PROVIDER on the session kill switch', async () => {
+            const session = { user: { id: 'p1', email: 'p@e.com', name: 'P', role: 'PROVIDER' } };
+            const res = await runMiddleware('/api/admin/sessions/sess-1/terminate', session, 'POST');
+            expect(res.status).toBe(403);
+        });
+    });
 });

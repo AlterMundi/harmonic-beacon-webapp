@@ -44,6 +44,8 @@ describe('POST /api/admin/tags', () => {
 
         const mockPrisma = {
             tag: { create: vi.fn().mockResolvedValue(createdTag) },
+            user: { findUnique: vi.fn().mockResolvedValue({ id: 'db-admin-1' }) },
+            auditLog: { create: vi.fn().mockResolvedValue({}) },
         };
         vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
 
@@ -66,6 +68,17 @@ describe('POST /api/admin/tags', () => {
                 name: 'Deep Sleep',
                 slug: 'deep-sleep',
                 category: 'mood',
+            },
+        });
+
+        expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
+            data: {
+                actorId: 'db-admin-1',
+                actorRole: 'ADMIN',
+                action: 'tag.create',
+                targetType: 'TAG',
+                targetId: 'tag-1',
+                metadata: { slug: 'deep-sleep', category: 'mood' },
             },
         });
     });
@@ -111,7 +124,12 @@ describe('DELETE /api/admin/tags', () => {
         }));
 
         const mockPrisma = {
-            tag: { delete: vi.fn().mockResolvedValue({ id: 'tag-1' }) },
+            tag: {
+                findUnique: vi.fn().mockResolvedValue({ slug: 'deep-sleep', category: 'mood' }),
+                delete: vi.fn().mockResolvedValue({ id: 'tag-1' }),
+            },
+            user: { findUnique: vi.fn().mockResolvedValue({ id: 'db-admin-1' }) },
+            auditLog: { create: vi.fn().mockResolvedValue({}) },
         };
         vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
 
@@ -128,6 +146,19 @@ describe('DELETE /api/admin/tags', () => {
 
         expect(mockPrisma.tag.delete).toHaveBeenCalledWith({
             where: { id: 'tag-1' },
+        });
+
+        // The slug is captured before the row goes away, so the audit entry is
+        // readable without the tag it refers to.
+        expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
+            data: {
+                actorId: 'db-admin-1',
+                actorRole: 'ADMIN',
+                action: 'tag.delete',
+                targetType: 'TAG',
+                targetId: 'tag-1',
+                metadata: { slug: 'deep-sleep', category: 'mood' },
+            },
         });
     });
 

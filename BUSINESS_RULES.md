@@ -110,7 +110,7 @@ A `Meditation` is a piece of pre-recorded audio or video content uploaded by a P
 - `defaultMix` (Float, 0–1) is an advisory crossfader position stored with the meditation. The client uses it as the starting position; the listener can override.
 - A meditation must carry a `TagCategory.LANGUAGE` tag at publication time.
 - A meditation must carry at least one of `MOOD`, `TECHNIQUE`, or `DURATION` tags at publication time.
-- The two tag rules above are policy, not yet enforcement: the approval endpoint performs no tag validation, so an Admin can currently publish a meditation that satisfies neither. **[Planned — Phase 1]**
+- The approval endpoint enforces both tag rules: an approval that would publish a meditation missing either requirement is refused with a message naming the missing one, and nothing is written. Re-approving an already-published meditation — which is how the Featured toggle is implemented — is not a publication and is not re-checked.
 - `originalPath` retains the original upload; `filePath` may be a transcoded derivative. Original files are never exposed to Listeners.
 
 ### 2.2 Scheduled sessions
@@ -136,7 +136,8 @@ A `ScheduledSession` is a live, interactive event hosted by a Provider. Status t
 A `ListeningSession` is a record of a Listener consuming content. Types: `LIVE`, `MEDITATION`, `SCHEDULED_SESSION`. Tracks `durationSeconds` and `completed`.
 
 - A ListeningSession is created on play. It will be finalized on natural end or a 30-minute inactivity window; no inactivity finalizer exists yet. **[Planned — Phase 1]**
-- `completed` will be computed server-side as `durationSeconds ≥ 0.85 × meditation.durationSeconds` for a MEDITATION type, the event ending naturally for a SCHEDULED_SESSION, or any ≥60s LIVE listen. **Today the client asserts `completed` and the server stores it unvalidated**, so the value is not currently trustworthy — which matters because [MONETIZATION.md](./docs/MONETIZATION.md) describes revenue attribution as auditable from this ledger, and the research protocol treats it as an observation. **[Planned — Phase 1]**
+- `completed` is computed server-side as `durationSeconds ≥ 0.85 × meditation.durationSeconds` for a MEDITATION type, the event ending naturally (status `ENDED`) for a SCHEDULED_SESSION, or any ≥60s LIVE listen. A `completed` value in the request body is discarded: [MONETIZATION.md](./docs/MONETIZATION.md) describes revenue attribution as auditable from this ledger and the research protocol treats each row as an observation, and neither survives the subject of the measurement supplying the value.
+- Where the total length is unknown the fraction is not computable, and the ≥60s floor applies instead. This covers meditations uploaded before durations were probed (`durationSeconds = 0`; see `scripts/backfill-durations.mjs`) and rows whose related meditation or session has since been deleted. It is a weaker claim than the 0.85 rule but a true one, where a constant `false` would misreport the whole back catalogue as never completed and a constant `true` would credit a five-second bounce. Running the backfill removes the ambiguity for the affected rows, and it should be run before this ledger is used for attribution or analysis.
 - `ListeningSession` powers research, aggregate analytics, and personal history. It is **never** sold or shared with third-party analytics vendors.
 - A Listener will be able to delete their own ListeningSessions, cascading to Research observations (see §6). **[Planned — Phase 1]**
 
