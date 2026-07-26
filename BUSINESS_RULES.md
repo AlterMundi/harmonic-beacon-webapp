@@ -370,23 +370,26 @@ The rules below are the intended client contract. Retry backoff and local cachin
 
 Detail: [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md).
 
-> **None of the four rules below is implemented.** There is no report model, no
-> report button on any surface, and no Admin path to terminate a session — the
-> only way a live session ends is the hosting Provider ending it. For a platform
-> inviting people into a vulnerable state, these are the affordances the safety
-> posture rests on, and they are required before open signup rather than merely
-> desirable. **[Planned — Phase 1]**
+> **Two of the four rules below hold; the reporting one is half-built.** The kill
+> switch exists and an Admin can end any live session with a recorded reason. The
+> `Report` model and its filing and triage endpoints exist. What does not exist is
+> the report *button* on each content surface, so a Listener cannot yet file one —
+> which for a platform inviting people into a vulnerable state is the half that
+> matters most, and it is required before open signup rather than merely
+> desirable. **[Planned — Phase 1]** *(the reporting UI)*
 >
-> The response times below are targets. Once published they read as
-> quasi-contractual, so they should not appear on a public surface until the
-> queue that measures them exists.
+> The response times below are targets. Acknowledgement is now measurable —
+> `acknowledgedAt` is stamped when an admin first triages a report — but nothing
+> measures it yet and nothing enforces it. Once published these read as
+> quasi-contractual, so they should not appear on a public surface until the queue
+> that measures them exists.
 
-Authoritative rules, to take effect as each ships:
+Authoritative rules:
 
-- Every scheduled session will have an Admin-accessible kill-switch.
-- Every content surface (meditations, sessions, profiles) will have a report button.
-- Reports will be acknowledged within 24 hours and triaged within 5 business days.
-- Incidents of severity S1 or S2 (user-visible harm, data incident, safety breach) will trigger the incident playbook and, when legally permissible, a public postmortem.
+- Every scheduled session has an Admin-accessible kill-switch, and using it requires a recorded reason.
+- Every content surface (meditations, sessions, profiles) will have a report button. The report can be filed and triaged; the button is what is missing. **[Planned — Phase 1]**
+- Reports will be acknowledged within 24 hours and triaged within 5 business days. **[Planned — Phase 1]** *(the measurement; the timestamp it needs is now recorded)*
+- Incidents of severity S1 or S2 (user-visible harm, data incident, safety breach) will trigger the incident playbook and, when legally permissible, a public postmortem. **[Planned — Phase 1]**
 
 ---
 

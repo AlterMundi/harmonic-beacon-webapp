@@ -78,11 +78,13 @@ Publish rights are decided once, when the join token is issued: a Provider gets 
 
 ### 2.5 Report capture
 
-> **Nothing in this section exists.** There is no `Report` model in the schema, no
-> report endpoint, and no report button on any surface. For a platform inviting
-> people into a vulnerable state this is the affordance the rest of the safety
-> posture rests on — the playbook in §5.1 begins with "a report arrives", and
-> today none can. Required before open signup. **[Planned — Phase 1]**
+> **The capture path exists; the button does not.** The `Report` model, the filing
+> endpoint and the admin triage routes are built, and `acknowledgedAt` is stamped
+> when an admin first moves a report off OPEN, which is what makes the 24-hour
+> acknowledgement in §2.5 measurable rather than merely stated. What is missing is
+> the report button on each content surface, so a report can currently only be
+> filed by calling the API. Until that ships, the playbook in §5.1 still begins
+> with an event no Listener can produce. **[Planned — Phase 1]** *(the UI)*
 
 - A report button will be on every content surface, every Provider profile, every live-session UI, and every participant row in a session.
 - A report will capture: reporter (if logged in), target (user/content/session), category, free-form context, context metadata (timestamp, URL), and whether the reporter wants a response.
@@ -140,11 +142,20 @@ Legal and privacy considerations may delay disclosure; they never eliminate it.
 
 ## 4. The Session Kill Switch
 
-> **The Kill Switch does not exist.** There is no Admin path to end a session:
-> the only way a live session stops is the hosting Provider ending their own. If
-> the Provider is the problem — a compromised account, abuse from the host mic —
-> there is no control at all. This is the single most load-bearing absence in the
-> document and it is required before open signup. **[Planned — Phase 1]**
+> **The Kill Switch exists**, at `POST /api/admin/sessions/[id]/terminate`. An
+> Admin can end any live session, including one whose Provider is the problem —
+> a compromised account, abuse from the host mic — which was the case with no
+> control at all. It stops any active egress, disconnects participants, moves the
+> session to ENDED, and requires a written reason: terminating someone else's live
+> session without recording why is what the audit log exists to prevent, so a
+> missing reason is a refusal rather than a default.
+>
+> Three of the five behaviours below are delivered. Locking the session against
+> restart falls out of the status change, since starting requires SCHEDULED.
+> **Not delivered:** suspending the Provider's ability to open new sessions
+> pending review — there is no suspension field on `User`, so this was left
+> unbuilt rather than invented — and the participant-facing message, which is
+> client-side. Both are tracked. **[Planned — Phase 1]** *(items 3 and 5)*
 
 A single-click control, available to Admin on any live `ScheduledSession`, that will:
 
