@@ -45,6 +45,13 @@ export async function GET() {
             status: m.status,
             isPublished: m.isPublished,
             isFeatured: m.isFeatured,
+            // Without these a Provider takes their own content down and their
+            // dashboard shows no change — the one screen that must reflect the
+            // decision was the one that could not see it. `takenDownAt` also
+            // distinguishes their own withdrawal from a moderation hide, which
+            // they should not be told is theirs.
+            isHidden: m.isHidden,
+            takenDownAt: m.takenDownAt?.toISOString() ?? null,
             defaultMix: m.defaultMix,
             rejectionReason: m.rejectionReason,
             createdAt: m.createdAt.toISOString(),

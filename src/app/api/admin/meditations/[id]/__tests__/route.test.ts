@@ -666,6 +666,61 @@ describe('PATCH /api/admin/meditations/[id] - audit trail', () => {
         });
     });
 
+    it('refuses to unhide content the Provider took down', async () => {
+        // The gap this closes: a Provider's takedown and an Admin's moderation
+        // hide both read isHidden true, so working the moderation queue would
+        // republish an author's withdrawn work with nothing on screen saying so.
+        const { mockPrisma } = setupMocks({
+            ...meditationRecord,
+            isHidden: true,
+            takenDownAt: new Date('2026-07-26T12:00:00.000Z'),
+        });
+
+        const response = await patch({ isHidden: false });
+        const body = await response.json();
+
+        expect(response.status).toBe(409);
+        expect(body.error).toMatch(/taken down by its Provider/i);
+        // The refusal has to be actionable, not just correct.
+        expect(body.detail).toMatch(/restoreTakenDown/);
+        expect(mockPrisma.meditation.update).not.toHaveBeenCalled();
+    });
+
+    it('restores a takedown when the caller says they mean it', async () => {
+        const { mockPrisma } = setupMocks({
+            ...meditationRecord,
+            isHidden: true,
+            takenDownAt: new Date('2026-07-26T12:00:00.000Z'),
+        });
+
+        const response = await patch({ isHidden: false, restoreTakenDown: true });
+
+        expect(response.status).toBe(200);
+        // Cleared, so the flag keeps meaning one thing: set means the author's
+        // withdrawal still stands.
+        expect(mockPrisma.meditation.update.mock.calls[0][0].data.takenDownAt).toBeNull();
+        expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ action: 'meditation.restore_takedown' }),
+            }),
+        );
+    });
+
+    it('still hides a taken-down meditation without the acknowledgement', async () => {
+        // Only unhiding is guarded. Hiding something already hidden is harmless
+        // and refusing it would be surprising.
+        const { mockPrisma } = setupMocks({
+            ...meditationRecord,
+            isHidden: true,
+            takenDownAt: new Date('2026-07-26T12:00:00.000Z'),
+        });
+
+        const response = await patch({ isHidden: true });
+
+        expect(response.status).toBe(200);
+        expect(mockPrisma.meditation.update).toHaveBeenCalled();
+    });
+
     it('distinguishes an unhide from a hide', async () => {
         const { mockPrisma } = setupMocks({ ...meditationRecord, isHidden: true });
 

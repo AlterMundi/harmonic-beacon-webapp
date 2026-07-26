@@ -37,10 +37,35 @@ export async function PATCH(
 
     // If only toggling visibility flags (no status change required)
     if (isHidden !== undefined && status === undefined) {
+        // An Admin unhiding content the Provider withdrew would republish work its
+        // author took down, and the moderation toggle gives no sign it is doing
+        // that — `isHidden` reads the same either way. Refuse the plain toggle and
+        // require the caller to say they mean it. The escape hatch exists because
+        // restoring is sometimes right (the Provider asked, or the takedown was a
+        // mistake); what it stops is doing it by accident while working a queue.
+        if (isHidden === false && meditation.takenDownAt && body.restoreTakenDown !== true) {
+            return NextResponse.json(
+                {
+                    error: 'This meditation was taken down by its Provider, not hidden by moderation',
+                    detail:
+                        'Unhiding it would republish work its author withdrew. If the Provider has ' +
+                        'asked for it back, or the takedown was a mistake, repeat the request with ' +
+                        '{ "restoreTakenDown": true } — that is recorded as a restore rather than an unhide.',
+                    takenDownAt: meditation.takenDownAt.toISOString(),
+                },
+                { status: 409 },
+            );
+        }
+
+        const restoringTakedown = isHidden === false && Boolean(meditation.takenDownAt);
+
         const updated = await prisma.meditation.update({
             where: { id },
             data: {
                 isHidden,
+                // Clearing it on restore keeps the flag meaning one thing: set
+                // means the author's withdrawal still stands.
+                ...(restoringTakedown ? { takenDownAt: null } : {}),
                 ...(isFeatured !== undefined ? { isFeatured } : {}),
             },
         });
@@ -49,10 +74,21 @@ export async function PATCH(
         // stays filterable by action: an incident review asking "who hid this"
         // should not have to unpack a combined visibility payload.
         await logAdminAction(session, {
-            action: isHidden ? 'meditation.hide' : 'meditation.unhide',
+            // A restore is not an unhide. It reverses an author's decision rather
+            // than the platform's, and the log should not make the two look alike.
+            action: isHidden
+                ? 'meditation.hide'
+                : restoringTakedown
+                    ? 'meditation.restore_takedown'
+                    : 'meditation.unhide',
             targetType: 'MEDITATION',
             targetId: id,
-            metadata: { previousIsHidden: meditation.isHidden },
+            metadata: {
+                previousIsHidden: meditation.isHidden,
+                ...(restoringTakedown
+                    ? { providerTookDownAt: meditation.takenDownAt!.toISOString() }
+                    : {}),
+            },
         });
         if (isFeatured !== undefined) {
             await logAdminAction(session, {

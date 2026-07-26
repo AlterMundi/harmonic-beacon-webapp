@@ -131,6 +131,13 @@ model Meditation {
   isPublished     Boolean           @default(false) @map("is_published")
   isFeatured      Boolean           @default(false) @map("is_featured")
   isHidden        Boolean           @default(false) @map("is_hidden")
+  // Set when the Provider withdrew the content themselves, cleared when it is
+  // restored. `isHidden` alone cannot tell a Provider's withdrawal from an
+  // Admin's moderation hide, and they are different acts: one is the author
+  // exercising a right over their own work, the other is the platform acting on
+  // it. Without this an Admin clicking unhide would silently republish content
+  // its author had withdrawn.
+  takenDownAt     DateTime?         @map("taken_down_at")
   
   // Timestamps
   createdAt       DateTime          @default(now()) @map("created_at")

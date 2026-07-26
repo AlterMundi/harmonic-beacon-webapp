@@ -490,10 +490,16 @@ describe('DELETE /api/provider/meditations/[id] - provider takedown', () => {
         const { status, body } = await parseResponse(await takedown());
 
         expect(status).toBe(200);
-        expect(mockPrisma.meditation.update).toHaveBeenCalledWith({
-            where: { id: 'med-1' },
-            data: { isHidden: true },
-        });
+        // The invariant is about the *visibility* flags: hiding writes isHidden
+        // and leaves isPublished and status where they were, so an unhide returns
+        // the row to exactly where it stood. takenDownAt rides along because it
+        // records who did the hiding, which isHidden alone cannot say.
+        const call = mockPrisma.meditation.update.mock.calls[0][0];
+        expect(call.where).toEqual({ id: 'med-1' });
+        expect(call.data.isHidden).toBe(true);
+        expect(call.data.takenDownAt).toBeInstanceOf(Date);
+        expect(call.data).not.toHaveProperty('isPublished');
+        expect(call.data).not.toHaveProperty('status');
         expect((body as { meditation: unknown }).meditation).toEqual({
             id: 'med-1',
             status: 'APPROVED',
@@ -561,10 +567,16 @@ describe('DELETE /api/provider/meditations/[id] - provider takedown', () => {
 
         expect(status).toBe(200);
         expect(data.withdrawnFromReview).toBe(true);
-        expect(mockPrisma.meditation.update).toHaveBeenCalledWith({
-            where: { id: 'med-1' },
-            data: { isHidden: true },
-        });
+        // The invariant is about the *visibility* flags: hiding writes isHidden
+        // and leaves isPublished and status where they were, so an unhide returns
+        // the row to exactly where it stood. takenDownAt rides along because it
+        // records who did the hiding, which isHidden alone cannot say.
+        const call = mockPrisma.meditation.update.mock.calls[0][0];
+        expect(call.where).toEqual({ id: 'med-1' });
+        expect(call.data.isHidden).toBe(true);
+        expect(call.data.takenDownAt).toBeInstanceOf(Date);
+        expect(call.data).not.toHaveProperty('isPublished');
+        expect(call.data).not.toHaveProperty('status');
         expect(data.meditation).toEqual({
             id: 'med-1',
             status: 'PENDING',

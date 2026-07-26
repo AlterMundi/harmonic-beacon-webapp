@@ -42,6 +42,9 @@ export type AuditAction =
     // this, or did they?". `actorRole` reads PROVIDER rather than ADMIN for
     // these.
     | 'meditation.takedown'
+    // Reversing an author's withdrawal, not the platform's own hide. Distinct so
+    // that "who put this back" is answerable without reading flags.
+    | 'meditation.restore_takedown'
     // Roles are granted in Zitadel, so nothing in this app changes one. The
     // refusal is recorded rather than the change: an Admin reaching for a control
     // that should not be reachable is the fact worth having.

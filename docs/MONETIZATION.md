@@ -189,14 +189,19 @@ Neither pathway is selectable. There is no onboarding flow that asks, no field t
 - Every payout calculation will be auditable from the `ListeningSession` ledger. A revshare Provider will be able to request the calculation breakdown at any time.
 - Disputes will be handled in writing; resolution within 30 days.
 
-> The ledger is not yet a basis anyone can be paid from. The client asserts
-> whether a listen was completed and the server stores `body.completed ?? true`
-> without validating it against the meditation's duration, so the completion flag
-> is currently whatever the client said it was — and duration itself is stored as
-> `0` at upload. Attribution money cannot be computed from that. The server-side
-> computation described in
-> [BUSINESS_RULES.md §2.3](../BUSINESS_RULES.md) is a precondition for revshare,
-> not a refinement of it. **[Planned — Phase 1]**
+> The ledger is now trustworthy enough to compute from, which it was not when
+> this section was written. `completed` is derived server-side from the elapsed
+> time the server itself measured against the meditation's probed duration
+> ([BUSINESS_RULES.md §2.3](../BUSINESS_RULES.md)); the client no longer asserts
+> it and the server no longer stores what the client said. Durations are read
+> from the file at upload rather than stored as `0`.
+>
+> Two gaps remain before money can rest on it. A meditation whose duration never
+> probed successfully still carries `0`, and those rows fall back to a flat
+> seconds threshold rather than a fraction of the track — a payout formula has to
+> decide whether such a listen attributes at all, rather than inheriting the
+> fallback silently. And nothing yet normalizes per-listener contribution, which
+> is the cap this section promises above. **[Planned — Phase 2]**
 
 ## Institutional licensing
 

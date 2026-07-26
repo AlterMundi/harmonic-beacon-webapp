@@ -61,13 +61,20 @@ All content must have:
 - Title and description in the declared language (translations optional).
 - A signed Provider Content Agreement covering rights.
 
-> **The first three are policy, not enforcement.** Upload accepts a meditation
-> with no tags at all, and the Admin approval endpoint validates nothing before
-> it sets `isPublished` — so an Admin can today publish a meditation that
-> satisfies neither tag rule. The duration rule has nothing to compare against:
-> upload stores `durationSeconds = 0` with a comment deferring extraction, and no
-> edit path sets it. Until the checks exist, a reviewer's eye is the only thing
-> implementing any of this. **[Planned — Phase 1]**
+> **The two tag rules are enforced at publication, not at upload.** An approval
+> that would publish a meditation missing a LANGUAGE tag, or missing all three of
+> MOOD, TECHNIQUE and DURATION, is refused and names which requirement is unmet.
+> Upload itself still accepts a submission with no tags at all, so a Provider
+> finds out at review rather than while filling the form — a pre-flight check on
+> the upload form would move that discovery earlier, and does not exist.
+> **[Planned — unscheduled]**
+>
+> **Duration is measured, not declared.** Upload probes the file with ffprobe and
+> stores the result; a probe failure leaves `0`, meaning "not measured", rather
+> than failing the upload. Nothing asks a Provider to state a duration, so the
+> 5% rule above no longer describes a value anyone supplies — it bites only on a
+> duration a Provider writes into a title or description by hand, which nothing
+> checks and a reviewer has to catch.
 >
 > The Provider Content Agreement has not been drafted — it is the
 > counsel-engagement thread in [README.md](./README.md#open-threads) — and no
@@ -137,7 +144,7 @@ Approval and publication are one operation today — the Admin endpoint sets `is
 - **First-submission Providers**: two-reviewer approval. One Admin, one Steward (or two Admins if Steward role is unavailable). **[Planned — Phase 2]**
 - **Returning Providers in good standing**: single-reviewer approval. *(This is what the tooling does today — for everyone, first submission or not.)*
 - **Providers on probation** (post-breach, pre-reinstatement): two-reviewer approval, mandatory. See §4.6. **[Planned — Phase 2]**
-- **Emergency takedowns**: single Admin, immediate, reviewed by a second Admin within 24 hours. Hiding content is immediate and single-Admin today; the log and the second review are not. **[Planned — Phase 1]**
+- **Emergency takedowns**: single Admin, immediate, logged, reviewed by a second Admin within 24 hours. Hiding is immediate, single-Admin and written to the audit log as `meditation.hide` with the acting Admin and the previous state. The second review is the part that does not exist — nothing routes a hide to another Admin or tracks whether one looked. **[Planned — Phase 2]**
 
 > The tier scheme has no substrate. `Meditation` records `reviewedAt` but not who
 > reviewed — so a second reviewer, and the §4.5 rule that an appeal goes to an
@@ -314,10 +321,13 @@ Workflow:
 ### 6.3 Takedown thresholds
 
 A Provider reaching any of these thresholds will enter review, and probation per
-§4.6. Nothing counts: a rejection leaves one free-text reason on the current
-record, which is cleared when the meditation is later approved, and no takedown
-history is kept per Provider at all. The thresholds are policy waiting for a
-counter. **[Planned — Phase 2]**
+§4.6. The history to count now survives — every rejection, hide and takedown is
+an audit entry naming the meditation, the actor and the time, so a rejection is
+no longer lost when the row is later approved and its `rejectionReason` is
+cleared. What does not exist is the counting: nothing rolls those entries up per
+Provider, over a rolling 12 months, and nothing acts when a threshold is crossed.
+The thresholds are policy waiting for a counter, not for a record.
+**[Planned — Phase 2]**
 
 - 3 separate validated content rejections within 12 months.
 - 2 takedowns of published content within 12 months.
@@ -399,12 +409,14 @@ We will publish, at `/policy/content`:
 - Notable policy decisions worth broader explanation.
 
 > The page does not exist — there is no `policy` route in the app — and no
-> aggregate statistics are produced, because nothing counts submissions,
-> approvals, rejections by category or takedowns by reason. The public summary is
-> a Phase 1 deliverable
-> ([PHASE_1_CREDIBILITY.md §2.1](./phases/PHASE_1_CREDIBILITY.md))
-> **[Planned — Phase 1]**; the statistics need the audit log and the queue
-> instrumentation that arrive with the moderation tooling
+> aggregate statistics are produced. The raw material now does exist: the audit
+> log records every approval, rejection, hide and takedown with its actor and
+> timestamp, and the `Report` table records what was reported and how it was
+> resolved. What is missing is the counting — nothing aggregates either into the
+> submitted / approved / rejected-by-category / takedowns-by-reason figures this
+> section promises, and nothing publishes them. The public summary is a Phase 1
+> deliverable ([PHASE_1_CREDIBILITY.md §2.1](./phases/PHASE_1_CREDIBILITY.md))
+> **[Planned — Phase 1]**; the quarterly statistics over that log are
 > **[Planned — Phase 2]**.
 
 We do not publish:

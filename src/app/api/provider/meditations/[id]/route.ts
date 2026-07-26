@@ -180,7 +180,13 @@ export async function DELETE(
 
         const updated = await prisma.meditation.update({
             where: { id },
-            data: { isHidden: true },
+            // `takenDownAt` is what makes this distinguishable from an Admin's
+            // moderation hide. Both set `isHidden`, but they are different acts —
+            // the author withdrawing their own work, versus the platform acting on
+            // it — and without the distinction an Admin clicking unhide would
+            // republish something its author had withdrawn, with nothing on screen
+            // to say so.
+            data: { isHidden: true, takenDownAt: new Date() },
         });
 
         // TODO(storage): when an object-storage driver exists, this is where the
