@@ -281,4 +281,4 @@ Before shipping any monetization surface, confirm:
 - [ ] Copy is audited — no scarcity, no guilt, no flattery.
 - [ ] Privacy implications of any new data (e.g. billing address) are reflected in the consent copy.
 - [ ] Tax handling for the surface is in place.
-- [ ] Admin audit log captures financial events. The audit log does not exist; it is Phase 1 work ([BUSINESS_RULES.md §1.3](../BUSINESS_RULES.md)) and this checkbox cannot be ticked before it lands. **[Planned — Phase 1]**
+- [ ] Admin audit log captures financial events. The audit log now exists ([BUSINESS_RULES.md §1.3](../BUSINESS_RULES.md)) and records administrative writes, so what remains for this checkbox is emitting entries from the financial surfaces themselves — which have not been built. The mechanism is ready; there are no financial events to capture yet. **[Planned — Phase 1]**

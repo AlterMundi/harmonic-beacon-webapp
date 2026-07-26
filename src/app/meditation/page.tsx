@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { BottomNav, AudioVisualizer } from "@/components";
+import { BottomNav, AudioVisualizer, ReportButton } from "@/components";
 import { useAudio } from "@/context/AudioContext";
 import { getGradient, formatDuration, formatTimeMs } from "@/lib/format";
 
@@ -316,6 +316,18 @@ export default function MeditationPage() {
                                 />
                                 <span className="text-xs text-white/60">Voice</span>
                             </div>
+                        </div>
+
+                        {/* The browse cards below are themselves <button>s, so the report
+                            control lives here: this is the one place a meditation is
+                            presented without being nested inside another control, and it
+                            is where a listener is actually hearing the thing. */}
+                        <div className="mt-4 pt-3 border-t border-white/5 flex justify-end">
+                            <ReportButton
+                                targetType="MEDITATION"
+                                targetId={currentMeditation.id}
+                                targetLabel={currentMeditation.title}
+                            />
                         </div>
                     </div>
                 </section>

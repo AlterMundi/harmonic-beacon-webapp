@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { BottomNav, AudioVisualizer } from "@/components";
+import { BottomNav, AudioVisualizer, ReportButton } from "@/components";
 import { useAudio } from "@/context/AudioContext";
 import { formatTime as formatTimeFn, formatDate as formatDateFn, formatDuration as formatDurationFn } from "@/lib/format";
 
@@ -334,12 +334,15 @@ export default function SessionsPage() {
                     </h3>
                     <div className="space-y-3">
                         {recordedSessions.map((s, i) => (
-                            <Link
+                            <div
                                 key={s.id}
-                                href={`/playback/${s.id}`}
-                                className="glass-card p-4 block hover:bg-white/5 transition-colors animate-fade-in"
+                                className="glass-card p-4 animate-fade-in"
                                 style={{ opacity: 0, animationDelay: `${i * 0.1}s` }}
                             >
+                                <Link
+                                    href={`/playback/${s.id}`}
+                                    className="block hover:opacity-80 transition-opacity"
+                                >
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2 mb-1">
@@ -369,7 +372,15 @@ export default function SessionsPage() {
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                                     </svg>
                                 </div>
-                            </Link>
+                                </Link>
+                                <div className="mt-2 pt-2 border-t border-white/5 flex justify-end">
+                                    <ReportButton
+                                        targetType="SESSION"
+                                        targetId={s.id}
+                                        targetLabel={s.title}
+                                    />
+                                </div>
+                            </div>
                         ))}
                     </div>
                 </section>
@@ -387,12 +398,15 @@ export default function SessionsPage() {
                 ) : (
                     <div className="space-y-3">
                         {scheduledSessions.map((s, i) => (
-                            <Link
+                            <div
                                 key={s.id}
-                                href={`/session/${s.id}`}
-                                className="glass-card p-4 block hover:bg-white/5 transition-colors animate-fade-in"
+                                className="glass-card p-4 animate-fade-in"
                                 style={{ opacity: 0, animationDelay: `${i * 0.1}s` }}
                             >
+                                <Link
+                                    href={`/session/${s.id}`}
+                                    className="block hover:opacity-80 transition-opacity"
+                                >
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2 mb-1">
@@ -425,7 +439,23 @@ export default function SessionsPage() {
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                                     </svg>
                                 </div>
-                            </Link>
+                                </Link>
+                                {/* This is the only listener-facing surface that carries
+                                    another person's user id, so it is where the USER
+                                    target is reachable. */}
+                                <div className="mt-2 pt-2 border-t border-white/5 flex justify-end gap-1">
+                                    <ReportButton
+                                        targetType="SESSION"
+                                        targetId={s.id}
+                                        targetLabel={s.title}
+                                    />
+                                    <ReportButton
+                                        targetType="USER"
+                                        targetId={s.provider.id}
+                                        targetLabel={s.provider.name || "this provider"}
+                                    />
+                                </div>
+                            </div>
                         ))}
                     </div>
                 )}

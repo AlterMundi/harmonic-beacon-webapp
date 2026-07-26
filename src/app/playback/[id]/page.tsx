@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CompositePlayer } from "@/components";
+import { CompositePlayer, ReportButton } from "@/components";
 import type { RecordingTrack } from "@/components/CompositePlayer";
 
 interface SessionMeta {
@@ -141,6 +141,16 @@ export default function PlaybackPage() {
                     sessionId={session.id}
                     recordings={session.recordings}
                 />
+
+                {/* Below the player: this is where a listener hears whatever they
+                    would be reporting. */}
+                <div className="mt-6 pt-4 border-t border-[var(--border-subtle)] flex justify-end">
+                    <ReportButton
+                        targetType="SESSION"
+                        targetId={session.id}
+                        targetLabel={session.title}
+                    />
+                </div>
             </section>
         </main>
     );

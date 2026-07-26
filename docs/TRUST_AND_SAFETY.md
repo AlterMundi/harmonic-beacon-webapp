@@ -78,17 +78,18 @@ Publish rights are decided once, when the join token is issued: a Provider gets 
 
 ### 2.5 Report capture
 
-> **The capture path exists; the button does not.** The `Report` model, the filing
-> endpoint and the admin triage routes are built, and `acknowledgedAt` is stamped
-> when an admin first moves a report off OPEN, which is what makes the 24-hour
-> acknowledgement in §2.5 measurable rather than merely stated. What is missing is
-> the report button on each content surface, so a report can currently only be
-> filed by calling the API. Until that ships, the playbook in §5.1 still begins
-> with an event no Listener can produce. **[Planned — Phase 1]** *(the UI)*
+> **Reporting is end to end.** The `Report` model, the filing endpoint and the
+> admin triage routes are built, the report button is on the content surfaces, and
+> `acknowledgedAt` is stamped when an admin first moves a report off OPEN — which
+> is what makes the 24-hour acknowledgement measurable rather than merely stated.
+> The triage queue at `/admin/reports` shows, per report, how long it has been
+> waiting and whether it has been acknowledged. Nothing aggregates that across the
+> queue and nothing enforces the target, so the response times stay off public
+> surfaces. The playbook in §5.1 now begins with an event a Listener can produce.
 
-- A report button will be on every content surface, every Provider profile, every live-session UI, and every participant row in a session.
-- A report will capture: reporter (if logged in), target (user/content/session), category, free-form context, context metadata (timestamp, URL), and whether the reporter wants a response.
-- Reports will emit to a queue that routes to Steward or Admin.
+- The report button is on the meditation player, on the recorded- and scheduled-session lists, on the session playback page, in the live-session UI for Listeners, and on the Provider behind a scheduled session. Participant rows do not exist as a UI, and there is no standalone Provider profile page; both will carry the button when they are built. **[Planned — Phase 2]** *(participant rows and Provider profiles)*
+- A report captures: reporter, target (user/content/session), category, and free-form context. It does not capture context metadata (URL, playback position) or a "do you want a response" flag; the app never writes back to a reporter, and the dialog says so rather than implying a reply. **[Planned — unscheduled]** *(context metadata and the response flag)*
+- Reports land in a single queue that an Admin works. There is no routing to a Steward role and no notification of any kind — an Admin has to open the queue to find out a report exists. **[Planned — Phase 1]** *(routing and notification)*
 
 ### 2.6 Data controls
 

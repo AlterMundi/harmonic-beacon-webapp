@@ -7,14 +7,20 @@
 > statement in this document is a claim about code that exists today; if you find
 > one that is not, that is a bug in this document.
 >
-> **What exists today is the moderation spine and nothing else.** A meditation is
-> uploaded as `PENDING`, an Admin approves or rejects it with a stored reason
-> shown to the Provider, and an Admin can hide a published one. There is no
-> report model and no report button on any surface, no appeal path, no probation
-> state, no second reviewer, no audit log and no public policy page — and none of
-> the publication requirements in §2 is checked by any endpoint. Read the rest of
-> this document as the standard the moderation surface will be held to, not as a
-> description of what happens when a Provider uploads something today.
+> **The moderation spine is real; the surfaces around it are not yet.** A
+> meditation is uploaded as `PENDING`, an Admin approves or rejects it with a
+> stored reason shown to the Provider, and an Admin can hide a published one.
+> Publication now enforces the tag requirements in §2 — an approval that would
+> publish a meditation missing them is refused. Listener reporting is built end to
+> end (§5), every administrative action is written to an audit log, and an Admin
+> can terminate a live session with a recorded reason.
+>
+> Still absent: the appeal path, the probation state (§4.6 defines its conditions
+> but nothing implements them), the second reviewer for first-submission Providers
+> — which has no substrate, since `Meditation` records *when* it was reviewed but
+> not by *whom* — and the public policy page. Read those parts of this document as
+> the standard the moderation surface will be held to, not as a description of
+> what happens today.
 
 *Draft · 2026-04-12 · author: product design, pending validation and legal review*
 
@@ -207,34 +213,34 @@ breach will be offboarded rather than placed on probation again.
 
 ## 5. Reports from Listeners
 
-> **None of this section exists.** There is no report model in the schema, no
-> report button on any surface, no triage queue and no acknowledgement email — a
-> Listener who encounters something wrong today has no path inside the product to
-> say so. For a platform that invites people into a vulnerable state this is the
-> affordance the safety posture rests on, and it is required before open signup
-> rather than merely desirable. The model and the button are
-> **[Planned — Phase 1]**; the triage tooling and its SLA indicators are
-> **[Planned — Phase 2]**.
+> **The path exists; the notifications do not.** A Listener can file a report from
+> a content surface, it lands in the `Report` table, and an Admin works the queue
+> at `/admin/reports`, which shows how long each report has waited and whether it
+> has been acknowledged. What does not exist is any message back to the reporter —
+> there is no transactional email of any kind — and there is no Steward role, so
+> everything routes to an Admin. The response times below stay targets until
+> something aggregates the timestamps the queue records.
 
-### 5.1 What will be reportable
+### 5.1 What is reportable
 
-- A meditation.
-- A scheduled session (during or after).
-- A Provider profile.
-- A co-Listener in a live session.
+- A meditation — from the player on the meditation page.
+- A scheduled session — from the session list, the live-session UI and the playback page.
+- The Provider behind a scheduled session. There is no standalone Provider profile page; when one exists it will carry the button. **[Planned — Phase 2]**
+- A co-Listener in a live session. The UI has no participant list, so there is nothing to attach the control to. **[Planned — Phase 2]**
 
 ### 5.2 How
 
-- A report button will be visible on every content surface.
-- The reporter will select a category (therapeutic claim / harassment / plagiarism / technical problem / other) and may add free-form context.
-- Reporters will receive an acknowledgement within 24 hours and a resolution notice within 5 business days. These are targets and there is no transactional email of any kind yet.
+- A report button is visible on the content surfaces named in §5.1.
+- The reporter selects a category (safety / therapeutic claim / copyright / spam / other) and may add free-form context, capped at 4,000 characters.
+- A second open report from the same reporter against the same target is refused. The dialog says the earlier report is still open rather than showing an error.
+- Reporters will receive an acknowledgement within 24 hours and a resolution notice within 5 business days. These are targets; there is no transactional email of any kind yet, and the dialog tells the reporter the app will not write back. **[Planned — Phase 1]**
 - Reporters are never disclosed to the reported party.
 
 ### 5.3 Triage
 
-- Reports will be triaged by a Steward (when the role exists) or an Admin.
+- Reports are triaged by an Admin at `/admin/reports`, who can acknowledge, resolve, dismiss or reopen one and attach a resolution note. A Steward role does not exist. **[Planned — Phase 2]** *(the Steward role)*
 - High-severity reports (safety, abuse, legal) will escalate to Admin immediately.
-- A report that names an active live session will be able to trigger the kill-switch (see [TRUST_AND_SAFETY.md §4](./TRUST_AND_SAFETY.md)). No Admin path ends a live session today; the only thing that ends one is the hosting Provider ending their own. **[Planned — Phase 1]**
+- A report that names an active live session can be acted on: the kill-switch exists at `POST /api/admin/sessions/[id]/terminate` and an Admin can end any session with a recorded reason (see [TRUST_AND_SAFETY.md §4](./TRUST_AND_SAFETY.md)). What is not wired is the path *from* a report *to* that action — an Admin reading a report about a live session has to find the session themselves. **[Planned — Phase 1]** *(the link between the two)*
 - A pattern of validated reports about a Provider will move them to probation (§4.6).
 
 ---

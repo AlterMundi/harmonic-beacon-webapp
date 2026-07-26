@@ -14,6 +14,7 @@ interface AdminStats {
 
 export default function AdminDashboard() {
     const [stats, setStats] = useState<AdminStats | null>(null);
+    const [openReports, setOpenReports] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -24,6 +25,16 @@ export default function AdminDashboard() {
             })
             .catch(() => { })
             .finally(() => setLoading(false));
+    }, []);
+
+    // Separate from /api/admin/stats: the open-report count is the one number on
+    // this page that is time-sensitive (BUSINESS_RULES.md §10), and the reports
+    // endpoint already returns it alongside the queue.
+    useEffect(() => {
+        fetch("/api/admin/reports?status=OPEN&limit=1")
+            .then((r) => r.json())
+            .then((data) => setOpenReports(data?.counts?.OPEN || 0))
+            .catch(() => { });
     }, []);
 
     const menuItems = [
@@ -37,6 +48,17 @@ export default function AdminDashboard() {
                 </svg>
             ),
             alert: stats?.pendingMeditations || 0,
+        },
+        {
+            title: "Report Queue",
+            desc: "Triage safety and policy reports from listeners",
+            href: "/admin/reports",
+            icon: (
+                <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 2H21l-3 6 3 6h-8.5l-1-2H5a2 2 0 00-2 2z" />
+                </svg>
+            ),
+            alert: openReports,
         },
         {
             title: "User Management",

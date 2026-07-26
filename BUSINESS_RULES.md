@@ -370,25 +370,24 @@ The rules below are the intended client contract. Retry backoff and local cachin
 
 Detail: [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md).
 
-> **Two of the four rules below hold; the reporting one is half-built.** The kill
-> switch exists and an Admin can end any live session with a recorded reason. The
-> `Report` model and its filing and triage endpoints exist. What does not exist is
-> the report *button* on each content surface, so a Listener cannot yet file one —
-> which for a platform inviting people into a vulnerable state is the half that
-> matters most, and it is required before open signup rather than merely
-> desirable. **[Planned — Phase 1]** *(the reporting UI)*
+> **Three of the four rules below hold.** The kill switch exists and an Admin can
+> end any live session with a recorded reason. Reporting is end to end: a Listener
+> files a report from the content surface, the `Report` row is created, and an
+> Admin works the queue at `/admin/reports`, which shows how long each report has
+> been waiting and whether it has been acknowledged.
 >
-> The response times below are targets. Acknowledgement is now measurable —
-> `acknowledgedAt` is stamped when an admin first triages a report — but nothing
-> measures it yet and nothing enforces it. Once published these read as
-> quasi-contractual, so they should not appear on a public surface until the queue
-> that measures them exists.
+> The response times below are targets. Acknowledgement is measurable —
+> `acknowledgedAt` is stamped when an admin first triages a report, and the queue
+> displays the resulting latency — but nothing aggregates it and nothing enforces
+> it. Once published these read as quasi-contractual, so they should not appear on
+> a public surface until something measures them rather than merely displaying
+> them per row.
 
 Authoritative rules:
 
 - Every scheduled session has an Admin-accessible kill-switch, and using it requires a recorded reason.
-- Every content surface (meditations, sessions, profiles) will have a report button. The report can be filed and triaged; the button is what is missing. **[Planned — Phase 1]**
-- Reports will be acknowledged within 24 hours and triaged within 5 business days. **[Planned — Phase 1]** *(the measurement; the timestamp it needs is now recorded)*
+- Every content surface (meditations, sessions, and the Provider behind a scheduled session) has a report button, and a filed report lands in the Admin triage queue at `/admin/reports`. There is no standalone Provider profile page yet, so the Provider is reportable where their session is presented rather than from a page of their own.
+- Reports will be acknowledged within 24 hours and triaged within 5 business days. **[Planned — Phase 1]** *(the measurement; the timestamp is recorded and the triage queue shows it per report, but nothing aggregates or reports on it)*
 - Incidents of severity S1 or S2 (user-visible harm, data incident, safety breach) will trigger the incident playbook and, when legally permissible, a public postmortem. **[Planned — Phase 1]**
 
 ---

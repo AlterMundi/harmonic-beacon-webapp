@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, RemoteTrackPublication, LocalTrackPublication } from "livekit-client";
 import { useAudio } from "@/context/AudioContext";
+import { ReportButton } from "@/components";
 import { redactErrorDetail } from '@/lib/redact';
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
@@ -425,6 +426,17 @@ export default function SessionRoomPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                         </svg>
                     </button>
+
+                    {/* Report (listeners only — a host does not report their own room) */}
+                    {!canPublish && sessionInfo && (
+                        <ReportButton
+                            variant="icon"
+                            targetType="SESSION"
+                            targetId={sessionInfo.id}
+                            targetLabel={sessionInfo.title}
+                            className="w-14 h-14"
+                        />
+                    )}
 
                     {/* End Session button (only for publishers) */}
                     {canPublish && (
