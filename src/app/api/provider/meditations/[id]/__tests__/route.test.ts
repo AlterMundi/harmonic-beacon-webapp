@@ -102,7 +102,10 @@ describe('GET /api/provider/meditations/[id]', () => {
 
         const mockPrisma = {
             meditation: { findUnique: vi.fn().mockResolvedValue(null) },
-            user: { findUnique: vi.fn() },
+            // The ownership helper resolves the DB user before it looks at the
+            // meditation, so a request with no user short-circuits into "User not
+            // found" and never reaches the case under test.
+            user: { findUnique: vi.fn().mockResolvedValue({ id: 'db-uuid-1' }) },
         };
         vi.doMock('@/lib/db', () => ({ prisma: mockPrisma }));
 
@@ -450,13 +453,38 @@ describe('DELETE /api/provider/meditations/[id] - provider takedown', () => {
         expect(body).toEqual({ error: 'Authentication required' });
     });
 
-    it('returns 403 for a LISTENER', async () => {
-        setupMocks(publishedMeditation, { role: 'LISTENER' });
+    it('lets an offboarded Provider take their own content down', async () => {
+        // BUSINESS_RULES.md §3.3: a Provider who offboards may remove their
+        // content. Offboarding revokes the PROVIDER role, so a role check would
+        // take the route away at the exact moment the right applies. The owner
+        // here has role LISTENER and still owns the row.
+        const { mockPrisma } = setupMocks(publishedMeditation, { role: 'LISTENER' });
+
+        const { status, body } = await parseResponse(await takedown());
+
+        expect(status).toBe(200);
+        expect((body as { takenDown: boolean }).takenDown).toBe(true);
+        expect(mockPrisma.meditation.update).toHaveBeenCalled();
+        // The audit entry records the role they hold now, not the one they had
+        // when they uploaded it.
+        expect(mockPrisma.auditLog.create.mock.calls[0][0].data.actorRole).toBe('LISTENER');
+    });
+
+    it('returns 403, not 404, when a caller who owns nothing targets someone else\'s content', async () => {
+        // A plain Listener must not be able to take down content, and must not be
+        // able to probe which ids exist either — the refusal is the ownership
+        // one, and it does not depend on the caller's role.
+        const { mockPrisma } = setupMocks(
+            { ...publishedMeditation, providerId: 'other-provider-uuid' },
+            { role: 'LISTENER', dbUserId: 'db-listener-1' },
+        );
 
         const { status, body } = await parseResponse(await takedown());
 
         expect(status).toBe(403);
-        expect(body).toEqual({ error: 'Insufficient permissions' });
+        expect(body).toEqual({ error: 'Unauthorized' });
+        expect(mockPrisma.meditation.update).not.toHaveBeenCalled();
+        expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
     });
 
     it('refuses to take down another Provider\'s content', async () => {

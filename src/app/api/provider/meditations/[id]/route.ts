@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { Meditation } from '@prisma/client';
 import { prisma } from '@/lib/db';
-import { requireRole } from '@/lib/auth';
+import { requireAuth, requireRole } from '@/lib/auth';
 import { logAdminAction } from '@/lib/audit';
 import { redactErrorDetail } from '@/lib/redact';
 
@@ -12,9 +12,12 @@ export const dynamic = 'force-dynamic';
  * explaining why it is not. Same tuple shape as `requireAuth`/`requireRole`.
  *
  * An Admin passes for any meditation — the moderation route is theirs and this
- * route has always let them through. A Provider passes only for their own:
+ * route has always let them through. Everyone else passes only for their own:
  * `session.user.id` is the Zitadel subject, so the owner comparison needs the DB
  * user row, not the session id.
+ *
+ * Note what this does *not* consult: the caller's current role. That is the whole
+ * check for DELETE, deliberately — see the takedown handler.
  */
 async function resolveOwnedMeditation(
     session: { user: { id: string; role: string } },
@@ -45,6 +48,15 @@ export async function GET(
     const [session, errorResponse] = await requireRole('PROVIDER', 'ADMIN');
     if (!session) return errorResponse;
 
+    // Ownership through the shared helper rather than a second copy. The copy that
+    // used to live here compared `providerId` against `session.user.id` — the
+    // Zitadel subject, not the DB uuid — and carried a comment admitting it and
+    // deferring the fix. It happened to be safe because the mismatch always failed
+    // closed into the fallback below it, but two auth checks where one is known to
+    // be wrong is a bug waiting for someone to simplify the wrong half.
+    const [, ownershipError] = await resolveOwnedMeditation(session, id);
+    if (ownershipError) return ownershipError;
+
     const meditation = await prisma.meditation.findUnique({
         where: { id },
         include: {
@@ -56,16 +68,6 @@ export async function GET(
 
     if (!meditation) {
         return NextResponse.json({ error: 'Meditation not found' }, { status: 404 });
-    }
-
-    // Ensure ownership if not admin
-    if (session.user.role !== 'ADMIN' && meditation.providerId !== session.user.id) { // NOTE: providerId check needs user ID to be UUID from DB, not Zitadel ID
-        // To fix this properly we need to fetch the DB user first like in the list endpoint
-        // But for now let's assume session.user.id matches for simplicity or fetch user
-        const dbUser = await prisma.user.findUnique({ where: { zitadelId: session.user.id } });
-        if (!dbUser || meditation.providerId !== dbUser.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-        }
     }
 
     return NextResponse.json({
@@ -141,7 +143,16 @@ export async function PATCH(
  * DELETE /api/provider/meditations/[id]
  * Provider-initiated takedown. CONTENT_POLICY.md §6.1: "a Provider may take down
  * their own content at any time."
- * Auth: PROVIDER or ADMIN, owner-checked.
+ * Auth: any authenticated caller, gated on ownership.
+ *
+ * Ownership rather than current role, which is not the looser check it reads as —
+ * `resolveOwnedMeditation` is what has always gated this, and the role check was
+ * never doing the work. It was doing harm: BUSINESS_RULES.md §3.3 says a Provider
+ * who offboards may remove their content, and offboarding revokes the PROVIDER
+ * role, so the role check removed the route from its owner at the exact moment
+ * the right applies. A caller who owns nothing gets 403 on every id, so the
+ * surface does not widen. GET and PATCH stay on `requireRole`: editing content is
+ * a Provider activity, withdrawing your own work is not.
  *
  * DELETE rather than a PATCH field, for two reasons. PATCH here is the editor
  * payload — title, description, tags, mix — and a takedown arriving inside an
@@ -162,7 +173,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id } = await params;
-    const [session, errorResponse] = await requireRole('PROVIDER', 'ADMIN');
+    const [session, errorResponse] = await requireAuth();
     if (!session) return errorResponse;
 
     try {
