@@ -496,6 +496,46 @@ describe('PATCH /api/admin/meditations/[id] - publication tag rules', () => {
         expect(mockPrisma.meditation.update).toHaveBeenCalled();
     });
 
+    it('refuses to publish a meditation that has been taken down', async () => {
+        // CONTENT_POLICY.md §6.1: a Provider's withdrawal stays withdrawn. The
+        // row is still in the PENDING queue, so the refusal is what keeps a
+        // reviewer from approving it back into the catalogue.
+        const { mockPrisma, mockRename } = setupMocks(['LANGUAGE', 'MOOD'], {
+            ...pendingMeditation,
+            isHidden: true,
+        });
+
+        const { status, body } = await parseResponse(await approve());
+
+        expect(status).toBe(409);
+        expect((body as { error: string }).error).toContain('taken down');
+        expect(mockPrisma.meditation.update).not.toHaveBeenCalled();
+        expect(mockRename).not.toHaveBeenCalled();
+    });
+
+    it('still lets an Admin unhide a taken-down meditation', async () => {
+        // The refusal is scoped to the publishing write; the visibility-only
+        // branch must stay reachable or nothing could ever be put back up.
+        const { mockPrisma } = setupMocks(['LANGUAGE', 'MOOD'], {
+            ...pendingMeditation,
+            status: 'APPROVED',
+            isPublished: true,
+            isHidden: true,
+        });
+
+        const { PATCH } = await import('../route');
+        const response = await PATCH(
+            createRequest('/api/admin/meditations/med-1', { method: 'PATCH', body: { isHidden: false } }),
+            mockParams({ id: 'med-1' }),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockPrisma.meditation.update).toHaveBeenCalledWith({
+            where: { id: 'med-1' },
+            data: { isHidden: false },
+        });
+    });
+
     it('does not re-check tags on an already-published meditation', async () => {
         // The Featured toggle PATCHes status: 'APPROVED' too. Blocking that on a
         // publication rule would make an unrelated admin action fail.

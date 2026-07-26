@@ -250,21 +250,40 @@ breach will be offboarded rather than placed on probation again.
 
 ### 6.1 Provider-initiated takedown
 
-A Provider will be able to take down their own content at any time. There is no
-provider-facing removal or unpublish path today — the provider API updates a
-title, a description, tags and the mix position, and nothing else — so a Provider
-who wants content down has to ask an Admin, who hides it.
-**[Planned — unscheduled]**
+A Provider may take down their own content at any time, without a reason and
+without asking an Admin: `DELETE /api/provider/meditations/[id]` takes down one
+meditation the caller owns. The content leaves the catalogue immediately and
+stops streaming — the audio endpoint consults the same visibility flag the
+catalogue does, so a saved link or a favourite stops playing too. Taking a
+meditation down before review is a withdrawal from review: it stays out and
+cannot be approved while it is down.
 
-Take-downs will be logged, once there is an audit log to log them to.
-**[Planned — Phase 1]**
+The endpoint is built; no button calls it yet, so a Provider exercising the right
+today needs someone to call it for them. The control in the Provider dashboard is
+**[Planned — Phase 1]**.
 
-Historical `ListeningSession` records are unaffected: hiding leaves them
-untouched, and the schema sets `ListeningSession.meditationId` to null if a
-meditation row is ever hard-deleted, so the listening record survives without its
-reference. (The tombstone record described in
-[BUSINESS_RULES.md §9.2](../BUSINESS_RULES.md) does not exist; the null is what
-happens instead.)
+Takedowns are recorded in the audit log as `meditation.takedown`, distinct from an
+Admin's `meditation.hide`, so the log can answer whether content was pulled by us
+or by its author.
+
+A takedown is not a deletion, and this is deliberate. The row is retained — it is
+the tombstone [BUSINESS_RULES.md §9.2](../BUSINESS_RULES.md) asks for — because a
+past `ListeningSession` references the `meditationId`, and dropping the row would
+blank other Listeners' history. Nothing a Listener has already done disappears;
+the content simply stops being reachable.
+
+> **The audio file itself is not purged.** A takedown stops the platform serving
+> the bytes; it does not erase them. There is no object-storage driver yet, so
+> the file remains on the host filesystem until an administrator removes it by
+> hand. A Provider who needs the file destroyed rather than unserved has to ask,
+> and the interface says so rather than implying the file is gone.
+> **[Planned — unscheduled]** *(the purge, gated on the storage driver)*
+
+Two limits worth stating plainly, because a Provider reading the promise above
+would not guess either:
+
+- Restoring taken-down content is an Admin action, not a Provider one. The takedown verb is one-way by design: the flag it writes is the same flag Admin moderation hides use, and a Provider able to clear it could undo a policy takedown.
+- The route requires the PROVIDER or ADMIN role, so a Provider whose role has already been revoked cannot use it — which is exactly the case [BUSINESS_RULES.md §3.3](../BUSINESS_RULES.md) contemplates, where content stays available unless removal is requested. Until that is fixed, an offboarded Provider's removal request goes through an Admin. **[Planned — unscheduled]**
 
 ### 6.2 Platform-initiated takedown
 

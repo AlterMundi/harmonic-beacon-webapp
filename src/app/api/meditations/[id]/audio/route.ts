@@ -27,10 +27,15 @@ export async function GET(
 
     const meditation = await prisma.meditation.findUnique({
         where: { id },
-        select: { filePath: true, isPublished: true, status: true },
+        select: { filePath: true, isPublished: true, status: true, isHidden: true },
     });
 
-    if (!meditation || !meditation.isPublished || meditation.status !== 'APPROVED') {
+    // `isHidden` belongs in this check, not just in the catalogue query: a
+    // takedown that leaves the file streamable to anyone holding the id — a
+    // favourite, a bookmark, a cached page — has not taken anything down.
+    // BUSINESS_RULES.md §2.1 makes `isHidden` the one flag a visibility filter
+    // consults, and this is a visibility filter.
+    if (!meditation || !meditation.isPublished || meditation.status !== 'APPROVED' || meditation.isHidden) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 

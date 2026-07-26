@@ -8,6 +8,14 @@
  * Append-only: this module offers a write and nothing else. There is deliberately
  * no update or delete helper, and no route exposes either. A log an Admin can
  * edit is not evidence of what an Admin did.
+ *
+ * Not every actor here is an Admin. Provider takedown (CONTENT_POLICY.md §6.1)
+ * removes content from the catalogue, which is the same consequence a moderation
+ * hide has, so it is logged in the same place. Nothing about that misrepresents
+ * the actor: `actorRole` is snapshotted from the acting session, so a Provider's
+ * action is recorded as a Provider's, and `action` distinguishes
+ * `meditation.takedown` from `meditation.hide`. The helper is named for the log
+ * it writes to, not for a role it assumes.
  */
 
 import { prisma } from '@/lib/db';
@@ -25,6 +33,15 @@ export type AuditAction =
     | 'meditation.unfeature'
     | 'meditation.hide'
     | 'meditation.unhide'
+    // Provider-initiated, not administrative: the Provider removing their own
+    // content under CONTENT_POLICY.md §6.1. It lands in the same log because the
+    // log is the record of anything that changes what a Listener can reach, and
+    // it stays separate from `meditation.hide` even though both write the same
+    // flag — the author withdrawing their work and a moderator removing it are
+    // different acts, and a log that conflates them cannot answer "did we pull
+    // this, or did they?". `actorRole` reads PROVIDER rather than ADMIN for
+    // these.
+    | 'meditation.takedown'
     // Roles are granted in Zitadel, so nothing in this app changes one. The
     // refusal is recorded rather than the change: an Admin reaching for a control
     // that should not be reachable is the fact worth having.

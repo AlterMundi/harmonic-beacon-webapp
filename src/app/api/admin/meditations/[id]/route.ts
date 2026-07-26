@@ -84,6 +84,20 @@ export async function PATCH(
     // action fail on a rule about publication. Checked before the file moves, so a
     // refused approval leaves nothing half-done.
     const publishes = status === 'APPROVED' && !(meditation.isPublished && meditation.status === 'APPROVED');
+
+    // A meditation that is down cannot be published without first being brought
+    // back up. This is what stops a Provider's withdrawal (CONTENT_POLICY.md
+    // §6.1) from being undone by a reviewer working the PENDING queue: the row
+    // is still in that queue, flagged Hidden, but approving it is refused.
+    // Scoped to the write that publishes, so unhiding and the Featured toggle —
+    // both of which PATCH an already-approved row — are unaffected.
+    if (publishes && meditation.isHidden) {
+        return NextResponse.json(
+            { error: 'This meditation has been taken down. Unhide it before approving.' },
+            { status: 409 },
+        );
+    }
+
     if (publishes) {
         const meditationTags = await prisma.meditationTag.findMany({
             where: { meditationId: id },
