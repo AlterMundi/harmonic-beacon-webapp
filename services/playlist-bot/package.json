@@ -1,6 +1,7 @@
 {
   "name": "harmonic-beacon-playlist-bot",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "private": true,
   "description": "LiveKit bot that publishes recorded beacon audio when beacon01 is offline",
   "main": "dist/index.js",

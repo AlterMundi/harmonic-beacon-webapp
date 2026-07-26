@@ -1,0 +1,64 @@
+Harmonic Beacon — Web
+Copyright 2026 Asociación Civil AlterMundi
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+--------------------------------------------------------------------------------
+WHAT THIS LICENSE COVERS
+
+The Apache License 2.0 covers the SOURCE CODE in this repository.
+
+It does NOT cover:
+
+  * Audio content — provider meditations, session recordings, and the beacon
+    stream itself. Content is governed by the Provider Content Agreement; see
+    docs/CONTENT_POLICY.md. Nothing in the code license grants any right to
+    audio served by this software.
+
+  * Trademarks — "Harmonic Beacon", "AlterMundi", and the Harmonically Aware
+    Technology seal. Apache License 2.0 section 6 expressly declines to grant
+    trademark rights, and this notice restates it because a permissive code
+    license is often read as broader than it is. Running this software does not
+    make a deployment a Harmonic Beacon, and does not permit describing it as
+    one. Participation in the Constellation is governed by its charter, which is
+    a trademark license and is unaffected by this one.
+
+  * Documentation — the docs/ directory and BUSINESS_RULES.md describe policy
+    and product commitments rather than implementing them. They are currently
+    covered by this license for want of a separate decision; the founding work
+    "harmonic-information-theory" is published CC BY 4.0, and aligning the
+    documentation with it is an open question.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS
+
+This software depends on, but does not redistribute, components under their own
+licenses. Notable ones, and the obligation each carries if this software is ever
+redistributed as a built artifact such as a container image:
+
+  * LiveKit server and SDKs (livekit-server-sdk, livekit-client) — Apache-2.0
+  * go2rtc — MIT
+  * Next.js, React — MIT
+  * Prisma — Apache-2.0
+  * sharp / libvips prebuilt binaries (@img/sharp-libvips-*) — LGPL-3.0-or-later.
+    Transitively required by Next.js image optimisation. Not redistributed
+    today, because container images are built on the deployment host and pushed
+    to no registry. Publishing an image would attach LGPL section 4 obligations
+    (notice, and the ability to relink) to that image, under any license choice
+    including this one.
+  * lightningcss, axe-core — MPL-2.0 (file-level copyleft; triggered only by
+    modifying those projects' own source files)
+  * caniuse-lite — CC-BY-4.0 (attribution if redistributed)
+
+A full dependency license inventory can be regenerated at any time from the
+lockfiles; this list records only what imposes an obligation or a caveat.

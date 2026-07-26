@@ -95,18 +95,24 @@ What's live today:
 
 Production deploys run on a managed host with Postgres on the host and Next.js + go2rtc in Docker Compose. See `deploy/README.md` for the deployment runbook.
 
-## License & ownership
+## License
 
-> **Open decision — and this repository is already public.** It has been public
-> since 2026-01-23 with no `LICENSE` file and no `license` field in
-> `package.json`. That is not a considered posture; it is the absence of one,
-> and it is the least useful state to be in: visitors can read and fork the
-> source but have no right to run, modify or deploy it, and a contribution
-> arriving by pull request carries no grant to AlterMundi, because GitHub's
-> inbound=outbound terms apply only to a repository that states a license.
->
-> Do not read this repo's visibility, or the line below, as a license grant.
-> Choosing a license is AlterMundi's decision and is being made; adding one only
-> reduces ambiguity, so nothing here is waiting on counsel.
+The source code in this repository is licensed under the **Apache License 2.0**
+([LICENSE](./LICENSE)). You may run it, modify it, and deploy it, including
+commercially, subject to the license's attribution and notice requirements.
+Contributions come in under the same license via §5, so there is no CLA — see
+[CONTRIBUTING.md](./CONTRIBUTING.md), which asks for a DCO sign-off instead.
 
-© 2026 AlterMundi. All rights reserved. Content and code ownership details are maintained in separate legal agreements; Provider content terms are summarized in [CONTENT_POLICY.md §7](./docs/CONTENT_POLICY.md).
+**This covers code only.** Provider audio, session recordings, and the beacon
+stream are not covered and are governed by the Provider Content Agreement — see
+[CONTENT_POLICY.md §7](./docs/CONTENT_POLICY.md).
+
+**Trademarks are not licensed.** Apache-2.0 §6 grants no trademark rights, and
+"Harmonic Beacon", "AlterMundi" and the Harmonically Aware Technology seal are
+marks of Asociación Civil AlterMundi. Running this software does not make a
+deployment a Harmonic Beacon; joining the Constellation is governed by its
+charter, which is a separate trademark license. [NOTICE](./NOTICE) states this in
+full, along with the third-party components whose licenses carry obligations of
+their own.
+
+Copyright © 2026 Asociación Civil AlterMundi.
