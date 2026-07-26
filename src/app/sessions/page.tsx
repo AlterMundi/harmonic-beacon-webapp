@@ -144,11 +144,12 @@ export default function SessionsPage() {
         // End session via API
         if (activeSessionId) {
             try {
-                await fetch(`/api/sessions/${activeSessionId}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ completed: true }),
-                });
+                // No body: the server computes `completed` from the session's own
+                // elapsed time and the track length (BUSINESS_RULES §2.3). This
+                // used to send `{ completed: true }`, which the handler now
+                // discards — a client cannot be the source of a value the
+                // revenue ledger and the research set both read.
+                await fetch(`/api/sessions/${activeSessionId}`, { method: "PATCH" });
             } catch {
                 // Silently fail
             }
