@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { logAdminAction } from '@/lib/audit';
-import { getRoomService } from '@/lib/livekit-server';
 import { endLiveSession } from '@/lib/session-lifecycle';
 import { redactErrorDetail } from '@/lib/redact';
 
@@ -94,26 +93,14 @@ export async function POST(
             where: { sessionId: id, leftAt: null },
         });
 
-        const { session: ended, recordingsStopped } = await endLiveSession(
+        // Stops the recordings, moves the row to ENDED, and disconnects everyone
+        // still connected. Room closure moved into endLiveSession so the Provider's
+        // own end path gets it too — see the note there.
+        const { session: ended, recordingsStopped, roomDeleted } = await endLiveSession(
             id,
             scheduledSession.startedAt,
+            scheduledSession.roomName,
         );
-
-        // Disconnects everyone still connected. Deliberately after the DB write:
-        // if this throws, the session is already ENDED and cannot be restarted from
-        // the UI, which is the safer half-state. A room left standing with no
-        // publishable session is recoverable; a live room with a session row that
-        // still says LIVE is not distinguishable from normal operation.
-        let roomDeleted = true;
-        try {
-            await getRoomService().deleteRoom(scheduledSession.roomName);
-        } catch (error) {
-            roomDeleted = false;
-            console.error(
-                `Failed to delete LiveKit room ${scheduledSession.roomName} on terminate:`,
-                redactErrorDetail(error),
-            );
-        }
 
         await logAdminAction(session, {
             action: 'session.terminate',

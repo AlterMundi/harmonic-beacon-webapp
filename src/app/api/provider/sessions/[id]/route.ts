@@ -129,9 +129,15 @@ export async function PATCH(
             );
         }
 
-        // Recording teardown and the ENDED transition are shared with the Admin
-        // kill switch — see src/lib/session-lifecycle.ts.
-        const { session: updated } = await endLiveSession(id, scheduledSession.startedAt);
+        // Recording teardown, the ENDED transition and closing the room are shared
+        // with the Admin kill switch — see src/lib/session-lifecycle.ts. Passing
+        // roomName is what disconnects the listeners; without it the session ends
+        // in the database and they stay in a room nobody is publishing to.
+        const { session: updated } = await endLiveSession(
+            id,
+            scheduledSession.startedAt,
+            scheduledSession.roomName,
+        );
         return NextResponse.json({ session: updated });
     }
 

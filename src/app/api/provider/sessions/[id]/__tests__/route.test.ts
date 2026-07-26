@@ -185,15 +185,18 @@ describe('PATCH /api/provider/sessions/[id]', () => {
             },
         };
 
+        const mockRoomService = { deleteRoom: vi.fn().mockResolvedValue(undefined) };
+
         vi.doMock('@/lib/db', () => ({ prisma: mockPrisma }));
         vi.doMock('@/lib/livekit-server', () => ({
             getEgressClient: vi.fn().mockReturnValue(mockEgressClient),
+            getRoomService: vi.fn().mockReturnValue(mockRoomService),
         }));
         vi.doMock('fs', () => ({
             existsSync: vi.fn().mockReturnValue(true),
         }));
 
-        return { mockPrisma, mockEgressClient };
+        return { mockPrisma, mockEgressClient, mockRoomService };
     }
 
     it('returns 401 when not authenticated', async () => {
@@ -297,6 +300,57 @@ describe('PATCH /api/provider/sessions/[id]', () => {
                 data: expect.objectContaining({ status: 'ENDED' }),
             }),
         );
+    });
+
+    it('end: closes the room so listeners are actually disconnected', async () => {
+        // The regression this guards: for a long time only the Admin kill switch
+        // deleted the room, so a Provider ending their own session — by far the
+        // commoner path — left every listener connected to a room with no
+        // publisher. Silence, no disconnect event, nothing on screen.
+        const { mockRoomService } = setupMocks({
+            id: 'sess-1',
+            providerId: 'db-uuid-1',
+            status: 'LIVE',
+            roomName: 'session-sess-1',
+            startedAt: new Date(Date.now() - 60 * 1000),
+        });
+
+        const { PATCH } = await import('../route');
+        const response = await PATCH(
+            createRequest('/api/provider/sessions/sess-1', {
+                method: 'PATCH',
+                body: { action: 'end' },
+            }),
+            mockParams({ id: 'sess-1' }),
+        );
+
+        expect((await parseResponse(response)).status).toBe(200);
+        expect(mockRoomService.deleteRoom).toHaveBeenCalledWith('session-sess-1');
+    });
+
+    it('end: still ends the session when closing the room fails', async () => {
+        // Room deletion is deliberately after the DB write and never fatal. A room
+        // left standing with no publishable session is recoverable; a live room
+        // whose row still says LIVE is indistinguishable from a working session.
+        const { mockRoomService } = setupMocks({
+            id: 'sess-1',
+            providerId: 'db-uuid-1',
+            status: 'LIVE',
+            roomName: 'session-sess-1',
+            startedAt: new Date(Date.now() - 60 * 1000),
+        });
+        mockRoomService.deleteRoom.mockRejectedValue(new Error('livekit unreachable'));
+
+        const { PATCH } = await import('../route');
+        const response = await PATCH(
+            createRequest('/api/provider/sessions/sess-1', {
+                method: 'PATCH',
+                body: { action: 'end' },
+            }),
+            mockParams({ id: 'sess-1' }),
+        );
+
+        expect((await parseResponse(response)).status).toBe(200);
     });
 
     it('end: stops active recordings', async () => {

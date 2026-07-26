@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, RemoteTrackPublication, LocalTrackPublication } from "livekit-client";
+import { Room, RoomEvent, Track, DisconnectReason, RemoteTrack, RemoteParticipant, RemoteTrackPublication, LocalTrackPublication } from "livekit-client";
 import { useAudio } from "@/context/AudioContext";
 import { ReportButton } from "@/components";
 import { redactErrorDetail } from '@/lib/redact';
@@ -15,6 +15,37 @@ interface SessionInfo {
     status: string;
     startedAt: string | null;
     isRecording: boolean;
+}
+
+// What RoomEvent.Disconnected tells us, collapsed to the three things a
+// participant can be told without guessing:
+// - "ended": someone deliberately ended the room server-side (Admin kill
+//   switch or Provider ending their own session). Say the session ended;
+//   don't speculate about who did it or why.
+// - "transport": a network-shaped failure. Say the connection dropped and
+//   offer to rejoin.
+// - "unknown": the SDK gave no reason, or one we don't have a bucket for.
+//   Don't guess which of the above it was — say we can't tell.
+type DisconnectKind = "ended" | "transport" | "unknown";
+
+function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
+    switch (reason) {
+        case DisconnectReason.ROOM_DELETED:
+        case DisconnectReason.ROOM_CLOSED:
+        case DisconnectReason.PARTICIPANT_REMOVED:
+        case DisconnectReason.SERVER_SHUTDOWN:
+            return "ended";
+        case DisconnectReason.SIGNAL_CLOSE:
+        case DisconnectReason.STATE_MISMATCH:
+        case DisconnectReason.CONNECTION_TIMEOUT:
+        case DisconnectReason.MEDIA_FAILURE:
+        case DisconnectReason.JOIN_FAILURE:
+        case DisconnectReason.DUPLICATE_IDENTITY:
+        case DisconnectReason.MIGRATION:
+            return "transport";
+        default:
+            return "unknown";
+    }
 }
 
 export default function SessionRoomPage() {
@@ -39,11 +70,18 @@ export default function SessionRoomPage() {
     const [recordingLoading, setRecordingLoading] = useState(false);
     const [recordingError, setRecordingError] = useState<string | null>(null);
     const [endingSession, setEndingSession] = useState(false);
+    const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
+    const [retryToken, setRetryToken] = useState(0);
 
     const roomRef = useRef<Room | null>(null);
     const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const volumeRef = useRef(volume);
+    // Set right before we call room.disconnect() ourselves (leave, end session)
+    // so the room-level Disconnected handler below can tell "we did this on
+    // purpose" apart from the server or the network doing it to us.
+    const intentionalDisconnectRef = useRef(false);
+    const terminalViewRef = useRef<HTMLDivElement>(null);
 
     // Keep volumeRef in sync with state
     useEffect(() => { volumeRef.current = volume; }, [volume]);
@@ -58,15 +96,25 @@ export default function SessionRoomPage() {
 
         // Disconnect from room
         if (roomRef.current) {
+            intentionalDisconnectRef.current = true;
             roomRef.current.disconnect();
         }
 
         router.push("/sessions");
     }, [id, router]);
 
+    const rejoin = useCallback(() => {
+        setDisconnectState(null);
+        setIsConnected(false);
+        setIsConnecting(true);
+        setError(null);
+        setRetryToken((t) => t + 1);
+    }, []);
+
     // Connect to LiveKit room
     useEffect(() => {
         let cancelled = false;
+        intentionalDisconnectRef.current = false;
 
         async function connect() {
             try {
@@ -124,8 +172,14 @@ export default function SessionRoomPage() {
                     setParticipantCount(room.remoteParticipants.size + 1);
                 });
 
-                room.on(RoomEvent.Disconnected, () => {
+                room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
                     setIsConnected(false);
+                    // We already know why: either this effect is tearing down
+                    // (cancelled) or we called disconnect() ourselves (leave/end).
+                    // Neither needs the terminal view — the caller is already
+                    // navigating away.
+                    if (cancelled || intentionalDisconnectRef.current) return;
+                    setDisconnectState(classifyDisconnectReason(reason));
                 });
 
                 await room.connect(LIVEKIT_URL, data.token);
@@ -159,7 +213,7 @@ export default function SessionRoomPage() {
             audioElementsRef.current.clear();
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id, inviteCode]);
+    }, [id, inviteCode, retryToken]);
 
     // Timer
     useEffect(() => {
@@ -172,6 +226,15 @@ export default function SessionRoomPage() {
             if (timerRef.current) clearInterval(timerRef.current);
         };
     }, [isConnected]);
+
+    // Move focus into the terminal view when it replaces the live session UI,
+    // so a screen reader user lands on the announcement rather than on
+    // whatever the focused control used to be.
+    useEffect(() => {
+        if (disconnectState) {
+            terminalViewRef.current?.focus();
+        }
+    }, [disconnectState]);
 
     // Apply mix: distribute master volume between session and beacon
     useEffect(() => {
@@ -221,6 +284,7 @@ export default function SessionRoomPage() {
                 throw new Error(data.error || "Failed to end session");
             }
             if (roomRef.current) {
+                intentionalDisconnectRef.current = true;
                 roomRef.current.disconnect();
             }
             router.push("/sessions");
@@ -286,6 +350,59 @@ export default function SessionRoomPage() {
                     <button onClick={() => router.push("/sessions")} className="btn-secondary">
                         Back to Sessions
                     </button>
+                </div>
+            </main>
+        );
+    }
+
+    // Terminal state: the room-level Disconnected event fired for a reason
+    // that wasn't us leaving on purpose. What we say depends on what LiveKit
+    // told us — see classifyDisconnectReason above.
+    if (disconnectState) {
+        const copy = {
+            ended: {
+                heading: "Session ended",
+                body: "This session has ended. You're no longer connected.",
+                showRejoin: false,
+            },
+            transport: {
+                heading: "Connection lost",
+                body: "Your connection to this session was lost.",
+                showRejoin: true,
+            },
+            unknown: {
+                heading: "Disconnected",
+                body: "You're no longer connected to this session. We can't tell whether it ended or your connection dropped.",
+                showRejoin: true,
+            },
+        }[disconnectState];
+
+        return (
+            <main className="min-h-screen flex items-center justify-center px-4">
+                <div
+                    ref={terminalViewRef}
+                    role="status"
+                    aria-live="polite"
+                    tabIndex={-1}
+                    className="glass-card p-8 text-center max-w-sm w-full outline-none"
+                >
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">
+                        <svg className="w-8 h-8 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M5.636 5.636a9 9 0 000 12.728" />
+                        </svg>
+                    </div>
+                    <h2 className="text-xl font-semibold mb-2">{copy.heading}</h2>
+                    <p className="text-sm text-[var(--text-muted)] mb-4">{copy.body}</p>
+                    <div className="flex flex-col gap-2">
+                        {copy.showRejoin && (
+                            <button onClick={rejoin} className="btn-primary">
+                                Rejoin
+                            </button>
+                        )}
+                        <button onClick={() => router.push("/sessions")} className="btn-secondary">
+                            Back to Sessions
+                        </button>
+                    </div>
                 </div>
             </main>
         );
