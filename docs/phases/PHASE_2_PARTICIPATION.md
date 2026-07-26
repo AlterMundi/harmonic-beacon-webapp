@@ -154,9 +154,9 @@ Phase 2 is done when:
 | Stripe Tax setup reveals compliance gaps in EU | Med | Engage tax advisor in week 1; launch patronage in smaller geography first, expand as cleared |
 | Stripe Connect KYC friction causes Provider drop-off | Med | Default economic model on application is Contribution; Providers opt into Revshare when ready, no pressure |
 | Revshare calculation disputes | Med-High | Make the ledger legible; provide Providers a breakdown endpoint from day 1; publish the exact formula |
-| Sittings capacity stress on LiveKit | Med | Start with small capacity caps (e.g. 50 co-listeners); measure; expand later |
+| Sittings capacity stress on LiveKit | Med | Start with small capacity caps on **public** sittings (e.g. 50 co-listeners); measure; expand later. Distinct from the 6-co-listener figure in [MONETIZATION.md](../MONETIZATION.md), which is the Kindred tier's **private** sitting benefit, not a platform ceiling |
 | Steward role misuse | Med | Launch cautiously (1–2 Stewards); all Steward actions reversible by Admin; Steward actions audited |
-| Journal encryption key management UX confusion | Med | Key derived from user's password with recovery-phrase option; clear copy that losing the password loses the journal |
+| Journal encryption key management UX confusion | Med | **The stated mitigation is not buildable and must be redesigned before this ships.** A key "derived from the user's password" assumes the application holds a password; authentication is Zitadel OIDC with PKCE and it never does. Either client-held key material with a recovery phrase, or app-managed encryption described honestly as Admin-resistant rather than Admin-proof. See [BUSINESS_RULES.md §7.3](../../BUSINESS_RULES.md) |
 | Email deliverability to gmail/hotmail | Med | Warm-up new sender domain in Phase 1; SPF/DKIM/DMARC strict; monitor bounce rate |
 | Institutional sales pulls team away from product work | High | Cap institutional effort at ~10% of team bandwidth in Phase 2; do not staff a dedicated sales role until Phase 3+ |
 

@@ -48,7 +48,7 @@ Tiers will be named, not numbered. Naming carries weight in a brand that takes l
 |---|---|---|---|
 | **Threshold** | Monthly | $2 | Named low-barrier tier for anyone the standard price excludes — students, unemployed, residents of lower-income countries. No eligibility check. Same benefits as Resonant. |
 | **Resonant** | Monthly / Annual | $7 / $70 | The standard sustaining tier. |
-| **Kindred** | Monthly / Annual | $15 / $150 | Supports more of the infrastructure. Adds private sittings hosting (up to 6 co-listeners). |
+| **Kindred** | Monthly / Annual | $15 / $150 | Supports more of the infrastructure. Adds hosting a **private** sitting for a small circle (up to 6 co-listeners — a tier benefit, not a platform limit; public sittings are capped separately and much higher). |
 | **Hearth** | Annual only | $300 | The name-published-on-the-Hearth tier, optional recognition. |
 | **Donation** | One-time | Any amount ≥ $1 | No subscription, no benefits beyond an acknowledgement email. |
 | **Institution** | Annual | Contact sales | Hand-sold at launch. See *Institutional licensing* below. |
