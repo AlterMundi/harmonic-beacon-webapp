@@ -576,9 +576,11 @@ describe('PATCH /api/admin/meditations/[id] - audit trail', () => {
         );
     }
 
-    /** Every audit entry written during one request. */
-    function auditActions(mockPrisma: { auditLog: { create: { mock: { calls: [{ data: { action: string } }][] } } } }) {
-        return mockPrisma.auditLog.create.mock.calls.map((c) => c[0].data.action);
+    /** Every audit entry written during one request, in order. */
+    function auditActions(mockPrisma: ReturnType<typeof setupMocks>['mockPrisma']): string[] {
+        return mockPrisma.auditLog.create.mock.calls.map(
+            (call) => (call[0] as { data: { action: string } }).data.action,
+        );
     }
 
     it('logs a rejection with the reason the Provider will be given', async () => {
