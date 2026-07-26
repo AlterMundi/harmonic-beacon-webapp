@@ -265,9 +265,10 @@ catalogue does, so a saved link or a favourite stops playing too. Taking a
 meditation down before review is a withdrawal from review: it stays out and
 cannot be approved while it is down.
 
-The endpoint is built; no button calls it yet, so a Provider exercising the right
-today needs someone to call it for them. The control in the Provider dashboard is
-**[Planned — Phase 1]**.
+The control is in the Provider dashboard, next to each meditation. It states
+before it acts what the takedown does and does not do, and the dashboard then
+shows the content as taken down — labelled as the Provider's own act, distinct
+from content moderation hid, which a Provider is never told was their doing.
 
 Takedowns are recorded in the audit log as `meditation.takedown`, distinct from an
 Admin's `meditation.hide`, so the log can answer whether content was pulled by us
@@ -286,11 +287,11 @@ the content simply stops being reachable.
 > and the interface says so rather than implying the file is gone.
 > **[Planned — unscheduled]** *(the purge, gated on the storage driver)*
 
-Two limits worth stating plainly, because a Provider reading the promise above
+Two things worth stating plainly, because a Provider reading the promise above
 would not guess either:
 
-- Restoring taken-down content is an Admin action, not a Provider one. The takedown verb is one-way by design: the flag it writes is the same flag Admin moderation hides use, and a Provider able to clear it could undo a policy takedown.
-- The route requires the PROVIDER or ADMIN role, so a Provider whose role has already been revoked cannot use it — which is exactly the case [BUSINESS_RULES.md §3.3](../BUSINESS_RULES.md) contemplates, where content stays available unless removal is requested. Until that is fixed, an offboarded Provider's removal request goes through an Admin. **[Planned — unscheduled]**
+- **Restoring taken-down content is an Admin action, and a deliberate one.** The takedown verb is one-way: a Provider can pull their own work but cannot put it back, because the flag it writes is the same flag Admin moderation hides use and a Provider able to clear it could undo a policy takedown. What an Admin cannot do is restore it *by accident*. Unhiding a meditation its Provider took down is refused outright; putting it back requires a separate, explicit request, and it is recorded as a restore rather than an unhide, so the log distinguishes "moderation changed its mind" from "the author's withdrawal was reversed". An Admin working the moderation queue cannot republish withdrawn work by clicking the wrong toggle.
+- **Losing the Provider role does not lose this right.** Taking your own content down is authorized by owning it, not by currently holding the role — so a Provider who has been offboarded can still remove their work, which is what [BUSINESS_RULES.md §3.3](../BUSINESS_RULES.md) promises when it says content stays available unless removal is requested. A right that evaporates at the moment someone most wants to use it is not a right.
 
 ### 6.2 Platform-initiated takedown
 

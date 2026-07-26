@@ -1,38 +1,79 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { signOut } from "next-auth/react";
 
-interface DeleteAccountDialogProps {
+interface TakeDownDialogProps {
+    meditationId: string;
+    /** Title of the meditation, shown so the Provider can see which one this is. */
+    meditationTitle: string;
+    /**
+     * Whether this meditation has been published. Withdrawing a submission that
+     * has never been seen by a Listener is a different act from pulling something
+     * people are listening to, and the copy says which one is happening — the
+     * endpoint distinguishes them too, and returns `withdrawnFromReview`.
+     */
+    isPublished: boolean;
     onClose: () => void;
+    /** Called after a successful takedown so the list can reflect the new state. */
+    onTakenDown: (result: TakeDownResponse) => void;
 }
 
-interface DeleteAccountResponse {
-    deleted: true;
-    deletedData: string[];
+export interface TakeDownResponse {
+    takenDown: true;
+    withdrawnFromReview: boolean;
+    meditation: {
+        id: string;
+        status: string;
+        isPublished: boolean;
+        isHidden: boolean;
+    };
+    /** Consequences the endpoint states. Rendered verbatim — see below. */
     retained: string[];
-    authoredContentCount: number;
 }
 
 /** The user must type this exact phrase before the destructive action unlocks. */
-const CONFIRM_PHRASE = "DELETE";
+const CONFIRM_PHRASE = "TAKE DOWN";
 
-type Phase = "confirm" | "deleting" | "error" | "done";
+type Phase = "confirm" | "submitting" | "error" | "done";
 
 const FOCUSABLE_SELECTOR =
     'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
-export default function DeleteAccountDialog({ onClose }: DeleteAccountDialogProps) {
+/**
+ * Confirmation for a Provider taking their own content down
+ * (CONTENT_POLICY.md §6.1).
+ *
+ * The consequences in the "done" state are rendered from the endpoint's own
+ * `retained` array rather than restated here. Two copies of a promise about what
+ * survives a takedown is two copies to keep true, and the one the Provider reads
+ * should be the one the server actually acted on.
+ *
+ * The pre-confirmation warning is necessarily written here, because it has to be
+ * shown before the request exists. It is kept deliberately short and limited to
+ * what will not change: content stops being served, the file is not deleted, and
+ * putting it back is not the Provider's to do.
+ */
+export default function TakeDownDialog({
+    meditationId,
+    meditationTitle,
+    isPublished,
+    onClose,
+    onTakenDown,
+}: TakeDownDialogProps) {
     const [phase, setPhase] = useState<Phase>("confirm");
     const [confirmText, setConfirmText] = useState("");
     const [error, setError] = useState<string | null>(null);
-    const [result, setResult] = useState<DeleteAccountResponse | null>(null);
+    const [result, setResult] = useState<TakeDownResponse | null>(null);
 
     const dialogRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const canConfirm = confirmText === CONFIRM_PHRASE;
-    const isBusy = phase === "deleting";
+    const canConfirm = confirmText.trim().toUpperCase() === CONFIRM_PHRASE;
+    const isBusy = phase === "submitting";
+
+    // A withdrawal and a takedown are the same request but not the same act, and
+    // the Provider should be told which one they are doing.
+    const action = isPublished ? "Take Down" : "Withdraw From Review";
 
     // Autofocus the confirmation input, and trap focus + Escape-to-close while open.
     useEffect(() => {
@@ -68,30 +109,30 @@ export default function DeleteAccountDialog({ onClose }: DeleteAccountDialogProp
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isBusy]);
 
-    const handleDelete = async () => {
+    const handleTakeDown = async () => {
         if (!canConfirm || isBusy) return;
 
-        setPhase("deleting");
+        setPhase("submitting");
         setError(null);
 
         try {
-            const res = await fetch("/api/users/me", { method: "DELETE" });
+            const res = await fetch(`/api/provider/meditations/${meditationId}`, {
+                method: "DELETE",
+            });
             const data = await res.json();
 
             if (!res.ok) {
-                throw new Error(data.error || "Failed to delete account");
+                throw new Error(data.error || "Failed to take down this meditation");
             }
 
-            setResult(data as DeleteAccountResponse);
+            const takedown = data as TakeDownResponse;
+            setResult(takedown);
             setPhase("done");
+            onTakenDown(takedown);
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to delete account");
+            setError(err instanceof Error ? err.message : "Failed to take down this meditation");
             setPhase("error");
         }
-    };
-
-    const handleFinish = async () => {
-        await signOut({ callbackUrl: "/login" });
     };
 
     return (
@@ -100,12 +141,16 @@ export default function DeleteAccountDialog({ onClose }: DeleteAccountDialogProp
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby="delete-account-title"
+                aria-labelledby="take-down-title"
                 className="glass-card w-full max-w-lg rounded-t-2xl p-5 animate-slide-up max-h-[85vh] overflow-y-auto"
             >
                 <div className="flex items-center justify-between mb-4">
-                    <h3 id="delete-account-title" className="text-lg font-semibold">
-                        {phase === "done" ? "Account Deleted" : "Delete Account"}
+                    <h3 id="take-down-title" className="text-lg font-semibold">
+                        {phase === "done"
+                            ? result?.withdrawnFromReview
+                                ? "Withdrawn From Review"
+                                : "Taken Down"
+                            : action}
                     </h3>
                     <button
                         onClick={onClose}
@@ -119,32 +164,40 @@ export default function DeleteAccountDialog({ onClose }: DeleteAccountDialogProp
                     </button>
                 </div>
 
+                <p className="text-sm text-[var(--text-secondary)] mb-4 truncate">
+                    <span className="text-[var(--text-muted)]">Meditation: </span>
+                    <span className="font-medium text-[var(--text-primary)]">{meditationTitle}</span>
+                </p>
+
                 {phase !== "done" ? (
                     <div className="space-y-4">
                         <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-[var(--text-secondary)] space-y-2">
-                            <p className="font-medium text-red-400">This is permanent for your personal data, but not for everything tied to your account:</p>
+                            <p className="font-medium text-red-400">
+                                {isPublished
+                                    ? "This stops Listeners reaching it, straight away:"
+                                    : "This pulls the submission out of the review queue:"}
+                            </p>
                             <ul className="list-disc list-inside space-y-1">
-                                <li>Your profile identifiers (email, name, avatar, sign-in link), favourites, listening history and session participation records are removed.</li>
-                                <li>Your account row is kept in an anonymised form, because other listeners&apos; session history references it. It will no longer hold anything that identifies you.</li>
-                                <li>Stored audio is not purged by this action.</li>
-                                <li>
-                                    If you have published meditations, they stay published under an
-                                    anonymised provider record. Deleting your account does not
-                                    withdraw them — if you want them down, take them down from your
-                                    provider dashboard first. Afterwards it takes an administrator.
-                                </li>
+                                {isPublished ? (
+                                    <li>It leaves the catalogue immediately and stops playing, including for anyone holding a direct link or a favourite.</li>
+                                ) : (
+                                    <li>It stays out of the catalogue and cannot be approved while it is down.</li>
+                                )}
+                                <li>The audio file is not deleted. It stops being served, but the file itself stays on our servers until an administrator removes it — ask us if you need the file destroyed.</li>
+                                <li>Your listening statistics and other people&apos;s history stay intact. The record is kept, not erased.</li>
+                                <li>You cannot put it back yourself. Restoring content is an administrator action.</li>
                             </ul>
                         </div>
 
                         <div>
                             <label
-                                htmlFor="delete-confirm-input"
+                                htmlFor="take-down-confirm-input"
                                 className="block text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
                             >
                                 Type {CONFIRM_PHRASE} to confirm
                             </label>
                             <input
-                                id="delete-confirm-input"
+                                id="take-down-confirm-input"
                                 ref={inputRef}
                                 type="text"
                                 value={confirmText}
@@ -157,7 +210,7 @@ export default function DeleteAccountDialog({ onClose }: DeleteAccountDialogProp
                         </div>
 
                         {error && (
-                            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+                            <div role="alert" className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
                                 {error}
                             </div>
                         )}
@@ -173,25 +226,23 @@ export default function DeleteAccountDialog({ onClose }: DeleteAccountDialogProp
                             </button>
                             <button
                                 type="button"
-                                onClick={handleDelete}
+                                onClick={handleTakeDown}
                                 disabled={!canConfirm || isBusy}
-                                aria-label="Permanently delete my account"
+                                aria-label={`${action}: ${meditationTitle}`}
                                 className="flex-1 rounded-xl font-semibold text-sm bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                {isBusy ? "Deleting..." : "Delete Account"}
+                                {isBusy ? "Taking down..." : action}
                             </button>
                         </div>
                     </div>
                 ) : (
                     <div className="space-y-4">
                         <div className="p-3 rounded-lg bg-white/5 border border-[var(--border-subtle)] text-sm text-[var(--text-secondary)] space-y-2">
-                            <p className="font-medium text-[var(--text-primary)]">Removed:</p>
-                            <ul className="list-disc list-inside space-y-1">
-                                {result?.deletedData.map((item) => (
-                                    <li key={item}>{item}</li>
-                                ))}
-                            </ul>
-                            <p className="font-medium text-[var(--text-primary)] pt-2">Retained:</p>
+                            <p className="font-medium text-[var(--text-primary)]">
+                                {result?.withdrawnFromReview
+                                    ? "It is out of the review queue. What that leaves:"
+                                    : "It is no longer being served. What that leaves:"}
+                            </p>
                             <ul className="list-disc list-inside space-y-1">
                                 {result?.retained.map((item) => (
                                     <li key={item}>{item}</li>
@@ -199,17 +250,8 @@ export default function DeleteAccountDialog({ onClose }: DeleteAccountDialogProp
                             </ul>
                         </div>
 
-                        {result && result.authoredContentCount > 0 && (
-                            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm text-amber-400">
-                                You authored {result.authoredContentCount} item
-                                {result.authoredContentCount === 1 ? "" : "s"} (meditations or hosted sessions).
-                                These remain published under an anonymised provider record — contact an
-                                administrator if you need them taken down.
-                            </div>
-                        )}
-
-                        <button type="button" onClick={handleFinish} className="btn-primary w-full py-3">
-                            <span>Sign Out</span>
+                        <button type="button" onClick={onClose} className="btn-primary w-full py-3">
+                            <span>Done</span>
                         </button>
                     </div>
                 )}

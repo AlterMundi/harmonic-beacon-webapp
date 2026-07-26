@@ -327,7 +327,15 @@ describe('DELETE /api/users/me', () => {
 
         const data = body as { authoredContentCount: number; retained: string[] };
         expect(data.authoredContentCount).toBe(3);
-        expect(data.retained.some((r) => /takedown/i.test(r))).toBe(true);
+        // Asserts the substance rather than a keyword: a Provider deleting their
+        // account has to learn that their published work stays up, and that
+        // withdrawing it is a separate thing they could have done first. An
+        // earlier version of this matched the word "takedown", which passed on
+        // wording that told them nothing.
+        const authoredNote = data.retained.find((r) => /authored/i.test(r));
+        expect(authoredNote).toBeDefined();
+        expect(authoredNote).toMatch(/remains published/i);
+        expect(authoredNote).toMatch(/does not withdraw/i);
     });
 
     it('states what was retained and why, including the unpurged audio', async () => {

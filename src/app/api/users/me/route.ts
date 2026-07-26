@@ -141,10 +141,14 @@ export async function DELETE() {
             }),
         ]);
 
-        // TODO(takedown): authored content stays published under an anonymised
-        // provider record because there is no provider takedown path yet. When
-        // one exists, this endpoint should offer or require it before deleting a
-        // Provider account. Tracked as "Build provider self-takedown".
+        // Authored content stays published under the anonymised record. The
+        // provider takedown path now exists (DELETE /api/provider/meditations/[id]),
+        // and deletion deliberately does not invoke it: withdrawing published work
+        // is a separate decision from closing an account, and making one imply the
+        // other would take a choice away from the person at the moment they are
+        // least able to revisit it. What is still owed is offering it — a Provider
+        // should be told before they delete that their content will stay up and
+        // that they can take it down first. Tracked separately.
         const retained = [
             'Your account record is retained as an anonymised row. Published content and other listeners\' session history reference it, and removing it would break those references. It no longer holds your email, name, avatar or identity-provider subject.',
             'Stored audio is not purged. No object-storage driver exists yet, so audio still sits on the host filesystem and deleting it is not something this endpoint can do. This is a known gap against BUSINESS_RULES.md 9.1.',
@@ -152,7 +156,7 @@ export async function DELETE() {
 
         if (authoredContentCount > 0) {
             retained.push(
-                'Content you authored remains published under the anonymised provider record. Removing it needs the provider takedown path, which does not exist yet; contact an administrator.',
+                'Content you authored remains published under the anonymised provider record. Deleting your account does not withdraw it — that is a separate decision, and you can take content down yourself from the provider dashboard before deleting. Afterwards, restoring or removing it needs an administrator.',
             );
         }
 

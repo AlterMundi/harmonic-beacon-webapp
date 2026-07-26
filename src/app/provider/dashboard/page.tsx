@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import TakeDownDialog, { type TakeDownResponse } from "@/components/TakeDownDialog";
 
 interface ProviderSession {
     id: string;
@@ -22,10 +23,31 @@ interface ProviderMeditation {
     status: string;
     isPublished: boolean;
     isFeatured: boolean;
+    /**
+     * True for content the Provider took down *and* for content the platform
+     * hid. `takenDownAt` is what tells the two apart — see `visibilityState`.
+     */
+    isHidden: boolean;
+    takenDownAt: string | null;
     rejectionReason: string | null;
     createdAt: string;
     playCount: number;
     tags: { name: string; slug: string; category: string }[];
+}
+
+type VisibilityState = "visible" | "takenDown" | "hiddenByPlatform";
+
+/**
+ * Which of the three states a meditation is in.
+ *
+ * A Provider must not be told that a moderation hide was their own doing, so
+ * `isHidden` alone is not enough to label anything: hidden with a `takenDownAt`
+ * is the Provider's own takedown, hidden without one is the platform having
+ * acted on it (CONTENT_POLICY.md §6.2).
+ */
+function visibilityState(m: ProviderMeditation): VisibilityState {
+    if (!m.isHidden) return "visible";
+    return m.takenDownAt ? "takenDown" : "hiddenByPlatform";
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -59,6 +81,7 @@ export default function ProviderDashboard() {
     const [meditations, setMeditations] = useState<ProviderMeditation[]>([]);
     const [scheduledSessions, setScheduledSessions] = useState<ProviderSession[]>([]);
     const [loading, setLoading] = useState(true);
+    const [takingDown, setTakingDown] = useState<ProviderMeditation | null>(null);
 
     useEffect(() => {
         Promise.all([
@@ -72,6 +95,25 @@ export default function ProviderDashboard() {
             .catch(() => { })
             .finally(() => setLoading(false));
     }, []);
+
+    // Reflect the takedown in place rather than refetching: the endpoint returns
+    // the row it wrote, and the dashboard is the one screen that has to show the
+    // decision took effect.
+    const handleTakenDown = (result: TakeDownResponse) => {
+        setMeditations((prev) =>
+            prev.map((m) =>
+                m.id === result.meditation.id
+                    ? {
+                        ...m,
+                        isHidden: result.meditation.isHidden,
+                        isPublished: result.meditation.isPublished,
+                        status: result.meditation.status,
+                        takenDownAt: new Date().toISOString(),
+                    }
+                    : m
+            )
+        );
+    };
 
     return (
         <main className="pb-8">
@@ -170,6 +212,7 @@ export default function ProviderDashboard() {
                     <div className="space-y-3">
                         {meditations.map((m, i) => {
                             const sc = statusConfig[m.status] || statusConfig.PENDING;
+                            const visibility = visibilityState(m);
                             return (
                                 <div
                                     key={m.id}
@@ -186,6 +229,16 @@ export default function ProviderDashboard() {
                                                 <span className={`text-xs px-2 py-0.5 rounded-full ${sc.color}`}>
                                                     {sc.label}
                                                 </span>
+                                                {visibility === "takenDown" && (
+                                                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-[var(--text-secondary)]">
+                                                        {m.isPublished ? "Taken down by you" : "Withdrawn by you"}
+                                                    </span>
+                                                )}
+                                                {visibility === "hiddenByPlatform" && (
+                                                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+                                                        Hidden by moderation
+                                                    </span>
+                                                )}
                                                 {m.durationSeconds > 0 && (
                                                     <span className="text-xs text-[var(--text-muted)]">
                                                         {formatDuration(m.durationSeconds)}
@@ -231,6 +284,23 @@ export default function ProviderDashboard() {
                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                                 Edit
                                             </Link>
+                                            {/*
+                                              * Offered only where it would do something. Content the
+                                              * platform hid is already out of the catalogue and is not
+                                              * the Provider's to act on, and content already taken down
+                                              * cannot be taken down twice.
+                                              */}
+                                            {visibility === "visible" && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setTakingDown(m)}
+                                                    aria-label={`${m.isPublished ? "Take down" : "Withdraw from review"}: ${m.title}`}
+                                                    className="text-xs px-3 py-1.5 rounded-full bg-white/10 hover:bg-red-500/20 hover:text-red-400 transition-colors flex items-center gap-1"
+                                                >
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                                                    {m.isPublished ? "Take down" : "Withdraw"}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -239,6 +309,16 @@ export default function ProviderDashboard() {
                     </div>
                 )}
             </section>
+
+            {takingDown && (
+                <TakeDownDialog
+                    meditationId={takingDown.id}
+                    meditationTitle={takingDown.title}
+                    isPublished={takingDown.isPublished}
+                    onClose={() => setTakingDown(null)}
+                    onTakenDown={handleTakenDown}
+                />
+            )}
         </main>
     );
 }
