@@ -130,7 +130,7 @@ Phase 2 is done when:
 4. A Listener can join a public sitting, see co-listener count, leave, and write a journal entry.
 5. A report filed against a published meditation is acknowledged within 24 hours and resolved (publish / hide / unchanged) within 5 business days.
 6. A named prospective institutional partner is in active conversation.
-7. The audit log contains entries for every financial event (subscription created, charge, refund, payout), every moderation decision, and every role change, without gaps.
+7. The audit log contains entries for every financial event (subscription created, charge, refund, payout) and every moderation decision, without gaps. **Role changes are not in this list**: they are granted in Zitadel and recorded in Zitadel's audit trail, and this application performs none — see [BUSINESS_RULES.md §1](../../BUSINESS_RULES.md). What it logs is the refused attempt. Satisfying this criterion for roles means being able to produce Zitadel's trail, not ours.
 8. No Phase 1 commitment has regressed (continuity, observability, policy pages, accessibility, status page, etc.).
 
 ---
