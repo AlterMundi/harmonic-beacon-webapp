@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import DeleteAccountDialog from "@/components/DeleteAccountDialog";
 
 const LANGUAGE_STORAGE_KEY = "app_language";
 
@@ -17,6 +19,8 @@ export default function SettingsPage() {
         if (typeof window === "undefined") return "en";
         return localStorage.getItem(LANGUAGE_STORAGE_KEY) ?? "en";
     });
+    const [exporting, setExporting] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
     // Sync the HTML lang attribute whenever language changes
     useEffect(() => {
@@ -28,6 +32,35 @@ export default function SettingsPage() {
         setLanguage(newLang);
         localStorage.setItem(LANGUAGE_STORAGE_KEY, newLang);
         document.documentElement.lang = newLang;
+    };
+
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const res = await fetch("/api/users/me/export");
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || "Failed to export account data");
+            }
+
+            const disposition = res.headers.get("Content-Disposition") ?? "";
+            const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+            const filename = filenameMatch?.[1] ?? "harmonic-beacon-export.json";
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to export account data");
+        } finally {
+            setExporting(false);
+        }
     };
 
     return (
@@ -81,6 +114,45 @@ export default function SettingsPage() {
                     </div>
                 </section>
 
+                {/* Your Data */}
+                <section>
+                    <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
+                        Your Data
+                    </h3>
+                    <div className="glass-card overflow-hidden divide-y divide-[var(--border-subtle)]">
+                        <div className="p-4 flex items-center justify-between gap-4">
+                            <div>
+                                <span className="text-sm font-medium">Export your data</span>
+                                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                                    Download everything we hold about your account as a JSON file
+                                </p>
+                            </div>
+                            <button
+                                onClick={handleExport}
+                                disabled={exporting}
+                                className="btn-secondary whitespace-nowrap disabled:opacity-50"
+                            >
+                                {exporting ? "Exporting..." : "Export"}
+                            </button>
+                        </div>
+                        <div className="p-4 flex items-center justify-between gap-4">
+                            <div>
+                                <span className="text-sm font-medium text-red-400">Delete account</span>
+                                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                                    Permanently remove your personal data from Harmonic Beacon
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setShowDeleteDialog(true)}
+                                aria-label="Delete account"
+                                className="whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-medium border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
                 {/* About */}
                 <section>
                     <h3 className="text-[var(--text-muted)] text-xs uppercase tracking-wider mb-3">
@@ -97,6 +169,10 @@ export default function SettingsPage() {
                     </div>
                 </section>
             </div>
+
+            {showDeleteDialog && (
+                <DeleteAccountDialog onClose={() => setShowDeleteDialog(false)} />
+            )}
         </main>
     );
 }
