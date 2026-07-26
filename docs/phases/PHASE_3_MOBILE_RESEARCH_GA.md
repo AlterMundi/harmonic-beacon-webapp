@@ -177,18 +177,10 @@ Phase 3 is done when:
 - No Seal certification process.
 - No hardware product.
 - No retreats or in-person events (out-of-band AlterMundi activity may run, but not under this roadmap).
-- No generative-AI-produced content on the platform.
 - No geographic expansion beyond EN/ES regions.
 - No open-source / self-hostable release of the platform.
 
-> **Unresolved:** this document's "no generative-AI-produced content" is a
-> flat ban. [CONTENT_POLICY.md §3.6](../CONTENT_POLICY.md) requires AI-generated
-> content to be disclosed in a labelled field at upload — which presupposes
-> it is permitted, not banned. [BUSINESS_RULES.md §11](../BUSINESS_RULES.md)
-> takes a third position: it refuses "hidden AI synthesis" specifically,
-> implying disclosed synthesis is acceptable. Three documents, three different
-> rules on the same question. This is not resolved here; whoever owns the
-> content-policy line is the one to reconcile it.
+**Generative AI is not on that list, because it is a policy matter rather than a phase boundary.** AI-generated content is permitted on the platform when it is disclosed; what the platform refuses is *hidden* synthesis ([BUSINESS_RULES.md §11](../../BUSINESS_RULES.md), in operative form at [CONTENT_POLICY.md §3.6](../CONTENT_POLICY.md)). A phase's non-scope list can defer building something; it does not set the content rule, and this rule holds in every phase. What is missing is the labelled field the disclosure is recorded in, which upload does not collect. **[Planned — unscheduled]**
 
 ---
 

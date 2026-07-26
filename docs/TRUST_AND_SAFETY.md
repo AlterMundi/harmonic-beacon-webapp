@@ -48,19 +48,15 @@ The controls below are the intended posture. None of them is implemented in this
 
 ### 2.2 Role controls
 
-Role changes are Admin-gated in code today: only an ADMIN can change a user's role. Everything else in this section — the logging, the second pair of eyes, the emitted events — depends on the audit log, which does not exist. A role change today is a single Admin's `PATCH` leaving no trace.
+**Roles are granted in Zitadel, and only in Zitadel.** The `UserRole` value in this application's database is a projection of the Zitadel project-role claim, rewritten at every sign-in ([BUSINESS_RULES.md §1](../BUSINESS_RULES.md)). The application therefore does not grant, revoke or edit roles. The admin surface shows a user's role read-only, with no control to change it, and `PATCH /api/admin/users/[id]` refuses with a 409 naming Zitadel as where the grant belongs. A role changed anywhere but Zitadel would be silently reverted at that user's next sign-in, which is a worse control than none — it looks like an authorization decision and is not one. **[Delegated — Zitadel]**
 
-- PROVIDER role granted by named Admin action only. *(Admin-gating holds today.)* That action will be logged. **[Planned — Phase 1]**
-- ADMIN role changes will require two-Admin approval (one initiator, one validator) in the audit log. **[Planned — Phase 1]**
+That placement also puts the control where the audit trail is. Zitadel records who granted which project role to whom and when. This application has no role change to log, because it performs none; what it does log is the refused attempt, as `user.role_change_refused`. That entry is worth having — an Admin reaching for a control that should not be reachable says something about the surface they were shown.
+
+- PROVIDER role granted by named Admin action only, performed in Zitadel and recorded in Zitadel's audit trail. **[Delegated — Zitadel]**
+- ADMIN role changes require two-Admin approval (one initiator, one validator). Zitadel is where that is configured and enforced; nobody has confirmed the instance is configured for it, so treat it as unverified rather than as a control in place. **[Delegated — Zitadel]**
 - Future RESEARCHER role change will require a signed data-use agreement reference. **[Planned — Phase 3]**
-- All role changes will emit an event visible in the audit log. **[Planned — Phase 1]**
 
-> **Unresolved:** the sign-in path also accepts a legacy, undocumented
-> `certified_provider` claim as a PROVIDER grant, alongside `BEAC_PROVIDER`. An
-> undocumented role-granting claim is exactly what this section's posture should
-> not tolerate. Whether that path stays valid is a decision for the product lead
-> with Admin-team input; it is flagged in
-> [BUSINESS_RULES.md §1](../BUSINESS_RULES.md) as well.
+The sign-in path also accepts a legacy `certified_provider` claim as a PROVIDER grant, alongside `BEAC_PROVIDER`. It is **retained and deprecated**: documented here and in [BUSINESS_RULES.md §1](../BUSINESS_RULES.md) rather than left silent, which is what this section's posture actually objects to, and removed from the sign-in path once the accounts holding it have been migrated to `BEAC_PROVIDER`. That migration is an open task. Until it is done, `certified_provider` is a second, older way to hold PROVIDER, and an access review (§6.2) has to look at both claims to see the whole roster.
 
 ### 2.3 Content controls
 
@@ -72,7 +68,7 @@ Publish rights are decided once, when the join token is issued: a Provider gets 
 
 - Every scheduled session will have a Session Kill Switch (see §4 below). **[Planned — Phase 1]**
 - Every participant in a session will be able to raise a hand / request to speak; a Provider will not unilaterally unmute a participant — consent happens in-client. Neither the hand nor the mid-session grant exists; the practical effect today is that a Listener simply cannot be unmuted, which satisfies the consent half by accident and not the affordance. **[Planned — Phase 2]**
-- Recording will be disclosed in-UI before joining, and joining will require affirmative consent — an explicit accept, not participation treated as agreement. Today there is no pre-join disclosure at all, and the in-session recording indicator renders only for publishers, so a Listener in a recorded session is not told. **[Planned — Phase 1]**
+- Recording will be disclosed in-UI before joining, and joining will require affirmative consent — an explicit accept, not participation treated as agreement. The disclosure will say that the session is recorded, that the participant's own audio is captured as a separate track, and that the recording belongs to the Provider, so the participant cannot afterwards have their track pulled out of it. That last clause is the one that makes the arrangement honest: the recording genuinely cannot be unpicked later ([BUSINESS_RULES.md §9.1](../BUSINESS_RULES.md)), so the person has to know before they join rather than discover it when they ask. Today there is no pre-join disclosure at all, and the in-session recording indicator renders only for publishers, so a Listener in a recorded session is neither told nor asked. **[Planned — Phase 1]**
 - Participant-muting will be a Provider capability; banning will be an Admin capability; the Provider will be able to flag a participant and escalate. **[Planned — Phase 2]**
 - Session chat (if/when we build it) uses a character-frequency anti-flood control and a report-this-message UI. **[Planned — unscheduled]**
 

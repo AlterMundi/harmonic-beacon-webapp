@@ -17,9 +17,11 @@ Detail for most sections lives in dedicated docs inside `docs/`. This file is th
 
 ## 1. Roles
 
-The system is built around three primary user roles, stored in the `UserRole` enum in Postgres and derived from Zitadel project-role claims at sign-in.
+The system is built around three primary user roles. **Zitadel is authoritative for all of them.** A user's role is a projection of their Zitadel project-role claim, written into the `UserRole` enum in Postgres at each sign-in. The stored value is a cache of the claim, not an independently editable field: whatever it holds is overwritten from Zitadel the next time that user signs in.
 
-`BEAC_ADMIN` grants ADMIN and `BEAC_PROVIDER` grants PROVIDER. LISTENER is the default and requires no claim — the absence of the other two is what confers it, so no `BEAC_LISTENER` claim is read. A legacy `certified_provider` claim is also accepted as a PROVIDER grant; whether that path remains valid is an open decision, and an undocumented role-granting claim is exactly what §2.2 of [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md) should not tolerate.
+Role changes are therefore made in Zitadel, by someone with the rights to grant project roles there, and it is Zitadel's audit trail that records who granted what and when. The application does not grant roles and offers no path to. **[Delegated — Zitadel]**
+
+`BEAC_ADMIN` grants ADMIN and `BEAC_PROVIDER` grants PROVIDER. LISTENER is the default and requires no claim — the absence of the other two is what confers it, so no `BEAC_LISTENER` claim is read. A legacy `certified_provider` claim is also accepted as a PROVIDER grant. It is **retained and deprecated**: it still confers PROVIDER, it is documented here rather than left as the silent path §2.2 of [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md) should not tolerate, and it is removed once the accounts holding it have been migrated to `BEAC_PROVIDER`. That migration is an open task; no new grant should use the legacy claim.
 
 ### 1.1 LISTENER (default)
 
@@ -62,7 +64,7 @@ System administrator. Inherits all Listener and Provider capabilities.
 
 **Additional capabilities:**
 - Superuser access to sessions and resources.
-- Grant or revoke PROVIDER role.
+- Grant or revoke the PROVIDER role — in Zitadel, per §1. The admin surface in this application displays a user's role and does not change it. **[Delegated — Zitadel]**
 - Approve, reject, un-publish, or hide any content.
 - Will hold kill-switch authority on any live session (see [TRUST_AND_SAFETY.md §4](./docs/TRUST_AND_SAFETY.md)). Today the only path that ends a session is the hosting Provider ending their own. **[Planned — Phase 1]**
 - Read-only view of aggregated but not raw research data (raw data access will require a separate Research role; see §6). **[Planned — Phase 3]**
@@ -101,11 +103,9 @@ A `Meditation` is a piece of pre-recorded audio or video content uploaded by a P
 | Featured | `APPROVED` | true | false | Everyone, surfaced first |
 | Hidden | `APPROVED` | true | true | Admin only (Provider sees stub + reason) |
 
-> **Unresolved:** the Hidden row above keeps `isPublished: true`, but the takedown
-> workflow in [CONTENT_POLICY.md §takedown](./docs/CONTENT_POLICY.md) sets
-> `isPublished=false`. The two are different flag combinations, and a visibility
-> filter written from one behaves differently under the other. The invariant has
-> not been chosen yet; do not write a query against either until it is.
+**The Hidden invariant, stated once:** a hidden meditation is `ModerationStatus: APPROVED`, `isPublished: true`, `isHidden: true`. Hiding sets `isHidden` and nothing else; it does not clear `isPublished`, and unhiding does not set it. `isHidden` is the only flag a visibility filter needs to consult for this state, and every takedown workflow — including [CONTENT_POLICY.md §6.2](./docs/CONTENT_POLICY.md) — is written against it.
+
+It is the invariant because it preserves what the content's publication state was before the takedown, which is the more informative of the two: an unhide returns the row to where it stood rather than to a guess, and "approved but never published" stays distinguishable from "published, then hidden". It is also what the code enforces — the Admin hide toggle writes `isHidden` alone — so the table, the workflow and the database agree.
 
 - `defaultMix` (Float, 0–1) is an advisory crossfader position stored with the meditation. The client uses it as the starting position; the listener can override.
 - A meditation must carry a `TagCategory.LANGUAGE` tag at publication time.
@@ -119,6 +119,8 @@ A `ScheduledSession` is a live, interactive event hosted by a Provider. Status t
 
 - A session will not transition `SCHEDULED → LIVE` more than 10 minutes before `scheduledAt`, or 60 minutes after, without Admin override. The start action currently checks only that status is `SCHEDULED`. **[Planned — Phase 1]**
 - A session may be recorded (`SessionRecording`). Recording will be disclosed in-UI before joining, and joining will require affirmative consent — an explicit accept, not participation treated as agreement. **[Planned — Phase 1]**
+- The disclosure will state three things, because the consent is only meaningful if it covers all of them: that the session is recorded, that the participant's own audio is captured as a separate track, and that the resulting recording belongs to the Provider — so a participant cannot afterwards have their track withdrawn from it. The arrangement is legitimate at the point of joining or not at all: a person who accepts knowing the consequence has given consent, where a person promised a right the platform cannot deliver has been misled. See §9.1 for what this means at account deletion. **[Planned — Phase 1]**
+- This is the platform's position, not a settled legal one. Counsel has to confirm it against the Provider Content Agreement, which has not been drafted.
 - Session invites (`SessionInvite`) expire (`expiresAt`) or exhaust uses (`maxUses`) and are atomic.
 - A session that exceeds its declared duration by 100% will be automatically flagged for review. **[Planned — unscheduled]**
 - The Provider retains ownership of the resulting recording; the platform holds a non-exclusive, royalty-free license to serve it to authorized Listeners.
@@ -326,7 +328,7 @@ This is a brand promise, and it is a covenant rather than a warranty: the uptime
 
 The rules below are the intended client contract. Retry backoff and local caching are not implemented; token refresh is whatever the LiveKit SDK does by default. **[Planned — Phase 1]**
 
-- Clients will retry with exponential backoff up to 15 minutes before surfacing an error state.
+- Clients will tell the Listener the beacon is unavailable after **5 minutes** of failed connection, and will go on retrying with exponential backoff behind that message for up to **15 minutes**, after which they stop and surface a terminal error state with a manual retry. The two numbers govern different things — when the person is told, and when the client gives up — and neither substitutes for the other. Five minutes of silence has a Listener concluding their own device is broken, which is the failure this contract exists to prevent; fifteen minutes of quiet retrying is fine as long as nobody is left guessing during it. Detail in [SLO.md §8](./docs/SLO.md).
 - On token expiry, clients will transparently refresh; failure to refresh triggers a friendly re-auth without user-visible errors beyond a single toast.
 - Clients never blame the user for a server or network failure. *(This one holds today.)*
 
@@ -348,7 +350,11 @@ The rules below are the intended client contract. Retry backoff and local cachin
 
   **One category of stored audio is not purged, and it is the sensitive one.** Meditation audio is filed against the content that owns it rather than against a person, so a deleting Listener has none of it and a deleting Provider's files belong to content this endpoint deliberately retains — removing that audio is the takedown path's job, not deletion's.
 
-  Session recordings are different. Recording is per-participant: someone who joined a recorded session has an audio file of their own voice, filed under their user id. That survives deletion today, and it is the most sensitive data the platform holds. It also sits on a genuine conflict — §2.2 gives the Provider ownership of the recording, while the Listener has an erasure right over their own voice, and one participant's track cannot be removed without altering a recording someone else owns. The conflict is unresolved; until it is, a participant is owed the plain fact before they join rather than a promise afterwards. **[Planned — Phase 1]**
+  Session recordings are different, and the difference is deliberate. Recording is per-participant: someone who joined a recorded session has an audio file of their own voice, filed under their user id. **That audio is not erased by account deletion.** It is the most sensitive data the platform holds, and retaining it is a considered position rather than an oversight — §2.2 gives the Provider ownership of the recording, and one participant's track cannot be withdrawn without altering a work someone else owns.
+
+  What makes that legitimate is where it is settled: at the point of joining, not afterwards. A participant is told before they join that the session is recorded, that their own audio is captured separately, and that the recording belongs to the Provider, and they join by accepting that or they do not join (§2.2). Consent given in knowledge of the consequence is the thing being relied on here; an erasure right promised and then not deliverable would be worse than the plain fact. Neither the disclosure nor the affirmative-consent step exists yet, so today a participant is neither told nor asked. **[Planned — Phase 1]**
+
+  Counsel has to confirm this position against the Provider Content Agreement, which has not been drafted.
 
   Aggregate, de-identified data already mixed into research datasets may be retained unless the Listener specifies erasure at withdrawal. No such data exists yet.
 - **Portability**: the export declares a `formatVersion`, which is what makes the promise of a stable documented format keepable across changes.

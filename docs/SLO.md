@@ -64,7 +64,7 @@ The audio the Listener hears is sourced through a documented fallback chain. Two
 1. **Live primary** — `beacon01` WebRTC publisher on `wss://live.altermundi.net`, room `beacon`. Expected source ≥ 95% of the time.
 2. **Live secondary (warm standby)** — a second participant with the identity `beacon02`, publishing the same content from a different upstream, will take over if `beacon01` disconnects for more than N seconds (N tuned; default 30). `beacon02` exists nowhere in code. **[Planned — Phase 1]**
 3. **Playlist fallback** — the `services/playlist-bot` service (already in the repo), publishing pre-curated continuous audio when the live source is absent. Takes over automatically. The UI will surface a "Beacon in transit" state; per §1 it does not yet. **[Planned — Phase 1]** *(the UI, not the switchover)*
-4. **Offline degraded** — if even the fallback cannot publish, the client will play a locally-cached last-30-seconds loop while retrying in the background, for up to 5 minutes, then surface an outage state with a link to the status page. Nothing of this is implemented: there is no local cache, no retry loop, no outage state, and no status page to link to. **[Planned — Phase 1]**
+4. **Offline degraded** — if even the fallback cannot publish, the client will play a locally-cached last-30-seconds loop while retrying in the background. At **5 minutes** it stops covering for the outage and says so: an outage state with a link to the status page. It keeps retrying behind that message, with backoff, to a total of **15 minutes**, after which it gives up and the state becomes terminal, with a manual retry. See §8 for why both numbers are in the contract. Nothing of this is implemented: there is no local cache, no retry loop, no outage state, and no status page to link to. **[Planned — Phase 1]**
 
 The transition from state to state will be visible to the Listener. We never label a state as something it isn't — but note that saying nothing at all, which is what the client does today, is how a Listener ends up believing the fallback is the live beacon.
 
@@ -154,7 +154,7 @@ The status page will be served from infrastructure separate from the main app, s
 
 The SLO is a system property; much of it depends on client behaviour. Clients will:
 
-- Retry transient failures with exponential backoff (base 1s, max 15 min).
+- Retry transient failures with exponential backoff (base 1s), for a total of no more than 15 minutes, and tell the Listener the beacon is unavailable once 5 minutes have passed without a connection — see the two windows below.
 - Transparently refresh tokens without surfacing an error on the first attempt.
 - Distinguish source states in the UI (live / standby / fallback / retrying / offline).
 - Cache at least 30 seconds of audio locally for short-gap continuity.
@@ -162,18 +162,28 @@ The SLO is a system property; much of it depends on client behaviour. Clients wi
 
 **No clause of this contract is implemented in the web client, and it is not enforced in code review.** There is no backoff logic, no local audio cache, no source-state UI and no degradation telemetry; token handling is whatever the LiveKit SDK does by default, which may or may not be a transparent refresh — nobody has checked, and "we did not write it" is not the same as "the SDK does it". An earlier draft of this line claimed code-review enforcement, which is the more damaging half of the error: a contract nobody implemented is a gap, but a contract asserted to be enforced is a reviewer's false assurance that it was. **[Planned — Phase 1]**
 
-Each client's own docs will describe how it implements the contract, once one does.
+### 8.1 The two retry windows
 
-> **Unresolved:** how long a client retries before it tells the Listener the
-> beacon is out is stated as two different numbers. §3 level 4 has the client
-> looping cached audio "for up to 5 minutes, then surfaces an outage state";
-> the backoff above caps at 15 minutes, and
-> [BUSINESS_RULES.md §8.2](../BUSINESS_RULES.md) has clients retrying "up to 15
-> minutes before surfacing an error state". Five minutes of silent retrying and
-> fifteen are different products from inside the app — one admits the outage
-> while the Listener is still there, the other has them assume their phone is
-> broken. Whoever owns the client experience picks one, and both documents get
-> rewritten from it. Do not implement against either number until then.
+The client has two clocks running during an outage, and they measure different
+things. Both belong in the contract; neither replaces the other.
+
+| Window | What elapses | What happens at the end |
+|---|---|---|
+| **5 minutes** | Time since the last successful connection | The client tells the Listener the beacon is unavailable — an outage state with a link to the status page (§7) |
+| **15 minutes** | Total time spent retrying | The client stops retrying and the outage state becomes terminal, with a manual retry as the only way forward |
+
+Between the two, the client is both retrying and honest: the message is on screen
+while the backoff continues behind it. What the shorter window buys is the thing
+the honesty posture in §1 exists for — five minutes of silence has a Listener
+concluding their own device or network is broken, which is a worse outcome than
+an outage they can see is ours. What the longer window buys is recovery without
+anyone having to do anything, and quiet retrying is unobjectionable for as long
+as nobody is left guessing during it.
+
+Anything read as a single number is a misreading. Client implementations take
+both. **[Planned — Phase 1]**
+
+Each client's own docs will describe how it implements the contract, once one does.
 
 ---
 

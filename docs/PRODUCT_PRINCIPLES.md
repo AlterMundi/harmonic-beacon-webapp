@@ -92,13 +92,9 @@ The live beacon is the product's spine. No single provider, no single backend, n
 
 Calling it out, then: the architecture today is one `beacon01` source identity, one LiveKit SFU, one go2rtc, one Postgres and one host, with a playlist bot as the only fallback. Every one of those is a single point of failure, and the warm-standby upstream that would break the first of them is scheduled, not built (see [SLO.md](./SLO.md) and [BUSINESS_RULES.md §8.1](../BUSINESS_RULES.md)). This principle currently describes an intention and an accurate inventory of the gap between it and the deployment. **[Planned — Phase 1]**
 
-The analogous principle for content: no single provider should account for more than a defined share of total listening, so that a single removal or dispute never threatens the experience.
+The analogous principle for content: concentration of listening on a single provider is a risk the team watches, by judgment. It is a signal, not an enforced limit — there is no threshold, nothing measures concentration, and no share is defined. Stated as a threshold it would be a safeguard in name only, since a rule with no number and no measurement cannot be breached and so cannot be relied on. Stated as a signal it is true, and it does the work it can do: when commissioning content or onboarding Providers, ask whether a single removal or dispute would threaten the experience, and if it would, fix that.
 
-> **Unresolved:** that share has never been defined, and nothing measures
-> provider concentration. A rule stated as a threshold with no number and no
-> measurement cannot be breached, which means it also cannot be relied on. Either
-> a number is chosen and instrumented, or the sentence should say plainly that
-> concentration is a risk we watch by judgment.
+It earns a number and a query when revenue share ships. A pooled payout model makes concentration financially material as well as editorially so — one provider's share of listening becomes one provider's share of the pool — and that is the point at which a watched signal is no longer enough. The measurement would come from the `ListeningSession` ledger, which per [BUSINESS_RULES.md §2.3](../BUSINESS_RULES.md) is only trustworthy for content whose duration has been probed, so the backfill is a prerequisite of the query and not a detail of it. **[Planned — Phase 2]**
 
 ## 9. Slow roads are fine
 
@@ -112,13 +108,20 @@ The infrastructure half of that holds. The platform runs on self-hosted Postgres
 
 The dependency half does not, and this is worth stating rather than leaving for a reader to notice from `package.json`. The application tracks the current major of nearly everything: Next.js 16, React 19, Prisma 7, Tailwind 4. Most of that is ordinary cost. One item is not: authentication runs on a `5.0.0-beta` release of NextAuth, which puts a pre-release dependency directly on the trust surface the third bullet is about.
 
-> **Unresolved:** whether that is accepted or fixed. It is a real decision with a
-> real cost either way — there is no stable v5 to move to, and moving back is its
-> own migration — so the useful outcome is a recorded choice with a trigger
-> ("adopt the stable release within N weeks of publication"), not a silent
-> divergence between the principle and the lockfile. Until it is recorded, the
-> first bullet above should be read as the preference it states and not as a
-> description of the dependency tree.
+That divergence is accepted, deliberately and on the record — see
+[decisions/0001](./decisions/0001-next-auth-beta.md). There is nowhere to go: npm's
+`latest` for `next-auth` is still 4.24.15, so v5 has never shipped stable, and
+moving back is its own migration to an older API we would have to leave again.
+
+What the decision did fix is the shape of the risk. The dependency was declared
+`^5.0.0-beta.30`, and under semver that caret accepts any later beta — so an
+install not honouring the lockfile could have swapped the authentication
+implementation with no diff to review. It is now pinned exactly, with a trigger
+for revisiting.
+
+The point generalizes past this one package: a principle can be knowingly departed
+from, and the departure costs nothing as long as it is written down. What this
+section forbids is the silent version.
 
 ## 10. Accessibility is non-negotiable
 
