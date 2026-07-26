@@ -287,7 +287,8 @@ Protocol changes are preregistered publicly before deployment. Where preregistra
 
 - `wss://live.altermundi.net`, room `beacon`, primary source identity `beacon01`.
 - A playlist-bot fallback fills the stream when `beacon01` is offline. The client detects the switch and manages audio accordingly.
-- The fallback will be surfaced to the listener as a "Beacon in transit" state. **Today it is not**: the client mutes and unmutes fallback audio silently, so a listener hearing the playlist has no indication the source is not live. Until that UI ships, this document should not be read as describing current behaviour — and the gap is precisely the one [SLO.md](./docs/SLO.md) calls deception. **[Planned — Phase 1]**
+- The fallback is surfaced to the listener. `/live` renders one of three states above the player — **LIVE** in red while `beacon01` is publishing, **PLAYLIST** in amber while the fallback is carrying the stream, **OFFLINE** when neither is. It is derived from the same presence the audio switching uses, so it changes with the source rather than lagging it.
+- The label reads "PLAYLIST" rather than the "Beacon in transit" phrasing this document used to specify. The substance — a listener always knows which source they are hearing — is delivered; the wording is a copy decision, not a gap.
 
 ### 7.2 Sittings (planned feature; Phase 2)
 

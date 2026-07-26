@@ -29,9 +29,11 @@ It is a covenant and not a warranty. The audibility target in §2 is 99.5%, whic
 The covenant has two parts:
 
 1. **Continuous audibility** — a Listener who opens the app at any hour hears the beacon within seconds, at acceptable quality, regardless of source state.
-2. **Transparent source state** — whatever they are hearing (live source, warm standby, fallback), the UI will tell the truth about it. **Today it does not.** No source-state UI exists: the client mutes the fallback when `beacon01` appears and unmutes it when `beacon01` goes away, silently, so a Listener hearing the playlist has no way to know. **[Planned — Phase 1]**
+2. **Transparent source state** — whatever they are hearing (live source, warm standby, fallback), the UI tells the truth about it. `/live` shows **LIVE**, **PLAYLIST** or **OFFLINE**, derived from the same participant presence that drives the audio switching, so the badge changes with the source rather than lagging behind it.
 
-The second part matters as much as the first. A Listener who hears the fallback and thinks it's live is being deceived; a Listener who knows the beacon is in transit and stays anyway is participating in the same honest instrument we promised them. Until the source-state UI ships, the first sentence of that pair describes the product as it is — which is why this is the smallest and most urgent piece of continuity work, and why [BUSINESS_RULES.md §7.1](../BUSINESS_RULES.md) carries the same flag.
+The second part matters as much as the first. A Listener who hears the fallback and thinks it's live is being deceived; a Listener who knows the beacon is in transit and stays anyway is participating in the same honest instrument we promised them.
+
+What is not yet distinguished is the *middle* row of the chain in §3. A warm standby would be a second live source, and the current badge has no state for it — it would read LIVE, which is arguably correct but loses the distinction this section claims. That resolves itself when `beacon02` exists; there is nothing to distinguish today. **[Planned — Phase 1]** *(the standby state, not the badge)*
 
 ---
 
