@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { DELETED_ACCOUNT_LABEL, ANONYMOUS_LABEL } from "@/lib/user-display";
@@ -24,18 +24,23 @@ export default function UserManagementPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
 
-    useEffect(() => {
-        fetchUsers();
-    }, []);
-
-    const fetchUsers = () => {
+    // Declared before the effect that calls it. The effect used to run first and
+    // reference a `const` further down — legal at runtime, because the effect
+    // fires after the module body has finished, but it reads as a temporal dead
+    // zone violation and eslint flagged it as one. That single error is why
+    // `npm run lint` was failing, and CI gates the build on lint.
+    const fetchUsers = useCallback(() => {
         fetch("/api/admin/users")
             .then((r) => r.json())
             .then((data) => {
                 if (data.users) setUsers(data.users);
             })
             .finally(() => setLoading(false));
-    };
+    }, []);
+
+    useEffect(() => {
+        fetchUsers();
+    }, [fetchUsers]);
 
     const filteredUsers = users.filter(user =>
         user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
