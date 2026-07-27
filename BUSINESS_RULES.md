@@ -48,7 +48,7 @@ A content creator or guide. Granted to users who have been **vetted** (see §3.2
 **Additional capabilities:**
 - Upload and manage `Meditation` entries (audio/video).
 - Create and host `ScheduledSession`s.
-- Publish via `stream_name` and `room_name` on the associated LiveKit and go2rtc surfaces.
+- Publish via `room_name` on the associated LiveKit surface.
 - Access analytics on their own content and sessions.
 - If enrolled in the revenue-share scheme, receive payouts (see [MONETIZATION.md §3](./docs/MONETIZATION.md)).
 

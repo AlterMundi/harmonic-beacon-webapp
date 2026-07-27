@@ -1,5 +1,5 @@
 # Harmonic Beacon - Production Docker Compose
-# Next.js app + go2rtc meditation streaming
+# Next.js app + playlist bot
 # PostgreSQL runs on the host (not containerized)
 #
 # Prerequisites:
@@ -28,7 +28,6 @@ services:
       - AUTH_TRUST_HOST=true
       - AUTH_URL=${AUTH_URL:-https://beacon.altermundi.net}
       - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
-      - GO2RTC_INTERNAL_URL=http://go2rtc:1984
       - MEDITATIONS_STORAGE_PATH=/data/meditations
       - UPLOADS_PATH=/data/uploads
       - MAX_UPLOAD_SIZE_MB=100
@@ -39,55 +38,11 @@ services:
       - /mnt/n8n-data/harmonic-beacon/recordings:/data/recordings
     networks:
       - beacon
-    depends_on:
-      go2rtc:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-  go2rtc:
-    build:
-      context: ./deploy/go2rtc
-      args:
-        GO2RTC_VERSION: "1.9.14"
-    container_name: harmonic-beacon-go2rtc
-    restart: unless-stopped
-    ports:
-      # API - localhost only, proxied by host nginx
-      - "127.0.0.1:1984:1984"
-      # WebRTC ICE - must be directly exposed
-      - "8555:8555/udp"
-      - "8555:8555/tcp"
-    volumes:
-      - /mnt/n8n-data/harmonic-beacon/meditations:/data/meditations:ro
-    env_file:
-      - /etc/sai-harmonic-beacon/production.env
-    environment:
-      - TZ=${TZ:-America/Argentina/Buenos_Aires}
-    networks:
-      - beacon
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:1984/api"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   playlist-bot:
     build: ./services/playlist-bot

@@ -90,7 +90,7 @@ The exception is identifiable data, which is never public by default and often n
 
 The live beacon is the product's spine. No single provider, no single backend, no single datacenter should be a single point of failure for continuity. Where the current architecture concentrates risk, we call it out and plan its redundancy.
 
-Calling it out, then: the architecture today is one `beacon01` source identity, one LiveKit SFU, one go2rtc, one Postgres and one host, with a playlist bot as the only fallback. Every one of those is a single point of failure, and the warm-standby upstream that would break the first of them is scheduled, not built (see [SLO.md](./SLO.md) and [BUSINESS_RULES.md §8.1](../BUSINESS_RULES.md)). This principle currently describes an intention and an accurate inventory of the gap between it and the deployment. **[Planned — Phase 1]**
+Calling it out, then: the architecture today is one `beacon01` source identity, one LiveKit SFU, one Postgres and one host, with a playlist bot as the only fallback. Every one of those is a single point of failure, and the warm-standby upstream that would break the first of them is scheduled, not built (see [SLO.md](./SLO.md) and [BUSINESS_RULES.md §8.1](../BUSINESS_RULES.md)). This principle currently describes an intention and an accurate inventory of the gap between it and the deployment. **[Planned — Phase 1]**
 
 The analogous principle for content: concentration of listening on a single provider is a risk the team watches, by judgment. It is a signal, not an enforced limit — there is no threshold, nothing measures concentration, and no share is defined. Stated as a threshold it would be a safeguard in name only, since a rule with no number and no measurement cannot be breached and so cannot be relied on. Stated as a signal it is true, and it does the work it can do: when commissioning content or onboarding Providers, ask whether a single removal or dispute would threaten the experience, and if it would, fix that.
 
@@ -104,7 +104,7 @@ We are not a venture-timed business. We will sometimes choose approaches that ar
 - We prefer hand-sold institutional licensing in year one over a productized self-serve enterprise tier.
 - We prefer audit-friendly boring infrastructure over novel stacks, for anything on the trust surface.
 
-The infrastructure half of that holds. The platform runs on self-hosted Postgres, LiveKit and go2rtc on hosts we operate, with Zitadel for identity — boring, inspectable, and portable, which is most of what the third bullet asks for.
+The infrastructure half of that holds. The platform runs on self-hosted Postgres and LiveKit on hosts we operate, with Zitadel for identity — boring, inspectable, and portable, which is most of what the third bullet asks for.
 
 The dependency half does not, and this is worth stating rather than leaving for a reader to notice from `package.json`. The application tracks the current major of nearly everything: Next.js 16, React 19, Prisma 7, Tailwind 4. Most of that is ordinary cost. One item is not: authentication runs on a `5.0.0-beta` release of NextAuth, which puts a pre-release dependency directly on the trust surface the third bullet is about.
 

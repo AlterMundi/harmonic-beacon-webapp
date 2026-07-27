@@ -47,7 +47,6 @@ licenses. Notable ones, and the obligation each carries if this software is ever
 redistributed as a built artifact such as a container image:
 
   * LiveKit server and SDKs (livekit-server-sdk, livekit-client) — Apache-2.0
-  * go2rtc — MIT
   * Next.js, React — MIT
   * Prisma — Apache-2.0
   * sharp / libvips prebuilt binaries (@img/sharp-libvips-*) — LGPL-3.0-or-later.

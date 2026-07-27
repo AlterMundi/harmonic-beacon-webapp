@@ -29,7 +29,8 @@ granting or changing a Zitadel role mapping · anything that starts costing mone
 
 **R1** — the storage-driver interface · schema changes in `prisma/schema.prisma` ·
 auth/session flow changes (`src/lib/auth-config.ts`, `middleware.ts`) · choosing
-between LiveKit Cloud and self-hosted · deciding whether go2rtc survives the migration ·
+between LiveKit Cloud and self-hosted · deciding whether a whole component survives
+a migration (go2rtc did not) ·
 anything in `docs/` that states a policy or a commitment.
 
 **R2** — writing an API route against an agreed contract · adding tests ·

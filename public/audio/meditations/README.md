@@ -14,6 +14,6 @@ In production, files are stored at `/data/meditations` (bind-mounted volume) and
 1. Providers upload audio files through the Provider Studio (`/provider/upload`)
 2. Admins approve uploads via the Admin Panel (`/admin/moderation`)
 3. Approved files are moved to the meditations storage directory
-4. The app creates go2rtc streams on-demand via `PUT /api/streams`
+4. The app serves them over HTTP with range requests via `GET /api/meditations/[id]/audio`
 
 Audio files in this directory are `.gitignore`d — they exist only on each environment's storage.

@@ -30,8 +30,7 @@ jobs:
       - name: Build Docker images
         run: |
           docker compose build \
-            --build-arg NEXT_PUBLIC_LIVEKIT_URL="${{ secrets.NEXT_PUBLIC_LIVEKIT_URL }}" \
-            --build-arg NEXT_PUBLIC_GO2RTC_URL="${{ secrets.NEXT_PUBLIC_GO2RTC_URL }}"
+            --build-arg NEXT_PUBLIC_LIVEKIT_URL="${{ secrets.NEXT_PUBLIC_LIVEKIT_URL }}"
 
       - name: Persist secrets to env file
         run: |
@@ -64,9 +63,6 @@ jobs:
 
           # Verify app is responding
           curl -f http://localhost:3003/api/health || exit 1
-
-          # Verify go2rtc is responding
-          curl -f http://127.0.0.1:1984/api || exit 1
 
           echo "Deployment successful"
 

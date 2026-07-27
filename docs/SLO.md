@@ -195,7 +195,7 @@ Baseline observability, all of it **[Planned — Phase 1]**:
 
 - **Structured logs** with a consistent field set (request ID, user ID or anonymous token, route, latency, status).
 - **Metrics** for audibility (probe results), source state transitions, token fetches, WebRTC ICE failures, moderation queue depth, error rates.
-- **Traces** for cross-service request flows (app ↔ LiveKit, app ↔ DB). Earlier drafts listed app ↔ go2rtc in this set; meditation playback no longer takes that path, serving audio over plain HTTP with range requests instead, so go2rtc is not on a request flow worth tracing.
+- **Traces** for cross-service request flows (app ↔ LiveKit, app ↔ DB). Earlier drafts listed a streaming sidecar in this set; meditation playback serves audio over plain HTTP with range requests, so there is no such request flow to trace.
 - **Errors** captured by an error reporter with sourcemaps.
 - **Uptime** from an independent external monitor.
 - **Alerts** routed to the on-call pager, with documented runbooks per alert.

@@ -13,14 +13,9 @@
 > to a private ops repository. What should not continue is the current state,
 > where it is public because nobody chose. Tracked as TECH_AUDIT Appendix A.3.
 
-Docker Compose deployment for Next.js app + go2rtc meditation streaming.
-
-> **Note on go2rtc.** The migration plan retires it: meditation playback already
-> runs over plain HTTP with Range requests, and `loadMeditationFromGo2rtc` in the
-> client is dead code that nothing calls. Until that removal lands, go2rtc is
-> still deployed and this runbook still describes it — but do not build anything
-> new against it. See `docs/CLOUD_MIGRATION_PLAN.md` on the `feat/cloud-migration`
-> branch, decision D1.
+Docker Compose deployment for the Next.js app. Meditation audio is served by
+the app over plain HTTP with range requests (`src/lib/stream-file.ts`); go2rtc
+was removed under migration decision D1 and no streaming sidecar remains.
 
 ## Architecture
 
@@ -28,11 +23,7 @@ Docker Compose deployment for Next.js app + go2rtc meditation streaming.
 Client (beacon.altermundi.net)
   ↓ HTTPS
 Host Nginx (SSL, reverse proxy)
-  ├── / → Next.js (port 3003)
-  ├── /api/stream/webrtc → go2rtc (port 1984)
-  └── /api/stream/streams → go2rtc (port 1984)
-
-WebRTC ICE traffic: UDP/TCP 8555 (direct to go2rtc container)
+  └── / → Next.js (port 3003)
 ```
 
 ## Services
@@ -40,13 +31,11 @@ WebRTC ICE traffic: UDP/TCP 8555 (direct to go2rtc container)
 | Service | Container | Port | Purpose |
 |---------|-----------|------|---------|
 | `app` | harmonic-beacon | 3003:3000 | Next.js web app |
-| `go2rtc` | harmonic-beacon-go2rtc | 127.0.0.1:1984, 8555/tcp+udp | WebRTC streaming |
 
 ## Prerequisites
 
 - Docker + Docker Compose v2
 - Host nginx with SSL (Certbot) for `beacon.altermundi.net`
-- Firewall rules for port 8555 TCP/UDP
 - Zitadel OIDC application at `auth.altermundi.net`
 - Meditation files uploaded via Provider Studio and approved by admin
 
@@ -55,9 +44,9 @@ WebRTC ICE traffic: UDP/TCP 8555 (direct to go2rtc container)
 Deployment is automated via GitHub Actions (`.github/workflows/deploy.yml`):
 
 1. Push to `release` branch triggers deploy
-2. Docker Compose builds both services
+2. Docker Compose builds the services
 3. Prisma migrations run automatically
-4. Health checks verify both services are up
+4. Health checks verify the services are up
 
 ### Manual deploy
 
@@ -83,7 +72,6 @@ docker compose up -d
 #    a poor health signal
 curl -f http://localhost:3003/api/health
 curl -f http://localhost:3003/api/health/ready    # 503 if the DB is unreachable
-curl -f http://127.0.0.1:1984/api
 ```
 
 ## Configuration
@@ -119,13 +107,6 @@ comment.
 
 Copy `deploy/nginx-harmonic-beacon.conf` to `/etc/nginx/sites-enabled/` and reload nginx.
 
-### Firewall
-
-```bash
-iptables -A INPUT -p tcp --dport 8555 -j ACCEPT
-iptables -A INPUT -p udp --dport 8555 -j ACCEPT
-```
-
 ## Monitoring
 
 ```bash
@@ -134,22 +115,12 @@ docker compose ps
 
 # Logs
 docker compose logs -f app
-docker compose logs -f go2rtc
-
-# go2rtc streams
-curl http://127.0.0.1:1984/api/streams
 
 # Health checks
 curl -f http://localhost:3003
-curl -f http://127.0.0.1:1984/api
 ```
 
 ## Troubleshooting
-
-### WebRTC not connecting
-- Verify port 8555 TCP/UDP is open in iptables
-- Check `PUBLIC_IP` env var matches server's public IP
-- Test: `curl http://127.0.0.1:1984/api/streams` to verify streams exist
 
 ### Auth redirects failing
 - Verify Zitadel OIDC app redirect URI: `https://beacon.altermundi.net/api/auth/callback/zitadel`
@@ -158,5 +129,5 @@ curl -f http://127.0.0.1:1984/api
 
 ### No audio
 - Check meditation files exist: `ls /mnt/n8n-data/harmonic-beacon/meditations/`
-- Check go2rtc logs: `docker compose logs go2rtc`
-- Verify streams are configured: `curl http://127.0.0.1:1984/api/streams`
+- Check app logs: `docker compose logs app`
+- Verify the file resolves: `curl -I -H 'Range: bytes=0-1' http://localhost:3003/api/meditations/<id>/audio`

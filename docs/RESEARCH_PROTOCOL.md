@@ -188,7 +188,7 @@ An earlier draft of this document asserted that "no third-party processor touche
 |---|---|---|
 | Zitadel (`auth.altermundi.net`, AlterMundi-operated) | Email, name, OIDC subject | Identity provider — see `src/lib/auth-config.ts` |
 | PostgreSQL and object storage on AlterMundi-operated hosts | All application data | First-party infrastructure |
-| LiveKit and go2rtc, self-hosted on AlterMundi infrastructure | Live audio, participant identities | Real-time transport |
+| LiveKit, self-hosted on AlterMundi infrastructure | Live audio, participant identities | Real-time transport |
 
 No payment processor, email provider, error-tracking, crash-reporting, analytics or push-notification service is integrated today.
 

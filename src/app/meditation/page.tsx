@@ -36,7 +36,6 @@ export default function MeditationPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const {
-        loadMeditationFromGo2rtc,
         loadMeditation,
         unloadMeditation,
         meditationIsPlaying,

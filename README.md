@@ -21,7 +21,7 @@ Index of all documentation: **[docs/README.md](./docs/README.md)**.
 - **PostgreSQL** via Prisma 7
 - **NextAuth v5** with **Zitadel OIDC** (roles `BEAC_ADMIN`, `BEAC_PROVIDER`, `BEAC_LISTENER`)
 - **LiveKit** for the live beacon (WebRTC, room `beacon`, primary publisher `beacon01`)
-- **go2rtc** for on-demand meditation streaming
+- **HTTP range requests** for on-demand meditation playback (`src/lib/stream-file.ts`)
 - **Docker Compose** for production deploy (see `deploy/`)
 - **Vitest** for testing
 
@@ -34,7 +34,7 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-The app needs a running Postgres, a reachable LiveKit server, a Zitadel OIDC client, and go2rtc for meditation streaming. See `TESTING.md` for the go2rtc integration notes and `deploy/` for the production-shaped setup.
+The app needs a running Postgres, a reachable LiveKit server, and a Zitadel OIDC client. Meditation audio is served by the app itself over HTTP with range requests, so it needs no extra service. See `deploy/` for the production-shaped setup.
 
 ## Scripts
 
@@ -66,12 +66,10 @@ npm run test:coverage    # coverage report
 ├── prisma/              # Schema, migrations, seed
 ├── services/
 │   └── playlist-bot/    # Fallback audio service
-├── go2rtc/              # Streaming configuration
 ├── deploy/              # Production deploy artifacts
 ├── docs/                # Vision, principles, roadmap, phase plans
 │   └── phases/          # Phase-by-phase project plans
 ├── BUSINESS_RULES.md    # Canonical policy document
-├── TESTING.md           # Integration testing notes
 ├── docker-compose.yml   # Production compose
 └── Dockerfile           # App container
 ```
@@ -93,7 +91,7 @@ What's live today:
 
 ## Deploy
 
-Production deploys run on a managed host with Postgres on the host and Next.js + go2rtc in Docker Compose. See `deploy/README.md` for the deployment runbook.
+Production deploys run on a managed host with Postgres on the host and Next.js in Docker Compose. See `deploy/README.md` for the deployment runbook.
 
 ## License
 

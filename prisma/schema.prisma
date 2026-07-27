@@ -113,7 +113,7 @@ model Meditation {
   // File storage
   filePath        String            @map("file_path")    // e.g., "amor.ogg"
   originalPath    String?           @map("original_path") // Original upload
-  streamName      String            @unique @map("stream_name") // go2rtc stream ID
+  streamName      String            @unique @map("stream_name") // vestigial: unique slug, no longer backs a stream
   
   // Provider
   providerId      String            @map("provider_id")

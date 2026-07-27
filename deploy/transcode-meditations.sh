@@ -1,11 +1,11 @@
 #!/bin/bash
 # Pre-transcode meditation files from m4a to Opus .ogg
-# Run at deploy time before starting go2rtc
+# Run at deploy time, before serving meditation audio
 #
 # Usage: ./transcode-meditations.sh [meditations_directory]
 #
 # Converts .m4a files to .ogg (Opus, 64kbps, 20ms page duration)
-# go2rtc can then serve these with #audio=copy (no runtime transcoding)
+# Opus .ogg is smaller over the wire and needs no runtime transcoding
 
 set -e
 

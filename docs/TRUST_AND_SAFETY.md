@@ -96,7 +96,7 @@ Publish rights are decided once, when the join token is issued: a Provider gets 
 
 ### 2.7 Infra controls
 
-- Healthchecks at container level, backed by a liveness probe (`/api/health`, which deliberately does not touch the database) and a readiness probe (`/api/health/ready`, which does, under a short timeout). The app, go2rtc and the playlist bot each have one.
+- Healthchecks at container level, backed by a liveness probe (`/api/health`, which deliberately does not touch the database) and a readiness probe (`/api/health/ready`, which does, under a short timeout). The app and the playlist bot each have one.
 - Rate limiting at the nginx layer: per-IP zones on the streaming and API paths (details in ops runbook). A WAF **will** sit in front of it; there is none today, and the rate limits are not one. **[Planned — unscheduled]**
 - An external uptime monitor will ping the beacon and the app. Nothing monitors either from outside the host today, which is why the audibility number in [SLO.md §2](./SLO.md) cannot be reported. **[Planned — Phase 1]**
 - Staged deployment with pre-production environment before prod push. Deployment goes straight to production today. **[Planned — Phase 1]**

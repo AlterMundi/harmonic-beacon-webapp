@@ -25,7 +25,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
-          NEXT_PUBLIC_GO2RTC_URL: http://localhost:1984/api
 
   test:
     runs-on: self-hosted
@@ -42,7 +41,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
-          NEXT_PUBLIC_GO2RTC_URL: http://localhost:1984/api
 
       - uses: actions/upload-artifact@v4
         if: always()
