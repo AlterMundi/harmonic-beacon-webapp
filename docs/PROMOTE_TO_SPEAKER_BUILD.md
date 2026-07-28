@@ -4,6 +4,19 @@
 **Audience:** External reviewer + their agents. Self-contained; every file/symbol referenced is real and cited.
 **Repo:** `harmonic-beacon-webapp` (Next.js 16 App Router · LiveKit · Prisma/Postgres · Auth.js v5).
 
+> **🔬 Peer-review note (2026-07-28).** From
+> [`docs/reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md`](./reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md):
+> - **`maxPublishers` must be set AND enforced (server + UI) before tickets are sold** — it's a launch blocker,
+>   not a config detail. Load-test at the cap ×1.5.
+> - **The cost driver is *receivers × subscribed bitrate*, not publisher count.** 40 publishers watched by 500
+>   receivers ≈ ~18.9 TB/event (~$2,000/mo) — far more than a 40-person circle (~240 GB). So a big audience
+>   *watching* the camera circle is the expensive case; state per-session whether all attendees receive the
+>   circle or only the circle members do.
+> - **Promoted-after-recording-starts speakers are NOT captured** by the per-track egress snapshot; and Cloud
+>   breaks today's local-path egress. **Recording off for launch**, or dynamic/composite egress → R2/S3 first.
+> - Admission itself (who may even get a session token) is **not enforced today** — see the pivot plan; this
+>   spec's promotion logic assumes the entitlement gate exists.
+
 > **🔄 Reconciliation note (2026-07-28).** This spec was first drafted against `release`; these are the deltas
 > after re-reading current `main`. The design is unchanged; anchors and integration points are corrected below.
 > - **Session-page line numbers all shifted** (`src/app/session/[id]/page.tsx` grew). Current anchors: `Room`

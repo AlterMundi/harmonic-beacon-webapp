@@ -4,6 +4,20 @@
 **Audience:** External reviewer + their agents. Self-contained; grounded in the repo's real auth code.
 **Repo:** `harmonic-beacon-webapp` — Auth.js v5 (NextAuth) + Zitadel OIDC.
 
+> **🔬 Peer-review note (2026-07-28).** From
+> [`docs/reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md`](./reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md):
+> - **❌ Error corrected:** this doc said providers/admins are promoted via `/admin/users`. That route actually
+>   **returns 409 and instructs admins to change roles in Zitadel** — roles are **Zitadel-authoritative**. So a
+>   migration off Zitadel must *also build a role-management path that doesn't exist today* (not just re-map
+>   claims). Fixed in §6.
+> - **Migration effort is understated:** `zitadelId` is looked up across provider-sessions, invites, meditations,
+>   favorites, reports, audit, export, deletion, and token issuance, and the schema field is **required + unique**.
+>   Inventory *every* call site; use a stable internal id + staged dual-mapping.
+> - **Magic-link ≠ admin MFA.** "Email possession" is not equivalent MFA for ADMIN/PROVIDER — keep strong
+>   second-factor for privileged accounts regardless of the listener login choice.
+> - **Sequence, not simultaneity:** keep Zitadel for the first paid event (relax listener MFA if possible);
+>   Auth.js is the *destination*, not a launch dependency. Do NOT combine an identity migration with the first sale.
+
 > **🔄 Reconciliation note (2026-07-28).** Deltas since this was drafted against `release`:
 > - **The PII-in-logs issue is already FIXED and guarded.** `auth-config.ts` no longer logs email — it logs
 >   role *names* only (**:60**) and pseudonymous `sub=…/role=…` (**:95**); error paths use `redactErrorDetail`
@@ -88,9 +102,11 @@ Email magic-link** — with the **Prisma adapter** storing users/sessions in the
   email → click the link," no password, no authenticator app.
 - **No new vendor, keeps sovereignty** — identities live in *our* Postgres, matching a community-networks org's
   values and removing Zitadel's operational burden entirely.
-- **Roles already work** — `User.role` exists; assign `LISTENER` on signup, and providers/admins are promoted
-  via the existing admin panel (`/admin/users`, `src/app/api/admin/users/[id]/route.ts`). Roles stop coming
-  from external claims and become **DB-native**, which is simpler and something we already half-do.
+- **Roles need a new management path (corrected).** `User.role` exists in the DB, but today it's **written from
+  Zitadel claims on each login, and `/admin/users` refuses to change it (409 → "change it in Zitadel")** — roles
+  are Zitadel-authoritative. So migrating off Zitadel means *also building* an in-app role-assignment path
+  (default `LISTENER` on signup; an admin action to grant PROVIDER/ADMIN) that does **not** exist yet. This is
+  extra scope the original draft missed, not a freebie.
 
 ### Security posture without mandatory MFA (important)
 Removing forced 2FA for everyone is fine **if** we compensate sensibly:
@@ -136,8 +152,9 @@ The two live contenders are **Auth.js-native** (best fit given we already run Au
    strategy: the Prisma adapter is easiest with **database sessions**; if we keep **JWT** (current, `strategy:
    'jwt'`, line 143) we can still use the adapter for user records. Recommend database sessions for magic-link
    simplicity, but confirm middleware still reads `session.user.role` (it does — provider-agnostic).
-3. **Role model.** Move role assignment out of the Zitadel claim logic: default `LISTENER` on user creation;
-   PROVIDER/ADMIN set via the existing admin UI. Update the `jwt`/`session` callbacks to read `role` from the DB
+3. **Role model — build the missing path.** Move role assignment out of the Zitadel-claim logic: default
+   `LISTENER` on user creation; and **add** an admin role-grant action (the current `/admin/users` route 409s and
+   defers to Zitadel, so this is net-new — not "the existing admin UI"). Update the `jwt`/`session` callbacks to read `role` from the DB
    user (they already write/read a DB user — simplify to read `User.role`).
 4. **User data migration — now the biggest risk, because live data-rights endpoints depend on `zitadelId`.**
    Existing users are keyed by `zitadelId` (unique, required) and `email` (unique). **`GET`/`DELETE
@@ -193,5 +210,5 @@ in step 4 (user linking) — pilot it against a copy of prod data.
 - `src/auth.ts` — Auth.js entrypoint (unchanged).
 - `middleware.ts` — role-gating; provider-agnostic, should not need changes.
 - `prisma/schema.prisma` — `User.zitadelId` (make nullable), `User.role` (already the role store), add adapter tables.
-- `src/app/api/admin/users/[id]/route.ts` — existing role-promotion path (becomes the way PROVIDER/ADMIN are granted).
+- `src/app/api/admin/users/[id]/route.ts` — **not** a role-promotion path today (returns 409, defers to Zitadel); a migration must add real in-app role granting here.
 - `deploy/README.md` / `.env.example` — Zitadel references to remove.

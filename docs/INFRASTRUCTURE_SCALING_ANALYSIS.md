@@ -1,6 +1,28 @@
 # Infrastructure & Scaling Analysis
 
-**Status:** Research · 2026-07-25 · updated 2026-07-25/27 (product clarifications) · **reconciled against `main` 2026-07-28**.
+**Status:** Research · 2026-07-25 · updated 2026-07-25/27 · reconciled against `main` 2026-07-28 · **peer-review reconciled 2026-07-28**.
+
+> **🔬 Peer-review reconciliation (2026-07-28).** From
+> [`docs/reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md`](./reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md) — corrections
+> adopted below:
+> - **Two-room cost, missed entirely:** every attendee holds a **global "beacon" room connection** (`AudioContext`)
+>   *plus* the session room — **two** LiveKit connections. That ~doubles billable connection-minutes (~$347 vs
+>   ~$167/mo on Ship) and nears the 1,000-concurrent Ship quota at ~500 attendees. **Disconnect the global room
+>   during a paid session** (or move the file-bot into the session room with source-specific gain) before launch.
+> - **Audio bandwidth math was inconsistent:** two **128 kbps** sources = 256 kbps/listener = **128 Mbps** aggregate
+>   ≈ **86.4 GB** per 500-person 90-min event (my "43 GB / 64 Mbps" implied 128 kbps *total*, i.e. two 64 kbps
+>   sources). Numbers corrected below.
+> - **Benchmark nuance:** the "3,000 subscribers" single-node figure is an **audio-only, ~3 kbps test stream** (10
+>   publishers @ ~80% CPU); the ~92% figure is the **video** case. Real 128 kbps audio capacity is lower — don't
+>   over-read the headline.
+> - **300-person room = ONE big node, not a cluster.** Multi-node LiveKit spreads *rooms*, never one room — my
+>   video section's "multi-node cluster for 300 all-camera" was self-contradictory. Fixed.
+> - **Recording breaks on Cloud:** egress writes server-local paths and lifecycle `existsSync`-checks them; promoted-
+>   after-start speakers aren't captured. **Disable recording for launch, or configure R2/S3 egress first.**
+> - **The deploy "rollback" is not real** (rebuilds from the same source; no immutable image, no DB rollback).
+> - Hetzner's **20 TB is EU-only** (US ≈ 1 TB) — don't cite it as globally low-latency for a Costa-Rica audience.
+> - See the review's **corrected cost table** (rechecked vendor prices 2026-07-28) for camera-circle scenarios,
+>   where the dominant variable is **receivers × subscribed bitrate**, not publisher count.
 
 > **🔄 Reconciliation note (2026-07-28).** Deltas since drafting; the analysis and recommendations stand, with
 > these corrections to the "current state":
@@ -112,7 +134,9 @@ Argentina)**, behind one host nginx, deployed by a GitHub Actions runner **on th
 ## Part 2 — The reframe: it's not a "LiveKit won't scale" problem
 
 The research is unambiguous: **a single self-hosted LiveKit node handles ~3,000 one-way audio subscribers**
-(`c2-standard-16`, ~92% CPU at 1 publisher + 3,000 subscribers). Your 500-listener target — even doubled to
+(`c2-standard-16`; the audio-only case is 10 publishers + 3,000 subscribers at ~80% CPU **with a ~3 kbps test
+stream** — the ~92% figure is the *video* livestream case, so real 128 kbps audio capacity is lower). Your
+500-listener target — even doubled to
 ~1,000 *track* subscriptions because you currently send **two tracks** (voice + Beacon) for the client-side
 crossfade — sits comfortably inside one box. LiveKit's multi-node/distributed mode (which requires Redis + a
 signaling bridge) **spreads different *rooms* across nodes; it does not split one big room** — so it wouldn't
@@ -121,8 +145,9 @@ not about a bigger single room.
 
 So the genuine constraints are:
 
-- **Downstream bandwidth cost.** SFU fan-out = bitrate × subscribers. At 128 kbps × 2 tracks × 500 ≈ **64 Mbps
-  sustained, ~43 GB per 90-min session**; at 5,000 listeners, ~640 Mbps / ~430 GB. *Where those bytes are
+- **Downstream bandwidth cost.** SFU fan-out = bitrate × subscribers. At 128 kbps × 2 sources × 500 = 256
+  kbps/listener ≈ **128 Mbps sustained, ~86 GB per 90-min session**; at 5,000 listeners, ~1.28 Gbps / ~860 GB.
+  (If each source is 64 kbps, halve these.) *Where those bytes are
   served from* dominates cost far more than which SFU software you run.
 - **Redundancy** — one node = one failure domain.
 - **Geography** — see Part 1.
@@ -224,7 +249,7 @@ is on and each viewer paginates through a subset — that's exactly what Zoom do
 | Session size | Feasible? | What it takes |
 |--------------|-----------|---------------|
 | **Circle ≤ ~40 on camera** | ✅ easily | Single self-hosted node; everyone fits one page (no paging). Cheapest. |
-| **~300 all on camera, paginated** | ✅ yes (Zoom-style) | Ingest ~450 Mbps + forwarding is a **large-meeting tier**: **LiveKit Cloud** (distributed mesh; ~$150–190/session egress) **or** a **multi-node self-hosted cluster** (Redis + N SFU nodes). Strongly consider **publish-when-visible/speaking (camera slots)** to cut cost. |
+| **~300 all on camera, paginated** | ✅ yes (Zoom-style) | Ingest ~450 Mbps + forwarding is a **large-meeting tier**. ⚠️ **This is ONE room, so it must fit on a single high-capacity node — a multi-node cluster does NOT split one room.** Options: **LiveKit Cloud** (its distributed mesh does handle big single rooms; ~$150–190/session egress) **or** a **single, load-tested, high-network node + a hot standby** (not a cluster). Strongly prefer **publish-when-visible/speaking (camera slots)** to cut both cost and node load. |
 | **Rendering 300 tiles at once on one screen** | ❌ impossible | No device decodes that; not a goal — pagination handles it. |
 
 **Recommendation:** build the **pagination/selective-subscription rendering (knob #1, ≈40 tiles)** regardless —
@@ -310,16 +335,17 @@ The figures above are **audio-only**. With Decision #4 (mutual camera-on, Part 3
 |----------|-------------------------------|------------------------------------------|
 | Audio-only session | baseline (~$170/mo total) | ~$30–95/mo total |
 | **~40-camera circle (~240 GB/session)** | **~$400–600+/mo** (data $0.10–0.12/GB) | **~$30–95/mo** (single node; egress ~$0 on 20 TB) |
-| **~300 all-on-camera, paginated (~1.5 TB/session)** | **~$150–190/session in data** (four-figure/mo) | bandwidth ~$0 but needs a **multi-node cluster** (Redis + N SFU nodes) |
+| **~300 all-on-camera, paginated (~1.5 TB/session)** | **~$150–190/session in data** (four-figure/mo) | bandwidth ~$0 but the room must fit **one high-capacity node + a hot standby** (NOT a cluster — one room can't span nodes) |
 
 **So video flips the hosting recommendation.** For an audio-only product, LiveKit Cloud's simplicity won. Once
 **camera-on is standard**, self-hosted LiveKit on a box with included bandwidth is **several times cheaper**, and
 the gap widens with room size. Revised guidance:
 
 - **Small camera circles (≤~40):** either works; LiveKit Cloud is simplest, self-hosted-single-node is cheapest.
-- **Large camera rooms (~300 all-on-camera):** a real large-meeting tier. **Self-hosted multi-node** (cheap
-  bandwidth, real ops) or **LiveKit Cloud** (turnkey mesh, heavy egress bill). At this size, **strongly prefer
-  camera slots / publish-when-visible** (Doc 3 §11 Q7) to cut both — nobody watches 300 faces at once.
+- **Large camera rooms (~300 all-on-camera):** a real large-meeting tier. **Self-hosted = one high-capacity
+  node + a hot standby** (cheap bandwidth, real ops — *not* a cluster; one room can't span nodes) or **LiveKit
+  Cloud** (its mesh handles big single rooms, heavy egress bill). At this size, **strongly prefer camera slots /
+  publish-when-visible** (Doc 3 §11 Q7) to cut both — nobody watches 300 faces at once.
 - Either way it still satisfies "off our own infra / isolated." Pragmatic path: launch on Cloud, migrate to
   self-hosted as camera usage/room-size grows (same software, low-friction).
 

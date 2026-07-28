@@ -28,6 +28,13 @@ This directory holds the living documentation of the product, the policies it en
 > analysis and all recommendations stand**; file/line anchors and "what-exists-today" claims are now current.
 > Still open before public paid launch: privacy/terms/refund policy, metrics/tracing, and an object-storage
 > driver so deletion can purge audio.
+>
+> **🔬 Peer-review reconciled (2026-07-28).** An external adversarial review (PR #11, verdict *"proceed with
+> conditions"*, now at [reviews/](./reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md)) is folded into Docs 1–4. Key
+> corrections: **paid admission is not enforced today** (a launch blocker, not "zero code"); one-use codes break
+> reconnect; the **two-room client doubles LiveKit cost**; the auth doc's role-promotion path was wrong (roles
+> are Zitadel-authoritative); audio bandwidth math and the single-node/300-camera claims fixed; **recording off
+> for launch**; and the **"weekend" is really ~10–16 person-days** for a capped pilot.
 
 **Read in this order:**
 
@@ -37,11 +44,13 @@ This directory holds the living documentation of the product, the policies it en
 | 2 | [INFRASTRUCTURE_SCALING_ANALYSIS.md](./INFRASTRUCTURE_SCALING_ANALYSIS.md) | **Where it should run** — service inventory, the real constraints (isolation + bandwidth + geography, not "LiveKit won't scale"), component-by-component recommendations with sourced 2026 pricing + nonprofit credits. | Research (updated for the interactive/keep-latency + migrate-off-our-infra decisions) |
 | 3 | [PROMOTE_TO_SPEAKER_BUILD.md](./PROMOTE_TO_SPEAKER_BUILD.md) | **How the interactive sharing round works** — code-grounded spec for letting listeners take the floor without reconnecting or 500 simultaneous publishers. | Engineering spec |
 | 4 | [AUTH_SIMPLIFICATION_ANALYSIS.md](./AUTH_SIMPLIFICATION_ANALYSIS.md) | **How people log in** — moving off mandatory-MFA Zitadel to a friction-light consumer login, with a migration path. | Decision analysis |
+| ★ | [reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md](./reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md) | **Independent adversarial review** of Docs 1–4 (Codex gpt-5.6-sol, human-audited). Verdict **"proceed with conditions"**: verified-claims table, launch blockers, corrected cost model, 24-risk register, ~10–16 person-day capped-pilot sequencing. **Read alongside Docs 1–4** — its findings are folded into their peer-review notes. | External review |
 
 **Decisions locked so far:** paid session-gated events, web-first, hide Live/Meditate/Practice behind flags
-(Doc 1) · **sell the first events via an external ticketing platform** (Luma / Ticket Tailor), gate access with
-the *existing* `SessionInvite` codes or an email allowlist — **zero payment code for launch**; in-app
-Voucher/PayPal deferred to v2 (Doc 1, WS2) · **keep WebRTC/LiveKit** (interactive + low latency → HLS ruled out)
+(Doc 1) · **sell the first events on an external ticketing platform** (Ticket Tailor + PayPal preferred; Luma/
+Stripe unavailable in Argentina) — but **admission must be enforced in-app** (the token route does NOT gate
+today; ~2–3 person-days of entitlement + reconnect-safe redemption is a launch blocker, per the review — *not*
+"zero code"); in-app Voucher/PayPal deferred to v2 (Doc 1, WS2) · **keep WebRTC/LiveKit** (interactive + low latency → HLS ruled out)
 (Docs 2–3) · **migrate off our own infra** for isolation, LiveKit Cloud leading / self-hosted-dedicated as alt
 (Doc 2) · DB→Neon, files→Cloudflare R2, app→Fly.io/VM (Doc 2) · auth→Auth.js-native social + magic-link, MFA
 only for ADMIN/PROVIDER (Doc 4).

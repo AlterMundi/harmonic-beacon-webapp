@@ -1,6 +1,21 @@
 # Pivot Plan — Paid Sessions (Subsistence MVP)
 
-**Status:** Draft · 2026-07-25 · **reconciled against `main` 2026-07-28**
+**Status:** Draft · 2026-07-25 · reconciled against `main` 2026-07-28 · **peer-review reconciled 2026-07-28**
+
+> **🔬 Peer-review reconciliation (2026-07-28).** An adversarial external review
+> ([`docs/reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md`](./reviews/EXTERNAL_REVIEW_SOL_2026-07-28.md), verdict
+> *"proceed with conditions"*) caught real errors in this plan. Corrections adopted:
+> - **❌ "Zero payment code / existing invite codes gate the first events" was WRONG.** The scheduled-session
+>   token route admits **any authenticated listener** to a `LIVE` session — passing an invite is *optional*, and
+>   a unit test asserts it (`src/app/api/scheduled-sessions/[id]/token/route.ts` + its test). **Enforcing paid
+>   entitlement is required code work and a launch blocker**, not free. See the rewritten WS1/WS2 + D2.
+> - **One-use codes break reconnect** (uses-exhausted check runs before the existing-participant exception; not
+>   transactional). Redemption must be **user-bound + atomic + reconnect-safe**.
+> - **"Weekend" framing is not credible** → ~**10–16 person-days** for a capped pilot, ~17–27 for full isolation.
+> - **Recording** must be **off for launch** (or migrate egress to R2/S3 first) — LiveKit Cloud breaks today's
+>   local-path egress and promoted-after-start speakers aren't captured.
+> - A **real purchase → refund → payout → join → rejoin → promote → fallback rehearsal** is a pre-sale blocker.
+> - Ticket Tailor + PayPal over Luma + Stripe (Stripe unavailable in Argentina) — matches the payments research.
 
 > **🔄 Reconciliation note (2026-07-28).** The plan stands; current-state deltas: (a) most compliance gaps are
 > now closed — see the updated Risks §4.1; (b) **go2rtc was removed**, so the "hide Meditate streaming" work in
@@ -83,12 +98,16 @@ The "must stop being available for the public" items. All behind flags.
 
 ### WS1 — Voucher access gate (the core of the pivot) **[MVP]** — *~1–1.5 days*
 
-> **🎟️ Launch shortcut (2026-07-28): the first events don't need the Voucher model at all.** With external
-> ticketing (WS2), access for event #1 can run entirely on the **already-built** `SessionInvite` + `/join/[code]`
-> + `?invite=CODE` machinery: mint a batch of single-use invite codes for the session, and the ticketing
-> platform delivers one per buyer (or gate on an email allowlist). The `Plan`/`Voucher`/`Order` models below are
-> the **v2** build — needed only when you want *in-app* plans (monthly, bundles, closed groups) rather than
-> per-event tickets sold outside. So for the first events, skip to WS2 and treat this section as the follow-on.
+> **🎟️ Launch scope (2026-07-28, peer-review-corrected): the first events don't need the full Voucher model —
+> but they DO need new admission-enforcement code.** The `SessionInvite` + `/join/[code]` + `?invite=CODE`
+> machinery exists, **but it does not currently gate entry**: the token route admits any authenticated listener
+> to a `LIVE` session whether or not they present an invite (a unit test asserts this). So the minimum viable
+> launch work is a **paid-event mode / entitlement check in the token route** — *no active entitlement → no
+> LiveKit token* — plus **reconnect-safe, user-bound, atomic redemption** (today the uses-exhausted check runs
+> before the existing-participant exception and isn't transactional, so a `maxUses:1` code rejects the buyer on
+> refresh). The `Plan`/`Voucher`/`Order` models below remain **v2** (in-app plans); the launch needs the smaller
+> entitlement/allowlist + enforcement, estimated at ~2–3 person-days (see §3). This is a **launch blocker**, not
+> a shortcut.
 
 **New Prisma models** (`prisma/schema.prisma` + a migration) — **[v2, for in-app plans]**. Sketch:
 
@@ -151,29 +170,30 @@ active voucher, redirect to a **purchase page** (WS2) rather than the room. The 
 model already has `maxUses`/`expiresAt`/`canPublish` — reuse it for coupons; a coupon-invite issues a
 Voucher on redemption instead of granting direct entry.
 
-### WS2 — Payment **[MVP: external ticketing — zero payment code] / [v2: in-app PayPal]** — *MVP ~half day of wiring, v2 ~1–1.5 days*
+### WS2 — Payment (external) + admission (in-app) **[launch: ~2–3 person-days admission code + external ticketing] / [v2: in-app PayPal]**
 
-**Launch decision (D2): sell the first events on an external ticketing platform** (Luma, Ticket Tailor,
-Eventbrite). The platform handles payment, receipts, refunds, and gives you an attendee list; the **app never
-touches money** for launch. The only work is turning "sold" into "allowed in the session," and that reuses
-machinery you already have.
+**Launch decision (D2): sell the first events on an external ticketing platform** (Ticket Tailor + PayPal
+preferred — see below). The platform handles payment, receipts, refunds, and gives you an attendee list; the
+**app never touches money**. But "zero payment code" ≠ "zero code" — **turning *sold* into *admitted* is new
+enforcement work in the app, and it's a launch blocker** (peer review). Budget ~2–3 person-days.
 
-**The key reuse:** the app already has the *redemption* half — `SessionInvite` (`code`, `maxUses`, `expiresAt`,
-`canPublish`), the `/join/[code]` page, `GET /api/invites/[code]`, and `?invite=CODE` on the session token
-route. So the ticketing platform is just a payment + delivery front-end onto the invite system.
+**What actually has to be built (the token route does NOT gate today).** The app has the redemption *nouns*
+— `SessionInvite` (`code`, `maxUses`, `expiresAt`, `canPublish`), `/join/[code]`, `?invite=CODE` — but the
+scheduled-session token route **issues a token to any authenticated listener in a `LIVE` session regardless of
+invite**. So you must add a **paid-event mode**: in that mode, *no active entitlement → no token*. Then wire the
+platform to it one of two ways:
 
-Two ways to wire access (pick per friction tolerance):
-
-- **Option A — code redemption (uses existing invite system).** Generate **single-use** invite codes
-  (`maxUses: 1`) for the session; the platform delivers one code per buyer (unique-code field, or you email
-  them after export). Buyer enters it at `/join/[code]`. Single-use is the anti-piracy control — a shared code
-  gets passed around, a `maxUses:1` code doesn't. Minimal new build: a small "bulk-generate N invite codes for
-  this session" action (extend `src/app/api/provider/sessions/[id]/invites`).
-- **Option B — email allowlist + magic-link (least friction, recommended for event #1).** Export the paid
-  attendees' emails, mark them allowed for the session, and gate on the login email. Buyer just logs in (magic
-  link / Google — see the auth analysis) and is admitted; nothing to copy. Tradeoff: tied to the email they
-  bought with (keep Option A as the fallback for gift tickets / mismatched emails). New build: a session→allowed
-  -emails table + one check in the token route.
+- **Option A — code redemption.** Bulk-generate unique codes for the session; the platform delivers one per
+  buyer; buyer redeems at `/join/[code]`. ⚠️ **Redemption must be user-bound, atomic, and reconnect-safe** — bind
+  the code to the redeeming user, do redemption + participant upsert in **one transaction**, and let that same
+  user rejoin on refresh (today's uses-exhausted check runs *before* the existing-participant exception, so a
+  `maxUses:1` code would reject the buyer on reconnect). Model revoke/transfer/refund/resend. Build: bulk-code
+  generator (extend `src/app/api/provider/sessions/[id]/invites`) + the enforcement + reconnect fix.
+- **Option B — email allowlist + magic-link (least friction for event #1).** Export paid emails → a
+  session→allowed-emails table → the token route admits only allowed, verified emails. Buyer logs in (magic
+  link / Google) and is admitted. Tradeoff: tied to purchase email (keep Option A as fallback for gifts /
+  mismatches). Either option requires the same token-route enforcement — the ticketing platform never enforces
+  admission *for* you.
 
 **Platform choice — the real decider is payout, not features.** Unique codes / attendee export / API exist on
 all of them; what matters for an **Argentine nonprofit charging a global (Costa Rica + worldwide) audience** is
@@ -247,20 +267,41 @@ being easily pirateable." The recording infra exists (`SessionRecording`, per-tr
 
 ---
 
-## 3. Suggested sequencing for the weekend
+## 3. Sequencing — capped pilot (~10–16 person-days, NOT a weekend)
 
-**Ship-Saturday critical path (with external ticketing, D2):** WS0 (flags/cleanup) → WS3 (file audio) →
-WS2-launch (set up the ticketing event + wire access via existing `SessionInvite` codes **or** an email
-allowlist) → WS5-minimal (profile shows session access). **No payment code, no Voucher model needed for event
-#1** — the ticketing platform is the payment system, and the invite/join flow already exists.
+The peer review found the "weekend" framing not credible; a realistic **capped pilot on LiveKit Cloud, Zitadel
+kept, recording off** is ~**10–16 focused person-days** (a full Neon + R2 + Fly/VM isolation migration is
+~17–27). Person-days ≠ calendar days, and exclude vendor KYC / bank-settlement / legal elapsed time.
 
-That yields a testable loop: *buy ticket on the platform → get an invite code (or your email is on the
-allowlist) → log in → join the scheduled ES/EN session → hear the spatialized file + facilitator → session
-runs.* The one thing to settle first: **which ticketing platform pays out to the Argentine org** (WS2).
+**Pre-sale blockers (must be true before a single ticket is sold):**
+1. **Freeze the event envelope & policy** (capacity, `maxPublishers`, max received video tracks, resolution,
+   recording on/off, refund/transfer/privacy/terms, incident owner) — ~1–2 d.
+2. **Validate the commercial rail end-to-end** — a real low-value purchase → ticket delivery → refund → **payout
+   to AlterMundi's bank** → fee/FX reconciliation. Ticket Tailor + PayPal before Luma + Stripe. Not "selected"
+   until this passes — ~0.5–1 d + external settlement time.
+3. **Make admission paid, identity-bound, reconnect-safe** (WS2) — no entitlement → no token; atomic redemption;
+   rejoin allowed; revoke/transfer/refund; tests for bypass/concurrency/expiry/sharing/rejoin — ~2–3 d.
+4. **Keep auth stable** — try relaxing Zitadel forced-MFA for listeners; do NOT combine an auth migration with
+   the first sale — ~0.5–1 d.
 
-**Fast-follow (week 2+):** in-app plans (WS1 Voucher/Plan/Order + PayPal, only if you want subscriptions/bundles
-inside the app), ticketing **webhook** automation, WS4 recorded-session hardening, WS6 signup polish, and the
-legal/compliance items below.
+**Pre-event-start blockers (before the first session runs):**
+5. **One-room-capable, operable media** (WS3) — launch a file into the specific session, distinguish bot/file
+   from facilitator audio for the crossfader, **stop the global-beacon second connection during a paid session**
+   (cost/quota — see infra), operator restart + local fallback — ~3–5 d (or ~1–2 d for a manual per-event
+   publisher).
+6. **Move event media to LiveKit Cloud** — ~1–2 d **if recording is off**; more if retained (needs R2/S3 egress
+   first — local-path egress breaks on Cloud).
+7. **Minimum observability + event runbook**, then **8. a full rehearsal**: *purchase → refund → identity →
+   admission → join → refresh/rejoin → promote/demote → fallback → end/refund*, load-tested at the cap ×1.5 from
+   CR/AR/NA/EU incl. mobile, then a 48h freeze — ~2.5–4.5 d combined.
+
+The testable loop: *buy on platform → entitlement recorded → log in → **enforced** admission → join session →
+spatialized file + facilitator → (sharing round) → end.* Settle first: **which platform pays out to the
+Argentine org** (WS2), and **recording on/off** (default off).
+
+**Explicitly deferred past event #1:** in-app Voucher/Plan/PayPal, full Auth.js migration, self-hosted-LiveKit
+economics, video recording/replay, ticketing webhook automation, multi-region — see the review's "what can
+wait" list.
 
 ---
 
