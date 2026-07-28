@@ -9,6 +9,65 @@
 
 This directory holds the living documentation of the product, the policies it enforces, and the long-term development project. It is meant to be read, edited, and questioned — the word "pending validation" at the top of each document is real.
 
+---
+
+## ⭐ Pivot & Architecture working set (2026-07)
+
+> A distinct, more recent set of working documents for the **pivot to paid, session-gated events** and the
+> **migration off our own shared infrastructure**. Written to be handed to an external reviewer and their
+> agents. Analysis and specs to review and sequence before implementation. The product/policy/roadmap corpus
+> indexed further below remains the long-term frame.
+>
+> **⚠️ Freshness note (2026-07-28):** these four docs were authored against the `release` branch. Since then
+> `main` has advanced significantly and already implements several items they (and the 2026-06-09 audit)
+> flagged as gaps — a `LICENSE`/`NOTICE`, PII-log redaction (`src/lib/redact.ts`), data export/deletion
+> (`/api/users/me/export`, account deletion), a reports/abuse system, an admin session kill-switch, an audit
+> log, health endpoints, and a started **Neon** migration. So the **strategic analysis holds, but the
+> "what-exists-today" grounding and some file/line references are stale vs `main` and need a reconciliation
+> pass before hand-off.** See per-doc notes.
+
+**Read in this order:**
+
+| # | Document | Answers | Status |
+|---|----------|---------|--------|
+| 1 | [PIVOT_PAID_SESSIONS_PLAN.md](./PIVOT_PAID_SESSIONS_PLAN.md) | **What we're building & why** — paid, voucher-gated scheduled sessions, web-first; feature-gating, voucher/plan model, PayPal, sequencing. Start here. | Draft |
+| 2 | [INFRASTRUCTURE_SCALING_ANALYSIS.md](./INFRASTRUCTURE_SCALING_ANALYSIS.md) | **Where it should run** — service inventory, the real constraints (isolation + bandwidth + geography, not "LiveKit won't scale"), component-by-component recommendations with sourced 2026 pricing + nonprofit credits. | Research (updated for the interactive/keep-latency + migrate-off-our-infra decisions) |
+| 3 | [PROMOTE_TO_SPEAKER_BUILD.md](./PROMOTE_TO_SPEAKER_BUILD.md) | **How the interactive sharing round works** — code-grounded spec for letting listeners take the floor without reconnecting or 500 simultaneous publishers. | Engineering spec |
+| 4 | [AUTH_SIMPLIFICATION_ANALYSIS.md](./AUTH_SIMPLIFICATION_ANALYSIS.md) | **How people log in** — moving off mandatory-MFA Zitadel to a friction-light consumer login, with a migration path. | Decision analysis |
+
+**Decisions locked so far:** paid voucher-gated sessions, web-first, hide Live/Meditate/Practice behind flags
+(Doc 1) · **keep WebRTC/LiveKit** (interactive + low latency → HLS ruled out) (Docs 2–3) · **migrate off our own
+infra** for isolation, LiveKit Cloud leading / self-hosted-dedicated as alt (Doc 2) · DB→Neon, files→Cloudflare
+R2, app→Fly.io/VM (Doc 2) · auth→Auth.js-native social + magic-link, MFA only for ADMIN/PROVIDER (Doc 4).
+
+**Video (mutual camera-on) — folded into Docs 2 & 3 on 2026-07-27:** everyone activates their camera as a group
+connection exercise (Zoom-style). Key resolutions: video **does not hurt latency** (WebRTC is real-time) but
+multiplies **bandwidth ~8–15×**, which **tilts hosting toward self-hosted-with-included-bandwidth**. Uses
+**Zoom's two-knob model:** (1) each viewer only renders/receives **~40 tiles** via pagination + active-speaker +
+selective subscription — so **room size is irrelevant to any device**; (2) the number of **simultaneous camera
+publishers** is the real infra/cost limit. **Large camera rooms (e.g. ~300 all-on-camera, paginated) are
+possible** but are a large-meeting tier (LiveKit Cloud egress ~$150–190/session, or a multi-node self-host);
+prefer **camera slots / publish-when-visible** at that size. Load-bearing open decision: **`maxPublishers`** (how
+big camera rooms get → drives the hosting choice). Minor open item: mobile tile handling.
+
+**Open threads not yet folded in:**
+- **Legal/compliance for taking money** — `main` now has a `LICENSE`, PII-log redaction, and data
+  export/deletion (several gaps closed). **Still open:** privacy policy / terms of service / refund policy for
+  paid sessions (Docs 1 & 4).
+- **Nonprofit credits** — validate AlterMundi via TechSoup Argentina/Wingu + Goodstack to unlock Doc 2 §6
+  programs (Google Ad Grants + Cloudflare Project Galileo are highest-leverage).
+- **Reconcile the four docs against `main`** — re-ground file/line references (session page, `AudioContext`,
+  token route, `schema.prisma`, `auth-config.ts` all changed) and mark the already-implemented items as done.
+
+```
+PIVOT (what) ─► what we sell: paid, voucher-gated interactive sessions
+   ├─► INFRASTRUCTURE (where)      keep LiveKit, migrate off our infra, managed data/storage (+video → self-host)
+   ├─► PROMOTE-TO-SPEAKER (room)   the interactive sharing round (mic + video)
+   └─► AUTH (entry)               friction-light login so paying users convert
+```
+
+---
+
 ## How the docs fit together
 
 ```
