@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { features } from "@/lib/features";
 
 interface Tab {
     name: string;
@@ -57,8 +58,16 @@ export default function BottomNav() {
     const userRole = session?.user?.role;
     const isProviderOrAdmin = userRole === "PROVIDER" || userRole === "ADMIN";
 
-    // Always show strict tabs: Live, Meditate, Sessions, Profile
-    const navTabs: Tab[] = [...tabs];
+    // Base tabs: Live, Meditate, Sessions, Profile — but hide Live/Meditate from
+    // listeners when their flags are off (WS0). Providers/admins keep them so they
+    // can preview (which also preserves the Studio/Admin splice indices below).
+    const showLiveTab = features.showLive || isProviderOrAdmin;
+    const showMeditateTab = features.showMeditate || isProviderOrAdmin;
+    const navTabs: Tab[] = tabs.filter((t) => {
+        if (t.href === "/live") return showLiveTab;
+        if (t.href === "/meditation") return showMeditateTab;
+        return true;
+    });
 
     if (isProviderOrAdmin) {
         navTabs.splice(2, 0, {

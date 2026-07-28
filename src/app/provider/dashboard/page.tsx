@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import TakeDownDialog, { type TakeDownResponse } from "@/components/TakeDownDialog";
+import { features } from "@/lib/features";
 
 interface ProviderSession {
     id: string;
@@ -204,9 +205,13 @@ export default function ProviderDashboard() {
                 ) : meditations.length === 0 ? (
                     <div className="glass-card p-6 text-center">
                         <p className="text-[var(--text-muted)] mb-4">You haven&apos;t uploaded any meditations yet.</p>
-                        <Link href="/provider/upload" className="btn-primary inline-block">
-                            <span>Upload Your First</span>
-                        </Link>
+                        {/* Upload is hidden in the first iteration (WS0). Re-enabled by
+                            NEXT_PUBLIC_SHOW_UPLOAD. */}
+                        {features.showUpload && (
+                            <Link href="/provider/upload" className="btn-primary inline-block">
+                                <span>Upload Your First</span>
+                            </Link>
+                        )}
                     </div>
                 ) : (
                     <div className="space-y-3">

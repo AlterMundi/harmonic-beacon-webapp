@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
+import { features } from '@/lib/features';
 
 export default auth((req) => {
     const { pathname } = req.nextUrl;
@@ -11,6 +12,18 @@ export default auth((req) => {
 
     if (isProtectedPage && !session?.user) {
         return NextResponse.redirect(new URL('/login', req.url));
+    }
+
+    // First-iteration (WS0): hide Live / Meditate from listeners when flagged off.
+    // Providers and admins keep access so they can preview. Code is unchanged — the
+    // routes still exist; listeners are just sent to Sessions instead.
+    if (session?.user && session.user.role !== 'PROVIDER' && session.user.role !== 'ADMIN') {
+        if (!features.showLive && pathname.startsWith('/live')) {
+            return NextResponse.redirect(new URL('/sessions', req.url));
+        }
+        if (!features.showMeditate && pathname.startsWith('/meditation')) {
+            return NextResponse.redirect(new URL('/sessions', req.url));
+        }
     }
 
     // Provider pages: require PROVIDER or ADMIN role
@@ -84,9 +97,10 @@ export default auth((req) => {
         }
     }
 
-    // Redirect authenticated users away from login
+    // Redirect authenticated users away from login. Land on the beacon home when
+    // it's public; otherwise on Sessions (the listener's home in the first iteration).
     if (pathname === '/login' && session?.user) {
-        return NextResponse.redirect(new URL('/live', req.url));
+        return NextResponse.redirect(new URL(features.showLive ? '/live' : '/sessions', req.url));
     }
 
     return NextResponse.next();

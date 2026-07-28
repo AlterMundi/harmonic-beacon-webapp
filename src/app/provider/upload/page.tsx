@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { features } from "@/lib/features";
 
 interface TagItem {
     id: string;
@@ -22,6 +23,12 @@ export default function ProviderUploadPage() {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+
+    // First-iteration (WS0): upload is hidden. Guard the route so a direct URL
+    // doesn't reach the form. Re-enabled by NEXT_PUBLIC_SHOW_UPLOAD.
+    useEffect(() => {
+        if (!features.showUpload) router.replace("/provider/dashboard");
+    }, [router]);
 
     useEffect(() => {
         fetch("/api/tags")

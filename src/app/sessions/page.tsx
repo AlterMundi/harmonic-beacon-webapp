@@ -5,6 +5,7 @@ import Link from "next/link";
 import { BottomNav, AudioVisualizer, ReportButton } from "@/components";
 import { useAudio } from "@/context/AudioContext";
 import { formatTime as formatTimeFn, formatDate as formatDateFn, formatDuration as formatDurationFn } from "@/lib/format";
+import { features } from "@/lib/features";
 
 interface SessionRecord {
     id: string;
@@ -38,7 +39,9 @@ interface RecordedSessionItem {
 }
 
 export default function SessionsPage() {
-    const [activeTab, setActiveTab] = useState<'practice' | 'events'>('practice');
+    // First-iteration (WS0): solo Practice is hidden, so Events is the default and
+    // only tab. Re-enabled by NEXT_PUBLIC_SHOW_PRACTICE.
+    const [activeTab, setActiveTab] = useState<'practice' | 'events'>(features.showPractice ? 'practice' : 'events');
     const [isSessionActive, setIsSessionActive] = useState(false);
     const [duration, setDuration] = useState(0);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -173,7 +176,8 @@ export default function SessionsPage() {
                 </p>
             </header>
 
-            {/* Tab Bar */}
+            {/* Tab Bar — only shown when solo Practice is enabled (WS0). */}
+            {features.showPractice && (
             <div className="relative z-10 px-4 mb-6">
                 <div className="flex gap-2 p-1 bg-white/5 rounded-xl">
                     <button
@@ -198,9 +202,10 @@ export default function SessionsPage() {
                     </button>
                 </div>
             </div>
+            )}
 
             {/* Practice Tab */}
-            {activeTab === 'practice' && (
+            {features.showPractice && activeTab === 'practice' && (
             <>
             {/* Active Session or Start Button */}
             <section className="relative z-10 px-4 mb-6">

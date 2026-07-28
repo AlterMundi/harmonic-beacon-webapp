@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { AccessToken } from 'livekit-server-sdk';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, isAdminOrProvider } from '@/lib/auth';
 import { redactErrorDetail } from '@/lib/redact';
+import { features } from '@/lib/features';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,13 @@ const TOKEN_TTL = '2h';
 export async function GET() {
     const [session, errorResponse] = await requireAuth();
     if (!session) return errorResponse;
+
+    // First-iteration (WS0): the public beacon is hidden, so don't mint beacon
+    // credentials for listeners even if they hit the endpoint directly. Providers
+    // and admins keep access to preview. Re-enabled by NEXT_PUBLIC_SHOW_LIVE.
+    if (!features.showLive && !isAdminOrProvider(session.user.role)) {
+        return NextResponse.json({ error: 'The beacon is not publicly available' }, { status: 403 });
+    }
 
     if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
         return NextResponse.json(

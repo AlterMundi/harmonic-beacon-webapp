@@ -190,6 +190,51 @@ describe('middleware', () => {
         });
     });
 
+    describe('WS0 feature flags OFF (public surfaces hidden)', () => {
+        async function runFlagsOff(pathname: string, session: unknown, method = 'GET') {
+            vi.doMock('@/lib/features', () => ({
+                features: { showLive: false, showMeditate: false, showPractice: false, showUpload: false },
+            }));
+            vi.doMock('@/auth', () => ({
+                auth: (callback: (req: NextRequest & { auth: unknown }) => unknown) =>
+                    (req: NextRequest) => {
+                        const augmented = req as NextRequest & { auth: unknown };
+                        augmented.auth = session;
+                        return callback(augmented);
+                    },
+            }));
+            const mod = await import('./middleware');
+            const req = createMiddlewareRequest(pathname, { method });
+            return mod.default(req, { params: Promise.resolve({}) }) as NextResponse;
+        }
+
+        const listener = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
+        const provider = { user: { id: 'p1', email: 'p@e.com', name: 'P', role: 'PROVIDER' } };
+
+        it('redirects a listener from /live to /sessions', async () => {
+            const res = await runFlagsOff('/live', listener);
+            expect(res.status).toBe(307);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/sessions');
+        });
+
+        it('redirects a listener from /meditation to /sessions', async () => {
+            const res = await runFlagsOff('/meditation', listener);
+            expect(res.status).toBe(307);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/sessions');
+        });
+
+        it('still allows a PROVIDER to preview /live', async () => {
+            const res = await runFlagsOff('/live', provider);
+            expect(res.status).toBe(200);
+        });
+
+        it('sends an authenticated user from /login to /sessions (not /live)', async () => {
+            const res = await runFlagsOff('/login', listener);
+            expect(res.status).toBe(307);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/sessions');
+        });
+    });
+
     describe('POST /api/meditations auth', () => {
         it('returns 401 for unauthenticated POST', async () => {
             const res = await runMiddleware('/api/meditations', null, 'POST');

@@ -19,6 +19,14 @@ function mockAuthed() {
             { user: { id: 'zitadel-sub-1', email: 'listener@example.com', role: 'USER' } },
             null,
         ]),
+        isAdminOrProvider: (role: string) => role === 'ADMIN' || role === 'PROVIDER',
+    }));
+}
+
+/** Default: the beacon is public (flag shown). Overridden in the WS0 test below. */
+function mockFeaturesShown() {
+    vi.doMock('@/lib/features', () => ({
+        features: { showLive: true, showMeditate: true, showPractice: true, showUpload: true },
     }));
 }
 
@@ -31,6 +39,7 @@ describe('GET /api/livekit/token', () => {
         mockToJwt.mockClear();
         mockToJwt.mockResolvedValue('mock-jwt-token');
         mockAuthed();
+        mockFeaturesShown();
     });
 
     afterEach(() => {
@@ -97,6 +106,29 @@ describe('GET /api/livekit/token', () => {
         const { status } = await parseResponse(await GET());
 
         expect(status).toBe(401);
+        expect(mockToJwt).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 for a listener when the beacon is hidden (WS0), but not for a provider', async () => {
+        process.env.LIVEKIT_API_KEY = 'test-api-key';
+        process.env.LIVEKIT_API_SECRET = 'test-api-secret';
+
+        vi.doMock('@/lib/features', () => ({
+            features: { showLive: false, showMeditate: false, showPractice: false, showUpload: false },
+        }));
+        // Re-mock auth to also expose isAdminOrProvider (the route now imports it).
+        vi.doMock('@/lib/auth', () => ({
+            requireAuth: vi.fn().mockResolvedValue([
+                { user: { id: 'sub-1', email: 'listener@example.com', role: 'USER' } },
+                null,
+            ]),
+            isAdminOrProvider: (role: string) => role === 'ADMIN' || role === 'PROVIDER',
+        }));
+
+        const { GET } = await import('../route');
+        const { status } = await parseResponse(await GET());
+
+        expect(status).toBe(403);
         expect(mockToJwt).not.toHaveBeenCalled();
     });
 
