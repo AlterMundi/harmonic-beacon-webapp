@@ -38,10 +38,13 @@ This directory holds the living documentation of the product, the policies it en
 | 3 | [PROMOTE_TO_SPEAKER_BUILD.md](./PROMOTE_TO_SPEAKER_BUILD.md) | **How the interactive sharing round works** — code-grounded spec for letting listeners take the floor without reconnecting or 500 simultaneous publishers. | Engineering spec |
 | 4 | [AUTH_SIMPLIFICATION_ANALYSIS.md](./AUTH_SIMPLIFICATION_ANALYSIS.md) | **How people log in** — moving off mandatory-MFA Zitadel to a friction-light consumer login, with a migration path. | Decision analysis |
 
-**Decisions locked so far:** paid voucher-gated sessions, web-first, hide Live/Meditate/Practice behind flags
-(Doc 1) · **keep WebRTC/LiveKit** (interactive + low latency → HLS ruled out) (Docs 2–3) · **migrate off our own
-infra** for isolation, LiveKit Cloud leading / self-hosted-dedicated as alt (Doc 2) · DB→Neon, files→Cloudflare
-R2, app→Fly.io/VM (Doc 2) · auth→Auth.js-native social + magic-link, MFA only for ADMIN/PROVIDER (Doc 4).
+**Decisions locked so far:** paid session-gated events, web-first, hide Live/Meditate/Practice behind flags
+(Doc 1) · **sell the first events via an external ticketing platform** (Luma / Ticket Tailor), gate access with
+the *existing* `SessionInvite` codes or an email allowlist — **zero payment code for launch**; in-app
+Voucher/PayPal deferred to v2 (Doc 1, WS2) · **keep WebRTC/LiveKit** (interactive + low latency → HLS ruled out)
+(Docs 2–3) · **migrate off our own infra** for isolation, LiveKit Cloud leading / self-hosted-dedicated as alt
+(Doc 2) · DB→Neon, files→Cloudflare R2, app→Fly.io/VM (Doc 2) · auth→Auth.js-native social + magic-link, MFA
+only for ADMIN/PROVIDER (Doc 4).
 
 **Video (mutual camera-on) — folded into Docs 2 & 3 on 2026-07-27:** everyone activates their camera as a group
 connection exercise (Zoom-style). Key resolutions: video **does not hurt latency** (WebRTC is real-time) but
@@ -59,6 +62,9 @@ big camera rooms get → drives the hosting choice). Minor open item: mobile til
   paid sessions (Docs 1 & 4).
 - **Nonprofit credits** — validate AlterMundi via TechSoup Argentina/Wingu + Goodstack to unlock Doc 2 §6
   programs (Google Ad Grants + Cloudflare Project Galileo are highest-leverage).
+- **Ticketing platform payout (blocks first-event sales)** — pick the platform by which one can pay out to the
+  Argentine org (Ticket Tailor w/ own PayPal, or Luma/Stripe). Features are equivalent; payout is the decider
+  (Doc 1, WS2).
 - ~~Reconcile the four docs against `main`~~ — **done 2026-07-28** (file/line refs re-grounded; implemented
   items marked done; see each doc's reconciliation note).
 

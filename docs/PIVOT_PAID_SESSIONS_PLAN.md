@@ -43,7 +43,7 @@ file-publishing bot (`services/playlist-bot`). The pivot reuses all of it. Three
 | # | Decision | Recommendation | Why |
 |---|----------|----------------|-----|
 | D1 | Keep Zitadel or migrate auth? | **Keep Zitadel for the MVP.** | Replacing auth is the single riskiest thing you could do on a weekend deadline, and the repo already survived one painful auth migration (Supabase→Zitadel). Account creation + "add card" layer *on top* of Zitadel; don't couple billing to the auth provider. Revisit only if Zitadel's hosted signup UX is a real conversion blocker. |
-| D2 | Payment: automate PayPal now, or issue vouchers manually first? | **Manual-first.** Ship with an admin "issue voucher" action; a buyer pays a PayPal payment link, an admin (you) clicks issue. Automate with PayPal webhooks in iteration 2. | Decouples the Saturday ship from a payment integration. At 2 sessions/week × ~a few hundred buyers this is tractable by hand for the first weeks, and it de-risks the launch. |
+| D2 | How to take payment for the first events? | **External ticketing platform (Luma / Ticket Tailor), not in-app payment.** The platform sells tickets; access is granted through the app's *existing* `SessionInvite` codes or an email allowlist. Build **zero** payment code for launch. (Full in-app Voucher/Plan/PayPal flow is deferred to v2, when you want in-app subscriptions/bundles.) | Fastest possible launch: the platform handles payment, receipts, refunds, and gives you an attendee list. It reuses machinery you already have (`/join/[code]`, `SessionInvite`). Supersedes the earlier "manual PayPal links + admin issues vouchers" idea — same simplicity, less to build. See **WS2**. |
 | D3 | Session beacon audio source | **Pre-recorded spatialized file → LiveKit session room** via a publisher bot/ingress. | Matches the meeting decision ("archivo espacializado grabado que ya está ahí"), avoids depending on live hardware/an external stream, and reuses `playlist-bot`. |
 | D4 | Recorded-session replay: how much beacon to expose? | **Server-mixed, low-fidelity, signed-URL, no raw beacon track.** (See WS4.) | The beacon layer is the IP; it must not be trivially downloadable. |
 
@@ -83,7 +83,14 @@ The "must stop being available for the public" items. All behind flags.
 
 ### WS1 — Voucher access gate (the core of the pivot) **[MVP]** — *~1–1.5 days*
 
-**New Prisma models** (`prisma/schema.prisma` + a migration). Sketch:
+> **🎟️ Launch shortcut (2026-07-28): the first events don't need the Voucher model at all.** With external
+> ticketing (WS2), access for event #1 can run entirely on the **already-built** `SessionInvite` + `/join/[code]`
+> + `?invite=CODE` machinery: mint a batch of single-use invite codes for the session, and the ticketing
+> platform delivers one per buyer (or gate on an email allowlist). The `Plan`/`Voucher`/`Order` models below are
+> the **v2** build — needed only when you want *in-app* plans (monthly, bundles, closed groups) rather than
+> per-event tickets sold outside. So for the first events, skip to WS2 and treat this section as the follow-on.
+
+**New Prisma models** (`prisma/schema.prisma` + a migration) — **[v2, for in-app plans]**. Sketch:
 
 ```prisma
 enum PlanKind { PER_SESSION  BUNDLE  MONTHLY  PREMIUM  CLOSED_GROUP }
@@ -144,22 +151,53 @@ active voucher, redirect to a **purchase page** (WS2) rather than the room. The 
 model already has `maxUses`/`expiresAt`/`canPublish` — reuse it for coupons; a coupon-invite issues a
 Voucher on redemption instead of granting direct entry.
 
-### WS2 — Billing / plans (PayPal) **[MVP: manual] / [v2: automated]** — *MVP ~half day, v2 ~1 day*
+### WS2 — Payment **[MVP: external ticketing — zero payment code] / [v2: in-app PayPal]** — *MVP ~half day of wiring, v2 ~1–1.5 days*
 
-**Plan types** (from the audit checklist): Pay-per-session · Bundle (coupon for N sessions) · Monthly ·
-Premium · Closed groups (4–5 people). Seed these as `Plan` rows.
+**Launch decision (D2): sell the first events on an external ticketing platform** (Luma, Ticket Tailor,
+Eventbrite). The platform handles payment, receipts, refunds, and gives you an attendee list; the **app never
+touches money** for launch. The only work is turning "sold" into "allowed in the session," and that reuses
+machinery you already have.
 
-- **MVP (manual):** A simple `/pricing` page listing plans, each linking to a PayPal payment link. Admin gets
-  an "Issue voucher" action in `/admin/users` (extend `src/app/api/admin/users/[id]/route.ts`) to grant a
-  Voucher after confirming payment. Buyer flow: pick plan → pay via PayPal → tell us / we see the payment →
-  we issue voucher → they can join. Crude but shippable and fully auditable.
-- **v2 (automated):** PayPal Checkout (Smart Buttons) on `/pricing`, a `POST /api/orders` to create an Order,
-  and `POST /api/webhooks/paypal` to verify capture and auto-issue the Voucher. Add `paypal` server SDK.
-  Store `providerRef` for reconciliation/refunds.
-- **Note on the checklist question "¿cómo cobrar con la cuenta de PayPal disponible?"** — PayPal Business +
-  payment links works day one with no integration. Google for Nonprofits (the other checklist question) can
-  reduce fees / unlock Google Ad Grants for *publicity*, but it's an org-eligibility process, not a payment
-  rail — pursue it in parallel, don't block launch on it.
+**The key reuse:** the app already has the *redemption* half — `SessionInvite` (`code`, `maxUses`, `expiresAt`,
+`canPublish`), the `/join/[code]` page, `GET /api/invites/[code]`, and `?invite=CODE` on the session token
+route. So the ticketing platform is just a payment + delivery front-end onto the invite system.
+
+Two ways to wire access (pick per friction tolerance):
+
+- **Option A — code redemption (uses existing invite system).** Generate **single-use** invite codes
+  (`maxUses: 1`) for the session; the platform delivers one code per buyer (unique-code field, or you email
+  them after export). Buyer enters it at `/join/[code]`. Single-use is the anti-piracy control — a shared code
+  gets passed around, a `maxUses:1` code doesn't. Minimal new build: a small "bulk-generate N invite codes for
+  this session" action (extend `src/app/api/provider/sessions/[id]/invites`).
+- **Option B — email allowlist + magic-link (least friction, recommended for event #1).** Export the paid
+  attendees' emails, mark them allowed for the session, and gate on the login email. Buyer just logs in (magic
+  link / Google — see the auth analysis) and is admitted; nothing to copy. Tradeoff: tied to the email they
+  bought with (keep Option A as the fallback for gift tickets / mismatched emails). New build: a session→allowed
+  -emails table + one check in the token route.
+
+**Platform choice — the real decider is payout, not features.** Unique codes / attendee export / API exist on
+all of them; what matters for an **Argentine nonprofit charging a global (Costa Rica + worldwide) audience** is
+*can it collect money and pay out to the org.* Shortlist:
+- **Ticket Tailor** — flat per-ticket fee (no %), strong API + webhooks, and lets you connect **your own PayPal
+  or Stripe** (PayPal is reliably available in Argentina — likely the pragmatic winner).
+- **Luma** — best event UX, free/low fee, runs on Stripe (verify Stripe payout to the org).
+- **Eventbrite** — robust, higher fees; confirm Argentina payout.
+- **Zeffy** — free for nonprofits but US/Canada-focused; Argentine eligibility doubtful — verify before relying.
+- **⚠️ OPEN DECISION:** which platform can actually pay out to the Argentine org. This is the one thing to
+  settle before selling — everything else is equivalent.
+
+**Manual flow for event #1:** create the event (ES + EN) → publish the link → put join instructions in the
+confirmation email → after sales, export attendees → bulk-generate invite codes **or** load the email allowlist
+→ attendees log in and join.
+
+**Later automation:** platform **webhook** on purchase → create a `SessionInvite` / allowlist entry → email the
+join link. (Ticket Tailor + Eventbrite have webhooks; Luma via API/Zapier.) The *payment* stays the platform's
+problem.
+
+**v2 — in-app plans (only when you want subscriptions/bundles inside the app):** the `Plan`/`Voucher`/`Order`
+models (WS1) + PayPal Checkout + `POST /api/webhooks/paypal`. Note **Google for Nonprofits** can unlock Ad
+Grants for *publicity* (huge for filling events) but it's an org-eligibility process, not a payment rail —
+pursue in parallel, don't block launch on it.
 
 ### WS3 — Session audio from a pre-recorded spatialized file **[MVP]** — *~1 day*
 
@@ -211,13 +249,17 @@ being easily pirateable." The recording infra exists (`SessionRecording`, per-tr
 
 ## 3. Suggested sequencing for the weekend
 
-**Ship-Saturday critical path:** WS0 (flags/cleanup) → WS1 (voucher gate + models) → WS3 (file audio) →
-WS2-manual (pricing page + admin issue-voucher) → WS5-minimal (profile shows voucher, pricing link).
+**Ship-Saturday critical path (with external ticketing, D2):** WS0 (flags/cleanup) → WS3 (file audio) →
+WS2-launch (set up the ticketing event + wire access via existing `SessionInvite` codes **or** an email
+allowlist) → WS5-minimal (profile shows session access). **No payment code, no Voucher model needed for event
+#1** — the ticketing platform is the payment system, and the invite/join flow already exists.
 
-That yields a testable loop: *buy plan (PayPal link) → admin issues voucher → user joins the scheduled ES/EN
-session → hears the spatialized file + facilitator → session runs.*
+That yields a testable loop: *buy ticket on the platform → get an invite code (or your email is on the
+allowlist) → log in → join the scheduled ES/EN session → hear the spatialized file + facilitator → session
+runs.* The one thing to settle first: **which ticketing platform pays out to the Argentine org** (WS2).
 
-**Fast-follow (week 2):** WS2 PayPal automation, WS4 recorded-session hardening, WS6 signup polish, and the
+**Fast-follow (week 2+):** in-app plans (WS1 Voucher/Plan/Order + PayPal, only if you want subscriptions/bundles
+inside the app), ticketing **webhook** automation, WS4 recorded-session hardening, WS6 signup polish, and the
 legal/compliance items below.
 
 ---
