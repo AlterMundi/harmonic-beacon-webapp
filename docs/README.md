@@ -22,6 +22,9 @@ BUSINESS_RULES.md        ← canonical policy (root-level)
 ├── TRUST_AND_SAFETY.md  ← threat model, controls, incident playbooks
 └── SLO.md               ← the Covenant of Continuity, uptime targets, client contract
 ..
+└── integrations/        ← evaluated external systems and implementation boundaries
+    └── UNIVERSE.md      ← ticketing checkout, payments, webhooks, and API
+..
 ROADMAP.md               ← long-term development project, phases 1–4+
 └── phases/
     ├── PHASE_1_CREDIBILITY.md
@@ -108,6 +111,7 @@ merged is the same bug this convention exists to prevent.
 | Provider guidelines, moderation rules, appeals | CONTENT_POLICY.md |
 | Security controls, reports, incidents | TRUST_AND_SAFETY.md |
 | Uptime, source states, client behaviour under degradation | SLO.md |
+| External checkout, payment, webhook, or API integration | integrations/ |
 | Product identity, voice, refusals | VISION.md or PRODUCT_PRINCIPLES.md |
 | Work sequencing, milestones, goals | ROADMAP.md or a phase doc |
 
