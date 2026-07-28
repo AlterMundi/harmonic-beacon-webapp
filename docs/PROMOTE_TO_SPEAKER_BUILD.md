@@ -1,8 +1,28 @@
 # Build Spec — Interactive "Sharing Round" via Promote-to-Speaker
 
-**Status:** Engineering spec for review · 2026-07-25
+**Status:** Engineering spec for review · 2026-07-25 · **reconciled against `main` 2026-07-28**
 **Audience:** External reviewer + their agents. Self-contained; every file/symbol referenced is real and cited.
 **Repo:** `harmonic-beacon-webapp` (Next.js 16 App Router · LiveKit · Prisma/Postgres · Auth.js v5).
+
+> **🔄 Reconciliation note (2026-07-28).** This spec was first drafted against `release`; these are the deltas
+> after re-reading current `main`. The design is unchanged; anchors and integration points are corrected below.
+> - **Session-page line numbers all shifted** (`src/app/session/[id]/page.tsx` grew). Current anchors: `Room`
+>   creation **:142**; token fetch **:121-128**; `canPublish` state **:63** (set at **:132**); `toggleMic`
+>   **:249-271** (now `async`); `RoomEvent` handlers **:145-183**; mic button gate **:486**. The connect
+>   `useEffect` dep array is `[id, inviteCode, retryToken]` (**:216**) — **`retryToken` (:74) is the existing
+>   reconnect mechanism** a role-change reconnect should reuse.
+> - **NEW terminal/disconnect machinery to integrate with (did not exist before):** `classifyDisconnectReason`
+>   (**:31-49**), `disconnectState` (**:73**), `intentionalDisconnectRef` (**:83**), and a terminal "Session
+>   ended / Connection lost" view (**:361-409**). **Any deliberate `room.disconnect()` for promotion/reconnect
+>   must set `intentionalDisconnectRef.current = true` first**, or it trips the "session ended" screen.
+> - **go2rtc has been removed** (commit `9512899`). `AudioContext.tsx` no longer has `loadMeditationFromGo2rtc`
+>   (dead code, deleted); meditation is now a local HTML5 `<audio>` element, and `/api/meditations` is GET-only.
+>   Ignore any go2rtc references this spec inherited.
+> - **Unchanged / still valid:** `token/route.ts` `canPublish` logic (**:62, 89-91**) + identity `user-${user.id}`
+>   (**:121**); `createSessionToken(room,identity,name,canPublish)` and `getRoomService()` in `livekit-server.ts`;
+>   video/camera is still **100% greenfield** (no camera code anywhere); `SessionSpeaker`/`SessionMode` and the
+>   voucher models proposed here **do not exist yet and have no naming collisions**. `SessionInvite.canPublish`
+>   still exists as the seed noted below.
 
 ---
 
@@ -45,7 +65,7 @@ infra analysis.
 
 ### 2.1 The session room today
 - **Listener/provider UI:** `src/app/session/[id]/page.tsx` (`SessionRoomPage`). It creates its **own**
-  `livekit-client` `Room` (line ~92), fetches a token, and connects. Note this is a *separate* room from the
+  `livekit-client` `Room` (**:142**), fetches a token (**:121-128**), and connects. Note this is a *separate* room from the
   always-on "beacon" room managed by `src/context/AudioContext.tsx` — the crossfader in the session page mixes
   *this* session room's audio against the global beacon via `setBeaconVolume()` from `useAudio()`
   (`session/[id]/page.tsx:174-182`).
@@ -55,9 +75,9 @@ infra analysis.
 - **`canPublish` is static today:** `true` for the provider (`isProvider`), otherwise `false`, unless the join
   used an invite with `invite.canPublish` (`token/route.ts:62, 89-91`). There is **no way to change publish
   rights after join** except reconnecting with a different token.
-- **Mic control exists but is gated on the static flag:** `toggleMic()` (`session/[id]/page.tsx:184-206`) calls
+- **Mic control exists but is gated on the static flag:** `toggleMic()` (`session/[id]/page.tsx:249-271`) calls
   `room.localParticipant.setMicrophoneEnabled(true)`, and the mic button only renders `if (canPublish)`
-  (line 367). So the plumbing to publish a mic is already there — it's just permanently off for listeners.
+  (**:486**). So the plumbing to publish a mic is already there — it's just permanently off for listeners.
 - **Server helpers:** `src/lib/livekit-server.ts` exposes `getRoomService()` → a `RoomServiceClient` (the
   server-side API we need for live permission changes) and `createSessionToken(...)`.
 - **No signaling channel exists yet** — no `publishData`/`DataReceived` usage, no participant-metadata usage.
@@ -355,6 +375,7 @@ visualizer — there is **no video UI yet**. Add:
 | Risk | Mitigation |
 |------|------------|
 | **Reconnect drops a promoted speaker** (token route didn't know) | §6.1 makes the token route read `SessionSpeaker.state==SPEAKING`. DB is source of truth. |
+| **Deliberate reconnect trips the "session ended" terminal view** (NEW machinery, `page.tsx:31-49, 361-409`) | If promotion re-mints a token and reconnects, set `intentionalDisconnectRef.current = true` (`:83`) before `room.disconnect()` — as `leaveSession`/`endSession` already do — so `classifyDisconnectReason` doesn't render the terminal screen. Prefer live `updateParticipant` (no reconnect) to sidestep this entirely. |
 | **DB says SPEAKING but LiveKit permission missing (or vice-versa)** after a crash | On session `LIVE` start and on provider panel mount, run a **reconcile**: read DB speakers, re-apply `updateParticipant` for each. Treat DB as authoritative. |
 | **Provider refreshes → loses the in-memory hand queue** | Queue is DB-backed (`GET /hands`); data messages only accelerate updates. |
 | **Echo/feedback / "double audio"** when listener→speaker | Force `echoCancellation`/`noiseSuppression` (§7.1); auto-mute on demote; only 1–3 speakers (R1) limits feedback loops. |
@@ -437,6 +458,6 @@ session page has no video UI today — and its cost/scale implications feed back
 - `src/app/session/[id]/page.tsx` — session room UI (listener + provider), mic plumbing already present.
 - `src/app/api/scheduled-sessions/[id]/token/route.ts` — token mint + participant upsert; add speaker source-of-truth + voucher gate.
 - `src/lib/livekit-server.ts` — `getRoomService()` (RoomServiceClient) + `createSessionToken`.
-- `src/context/AudioContext.tsx` — separate global "beacon" room; crossfader target (not the floor mechanic).
-- `prisma/schema.prisma` — `SessionParticipant` (269-284), `SessionInvite.canPublish` (261), `ScheduledSession`.
+- `src/context/AudioContext.tsx` — separate global "beacon" room + local `<audio>` meditation (go2rtc removed); crossfader target (not the floor mechanic).
+- `prisma/schema.prisma` — `ScheduledSession` (:235), `SessionInvite.canPublish` (:287), `SessionParticipant` (:304). New `AuditLog`/`Report` models exist but are unrelated to the floor mechanic.
 - `src/lib/__tests__/livekit-server.test.ts` + `.../token/__tests__/route.test.ts` — test patterns to mirror.

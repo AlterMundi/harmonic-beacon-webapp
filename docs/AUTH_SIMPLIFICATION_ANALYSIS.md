@@ -1,8 +1,25 @@
 # Analysis — Simplifying Login (moving off mandatory-MFA Zitadel)
 
-**Status:** Decision analysis for review · 2026-07-25
+**Status:** Decision analysis for review · 2026-07-25 · **reconciled against `main` 2026-07-28**
 **Audience:** External reviewer + their agents. Self-contained; grounded in the repo's real auth code.
 **Repo:** `harmonic-beacon-webapp` — Auth.js v5 (NextAuth) + Zitadel OIDC.
+
+> **🔄 Reconciliation note (2026-07-28).** Deltas since this was drafted against `release`:
+> - **The PII-in-logs issue is already FIXED and guarded.** `auth-config.ts` no longer logs email — it logs
+>   role *names* only (**:60**) and pseudonymous `sub=…/role=…` (**:95**); error paths use `redactErrorDetail`
+>   (**:130**). A source-scanning test `src/lib/__tests__/no-pii-in-logs.test.ts` fails CI if any `console.*`
+>   references `.email`/`.name`/`.picture`/`.image`/`.avatarUrl`. So the old "lines 57/89 log PII" claim is
+>   **stale** — treat this as an invariant to *preserve*, not a fix to do.
+> - **`next-auth` is now pinned exactly** (`5.0.0-beta.30`, `package.json:29`), and a commit made **Zitadel
+>   authoritative for roles**. The single-Zitadel-provider + two-tier role mapping (claim → session `USER` → DB
+>   `LISTENER`) is unchanged.
+> - **NEW migration-critical dependency:** data-rights endpoints now exist — `GET`/`DELETE /api/users/me` and
+>   `GET /api/users/me/export` — and all resolve the caller via `prisma.user.findUnique({ where: { zitadelId:
+>   session.user.id } })`, while account **deletion writes `deleted-{id}` into `zitadelId`** as a tombstone. **Any
+>   auth migration MUST preserve the session-subject → `User.zitadelId` mapping (or rename that column in the same
+>   change), or export/delete break.** This is now the single biggest migration constraint (see §6).
+> - **New auth-gated routes** in `middleware.ts`: `/api/users/*` and `/api/reports/*` (auth required; per-user
+>   authz enforced in-handler). Still provider-agnostic on role. `USER`↔`LISTENER` naming split still load-bearing.
 
 ---
 
@@ -31,8 +48,9 @@ target auth design, and (c) gives a concrete migration path from the current cod
 - **`prisma/schema.prisma`** — `User` has `zitadelId String @unique` (line 54), `email @unique` (56), and
   `role UserRole @default(LISTENER)` (58). **Crucially, roles already live in our own DB** — Zitadel is only the
   *origin* of the role value, not the store.
-- **Known pre-existing issue:** `auth-config.ts` logs email + subject id in plaintext on every JWT sync (lines
-  57, 89) — flagged in the earlier project audit; fix during any auth work regardless of direction.
+- **PII logging: already fixed (2026-07).** `auth-config.ts` logs only role names (**:60**) and pseudonymous
+  `sub/role` (**:95**); a `no-pii-in-logs` test enforces it. Any replacement auth code must keep this invariant
+  (don't `console.*` a `.email`/`.name`/`.picture`), or CI fails.
 
 **Implication:** the app is only loosely coupled to Zitadel. The role model, the DB user store, and the
 middleware are provider-agnostic. Swapping the *authentication method* is mostly confined to
@@ -121,17 +139,23 @@ The two live contenders are **Auth.js-native** (best fit given we already run Au
 3. **Role model.** Move role assignment out of the Zitadel claim logic: default `LISTENER` on user creation;
    PROVIDER/ADMIN set via the existing admin UI. Update the `jwt`/`session` callbacks to read `role` from the DB
    user (they already write/read a DB user — simplify to read `User.role`).
-4. **User data migration.** Existing users are keyed by `zitadelId` (unique, required — `schema.prisma:54`) and
-   `email` (unique). Plan:
-   - Make `zitadelId` **nullable** (migration) or repurpose it; new signups won't have one.
+4. **User data migration — now the biggest risk, because live data-rights endpoints depend on `zitadelId`.**
+   Existing users are keyed by `zitadelId` (unique, required) and `email` (unique). **`GET`/`DELETE
+   /api/users/me` and `GET /api/users/me/export` all look up the caller by `zitadelId: session.user.id`, and
+   account deletion writes `deleted-{id}` tombstones into `zitadelId`.** So the migration must either keep
+   populating `User.zitadelId` from the new IdP's subject, or **rename that column to a provider-neutral
+   `authSubject` and update those three routes + the deletion tombstone logic in the same change.** Plan:
+   - Repurpose `zitadelId` → a neutral subject column (or keep the name but feed it the new subject).
    - On first post-migration login, **match the existing `User` by email** (Google/magic-link returns the same
-     email) and link the new account, preserving `role`, favorites, sessions, etc. The Prisma adapter's
-     `Account` linking handles OAuth; for magic-link, email match is direct.
-   - Communicate to existing users that they'll "sign in with Google or email link" now.
+     email) and link the new account, preserving `role`, favorites, sessions, authored content, etc. The Prisma
+     adapter's `Account` linking handles OAuth; for magic-link, email match is direct.
+   - Re-point the data-rights routes + deletion tombstone to the new subject column; keep them green (they have
+     tests). Communicate to existing users that they'll "sign in with Google or email link" now.
 5. **Cleanup.** Remove Zitadel env vars (`AUTH_ZITADEL_*`), update `.env.example` and the deploy env docs
    (`deploy/README.md` references the Zitadel OIDC app), decommission the self-hosted Zitadel service (this also
    *removes an entire self-hosted component* from the infra — see the infra analysis; a nice side win).
-6. **Fix the PII logging** (`auth-config.ts:57,89`) while rewriting the callbacks.
+6. **Preserve the PII-log invariant** (already fixed) and the `redactError`/`redactErrorDetail` usage in the
+   auth error path — the `no-pii-in-logs` test will catch regressions.
 7. **Tests.** Add/adjust auth tests; verify `middleware.ts` role-gating still passes with the new session shape.
 
 **Effort estimate:** ~2–4 focused days including user-matching migration and testing. The risk is concentrated

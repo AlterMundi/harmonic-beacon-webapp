@@ -1,6 +1,14 @@
 # Pivot Plan — Paid Sessions (Subsistence MVP)
 
-**Status:** Draft · 2026-07-25
+**Status:** Draft · 2026-07-25 · **reconciled against `main` 2026-07-28**
+
+> **🔄 Reconciliation note (2026-07-28).** The plan stands; current-state deltas: (a) most compliance gaps are
+> now closed — see the updated Risks §4.1; (b) **go2rtc was removed**, so the "hide Meditate streaming" work in
+> WS0 is largely already done at the infra level (the Meditate *page* + a GET meditations API remain); (c) the
+> **voucher / plan / order** models this plan proposes still **do not exist** and have **no naming collision**
+> with the new `AuditLog`/`Report` models; (d) the session-room token route (the voucher choke-point in WS1) is
+> unchanged. Anti-piracy (WS4) is reinforced: audio still sits on local disk with no signed URLs and deletion
+> can't purge it yet.
 **Context:** Private funds (Nicolás) and AlterMundi public funds are running out. Goal is to make the
 existing webapp self-sustaining by selling access to scheduled facilitated sessions — specifically the
 "proyección de mito con Beacon + cierre psicodramático" long session Juli designed.
@@ -61,9 +69,10 @@ The "must stop being available for the public" items. All behind flags.
     non-provider/admin users to `/sessions` instead of serving the page. (Providers keep access so they can
     preview.)
   - The Live "auto-play at the home entrance" the meeting wants removed lives on the `/live` page +
-    `AudioContext`; hiding the route removes public audio exposure. Also stop `/api/livekit/token`
-    (the anonymous beacon-room token, `src/app/api/livekit/token/route.ts`) from minting for non-providers
-    when `PUBLIC_LIVE=off` — otherwise the beacon audio is still reachable by anyone who knows the endpoint.
+    `AudioContext`; hiding the route removes public audio exposure. `/api/livekit/token`
+    (`src/app/api/livekit/token/route.ts`) **now already requires auth** (commit `dd17052`) and mints an
+    anonymous `listener-<uuid>` subscribe-only token — so tighten it further to not mint for non-providers when
+    `PUBLIC_LIVE=off`, otherwise authenticated non-buyers can still reach the beacon audio.
 - **Sessions page** — `src/app/sessions/page.tsx`: hide the **Practice** entry; keep **Events**
   (→ becomes "Recorded Sessions", WS4) and **Scheduled**. (Verify exact tab structure in that file.)
 - **Studio** — `src/app/provider/upload` + nav to it: hide **Upload Meditation** behind
@@ -215,16 +224,16 @@ legal/compliance items below.
 
 ## 4. Risks & flags (read these)
 
-1. **Taking money sharpens the compliance gaps the project's *own* prior audit already found.** The
-   `docs/audit/` self-audit (on `main`, dated 2026-06-09, later dropped from `release`) flagged: no LICENSE,
-   no privacy/terms pages, PII (email + subject id) logged in plaintext in `src/lib/auth-config.ts`
-   (lines 57 & 89), no data export/delete. When you start charging, **Terms of Service + a Privacy Policy +
-   a refund/cancellation policy stop being optional** — PayPal and card networks expect them, and buyers will
-   ask. Add these to the week-2 list as **required, not nice-to-have**, and scrub the PII logging while you're
-   in `auth-config.ts` anyway.
-2. **The repo is ~3.5 months stale on `release`** (last commit ~2026-04-12). Before building, re-verify:
-   `prisma generate && npm run build`, `npx vitest run` (should be 347/347), and that the deployed
-   `beacon.altermundi.net` env still matches. Budget half a day for "does it still run" before feature work.
+1. **Compliance for taking money — mostly closed since this was drafted; a short list remains.** `main` has
+   since added a `LICENSE`/`NOTICE`, PII-log redaction (the `auth-config.ts` leak is fixed + test-guarded),
+   data **export + account deletion**, an **audit log**, a **reports/abuse system**, and an **admin session
+   kill-switch** — several of the exact gaps the 2026-06-09 self-audit flagged. **Still required before a public
+   paid launch:** Terms of Service + Privacy Policy + a **refund/cancellation policy** (PayPal and buyers expect
+   them), and an **object-storage driver so account deletion can actually purge audio** (a known `TODO(storage)`
+   gap — reinforces moving audio to R2). The moderation/safety infra now existing is a *tailwind* for charging.
+2. **The repo is active, not stale.** `main` advanced ~39 commits since the first draft; the suite is now
+   **624 tests, all green** (not 347). Still re-verify `prisma generate && npm run build` and that the deployed
+   `beacon.altermundi.net` env matches before feature work — but the "is it abandoned" worry is resolved.
 3. **Voucher double-spend** on reconnect/refresh — handled by the existing `existingParticipant` guard +
    a DB transaction, but test it explicitly (join, refresh mid-session, rejoin next week).
 4. **Manual voucher issuance doesn't scale past the first weeks** — fine as a launch crutch, but WS2

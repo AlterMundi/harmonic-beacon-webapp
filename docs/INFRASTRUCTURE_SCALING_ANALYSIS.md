@@ -1,6 +1,25 @@
 # Infrastructure & Scaling Analysis
 
-**Status:** Research · 2026-07-25 · **Updated 2026-07-25** after two decisive product clarifications (see box).
+**Status:** Research · 2026-07-25 · updated 2026-07-25/27 (product clarifications) · **reconciled against `main` 2026-07-28**.
+
+> **🔄 Reconciliation note (2026-07-28).** Deltas since drafting; the analysis and recommendations stand, with
+> these corrections to the "current state":
+> - **go2rtc is fully removed** (commit `9512899`). Meditation audio is now served over plain HTTP range
+>   requests (`src/lib/stream-file.ts`), and `docker-compose.yml` now runs just **two services** (`app` +
+>   `playlist-bot`). Drop go2rtc from the inventory below (kept, struck through, for continuity).
+> - **Observability partially exists now:** liveness `GET /api/health` (no DB) and readiness `GET
+>   /api/health/ready` (DB `SELECT 1`, 3 s timeout, redacted errors, 503 on failure). Still **no metrics /
+>   tracing** — so the "no observability" claim is now only half true.
+> - **Neon is being prepared, not provisioned.** A `.neon` init scaffold + vendored Neon skills exist, but there
+>   is no project link, no `@neondatabase/*` dep, and `DATABASE_URL` still points at **host Postgres**. So the
+>   DB→Neon recommendation is *already the team's direction* but not yet done — good alignment.
+> - **Most compliance gaps are closed:** `LICENSE`/`NOTICE` (Apache-2.0), PII-log redaction, data export +
+>   account deletion, an audit log, a reports/abuse system, and an admin session kill-switch all now exist.
+>   **Storage caveat that reinforces the R2 recommendation:** deletion **cannot purge stored audio yet** (no
+>   object-storage driver — a `TODO(storage)` gap), and audio still sits on the shared local `/mnt/n8n-data`
+>   disk. Moving audio to R2 + a driver is now also a *compliance* need, not just a delivery one.
+> - `deploy/.env.example` is stale/legacy; the authoritative env surface is root **`.env.example`** + the
+>   deploy.yml secrets heredoc.
 **Question posed:** The app is self-hosted on our own server/infrastructure; that won't be compatible with a
 growing audience. What should the web-services architecture become?
 
@@ -69,7 +88,7 @@ Argentina)**, behind one host nginx, deployed by a GitHub Actions runner **on th
 | 2 | **PostgreSQL 16** | All app data (Prisma) | Host, not containerized | Single instance, backups/PITR unclear |
 | 3 | **LiveKit SFU** | Real-time WebRTC audio fan-out | `live.altermundi.net`, host `:7880` | **Fine at 500; SPOF; egress-bound** |
 | 4 | **LiveKit Egress** | Per-track session recording | Host | CPU-heavy, competes with #3 |
-| 5 | **go2rtc** | WebRTC meditation streaming | Docker `:1984`,`:8555` | Shrinks post-pivot (Meditate hidden) |
+| 5 | ~~**go2rtc**~~ **REMOVED** | was WebRTC meditation streaming | — | Deleted (commit `9512899`); meditation now HTTP range via `stream-file.ts`; compose is `app` + `playlist-bot` only |
 | 6 | **Zitadel** | OIDC identity + roles | `auth.altermundi.net` | On critical path for paid access |
 | 7 | **File storage** | meditations / uploads / recordings | Local RAID `/mnt/n8n-data` | **No CDN, no geo, shared with n8n** |
 | 8 | **nginx** | TLS, reverse proxy, rate-limit | Host | Fine |
@@ -364,10 +383,12 @@ Sequenced so nothing blocks the near-term paid-sessions launch, and so each step
   shared n8n disk). Migrate Postgres to **Neon** (or DO Managed PG).
 
 **Phase 3 — Harden & decide auth**
-- Keep Zitadel self-hosted but harden it (tested restore, monitoring, patching) now that it guards payments —
-  or lift to **Zitadel Cloud** if ops load is too high. Add basic observability (the earlier audit flagged
-  there is none) and, before taking money publicly, the legal/compliance items (license, privacy/terms, PII log
-  scrub) noted in the pivot plan.
+- Auth may change entirely (see the auth-simplification analysis — moving off mandatory-MFA Zitadel). Whatever
+  the choice, harden it now that it guards payments (tested restore, monitoring, patching), or lift to a managed
+  provider. **Already done since the first draft:** health/readiness probes exist, PII-log redaction, a
+  `LICENSE`, data export/deletion, an audit log. **Still to do before public paid launch:** metrics/tracing
+  (only health probes exist today), privacy policy / terms / refund policy, and an object-storage driver so
+  account deletion can actually purge audio.
 
 ---
 
