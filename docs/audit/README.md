@@ -1,4 +1,18 @@
-# Pre-Public-Release Audit of the Product & Policy Documentation
+# Audits
+
+> **Historical-status note.** The June 2026 legal and technical audits are dated
+> evidence of the repository at `b72b279`. Several findings were fixed later and
+> their original file/line citations now point at code that changed or was removed.
+> They are preserved rather than rewritten so the audit trail remains honest.
+
+## Current infrastructure audit
+
+The current release-readiness assessment is
+[CLOUD_READINESS_AUDIT_2026-07-28.md](./CLOUD_READINESS_AUDIT_2026-07-28.md).
+It audits `main@faf5f13` as the baseline for a reduced distributed-cloud refactor.
+Its verdict is **go for the refactor, no-go for deployment of the current tree**.
+
+## June 2026 pre-public-release audit
 
 *Audit date: 2026-06-09 · Auditor: automated full-corpus review (Claude Code) · Status: findings recorded, remediation pending*
 
