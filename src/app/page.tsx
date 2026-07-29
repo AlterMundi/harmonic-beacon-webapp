@@ -6,7 +6,7 @@
  * visitor is — the form's response does that. Purchase happens on the external
  * ticketing platform.
  *
- * Bilingual EN/ES on one page. Saturday is English and Sunday Spanish, both
+ * Bilingual EN/ES on one page. Session 1 is Spanish (8:30 AM Costa Rica) and Session 2 is English (12:30 PM Costa Rica), both Saturday, both
  * audiences arrive at the same URL, and a Spanish-speaking attendee must be able
  * to log in without reading English.
  */

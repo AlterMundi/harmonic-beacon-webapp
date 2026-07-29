@@ -44,17 +44,17 @@ function seedEnvironment(): NodeJS.ProcessEnv {
         STAFF_ADMIN_NAME: 'Weekend Admin',
         STAFF_ADMIN_EMAIL: 'admin@example.invalid',
         STAFF_ADMIN_PASSWORD_DIGEST: credentialDigest(PASSWORDS.admin),
-        WEEKEND_SATURDAY_EVENT_JSON: JSON.stringify({
+        WEEKEND_SESSION_1_EVENT_JSON: JSON.stringify({
             id: '10000000-0000-4000-8000-000000000001',
             title: 'Saturday session',
             roomName: 'weekend-saturday',
             scheduledAt: '2026-08-01T22:00:00.000Z',
         }),
-        WEEKEND_SUNDAY_EVENT_JSON: JSON.stringify({
+        WEEKEND_SESSION_2_EVENT_JSON: JSON.stringify({
             id: '10000000-0000-4000-8000-000000000002',
             title: 'Sunday session',
             roomName: 'weekend-sunday',
-            scheduledAt: '2026-08-02T22:00:00.000Z',
+            scheduledAt: '2026-08-01T22:00:00.000Z',
         }),
     };
 }

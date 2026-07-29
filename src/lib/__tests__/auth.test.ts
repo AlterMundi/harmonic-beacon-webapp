@@ -320,11 +320,11 @@ describe('requireSessionAccess', () => {
         expect(principal).toMatchObject({ kind: 'attendee' });
     });
 
-    it("refuses a Saturday ticket at Sunday's room", async () => {
+    it("refuses a Session 1 ticket at Session 2's room", async () => {
         mountRequest(await attendeeRow());
         const { requireSessionAccess } = await import('../auth');
 
-        const [principal, errorResponse] = await requireSessionAccess('session-sunday');
+        const [principal, errorResponse] = await requireSessionAccess('session-2');
 
         expect(principal).toBeNull();
         expect(errorResponse!.status).toBe(403);
@@ -334,7 +334,7 @@ describe('requireSessionAccess', () => {
         mountRequest(await staffRow('FACILITATOR'));
         const { requireSessionAccess } = await import('../auth');
 
-        const [principal, errorResponse] = await requireSessionAccess('session-sunday');
+        const [principal, errorResponse] = await requireSessionAccess('session-2');
 
         expect(errorResponse).toBeNull();
         expect(principal).toMatchObject({ kind: 'staff' });

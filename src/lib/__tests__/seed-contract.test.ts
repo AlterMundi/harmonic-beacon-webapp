@@ -27,18 +27,18 @@ function validEnvironment(): NodeJS.ProcessEnv {
         STAFF_ADMIN_NAME: 'Admin',
         STAFF_ADMIN_EMAIL: 'admin@example.invalid',
         STAFF_ADMIN_PASSWORD_DIGEST: digestFor(4),
-        WEEKEND_SATURDAY_EVENT_JSON: JSON.stringify({
+        WEEKEND_SESSION_1_EVENT_JSON: JSON.stringify({
             id: '10000000-0000-4000-8000-000000000001',
             title: 'Saturday',
             roomName: 'saturday',
             scheduledAt: '2026-08-01T18:00:00.000Z',
             maxPublishers: 999,
         }),
-        WEEKEND_SUNDAY_EVENT_JSON: JSON.stringify({
+        WEEKEND_SESSION_2_EVENT_JSON: JSON.stringify({
             id: '10000000-0000-4000-8000-000000000002',
-            title: 'Sunday',
-            roomName: 'sunday',
-            scheduledAt: '2026-08-02T18:00:00.000Z',
+            title: 'Session 2',
+            roomName: 'session-2',
+            scheduledAt: '2026-08-01T18:00:00.000Z',
         }),
     };
 }
@@ -54,7 +54,7 @@ describe('weekend seed contract', () => {
             'ADMIN',
         ]);
         expect(contract.staff[0].email).toBe('facilitator@example.invalid');
-        expect(contract.events.map(({ language }) => language)).toEqual(['ENGLISH', 'SPANISH']);
+        expect(contract.events.map(({ language }) => language)).toEqual(['SPANISH', 'ENGLISH']);
         expect(WEEKEND_ATTENDEE_CAP).toBe(150);
         expect(WEEKEND_MAX_PUBLISHERS).toBe(6);
         expect(contract.events[0]).not.toHaveProperty('maxPublishers');
@@ -65,8 +65,8 @@ describe('weekend seed contract', () => {
         'STAFF_OPERATOR_ONE_PASSWORD_DIGEST',
         'STAFF_OPERATOR_TWO_PASSWORD_DIGEST',
         'STAFF_ADMIN_PASSWORD_DIGEST',
-        'WEEKEND_SATURDAY_EVENT_JSON',
-        'WEEKEND_SUNDAY_EVENT_JSON',
+        'WEEKEND_SESSION_1_EVENT_JSON',
+        'WEEKEND_SESSION_2_EVENT_JSON',
     ])('fails closed when %s is missing', (name) => {
         const env = validEnvironment();
         const removedValue = env[name];

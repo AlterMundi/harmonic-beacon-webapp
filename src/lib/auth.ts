@@ -102,7 +102,7 @@ export async function requireStaff(
  * ticket names it, or staff who may operate any stage.
  *
  * Event-scoped resources (tokens, hands, tapestry frames) must use this rather
- * than `requireAttendee`, or a Saturday ticket would open Sunday's room.
+ * than `requireAttendee`, or a Session 1 ticket would open Session 2's room.
  */
 export async function requireSessionAccess(
     scheduledSessionId: string,

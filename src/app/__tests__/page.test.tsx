@@ -20,14 +20,14 @@ vi.mock('@/app/login/LoginClient', () => ({
 }));
 
 const SATURDAY = {
-    id: 'session-saturday',
-    language: 'ENGLISH' as const,
-    scheduledAt: new Date('2026-08-01T22:00:00.000Z'),
-};
-const SUNDAY = {
-    id: 'session-sunday',
+    id: 'session-1',
     language: 'SPANISH' as const,
-    scheduledAt: new Date('2026-08-02T22:00:00.000Z'),
+    scheduledAt: new Date('2026-08-01T14:30:00.000Z'),
+};
+const SESSION_2 = {
+    id: 'session-2',
+    language: 'ENGLISH' as const,
+    scheduledAt: new Date('2026-08-01T18:30:00.000Z'),
 };
 
 function mountDb(findMany: ReturnType<typeof vi.fn>) {
@@ -55,7 +55,7 @@ describe('landing page', () => {
     });
 
     it('shows both sessions with their language and time', async () => {
-        mountDb(vi.fn().mockResolvedValue([SATURDAY, SUNDAY]));
+        mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
         expect(screen.getByText('In English')).toBeInTheDocument();
@@ -63,10 +63,10 @@ describe('landing page', () => {
 
         // Local time for the Argentine host plus UTC, both with the zone named, so
         // an attendee anywhere can work out when to arrive.
-        expect(screen.getByText(/Saturday 1 August at 19:00 GMT-3/)).toBeInTheDocument();
-        expect(screen.getByText(/Saturday 1 August at 22:00 UTC/)).toBeInTheDocument();
-        expect(screen.getByText(/domingo, 2 de agosto.*ART/)).toBeInTheDocument();
-        expect(screen.getByText(/domingo, 2 de agosto.*UTC/)).toBeInTheDocument();
+        expect(screen.getByText(/Saturday 1 August at 15:30 GMT-3/)).toBeInTheDocument();
+        expect(screen.getByText(/Saturday 1 August at 18:30 UTC/)).toBeInTheDocument();
+        expect(screen.getByText(/sábado, 1 de agosto.*ART/)).toBeInTheDocument();
+        expect(screen.getByText(/sábado, 1 de agosto.*UTC/)).toBeInTheDocument();
     });
 
     it('asks only for sessions an attendee could still join', async () => {
@@ -95,7 +95,7 @@ describe('landing page', () => {
 
     it('renders the purchase link when one is configured', async () => {
         vi.stubEnv('TICKET_PURCHASE_URL', 'https://tickets.example.invalid/harmonic-beacon');
-        mountDb(vi.fn().mockResolvedValue([SATURDAY, SUNDAY]));
+        mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
         const link = screen.getByRole('link', { name: /Buy a ticket/ });
@@ -105,7 +105,7 @@ describe('landing page', () => {
 
     it('says sales open shortly while the external platform is still TBD', async () => {
         vi.stubEnv('TICKET_PURCHASE_URL', '');
-        mountDb(vi.fn().mockResolvedValue([SATURDAY, SUNDAY]));
+        mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
         expect(screen.queryByRole('link', { name: /Buy a ticket/ })).toBeNull();
@@ -140,7 +140,7 @@ describe('landing page', () => {
     });
 
     it('links to the staff sign-in page', async () => {
-        mountDb(vi.fn().mockResolvedValue([SATURDAY, SUNDAY]));
+        mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
         expect(screen.getByRole('link', { name: /Staff sign-in/ })).toHaveAttribute('href', '/staff/login');

@@ -1,10 +1,10 @@
 # Harmonic Beacon weekend MVP roadmap
 
-**Target:** first paid events on Saturday 2026-08-01 and Sunday 2026-08-02
+**Target:** first paid events on Saturday 2026-08-02 (two sessions)
 
 **Planning baseline:** `main` at `faf5f13d06aff9c47c133818095f32c8153e0086`
 
-**Working event order:** Saturday English, Sunday Spanish. WS6-02 may swap the languages on Tuesday without changing the build.
+**Working event order:** Session 1: Spanish 8:30 AM Costa Rica, Session 2: English 12:30 PM Costa Rica, both Saturday. WS6-02 may swap the languages on Tuesday without changing the build.
 
 **Delivery envelope:** 15.0 person-days, assuming four engineering-capable assignees working in parallel plus an ops/commercial owner.
 
@@ -250,7 +250,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 
 - **Workstream:** WS5 — Deploy, reliability, and event ops
 - **Effort:** 1.0 person-day
-- **Scope:** Extend `src/app/api/health/ready/route.ts`; create `src/app/api/ops/health/route.ts`, `src/app/ops/health/page.tsx`, and tests; create `docs/ops/WEEKEND_EVENT_RUNBOOK.md`. Keep `/api/health` liveness-only. The operator check covers Postgres, LiveKit API, stage room, publisher grant count, bed publisher presence, and tapestry health, with timeouts and redacted errors. The runbook assigns incident commander, spotlight operator, stream/support operator, and Julián; covers admission, code rebind/revoke, bot loss/local bed fallback, provider loss, participant abuse, capacity, app/DB/LiveKit/vendor outage, fallback meeting, customer communication, abort, and refund authority.
+- **Scope:** Extend `src/app/api/health/ready/route.ts`; create `src/app/api/ops/health/route.ts`, `src/app/ops/health/page.tsx`, and tests; create `docs/ops/WEEKEND_EVENT_RUNBOOK.md`. Keep `/api/health` liveness-only. The operator check covers Postgres, LiveKit API, stage room, publisher grant count, bed publisher presence, and tapestry health, with timeouts and redacted errors. The runbook assigns incident commander, spotlight operator, stream/support operator, and Julián; covers admission, code rebind/revoke, bot loss/local bed fallback, provider loss, participant abuse, capacity, app/DB/LiveKit/vendor outage, raincheck policy, customer communication, abort, and refund authority.
 - **Dependencies:** WS5-01, WS2-01, WS4-01
 - **Acceptance criteria:**
   - Operator health turns non-green within 30 seconds of simulated DB, LiveKit, bot, or tapestry loss and identifies the failed subsystem without exposing secrets/PII.
@@ -264,7 +264,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 
 - **Workstream:** WS5 — Deploy, reliability, and event ops
 - **Effort:** 1.0 person-day
-- **Scope:** Create `docs/ops/WEEKEND_REHEARSAL.md` and a dated result sheet under `docs/ops/rehearsals/`; execute the automated and human checks on production-like mona. Test 150 attendees with both LiveKit connections, six simulcast publishers at the intended layers, and a 20-minute soak; include at least one Argentina network, one non-Argentina network, iPhone Safari, Android Chrome, and a restrictive/TURN path. Then run purchase → code/email → join → refresh → disconnect/rejoin → raise hand → promote → demote → audio-only → revoke/override → bot failure → provider failure → fallback meeting → refund.
+- **Scope:** Create `docs/ops/WEEKEND_REHEARSAL.md` and a dated result sheet under `docs/ops/rehearsals/`; execute the automated and human checks on production-like mona. Test 150 attendees with both LiveKit connections, six simulcast publishers at the intended layers, and a 20-minute soak; include at least one Argentina network, one non-Argentina network, iPhone Safari, Android Chrome, and a restrictive/TURN path. Then run purchase → code/email → join → refresh → disconnect/rejoin → raise hand → promote → demote → audio-only → revoke/override → bot failure → provider failure → raincheck → refund.
 - **Dependencies:** WS1-02, WS1-03, WS2-02, WS3-02, WS5-02, WS6-01, WS6-02, WS6-03; WS4-02 only if tapestry remains public
 - **Acceptance criteria:**
   - No seventh publisher appears; the sixth-publisher stage and concurrent last-slot race both pass under load.
@@ -295,7 +295,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 - **Workstream:** WS6 — Commercial and human launch actions
 - **Owner hint:** ops/human — event producer + policy owner
 - **Effort:** 0.5 person-day
-- **Scope:** Create Saturday EN and Sunday ES events (or record the Tuesday language swap), each capped at 150 sold tickets with $50 global-north and $20 global-south tiers. Load the WS1-03 codes, send bilingual login/support instructions, and publish minimum privacy, camera-thumbnail consent, cancellation/refund, transfer/email-mismatch, fallback-meeting, and recording-off terms. Record the sales close and attendee reminder schedule.
+- **Scope:** Create Saturday Session 1 (Spanish, morning) and Session 2 (English, afternoon) events (or record the Tuesday language swap), each capped at 150 sold tickets with $50 global-north and $20 global-south tiers. Load the WS1-03 codes, send bilingual login/support instructions, and publish minimum privacy, camera-thumbnail consent, cancellation/refund, transfer/email-mismatch, fallback-meeting, and recording-off terms. Record the sales close and attendee reminder schedule.
 - **Dependencies:** WS6-01, WS1-03
 - **Acceptance criteria:**
   - A purchase at each price tier receives exactly one code for the correct session and lands on the correct login flow.
@@ -309,7 +309,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 - **Workstream:** WS6 — Commercial and human launch actions
 - **Owner hint:** ops/human — server/Cloudflare owner + event producer
 - **Effort:** 0.5 person-day
-- **Scope:** Verify A/AAAA reachability for `live.harmonicbeacon.com`, set Cloudflare SSL to Full (strict), proxy/cache only appropriate HTTP paths, and add the short-TTL tapestry cache rule while bypassing auth APIs, tokens, health, and LiveKit signaling. Create `/etc/harmonic-beacon/production.env` with mode `0600`, generate independent LiveKit/ticket/session/internal-service secrets, and seed four named staff with separately delivered credentials. Pre-create capacity-appropriate EN and ES Zoom/Meet fallback links and private operator communication channel; assign incident and refund authority.
+- **Scope:** Verify A/AAAA reachability for `live.harmonicbeacon.com`, set Cloudflare SSL to Full (strict), proxy/cache only appropriate HTTP paths, and add the short-TTL tapestry cache rule while bypassing auth APIs, tokens, health, and LiveKit signaling. Create `/etc/harmonic-beacon/production.env` with mode `0600`, generate independent LiveKit/ticket/session/internal-service secrets, and seed four named staff with separately delivered credentials. Define raincheck policy and private operator communication channel and private operator communication channel; assign incident and refund authority.
 - **Dependencies:** WS5-01 and WS1-01 for final config/seed contracts; DNS, fallback, and contact work starts Tuesday
 - **Acceptance criteria:**
   - Public DNS resolves IPv4/IPv6 to mona where supported, the certificate chain is valid, and Cloudflare never caches login/token/API responses.
@@ -335,7 +335,7 @@ WS1-02 and WS2-02 are mandatory parallel branches that must also converge before
 
 | Day | Cards and integration outcome |
 |---|---|
-| **Tue 07-28** | Freeze Section 1 by noon. Land WS1-01 and WS4-01. Start WS5-01. Ops starts WS6-01 immediately, verifies DNS, creates fallback meetings/contact channel, and prepares WS6-03. Ani's strip rebases onto the WS1 schema/surface contract rather than deleting launch seams. |
+| **Tue 07-28** | Freeze Section 1 by noon. Land WS1-01 and WS4-01. Start WS5-01. Ops starts WS6-01 immediately, verifies DNS, creates rainchecks/contact channel, and prepares WS6-03. Ani's strip rebases onto the WS1 schema/surface contract rather than deleting launch seams. |
 | **Wed 07-29** | Land WS5-01 on mona, then WS1-02, WS1-03, and WS2-01. Complete WS6-01 and WS6-03; load a tiny test ticket batch. Run the first two-browser smoke: ticket login, both tokens, crossfader, staff login, restart/reconnect. Land WS6-02 only after the real rail test. |
 | **Thu 07-30** | Land WS2-02, WS3-01, WS4-02, and WS5-02. Integrate six real publisher browsers plus a small subscriber load. Exercise cap races, grant reconciliation, bot restart, TURN, audio-only, revoke/rebind, and both language ticket paths. Decide the tapestry cut by **18:00 ART**; after that it is staff-only or absent, not a Friday rescue project. |
 | **Fri 07-31** | Land WS3-02 by 11:00 ART. Run WS5-03 capacity soak at 11:00 and the no-developer-assisted purchase-to-refund dress rehearsal at **14:00 ART**. Fix only rehearsal blockers. Re-run the failed segment plus smoke suite. **Production freeze at 18:00 ART or T-12h before Saturday's doors, whichever is earlier.** |
@@ -347,7 +347,7 @@ WS1-02 and WS2-02 are mandatory parallel branches that must also converge before
 - After Friday freeze, allowed changes are ticket inventory/revocation, event copy/time correction, secret rotation for a confirmed compromise, and a minimal Sev-1 fix for entitlement bypass, inability to join/hear, publisher-cap failure, or operator safety control.
 - A Sev-1 code/config change requires incident-commander approval, a second technical reviewer, targeted regression plus smoke test, a tagged artifact, and documented rollback. If that cannot fit before doors, invoke the fallback/refund plan.
 - Tapestry, layout polish, analytics, and non-blocking browser quirks never justify a post-freeze deploy.
-- Sunday uses the Saturday artifact. A Saturday incident is handled operationally unless the same non-cuttable Sev-1 would make Sunday unsafe.
+- Session 2 uses the Session 1 artifact. A Session 1 incident is handled operationally unless the same non-cuttable Sev-1 would make Session 2 unsafe.
 
 ## 5. Explicit cut-lines
 

@@ -9,7 +9,7 @@
  * now redirects there.
  *
  * Bilingual by showing both languages at once rather than by detecting one.
- * Saturday is the English event and Sunday the Spanish one, the two audiences
+ * Session 1 is Spanish (morning) and Session 2 is English (afternoon), both Saturday, the two audiences
  * share this page, and an attendee who cannot read the half addressed to someone
  * else must still be able to get into the event they paid for.
  */
