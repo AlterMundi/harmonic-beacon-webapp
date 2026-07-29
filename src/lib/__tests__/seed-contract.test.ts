@@ -13,6 +13,7 @@ function digestFor(seed: number): string {
 
 function validEnvironment(): NodeJS.ProcessEnv {
     return {
+        NODE_ENV: 'test',
         SESSION_COOKIE_TTL_SECONDS: '604800',
         STAFF_FACILITATOR_NAME: 'Facilitator',
         STAFF_FACILITATOR_EMAIL: 'FACILITATOR@example.invalid',

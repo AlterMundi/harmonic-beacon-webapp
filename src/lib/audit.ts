@@ -155,7 +155,7 @@ export interface AuditEntry {
 export async function logAdminAction(actor: AuditActor, entry: AuditEntry): Promise<void> {
     try {
         const user = await prisma.user.findUnique({
-            where: { zitadelId: actor.user.id },
+            where: { id: actor.user.id },
             select: { id: true },
         });
 
@@ -168,8 +168,7 @@ export async function logAdminAction(actor: AuditActor, entry: AuditEntry): Prom
 
         await prisma.auditLog.create({
             data: {
-                actorId: user.id,
-                actorRole: actor.user.role,
+                actorUserId: user.id,
                 action: entry.action,
                 targetType: entry.targetType,
                 targetId: entry.targetId,
