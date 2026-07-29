@@ -1,13 +1,10 @@
-import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import LoginClient from "./LoginClient";
 
-export default async function LoginPage() {
-    const session = await auth();
-
-    if (session?.user) {
-        redirect("/live");
-    }
-
-    return <LoginClient />;
+/**
+ * `/login` was the Zitadel redirect. There is no separate attendee login page
+ * now — the code + email form lives on the landing page — so this only keeps
+ * old links, bookmarks and any stale client redirect from reaching a 404.
+ */
+export default function LoginPage() {
+    redirect("/");
 }

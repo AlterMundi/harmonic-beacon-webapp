@@ -1,305 +1,107 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
-// The middleware uses auth() from @/auth which wraps the callback
-// We need to mock it so the callback receives req.auth = our session
+import { SESSION_COOKIE_NAME } from './src/lib/session-auth';
+// `src/middleware.ts`, not the repository root: Next only loads the middleware
+// convention from inside `src` when the app lives there, and a root-level file is
+// silently ignored — which is what it had been doing.
+import middleware, { config } from './src/middleware';
 
-function createMiddlewareRequest(url: string, options: { method?: string } = {}): NextRequest & { auth: unknown; nextUrl: URL } {
-    const fullUrl = new URL(url, 'http://localhost:3000');
-    const req = new NextRequest(fullUrl, { method: options.method || 'GET' });
-    return req as NextRequest & { auth: unknown; nextUrl: URL };
+/**
+ * Middleware is navigation convenience, not the authorization boundary.
+ *
+ * These tests deliberately assert something weak: presence of a cookie changes
+ * where a visitor lands, and nothing else. The gate lives in `@/lib/auth`, whose
+ * tests assert the strong properties (revoked ticket, disabled staff, expired
+ * session). If a future change makes middleware appear to authorize anything,
+ * the last test here — an arbitrary made-up cookie value sailing through — is the
+ * one that should make that obvious.
+ */
+
+function request(pathname: string, cookie?: string): NextRequest {
+    const headers = new Headers();
+    if (cookie) {
+        headers.set('cookie', cookie);
+    }
+    return new NextRequest(new URL(pathname, 'https://live.harmonicbeacon.com'), { headers });
+}
+
+function location(response: NextResponse): URL {
+    return new URL(response.headers.get('location')!);
 }
 
 describe('middleware', () => {
-    beforeEach(() => {
-        vi.resetModules();
+    it('recognizes exactly the cookie the session contract issues', () => {
+        // Drift guard for the literal in `middleware.ts`, which cannot import
+        // `@/lib/session-auth` because the edge runtime has no `node:crypto`.
+        // Driven from the contract's own constant, so a rename fails here.
+        expect(middleware(request('/session/x', `${SESSION_COOKIE_NAME}=value`)).status).toBe(200);
+        expect(middleware(request('/session/x', 'hb_session_other=value')).status).toBe(307);
     });
 
-    // Helper to run middleware with a given session
-    async function runMiddleware(pathname: string, session: unknown, method = 'GET') {
-        // Mock @/auth to return a function that calls the callback with req.auth set
-        vi.doMock('@/auth', () => ({
-            auth: (callback: (req: NextRequest & { auth: unknown }) => unknown) => {
-                // Return the actual middleware function
-                return (req: NextRequest) => {
-                    const augmented = req as NextRequest & { auth: unknown };
-                    augmented.auth = session;
-                    return callback(augmented);
-                };
-            },
-        }));
+    describe('without a session cookie', () => {
+        it('sends a room visitor to the landing page with the room remembered', () => {
+            const response = middleware(request('/session/session-saturday'));
 
-        const middlewareModule = await import('./middleware');
-        const middleware = middlewareModule.default;
-        const req = createMiddlewareRequest(pathname, { method });
-        // The @/auth mock above substitutes a single-argument function, so the
-        // context is unused at runtime — but the declared type still comes from
-        // the real auth() wrapper, which takes it.
-        return middleware(req, { params: Promise.resolve({}) }) as NextResponse;
-    }
-
-    describe('protected pages (unauthenticated)', () => {
-        it('redirects /live to /login when not authenticated', async () => {
-            const res = await runMiddleware('/live', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+            expect(response.status).toBe(307);
+            const target = location(response);
+            expect(target.pathname).toBe('/');
+            expect(target.searchParams.get('next')).toBe('/session/session-saturday');
         });
 
-        it('redirects /meditation to /login when not authenticated', async () => {
-            const res = await runMiddleware('/meditation', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+        it('sends an operator to the staff login page', () => {
+            const response = middleware(request('/ops/session/session-saturday'));
+
+            expect(response.status).toBe(307);
+            expect(location(response).pathname).toBe('/staff/login');
         });
 
-        it('redirects /profile to /login when not authenticated', async () => {
-            const res = await runMiddleware('/profile', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+        it('redirects the bare prefixes too', () => {
+            expect(location(middleware(request('/session'))).pathname).toBe('/');
+            expect(location(middleware(request('/ops'))).pathname).toBe('/staff/login');
         });
 
-        it('redirects /sessions to /login when not authenticated', async () => {
-            const res = await runMiddleware('/sessions', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+        it('leaves the public landing page and the login surfaces alone', () => {
+            for (const pathname of ['/', '/staff/login', '/login', '/api/auth/ticket']) {
+                expect(middleware(request(pathname)).status).toBe(200);
+            }
+        });
+
+        it('does not redirect a path that merely starts with a protected prefix', () => {
+            // `/sessions-are-cool` is not under `/session`.
+            expect(middleware(request('/sessions-are-cool')).status).toBe(200);
+            expect(middleware(request('/opside')).status).toBe(200);
         });
     });
 
-    describe('protected pages (authenticated)', () => {
-        const userSession = {
-            user: { id: 'user-1', email: 'user@example.com', name: 'User', role: 'USER' },
-        };
+    describe('with a session cookie', () => {
+        it('lets a room request through to the page that will actually check it', () => {
+            const response = middleware(request('/session/session-saturday', `${SESSION_COOKIE_NAME}=whatever`));
 
-        it('allows /live for authenticated user', async () => {
-            const res = await runMiddleware('/live', userSession);
-            expect(res.status).toBe(200);
+            expect(response.status).toBe(200);
+            expect(response.headers.get('location')).toBeNull();
         });
 
-        it('allows /meditation for authenticated user', async () => {
-            const res = await runMiddleware('/meditation', userSession);
-            expect(res.status).toBe(200);
-        });
-    });
-
-    describe('provider pages', () => {
-        it('redirects to /login when not authenticated', async () => {
-            const res = await runMiddleware('/provider/studio', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+        it('lets an operator request through', () => {
+            expect(middleware(request('/ops/admission', `${SESSION_COOKIE_NAME}=whatever`)).status).toBe(200);
         });
 
-        it('redirects USER role to /profile', async () => {
-            const session = { user: { id: 'u1', email: 'u@e.com', name: 'U', role: 'USER' } };
-            const res = await runMiddleware('/provider/studio', session);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/profile');
+        it('authorizes nothing: an invented cookie value passes here and is refused downstream', () => {
+            // The point of the design. This value names no `WebSession` row, so
+            // `requirePrincipal()` will answer 401 — but middleware cannot know
+            // that, and must not pretend to.
+            const response = middleware(request('/ops/admission', `${SESSION_COOKIE_NAME}=not-a-real-token`));
+            expect(response.status).toBe(200);
         });
 
-        it('allows PROVIDER role', async () => {
-            const session = { user: { id: 'p1', email: 'p@e.com', name: 'P', role: 'PROVIDER' } };
-            const res = await runMiddleware('/provider/studio', session);
-            expect(res.status).toBe(200);
-        });
-
-        it('allows ADMIN role', async () => {
-            const session = { user: { id: 'a1', email: 'a@e.com', name: 'A', role: 'ADMIN' } };
-            const res = await runMiddleware('/provider/studio', session);
-            expect(res.status).toBe(200);
+        it('ignores an empty cookie value', () => {
+            expect(middleware(request('/session/x', `${SESSION_COOKIE_NAME}=`)).status).toBe(307);
         });
     });
 
-    describe('admin pages', () => {
-        it('redirects to /login when not authenticated', async () => {
-            const res = await runMiddleware('/admin/dashboard', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
-        });
-
-        it('redirects PROVIDER role to /profile', async () => {
-            const session = { user: { id: 'p1', email: 'p@e.com', name: 'P', role: 'PROVIDER' } };
-            const res = await runMiddleware('/admin/dashboard', session);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/profile');
-        });
-
-        it('allows ADMIN role', async () => {
-            const session = { user: { id: 'a1', email: 'a@e.com', name: 'A', role: 'ADMIN' } };
-            const res = await runMiddleware('/admin/dashboard', session);
-            expect(res.status).toBe(200);
-        });
-    });
-
-    describe('admin API routes', () => {
-        it('returns 401 JSON when not authenticated', async () => {
-            const res = await runMiddleware('/api/admin/stats', null);
-            expect(res.status).toBe(401);
-            const body = await res.json();
-            expect(body.error).toBe('Authentication required');
-        });
-
-        it('returns 403 JSON for non-admin', async () => {
-            const session = { user: { id: 'p1', email: 'p@e.com', name: 'P', role: 'PROVIDER' } };
-            const res = await runMiddleware('/api/admin/stats', session);
-            expect(res.status).toBe(403);
-            const body = await res.json();
-            expect(body.error).toBe('Insufficient permissions');
-        });
-
-        it('passes through with x-user-* headers for admin', async () => {
-            const session = { user: { id: 'a1', email: 'admin@e.com', name: 'A', role: 'ADMIN' } };
-            const res = await runMiddleware('/api/admin/stats', session);
-            expect(res.status).toBe(200);
-            expect(res.headers.get('x-middleware-request-x-user-id')).toBe('a1');
-            expect(res.headers.get('x-middleware-request-x-user-role')).toBe('ADMIN');
-        });
-    });
-
-    describe('provider API routes', () => {
-        it('returns 401 JSON when not authenticated', async () => {
-            const res = await runMiddleware('/api/provider/sessions', null);
-            expect(res.status).toBe(401);
-            const body = await res.json();
-            expect(body.error).toBe('Authentication required');
-        });
-
-        it('returns 403 JSON for USER role', async () => {
-            const session = { user: { id: 'u1', email: 'u@e.com', name: 'U', role: 'USER' } };
-            const res = await runMiddleware('/api/provider/sessions', session);
-            expect(res.status).toBe(403);
-            const body = await res.json();
-            expect(body.error).toBe('Insufficient permissions');
-        });
-
-        it('allows PROVIDER role', async () => {
-            const session = { user: { id: 'p1', email: 'p@e.com', name: 'P', role: 'PROVIDER' } };
-            const res = await runMiddleware('/api/provider/sessions', session);
-            expect(res.status).toBe(200);
-        });
-    });
-
-    describe('login redirect', () => {
-        it('redirects authenticated user from /login to /live', async () => {
-            const session = { user: { id: 'u1', email: 'u@e.com', name: 'U', role: 'USER' } };
-            const res = await runMiddleware('/login', session);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/live');
-        });
-
-        it('allows unauthenticated access to /login', async () => {
-            const res = await runMiddleware('/login', null);
-            expect(res.status).toBe(200);
-        });
-    });
-
-    describe('POST /api/meditations auth', () => {
-        it('returns 401 for unauthenticated POST', async () => {
-            const res = await runMiddleware('/api/meditations', null, 'POST');
-            expect(res.status).toBe(401);
-        });
-
-        it('allows authenticated POST', async () => {
-            const session = { user: { id: 'u1', email: 'u@e.com', name: 'U', role: 'USER' } };
-            const res = await runMiddleware('/api/meditations', session, 'POST');
-            expect(res.status).toBe(200);
-        });
-
-        it('allows unauthenticated GET to /api/meditations', async () => {
-            const res = await runMiddleware('/api/meditations', null, 'GET');
-            expect(res.status).toBe(200);
-        });
-    });
-
-    describe('additional protected pages', () => {
-        it('redirects /join to /login when not authenticated', async () => {
-            const res = await runMiddleware('/join', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
-        });
-
-        it('redirects /session to /login when not authenticated', async () => {
-            const res = await runMiddleware('/session', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
-        });
-
-        it('redirects /playback to /login when not authenticated', async () => {
-            const res = await runMiddleware('/playback', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
-        });
-
-        it('allows /join for authenticated user', async () => {
-            const session = { user: { id: 'u1', email: 'u@e.com', name: 'U', role: 'LISTENER' } };
-            const res = await runMiddleware('/join', session);
-            expect(res.status).toBe(200);
-        });
-    });
-
-    describe('nested route protection', () => {
-        it('protects /live/sub-path for unauthenticated', async () => {
-            const res = await runMiddleware('/live/sub-path', null);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
-        });
-
-        it('protects /provider/dashboard for LISTENER role', async () => {
-            const session = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
-            const res = await runMiddleware('/provider/dashboard', session);
-            expect(res.status).toBe(307);
-            expect(new URL(res.headers.get('location')!).pathname).toBe('/profile');
-        });
-
-        it('redirects USER to /profile?unauthorized=1 for admin pages', async () => {
-            const session = { user: { id: 'u1', email: 'u@e.com', name: 'U', role: 'USER' } };
-            const res = await runMiddleware('/admin/users', session);
-            expect(res.status).toBe(307);
-            const loc = new URL(res.headers.get('location')!);
-            expect(loc.pathname).toBe('/profile');
-            expect(loc.searchParams.get('unauthorized')).toBe('1');
-        });
-
-        it('passes x-user-email header for admin API', async () => {
-            const session = { user: { id: 'a1', email: 'admin@e.com', name: 'A', role: 'ADMIN' } };
-            const res = await runMiddleware('/api/admin/users', session);
-            expect(res.status).toBe(200);
-            expect(res.headers.get('x-middleware-request-x-user-email')).toBe('admin@e.com');
-        });
-
-        it('returns 403 for LISTENER on provider API', async () => {
-            const session = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
-            const res = await runMiddleware('/api/provider/sessions', session);
-            expect(res.status).toBe(403);
-        });
-
-        it('allows ADMIN on provider API routes', async () => {
-            const session = { user: { id: 'a1', email: 'a@e.com', name: 'A', role: 'ADMIN' } };
-            const res = await runMiddleware('/api/provider/sessions', session);
-            expect(res.status).toBe(200);
-        });
-    });
-
-    describe('reports API', () => {
-        it('returns 401 JSON for unauthenticated report filing', async () => {
-            const res = await runMiddleware('/api/reports', null, 'POST');
-            expect(res.status).toBe(401);
-            expect(await res.json()).toEqual({ error: 'Authentication required' });
-        });
-
-        it('allows an authenticated LISTENER to reach the report route', async () => {
-            const session = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
-            const res = await runMiddleware('/api/reports', session, 'POST');
-            expect(res.status).toBe(200);
-        });
-
-        it('returns 403 for a LISTENER on the admin triage queue', async () => {
-            const session = { user: { id: 'l1', email: 'l@e.com', name: 'L', role: 'LISTENER' } };
-            const res = await runMiddleware('/api/admin/reports', session);
-            expect(res.status).toBe(403);
-        });
-
-        it('returns 403 for a PROVIDER on the session kill switch', async () => {
-            const session = { user: { id: 'p1', email: 'p@e.com', name: 'P', role: 'PROVIDER' } };
-            const res = await runMiddleware('/api/admin/sessions/sess-1/terminate', session, 'POST');
-            expect(res.status).toBe(403);
+    describe('matcher', () => {
+        it('runs only on the two protected surfaces', () => {
+            expect(config.matcher).toEqual(['/session/:path*', '/ops/:path*']);
         });
     });
 });
