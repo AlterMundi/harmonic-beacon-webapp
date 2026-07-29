@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+import OpsNavLinks from '@/components/ops/OpsNavLinks';
 import { prisma } from '@/lib/db';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
@@ -26,45 +27,35 @@ export default async function OpsLayout({
         orderBy: { scheduledAt: 'asc' },
     });
 
+    const links = [
+        { href: '/ops/health', label: 'Health' },
+        { href: '/ops/admission', label: 'Admission' },
+        ...sessions.map((s) => ({
+            href: `/ops/session/${s.id}`,
+            label: s.language === 'SPANISH' ? 'ES Spotlight' : 'EN Spotlight',
+            live: s.status === 'LIVE',
+        })),
+    ];
+
     return (
         <div className="min-h-screen">
-            <nav className="border-b border-white/10 bg-black/40 px-4 py-3">
-                <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-4 text-sm">
-                    <span className="font-semibold text-[var(--text-primary)]">
-                        Beacon Ops
-                    </span>
-                    <span className="text-[var(--text-secondary)]">
-                        {staff.name} ({staff.role})
-                    </span>
-                    <span className="mx-1 text-white/20">|</span>
+            <nav className="border-b border-white/10 bg-black/40 px-4 py-2.5">
+                <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                     <Link
                         href="/ops/health"
-                        className="text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-primary)] hover:underline"
+                        className="font-semibold text-[var(--text-primary)]"
                     >
-                        Health
+                        Beacon Ops
                     </Link>
-                    <Link
-                        href="/ops/admission"
-                        className="text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-primary)] hover:underline"
-                    >
-                        Admission
-                    </Link>
-                    {sessions.map((s) => (
-                        <Link
-                            key={s.id}
-                            href={`/ops/session/${s.id}`}
-                            className="text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-primary)] hover:underline"
-                        >
-                            {s.language === 'SPANISH' ? 'ES' : 'EN'} Spotlight
-                            {s.status === 'LIVE' && (
-                                <span className="ml-1 inline-block h-2 w-2 rounded-full bg-green-400" />
-                            )}
-                        </Link>
-                    ))}
-                    <span className="mx-1 text-white/20">|</span>
+                    <span className="text-[var(--text-secondary)]">
+                        {staff.name} · {staff.role}
+                    </span>
+                    <span className="mx-1 hidden text-white/20 sm:inline">|</span>
+                    <OpsNavLinks links={links} />
+                    <span className="mx-1 hidden text-white/20 sm:inline">|</span>
                     <Link
                         href="/"
-                        className="text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-primary)] hover:underline"
+                        className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                     >
                         Public site
                     </Link>
