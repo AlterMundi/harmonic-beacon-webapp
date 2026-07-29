@@ -40,6 +40,16 @@ type ConsoleParticipant = {
     connectionQuality: string | null;
 };
 
+/** Normalize a participant from the API: fill optional live-state fields. */
+function normalizeParticipant(p: ConsoleParticipant): ConsoleParticipant {
+    return {
+        ...p,
+        connected: p.connected ?? null,
+        media: p.media ?? [],
+        connectionQuality: p.connectionQuality ?? null,
+    };
+}
+
 type ParticipantsSnapshot = {
     sessionId: string;
     maxPublishers: number;
@@ -135,7 +145,10 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
             }
             const body = (await response.json()) as ParticipantsSnapshot;
             if (mounted.current) {
-                setSnapshot(body);
+                setSnapshot({
+                    ...body,
+                    participants: body.participants.map(normalizeParticipant),
+                });
                 setPollError(null);
                 setNowMs(Date.now());
             }
