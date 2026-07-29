@@ -72,7 +72,8 @@ describe('no PII in logs', () => {
 
     it('scans a plausible number of source files', () => {
         // Guards the guard: a broken walker would silently pass everything.
-        expect(files.length).toBeGreaterThan(40);
+        // Floor lowered after the WS0 strip reduced the app to its launch surfaces.
+        expect(files.length).toBeGreaterThan(20);
     });
 
     it('no console call reads a PII-bearing property', () => {

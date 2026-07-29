@@ -147,7 +147,7 @@ describe('SessionRoomPage - server-ended disconnect', () => {
         await waitFor(() => expect(document.activeElement).toBe(status));
 
         fireEvent.click(screen.getByRole('button', { name: 'Back to Sessions' }));
-        expect(mockPush).toHaveBeenCalledWith('/sessions');
+        expect(mockPush).toHaveBeenCalledWith('/');
     });
 
     it('treats a participant removal and a server shutdown the same way', async () => {
@@ -215,7 +215,7 @@ describe('SessionRoomPage - intentional disconnects are not terminal states', ()
         await renderConnected();
 
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
-        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/sessions'));
+        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'));
 
         // The real SDK would still fire Disconnected(CLIENT_INITIATED) after
         // our own disconnect() call; it must not produce a terminal screen.

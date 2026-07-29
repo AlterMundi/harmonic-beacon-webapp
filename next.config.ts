@@ -3,9 +3,6 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  typescript: {
-    ignoreBuildErrors: true,  // weekend MVP: strip-owned legacy routes are broken; removed post-weekend
-  },
   turbopack: {
     root: path.resolve(__dirname),
   },
