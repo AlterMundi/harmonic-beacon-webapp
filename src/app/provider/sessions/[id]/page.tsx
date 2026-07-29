@@ -3,8 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { CompositePlayer } from "@/components";
-import type { RecordingTrack } from "@/components/CompositePlayer";
 
 interface Invite {
     id: string;
@@ -24,14 +22,6 @@ interface Participant {
     user: { id: string; name: string | null; email: string };
 }
 
-interface SessionRecordingInfo {
-    id: string;
-    participantIdentity: string;
-    category: string;
-    active: boolean;
-    egressId: string;
-}
-
 interface SessionDetail {
     id: string;
     title: string;
@@ -45,7 +35,6 @@ interface SessionDetail {
     createdAt: string;
     invites: Invite[];
     participants: Participant[];
-    recordings: SessionRecordingInfo[];
     _count: { participants: number };
 }
 
@@ -82,7 +71,6 @@ export default function SessionManagePage() {
     const [session, setSession] = useState<SessionDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
-    const [recordingLoading, setRecordingLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState<string | null>(null);
 
@@ -149,29 +137,6 @@ export default function SessionManagePage() {
         }
     };
 
-    const isRecording = session?.recordings.some((r) => r.active) ?? false;
-
-    const toggleRecording = async () => {
-        if (!session) return;
-        setRecordingLoading(true);
-        setError(null);
-        try {
-            const action = isRecording ? "stop" : "start";
-            const res = await fetch(`/api/provider/sessions/${id}/recording/${action}`, {
-                method: "POST",
-            });
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Recording action failed");
-            }
-            await fetchSession();
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Recording action failed");
-        } finally {
-            setRecordingLoading(false);
-        }
-    };
-
     const copyInviteLink = async (code: string) => {
         const url = `${window.location.origin}/join/${code}`;
         try {
@@ -211,15 +176,6 @@ export default function SessionManagePage() {
     }
 
     const sc = statusConfig[session.status] || statusConfig.SCHEDULED;
-    const completedRecordings: RecordingTrack[] = session.recordings
-        .filter((r) => !r.active)
-        .map((r) => ({
-            id: r.id,
-            participantIdentity: r.participantIdentity,
-            category: r.category as "SESSION" | "BEACON",
-        }));
-    const hasCompletedRecordings = completedRecordings.length > 0;
-
     return (
         <main className="pb-8">
             <section className="px-4 py-4">
@@ -237,7 +193,7 @@ export default function SessionManagePage() {
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-4 gap-3 mb-6">
+                <div className="grid grid-cols-3 gap-3 mb-6">
                     <div className="stat-card">
                         <span className="stat-value text-lg">{session._count.participants}</span>
                         <p className="stat-label text-xs">Participants</p>
@@ -251,20 +207,6 @@ export default function SessionManagePage() {
                             {session.durationSeconds ? formatDuration(session.durationSeconds) : "--"}
                         </span>
                         <p className="stat-label text-xs">Duration</p>
-                    </div>
-                    <div className="stat-card">
-                        <span className="stat-value text-lg flex items-center justify-center gap-1">
-                            {isRecording ? (
-                                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
-                            ) : hasCompletedRecordings ? (
-                                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                            ) : (
-                                "--"
-                            )}
-                        </span>
-                        <p className="stat-label text-xs">Recording</p>
                     </div>
                 </div>
 
@@ -297,31 +239,6 @@ export default function SessionManagePage() {
                         </div>
                     )}
                 </div>
-
-                {/* Recording info + player */}
-                {(isRecording || hasCompletedRecordings) && (
-                    <div className="glass-card p-4 mb-4">
-                        <div className="flex items-center gap-2 mb-3">
-                            {isRecording ? (
-                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                            ) : (
-                                <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <circle cx="12" cy="12" r="6" fill="currentColor" />
-                                </svg>
-                            )}
-                            <span className="text-sm font-medium">
-                                {isRecording ? "Recording in progress" : "Recording"}
-                            </span>
-                        </div>
-                        {hasCompletedRecordings && !isRecording && (
-                            <CompositePlayer
-                                sessionId={session.id}
-                                recordings={completedRecordings}
-                                enableCutControls={session.status === "ENDED"}
-                            />
-                        )}
-                    </div>
-                )}
 
                 {/* Error */}
                 {error && (
@@ -360,23 +277,9 @@ export default function SessionManagePage() {
                             </Link>
                             <div className="flex gap-3">
                                 <button
-                                    onClick={toggleRecording}
-                                    disabled={recordingLoading}
-                                    className={`flex-1 py-3 rounded-xl font-medium transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
-                                        isRecording
-                                            ? "bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30"
-                                            : "bg-white/10 border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-white/20"
-                                    }`}
-                                >
-                                    {isRecording && (
-                                        <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                                    )}
-                                    {recordingLoading ? "..." : isRecording ? "Stop Recording" : "Record"}
-                                </button>
-                                <button
                                     onClick={() => handleAction("end")}
                                     disabled={actionLoading}
-                                    className="flex-1 py-3 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 font-medium hover:bg-red-500/30 transition-all disabled:opacity-50"
+                                    className="w-full py-3 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 font-medium hover:bg-red-500/30 transition-all disabled:opacity-50"
                                 >
                                     {actionLoading ? "Ending..." : "End Session"}
                                 </button>

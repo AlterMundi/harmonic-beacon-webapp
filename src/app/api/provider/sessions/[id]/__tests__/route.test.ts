@@ -273,7 +273,7 @@ describe('PATCH /api/provider/sessions/[id]', () => {
         expect(body).toEqual({ error: 'Can only start a SCHEDULED session' });
     });
 
-    it('end: transitions LIVE to ENDED with duration', async () => {
+    it('end: transitions LIVE to ENDED without legacy recording metadata', async () => {
         const startedAt = new Date(Date.now() - 3600 * 1000); // 1 hour ago
         const { mockPrisma } = setupMocks({
             id: 'sess-1',
@@ -291,14 +291,16 @@ describe('PATCH /api/provider/sessions/[id]', () => {
         const { status, body } = await parseResponse(response);
 
         expect(status).toBe(200);
-        const data = body as { session: { status: string; durationSeconds: number } };
+        const data = body as { session: { status: string } };
         expect(data.session.status).toBe('ENDED');
-        expect(data.session.durationSeconds).toBeGreaterThan(3500); // ~3600 seconds
         expect(mockPrisma.scheduledSession.update).toHaveBeenCalledWith(
-            expect.objectContaining({
+            {
                 where: { id: 'sess-1' },
-                data: expect.objectContaining({ status: 'ENDED' }),
-            }),
+                data: {
+                    status: 'ENDED',
+                    endedAt: expect.any(Date),
+                },
+            },
         );
     });
 
@@ -353,7 +355,7 @@ describe('PATCH /api/provider/sessions/[id]', () => {
         expect((await parseResponse(response)).status).toBe(200);
     });
 
-    it('end: stops active recordings', async () => {
+    it('end: performs no recording or egress work', async () => {
         const startedAt = new Date(Date.now() - 600 * 1000);
         const { mockPrisma, mockEgressClient } = setupMocks({
             id: 'sess-1',
@@ -379,14 +381,9 @@ describe('PATCH /api/provider/sessions/[id]', () => {
         const { status } = await parseResponse(response);
 
         expect(status).toBe(200);
-        expect(mockEgressClient.stopEgress).toHaveBeenCalledWith('egress-1');
-        // File exists (mocked true), so update rather than delete
-        expect(mockPrisma.sessionRecording.update).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { id: 'rec-1' },
-                data: { active: false, stoppedAt: expect.any(Date) },
-            }),
-        );
+        expect(mockEgressClient.stopEgress).not.toHaveBeenCalled();
+        expect(mockPrisma.sessionRecording.findMany).not.toHaveBeenCalled();
+        expect(mockPrisma.sessionRecording.update).not.toHaveBeenCalled();
     });
 
     it('end: returns 400 when session is not LIVE', async () => {
