@@ -16,6 +16,8 @@ import {
 } from "livekit-client";
 import { AudioProvider, useAudio } from "@/context/AudioContext";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
+import ThumbnailSender from "@/components/session/ThumbnailSender";
+import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
 import type { StageVideoPublication } from "@/components/session/StageTile";
 import type { StageConnectionQuality } from "@/lib/stage-layout";
 import { redactErrorDetail } from '@/lib/redact';
@@ -679,6 +681,18 @@ function SessionRoom() {
                     <p className="text-sm text-[var(--accent-400)] text-center">
                         Your turn—enable camera and mic
                     </p>
+                )}
+
+                <ThumbnailSender
+                    sessionId={id}
+                    connected={isConnected}
+                    // A stage grant owns the camera. Stop the optional stream as
+                    // soon as promotion lands, before a stage camera is enabled.
+                    isPublishing={canPublish}
+                />
+
+                {process.env.NEXT_PUBLIC_TAPESTRY_PUBLIC_ENABLED === "true" && (
+                    <ThumbnailTapestry sessionId={id} />
                 )}
 
                 {/* Volume + Mix controls */}

@@ -119,6 +119,8 @@ describe('OpsHealthClient', () => {
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
         await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }));
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        // One staff-only tapestry refresh accompanies the initial health
+        // report; the explicit health refresh adds the second board request.
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     });
 });

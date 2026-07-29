@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { HealthLevel, OperatorHealthReport, SubsystemCheck } from '@/lib/ops-health';
+import ThumbnailTapestry from '@/components/session/ThumbnailTapestry';
 
 const POLL_INTERVAL_MS = 10_000;
 
@@ -152,6 +153,8 @@ export default function OpsHealthClient({ role }: { role: string }) {
                     ))}
                 </ul>
             ) : null}
+
+            {report?.session ? <ThumbnailTapestry sessionId={report.session.id} staffOnly /> : null}
 
             <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
                 <span>
