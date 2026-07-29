@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Room, RoomEvent, Track, DisconnectReason, RemoteTrack, RemoteParticipant, RemoteTrackPublication, LocalTrackPublication } from "livekit-client";
 import { AudioProvider, useAudio } from "@/context/AudioContext";
-import { ReportButton } from "@/components";
 import { redactErrorDetail } from '@/lib/redact';
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
@@ -65,7 +64,6 @@ function SessionRoom() {
     const [volume, setVolume] = useState(0.8);
     const [mix, setMix] = useState(0.8); // 0 = all beacon, 1 = all session
     const [duration, setDuration] = useState(0);
-    const [endingSession, setEndingSession] = useState(false);
     const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
     const [retryToken, setRetryToken] = useState(0);
 
@@ -82,22 +80,15 @@ function SessionRoom() {
     // Keep volumeRef in sync with state
     useEffect(() => { volumeRef.current = volume; }, [volume]);
 
-    const leaveSession = useCallback(async () => {
-        // Record leave
-        try {
-            await fetch(`/api/scheduled-sessions/${id}/leave`, { method: "POST" });
-        } catch {
-            // Best effort
-        }
-
-        // Disconnect from room
+    const leaveSession = useCallback(() => {
+        // Disconnect from room and return to the landing page.
         if (roomRef.current) {
             intentionalDisconnectRef.current = true;
             roomRef.current.disconnect();
         }
 
-        router.push("/sessions");
-    }, [id, router]);
+        router.push("/");
+    }, [router]);
 
     const rejoin = useCallback(() => {
         setDisconnectState(null);
@@ -263,30 +254,6 @@ function SessionRoom() {
         }
     };
 
-    const endSession = async () => {
-        if (!sessionInfo || endingSession) return;
-        setEndingSession(true);
-        try {
-            const res = await fetch(`/api/provider/sessions/${id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "end" }),
-            });
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Failed to end session");
-            }
-            if (roomRef.current) {
-                intentionalDisconnectRef.current = true;
-                roomRef.current.disconnect();
-            }
-            router.push("/sessions");
-        } catch (e) {
-            console.error("Failed to end session:", redactErrorDetail(e));
-            setEndingSession(false);
-        }
-    };
-
     const formatTime = (seconds: number): string => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
@@ -317,7 +284,7 @@ function SessionRoom() {
                     </div>
                     <h2 className="text-xl font-semibold mb-2">Connection Error</h2>
                     <p className="text-sm text-[var(--text-muted)] mb-4">{error}</p>
-                    <button onClick={() => router.push("/sessions")} className="btn-secondary">
+                    <button onClick={() => router.push("/")} className="btn-secondary">
                         Back to Sessions
                     </button>
                 </div>
@@ -369,7 +336,7 @@ function SessionRoom() {
                                 Rejoin
                             </button>
                         )}
-                        <button onClick={() => router.push("/sessions")} className="btn-secondary">
+                        <button onClick={() => router.push("/")} className="btn-secondary">
                             Back to Sessions
                         </button>
                     </div>
@@ -480,37 +447,11 @@ function SessionRoom() {
                         </svg>
                     </button>
 
-                    {/* Report (listeners only — a host does not report their own room) */}
-                    {!canPublish && sessionInfo && (
-                        <ReportButton
-                            variant="icon"
-                            targetType="SESSION"
-                            targetId={sessionInfo.id}
-                            targetLabel={sessionInfo.title}
-                            className="w-14 h-14"
-                        />
-                    )}
-
-                    {/* End Session button (only for publishers) */}
-                    {canPublish && (
-                        <button
-                            onClick={endSession}
-                            disabled={endingSession}
-                            className={`w-14 h-14 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center hover:bg-red-500/30 transition-all ${endingSession ? "opacity-50" : ""}`}
-                            aria-label="End session"
-                        >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
-                            </svg>
-                        </button>
-                    )}
                 </div>
                 {canPublish && (
                     <div className="flex justify-center gap-6 mt-2 text-[10px] text-[var(--text-muted)]">
                         <span className="w-14 text-center">Mic</span>
-                        <span className="w-14 text-center">Rec</span>
                         <span className="w-14 text-center">Leave</span>
-                        <span className="w-14 text-center">End</span>
                     </div>
                 )}
             </div>
