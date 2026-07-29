@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 /** Where an operator goes after signing in. WS1-03 builds this route. */
-const OPERATOR_HOME = "/ops/admission";
+const OPERATOR_HOME = "/";
 
 const MESSAGES = {
     rejected: "Those credentials are not valid.",

@@ -34,7 +34,7 @@ export default async function StaffLoginPage() {
                     <p className="text-sm">
                         Signed in as <span className="font-medium">{signedInRole}</span>.
                     </p>
-                    <Link href="/ops/admission" className="inline-block text-sm underline">
+                    <Link href="/" className="inline-block text-sm underline">
                         Go to operator controls
                     </Link>
                 </div>

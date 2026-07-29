@@ -75,7 +75,7 @@ describe('staff login page', () => {
 
         expect(screen.getByText(/Signed in as/)).toBeInTheDocument();
         expect(screen.getByText('OPERATOR')).toBeInTheDocument();
-        expect(screen.getByRole('link', { name: /operator controls/ })).toHaveAttribute('href', '/ops/admission');
+        expect(screen.getByRole('link', { name: /operator controls/ })).toHaveAttribute('href', '/');
         expect(screen.queryByLabelText('Password')).toBeNull();
     });
 
@@ -119,7 +119,7 @@ describe('StaffLoginClient', () => {
             password: 'weekend-passphrase',
         });
 
-        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/ops/admission'));
+        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'));
         expect(mockRefresh).toHaveBeenCalled();
         // The password does not stay in the DOM after it has been used.
         expect(screen.getByLabelText('Password')).toHaveValue('');
