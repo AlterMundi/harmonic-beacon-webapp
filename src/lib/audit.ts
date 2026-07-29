@@ -1,31 +1,97 @@
 /**
- * Administrative audit log.
+ * Audit log.
  *
- * BUSINESS_RULES.md §1.3 obliges every administrative action to be written here,
- * and TRUST_AND_SAFETY.md §4 makes the log the accountability half of the session
- * kill switch — "the two ship together or the control ships unaccountable".
+ * Two audiences share this module:
  *
- * Append-only: this module offers a write and nothing else. There is deliberately
- * no update or delete helper, and no route exposes either. A log an Admin can
- * edit is not evidence of what an Admin did.
+ *   1. The weekend admission surface (`recordAuditEvent`), reduced to what
+ *      the fresh schema (`AuditLog` in prisma/schema.prisma) supports: actor,
+ *      action, target, time, and non-PII reason metadata. Every admission
+ *      mutation — batch generation/import, revocation, rebind, comp/override
+ *      issuance — writes one row here.
+ *   2. The pre-weekend moderation routes (`logAdminAction` and its types),
+ *      kept so those strip-owned callers keep working until Ani's strip
+ *      removes them. They reference pre-weekend schema fields and are not
+ *      part of the weekend contract.
  *
- * Not every actor here is an Admin. Provider takedown (CONTENT_POLICY.md §6.1)
- * removes content from the catalogue, which is the same consequence a moderation
- * hide has, so it is logged in the same place. Nothing about that misrepresents
- * the actor: `actorRole` is snapshotted from the acting session, so a Provider's
- * action is recorded as a Provider's, and `action` distinguishes
- * `meditation.takedown` from `meditation.hide`. The helper is named for the log
- * it writes to, not for a role it assumes.
+ * Append-only: this module offers writes and nothing else. There is
+ * deliberately no update or delete helper, and no route exposes either. A log
+ * an Admin can edit is not evidence of what an Admin did.
+ *
+ * PII discipline: `reason` and `metadata` must never contain ticket codes,
+ * session tokens, or attendee emails. The admission routes enforce this by
+ * never threading attendee identifiers into these fields.
  */
 
 import { prisma } from '@/lib/db';
 import { redactErrorDetail } from '@/lib/redact';
 
+/** JSON-safe metadata. Deliberately narrow: audit rows are read by humans. */
+export type AuditMetadata = Record<string, string | number | boolean | null>;
+
+// ---------------------------------------------------------------------------
+// Weekend admission audit (WS1-03)
+// ---------------------------------------------------------------------------
+
 /**
- * Dotted discriminator for the action taken. A closed union rather than a free
- * string so a typo cannot silently create a category the audit reader filters
- * past without noticing.
+ * Dotted discriminator for the action taken. A closed union rather than a
+ * free string so a typo cannot silently create a category the audit reader
+ * filters past without noticing.
  */
+export type AdmissionAuditAction =
+    | 'ticket.batch_generate'
+    | 'ticket.batch_import'
+    | 'ticket.comp_issue'
+    | 'ticket.revoke'
+    | 'ticket.rebind';
+
+export type AdmissionAuditTargetType = 'TICKET_ENTITLEMENT' | 'SCHEDULED_SESSION';
+
+export interface AdmissionAuditEvent {
+    /** Staff user id, or null for CLI actions that name their source in metadata. */
+    actorUserId: string | null;
+    action: AdmissionAuditAction;
+    targetType: AdmissionAuditTargetType;
+    targetId: string;
+    /** Non-PII reason text; required by the routes that mandate one. */
+    reason?: string;
+    metadata?: AuditMetadata;
+}
+
+/**
+ * Write one audit entry. Never throws.
+ *
+ * A failed audit write must not fail the action it describes. An operator
+ * revoking a ticket in response to a live support call cannot be told "revoke
+ * failed" because a log insert timed out — the admission risk continues while
+ * the logging does not. So this swallows every error and reports it to
+ * stderr, and every caller can `await` it without a try/catch.
+ *
+ * The cost of that choice is real and worth naming: a dropped write leaves a
+ * mutation with no trace, which is precisely what the log exists to prevent.
+ * It is the lesser of the two failures, not a free one.
+ */
+export async function recordAuditEvent(event: AdmissionAuditEvent): Promise<void> {
+    try {
+        await prisma.auditLog.create({
+            data: {
+                actorUserId: event.actorUserId,
+                action: event.action,
+                targetType: event.targetType,
+                targetId: event.targetId,
+                ...(event.reason !== undefined ? { reason: event.reason } : {}),
+                ...(event.metadata ? { metadata: event.metadata } : {}),
+            },
+        });
+    } catch (error) {
+        console.error(`[audit] failed to write entry for ${event.action}:`, redactErrorDetail(error));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pre-weekend moderation audit — strip-owned legacy, kept for its callers
+// until the strip removes them. Not part of the weekend contract.
+// ---------------------------------------------------------------------------
+
 export type AuditAction =
     | 'meditation.approve'
     | 'meditation.reject'
@@ -56,9 +122,6 @@ export type AuditAction =
 
 export type AuditTargetType = 'MEDITATION' | 'USER' | 'TAG' | 'SESSION' | 'REPORT';
 
-/** JSON-safe metadata. Deliberately narrow: audit rows are read by humans. */
-export type AuditMetadata = Record<string, string | number | boolean | null>;
-
 export interface AuditActor {
     /**
      * The acting session. `user.id` is the Zitadel subject, not the DB uuid —
@@ -86,8 +149,8 @@ export interface AuditEntry {
  *
  * The cost of that choice is real and worth naming: a dropped write leaves a
  * moderation action with no trace, which is precisely what the log exists to
- * prevent. It is the lesser of the two failures, not a free one. Closing the gap
- * needs a durable queue, which does not exist here yet.
+ * prevent. It is the lesser of the two failures, not a free one. Closing the
+ * gap needs a durable queue, which does not exist here yet.
  */
 export async function logAdminAction(actor: AuditActor, entry: AuditEntry): Promise<void> {
     try {
