@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Room, RoomEvent, Track, DisconnectReason, RemoteTrack, RemoteParticipant, RemoteTrackPublication, LocalTrackPublication } from "livekit-client";
-import { useAudio } from "@/context/AudioContext";
+import { AudioProvider, useAudio } from "@/context/AudioContext";
 import { ReportButton } from "@/components";
 import { redactErrorDetail } from '@/lib/redact';
 
@@ -14,7 +14,6 @@ interface SessionInfo {
     title: string;
     status: string;
     startedAt: string | null;
-    isRecording: boolean;
 }
 
 // What RoomEvent.Disconnected tells us, collapsed to the three things a
@@ -48,13 +47,13 @@ function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
     }
 }
 
-export default function SessionRoomPage() {
+function SessionRoom() {
     const { id } = useParams<{ id: string }>();
     const searchParams = useSearchParams();
     const router = useRouter();
     const inviteCode = searchParams.get("invite");
 
-    const { volume: beaconVolume, setVolume: setBeaconVolume } = useAudio();
+    const { setVolume: setBeaconVolume } = useAudio();
 
     const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -66,9 +65,6 @@ export default function SessionRoomPage() {
     const [volume, setVolume] = useState(0.8);
     const [mix, setMix] = useState(0.8); // 0 = all beacon, 1 = all session
     const [duration, setDuration] = useState(0);
-    const [isRecording, setIsRecording] = useState(false);
-    const [recordingLoading, setRecordingLoading] = useState(false);
-    const [recordingError, setRecordingError] = useState<string | null>(null);
     const [endingSession, setEndingSession] = useState(false);
     const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
     const [retryToken, setRetryToken] = useState(0);
@@ -114,6 +110,7 @@ export default function SessionRoomPage() {
     // Connect to LiveKit room
     useEffect(() => {
         let cancelled = false;
+        const audioElements = audioElementsRef.current;
         intentionalDisconnectRef.current = false;
 
         async function connect() {
@@ -130,9 +127,6 @@ export default function SessionRoomPage() {
 
                 setSessionInfo(data.session);
                 setCanPublish(data.canPublish);
-                if (data.session.isRecording) {
-                    setIsRecording(true);
-                }
                 // Initialize timer from session startedAt
                 if (data.session.startedAt) {
                     const elapsed = Math.floor((Date.now() - new Date(data.session.startedAt).getTime()) / 1000);
@@ -206,13 +200,12 @@ export default function SessionRoomPage() {
             if (roomRef.current) {
                 roomRef.current.disconnect();
             }
-            audioElementsRef.current.forEach((el) => {
+            audioElements.forEach((el) => {
                 el.pause();
                 el.remove();
             });
-            audioElementsRef.current.clear();
+            audioElements.clear();
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, inviteCode, retryToken]);
 
     // Timer
@@ -291,29 +284,6 @@ export default function SessionRoomPage() {
         } catch (e) {
             console.error("Failed to end session:", redactErrorDetail(e));
             setEndingSession(false);
-        }
-    };
-
-    const toggleRecording = async () => {
-        if (!sessionInfo || recordingLoading) return;
-        setRecordingLoading(true);
-        setRecordingError(null);
-        try {
-            const action = isRecording ? "stop" : "start";
-            const res = await fetch(`/api/provider/sessions/${id}/recording/${action}`, {
-                method: "POST",
-            });
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Recording action failed");
-            }
-            setIsRecording(!isRecording);
-        } catch (e) {
-            const msg = e instanceof Error ? e.message : "Recording action failed";
-            setRecordingError(msg);
-            setTimeout(() => setRecordingError(null), 5000);
-        } finally {
-            setRecordingLoading(false);
         }
     };
 
@@ -472,13 +442,6 @@ export default function SessionRoomPage() {
                 </div>
             </div>
 
-            {/* Recording error toast */}
-            {recordingError && (
-                <div className="mx-4 mb-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400 text-center">
-                    {recordingError}
-                </div>
-            )}
-
             {/* Bottom controls */}
             <div className="p-6 border-t border-[var(--border-subtle)]">
                 <div className="flex items-center justify-center gap-4">
@@ -501,33 +464,6 @@ export default function SessionRoomPage() {
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                     <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                </svg>
-                            )}
-                        </button>
-                    )}
-
-                    {/* Recording toggle (only for publishers) */}
-                    {canPublish && (
-                        <button
-                            onClick={toggleRecording}
-                            disabled={recordingLoading}
-                            className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
-                                isRecording
-                                    ? "bg-red-600 text-white"
-                                    : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
-                            } ${recordingLoading ? "opacity-50" : ""}`}
-                            aria-label={isRecording ? "Stop recording" : "Start recording"}
-                        >
-                            {isRecording ? (
-                                <span className="relative flex items-center justify-center">
-                                    <span className="absolute w-3 h-3 rounded-full bg-white animate-pulse"></span>
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                        <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
-                                    </svg>
-                                </span>
-                            ) : (
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <circle cx="12" cy="12" r="6" fill="currentColor" />
                                 </svg>
                             )}
                         </button>
@@ -579,5 +515,15 @@ export default function SessionRoomPage() {
                 )}
             </div>
         </main>
+    );
+}
+
+export default function SessionRoomPage() {
+    const { id } = useParams<{ id: string }>();
+
+    return (
+        <AudioProvider sessionId={id}>
+            <SessionRoom />
+        </AudioProvider>
     );
 }

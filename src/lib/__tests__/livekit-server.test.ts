@@ -1,81 +1,64 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockAddGrant = vi.fn();
-const mockToJwt = vi.fn().mockResolvedValue('mock-jwt');
+const addGrant = vi.fn();
+const toJwt = vi.fn().mockResolvedValue('jwt');
 
-vi.mock('livekit-server-sdk', () => {
-    const MockAccessToken = vi.fn(function (this: Record<string, unknown>) {
-        this.addGrant = mockAddGrant;
-        this.toJwt = mockToJwt;
-    });
-    return {
-        AccessToken: MockAccessToken,
-        RoomServiceClient: vi.fn(function () {}),
-        EgressClient: vi.fn(function () {}),
-    };
-});
+vi.mock('livekit-server-sdk', () => ({
+    AccessToken: vi.fn(function (this: Record<string, unknown>) {
+        this.addGrant = addGrant;
+        this.toJwt = toJwt;
+    }),
+    RoomServiceClient: vi.fn(function () {}),
+    TrackSource: {
+        MICROPHONE: 2,
+        CAMERA: 1,
+    },
+}));
 
-import { AccessToken, RoomServiceClient, EgressClient } from 'livekit-server-sdk';
-import { getRoomService, getEgressClient, createSessionToken } from '../livekit-server';
-
-describe('getRoomService', () => {
-    it('creates RoomServiceClient with https URL from wss', () => {
-        getRoomService();
-        expect(RoomServiceClient).toHaveBeenCalledWith(
-            expect.stringContaining('https://'),
-            expect.any(String),
-            expect.any(String),
-        );
-    });
-
-    it('does not contain wss:// in the HTTP URL', () => {
-        getRoomService();
-        const call = vi.mocked(RoomServiceClient).mock.calls[0];
-        expect(call[0]).not.toContain('wss://');
-    });
-});
-
-describe('getEgressClient', () => {
-    it('creates EgressClient with https URL from wss', () => {
-        getEgressClient();
-        expect(EgressClient).toHaveBeenCalledWith(
-            expect.stringContaining('https://'),
-            expect.any(String),
-            expect.any(String),
-        );
-    });
-});
-
-describe('createSessionToken', () => {
+describe('livekit-server', () => {
     beforeEach(() => {
+        vi.resetModules();
         vi.clearAllMocks();
+        process.env.LIVEKIT_API_KEY = 'key';
+        process.env.LIVEKIT_API_SECRET = 'secret-long-enough';
     });
 
-    it('creates AccessToken with correct identity and TTL', async () => {
-        await createSessionToken('room-1', 'user-123', 'Test User', true);
-        expect(AccessToken).toHaveBeenCalledWith(
-            expect.any(String),
-            expect.any(String),
-            expect.objectContaining({ identity: 'user-123', name: 'Test User', ttl: '4h' }),
-        );
+    it('creates a stable event identity and a distinct stable bed identity', async () => {
+        const { bedRoomIdentity, stableRoomIdentity } = await import('../livekit-server');
+        const first = stableRoomIdentity('event-1', 'ticket', 'ticket-1');
+        const refresh = stableRoomIdentity('event-1', 'ticket', 'ticket-1');
+        const otherEvent = stableRoomIdentity('event-2', 'ticket', 'ticket-1');
+
+        expect(first).toBe(refresh);
+        expect(first).not.toBe(otherEvent);
+        expect(first).toMatch(/^event-[A-Za-z0-9_-]{32}$/);
+        expect(bedRoomIdentity(first)).toMatch(/^bed-[A-Za-z0-9_-]{32}$/);
+        expect(first).not.toContain('ticket-1');
     });
 
-    it('grants room join with canPublish flag', async () => {
-        await createSessionToken('room-1', 'user-123', 'Test User', true);
-        expect(mockAddGrant).toHaveBeenCalledWith(
-            expect.objectContaining({ roomJoin: true, room: 'room-1', canPublish: true, canSubscribe: true }),
-        );
+    it('limits publishing grants to microphone and camera', async () => {
+        const { createSessionToken } = await import('../livekit-server');
+        await createSessionToken('stage', 'identity', 'Attendee', true);
+
+        expect(addGrant).toHaveBeenCalledWith({
+            roomJoin: true,
+            room: 'stage',
+            canPublish: true,
+            canPublishSources: [2, 1],
+            canPublishData: false,
+            canSubscribe: true,
+        });
     });
 
-    it('passes canPublish=false correctly', async () => {
-        await createSessionToken('room-1', 'user-123', 'Listener', false);
-        expect(mockAddGrant).toHaveBeenCalledWith(
-            expect.objectContaining({ canPublish: false }),
-        );
-    });
+    it('makes the bed strictly subscribe-only', async () => {
+        const { createBedToken } = await import('../livekit-server');
+        await createBedToken('beacon', 'bed-identity');
 
-    it('returns JWT string', async () => {
-        const token = await createSessionToken('room-1', 'id', 'name', true);
-        expect(token).toBe('mock-jwt');
+        expect(addGrant).toHaveBeenCalledWith(expect.objectContaining({
+            room: 'beacon',
+            canPublish: false,
+            canPublishSources: [],
+            canSubscribe: true,
+        }));
     });
 });

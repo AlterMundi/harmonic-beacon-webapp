@@ -33,17 +33,41 @@ interface AudioContextType {
 
 }
 
-const AudioContext = createContext<AudioContextType | null>(null);
+const unavailableAudioContext: AudioContextType = {
+    isConnected: false,
+    hasLiveStream: false,
+    hasPlaylistStream: false,
+    isPlaying: false,
+    volume: 0,
+    togglePlay: () => {},
+    setVolume: () => {},
+    mixValue: 0.5,
+    setMixValue: () => {},
+    loadMeditation: async () => {},
+    unloadMeditation: () => {},
+    meditationIsPlaying: false,
+    meditationVolume: 0,
+    setMeditationVolume: () => {},
+    toggleMeditation: () => {},
+    meditationPosition: 0,
+    meditationDuration: 0,
+    seekMeditation: () => {},
+    currentMeditationFile: null,
+};
+
+const AudioContext = createContext<AudioContextType>(unavailableAudioContext);
 
 export function useAudio() {
-    const context = useContext(AudioContext);
-    if (!context) {
-        throw new Error('useAudio must be used within AudioProvider');
-    }
-    return context;
+    return useContext(AudioContext);
 }
 
-export function AudioProvider({ children }: { children: React.ReactNode }) {
+export function AudioProvider({
+    children,
+    sessionId,
+}: {
+    children: React.ReactNode;
+    sessionId: string;
+}) {
     // LiveKit / Beacon state
     const [isConnected, setIsConnected] = useState(false);
     const [hasLiveStream, setHasLiveStream] = useState(false);
@@ -79,6 +103,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     // Initialize LiveKit connection - runs once on mount
     useEffect(() => {
         const room = new Room();
+        const audioElements = audioElementsRef.current;
         roomRef.current = room;
 
         room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
@@ -155,7 +180,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         });
 
         // Fetch token from server-side API and connect
-        fetch('/api/livekit/token')
+        fetch(`/api/livekit/token?sessionId=${encodeURIComponent(sessionId)}`)
             .then((res) => {
                 // The endpoint requires a session. Without this check a 401 body
                 // has no `token`, and the failure surfaces as an opaque connect
@@ -176,13 +201,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
         return () => {
             room.disconnect();
-            audioElementsRef.current.forEach((el) => {
+            audioElements.forEach((el) => {
                 el.pause();
                 el.remove();
             });
-            audioElementsRef.current.clear();
+            audioElements.clear();
         };
-    }, [LIVEKIT_URL]);
+    }, [LIVEKIT_URL, sessionId]);
 
     // When beacon goes live, mute playlist audio; unmute when beacon goes offline
     useEffect(() => {

@@ -217,7 +217,7 @@ describe('POST /api/admin/sessions/[id]/terminate', () => {
         expect(mockDeleteRoom).toHaveBeenCalledWith('session-abc12345');
     });
 
-    it('stops active egress recordings before deleting the room', async () => {
+    it('does not contact recording or egress services', async () => {
         mockAuth(ADMIN_SESSION);
         const { mockPrisma, mockStopEgress } = setup(LIVE_SESSION, {
             recordings: [
@@ -231,27 +231,11 @@ describe('POST /api/admin/sessions/[id]/terminate', () => {
         const { status, body } = await parseResponse(res);
 
         expect(status).toBe(200);
-        expect(mockStopEgress).toHaveBeenCalledWith('egress-1');
-        expect(mockStopEgress).toHaveBeenCalledWith('egress-2');
-        // Files exist, so the rows are marked stopped rather than deleted.
-        expect(mockPrisma.sessionRecording.update).toHaveBeenCalledTimes(2);
-        expect(mockPrisma.sessionRecording.delete).not.toHaveBeenCalled();
-        expect((body as { recordingsStopped: number }).recordingsStopped).toBe(2);
-    }, 10000);
-
-    it('drops a recording row whose file never landed', async () => {
-        mockAuth(ADMIN_SESSION);
-        const { mockPrisma } = setup(LIVE_SESSION, {
-            recordings: [{ id: 'rec-1', egressId: 'egress-1', filePath: '/data/recordings/a.ogg', active: true }],
-            fileExists: false,
-        });
-
-        const { POST } = await import('../route');
-        const res = await POST(terminateRequest({ reason: VALID_REASON }), mockParams({ id: 'sess-1' }));
-
-        expect(res.status).toBe(200);
-        expect(mockPrisma.sessionRecording.delete).toHaveBeenCalledWith({ where: { id: 'rec-1' } });
+        expect(mockStopEgress).not.toHaveBeenCalled();
+        expect(mockPrisma.sessionRecording.findMany).not.toHaveBeenCalled();
         expect(mockPrisma.sessionRecording.update).not.toHaveBeenCalled();
+        expect(mockPrisma.sessionRecording.delete).not.toHaveBeenCalled();
+        expect((body as { recordingsStopped: number }).recordingsStopped).toBe(0);
     }, 10000);
 
     it('writes an audit entry carrying the declared reason and an incident snapshot', async () => {

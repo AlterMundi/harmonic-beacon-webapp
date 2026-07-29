@@ -7,6 +7,7 @@ import { render, screen, cleanup, fireEvent, waitFor, act, within } from '@testi
 // in src/app/session/[id]/page.tsx and the three copy variants it renders.
 
 const mockPush = vi.fn();
+const mockSetBeaconVolume = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
     useParams: () => ({ id: 'session-1' }),
     useSearchParams: () => ({ get: () => null }),
@@ -14,7 +15,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/context/AudioContext', () => ({
-    useAudio: () => ({ volume: 0.8, setVolume: vi.fn() }),
+    AudioProvider: ({ children }: { children: React.ReactNode }) => children,
+    useAudio: () => ({ volume: 0.8, setVolume: mockSetBeaconVolume }),
 }));
 
 vi.mock('@/components', () => ({
@@ -106,6 +108,7 @@ const TOKEN_RESPONSE = {
 };
 
 beforeEach(() => {
+    mockSetBeaconVolume.mockClear();
     global.fetch = vi.fn().mockImplementation((url: string) => {
         if (url.includes('/token')) {
             return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE });
@@ -223,5 +226,35 @@ describe('SessionRoomPage - intentional disconnects are not terminal states', ()
         expect(screen.queryByRole('status')).not.toBeInTheDocument();
         expect(screen.queryByText('Session ended')).not.toBeInTheDocument();
         expect(screen.queryByText('Connection lost')).not.toBeInTheDocument();
+    });
+});
+
+describe('SessionRoomPage - two-room crossfader', () => {
+    it('changes stage voice and Beacon bed gains independently', async () => {
+        await renderConnected();
+        const stageAudio = document.createElement('audio');
+        const stageTrack = {
+            kind: 'audio',
+            attach: () => stageAudio,
+            detach: () => [stageAudio],
+        };
+
+        act(() => {
+            currentRoom().emit(
+                'trackSubscribed',
+                stageTrack,
+                {},
+                { identity: 'facilitator' },
+            );
+        });
+
+        const sliders = screen.getAllByRole('slider');
+        fireEvent.change(sliders[1], { target: { value: '0.25' } });
+
+        await waitFor(() => {
+            expect(stageAudio.volume).toBeCloseTo(0.2);
+            const bedGain = mockSetBeaconVolume.mock.lastCall?.[0];
+            expect(bedGain).toBeCloseTo(0.6);
+        });
     });
 });

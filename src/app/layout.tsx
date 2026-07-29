@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { AudioProvider } from "@/context/AudioContext";
+import { SessionProvider } from "next-auth/react";
 import { Toaster } from "sonner";
 
 const inter = Inter({
@@ -35,13 +35,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      {/*
-        No client-side session provider. The `hb_session` cookie is HttpOnly and
-        every gate resolves it server-side, so there is no session for the browser
-        to hold — and the landing page must render for a visitor who has none.
-      */}
       <body className={`${inter.variable} antialiased`}>
-        <AudioProvider>
+        <SessionProvider>
           {/* Background orbs - Adjusted for deep space feel */}
           <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
             <div className="bg-orb bg-orb-1 opacity-20 mix-blend-screen" />
@@ -65,7 +60,7 @@ export default function RootLayout({
               },
             }}
           />
-        </AudioProvider>
+        </SessionProvider>
       </body>
     </html>
   );
