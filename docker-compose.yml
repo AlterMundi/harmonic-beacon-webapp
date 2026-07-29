@@ -82,7 +82,10 @@ services:
 
   # ── Next.js app ───────────────────────────────────────────────────
   app:
-    build: .
+    build:
+      context: .
+      args:
+        - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL:-wss://live.harmonicbeacon.com/rtc}
     container_name: beacon-app
     restart: unless-stopped
     env_file:
@@ -90,7 +93,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
-      - LIVEKIT_INTERNAL_URL=http://livekit:7880
+      - LIVEKIT_INTERNAL_URL=http://beacon-livekit:7880
     ports:
       - "127.0.0.1:3000:3000"                # nginx-only
     networks:
@@ -125,7 +128,7 @@ services:
     env_file:
       - /etc/harmonic-beacon/production.env
     environment:
-      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_URL=ws://beacon-livekit:7880
       - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
       - BOT_IDENTITY=playlist-bot
       - BEACON_RECORDS_PATH=/data/beacon-records
