@@ -119,7 +119,7 @@ describe('StaffLoginClient', () => {
             password: 'weekend-passphrase',
         });
 
-        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'));
+        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/ops/health'));
         expect(mockRefresh).toHaveBeenCalled();
         // The password does not stay in the DOM after it has been used.
         expect(screen.getByLabelText('Password')).toHaveValue('');
