@@ -19,7 +19,7 @@ The deployed product has four surfaces and no general-purpose account area:
 | Surface | Route | Users | Launch behavior |
 |---|---|---|---|
 | Public landing and ticket login | `/` | Anyone | Bilingual EN/ES page with the two event times, $50/$20 purchase links, terms/refund links, and a code + email form. It never exposes a room token. |
-| Paid session room | `/session/[id]` | Entitled attendee or staff | Joins the stage and beacon-bed LiveKit rooms, renders the six-person stage, provides the Beacon/Voice crossfader, audio-only fallback, hand raise, and optional mountain camera contribution. |
+| Paid session room | `/session/[id]` | Entitled attendee or staff | Joins the stage and beacon-bed LiveKit rooms, renders the six-person stage, provides the Beacon/Voice crossfader, audio-only fallback, hand raise, and optional tapestry camera contribution. |
 | Staff login | `/staff/login` | Julián, two operators, one admin | Seeded per-person credentials; no Zitadel/OIDC, public signup, password reset, or listener account. |
 | Operator controls | `/ops/session/[id]`, `/ops/admission` | Facilitator/operator/admin according to role | Hand queue, promote/demote/mute, participant and service health, ticket lookup, revoke, rebind, and comp/override issuance. |
 
@@ -48,12 +48,12 @@ The stage publishes simulcast. The active speaker/Julián tile requests the 720p
 
 All publish permission originates server-side. A serialized database reservation limits active stage grants to six; the token route and live LiveKit grant update use that state. Reconnects retain the same stable stage identity and current grant. Demotion revokes the LiveKit grant and forcibly mutes/unpublishes the participant.
 
-### Thumbnail mountain contract
+### Thumbnail tapestry contract
 
 The target v1 is public to attendees, but it is not on the critical path and has a pre-approved staff-only cut:
 
 - After an explicit user gesture and browser camera permission, the client produces a 100 px JPEG every 2.5 seconds and POSTs it through an entitlement-gated app endpoint.
-- A separate in-memory `services/mountain` process retains one latest frame per opaque participant identity, removes frames after 10 seconds, and produces one composite JPEG per session. It never writes raw frames to disk.
+- A separate in-memory `services/tapestry` process retains one latest frame per opaque participant identity, removes frames after 10 seconds, and produces one composite JPEG per session. It never writes raw frames to disk.
 - The public composite endpoint has a two-second shared-cache TTL and no attendee identity or email. Cloudflare caches only that endpoint. In staff-only mode, the same image is returned through an authenticated operator route and is not publicly cached.
 - Ticket terms disclose the thumbnail snapshots. Camera permission remains explicit; declining it never prevents event admission.
 
@@ -61,7 +61,7 @@ The target v1 is public to attendees, but it is not on the critical path and has
 
 Use a fresh PostgreSQL container, not SQLite. The repository already uses Prisma 7, `@prisma/adapter-pg`, `pg`, migrations, and PostgreSQL transactions. Atomic first-use binding and concurrent publisher reservations need one reliable shared writer. SQLite would add a driver/schema/deployment change and single-file lock/backup behavior for no useful weekend reduction.
 
-The fresh database lives at `/mnt/beacon-data/postgres`; there is no migration of users, meditations, vouchers, recordings, or old sessions. Compose on `mona` runs the app, Postgres, LiveKit, playlist bot, and—until cut—the mountain service. Nginx terminates TLS for `live.harmonicbeacon.com`; LiveKit signaling is proxied over WSS and media/TURN use the already opened ports. Egress/recording is absent.
+The fresh database lives at `/mnt/beacon-data/postgres`; there is no migration of users, meditations, vouchers, recordings, or old sessions. Compose on `mona` runs the app, Postgres, LiveKit, playlist bot, and—until cut—the tapestry service. Nginx terminates TLS for `live.harmonicbeacon.com`; LiveKit signaling is proxied over WSS and media/TURN use the already opened ports. Egress/recording is absent.
 
 ### Launch definition of done
 
@@ -83,7 +83,7 @@ The MVP is done only when:
 | WS1 — Auth and entitlement | Fresh ticket/staff identity, reconnect-safe sessions, admission support | Backend/full-stack | 3.0 pd |
 | WS2 — Paid session room | Strict token gates, preserved crossfader, six-person video stage, audio-only mode | LiveKit/frontend | 3.0 pd |
 | WS3 — Spotlight and hand queue | Race-safe six-publisher control and usable operator console | Backend + full-stack | 2.5 pd |
-| WS4 — Thumbnail mountain | Bounded ingest/composite service and optional public presence view | Service/frontend | 1.5 pd |
+| WS4 — Thumbnail tapestry | Bounded ingest/composite service and optional public presence view | Service/frontend | 1.5 pd |
 | WS5 — Deploy, reliability, and event ops | Mona Compose/TLS/TURN, health view, runbook, load test, rehearsal, freeze | Infra + tech ops | 3.5 pd |
 | WS6 — Commercial and human launch actions | Proven payout rail, configured tickets/policies, DNS/secrets/staff/fallback | Ops/human | 1.5 pd |
 | **Total** | | | **15.0 pd** |
@@ -200,33 +200,33 @@ Cards are ordered within each workstream. A dependency means the upstream card's
   - The full raise → promote → explicit mic/camera enable → demote interaction completes without reconnect.
 - **Risk notes:** Polling is intentionally less elegant and more recoverable than transient LiveKit data messages. Do not add chat, auto-advance, reactions, or audience moderation beyond the queue.
 
-### WS4 — Thumbnail mountain
+### WS4 — Thumbnail tapestry
 
-#### WS4-01 — Build the bounded in-memory mountain service
+#### WS4-01 — Build the bounded in-memory tapestry service
 
-- **Workstream:** WS4 — Thumbnail mountain
+- **Workstream:** WS4 — Thumbnail tapestry
 - **Effort:** 1.0 person-day
-- **Scope:** Create `services/mountain/package.json`, lockfile, `tsconfig.json`, `Dockerfile`, `src/index.ts`, and service tests. Expose internal authenticated ingest, composite JPEG, and `/health` endpoints. Accept only JPEG, at most 20 KB, target 100 px, keyed by opaque session/participant IDs supplied by the app. Replace the prior frame, expire at ten seconds, cap entries at 150 per seeded session, and composite at most once per second using `sharp`. Keep all bytes in memory.
+- **Scope:** Create `services/tapestry/package.json`, lockfile, `tsconfig.json`, `Dockerfile`, `src/index.ts`, and service tests. Expose internal authenticated ingest, composite JPEG, and `/health` endpoints. Accept only JPEG, at most 20 KB, target 100 px, keyed by opaque session/participant IDs supplied by the app. Replace the prior frame, expire at ten seconds, cap entries at 150 per seeded session, and composite at most once per second using `sharp`. Keep all bytes in memory.
 - **Dependencies:** None
 - **Acceptance criteria:**
   - Invalid content type, oversized body, unknown session, bad internal secret, and a 151st identity are rejected without retaining bytes.
   - A new frame replaces the old frame for that identity; a stale participant disappears from the next composite within 12 seconds.
-  - No raw frame or composite is written to disk; process restart yields an empty mountain.
+  - No raw frame or composite is written to disk; process restart yields an empty tapestry.
   - A 60-ingest-request/second, 150-participant, ten-minute test stays within the container's defined CPU/memory limit and continues serving a valid JPEG.
   - `/health` reports service state and counts but no participant identifiers.
 - **Risk notes:** `sharp` native packaging must be proven in the exact Docker image on Tuesday. If it becomes the long pole, cut WS4 before substituting an unbounded in-process implementation in Next.js.
 
-#### WS4-02 — Add camera snapshots and the cached/staff-only mountain views
+#### WS4-02 — Add camera snapshots and the cached/staff-only tapestry views
 
-- **Workstream:** WS4 — Thumbnail mountain
+- **Workstream:** WS4 — Thumbnail tapestry
 - **Effort:** 0.5 person-day
-- **Scope:** Create `src/components/session/ThumbnailSender.tsx`, `src/components/session/ThumbnailMountain.tsx`, `src/app/api/mountain/frame/route.ts`, `src/app/api/mountain/[sessionId]/route.ts`, and tests; wire the room page and operator view. The app validates event entitlement, replaces principal IDs with opaque mountain IDs, and proxies to the internal service. Capture via canvas every 2.5 seconds after explicit opt-in. Pause capture when hidden/disconnected and avoid opening a second camera stream while that participant is publishing on stage. Set the public composite's short shared-cache headers; staff-only mode requires operator auth and `private, no-store`.
+- **Scope:** Create `src/components/session/ThumbnailSender.tsx`, `src/components/session/ThumbnailTapestry.tsx`, `src/app/api/tapestry/frame/route.ts`, `src/app/api/tapestry/[sessionId]/route.ts`, and tests; wire the room page and operator view. The app validates event entitlement, replaces principal IDs with opaque tapestry IDs, and proxies to the internal service. Capture via canvas every 2.5 seconds after explicit opt-in. Pause capture when hidden/disconnected and avoid opening a second camera stream while that participant is publishing on stage. Set the public composite's short shared-cache headers; staff-only mode requires operator auth and `private, no-store`.
 - **Dependencies:** WS4-01, WS2-02
 - **Acceptance criteria:**
   - Camera capture never starts before a click and permission; declining/stopping camera does not affect room access.
   - The browser sends a JPEG at most once per 2.5 seconds, stops on unmount/background, and never sends email/code in URL, headers, or body.
   - Public mode returns `Cache-Control` suitable for a two-second Cloudflare shared TTL and no cookies; staff-only mode cannot be fetched without staff authorization and is never publicly cached.
-  - Promoting a mountain contributor does not create conflicting camera capture or break the stage camera.
+  - Promoting a tapestry contributor does not create conflicting camera capture or break the stage camera.
 - **Risk notes:** This is the first cut. Public display depends on WS6-02 consent copy and WS6-03 cache configuration; otherwise deploy the already-implemented staff-only mode.
 
 ### WS5 — Deployment, reliability, and event operations
@@ -235,7 +235,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 
 - **Workstream:** WS5 — Deploy, reliability, and event ops
 - **Effort:** 1.5 person-days
-- **Scope:** Replace the launch portions of `docker-compose.yml`; create `deploy/livekit.yaml`; update `Dockerfile`, `.env.example`, `deploy/.env.example`, `deploy/nginx-harmonic-beacon.conf`, `deploy/setup-nginx.sh`, and `deploy/README.md`; add a small Postgres backup script under `deploy/`. Compose must run `app`, `postgres`, `livekit`, `playlist-bot`, and `mountain` (profile/cuttable), with health checks and bounded logs/resources. Put Postgres at `/mnt/beacon-data/postgres` and bed assets at `/mnt/beacon-data/beacon-records`. Bind HTTP control ports to loopback/internal networks, expose only the required LiveKit media/TURN ports, and proxy app + WSS signaling through Nginx at `live.harmonicbeacon.com`. Configure LiveKit's UDP media mux and TURN on the provisioned 3478 TCP/UDP path; verify restrictive-network fallback. Inject keys through `/etc/harmonic-beacon/production.env`/`LIVEKIT_KEYS`, never tracked config. Do not run LiveKit Egress.
+- **Scope:** Replace the launch portions of `docker-compose.yml`; create `deploy/livekit.yaml`; update `Dockerfile`, `.env.example`, `deploy/.env.example`, `deploy/nginx-harmonic-beacon.conf`, `deploy/setup-nginx.sh`, and `deploy/README.md`; add a small Postgres backup script under `deploy/`. Compose must run `app`, `postgres`, `livekit`, `playlist-bot`, and `tapestry` (profile/cuttable), with health checks and bounded logs/resources. Put Postgres at `/mnt/beacon-data/postgres` and bed assets at `/mnt/beacon-data/beacon-records`. Bind HTTP control ports to loopback/internal networks, expose only the required LiveKit media/TURN ports, and proxy app + WSS signaling through Nginx at `live.harmonicbeacon.com`. Configure LiveKit's UDP media mux and TURN on the provisioned 3478 TCP/UDP path; verify restrictive-network fallback. Inject keys through `/etc/harmonic-beacon/production.env`/`LIVEKIT_KEYS`, never tracked config. Do not run LiveKit Egress.
 - **Dependencies:** WS1-01 for final migration/env names; implementation starts Tuesday from this contract
 - **Acceptance criteria:**
   - `docker compose config` contains no secret values or Zitadel/recording dependency; all five services become healthy after a clean boot.
@@ -250,22 +250,22 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 
 - **Workstream:** WS5 — Deploy, reliability, and event ops
 - **Effort:** 1.0 person-day
-- **Scope:** Extend `src/app/api/health/ready/route.ts`; create `src/app/api/ops/health/route.ts`, `src/app/ops/health/page.tsx`, and tests; create `docs/ops/WEEKEND_EVENT_RUNBOOK.md`. Keep `/api/health` liveness-only. The operator check covers Postgres, LiveKit API, stage room, publisher grant count, bed publisher presence, and mountain health, with timeouts and redacted errors. The runbook assigns incident commander, spotlight operator, stream/support operator, and Julián; covers admission, code rebind/revoke, bot loss/local bed fallback, provider loss, participant abuse, capacity, app/DB/LiveKit/vendor outage, fallback meeting, customer communication, abort, and refund authority.
+- **Scope:** Extend `src/app/api/health/ready/route.ts`; create `src/app/api/ops/health/route.ts`, `src/app/ops/health/page.tsx`, and tests; create `docs/ops/WEEKEND_EVENT_RUNBOOK.md`. Keep `/api/health` liveness-only. The operator check covers Postgres, LiveKit API, stage room, publisher grant count, bed publisher presence, and tapestry health, with timeouts and redacted errors. The runbook assigns incident commander, spotlight operator, stream/support operator, and Julián; covers admission, code rebind/revoke, bot loss/local bed fallback, provider loss, participant abuse, capacity, app/DB/LiveKit/vendor outage, fallback meeting, customer communication, abort, and refund authority.
 - **Dependencies:** WS5-01, WS2-01, WS4-01
 - **Acceptance criteria:**
-  - Operator health turns non-green within 30 seconds of simulated DB, LiveKit, bot, or mountain loss and identifies the failed subsystem without exposing secrets/PII.
+  - Operator health turns non-green within 30 seconds of simulated DB, LiveKit, bot, or tapestry loss and identifies the failed subsystem without exposing secrets/PII.
   - Publisher count over six is a red invariant alarm; five participant grants plus Julián is green.
   - Liveness stays green during a DB outage while readiness returns `503`.
   - Every failure section has one owner, detection signal, first action, fallback/abort threshold, attendee message template in EN and ES, and refund decision owner.
   - Bot loss has a rehearsable browser/local audio fallback; total platform failure points to the pre-created external meeting, not an improvised URL.
-- **Risk notes:** Do not mount the Docker socket into the app for health. Query service APIs/health endpoints. Mountain failure is yellow/cuttable; entitlement, LiveKit, missing bed audio, or cap violation is red.
+- **Risk notes:** Do not mount the Docker socket into the app for health. Query service APIs/health endpoints. Tapestry failure is yellow/cuttable; entitlement, LiveKit, missing bed audio, or cap violation is red.
 
 #### WS5-03 — Run capacity test, full dress rehearsal, and production freeze
 
 - **Workstream:** WS5 — Deploy, reliability, and event ops
 - **Effort:** 1.0 person-day
 - **Scope:** Create `docs/ops/WEEKEND_REHEARSAL.md` and a dated result sheet under `docs/ops/rehearsals/`; execute the automated and human checks on production-like mona. Test 150 attendees with both LiveKit connections, six simulcast publishers at the intended layers, and a 20-minute soak; include at least one Argentina network, one non-Argentina network, iPhone Safari, Android Chrome, and a restrictive/TURN path. Then run purchase → code/email → join → refresh → disconnect/rejoin → raise hand → promote → demote → audio-only → revoke/override → bot failure → provider failure → fallback meeting → refund.
-- **Dependencies:** WS1-02, WS1-03, WS2-02, WS3-02, WS5-02, WS6-01, WS6-02, WS6-03; WS4-02 only if mountain remains public
+- **Dependencies:** WS1-02, WS1-03, WS2-02, WS3-02, WS5-02, WS6-01, WS6-02, WS6-03; WS4-02 only if tapestry remains public
 - **Acceptance criteria:**
   - No seventh publisher appears; the sixth-publisher stage and concurrent last-slot race both pass under load.
   - All 150 subscribers remain connected for 20 minutes, receive both audio sources, and stage egress stays below the 3 Gbps NIC budget with no sustained CPU saturation or material packet-loss alarm.
@@ -300,7 +300,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 - **Acceptance criteria:**
   - A purchase at each price tier receives exactly one code for the correct session and lands on the correct login flow.
   - Paid plus comp entitlements cannot exceed 150 per session; the four staff identities are outside that audience count, and no ticket/comp entitlement creates publish rights.
-  - Terms explicitly disclose a 100 px camera snapshot every 2–3 seconds for the mountain, no raw-frame persistence, optional browser permission, processors, refund trigger, and that launch recording is off.
+  - Terms explicitly disclose a 100 px camera snapshot every 2–3 seconds for the tapestry, no raw-frame persistence, optional browser permission, processors, refund trigger, and that launch recording is off.
   - EN and ES confirmation/reminder/support copy is reviewed by a fluent human and includes event time with timezone.
 - **Risk notes:** Do not infer global-north/south eligibility in application code this week. The ticket platform owns tier choice and payment; operators handle abuse manually.
 
@@ -309,11 +309,11 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 - **Workstream:** WS6 — Commercial and human launch actions
 - **Owner hint:** ops/human — server/Cloudflare owner + event producer
 - **Effort:** 0.5 person-day
-- **Scope:** Verify A/AAAA reachability for `live.harmonicbeacon.com`, set Cloudflare SSL to Full (strict), proxy/cache only appropriate HTTP paths, and add the short-TTL mountain cache rule while bypassing auth APIs, tokens, health, and LiveKit signaling. Create `/etc/harmonic-beacon/production.env` with mode `0600`, generate independent LiveKit/ticket/session/internal-service secrets, and seed four named staff with separately delivered credentials. Pre-create capacity-appropriate EN and ES Zoom/Meet fallback links and private operator communication channel; assign incident and refund authority.
+- **Scope:** Verify A/AAAA reachability for `live.harmonicbeacon.com`, set Cloudflare SSL to Full (strict), proxy/cache only appropriate HTTP paths, and add the short-TTL tapestry cache rule while bypassing auth APIs, tokens, health, and LiveKit signaling. Create `/etc/harmonic-beacon/production.env` with mode `0600`, generate independent LiveKit/ticket/session/internal-service secrets, and seed four named staff with separately delivered credentials. Pre-create capacity-appropriate EN and ES Zoom/Meet fallback links and private operator communication channel; assign incident and refund authority.
 - **Dependencies:** WS5-01 and WS1-01 for final config/seed contracts; DNS, fallback, and contact work starts Tuesday
 - **Acceptance criteria:**
   - Public DNS resolves IPv4/IPv6 to mona where supported, the certificate chain is valid, and Cloudflare never caches login/token/API responses.
-  - Repeated mountain requests show the intended approximately two-second edge cache behavior; staff-only mode bypasses the public cache.
+  - Repeated tapestry requests show the intended approximately two-second edge cache behavior; staff-only mode bypasses the public cache.
   - No secret is present in Git, Compose output, image history, shell history supplied to the rehearsal record, or public health output.
   - All four staff complete a login check with their own credential; disabled/incorrect credentials fail.
   - Both fallback links are host-controlled, tested from an attendee device, sized for the cap, and present only in the runbook/operator channel until invoked.
@@ -337,7 +337,7 @@ WS1-02 and WS2-02 are mandatory parallel branches that must also converge before
 |---|---|
 | **Tue 07-28** | Freeze Section 1 by noon. Land WS1-01 and WS4-01. Start WS5-01. Ops starts WS6-01 immediately, verifies DNS, creates fallback meetings/contact channel, and prepares WS6-03. Ani's strip rebases onto the WS1 schema/surface contract rather than deleting launch seams. |
 | **Wed 07-29** | Land WS5-01 on mona, then WS1-02, WS1-03, and WS2-01. Complete WS6-01 and WS6-03; load a tiny test ticket batch. Run the first two-browser smoke: ticket login, both tokens, crossfader, staff login, restart/reconnect. Land WS6-02 only after the real rail test. |
-| **Thu 07-30** | Land WS2-02, WS3-01, WS4-02, and WS5-02. Integrate six real publisher browsers plus a small subscriber load. Exercise cap races, grant reconciliation, bot restart, TURN, audio-only, revoke/rebind, and both language ticket paths. Decide the mountain cut by **18:00 ART**; after that it is staff-only or absent, not a Friday rescue project. |
+| **Thu 07-30** | Land WS2-02, WS3-01, WS4-02, and WS5-02. Integrate six real publisher browsers plus a small subscriber load. Exercise cap races, grant reconciliation, bot restart, TURN, audio-only, revoke/rebind, and both language ticket paths. Decide the tapestry cut by **18:00 ART**; after that it is staff-only or absent, not a Friday rescue project. |
 | **Fri 07-31** | Land WS3-02 by 11:00 ART. Run WS5-03 capacity soak at 11:00 and the no-developer-assisted purchase-to-refund dress rehearsal at **14:00 ART**. Fix only rehearsal blockers. Re-run the failed segment plus smoke suite. **Production freeze at 18:00 ART or T-12h before Saturday's doors, whichever is earlier.** |
 | **Sat 08-01** | No routine deploys. T-2h: backups, health, bot, TURN, fallback, staff, and ticket-support checks. T-45m: Julián + operators join; T-20m: attendee doors. Run EN session, record only operational metrics/incidents, execute refunds/fallback per runbook. Post-event 30-minute review may change runbook/content, not production code unless it is a Sev-1 safety/access fix. |
 | **Sun 08-02** | Keep Saturday's artifact and config. Apply no feature changes. Repeat T-2h/T-45m/T-20m checks, run ES session, then export the private attendance/refund ledger and hold the full post-weekend review. |
@@ -346,15 +346,15 @@ WS1-02 and WS2-02 are mandatory parallel branches that must also converge before
 
 - After Friday freeze, allowed changes are ticket inventory/revocation, event copy/time correction, secret rotation for a confirmed compromise, and a minimal Sev-1 fix for entitlement bypass, inability to join/hear, publisher-cap failure, or operator safety control.
 - A Sev-1 code/config change requires incident-commander approval, a second technical reviewer, targeted regression plus smoke test, a tagged artifact, and documented rollback. If that cannot fit before doors, invoke the fallback/refund plan.
-- Mountain, layout polish, analytics, and non-blocking browser quirks never justify a post-freeze deploy.
+- Tapestry, layout polish, analytics, and non-blocking browser quirks never justify a post-freeze deploy.
 - Sunday uses the Saturday artifact. A Saturday incident is handled operationally unless the same non-cuttable Sev-1 would make Sunday unsafe.
 
 ## 5. Explicit cut-lines
 
 Cut in this order, and stop work on the cut item rather than replacing it with a new design:
 
-1. **Public mountain → staff-only mountain.** Keep ingest/composite for the operators; remove the attendee composite and Cloudflare cache. Saves WS4-02 public integration/policy risk.
-2. **Staff-only mountain → no mountain.** Remove the service/profile and camera sender from Compose/UI. The paid stage and audience audio/video are unaffected. Saves all WS4 work and capacity risk.
+1. **Public tapestry → staff-only tapestry.** Keep ingest/composite for the operators; remove the attendee composite and Cloudflare cache. Saves WS4-02 public integration/policy risk.
+2. **Staff-only tapestry → no tapestry.** Remove the service/profile and camera sender from Compose/UI. The paid stage and audience audio/video are unaffected. Saves all WS4 work and capacity risk.
 3. **Automatic active-speaker switching → operator-pinned spotlight.** Keep Julián at 720p and five fixed 360p auxiliaries; the spotlight operator selects the main tile. Do not cut stage video or the six-publisher cap.
 4. **Admission polish → manual operator support.** Keep code + email, revoke, and rebind; drop search niceties, bulk UI, and comp UI in favor of the tested CLI. Never relax identity binding or the token gate.
 5. **Two sessions → one session.** By Friday noon, keep the session with the proven payout/code batch, most confirmed attendees, fluent operator coverage, and successful language rehearsal; refund/cancel the other using published terms. Do not choose solely by price tier.
