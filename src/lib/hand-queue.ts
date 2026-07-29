@@ -123,6 +123,7 @@ function toHandState(
  */
 export async function raiseHand(input: RaiseInput): Promise<HandState> {
     const now = input.now ?? new Date();
+    // Upsert creates the row with raisedAt for a first-time raiser.
     const participant = await prisma.sessionParticipant.upsert({
         where: {
             scheduledSessionId_participantIdentity: {
@@ -145,6 +146,16 @@ export async function raiseHand(input: RaiseInput): Promise<HandState> {
             publishRevokedAt: true,
         },
     });
+    // The upsert above matches on identity, so an existing row that has not
+    // yet raised (created by the token route without raisedAt) needs the
+    // raise applied explicitly. A no-op when the hand is already up.
+    if (participant.raisedAt === null) {
+        await prisma.sessionParticipant.update({
+            where: { id: participant.id },
+            data: { raisedAt: now },
+        });
+        participant.raisedAt = now;
+    }
     const queuePosition = await computeQueuePosition(
         input.scheduledSessionId,
         participant,
