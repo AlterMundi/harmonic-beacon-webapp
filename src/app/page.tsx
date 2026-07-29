@@ -154,7 +154,15 @@ export default async function LandingPage({
                 <LoginClient next={next} />
             </section>
 
-            <footer className="mt-auto text-xs text-[var(--text-secondary)]">
+            <footer className="mt-auto flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
+                <a
+                    href="https://harmonicbeacon.com/politica/"
+                    className="underline"
+                    rel="noreferrer noopener"
+                    target="_blank"
+                >
+                    Terms &amp; privacy <span>/ Términos y privacidad</span>
+                </a>
                 <Link href="/staff/login" className="underline">
                     Staff sign-in <span>/ Ingreso del equipo</span>
                 </Link>
