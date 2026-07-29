@@ -9,8 +9,16 @@ import {
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://live.altermundi.net';
+// Server-to-server API endpoint inside the deploy network (compose sets this to
+// http://livekit:7880). When present it wins over the public signaling URL:
+// the app's API calls should not hairpin through nginx and the public TLS
+// endpoint to reach a server on the same docker bridge.
+const LIVEKIT_INTERNAL_URL = process.env.LIVEKIT_INTERNAL_URL || '';
 
 function getLivekitHttpUrl(): string {
+    if (LIVEKIT_INTERNAL_URL) {
+        return LIVEKIT_INTERNAL_URL;
+    }
     // Convert wss:// to https:// for API calls
     return LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
 }

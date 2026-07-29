@@ -34,6 +34,26 @@ describe('GET /api/health/ready', () => {
         expect(body).toEqual({ status: 'error', checks: { database: 'unreachable' } });
     });
 
+    it('returns 503 marked as timeout when the database hangs instead of failing', async () => {
+        vi.useFakeTimers();
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const mockPrisma = { $queryRaw: vi.fn().mockImplementation(() => new Promise(() => {})) };
+            vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+
+            const { GET } = await import('../ready/route');
+            const pending = GET();
+            await vi.advanceTimersByTimeAsync(3000);
+            const { status, body } = await parseResponse(await pending);
+
+            expect(status).toBe(503);
+            expect(body).toEqual({ status: 'error', checks: { database: 'timeout' } });
+        } finally {
+            errorSpy.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
     it('does not leak connection details or raw error text in the response body', async () => {
         const mockPrisma = {
             $queryRaw: vi.fn().mockRejectedValue(
