@@ -1,0 +1,22 @@
+{
+  "name": "harmonic-beacon-tapestry",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "description": "Bounded in-memory tapestry service: composites attendee camera snapshots into one grid JPEG per session",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "MALLOC_ARENA_MAX=2 tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "sharp": "^0.34.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

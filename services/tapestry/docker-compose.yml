@@ -1,0 +1,20 @@
+# Local/testing Compose for the tapestry service only.
+# The production Compose file (repo root) is owned by WS5 and wires this
+# service onto the internal network; this file exists so the service can be
+# built and soak-tested standalone with its defined resource limits.
+services:
+  tapestry:
+    build: .
+    image: harmonic-beacon-tapestry:local
+    environment:
+      TAPESTRY_INTERNAL_SECRET: ${TAPESTRY_INTERNAL_SECRET:?set TAPESTRY_INTERNAL_SECRET}
+      TAPESTRY_SESSION_IDS: ${TAPESTRY_SESSION_IDS:-dev-session}
+    ports:
+      # Loopback only: the service is never directly internet-exposed.
+      - "127.0.0.1:3100:3100"
+    # Defined container limits for the soak acceptance test:
+    # 150 participants x 20 KB frames is ~3 MB of tiles; the process stays
+    # far below this ceiling.
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
