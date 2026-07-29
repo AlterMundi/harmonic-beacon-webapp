@@ -40,6 +40,7 @@ export class StageControlError extends Error {
             | 'participant_not_found'
             | 'stage_full'
             | 'not_publisher'
+            | 'facilitator_required'
             | 'invalid_request'
             | 'livekit_failed',
         public readonly status: 400 | 404 | 409 | 502,
@@ -382,7 +383,7 @@ export async function demoteParticipant(
         await lockScheduledSession(transaction, input.scheduledSessionId);
         const scheduledSession = await transaction.scheduledSession.findUnique({
             where: { id: input.scheduledSessionId },
-            select: { roomName: true },
+            select: { roomName: true, facilitatorId: true },
         });
         if (!scheduledSession) {
             throw new StageControlError(
@@ -396,13 +397,20 @@ export async function demoteParticipant(
                 id: input.participantId,
                 scheduledSessionId: input.scheduledSessionId,
             },
-            select: { id: true, participantIdentity: true },
+            select: { id: true, participantIdentity: true, staffUserId: true },
         });
         if (!target) {
             throw new StageControlError(
                 'participant_not_found',
                 404,
                 'Participant not found',
+            );
+        }
+        if (target.staffUserId === scheduledSession.facilitatorId) {
+            throw new StageControlError(
+                'facilitator_required',
+                409,
+                'The assigned facilitator holds the reserved stage slot and cannot be demoted',
             );
         }
         const participant = await transaction.sessionParticipant.update({

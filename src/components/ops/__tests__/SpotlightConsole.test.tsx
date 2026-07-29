@@ -228,4 +228,19 @@ describe('SpotlightConsole', () => {
             });
         });
     });
+
+    it('marks the facilitator slot as reserved instead of offering demotion', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('facilitator', {
+                displayName: 'Julián',
+                principalType: 'staff',
+                staffRole: 'FACILITATOR',
+                canPublish: true,
+            }),
+        ])));
+        render(<SpotlightConsole sessionId="event-1" role="OPERATOR" />);
+
+        expect(await screen.findByText('Reserved facilitator slot')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Take floor' })).not.toBeInTheDocument();
+    });
 });

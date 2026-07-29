@@ -13,7 +13,9 @@ interface AudioContextType {
     hasLiveStream: boolean;
     hasPlaylistStream: boolean;
     isPlaying: boolean;
+    audioError: string | null;
     volume: number;
+    startAudio: () => Promise<boolean>;
     togglePlay: () => void;
     setVolume: (v: number) => void;
     mixValue: number;
@@ -38,7 +40,9 @@ const unavailableAudioContext: AudioContextType = {
     hasLiveStream: false,
     hasPlaylistStream: false,
     isPlaying: false,
+    audioError: null,
     volume: 0,
+    startAudio: async () => false,
     togglePlay: () => {},
     setVolume: () => {},
     mixValue: 0.5,
@@ -73,6 +77,7 @@ export function AudioProvider({
     const [hasLiveStream, setHasLiveStream] = useState(false);
     const [hasPlaylistStream, setHasPlaylistStream] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [audioError, setAudioError] = useState<string | null>(null);
     const [volume, setVolumeState] = useState(0.5);
     const [mixValue, setMixValueState] = useState(0.5);
 
@@ -142,7 +147,7 @@ export function AudioProvider({
                     try {
                         await audioElement.play();
                     } catch {
-                        console.log("Autoplay blocked, waiting for user gesture");
+                        setAudioError("Audio was blocked. Press Start audio again.");
                     }
                 }
             }
@@ -194,9 +199,11 @@ export function AudioProvider({
             .then(() => {
                 console.log("✓ Connected to LiveKit room");
                 setIsConnected(true);
+                setAudioError(null);
             })
             .catch((err) => {
                 console.error("Failed to connect to LiveKit:", redactErrorDetail(err));
+                setAudioError("Beacon audio could not connect. Check your connection and try again.");
             });
 
         return () => {
@@ -231,19 +238,36 @@ export function AudioProvider({
         }
     }, [meditationVolume]);
 
+    /**
+     * Browser audio policies require this to run directly from a click. Unlock
+     * the LiveKit WebAudio graph as well as every currently attached element;
+     * `isPlayingRef` makes tracks arriving later start immediately too.
+     */
+    const startAudio = useCallback(async (): Promise<boolean> => {
+        try {
+            await roomRef.current?.startAudio();
+            await Promise.all(
+                [...audioElementsRef.current.values()].map((element) => element.play()),
+            );
+            setIsPlaying(true);
+            setAudioError(null);
+            return true;
+        } catch (err) {
+            console.error("Failed to start Beacon audio:", redactErrorDetail(err));
+            setIsPlaying(false);
+            setAudioError("Audio could not start. Check that this tab is not muted, then try again.");
+            return false;
+        }
+    }, []);
+
     const togglePlay = useCallback(() => {
         if (isPlaying) {
-            // Pause all beacon audio elements
             audioElementsRef.current.forEach((el) => el.pause());
             setIsPlaying(false);
-        } else {
-            // Play all beacon audio elements (only non-muted ones produce sound)
-            audioElementsRef.current.forEach((el) => {
-                el.play().catch(console.error);
-            });
-            setIsPlaying(true);
+            return;
         }
-    }, [isPlaying]);
+        void startAudio();
+    }, [isPlaying, startAudio]);
 
     const setVolume = useCallback((v: number) => {
         setVolumeState(v);
@@ -345,7 +369,9 @@ export function AudioProvider({
                 hasLiveStream,
                 hasPlaylistStream,
                 isPlaying,
+                audioError,
                 volume,
+                startAudio,
                 togglePlay,
                 setVolume,
                 mixValue,

@@ -8,8 +8,6 @@ import { test } from "node:test";
 
 import {
   SESSION_A,
-  TEST_SECRET,
-  authHeaders,
   getComposite,
   makeJpeg,
   postFrame,

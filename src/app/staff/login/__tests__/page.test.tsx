@@ -75,7 +75,7 @@ describe('staff login page', () => {
 
         expect(screen.getByText(/Signed in as/)).toBeInTheDocument();
         expect(screen.getByText('OPERATOR')).toBeInTheDocument();
-        expect(screen.getByRole('link', { name: /operator controls/ })).toHaveAttribute('href', '/');
+        expect(screen.getByRole('link', { name: /operator controls/ })).toHaveAttribute('href', '/ops/health');
         expect(screen.queryByLabelText('Password')).toBeNull();
     });
 

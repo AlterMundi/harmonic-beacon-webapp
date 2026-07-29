@@ -273,7 +273,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
             ) : null}
             {snapshot && !snapshot.liveStateAvailable ? (
                 <div role="alert" className="rounded border border-amber-500 bg-amber-950/40 px-4 py-2 text-sm text-amber-300">
-                    LiveKit live state unavailable — connected/media/quality columns are from the last durable read. Consider Reconcile.
+                    LiveKit live state unavailable — connection and media are unknown. Durable grants and the hand queue are still current.
                 </div>
             ) : null}
             {reconcilePending.length > 0 ? (
@@ -345,14 +345,20 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                                 {track.muted ? 'Unmute' : 'Mute'} {track.source.toLowerCase()}
                                             </button>
                                         ))}
-                                        <button
-                                            type="button"
-                                            disabled={busyKey !== null}
-                                            onClick={() => void takeFloor(participant)}
-                                            className="rounded border border-red-500 px-2 py-1 text-xs text-red-300 hover:opacity-80 disabled:opacity-50"
-                                        >
-                                            Take floor
-                                        </button>
+                                        {participant.staffRole !== 'FACILITATOR' ? (
+                                            <button
+                                                type="button"
+                                                disabled={busyKey !== null}
+                                                onClick={() => void takeFloor(participant)}
+                                                className="min-h-10 rounded border border-red-500 px-3 py-2 text-xs text-red-300 hover:opacity-80 disabled:opacity-50"
+                                            >
+                                                Take floor
+                                            </button>
+                                        ) : (
+                                            <span className="text-xs font-medium text-[var(--text-secondary)]">
+                                                Reserved facilitator slot
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </li>
@@ -384,7 +390,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                         type="button"
                                         disabled={busyKey !== null}
                                         onClick={() => void giveFloor(participant)}
-                                        className="rounded border border-green-500 px-2 py-1 text-xs text-green-300 hover:opacity-80 disabled:opacity-50"
+                                        className="min-h-10 rounded border border-green-500 px-3 py-2 text-xs text-green-300 hover:opacity-80 disabled:opacity-50"
                                     >
                                         Give floor
                                     </button>
@@ -392,7 +398,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                         type="button"
                                         disabled={busyKey !== null}
                                         onClick={() => void removeHand(participant)}
-                                        className="rounded border border-current px-2 py-1 text-xs hover:opacity-80 disabled:opacity-50"
+                                        className="min-h-10 rounded border border-current px-3 py-2 text-xs hover:opacity-80 disabled:opacity-50"
                                     >
                                         Remove hand
                                     </button>

@@ -29,6 +29,11 @@ export default function ThumbnailTapestry({ sessionId, staffOnly = false }: Prop
     }, [sessionId, staffOnly]);
     return <section aria-label="Tapestry" className="w-full">
         <h2 className="mb-2 text-sm font-medium">Tapestry</h2>
-        {src ? <img src={src} alt="Latest participant tapestry" className="w-full rounded border border-[var(--border-subtle)]" /> : <p className="text-xs text-[var(--text-muted)]">Waiting for snapshots.</p>}
+        {src ? (
+            // A blob URL refreshed every two seconds cannot use Next's image
+            // optimizer; it is already the service's 100px-tile composite.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt="Latest participant tapestry" className="w-full rounded border border-[var(--border-subtle)]" />
+        ) : <p className="text-xs text-[var(--text-muted)]">Waiting for snapshots.</p>}
     </section>;
 }

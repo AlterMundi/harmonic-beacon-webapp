@@ -61,12 +61,13 @@ describe('landing page', () => {
         expect(screen.getByText('In English')).toBeInTheDocument();
         expect(screen.getByText('En español')).toBeInTheDocument();
 
-        // Local time for the Argentine host plus UTC, both with the zone named, so
-        // an attendee anywhere can work out when to arrive.
-        expect(screen.getByText(/Saturday 1 August at 15:30 GMT-3/)).toBeInTheDocument();
-        expect(screen.getByText(/Saturday 1 August at 18:30 UTC/)).toBeInTheDocument();
-        expect(screen.getByText(/sábado, 1 de agosto.*ART/)).toBeInTheDocument();
-        expect(screen.getByText(/sábado, 1 de agosto.*UTC/)).toBeInTheDocument();
+        // The event's advertised Costa Rica time comes first, with operator and
+        // universal references explicitly labelled below it.
+        expect(screen.getAllByText(/Costa Rica:/)).toHaveLength(2);
+        expect(screen.getByText(/Saturday, August 1 at 12:30 PM CST/)).toBeInTheDocument();
+        expect(screen.getByText(/sábado, 1 de agosto.*08:30.*GMT-6/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Argentina:/)).toHaveLength(2);
+        expect(screen.getAllByText(/UTC:/)).toHaveLength(2);
     });
 
     it('asks only for sessions an attendee could still join', async () => {
@@ -101,6 +102,7 @@ describe('landing page', () => {
         const link = screen.getByRole('link', { name: /Buy a ticket/ });
         expect(link).toHaveAttribute('href', 'https://tickets.example.invalid/harmonic-beacon');
         expect(link).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
+        expect(screen.getByText(/USD \$50 Global North.*USD \$20 Global South/)).toBeInTheDocument();
     });
 
     it('says sales open shortly while the external platform is still TBD', async () => {

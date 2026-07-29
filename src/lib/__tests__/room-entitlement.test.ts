@@ -4,6 +4,8 @@ import { createRequest } from '@/__tests__/helpers';
 
 const findWebSession = vi.fn();
 const findScheduledSession = vi.fn();
+const findParticipant = vi.fn();
+const updateParticipant = vi.fn();
 const upsertParticipant = vi.fn();
 const stableRoomIdentity = vi.fn(
     (eventId: string, kind: string, principalId: string) =>
@@ -14,7 +16,11 @@ vi.mock('@/lib/db', () => ({
     prisma: {
         webSession: { findUnique: findWebSession },
         scheduledSession: { findUnique: findScheduledSession },
-        sessionParticipant: { upsert: upsertParticipant },
+        sessionParticipant: {
+            findFirst: findParticipant,
+            update: updateParticipant,
+            upsert: upsertParticipant,
+        },
     },
 }));
 vi.mock('@/lib/livekit-server', () => ({ stableRoomIdentity }));
@@ -53,6 +59,11 @@ describe('resolveRoomPrincipal', () => {
         vi.clearAllMocks();
         findWebSession.mockResolvedValue(activeTicketSession);
         findScheduledSession.mockResolvedValue(activeEvent);
+        findParticipant.mockResolvedValue(null);
+        updateParticipant.mockResolvedValue({
+            publishGrantedAt: null,
+            publishRevokedAt: null,
+        });
         upsertParticipant.mockResolvedValue({
             publishGrantedAt: null,
             publishRevokedAt: null,
@@ -136,6 +147,51 @@ describe('resolveRoomPrincipal', () => {
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
             update: { leftAt: null },
         }));
+    });
+
+    it('migrates the seeded facilitator row to the stable identity instead of inserting a duplicate', async () => {
+        findWebSession.mockResolvedValue({
+            expiresAt: new Date('2026-08-03T00:00:00Z'),
+            revokedAt: null,
+            ticketEntitlement: null,
+            staffUser: {
+                id: 'facilitator-1',
+                role: 'FACILITATOR',
+                disabledAt: null,
+            },
+        });
+        findScheduledSession.mockResolvedValue({
+            ...activeEvent,
+            status: 'SCHEDULED',
+        });
+        findParticipant.mockResolvedValue({ id: 'seeded-facilitator-row' });
+        updateParticipant.mockResolvedValue({
+            publishGrantedAt: now,
+            publishRevokedAt: null,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: {
+                identity: 'opaque:event-1:staff:facilitator-1',
+                canPublish: true,
+            },
+        });
+        expect(updateParticipant).toHaveBeenCalledWith({
+            where: { id: 'seeded-facilitator-row' },
+            data: {
+                participantIdentity: 'opaque:event-1:staff:facilitator-1',
+                leftAt: null,
+            },
+            select: {
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+            },
+        });
+        expect(upsertParticipant).not.toHaveBeenCalled();
     });
 
     it('lets only the assigned facilitator preflight with an initial grant', async () => {

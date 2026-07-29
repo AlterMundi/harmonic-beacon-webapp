@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
+import { TrackSource } from 'livekit-server-sdk';
 
 import { requireStaff } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getRoomService } from '@/lib/livekit-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +25,7 @@ export async function GET(
         where: { id },
         select: {
             id: true,
+            roomName: true,
             facilitatorId: true,
             maxPublishers: true,
             participants: {
@@ -66,6 +69,30 @@ export async function GET(
         );
     }
 
+    let liveStateAvailable = true;
+    let liveParticipants = new Map<string, {
+        media: Array<{ trackSid: string; source: string; muted: boolean }>;
+    }>();
+    try {
+        liveParticipants = new Map(
+            (await getRoomService().listParticipants(scheduledSession.roomName))
+                .map((participant) => [
+                    participant.identity,
+                    {
+                        media: participant.tracks.map((track) => ({
+                            trackSid: track.sid,
+                            source: trackSourceLabel(track.source),
+                            muted: track.muted,
+                        })),
+                    },
+                ]),
+        );
+    } catch {
+        // Durable grants and the queue remain usable during a LiveKit API
+        // outage. The console marks live fields unknown and keeps polling.
+        liveStateAvailable = false;
+    }
+
     let queuePosition = 0;
     const participants = scheduledSession.participants.map((participant) => {
         const canPublish =
@@ -75,6 +102,7 @@ export async function GET(
         if (isWaiting) {
             queuePosition += 1;
         }
+        const live = liveParticipants.get(participant.participantIdentity);
         return {
             id: participant.id,
             identity: participant.participantIdentity,
@@ -88,6 +116,11 @@ export async function GET(
             canPublish,
             grantVersion: participant.grantVersion,
             reconcileNeeded: participant.grantReconcileNeeded,
+            connected: liveStateAvailable ? Boolean(live) : null,
+            media: live?.media ?? [],
+            // RoomService's ParticipantInfo does not expose connection quality.
+            // Keep the field explicit so the UI never invents a value.
+            connectionQuality: null,
         };
     });
 
@@ -102,6 +135,22 @@ export async function GET(
                 participant.canPublish &&
                 participant.staffRole !== 'FACILITATOR',
         ).length,
+        liveStateAvailable,
         participants,
     });
+}
+
+function trackSourceLabel(source: TrackSource): string {
+    switch (source) {
+        case TrackSource.CAMERA:
+            return 'CAMERA';
+        case TrackSource.MICROPHONE:
+            return 'MICROPHONE';
+        case TrackSource.SCREEN_SHARE:
+            return 'SCREEN_SHARE';
+        case TrackSource.SCREEN_SHARE_AUDIO:
+            return 'SCREEN_SHARE_AUDIO';
+        default:
+            return 'UNKNOWN';
+    }
 }

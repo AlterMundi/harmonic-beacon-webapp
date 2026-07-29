@@ -120,17 +120,30 @@ async function handleRebind(staff: StaffPrincipal, id: string, email: string | u
         return error(400, 'invalid_email', 'Provide a valid email address or omit email to clear the binding');
     }
 
-    const updated = await prisma.ticketEntitlement.update({
-        where: { id },
-        data: {
-            boundEmail: newEmail,
-            boundAt: newEmail === null ? null : new Date(),
-            // Clearing the binding returns the ticket to ISSUED so the next
-            // first-use binds fresh; (re)binding to a new email keeps it BOUND.
-            state: newEmail === null ? 'ISSUED' : 'BOUND',
-        },
-        select: { id: true, state: true, boundEmail: true },
-    });
+    const now = new Date();
+    const [updated] = await prisma.$transaction([
+        prisma.ticketEntitlement.update({
+            where: { id },
+            data: {
+                boundEmail: newEmail,
+                boundAt: newEmail === null ? null : now,
+                // Clearing the binding returns the ticket to ISSUED so the next
+                // first-use binds fresh; (re)binding to a new email keeps it BOUND.
+                state: newEmail === null ? 'ISSUED' : 'BOUND',
+            },
+            select: { id: true, state: true, boundEmail: true },
+        }),
+        // A binding change is a credential rotation. Any browser authenticated
+        // with the old binding must sign in again before receiving room tokens.
+        prisma.webSession.updateMany({
+            where: { ticketEntitlementId: id, revokedAt: null },
+            data: {
+                revokedAt: now,
+                revokedByUserId: staff.id,
+                revocationReason: `Ticket binding changed: ${reason}`,
+            },
+        }),
+    ]);
 
     await recordAuditEvent({
         actorUserId: staff.id,

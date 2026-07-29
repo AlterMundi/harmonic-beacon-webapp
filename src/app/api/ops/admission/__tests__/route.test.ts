@@ -76,6 +76,7 @@ type MockPrisma = {
     };
     scheduledSession: { findUnique: MockFn };
     auditLog: { create: MockFn };
+    $queryRaw: MockFn;
     $transaction: MockFn;
 };
 
@@ -96,6 +97,7 @@ describe('/api/ops/admission', () => {
             },
             scheduledSession: { findUnique: vi.fn().mockResolvedValue(eventRow) },
             auditLog: { create: vi.fn().mockResolvedValue({}) },
+            $queryRaw: vi.fn().mockResolvedValue([]),
             $transaction: vi.fn().mockImplementation(async (arg: unknown) =>
                 Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => unknown)(mockPrisma)),
         };
@@ -205,6 +207,7 @@ describe('/api/ops/admission', () => {
                 await POST(authed('http://localhost/api/ops/admission', { method: 'POST', body: generateBody(3) })),
             );
             expect(status).toBe(201);
+            expect(mockPrisma.$queryRaw).toHaveBeenCalledOnce();
 
             const created = mockPrisma.ticketEntitlement.createMany.mock.calls[0][0].data;
             expect(created).toHaveLength(3);
@@ -301,6 +304,24 @@ describe('/api/ops/admission', () => {
                 })),
             );
             expect(status).toBe(409);
+        });
+
+        it('allows a duplicate-only retry even when the event is at capacity', async () => {
+            mockPrisma.ticketEntitlement.count.mockResolvedValue(150);
+            mockPrisma.ticketEntitlement.findMany.mockImplementation(async ({ where }) =>
+                where.codeDigest.in.map((codeDigest: string) => ({ codeDigest })));
+
+            const { POST } = await loadRoute();
+            const { status, body } = await parseResponse(
+                await POST(authed('http://localhost/api/ops/admission', {
+                    method: 'POST',
+                    body: { action: 'import', sessionId: SESSION_ID, tier: 'GLOBAL_SOUTH', csv },
+                })),
+            );
+
+            expect(status).toBe(201);
+            expect(body).toMatchObject({ created: 0, skipped: 2 });
+            expect(mockPrisma.ticketEntitlement.createMany).not.toHaveBeenCalled();
         });
 
         it('rejects malformed CSV', async () => {

@@ -7,7 +7,10 @@ import { render, screen, cleanup, fireEvent, waitFor, act, within } from '@testi
 // in src/app/session/[id]/page.tsx and the three copy variants it renders.
 
 const mockPush = vi.fn();
-const mockSetBeaconVolume = vi.hoisted(() => vi.fn());
+const audioMocks = vi.hoisted(() => ({
+    setBeaconVolume: vi.fn(),
+    startBeaconAudio: vi.fn().mockResolvedValue(true),
+}));
 vi.mock('next/navigation', () => ({
     useParams: () => ({ id: 'session-1' }),
     useSearchParams: () => ({ get: () => null }),
@@ -16,7 +19,12 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/context/AudioContext', () => ({
     AudioProvider: ({ children }: { children: React.ReactNode }) => children,
-    useAudio: () => ({ volume: 0.8, setVolume: mockSetBeaconVolume }),
+    useAudio: () => ({
+        audioError: null,
+        isPlaying: false,
+        setVolume: audioMocks.setBeaconVolume,
+        startAudio: audioMocks.startBeaconAudio,
+    }),
 }));
 
 vi.mock('@/components', () => ({
@@ -34,13 +42,25 @@ vi.mock('livekit-client', () => {
     class FakeRoom {
         private listeners: Record<string, Array<(...args: unknown[]) => void>> = {};
         remoteParticipants = new Map<string, unknown>();
+        activeSpeakers: unknown[] = [];
+        state = 'connected';
         localParticipant = {
+            identity: 'local-participant',
+            name: 'Participant',
+            permissions: { canPublish: false },
             trackPublications: new Map(),
+            videoTrackPublications: new Map(),
+            isSpeaking: false,
+            isCameraEnabled: false,
+            isMicrophoneEnabled: false,
+            connectionQuality: 'excellent',
             unpublishTrack: vi.fn(),
             setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
+            setCameraEnabled: vi.fn().mockResolvedValue(undefined),
         };
         connect = vi.fn().mockResolvedValue(undefined);
         disconnect = vi.fn();
+        startAudio = vi.fn().mockResolvedValue(undefined);
         on(event: string, cb: (...args: unknown[]) => void) {
             (this.listeners[event] ||= []).push(cb);
             return this;
@@ -57,12 +77,26 @@ vi.mock('livekit-client', () => {
             TrackUnsubscribed: 'trackUnsubscribed',
             ParticipantConnected: 'participantConnected',
             ParticipantDisconnected: 'participantDisconnected',
+            TrackPublished: 'trackPublished',
+            TrackUnpublished: 'trackUnpublished',
+            TrackMuted: 'trackMuted',
+            TrackUnmuted: 'trackUnmuted',
+            LocalTrackPublished: 'localTrackPublished',
+            LocalTrackUnpublished: 'localTrackUnpublished',
+            ActiveSpeakersChanged: 'activeSpeakersChanged',
+            TrackSubscriptionStatusChanged: 'trackSubscriptionStatusChanged',
+            ConnectionStateChanged: 'connectionStateChanged',
+            Reconnecting: 'reconnecting',
+            Reconnected: 'reconnected',
+            ConnectionQualityChanged: 'connectionQualityChanged',
+            ParticipantPermissionsChanged: 'participantPermissionsChanged',
             Disconnected: 'disconnected',
         },
-        Track: { Kind: { Audio: 'audio' } },
+        Track: { Kind: { Audio: 'audio', Video: 'video' } },
         VideoPresets: {
-            h720: { resolution: { width: 1280, height: 720 } },
-            h360: { resolution: { width: 640, height: 360 } },
+            h720: { resolution: { width: 1280, height: 720 }, encoding: {} },
+            h360: { resolution: { width: 640, height: 360 }, encoding: {} },
+            h180: { resolution: { width: 320, height: 180 }, encoding: {} },
         },
         // Mirrors @livekit/protocol's DisconnectReason enum values used by
         // classifyDisconnectReason in the page.
@@ -91,6 +125,7 @@ import { Room, DisconnectReason } from 'livekit-client';
 interface EmittableRoom {
     emit: (event: string, ...args: unknown[]) => void;
     disconnect: ReturnType<typeof vi.fn>;
+    startAudio: ReturnType<typeof vi.fn>;
 }
 
 function currentRoom(): EmittableRoom {
@@ -112,7 +147,9 @@ const TOKEN_RESPONSE = {
 };
 
 beforeEach(() => {
-    mockSetBeaconVolume.mockClear();
+    audioMocks.setBeaconVolume.mockClear();
+    audioMocks.startBeaconAudio.mockClear();
+    audioMocks.startBeaconAudio.mockResolvedValue(true);
     global.fetch = vi.fn().mockImplementation((url: string) => {
         if (url.includes('/token')) {
             return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE });
@@ -131,7 +168,7 @@ async function renderConnected() {
     await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
 }
 
-describe.skip('SessionRoomPage - server-ended disconnect', () => {
+describe('SessionRoomPage - server-ended disconnect', () => {
     it('says the session ended, without a rejoin option, and announces it', async () => {
         await renderConnected();
 
@@ -166,7 +203,7 @@ describe.skip('SessionRoomPage - server-ended disconnect', () => {
     });
 });
 
-describe.skip('SessionRoomPage - transport-failure disconnect', () => {
+describe('SessionRoomPage - transport-failure disconnect', () => {
     it('says the connection dropped and offers a rejoin', async () => {
         await renderConnected();
 
@@ -198,7 +235,7 @@ describe.skip('SessionRoomPage - transport-failure disconnect', () => {
     });
 });
 
-describe.skip('SessionRoomPage - ambiguous disconnect', () => {
+describe('SessionRoomPage - ambiguous disconnect', () => {
     it('says it cannot tell what happened, rather than guessing', async () => {
         await renderConnected();
 
@@ -214,7 +251,7 @@ describe.skip('SessionRoomPage - ambiguous disconnect', () => {
     });
 });
 
-describe.skip('SessionRoomPage - intentional disconnects are not terminal states', () => {
+describe('SessionRoomPage - intentional disconnects are not terminal states', () => {
     it('does not show a terminal view when the participant chose to leave', async () => {
         await renderConnected();
 
@@ -233,7 +270,7 @@ describe.skip('SessionRoomPage - intentional disconnects are not terminal states
     });
 });
 
-describe.skip('SessionRoomPage - two-room crossfader', () => {
+describe('SessionRoomPage - two-room crossfader', () => {
     it('changes stage voice and Beacon bed gains independently', async () => {
         await renderConnected();
         const stageAudio = document.createElement('audio');
@@ -257,8 +294,37 @@ describe.skip('SessionRoomPage - two-room crossfader', () => {
 
         await waitFor(() => {
             expect(stageAudio.volume).toBeCloseTo(0.2);
-            const bedGain = mockSetBeaconVolume.mock.lastCall?.[0];
+            const bedGain = audioMocks.setBeaconVolume.mock.lastCall?.[0];
             expect(bedGain).toBeCloseTo(0.6);
         });
+    });
+});
+
+describe('SessionRoomPage - audio activation', () => {
+    it('unlocks both LiveKit rooms from one explicit bilingual control', async () => {
+        await renderConnected();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio · Iniciar audio' }));
+
+        await waitFor(() => {
+            expect(currentRoom().startAudio).toHaveBeenCalledOnce();
+            expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
+        });
+    });
+});
+
+describe('SessionRoomPage - initial connection failure', () => {
+    it('offers a retry without forcing the attendee back through login', async () => {
+        (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            ok: false,
+            json: async () => ({ error: 'Room is temporarily unavailable' }),
+        });
+
+        render(<SessionRoomPage />);
+        expect(await screen.findByText('Room is temporarily unavailable')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+        expect(screen.getByText('Connecting to session...')).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
     });
 });

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     demoteParticipant: vi.fn(),
     muteParticipantTrack: vi.fn(),
     reconcileParticipants: vi.fn(),
+    lowerParticipantHand: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ requireStaff: mocks.requireStaff }));
@@ -26,6 +27,13 @@ vi.mock('@/lib/stage-control', async (importOriginal) => {
         demoteParticipant: mocks.demoteParticipant,
         muteParticipantTrack: mocks.muteParticipantTrack,
         reconcileParticipants: mocks.reconcileParticipants,
+    };
+});
+vi.mock('@/lib/hand-queue', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@/lib/hand-queue')>();
+    return {
+        ...original,
+        lowerParticipantHand: mocks.lowerParticipantHand,
     };
 });
 
@@ -55,6 +63,13 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
             canPublish: true,
             reconcileNeeded: false,
             grantVersion: 2,
+        });
+        mocks.lowerParticipantHand.mockResolvedValue({
+            participantId: 'participant-1',
+            raised: false,
+            raisedAt: null,
+            queuePosition: null,
+            canPublish: true,
         });
     });
 
@@ -172,6 +187,31 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
             actorUserId: 'operator-1',
             trackSid: 'TR_audio',
             muted: false,
+        });
+    });
+
+    it('lowers a served hand through the audited queue operation', async () => {
+        const { POST } = await import('../route');
+        const { status, body } = await parseResponse(await POST(
+            stageRequest({
+                action: 'lower_hand',
+                participantId: 'participant-1',
+                reason: 'Promoted to stage',
+            }),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(status).toBe(200);
+        expect(body).toMatchObject({
+            participantId: 'participant-1',
+            raised: false,
+            canPublish: true,
+        });
+        expect(mocks.lowerParticipantHand).toHaveBeenCalledWith({
+            scheduledSessionId: 'event-1',
+            participantId: 'participant-1',
+            actorUserId: 'operator-1',
+            reason: 'Promoted to stage',
         });
     });
 

@@ -5,12 +5,16 @@ import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 
 const requireStaff = vi.fn();
 const sessionFindUnique = vi.fn();
+const listParticipants = vi.fn();
 
 vi.mock('@/lib/auth', () => ({ requireStaff }));
 vi.mock('@/lib/db', () => ({
     prisma: {
         scheduledSession: { findUnique: sessionFindUnique },
     },
+}));
+vi.mock('@/lib/livekit-server', () => ({
+    getRoomService: () => ({ listParticipants }),
 }));
 
 const operator = {
@@ -24,8 +28,21 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         requireStaff.mockResolvedValue([operator, null]);
+        listParticipants.mockResolvedValue([
+            {
+                identity: 'opaque-publisher',
+                tracks: [
+                    {
+                        sid: 'TR_audio',
+                        source: 2,
+                        muted: false,
+                    },
+                ],
+            },
+        ]);
         sessionFindUnique.mockResolvedValue({
             id: 'event-1',
+            roomName: 'event-stage',
             facilitatorId: 'facilitator-1',
             maxPublishers: 6,
             participants: [
@@ -92,15 +109,42 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
                     id: 'publisher',
                     canPublish: true,
                     queuePosition: null,
+                    connected: true,
+                    media: [
+                        {
+                            trackSid: 'TR_audio',
+                            source: 'MICROPHONE',
+                            muted: false,
+                        },
+                    ],
                 },
                 {
                     id: 'waiting',
                     canPublish: false,
                     queuePosition: 1,
                     reconcileNeeded: true,
+                    connected: false,
                 },
             ],
         });
         expect(JSON.stringify(body)).not.toMatch(/email|ticket|code/i);
+    });
+
+    it('keeps durable controls available while marking live state unknown when LiveKit fails', async () => {
+        listParticipants.mockRejectedValue(new Error('LiveKit unavailable'));
+        const { GET } = await import('../route');
+        const { status, body } = await parseResponse(await GET(
+            createRequest('/api/ops/sessions/event-1/participants'),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(status).toBe(200);
+        expect(body).toMatchObject({
+            liveStateAvailable: false,
+            participants: [
+                { id: 'publisher', connected: null, media: [] },
+                { id: 'waiting', connected: null, media: [] },
+            ],
+        });
     });
 });

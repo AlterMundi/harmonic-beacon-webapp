@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireStaff } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { HandQueueError, lowerParticipantHand } from '@/lib/hand-queue';
 import {
     demoteParticipant,
     muteParticipantTrack,
@@ -112,6 +113,24 @@ export async function POST(
             });
             return NextResponse.json(result);
         }
+        if (action === 'lower_hand') {
+            if (!participantId) {
+                return invalidRequest('A participant ID is required');
+            }
+            const result = await lowerParticipantHand({
+                scheduledSessionId: id,
+                participantId,
+                actorUserId: staff.userId,
+                reason,
+            });
+            return NextResponse.json({
+                participantId: result.participantId,
+                raised: result.raised,
+                raisedAt: result.raisedAt?.toISOString() ?? null,
+                queuePosition: result.queuePosition,
+                canPublish: result.canPublish,
+            });
+        }
         if (action === 'reconcile') {
             const result = await reconcileParticipants({
                 scheduledSessionId: id,
@@ -124,9 +143,15 @@ export async function POST(
             });
         }
         return invalidRequest(
-            'Action must be promote, demote, mute, or reconcile',
+            'Action must be promote, demote, mute, lower_hand, or reconcile',
         );
     } catch (error) {
+        if (error instanceof HandQueueError) {
+            return NextResponse.json(
+                { error: error.code, message: error.message },
+                { status: error.status },
+            );
+        }
         if (error instanceof StageControlError) {
             return NextResponse.json(
                 {

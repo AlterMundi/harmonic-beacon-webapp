@@ -163,32 +163,58 @@ export async function resolveRoomPrincipal(
         principalKind,
         principalId,
     );
-    const participant = await prisma.sessionParticipant.upsert({
+    // The seed reserves Julián's slot before a LiveKit identity exists, so that
+    // row initially carries a random placeholder identity. Resolve by the
+    // event-scoped principal first and migrate that row to the stable identity.
+    // Otherwise an upsert keyed only by identity attempts to insert a second
+    // `(session, staff)` row and hits the migration's partial unique index.
+    const existingParticipant = await prisma.sessionParticipant.findFirst({
         where: {
-            scheduledSessionId_participantIdentity: {
+            scheduledSessionId: scheduledSession.id,
+            ...(ticketEntitlementId
+                ? { ticketEntitlementId }
+                : { staffUserId: staffUserId! }),
+        },
+        select: { id: true },
+    });
+    const participant = existingParticipant
+        ? await prisma.sessionParticipant.update({
+            where: { id: existingParticipant.id },
+            data: {
+                participantIdentity: identity,
+                leftAt: null,
+            },
+            select: {
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+            },
+        })
+        : await prisma.sessionParticipant.upsert({
+            where: {
+                scheduledSessionId_participantIdentity: {
+                    scheduledSessionId: scheduledSession.id,
+                    participantIdentity: identity,
+                },
+            },
+            create: {
                 scheduledSessionId: scheduledSession.id,
                 participantIdentity: identity,
+                ticketEntitlementId,
+                staffUserId,
+                publishGrantedAt: facilitatorCanPublish ? now : null,
+                grantVersion: facilitatorCanPublish ? 1 : 0,
+                grantReason: facilitatorCanPublish
+                    ? 'Facilitator preflight grant'
+                    : null,
             },
-        },
-        create: {
-            scheduledSessionId: scheduledSession.id,
-            participantIdentity: identity,
-            ticketEntitlementId,
-            staffUserId,
-            publishGrantedAt: facilitatorCanPublish ? now : null,
-            grantVersion: facilitatorCanPublish ? 1 : 0,
-            grantReason: facilitatorCanPublish
-                ? 'Facilitator preflight grant'
-                : null,
-        },
-        update: {
-            leftAt: null,
-        },
-        select: {
-            publishGrantedAt: true,
-            publishRevokedAt: true,
-        },
-    });
+            update: {
+                leftAt: null,
+            },
+            select: {
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+            },
+        });
 
     return {
         ok: true,

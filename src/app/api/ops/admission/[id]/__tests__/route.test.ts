@@ -195,6 +195,13 @@ describe('/api/ops/admission/[id]', () => {
                 select: expect.anything(),
             });
             expect(body).toMatchObject({ state: 'ISSUED', boundEmail: null });
+            expect(mockPrisma.webSession.updateMany).toHaveBeenCalledWith({
+                where: { ticketEntitlementId: ENTITLEMENT_ID, revokedAt: null },
+                data: expect.objectContaining({
+                    revokedByUserId: 'staff-admin',
+                    revocationReason: expect.stringContaining('buyer typoed email'),
+                }),
+            });
 
             const audit = mockPrisma.auditLog.create.mock.calls[0][0].data;
             expect(audit.action).toBe('ticket.rebind');
@@ -213,6 +220,7 @@ describe('/api/ops/admission/[id]', () => {
                 data: expect.objectContaining({ boundEmail: 'newbuyer@example.com', state: 'BOUND' }),
                 select: expect.anything(),
             });
+            expect(mockPrisma.webSession.updateMany).toHaveBeenCalledOnce();
         });
 
         it('never lets a FACILITATOR rebind or revoke', async () => {

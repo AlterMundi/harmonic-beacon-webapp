@@ -158,11 +158,15 @@ function SessionRoom() {
     const router = useRouter();
     const inviteCode = searchParams.get("invite");
 
-    const { setVolume: setBeaconVolume } = useAudio();
+    const {
+        audioError: beaconAudioError,
+        isPlaying: isBeaconPlaying,
+        setVolume: setBeaconVolume,
+        startAudio: startBeaconAudio,
+    } = useAudio();
 
     const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
     const [isConnected, setIsConnected] = useState(false);
-    const [endingSession, setEndingSession] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [canPublish, setCanPublish] = useState(false);
@@ -178,6 +182,7 @@ function SessionRoom() {
     const [duration, setDuration] = useState(0);
     const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
     const [retryToken, setRetryToken] = useState(0);
+    const [audioActivationError, setAudioActivationError] = useState<string | null>(null);
 
     const roomRef = useRef<Room | null>(null);
     const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
@@ -298,39 +303,7 @@ function SessionRoom() {
         applyVideoSubscriptions(!next);
     }, [applyVideoSubscriptions]);
 
-    const endSession = useCallback(async () => {
-        if (!sessionInfo || endingSession) return;
-        setEndingSession(true);
-        try {
-            const res = await fetch(`/api/ops/sessions/${id}/stage`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "end" }),
-            });
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Failed to end session");
-            }
-            if (roomRef.current) {
-                intentionalDisconnectRef.current = true;
-                roomRef.current.disconnect();
-            }
-            router.push("/");
-        } catch (e) {
-            console.error("Failed to end session:", redactErrorDetail(e));
-            setEndingSession(false);
-        }
-    }, [sessionInfo, endingSession, id, router]);
-
-    const leaveSession = useCallback(async () => {
-        // Record leave
-        try {
-            await fetch(`/api/scheduled-sessions/${id}/leave`, { method: "POST" });
-        } catch {
-            // Best effort
-        }
-
-        // Disconnect from room
+    const leaveSession = useCallback(() => {
         if (roomRef.current) {
             intentionalDisconnectRef.current = true;
             roomRef.current.disconnect();
@@ -344,8 +317,30 @@ function SessionRoom() {
         setIsConnected(false);
         setIsConnecting(true);
         setError(null);
+        setAudioActivationError(null);
         setRetryToken((t) => t + 1);
     }, []);
+
+    const startListening = useCallback(async () => {
+        setAudioActivationError(null);
+        try {
+            await roomRef.current?.startAudio();
+            await Promise.all(
+                [...audioElementsRef.current.values()].map((element) => element.play()),
+            );
+            const beaconStarted = await startBeaconAudio();
+            if (!beaconStarted) {
+                setAudioActivationError(
+                    "Beacon audio could not start. Check that this tab is not muted, then try again.",
+                );
+            }
+        } catch (e) {
+            console.error("Failed to start session audio:", redactErrorDetail(e));
+            setAudioActivationError(
+                "Audio could not start. Check that this tab is not muted, then try again.",
+            );
+        }
+    }, [startBeaconAudio]);
 
     // Connect to LiveKit room
     useEffect(() => {
@@ -580,9 +575,14 @@ function SessionRoom() {
                     </div>
                     <h2 className="text-xl font-semibold mb-2">Connection Error</h2>
                     <p className="text-sm text-[var(--text-muted)] mb-4">{error}</p>
-                    <button onClick={() => router.push("/")} className="btn-secondary">
-                        Back to Sessions
-                    </button>
+                    <div className="flex flex-col gap-2">
+                        <button onClick={rejoin} className="btn-primary">
+                            Try again
+                        </button>
+                        <button onClick={() => router.push("/")} className="btn-secondary">
+                            Back to Sessions
+                        </button>
+                    </div>
                 </div>
             </main>
         );
@@ -675,6 +675,23 @@ function SessionRoom() {
                     activeSpeakerIdentity={activeSpeakerIdentity}
                     audioOnly={audioOnly}
                 />
+
+                {!isBeaconPlaying && (
+                    <div className="glass-card w-full max-w-md p-4 text-center" role="group" aria-label="Audio activation">
+                        <p className="mb-3 text-sm text-[var(--text-secondary)]">
+                            Press once to hear the session and Beacon.
+                            <span className="block">Presiona una vez para escuchar la sesión y el Beacon.</span>
+                        </p>
+                        <button onClick={startListening} className="btn-primary min-h-12 w-full">
+                            Start audio · Iniciar audio
+                        </button>
+                        {(audioActivationError || beaconAudioError) && (
+                            <p className="mt-3 text-sm text-red-300" role="alert">
+                                {audioActivationError || beaconAudioError}
+                            </p>
+                        )}
+                    </div>
+                )}
 
                 {/* A grant is not consent to open a device. Nothing is enabled
                     until the promoted participant presses a button. */}
@@ -828,22 +845,6 @@ function SessionRoom() {
                         <span className="text-[10px] text-[var(--text-muted)]">Leave</span>
                     </div>
 
-                    {/* End Session button (only for publishers) */}
-                    {canPublish && (
-                        <div className="flex flex-col items-center gap-1">
-                            <button
-                                onClick={endSession}
-                                disabled={endingSession}
-                                className={`w-14 h-14 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center hover:bg-red-500/30 transition-all ${endingSession ? "opacity-50" : ""}`}
-                                aria-label="End session"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
-                                </svg>
-                            </button>
-                            <span className="text-[10px] text-[var(--text-muted)]">End</span>
-                        </div>
-                    )}
                 </div>
             </div>
         </main>

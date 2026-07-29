@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 
 import {
     batchExceedsCap,
@@ -126,6 +127,27 @@ async function countActiveEntitlements(
     });
 }
 
+/**
+ * Serialize every seat reservation for one event. A transaction around
+ * `count + insert` is not enough at PostgreSQL's default isolation level:
+ * concurrent transactions can both observe the same count. This row lock is
+ * the shared admission mutex used by paid batches, imports, comps, and support
+ * overrides.
+ */
+async function lockScheduledSession(
+    tx: Prisma.TransactionClient,
+    sessionId: string,
+): Promise<void> {
+    await tx.$queryRaw(
+        Prisma.sql`
+            SELECT "id"
+            FROM "scheduled_sessions"
+            WHERE "id"::text = ${sessionId}
+            FOR UPDATE
+        `,
+    );
+}
+
 async function handleGenerate(staff: StaffPrincipal, body: GenerateBody) {
     if (!hasAnyRole(staff, ['ADMIN'])) {
         return error(403, 'forbidden', 'Only ADMIN may generate ticket batches');
@@ -142,6 +164,7 @@ async function handleGenerate(staff: StaffPrincipal, body: GenerateBody) {
     const codes = generateTicketCodes(count!);
 
     const result = await prisma.$transaction(async (tx) => {
+        await lockScheduledSession(tx, sessionId);
         const session = await tx.scheduledSession.findUnique({ where: { id: sessionId } });
         if (!session) {
             return { status: 404 as const };
@@ -202,31 +225,47 @@ async function handleImport(staff: StaffPrincipal, body: ImportBody) {
     } catch (parseError) {
         return error(400, 'invalid_csv', parseError instanceof Error ? parseError.message : 'Invalid CSV');
     }
+    const candidates = codes.map((code) => ticketCodeStorage(code));
 
     const result = await prisma.$transaction(async (tx) => {
+        await lockScheduledSession(tx, sessionId);
         const session = await tx.scheduledSession.findUnique({ where: { id: sessionId } });
         if (!session) {
             return { status: 404 as const };
         }
 
+        const existing = await tx.ticketEntitlement.findMany({
+            where: {
+                codeDigest: {
+                    in: candidates.map(({ codeDigest }) => codeDigest),
+                },
+            },
+            select: { codeDigest: true },
+        });
+        const existingDigests = new Set(existing.map(({ codeDigest }) => codeDigest));
+        const novel = candidates.filter(
+            ({ codeDigest }) => !existingDigests.has(codeDigest),
+        );
         const active = await countActiveEntitlements(tx, sessionId);
-        if (batchExceedsCap(session.attendeeCap, active, codes.length)) {
+        if (batchExceedsCap(session.attendeeCap, active, novel.length)) {
             return { status: 409 as const, active, cap: session.attendeeCap };
         }
 
         const expiresAt = ticketExpiresAt(session.scheduledAt);
         // Idempotent: a digest already present (a rerun of the same import, or
         // overlap with an earlier batch) is skipped, never duplicated.
-        const created = await tx.ticketEntitlement.createMany({
-            data: codes.map((code) => ({
-                scheduledSessionId: sessionId,
-                ...ticketCodeStorage(code),
-                tier: tier as 'GLOBAL_NORTH' | 'GLOBAL_SOUTH',
-                expiresAt,
-                issuedByUserId: staff.id,
-            })),
-            skipDuplicates: true,
-        });
+        const created = novel.length === 0
+            ? { count: 0 }
+            : await tx.ticketEntitlement.createMany({
+                data: novel.map((storage) => ({
+                    scheduledSessionId: sessionId,
+                    ...storage,
+                    tier: tier as 'GLOBAL_NORTH' | 'GLOBAL_SOUTH',
+                    expiresAt,
+                    issuedByUserId: staff.id,
+                })),
+                skipDuplicates: true,
+            });
         return { status: 201 as const, created: created.count, title: session.title };
     });
 
@@ -266,6 +305,7 @@ async function handleComp(staff: StaffPrincipal, body: CompBody) {
     const [code] = generateTicketCodes(1);
 
     const result = await prisma.$transaction(async (tx) => {
+        await lockScheduledSession(tx, sessionId);
         const session = await tx.scheduledSession.findUnique({ where: { id: sessionId } });
         if (!session) {
             return { status: 404 as const };

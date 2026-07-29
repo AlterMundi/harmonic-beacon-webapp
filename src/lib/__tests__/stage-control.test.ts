@@ -318,6 +318,25 @@ describe('stage control', () => {
         );
     });
 
+    it('refuses to demote the assigned facilitator reserved by the weekend contract', async () => {
+        participants = [{
+            ...attendee('facilitator', true),
+            staffUserId: event.facilitatorId,
+        }];
+        const { demoteParticipant } = await import('../stage-control');
+
+        await expect(demoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'facilitator',
+            actorUserId: 'operator-1',
+        })).rejects.toMatchObject({
+            code: 'facilitator_required',
+            status: 409,
+        });
+        expect(mocks.updateParticipant).not.toHaveBeenCalled();
+        expect(mocks.mutePublishedTrack).not.toHaveBeenCalled();
+    });
+
     it('mutes and unmutes only a current publisher track', async () => {
         participants = [attendee('target', true)];
         const { muteParticipantTrack } = await import('../stage-control');

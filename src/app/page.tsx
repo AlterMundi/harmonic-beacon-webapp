@@ -115,6 +115,15 @@ export default async function LandingPage({
                                     {event.language === "ENGLISH" ? "In English" : "En español"}
                                 </p>
                                 <p className="text-sm">
+                                    <span className="font-medium">Costa Rica: </span>
+                                    {formatEventTime(
+                                        event.scheduledAt,
+                                        event.language === "ENGLISH" ? "en-US" : "es-CR",
+                                        "America/Costa_Rica",
+                                    )}
+                                </p>
+                                <p className="text-sm text-[var(--text-secondary)]">
+                                    <span className="font-medium">Argentina: </span>
                                     {formatEventTime(
                                         event.scheduledAt,
                                         event.language === "ENGLISH" ? "en-GB" : "es-AR",
@@ -122,16 +131,22 @@ export default async function LandingPage({
                                     )}
                                 </p>
                                 <p className="text-sm text-[var(--text-secondary)]">
+                                    <span className="font-medium">UTC: </span>
                                     {formatEventTime(
                                         event.scheduledAt,
                                         event.language === "ENGLISH" ? "en-GB" : "es-AR",
                                         "UTC",
                                     )}
                                 </p>
+                                <p className="mt-3 text-sm">
+                                    {event.language === "ENGLISH"
+                                        ? "Tickets: USD $50 Global North · USD $20 Global South"
+                                        : "Entradas: USD $50 Norte Global · USD $20 Sur Global"}
+                                </p>
                                 {purchaseUrlFor(event.language) ? (
                                     <a
                                         href={purchaseUrlFor(event.language)}
-                                        className="mt-2 inline-block text-sm underline"
+                                        className="btn-primary mt-3 inline-flex min-h-12 w-full items-center justify-center text-center sm:w-auto"
                                         rel="noreferrer noopener"
                                         target="_blank"
                                     >
