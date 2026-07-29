@@ -1,8 +1,18 @@
-import { config } from 'dotenv';
-import { randomUUID } from 'node:crypto';
+// dotenv loaded from env in dev; production sets vars directly
+let configDotenv: ((opts: { path: string }) => void) | undefined;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const dotenv = require('dotenv');
+  configDotenv = dotenv.config;
+} catch {
+  // dotenv not available in production; env vars are already set
+}
+if (configDotenv) {
+  configDotenv({ path: '.env.local' });
+  configDotenv({ path: '.env' });
+}
 
-config({ path: '.env.local' });
-config({ path: '.env' });
+import { randomUUID } from 'node:crypto';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
