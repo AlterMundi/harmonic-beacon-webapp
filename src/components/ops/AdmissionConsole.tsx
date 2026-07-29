@@ -190,10 +190,10 @@ export default function AdmissionConsole({ role, events }: Props) {
     return (
         <div className="space-y-10">
             <section>
-                <h2 className="mb-2 text-lg font-medium">Ticket lookup</h2>
+                <h2 className="mb-2 text-lg font-medium text-[var(--cream)]">Ticket lookup</h2>
                 <form onSubmit={runLookup} className="flex gap-2">
                     <input
-                        className="w-full rounded border px-3 py-2"
+                        className="event-field flex-1"
                         placeholder="Attendee email, code last four, or entitlement ID"
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
@@ -201,7 +201,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                     <button
                         type="submit"
                         disabled={busy || !query.trim()}
-                        className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
+                        className="event-button event-button--primary"
                     >
                         Look up
                     </button>
@@ -210,26 +210,26 @@ export default function AdmissionConsole({ role, events }: Props) {
                 {results && results.length > 0 && (
                     <div className="mt-4 space-y-4">
                         {results.map((item) => (
-                            <div key={item.id} className="rounded border p-3 text-sm">
+                            <div key={item.id} className="operational-panel text-sm">
                                 <div className="flex flex-wrap gap-x-6 gap-y-1">
-                                    <span><strong>State:</strong> {item.state}</span>
-                                    <span><strong>Tier:</strong> {item.tier}</span>
-                                    <span><strong>Last four:</strong> {item.codeLastFour}</span>
-                                    <span><strong>Bound email:</strong> {item.boundEmail ?? '—'}</span>
-                                    <span><strong>Event:</strong> {item.event.title}</span>
-                                    <span><strong>Expires:</strong> {new Date(item.expiresAt).toLocaleString()}</span>
+                                    <span><strong className="text-[var(--cream)]">State:</strong> {item.state}</span>
+                                    <span><strong className="text-[var(--cream)]">Tier:</strong> {item.tier}</span>
+                                    <span><strong className="text-[var(--cream)]">Last four:</strong> <span className="font-mono">{item.codeLastFour}</span></span>
+                                    <span><strong className="text-[var(--cream)]">Bound email:</strong> {item.boundEmail ?? '—'}</span>
+                                    <span><strong className="text-[var(--cream)]">Event:</strong> {item.event.title}</span>
+                                    <span><strong className="text-[var(--cream)]">Expires:</strong> {new Date(item.expiresAt).toLocaleString()}</span>
                                 </div>
-                                <div className="mt-1 text-xs text-gray-500">ID: {item.id}</div>
+                                <div className="mt-1 font-mono text-[10px] text-[var(--text-muted)]">ID: {item.id}</div>
                                 {item.revokedAt && (
-                                    <div className="mt-1 text-xs text-red-700">
+                                    <div className="mt-1 text-xs text-[var(--danger)]">
                                         Revoked {new Date(item.revokedAt).toLocaleString()} — {item.revocationReason}
                                     </div>
                                 )}
 
                                 {canMutate && item.state !== 'REVOKED' && (
-                                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+                                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-3">
                                         <input
-                                            className="min-w-56 flex-1 rounded border px-2 py-1"
+                                            className="event-field min-w-56 flex-1"
                                             placeholder="Reason (required, no PII)"
                                             value={reasons[item.id] ?? ''}
                                             onChange={(event) =>
@@ -237,7 +237,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                             }
                                         />
                                         <input
-                                            className="min-w-56 flex-1 rounded border px-2 py-1"
+                                            className="event-field min-w-56 flex-1"
                                             placeholder="New email (optional rebind)"
                                             value={emails[item.id] ?? ''}
                                             onChange={(event) =>
@@ -248,7 +248,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                             type="button"
                                             disabled={busy || !(reasons[item.id] ?? '').trim()}
                                             onClick={() => runEntitlementAction(item.id, 'rebind', emails[item.id] ?? '')}
-                                            className="rounded border px-3 py-1 disabled:opacity-50"
+                                            className="event-button event-button--secondary disabled:opacity-50"
                                         >
                                             {(emails[item.id] ?? '').trim() ? 'Rebind to email' : 'Clear binding'}
                                         </button>
@@ -256,7 +256,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                             type="button"
                                             disabled={busy || !(reasons[item.id] ?? '').trim()}
                                             onClick={() => runEntitlementAction(item.id, 'revoke')}
-                                            className="rounded bg-red-700 px-3 py-1 text-white disabled:opacity-50"
+                                            className="event-button bg-[var(--danger)] text-white hover:bg-[var(--danger)]/80 disabled:opacity-50"
                                         >
                                             Revoke
                                         </button>
@@ -270,10 +270,10 @@ export default function AdmissionConsole({ role, events }: Props) {
 
             {(canBatch || canMutate) && (
                 <section>
-                    <h2 className="mb-2 text-lg font-medium">Issue tickets</h2>
+                    <h2 className="mb-2 text-lg font-medium text-[var(--cream)]">Issue tickets</h2>
                     <div className="mb-3 flex flex-wrap gap-2">
                         <select
-                            className="rounded border px-2 py-1"
+                            className="event-field"
                             value={batchEvent}
                             onChange={(event) => setBatchEvent(event.target.value)}
                         >
@@ -286,11 +286,11 @@ export default function AdmissionConsole({ role, events }: Props) {
                     </div>
 
                     {canBatch && (
-                        <div className="mb-6 space-y-3 rounded border p-3">
-                            <h3 className="font-medium">Batch (ADMIN)</h3>
+                        <div className="operational-panel mb-6 space-y-3">
+                            <h3 className="font-medium text-[var(--cream)]">Batch (ADMIN)</h3>
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
-                                    className="rounded border px-2 py-1"
+                                    className="event-field"
                                     value={batchTier}
                                     onChange={(event) => setBatchTier(event.target.value)}
                                 >
@@ -298,7 +298,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     <option value="GLOBAL_SOUTH">Global South ($20)</option>
                                 </select>
                                 <input
-                                    className="w-24 rounded border px-2 py-1"
+                                    className="event-field w-24"
                                     type="number"
                                     min={1}
                                     max={150}
@@ -309,13 +309,13 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     type="button"
                                     disabled={busy || !batchEvent}
                                     onClick={() => runBatch('generate')}
-                                    className="rounded bg-gray-900 px-3 py-1 text-white disabled:opacity-50"
+                                    className="event-button event-button--primary disabled:opacity-50"
                                 >
                                     Generate batch
                                 </button>
                             </div>
                             <textarea
-                                className="h-24 w-full rounded border px-2 py-1 font-mono text-xs"
+                                className="event-field h-24 font-mono text-xs"
                                 placeholder="Paste platform CSV to import (code column, header optional)"
                                 value={importCsv}
                                 onChange={(event) => setImportCsv(event.target.value)}
@@ -324,7 +324,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                 type="button"
                                 disabled={busy || !batchEvent || !importCsv.trim()}
                                 onClick={() => runBatch('import')}
-                                className="rounded border px-3 py-1 disabled:opacity-50"
+                                className="event-button event-button--secondary disabled:opacity-50"
                             >
                                 Import CSV (idempotent)
                             </button>
@@ -332,11 +332,11 @@ export default function AdmissionConsole({ role, events }: Props) {
                     )}
 
                     {canMutate && (
-                        <div className="space-y-3 rounded border p-3">
-                            <h3 className="font-medium">Comp / support override</h3>
+                        <div className="operational-panel space-y-3">
+                            <h3 className="font-medium text-[var(--cream)]">Comp / support override</h3>
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
-                                    className="rounded border px-2 py-1"
+                                    className="event-field"
                                     value={compTier}
                                     onChange={(event) => setCompTier(event.target.value)}
                                 >
@@ -344,7 +344,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     <option value="SUPPORT_OVERRIDE">Support override</option>
                                 </select>
                                 <input
-                                    className="min-w-56 flex-1 rounded border px-2 py-1"
+                                    className="event-field min-w-56 flex-1"
                                     placeholder="Reason (required, no PII — e.g. support case reference)"
                                     value={compReason}
                                     onChange={(event) => setCompReason(event.target.value)}
@@ -353,7 +353,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     type="button"
                                     disabled={busy || !batchEvent || !compReason.trim()}
                                     onClick={runComp}
-                                    className="rounded bg-gray-900 px-3 py-1 text-white disabled:opacity-50"
+                                    className="event-button event-button--primary disabled:opacity-50"
                                 >
                                     Issue
                                 </button>
@@ -363,26 +363,26 @@ export default function AdmissionConsole({ role, events }: Props) {
                 </section>
             )}
 
-            {notice && <p className="rounded bg-green-50 px-3 py-2 text-sm text-green-800">{notice}</p>}
-            {failure && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-800">{failure}</p>}
+            {notice && <p className="rounded border border-[var(--lime)]/30 bg-[var(--lime)]/10 px-3 py-2 text-sm text-[var(--lime)]">{notice}</p>}
+            {failure && <p className="rounded border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-sm text-[var(--danger)]">{failure}</p>}
 
             {oneTimeCsv && (
-                <section className="rounded border-2 border-amber-500 p-3">
-                    <h3 className="mb-1 font-medium text-amber-800">One-time code export</h3>
-                    <p className="mb-2 text-sm text-amber-800">
+                <section className="rounded border-2 border-[var(--warning)] p-3">
+                    <h3 className="mb-1 font-medium text-[var(--warning)]">One-time code export</h3>
+                    <p className="mb-2 text-sm text-[var(--warning)]">
                         These plaintext codes are shown once and are never stored by the app. Save the CSV
                         under ops control now; do not commit it or paste it into tickets/chat.
                     </p>
                     <textarea
                         readOnly
-                        className="h-40 w-full rounded border px-2 py-1 font-mono text-xs"
+                        className="event-field h-40 font-mono text-xs"
                         value={oneTimeCsv}
                         onFocus={(event) => event.target.select()}
                     />
                     <button
                         type="button"
                         onClick={downloadCsv}
-                        className="mt-2 rounded bg-amber-600 px-3 py-1 text-white"
+                        className="event-button mt-2 bg-[var(--warning)] text-[var(--ink)] hover:bg-[var(--warning)]/80"
                     >
                         Download CSV
                     </button>

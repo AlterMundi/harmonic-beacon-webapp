@@ -27,19 +27,19 @@ const CHECK_LABELS: Array<{ key: keyof OperatorHealthReport['checks']; label: st
 
 const LEVEL_STYLES: Record<HealthLevel, { banner: string; dot: string; text: string }> = {
     green: {
-        banner: 'border-green-600 bg-green-950/40 text-green-300',
-        dot: 'bg-green-500',
-        text: 'text-green-400',
+        banner: 'border-[var(--lime)]/40 bg-[var(--lime)]/10 text-[var(--lime)]',
+        dot: 'bg-[var(--lime)]',
+        text: 'text-[var(--lime)]',
     },
     yellow: {
-        banner: 'border-amber-500 bg-amber-950/40 text-amber-300',
-        dot: 'bg-amber-400',
-        text: 'text-amber-400',
+        banner: 'border-[var(--warning)]/40 bg-[var(--warning)]/10 text-[var(--warning)]',
+        dot: 'bg-[var(--warning)]',
+        text: 'text-[var(--warning)]',
     },
     red: {
-        banner: 'border-red-600 bg-red-950/40 text-red-300',
-        dot: 'bg-red-500',
-        text: 'text-red-400',
+        banner: 'border-[var(--danger)]/40 bg-[var(--danger)]/10 text-[var(--danger)]',
+        dot: 'bg-[var(--danger)]',
+        text: 'text-[var(--danger)]',
     },
 };
 
@@ -52,26 +52,26 @@ const LEVEL_HEADLINES: Record<HealthLevel, string> = {
 function CheckRow({ label, check }: { label: string; check: SubsystemCheck }) {
     const styles = LEVEL_STYLES[check.status];
     return (
-        <li className="flex items-start gap-3 rounded border border-[var(--border,#333)] px-4 py-3">
+        <li className="flex items-start gap-3 rounded border border-[var(--border-subtle)] px-4 py-3">
             <span
                 aria-hidden
                 className={`mt-1.5 inline-block h-3 w-3 shrink-0 rounded-full ${styles.dot}`}
             />
             <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
-                    <span className="font-medium">{label}</span>
+                    <span className="font-medium text-[var(--cream)]">{label}</span>
                     <span className={`text-xs font-semibold uppercase ${styles.text}`}>
                         {check.status}
                     </span>
                 </div>
                 <p className="text-sm text-[var(--text-secondary)]">{check.detail}</p>
                 {check.error ? (
-                    <p className="mt-1 break-words font-mono text-xs text-[var(--text-secondary)]">
+                    <p className="mt-1 break-words font-mono text-xs text-[var(--text-muted)]">
                         {check.error}
                     </p>
                 ) : null}
             </div>
-            <span className="shrink-0 text-xs text-[var(--text-secondary)]">
+            <span className="shrink-0 font-mono text-xs text-[var(--text-muted)]">
                 {check.latencyMs} ms
             </span>
         </li>
@@ -96,8 +96,6 @@ export default function OpsHealthClient({ role }: { role: string }) {
                 setEndpointError(null);
             }
         } catch (error) {
-            // The endpoint itself failing is its own alarm: the app may be
-            // down, which is exactly what this page exists to catch.
             if (mounted.current) {
                 setEndpointError(
                     error instanceof Error ? error.message : 'Health endpoint unreachable',
@@ -137,7 +135,7 @@ export default function OpsHealthClient({ role }: { role: string }) {
 
             {report?.session ? (
                 <p className="text-sm text-[var(--text-secondary)]">
-                    Watching session <span className="font-medium">{report.session.title}</span>{' '}
+                    Watching session <span className="font-medium text-[var(--cream)]">{report.session.title}</span>{' '}
                     ({report.session.status}) — signed in as {role}.
                 </p>
             ) : (
@@ -165,7 +163,7 @@ export default function OpsHealthClient({ role }: { role: string }) {
                 <button
                     type="button"
                     onClick={() => void refresh()}
-                    className="rounded border border-current px-3 py-1 text-xs hover:opacity-80"
+                    className="rounded border border-[var(--border-subtle)] px-3 py-1 text-xs hover:bg-white/5"
                 >
                     Refresh now
                 </button>
