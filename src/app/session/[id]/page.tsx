@@ -15,6 +15,7 @@ import {
     type RoomOptions,
 } from "livekit-client";
 import { AudioProvider, useAudio } from "@/context/AudioContext";
+import HandRaiseButton from "@/components/session/HandRaiseButton";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
 import type { StageVideoPublication } from "@/components/session/StageTile";
 import type { StageConnectionQuality } from "@/lib/stage-layout";
@@ -721,6 +722,14 @@ function SessionRoom() {
 
             {/* Bottom controls */}
             <div className="p-6 border-t border-[var(--border-subtle)]">
+                {isConnected && (
+                    <div className="mb-4 flex justify-center">
+                        <HandRaiseButton
+                            sessionId={id}
+                            onPublishGrantChange={setCanPublish}
+                        />
+                    </div>
+                )}
                 <div className="flex items-start justify-center gap-4">
                     {/* Mic toggle (only for publishers) */}
                     {canPublish && (
