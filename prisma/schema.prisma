@@ -1,5 +1,4 @@
-// Harmonic Beacon - Database Schema
-// PostgreSQL 16 + Prisma ORM
+// Fresh PostgreSQL schema for the 2026-08-01/02 weekend MVP.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,20 +8,15 @@ datasource db {
   provider = "postgresql"
 }
 
-// ===================
-// ENUMS
-// ===================
-
-enum UserRole {
-  LISTENER
-  PROVIDER
+enum StaffRole {
+  FACILITATOR
+  OPERATOR
   ADMIN
 }
 
-enum SessionType {
-  LIVE
-  MEDITATION
-  SCHEDULED_SESSION
+enum SessionLanguage {
+  ENGLISH
+  SPANISH
 }
 
 enum ScheduledSessionStatus {
@@ -32,370 +26,157 @@ enum ScheduledSessionStatus {
   CANCELLED
 }
 
-enum TagCategory {
-  MOOD
-  TECHNIQUE
-  DURATION
-  LANGUAGE
+enum TicketTier {
+  GLOBAL_NORTH
+  GLOBAL_SOUTH
+  COMP
+  SUPPORT_OVERRIDE
 }
 
-enum ModerationStatus {
-  PENDING
-  APPROVED
-  REJECTED
+enum TicketEntitlementState {
+  ISSUED
+  BOUND
+  REVOKED
+  EXPIRED
 }
-
-enum ReportTargetType {
-  MEDITATION
-  SESSION
-  USER
-}
-
-enum ReportReason {
-  SAFETY
-  THERAPEUTIC_CLAIM
-  COPYRIGHT
-  SPAM
-  OTHER
-}
-
-enum ReportStatus {
-  OPEN
-  TRIAGED
-  RESOLVED
-  DISMISSED
-}
-
-// ===================
-// USER
-// ===================
 
 model User {
-  id            String    @id @default(uuid())
-  zitadelId     String    @unique @map("zitadel_id")
-  email         String    @unique
-  name          String?
-  avatarUrl     String?   @map("avatar_url")
-  role          UserRole  @default(LISTENER)
-  isVerified    Boolean   @default(false) @map("is_verified")
+  id               String      @id @default(uuid()) @db.Uuid
+  email            String      @unique
+  name             String
+  role             StaffRole
+  passwordDigest   String      @map("password_digest")
+  disabledAt       DateTime?   @map("disabled_at")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
 
-  // Set when the account holder requests deletion. The row survives because
-  // Meditation.provider and ScheduledSession.provider restrict on delete; the
-  // identifying columns above are overwritten instead.
-  deletedAt     DateTime? @map("deleted_at")
-
-  // Timestamps
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  
-  // Relations
-  meditations           Meditation[]           @relation("ProviderMeditations")
-  sessions              ListeningSession[]
-  favorites             Favorite[]
-  scheduledSessions     ScheduledSession[]     @relation("ProviderScheduledSessions")
-  sessionParticipations SessionParticipant[]
-  reportsFiled          Report[]               @relation("ReportsFiled")
-  reportsHandled        Report[]               @relation("ReportsHandled")
+  facilitatedSessions ScheduledSession[]  @relation("SessionFacilitator")
+  issuedTickets       TicketEntitlement[] @relation("TicketIssuer")
+  revokedTickets      TicketEntitlement[] @relation("TicketRevoker")
+  webSessions         WebSession[]         @relation("StaffWebSessions")
+  revokedWebSessions  WebSession[]         @relation("WebSessionRevoker")
+  participations      SessionParticipant[] @relation("StaffParticipation")
+  grantedParticipants SessionParticipant[] @relation("StageGrantActor")
+  auditEntries        AuditLog[]            @relation("AuditActor")
 
   @@map("users")
 }
 
-// ===================
-// MEDITATION
-// ===================
-
-model Meditation {
-  id              String            @id @default(uuid())
-  title           String
-  description     String?
-  durationSeconds Int               @map("duration_seconds")
-  
-  // File storage
-  filePath        String            @map("file_path")    // e.g., "amor.ogg"
-  originalPath    String?           @map("original_path") // Original upload
-  streamName      String            @unique @map("stream_name") // vestigial: unique slug, no longer backs a stream
-  
-  // Provider
-  providerId      String            @map("provider_id")
-  provider        User              @relation("ProviderMeditations", fields: [providerId], references: [id])
-  
-  // Moderation
-  status          ModerationStatus  @default(PENDING)
-  rejectionReason String?           @map("rejection_reason")
-  reviewedAt      DateTime?         @map("reviewed_at")
-  
-  // Playback
-  defaultMix      Float             @default(0.5) @map("default_mix")
-
-  // Visibility
-  isPublished     Boolean           @default(false) @map("is_published")
-  isFeatured      Boolean           @default(false) @map("is_featured")
-  isHidden        Boolean           @default(false) @map("is_hidden")
-  // Set when the Provider withdrew the content themselves, cleared when it is
-  // restored. `isHidden` alone cannot tell a Provider's withdrawal from an
-  // Admin's moderation hide, and they are different acts: one is the author
-  // exercising a right over their own work, the other is the platform acting on
-  // it. Without this an Admin clicking unhide would silently republish content
-  // its author had withdrawn.
-  takenDownAt     DateTime?         @map("taken_down_at")
-  
-  // Timestamps
-  createdAt       DateTime          @default(now()) @map("created_at")
-  updatedAt       DateTime          @updatedAt @map("updated_at")
-  
-  // Relations
-  tags            MeditationTag[]
-  sessions        ListeningSession[]
-  favorites       Favorite[]
-  
-  @@map("meditations")
-}
-
-// ===================
-// TAGS (Many-to-Many)
-// ===================
-
-model Tag {
-  id          String        @id @default(uuid())
-  name        String        @unique
-  slug        String        @unique
-  category    TagCategory
-  sortOrder   Int           @default(0) @map("sort_order")
-  
-  // Relations
-  meditations MeditationTag[]
-  
-  @@map("tags")
-}
-
-model MeditationTag {
-  meditationId  String      @map("meditation_id")
-  tagId         String      @map("tag_id")
-  
-  meditation    Meditation  @relation(fields: [meditationId], references: [id], onDelete: Cascade)
-  tag           Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  
-  @@id([meditationId, tagId])
-  @@map("meditation_tags")
-}
-
-// ===================
-// LISTENING SESSIONS
-// ===================
-
-model ListeningSession {
-  id              String        @id @default(uuid())
-  
-  userId          String        @map("user_id")
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Nullable for live sessions
-  meditationId    String?       @map("meditation_id")
-  meditation      Meditation?   @relation(fields: [meditationId], references: [id], onDelete: SetNull)
-
-  // Nullable for scheduled sessions
-  scheduledSessionId String?           @map("scheduled_session_id")
-  scheduledSession   ScheduledSession? @relation(fields: [scheduledSessionId], references: [id], onDelete: SetNull)
-
-  type            SessionType
-  durationSeconds Int           @map("duration_seconds")
-  completed       Boolean       @default(false)
-  
-  // Timestamps
-  startedAt       DateTime      @default(now()) @map("started_at")
-  endedAt         DateTime?     @map("ended_at")
-  
-  @@index([userId, startedAt])
-  @@index([meditationId])
-  @@index([scheduledSessionId])
-  @@map("listening_sessions")
-}
-
-// ===================
-// FAVORITES
-// ===================
-
-model Favorite {
-  userId        String      @map("user_id")
-  meditationId  String      @map("meditation_id")
-
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  meditation    Meditation  @relation(fields: [meditationId], references: [id], onDelete: Cascade)
-
-  createdAt     DateTime    @default(now()) @map("created_at")
-
-  @@id([userId, meditationId])
-  @@map("favorites")
-}
-
-// ===================
-// SCHEDULED SESSIONS
-// ===================
-
 model ScheduledSession {
-  id              String                  @id @default(uuid())
-  title           String
-  description     String?
-  roomName        String                  @unique @map("room_name")
+  id             String                 @id @default(uuid()) @db.Uuid
+  title          String
+  description    String?
+  roomName       String                 @unique @map("room_name")
+  language       SessionLanguage
+  scheduledAt    DateTime               @map("scheduled_at")
+  startedAt      DateTime?              @map("started_at")
+  endedAt        DateTime?              @map("ended_at")
+  status         ScheduledSessionStatus @default(SCHEDULED)
+  paidMode       Boolean                @default(true) @map("paid_mode")
+  attendeeCap    Int                    @default(150) @map("attendee_cap")
+  maxPublishers  Int                    @default(6) @map("max_publishers")
+  facilitatorId  String                 @map("facilitator_id") @db.Uuid
+  facilitator    User                   @relation("SessionFacilitator", fields: [facilitatorId], references: [id], onDelete: Restrict)
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
 
-  // Provider (host)
-  providerId      String                  @map("provider_id")
-  provider        User                    @relation("ProviderScheduledSessions", fields: [providerId], references: [id])
+  tickets      TicketEntitlement[]
+  participants SessionParticipant[]
 
-  // Scheduling
-  scheduledAt     DateTime?               @map("scheduled_at")
-  startedAt       DateTime?               @map("started_at")
-  endedAt         DateTime?               @map("ended_at")
-  status          ScheduledSessionStatus  @default(SCHEDULED)
-
-  // Recording
-  durationSeconds      Int?               @map("duration_seconds")
-
-  // Timestamps
-  createdAt       DateTime                @default(now()) @map("created_at")
-  updatedAt       DateTime                @updatedAt @map("updated_at")
-
-  // Relations
-  invites         SessionInvite[]
-  participants    SessionParticipant[]
-  listeningSessions ListeningSession[]
-  recordings      SessionRecording[]
-
-  @@index([providerId])
-  @@index([status])
+  @@index([status, scheduledAt])
   @@map("scheduled_sessions")
 }
 
-model SessionRecording {
-  id                  String           @id @default(uuid())
-  sessionId           String           @map("session_id")
-  session             ScheduledSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  egressId            String           @map("egress_id")
-  trackSid            String           @map("track_sid")
-  roomName            String           @map("room_name")
-  participantIdentity String           @map("participant_identity")
-  category            String           // 'SESSION' | 'BEACON'
-  filePath            String?          @map("file_path")
-  active              Boolean          @default(true)
-  startedAt           DateTime         @default(now()) @map("started_at")
-  stoppedAt           DateTime?        @map("stopped_at")
+model TicketEntitlement {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  scheduledSessionId String                     @map("scheduled_session_id") @db.Uuid
+  scheduledSession   ScheduledSession           @relation(fields: [scheduledSessionId], references: [id], onDelete: Cascade)
+  codeDigest         String                     @unique @map("code_digest")
+  codeLastFour       String                     @map("code_last_four") @db.VarChar(4)
+  tier               TicketTier
+  state              TicketEntitlementState     @default(ISSUED)
+  boundEmail         String?                    @map("bound_email")
+  boundAt            DateTime?                  @map("bound_at")
+  expiresAt          DateTime                   @map("expires_at")
+  issuedByUserId     String?                    @map("issued_by_user_id") @db.Uuid
+  issuedBy           User?                      @relation("TicketIssuer", fields: [issuedByUserId], references: [id], onDelete: SetNull)
+  revokedAt          DateTime?                  @map("revoked_at")
+  revokedByUserId    String?                    @map("revoked_by_user_id") @db.Uuid
+  revokedBy          User?                      @relation("TicketRevoker", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  revocationReason   String?                    @map("revocation_reason")
+  createdAt          DateTime                   @default(now()) @map("created_at")
+  updatedAt          DateTime                   @updatedAt @map("updated_at")
 
-  @@index([sessionId])
-  @@map("session_recordings")
+  webSessions   WebSession[]
+  participations SessionParticipant[]
+
+  @@index([scheduledSessionId, state])
+  @@index([boundEmail])
+  @@index([codeLastFour])
+  @@map("ticket_entitlements")
 }
 
-model SessionInvite {
-  id          String            @id @default(uuid())
-  code        String            @unique
-  sessionId   String            @map("session_id")
-  session     ScheduledSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+model WebSession {
+  id                  String              @id @default(uuid()) @db.Uuid
+  tokenDigest         String              @unique @map("token_digest")
+  staffUserId         String?             @map("staff_user_id") @db.Uuid
+  staffUser           User?               @relation("StaffWebSessions", fields: [staffUserId], references: [id], onDelete: Cascade)
+  ticketEntitlementId String?             @map("ticket_entitlement_id") @db.Uuid
+  ticketEntitlement   TicketEntitlement?  @relation(fields: [ticketEntitlementId], references: [id], onDelete: Cascade)
+  expiresAt           DateTime            @map("expires_at")
+  lastSeenAt          DateTime?           @map("last_seen_at")
+  revokedAt           DateTime?           @map("revoked_at")
+  revokedByUserId     String?             @map("revoked_by_user_id") @db.Uuid
+  revokedBy           User?               @relation("WebSessionRevoker", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  revocationReason    String?             @map("revocation_reason")
+  createdAt           DateTime            @default(now()) @map("created_at")
 
-  maxUses     Int               @default(0) @map("max_uses")  // 0 = unlimited
-  usedCount   Int               @default(0) @map("used_count")
-  expiresAt   DateTime?         @map("expires_at")
-  canPublish  Boolean           @default(false) @map("can_publish")
-
-  createdAt   DateTime          @default(now()) @map("created_at")
-
-  @@index([sessionId])
-  @@map("session_invites")
+  @@index([staffUserId])
+  @@index([ticketEntitlementId])
+  @@index([expiresAt])
+  @@map("web_sessions")
 }
 
 model SessionParticipant {
-  id              String            @id @default(uuid())
-  sessionId       String            @map("session_id")
-  session         ScheduledSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(uuid()) @db.Uuid
+  scheduledSessionId  String             @map("scheduled_session_id") @db.Uuid
+  scheduledSession    ScheduledSession   @relation(fields: [scheduledSessionId], references: [id], onDelete: Cascade)
+  participantIdentity String             @map("participant_identity")
+  ticketEntitlementId String?            @map("ticket_entitlement_id") @db.Uuid
+  ticketEntitlement   TicketEntitlement? @relation(fields: [ticketEntitlementId], references: [id], onDelete: Cascade)
+  staffUserId         String?            @map("staff_user_id") @db.Uuid
+  staffUser           User?              @relation("StaffParticipation", fields: [staffUserId], references: [id], onDelete: Cascade)
+  joinedAt            DateTime           @default(now()) @map("joined_at")
+  leftAt              DateTime?          @map("left_at")
+  raisedAt            DateTime?          @map("raised_at")
+  publishGrantedAt    DateTime?          @map("publish_granted_at")
+  publishRevokedAt    DateTime?          @map("publish_revoked_at")
+  grantVersion        Int                @default(0) @map("grant_version")
+  grantReconcileNeeded Boolean           @default(false) @map("grant_reconcile_needed")
+  grantChangedByUserId String?           @map("grant_changed_by_user_id") @db.Uuid
+  grantChangedBy       User?             @relation("StageGrantActor", fields: [grantChangedByUserId], references: [id], onDelete: SetNull)
+  grantReason          String?           @map("grant_reason")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
 
-  userId          String            @map("user_id")
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  joinedAt        DateTime          @default(now()) @map("joined_at")
-  leftAt          DateTime?         @map("left_at")
-  durationSeconds Int?              @map("duration_seconds")
-
-  @@unique([sessionId, userId])
-  @@index([userId])
+  @@unique([scheduledSessionId, participantIdentity])
+  @@index([scheduledSessionId, raisedAt])
+  @@index([scheduledSessionId, publishGrantedAt])
   @@map("session_participants")
 }
 
-// ===================
-// AUDIT LOG
-// ===================
-
-/// Append-only record of administrative action, per BUSINESS_RULES.md 1.3.
-///
-/// Append-only by convention, enforced by the absence of any write path other
-/// than `logAdminAction()` in src/lib/audit.ts: nothing in the app updates or
-/// deletes a row here, and no endpoint exposes either operation. A log an Admin
-/// can edit is not evidence.
-///
-/// `actorId` is deliberately a plain column and not a relation. A relation would
-/// let a `User` delete cascade or restrict on this table — the first would erase
-/// the history of an Admin along with their account, the second would make the
-/// audit log a reason account deletion fails. Neither is acceptable for a table
-/// whose job is to outlive the actions it records. Resolve the actor by joining
-/// on `users.id` at read time, and accept that the row may be anonymised
-/// (src/app/api/users/me/route.ts) by then.
 model AuditLog {
-  id         String   @id @default(uuid())
-  actorId    String   @map("actor_id")
-
-  /// Role held by the actor at the moment of the action, not their role now.
-  /// Roles change; a log that resolves the current role misrepresents history.
-  /// Stored as text rather than the `UserRole` enum so a role value the enum has
-  /// not heard of — the session union in src/lib/auth.ts still carries a legacy
-  /// 'USER' — cannot make an audit write fail. See src/lib/audit.ts.
-  actorRole  String   @map("actor_role")
-
-  /// Dotted discriminator, e.g. 'meditation.approve', 'session.terminate'.
-  action     String
-  targetType String   @map("target_type")
-  targetId   String   @map("target_id")
-  metadata   Json?
-
-  createdAt  DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String   @map("target_id")
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([targetType, targetId])
   @@index([createdAt])
   @@map("audit_logs")
-}
-
-// ===================
-// REPORTS
-// ===================
-
-/// A safety or policy report filed against content, a session, or a user.
-/// BUSINESS_RULES.md 10, TRUST_AND_SAFETY.md 2.5.
-model Report {
-  id             String            @id @default(uuid())
-
-  /// Nullable: a report outlives its reporter's account. Account deletion
-  /// anonymises rather than deletes (BUSINESS_RULES.md 9.1), so in practice the
-  /// row survives and this stays set but points at an anonymised user; the
-  /// `SetNull` covers a genuine row removal.
-  reporterId     String?           @map("reporter_id")
-  reporter       User?             @relation("ReportsFiled", fields: [reporterId], references: [id], onDelete: SetNull)
-
-  targetType     ReportTargetType  @map("target_type")
-  targetId       String            @map("target_id")
-  reason         ReportReason
-  detail         String?
-
-  status         ReportStatus      @default(OPEN)
-  resolution     String?
-
-  /// Set when an Admin first moves the report off OPEN. The 24h acknowledgement
-  /// commitment in BUSINESS_RULES.md 10 is measurable from this column; nothing
-  /// enforces or alerts on it.
-  acknowledgedAt DateTime?         @map("acknowledged_at")
-  resolvedAt     DateTime?         @map("resolved_at")
-
-  handledById    String?           @map("handled_by_id")
-  handledBy      User?             @relation("ReportsHandled", fields: [handledById], references: [id], onDelete: SetNull)
-
-  createdAt      DateTime          @default(now()) @map("created_at")
-
-  @@index([status])
-  @@index([targetType, targetId])
-  @@map("reports")
 }
