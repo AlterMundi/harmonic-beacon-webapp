@@ -2,14 +2,6 @@
 
 /**
  * Attendee hand control for the paid room (WS3-02).
- *
- * Polls the attendee hand endpoint every two seconds — the same
- * database-backed state the operator console sees — so a promotion granted
- * while the room page is open shows up here without a reconnect. When the
- * durable grant flips, `onPublishGrantChange` lets the room page reveal the
- * mic/camera controls; the devices themselves still need an explicit gesture,
- * which is the roadmap's "a promoted participant must explicitly enable
- * microphone/camera after the grant".
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -100,25 +92,27 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
                 type="button"
                 onClick={() => void setHand(!(state?.raised ?? false))}
                 disabled={busy}
-                className={`rounded-full px-4 py-2 text-sm transition-all ${
+                className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
                     state?.raised
-                        ? 'bg-[var(--primary-600)] text-white'
+                        ? 'bg-[var(--pink)] text-[var(--ink)] shadow-[0_0_16px_rgba(255,113,189,0.3)]'
                         : 'bg-white/10 text-[var(--text-muted)] hover:bg-white/20'
                 } disabled:opacity-50`}
             >
-                {state?.raised ? 'Lower hand' : 'Raise hand'}
+                {state?.raised ? 'Lower hand / Bajar mano' : 'Raise hand / Levantar mano'}
             </button>
             {state?.canPublish ? (
-                <p role="status" className="text-xs text-[var(--primary-400)]">
+                <p role="status" className="text-xs text-[var(--lime)]">
                     Your turn — enable mic and camera below.
+                    <span className="mt-0.5 block opacity-80">Tu turno — activá micrófono y cámara abajo.</span>
                 </p>
             ) : state?.raised && state.queuePosition !== null ? (
                 <p role="status" className="text-xs text-[var(--text-muted)]">
                     Hand raised — you are #{state.queuePosition} in the queue.
+                    <span className="mt-0.5 block opacity-80">Mano levantada — sos #{state.queuePosition} en la fila.</span>
                 </p>
             ) : null}
             {error ? (
-                <p role="alert" className="text-xs text-red-400">{error}</p>
+                <p role="alert" className="text-xs text-[var(--danger)]">{error}</p>
             ) : null}
         </div>
     );

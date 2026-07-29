@@ -187,7 +187,7 @@ describe('SessionRoomPage - server-ended disconnect', () => {
 
         await waitFor(() => expect(document.activeElement).toBe(status));
 
-        fireEvent.click(screen.getByRole('button', { name: 'Back to Sessions' }));
+        fireEvent.click(screen.getByRole('button', { name: /Back to Sessions/i }));
         expect(mockPush).toHaveBeenCalledWith('/');
     });
 
@@ -214,7 +214,7 @@ describe('SessionRoomPage - transport-failure disconnect', () => {
         const status = await screen.findByRole('status');
         expect(within(status).getByText('Connection lost')).toBeInTheDocument();
         expect(within(status).getByText('Your connection to this session was lost.')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Rejoin' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Rejoin/i })).toBeInTheDocument();
     });
 
     it('reconnects when Rejoin is clicked', async () => {
@@ -224,12 +224,12 @@ describe('SessionRoomPage - transport-failure disconnect', () => {
         act(() => {
             currentRoom().emit('disconnected', DisconnectReason.CONNECTION_TIMEOUT);
         });
-        await screen.findByRole('button', { name: 'Rejoin' });
+        await screen.findByRole('button', { name: /Rejoin/i });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Rejoin' }));
+        fireEvent.click(screen.getByRole('button', { name: /Rejoin/i }));
 
         // Back to the connecting state immediately, then reconnected.
-        expect(screen.getByText('Connecting to session...')).toBeInTheDocument();
+        expect(screen.getByText('Connecting')).toBeInTheDocument();
         await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
         expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(fetchCallsBefore);
     });
@@ -247,7 +247,7 @@ describe('SessionRoomPage - ambiguous disconnect', () => {
         const status = await screen.findByRole('status');
         expect(within(status).getByText('Disconnected')).toBeInTheDocument();
         expect(within(status).getByText(/can't tell whether it ended or your connection dropped/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Rejoin' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Rejoin/i })).toBeInTheDocument();
     });
 });
 
@@ -324,7 +324,7 @@ describe('SessionRoomPage - initial connection failure', () => {
         expect(await screen.findByText('Room is temporarily unavailable')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-        expect(screen.getByText('Connecting to session...')).toBeInTheDocument();
+        expect(screen.getByText('Connecting')).toBeInTheDocument();
         await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
     });
 });

@@ -9,40 +9,16 @@ import {
 import StageTile, { type StageVideoPublication } from "./StageTile";
 
 export interface StagePublisherView extends StagePublisher {
-    /** Camera publication for this identity, if there is one. */
     videoPublication?: StageVideoPublication | null;
 }
 
 export interface StageLayoutProps {
-    /** Only participants holding a stage grant. Never the audience. */
     publishers: readonly StagePublisherView[];
     activeSpeakerIdentity?: string | null;
-    /** Operator pin; wins over the active speaker when set. */
     pinnedIdentity?: string | null;
-    /**
-     * Attendee chose audio-only. Video subscriptions are dropped by the room
-     * owner; this component additionally renders no `<video>` element at all,
-     * so nothing decodes even if a subscription lingers.
-     */
     audioOnly?: boolean;
 }
 
-/**
- * The six-person stage: one spotlight at the 720p layout plus up to five
- * auxiliaries at 360p.
- *
- * Every tile is a direct child of a single CSS grid, keyed by participant
- * identity. That is deliberate: when the active speaker changes, the promoted
- * tile keeps its React position and only its grid span and requested layer
- * change, so its `<video>` element is reused rather than torn down and rebuilt.
- * Splitting the spotlight and the strip into two parent elements would remount
- * the tile on every speaker change — one detach/attach cycle, one black frame,
- * and one more chance to leak an element per switch.
- *
- * Mobile gets the same grid, which lands as a full-width spotlight above a strip
- * of five fifth-width auxiliaries rather than six equal decoders
- * (WEEKEND_MVP_ROADMAP.md WS2-02 risk note).
- */
 export default function StageLayout({
     publishers,
     activeSpeakerIdentity,
@@ -61,7 +37,7 @@ export default function StageLayout({
             aria-label="Stage"
             data-testid="stage-layout"
             data-overflow={overflow.length || undefined}
-            className="w-full max-w-4xl mx-auto"
+            className="mx-auto w-full max-w-4xl"
         >
             {audioOnly && (
                 <p
@@ -70,15 +46,23 @@ export default function StageLayout({
                 >
                     Audio-only mode. Video is off; you are still hearing the stage and
                     the Beacon bed.
+                    <span className="mt-0.5 block opacity-70">
+                        Modo solo audio. El video está apagado; seguís escuchando el escenario y el Beacon.
+                    </span>
                 </p>
             )}
 
             {tiles.length === 0 ? (
-                <p className="py-10 text-center text-sm text-[var(--text-muted)]">
-                    Waiting for the facilitator to open the stage.
-                </p>
+                <div className="terminal-state py-10">
+                    <p className="terminal-state__body">
+                        Waiting for the facilitator to open the stage.
+                        <span className="mt-1 block opacity-70">
+                            Esperando que el facilitador abra el escenario.
+                        </span>
+                    </p>
+                </div>
             ) : (
-                <ul className="grid grid-cols-5 gap-1.5 sm:gap-3 list-none p-0 m-0">
+                <ul className="m-0 grid list-none grid-cols-5 gap-1.5 p-0 sm:gap-3">
                     {tiles.map((publisher) => (
                         <StageTile
                             key={publisher.identity}

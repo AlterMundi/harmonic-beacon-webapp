@@ -6,7 +6,6 @@ const CAPTURE_INTERVAL_MS = 2_500;
 
 type Props = { sessionId: string; connected: boolean; isPublishing: boolean };
 
-/** Optional, independent 100px snapshot source for audience members. */
 export default function ThumbnailSender({ sessionId, connected, isPublishing }: Props) {
     const streamRef = useRef<MediaStream | null>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -41,7 +40,7 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
                 method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: frame, cache: 'no-store',
             });
         } catch {
-            // The tapestry is cuttable; a failed snapshot never affects the room.
+            // The tapestry is cuttable
         } finally {
             sendingRef.current = false;
         }
@@ -85,7 +84,7 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     return <section className="w-full max-w-xs text-center" aria-live="polite">
         <video ref={videoRef} muted playsInline className="hidden" />
         {enabled ? <button type="button" className="text-xs text-[var(--text-muted)] underline" onClick={stop}>Stop tapestry camera</button> :
-            <button type="button" className="text-xs text-[var(--accent-400)] underline" onClick={() => void enable()} disabled={!connected}>Share an optional camera snapshot</button>}
+            <button type="button" className="text-xs text-[var(--gold)] underline" onClick={() => void enable()} disabled={!connected}>Share an optional camera snapshot</button>}
         {message ? <p className="mt-1 text-xs text-[var(--text-muted)]">{message}</p> : null}
     </section>;
 }

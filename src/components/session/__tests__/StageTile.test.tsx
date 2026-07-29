@@ -153,10 +153,10 @@ describe('StageTile - per-tile indicators', () => {
 
     it('marks the active speaker so the audience can see who has the floor', () => {
         const { rerender } = render(<StageTile {...BASE_PROPS} isSpeaking={false} />);
-        expect(screen.getByTestId('stage-tile').className).not.toMatch(/ring-2/);
+        expect(screen.getByTestId('stage-tile').className).not.toMatch(/stage-tile--speaking/);
 
         rerender(<StageTile {...BASE_PROPS} isSpeaking />);
-        expect(screen.getByTestId('stage-tile').className).toMatch(/ring-2/);
+        expect(screen.getByTestId('stage-tile').className).toMatch(/stage-tile--speaking/);
     });
 
     it('labels a tile with the non-PII role word only', () => {

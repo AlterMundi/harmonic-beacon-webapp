@@ -21,24 +21,10 @@ import ThumbnailSender from "@/components/session/ThumbnailSender";
 import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
 import type { StageVideoPublication } from "@/components/session/StageTile";
 import type { StageConnectionQuality } from "@/lib/stage-layout";
-import { redactErrorDetail } from '@/lib/redact';
+import { redactErrorDetail } from "@/lib/redact";
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
 
-/**
- * WEEKEND_MVP_ROADMAP.md §1: "The stage publishes simulcast. The active
- * speaker/Julián tile requests the 720p layer; at most five auxiliary tiles
- * request 360p."
- *
- * - `adaptiveStream` lets the SFU stop sending video for tiles that are
- *   scrolled out of view or in a backgrounded tab; each tile then pins the layer
- *   it wants while visible (see StageTile).
- * - `dynacast` stops publishing layers nobody subscribes to, which is the other
- *   half of the same saving: with 150 subscribers all on 360p auxiliaries, the
- *   720p layer of those five publishers is never encoded.
- * - The publisher sends 720p + 360p + 180p. 180p exists for the mobile strip and
- *   for a publisher whose uplink collapses.
- */
 const STAGE_ROOM_OPTIONS: RoomOptions = {
     adaptiveStream: true,
     dynacast: true,
@@ -52,17 +38,9 @@ const STAGE_ROOM_OPTIONS: RoomOptions = {
     },
 };
 
-/** Role words minted by `resolveRoomPrincipal` — never an email or a code. */
 const FACILITATOR_LABEL = "Facilitator";
 const FALLBACK_LABEL = "Participant";
 
-/**
- * Room events arrive per participant. At the 150-attendee cap a join burst is
- * 150 `ParticipantConnected` events in a few seconds; each one would otherwise
- * rebuild the stage snapshot and re-render. Coalescing into one read per frame
- * budget keeps the cost proportional to the six tiles that can change, not to
- * the audience size.
- */
 const STAGE_REFRESH_MS = 100;
 
 interface SessionInfo {
@@ -72,15 +50,6 @@ interface SessionInfo {
     startedAt: string | null;
 }
 
-// What RoomEvent.Disconnected tells us, collapsed to the three things a
-// participant can be told without guessing:
-// - "ended": someone deliberately ended the room server-side (Admin kill
-//   switch or Provider ending their own session). Say the session ended;
-//   don't speculate about who did it or why.
-// - "transport": a network-shaped failure. Say the connection dropped and
-//   offer to rejoin.
-// - "unknown": the SDK gave no reason, or one we don't have a bucket for.
-//   Don't guess which of the above it was — say we can't tell.
 type DisconnectKind = "ended" | "transport" | "unknown";
 
 function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
@@ -105,17 +74,12 @@ function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
 
 const STAGE_QUALITIES: readonly string[] = ["excellent", "good", "poor", "lost", "unknown"];
 
-/**
- * `ConnectionQuality` is a string enum whose values already match the tile's
- * vocabulary. Reading it as a string keeps the SDK enum out of the components.
- */
 function toStageQuality(quality: unknown): StageConnectionQuality {
     return typeof quality === "string" && STAGE_QUALITIES.includes(quality)
         ? (quality as StageConnectionQuality)
         : "unknown";
 }
 
-/** How the room-level `ConnectionState` reads in the header. */
 const CONNECTION_COPY: Record<string, string> = {
     connected: "Connected",
     connecting: "Connecting",
@@ -125,28 +89,17 @@ const CONNECTION_COPY: Record<string, string> = {
 };
 
 const CONNECTION_DOT: Record<string, string> = {
-    connected: "bg-green-400 animate-pulse",
-    connecting: "bg-amber-400 animate-pulse",
-    reconnecting: "bg-amber-400 animate-pulse",
-    signalReconnecting: "bg-amber-400 animate-pulse",
-    disconnected: "bg-red-400",
+    connected: "bg-[var(--lime)] animate-breathe",
+    connecting: "bg-[var(--warning)] animate-breathe",
+    reconnecting: "bg-[var(--warning)] animate-breathe",
+    signalReconnecting: "bg-[var(--warning)] animate-breathe",
+    disconnected: "bg-[var(--danger)]",
 };
 
-/**
- * A stage tile belongs to a stage grant, not to attendance. The 150 subscribe-only
- * attendees have `canPublish: false` and publish nothing, so they never produce a
- * tile. The publication fallback covers the window where a grant is live on the
- * wire before the permission update has been applied locally.
- */
 function isStagePublisher(participant: Participant): boolean {
     return Boolean(participant.permissions?.canPublish) || participant.trackPublications.size > 0;
 }
 
-/**
- * The stage token grants only MICROPHONE and CAMERA (see `createSessionToken`),
- * so a participant's single video publication is their camera. No screen share
- * can appear here and be mistaken for one.
- */
 function cameraPublication(participant: Participant): StageVideoPublication | null {
     const [publication] = participant.videoTrackPublications.values();
     return publication ?? null;
@@ -178,7 +131,7 @@ function SessionRoom() {
     const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState<string | null>(null);
     const [participantCount, setParticipantCount] = useState(0);
     const [volume, setVolume] = useState(0.8);
-    const [mix, setMix] = useState(0.8); // 0 = all beacon, 1 = all session
+    const [mix, setMix] = useState(0.8);
     const [duration, setDuration] = useState(0);
     const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
     const [retryToken, setRetryToken] = useState(0);
@@ -188,25 +141,14 @@ function SessionRoom() {
     const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const volumeRef = useRef(volume);
-    // Read inside room event handlers, which are registered once per connection
-    // and would otherwise close over a stale `audioOnly`.
     const audioOnlyRef = useRef(audioOnly);
-    // Slot number per identity, assigned on first sighting of a stage grant and
-    // never recycled. Deliberately outside the connect effect: a rejoin reuses
-    // the numbers, so the same identities come back to the same tiles.
     const slotOrderRef = useRef<Map<string, number>>(new Map());
     const nextSlotRef = useRef(0);
-    // Highest slot number ever on stage. A newly granted publisher exceeds it,
-    // which is how "the spotlight follows the facilitator-promoted publisher".
     const highestSlotRef = useRef(-1);
     const stageRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    // Set right before we call room.disconnect() ourselves (leave, end session)
-    // so the room-level Disconnected handler below can tell "we did this on
-    // purpose" apart from the server or the network doing it to us.
     const intentionalDisconnectRef = useRef(false);
     const terminalViewRef = useRef<HTMLDivElement>(null);
 
-    // Keep volumeRef in sync with state
     useEffect(() => { volumeRef.current = volume; }, [volume]);
 
     const slotFor = useCallback((identity: string): number => {
@@ -217,12 +159,6 @@ function SessionRoom() {
         return slot;
     }, []);
 
-    /**
-     * Rebuild the whole stage snapshot from the room. One reader for every event
-     * rather than a partial update per event: with permissions, mute state,
-     * speaking state, subscriptions and quality all changing independently, the
-     * only cheap way to stay consistent is to re-derive.
-     */
     const readStage = useCallback(() => {
         const room = roomRef.current;
         if (!room) return;
@@ -257,8 +193,6 @@ function SessionRoom() {
 
         const newestSlot = publishers.reduce((max, p) => Math.max(max, p.grantOrder), -1);
         if (newestSlot > highestSlotRef.current) {
-            // Someone was just given the floor. Hand them the spotlight rather
-            // than leaving it on whoever spoke last.
             highestSlotRef.current = newestSlot;
             setActiveSpeakerIdentity(null);
             return;
@@ -266,8 +200,6 @@ function SessionRoom() {
 
         const onStage = new Set(publishers.map((p) => p.identity));
         const speaker = room.activeSpeakers.find((p) => onStage.has(p.identity));
-        // Sticky: `activeSpeakers` empties the moment audio level drops, and a
-        // spotlight that snapped back between sentences would be unwatchable.
         if (speaker) setActiveSpeakerIdentity(speaker.identity);
     }, [slotFor]);
 
@@ -279,13 +211,6 @@ function SessionRoom() {
         }, STAGE_REFRESH_MS);
     }, [readStage]);
 
-    /**
-     * Audio-only degradation. This drops the video *subscriptions* — nothing is
-     * sent to this client and nothing decodes — while the stage audio elements
-     * and the separate Beacon bed connection are left completely alone. It is
-     * not a scope cut (roadmap §5): a publisher's own camera is governed by the
-     * camera button, not by this.
-     */
     const applyVideoSubscriptions = useCallback((subscribed: boolean) => {
         const room = roomRef.current;
         if (!room) return;
@@ -308,7 +233,6 @@ function SessionRoom() {
             intentionalDisconnectRef.current = true;
             roomRef.current.disconnect();
         }
-
         router.push("/");
     }, [router]);
 
@@ -362,7 +286,6 @@ function SessionRoom() {
 
                 setSessionInfo(data.session);
                 setCanPublish(data.canPublish);
-                // Initialize timer from session startedAt
                 if (data.session.startedAt) {
                     const elapsed = Math.floor((Date.now() - new Date(data.session.startedAt).getTime()) / 1000);
                     setDuration(Math.max(0, elapsed));
@@ -373,22 +296,13 @@ function SessionRoom() {
 
                 room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
                     if (track.kind === Track.Kind.Audio) {
-                        // Stage voice lives in hidden elements owned by the page,
-                        // not by a tile: it has to survive audio-only mode and
-                        // any tile unmounting, and it is what the crossfader
-                        // attenuates against the Beacon bed.
                         const audioElement = track.attach() as HTMLAudioElement;
                         audioElement.volume = volumeRef.current;
                         audioElement.style.display = "none";
                         document.body.appendChild(audioElement);
                         audioElementsRef.current.set(participant.identity, audioElement);
-                        try {
-                            await audioElement.play();
-                        } catch {
-                            // Autoplay blocked
-                        }
+                        try { await audioElement.play(); } catch { /* Autoplay blocked */ }
                     } else if (audioOnlyRef.current) {
-                        // Auto-subscribe raced our preference; undo it.
                         publication.setSubscribed(false);
                     }
                     scheduleStageRefresh();
@@ -423,15 +337,11 @@ function SessionRoom() {
                 room.on(RoomEvent.Reconnected, scheduleStageRefresh);
 
                 room.on(RoomEvent.ConnectionQualityChanged, (_quality: unknown, participant: Participant) => {
-                    // The audience reports quality too. Only the six tiles show it.
                     if (isStagePublisher(participant)) scheduleStageRefresh();
                 });
 
                 room.on(RoomEvent.ParticipantPermissionsChanged, (_prev: unknown, participant: Participant) => {
                     if (participant === room.localParticipant && !participant.permissions?.canPublish) {
-                        // Demoted. Unpublish and stop both devices now rather
-                        // than waiting for the operator's force-mute to land:
-                        // WS2-02 requires this inside two seconds.
                         Promise.all([
                             room.localParticipant.setCameraEnabled(false),
                             room.localParticipant.setMicrophoneEnabled(false),
@@ -446,10 +356,6 @@ function SessionRoom() {
 
                 room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
                     setIsConnected(false);
-                    // We already know why: either this effect is tearing down
-                    // (cancelled) or we called disconnect() ourselves (leave/end).
-                    // Neither needs the terminal view — the caller is already
-                    // navigating away.
                     if (cancelled || intentionalDisconnectRef.current) return;
                     setDisconnectState(classifyDisconnectReason(reason));
                 });
@@ -462,7 +368,6 @@ function SessionRoom() {
 
                 setIsConnected(true);
                 setIsConnecting(false);
-                // A rejoin while audio-only must not quietly start pulling video.
                 if (audioOnlyRef.current) applyVideoSubscriptions(false);
                 readStage();
             } catch (e) {
@@ -504,16 +409,12 @@ function SessionRoom() {
         };
     }, [isConnected]);
 
-    // Move focus into the terminal view when it replaces the live session UI,
-    // so a screen reader user lands on the announcement rather than on
-    // whatever the focused control used to be.
     useEffect(() => {
         if (disconnectState) {
             terminalViewRef.current?.focus();
         }
     }, [disconnectState]);
 
-    // Apply mix: distribute master volume between session and beacon
     useEffect(() => {
         const sessionVol = volume * mix;
         const beaconVol = volume * (1 - mix);
@@ -554,10 +455,17 @@ function SessionRoom() {
     // Loading state
     if (isConnecting) {
         return (
-            <main className="min-h-screen flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin w-10 h-10 border-2 border-[var(--primary-500)] border-t-transparent rounded-full mx-auto mb-4"></div>
-                    <p className="text-[var(--text-muted)]">Connecting to session...</p>
+            <main className="event-shell">
+                <div className="relative z-10 flex min-h-screen items-center justify-center">
+                    <div className="terminal-state">
+                        <div className="terminal-state__icon">&#10022;</div>
+                        <p className="terminal-state__title" style={{ fontFamily: "var(--font-cormorant), Georgia, serif" }}>
+                            Connecting
+                        </p>
+                        <p className="terminal-state__body">
+                            Entering the Harmonic field…
+                        </p>
+                    </div>
                 </div>
             </main>
         );
@@ -566,75 +474,73 @@ function SessionRoom() {
     // Error state
     if (error) {
         return (
-            <main className="min-h-screen flex items-center justify-center px-4">
-                <div className="glass-card p-8 text-center max-w-sm w-full">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
-                        <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                    </div>
-                    <h2 className="text-xl font-semibold mb-2">Connection Error</h2>
-                    <p className="text-sm text-[var(--text-muted)] mb-4">{error}</p>
-                    <div className="flex flex-col gap-2">
-                        <button onClick={rejoin} className="btn-primary">
-                            Try again
-                        </button>
-                        <button onClick={() => router.push("/")} className="btn-secondary">
-                            Back to Sessions
-                        </button>
+            <main className="event-shell">
+                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                    <div className="event-card w-full max-w-sm text-center">
+                        <div className="terminal-state__icon text-[var(--danger)]">&#9888;</div>
+                        <h2 className="terminal-state__title">Connection Error</h2>
+                        <p className="terminal-state__body">{error}</p>
+                        <div className="mt-4 flex flex-col gap-2">
+                            <button onClick={rejoin} className="event-button event-button--primary w-full">
+                                Try again
+                            </button>
+                            <button onClick={() => router.push("/")} className="event-button event-button--secondary w-full">
+                                Back to Sessions
+                            </button>
+                        </div>
                     </div>
                 </div>
             </main>
         );
     }
 
-    // Terminal state: the room-level Disconnected event fired for a reason
-    // that wasn't us leaving on purpose. What we say depends on what LiveKit
-    // told us — see classifyDisconnectReason above.
+    // Terminal state
     if (disconnectState) {
         const copy = {
             ended: {
                 heading: "Session ended",
                 body: "This session has ended. You're no longer connected.",
+                esBody: "Esta sesión ha terminado. Ya no estás conectado.",
                 showRejoin: false,
             },
             transport: {
                 heading: "Connection lost",
                 body: "Your connection to this session was lost.",
+                esBody: "Se perdió la conexión con esta sesión.",
                 showRejoin: true,
             },
             unknown: {
                 heading: "Disconnected",
                 body: "You're no longer connected to this session. We can't tell whether it ended or your connection dropped.",
+                esBody: "Ya no estás conectado a esta sesión. No podemos saber si terminó o se cortó la conexión.",
                 showRejoin: true,
             },
         }[disconnectState];
 
         return (
-            <main className="min-h-screen flex items-center justify-center px-4">
-                <div
-                    ref={terminalViewRef}
-                    role="status"
-                    aria-live="polite"
-                    tabIndex={-1}
-                    className="glass-card p-8 text-center max-w-sm w-full outline-none"
-                >
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">
-                        <svg className="w-8 h-8 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M5.636 5.636a9 9 0 000 12.728" />
-                        </svg>
-                    </div>
-                    <h2 className="text-xl font-semibold mb-2">{copy.heading}</h2>
-                    <p className="text-sm text-[var(--text-muted)] mb-4">{copy.body}</p>
-                    <div className="flex flex-col gap-2">
-                        {copy.showRejoin && (
-                            <button onClick={rejoin} className="btn-primary">
-                                Rejoin
+            <main className="event-shell">
+                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                    <div
+                        ref={terminalViewRef}
+                        role="status"
+                        aria-live="polite"
+                        tabIndex={-1}
+                        className="event-card w-full max-w-sm text-center outline-none"
+                    >
+                        <div className="terminal-state__icon">&#10022;</div>
+                        <h2 className="terminal-state__title">{copy.heading}</h2>
+                        <p className="terminal-state__body">{copy.body}</p>
+                        <p className="mt-1 text-xs text-[var(--text-muted)] opacity-70">{copy.esBody}</p>
+                        <div className="mt-4 flex flex-col gap-2">
+                            {copy.showRejoin && (
+                                <button onClick={rejoin} className="event-button event-button--primary w-full">
+                                    Rejoin / Volver a entrar
+                                </button>
+                            )}
+                            <button onClick={() => router.push("/")} className="event-button event-button--secondary w-full">
+                                Back to Sessions / Volver
                             </button>
-                        )}
-                        <button onClick={() => router.push("/")} className="btn-secondary">
-                            Back to Sessions
-                        </button>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -645,206 +551,197 @@ function SessionRoom() {
     const needsDeviceGesture = canPublish && !isMicOn && !isCameraOn;
 
     return (
-        <main className="min-h-screen flex flex-col">
-            {/* Header */}
-            <header className="p-4 flex items-center justify-between border-b border-[var(--border-subtle)]">
-                <div className="min-w-0 flex-1">
-                    <h1 className="font-semibold truncate">{sessionInfo?.title || "Session"}</h1>
-                    {/* aria-live without role="status": the terminal view owns the
-                        page's only status role, and a second one would compete
-                        with it for assistive-technology attention. */}
-                    <p className="text-xs text-[var(--text-muted)]" aria-live="polite">
-                        {participantCount} participant{participantCount !== 1 ? "s" : ""}
-                        <span
-                            className="ml-2 inline-flex items-center gap-1"
-                            data-testid="connection-state"
-                            data-state={connectionState}
-                        >
-                            <span className={`w-1.5 h-1.5 rounded-full ${CONNECTION_DOT[connectionState] ?? "bg-white/30"}`}></span>
-                            {connectionLabel}
-                        </span>
-                    </p>
-                </div>
-                <span className="text-sm font-mono text-[var(--text-muted)]">{formatTime(duration)}</span>
-            </header>
-
-            {/* Stage */}
-            <div className="flex-1 flex flex-col items-center justify-center gap-6 px-3 py-4 sm:px-4">
-                <StageLayout
-                    publishers={stagePublishers}
-                    activeSpeakerIdentity={activeSpeakerIdentity}
-                    audioOnly={audioOnly}
-                />
-
-                {!isBeaconPlaying && (
-                    <div className="glass-card w-full max-w-md p-4 text-center" role="group" aria-label="Audio activation">
-                        <p className="mb-3 text-sm text-[var(--text-secondary)]">
-                            Press once to hear the session and Beacon.
-                            <span className="block">Presiona una vez para escuchar la sesión y el Beacon.</span>
+        <main className="event-shell">
+            <div className="relative z-10 flex min-h-screen flex-col">
+                {/* Header */}
+                <header className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                        <h1 className="truncate text-sm font-semibold text-[var(--cream)]">
+                            {sessionInfo?.title || "Session"}
+                        </h1>
+                        <p className="text-[10px] text-[var(--text-muted)]" aria-live="polite">
+                            <span className="font-mono">{participantCount}</span> participant{participantCount !== 1 ? "s" : ""}
+                            <span
+                                className="ml-2 inline-flex items-center gap-1"
+                                data-testid="connection-state"
+                                data-state={connectionState}
+                            >
+                                <span className={`inline-block h-1.5 w-1.5 rounded-full ${CONNECTION_DOT[connectionState] ?? "bg-white/30"}`} />
+                                {connectionLabel}
+                            </span>
                         </p>
-                        <button onClick={startListening} className="btn-primary min-h-12 w-full">
-                            Start audio · Iniciar audio
-                        </button>
-                        {(audioActivationError || beaconAudioError) && (
-                            <p className="mt-3 text-sm text-red-300" role="alert">
-                                {audioActivationError || beaconAudioError}
+                    </div>
+                    <span className="font-mono text-xs text-[var(--gold)]">{formatTime(duration)}</span>
+                </header>
+
+                {/* Stage */}
+                <div className="flex flex-1 flex-col items-center justify-center gap-5 px-3 py-4 sm:px-4">
+                    <StageLayout
+                        publishers={stagePublishers}
+                        activeSpeakerIdentity={activeSpeakerIdentity}
+                        audioOnly={audioOnly}
+                    />
+
+                    {!isBeaconPlaying && (
+                        <div className="event-card w-full max-w-md text-center" role="group" aria-label="Audio activation">
+                            <p className="mb-3 text-sm text-[var(--text-secondary)]">
+                                Press once to hear the session and Beacon.
+                                <span className="mt-1 block opacity-80">Presiona una vez para escuchar la sesión y el Beacon.</span>
                             </p>
-                        )}
-                    </div>
-                )}
+                            <button onClick={startListening} className="event-button event-button--primary w-full">
+                                Start audio · Iniciar audio
+                            </button>
+                            {(audioActivationError || beaconAudioError) && (
+                                <p className="mt-3 text-sm text-[var(--danger)]" role="alert">
+                                    {audioActivationError || beaconAudioError}
+                                </p>
+                            )}
+                        </div>
+                    )}
 
-                {/* A grant is not consent to open a device. Nothing is enabled
-                    until the promoted participant presses a button. */}
-                {needsDeviceGesture && (
-                    <p className="text-sm text-[var(--accent-400)] text-center">
-                        Your turn—enable camera and mic
-                    </p>
-                )}
+                    {needsDeviceGesture && (
+                        <p className="text-center text-sm text-[var(--lime)]">
+                            Your turn — enable camera and mic
+                            <span className="mt-0.5 block text-xs opacity-80">Tu turno — activá cámara y micrófono</span>
+                        </p>
+                    )}
 
-                <ThumbnailSender
-                    sessionId={id}
-                    connected={isConnected}
-                    // A stage grant owns the camera. Stop the optional stream as
-                    // soon as promotion lands, before a stage camera is enabled.
-                    isPublishing={canPublish}
-                />
+                    <ThumbnailSender
+                        sessionId={id}
+                        connected={isConnected}
+                        isPublishing={canPublish}
+                    />
 
-                {process.env.NEXT_PUBLIC_TAPESTRY_PUBLIC_ENABLED === "true" && (
-                    <ThumbnailTapestry sessionId={id} />
-                )}
+                    {process.env.NEXT_PUBLIC_TAPESTRY_PUBLIC_ENABLED === "true" && (
+                        <ThumbnailTapestry sessionId={id} />
+                    )}
 
-                {/* Volume + Mix controls */}
-                <div className="w-full max-w-xs space-y-4">
-                    {/* Master volume */}
-                    <div className="flex items-center gap-3">
-                        <svg className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                        </svg>
-                        <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value={volume}
-                            onChange={(e) => setVolume(parseFloat(e.target.value))}
-                            className="flex-1 accent-[var(--primary-500)]"
-                            aria-label="Master volume"
-                        />
-                    </div>
-                    {/* Crossfader: beacon <-> session */}
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <span className="text-[10px] text-[var(--text-muted)] w-12 text-right">Beacon</span>
+                    {/* Volume + Mix controls */}
+                    <div className="w-full max-w-xs space-y-4">
+                        <div className="crossfader">
+                            <svg className="h-4 w-4 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            </svg>
                             <input
                                 type="range"
                                 min="0"
                                 max="1"
                                 step="0.01"
-                                value={mix}
-                                onChange={(e) => setMix(parseFloat(e.target.value))}
-                                className="flex-1 accent-[var(--primary-500)]"
-                                aria-label="Beacon and session mix"
+                                value={volume}
+                                onChange={(e) => setVolume(parseFloat(e.target.value))}
+                                className="flex-1 accent-[var(--gold)]"
+                                aria-label="Master volume"
                             />
-                            <span className="text-[10px] text-[var(--text-muted)] w-12">Session</span>
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="w-10 text-right font-mono text-[9px] uppercase tracking-wider text-[var(--gold)]">Beacon</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={mix}
+                                    onChange={(e) => setMix(parseFloat(e.target.value))}
+                                    className="flex-1 accent-[var(--cyan)]"
+                                    aria-label="Beacon and session mix"
+                                />
+                                <span className="w-10 font-mono text-[9px] uppercase tracking-wider text-[var(--cyan)]">Session</span>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Bottom controls */}
-            <div className="p-6 border-t border-[var(--border-subtle)]">
-                {isConnected && (
-                    <div className="mb-4 flex justify-center">
-                        <HandRaiseButton
-                            sessionId={id}
-                            onPublishGrantChange={setCanPublish}
-                        />
-                    </div>
-                )}
-                <div className="flex items-start justify-center gap-4">
-                    {/* Mic toggle (only for publishers) */}
-                    {canPublish && (
-                        <div className="flex flex-col items-center gap-1">
-                            <button
-                                onClick={toggleMic}
-                                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
-                                    isMicOn
-                                        ? "bg-[var(--primary-600)] text-white"
-                                        : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
-                                }`}
-                                aria-label={isMicOn ? "Mute microphone" : "Unmute microphone"}
-                                aria-pressed={isMicOn}
-                            >
-                                {isMicOn ? (
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                    </svg>
-                                ) : (
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                        <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                    </svg>
-                                )}
-                            </button>
-                            <span className="text-[10px] text-[var(--text-muted)]">Mic</span>
+                {/* Bottom controls */}
+                <div className="border-t border-[var(--border-subtle)] px-4 py-4">
+                    {isConnected && (
+                        <div className="mb-4 flex justify-center">
+                            <HandRaiseButton
+                                sessionId={id}
+                                onPublishGrantChange={setCanPublish}
+                            />
                         </div>
                     )}
+                    <div className="flex items-start justify-center gap-4">
+                        {canPublish && (
+                            <div className="flex flex-col items-center gap-1">
+                                <button
+                                    onClick={toggleMic}
+                                    className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
+                                        isMicOn
+                                            ? "bg-[var(--cyan)] text-[var(--ink)]"
+                                            : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
+                                    }`}
+                                    aria-label={isMicOn ? "Mute microphone" : "Unmute microphone"}
+                                    aria-pressed={isMicOn}
+                                >
+                                    {isMicOn ? (
+                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                            <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                        </svg>
+                                    )}
+                                </button>
+                                <span className="text-[9px] text-[var(--text-muted)]">Mic</span>
+                            </div>
+                        )}
 
-                    {/* Camera toggle (only for publishers) */}
-                    {canPublish && (
+                        {canPublish && (
+                            <div className="flex flex-col items-center gap-1">
+                                <button
+                                    onClick={toggleCamera}
+                                    className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
+                                        isCameraOn
+                                            ? "bg-[var(--cyan)] text-[var(--ink)]"
+                                            : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
+                                    }`}
+                                    aria-label={isCameraOn ? "Turn camera off" : "Turn camera on"}
+                                    aria-pressed={isCameraOn}
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        {!isCameraOn && <line x1="3" y1="3" x2="21" y2="21" strokeLinecap="round" />}
+                                    </svg>
+                                </button>
+                                <span className="text-[9px] text-[var(--text-muted)]">Camera</span>
+                            </div>
+                        )}
+
                         <div className="flex flex-col items-center gap-1">
                             <button
-                                onClick={toggleCamera}
-                                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
-                                    isCameraOn
-                                        ? "bg-[var(--primary-600)] text-white"
+                                onClick={toggleAudioOnly}
+                                className={`flex h-14 w-14 items-center justify-center rounded-full transition-all ${
+                                    audioOnly
+                                        ? "bg-[var(--gold)] text-[var(--ink)]"
                                         : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
                                 }`}
-                                aria-label={isCameraOn ? "Turn camera off" : "Turn camera on"}
-                                aria-pressed={isCameraOn}
+                                aria-label={audioOnly ? "Turn video back on" : "Switch to audio only"}
+                                aria-pressed={audioOnly}
                             >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                    {!isCameraOn && <line x1="3" y1="3" x2="21" y2="21" strokeLinecap="round" />}
+                                <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l7-3v13M9 19a3 3 0 11-6 0 3 3 0 016 0zm7-3a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
                             </button>
-                            <span className="text-[10px] text-[var(--text-muted)]">Camera</span>
+                            <span className="text-[9px] text-[var(--text-muted)]">Audio only</span>
                         </div>
-                    )}
 
-                    {/* Audio-only fallback — available to everyone, publisher or not */}
-                    <div className="flex flex-col items-center gap-1">
-                        <button
-                            onClick={toggleAudioOnly}
-                            className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
-                                audioOnly
-                                    ? "bg-[var(--accent-500)] text-black"
-                                    : "bg-white/10 text-[var(--text-muted)] hover:bg-white/20"
-                            }`}
-                            aria-label={audioOnly ? "Turn video back on" : "Switch to audio only"}
-                            aria-pressed={audioOnly}
-                        >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l7-3v13M9 19a3 3 0 11-6 0 3 3 0 016 0zm7-3a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                        </button>
-                        <span className="text-[10px] text-[var(--text-muted)]">Audio only</span>
+                        <div className="flex flex-col items-center gap-1">
+                            <button
+                                onClick={leaveSession}
+                                className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-[var(--text-muted)] transition-all hover:bg-white/20"
+                                aria-label="Leave session"
+                            >
+                                <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                </svg>
+                            </button>
+                            <span className="text-[9px] text-[var(--text-muted)]">Leave</span>
+                        </div>
                     </div>
-
-                    {/* Leave button */}
-                    <div className="flex flex-col items-center gap-1">
-                        <button
-                            onClick={leaveSession}
-                            className="w-14 h-14 rounded-full bg-white/10 text-[var(--text-muted)] flex items-center justify-center hover:bg-white/20 transition-all"
-                            aria-label="Leave session"
-                        >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                            </svg>
-                        </button>
-                        <span className="text-[10px] text-[var(--text-muted)]">Leave</span>
-                    </div>
-
                 </div>
             </div>
         </main>
