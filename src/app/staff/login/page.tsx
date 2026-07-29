@@ -12,41 +12,49 @@ import Link from "next/link";
 import { currentPrincipal } from "@/lib/auth";
 
 import StaffLoginClient from "./StaffLoginClient";
+import BrandLockup from "@/components/brand/BrandLockup";
 
 export const dynamic = "force-dynamic";
 
 export default async function StaffLoginPage() {
-    // Resolved authoritatively, unlike the cookie check in `middleware.ts`: an
-    // operator whose account was disabled mid-event should see the form again,
-    // not a stale "you are signed in".
     const principal = await currentPrincipal().catch(() => null);
     const signedInRole = principal?.kind === "staff" ? principal.role : null;
 
     return (
-        <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-6 py-12">
-            <header className="space-y-1">
-                <h1 className="text-2xl font-bold">Staff sign-in</h1>
-                <p className="text-sm text-[var(--text-secondary)]">Harmonic Beacon event operations</p>
-            </header>
-
-            {signedInRole ? (
-                <div className="space-y-3">
-                    <p className="text-sm">
-                        Signed in as <span className="font-medium">{signedInRole}</span>.
+        <main className="event-shell">
+            <div className="relative z-10 mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-6 py-12">
+                <header className="space-y-1">
+                    <BrandLockup href="/" />
+                    <h1 className="pt-4 font-serif text-2xl font-normal text-[var(--cream)]">
+                        Staff sign-in
+                    </h1>
+                    <p className="text-sm text-[var(--text-muted)]">
+                        Harmonic Beacon event operations
                     </p>
-                    <Link href="/ops/health" className="inline-block text-sm underline">
-                        Go to operator controls
-                    </Link>
-                </div>
-            ) : (
-                <StaffLoginClient />
-            )}
+                </header>
 
-            <footer className="text-xs text-[var(--text-secondary)]">
-                <Link href="/" className="underline">
-                    Attendee sign-in
-                </Link>
-            </footer>
+                {signedInRole ? (
+                    <div className="space-y-4">
+                        <div className="event-alert event-alert--info">
+                            Signed in as <span className="font-medium text-[var(--cream)]">{signedInRole}</span>.
+                        </div>
+                        <Link
+                            href="/ops/health"
+                            className="event-button event-button--primary inline-flex w-full"
+                        >
+                            Go to operator controls
+                        </Link>
+                    </div>
+                ) : (
+                    <StaffLoginClient />
+                )}
+
+                <footer className="text-xs text-[var(--text-muted)]">
+                    <Link href="/" className="underline underline-offset-2 transition-colors hover:text-[var(--cream)]">
+                        Attendee sign-in / Ingreso de participantes
+                    </Link>
+                </footer>
+            </div>
         </main>
     );
 }

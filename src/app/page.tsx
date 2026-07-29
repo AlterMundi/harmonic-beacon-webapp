@@ -6,9 +6,13 @@
  * visitor is — the form's response does that. Purchase happens on the external
  * ticketing platform.
  *
- * Bilingual EN/ES on one page. Session 1 is Spanish (8:30 AM Costa Rica) and Session 2 is English (12:30 PM Costa Rica), both Saturday, both
- * audiences arrive at the same URL, and a Spanish-speaking attendee must be able
- * to log in without reading English.
+ * Bilingual EN/ES on one page. Session 1 is Spanish and Session 2 is English,
+ * both Saturday, both audiences arrive at the same URL, and a Spanish-speaking
+ * attendee must be able to log in without reading English.
+ *
+ * VISUAL NOTE: The marketing site shows Spanish at 08:30 CR and English at 14:00 CR.
+ * The app database comment says English is 12:30 CR. This discrepancy is reported
+ * in the handoff for the event owner to confirm.
  */
 
 import Link from "next/link";
@@ -17,9 +21,8 @@ import { prisma } from "@/lib/db";
 import { redactError } from "@/lib/redact";
 
 import LoginClient from "./login/LoginClient";
+import BrandLockup from "@/components/brand/BrandLockup";
 
-// The event list comes from the database and the page sets a session cookie, so
-// there is nothing here to prerender or cache at the edge.
 export const dynamic = "force-dynamic";
 
 type WeekendEvent = {
@@ -28,18 +31,10 @@ type WeekendEvent = {
     scheduledAt: Date;
 };
 
-/**
- * Where `middleware.ts` sends an attendee who reached a room without a cookie:
- * `/session` or `/session/<id>`, and nothing else. No dots, so no `..` segment
- * can walk the path back up to another surface after the check passes.
- */
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
 
 function safeNext(raw: string | string[] | undefined): string | undefined {
     const value = Array.isArray(raw) ? raw[0] : raw;
-    // Anything else — a protocol-relative URL, a host, a backslash, a traversal —
-    // is dropped rather than corrected, so a crafted login link cannot redirect
-    // an attendee anywhere except into a room.
     return value && INTERNAL_NEXT.test(value) ? value : undefined;
 }
 
@@ -51,8 +46,6 @@ async function weekendEvents(): Promise<WeekendEvent[] | null> {
             select: { id: true, language: true, scheduledAt: true },
         });
     } catch (error) {
-        // The form still works without this list: it needs the database, but the
-        // attendee holding a code does not need us to render the schedule first.
         console.error(`[landing] could not load the event schedule: ${redactError(error)}`);
         return null;
     }
@@ -70,6 +63,14 @@ function formatEventTime(at: Date, locale: string, timeZone: string): string {
     }).format(at);
 }
 
+function formatTimeOnly(at: Date, locale: string, timeZone: string): string {
+    return new Intl.DateTimeFormat(locale, {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone,
+    }).format(at);
+}
+
 export default async function LandingPage({
     searchParams,
 }: {
@@ -77,116 +78,143 @@ export default async function LandingPage({
 }) {
     const next = safeNext((await searchParams).next);
     const events = await weekendEvents();
-    // Per-session ticket purchase links; unset until WS6-01/02 configure them.
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlSession2 = process.env.TICKET_PURCHASE_URL_SESSION_2 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlFor = (language: string) =>
         language === "SPANISH" ? purchaseUrlSession1 : purchaseUrlSession2;
 
     return (
-        <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-10 px-6 py-12">
-            <header className="space-y-2">
-                <h1 className="text-3xl font-bold">Harmonic Beacon</h1>
-                <p className="text-[var(--text-secondary)]">
-                    A live psychodrama session with Julián, held twice this weekend.
-                    <span className="block">
-                        Una sesión de psicodrama en vivo con Julián, en dos encuentros este fin de semana.
-                    </span>
-                </p>
-            </header>
+        <main className="event-shell">
+            <div className="relative z-10 mx-auto flex min-h-screen max-w-2xl flex-col gap-10 px-6 py-12">
+                {/* Brand */}
+                <header className="flex items-center justify-between">
+                    <BrandLockup />
+                </header>
 
-            <section className="space-y-3" aria-labelledby="events-heading">
-                <h2 id="events-heading" className="text-lg font-semibold">
-                    The two sessions <span className="text-[var(--text-secondary)]">/ Los dos encuentros</span>
-                </h2>
-
-                {events === null ? (
-                    <p className="text-sm text-[var(--text-secondary)]">
-                        Session times are temporarily unavailable — your ticket code still works.
-                        <span className="block">
-                            Los horarios no están disponibles por el momento — tu código de entrada sigue funcionando.
+                {/* Hero */}
+                <section className="space-y-4">
+                    <p className="flex items-center gap-2.5 text-[10px] font-mono uppercase tracking-[0.18em] text-[var(--gold)]">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--pink)] shadow-[0_0_10px_var(--pink)]" />
+                        Harmonic Projection · Virtual Session
+                    </p>
+                    <h1 className="font-serif text-[clamp(2.8rem,8vw,5rem)] font-normal leading-[0.85] tracking-[-0.04em] text-[var(--cream)]">
+                        The myth<br /><em className="text-[var(--lime)] not-italic" style={{ textShadow: "0 0 28px rgba(182,255,113,0.25)" }}>is alive.</em>
+                    </h1>
+                    <p className="max-w-md text-[15px] leading-[1.75] text-[var(--text-secondary)]">
+                        A live online experience to enter your inner landscape through body, sound and the images already living inside you.
+                        <span className="mt-1 block opacity-80">
+                            Una experiencia online en vivo para entrar en tu paisaje interior a través del cuerpo, el sonido y las imágenes que ya viven dentro tuyo.
                         </span>
                     </p>
-                ) : (
-                    <ul className="space-y-3">
-                        {events.map((event) => (
-                            <li key={event.id} className="rounded-lg border border-white/10 bg-black/20 p-4">
-                                <p className="font-medium">
-                                    {event.language === "ENGLISH" ? "In English" : "En español"}
-                                </p>
-                                <p className="text-sm">
-                                    <span className="font-medium">Costa Rica: </span>
-                                    {formatEventTime(
-                                        event.scheduledAt,
-                                        event.language === "ENGLISH" ? "en-US" : "es-CR",
-                                        "America/Costa_Rica",
-                                    )}
-                                </p>
-                                <p className="text-sm text-[var(--text-secondary)]">
-                                    <span className="font-medium">Argentina: </span>
-                                    {formatEventTime(
-                                        event.scheduledAt,
-                                        event.language === "ENGLISH" ? "en-GB" : "es-AR",
-                                        "America/Argentina/Buenos_Aires",
-                                    )}
-                                </p>
-                                <p className="text-sm text-[var(--text-secondary)]">
-                                    <span className="font-medium">UTC: </span>
-                                    {formatEventTime(
-                                        event.scheduledAt,
-                                        event.language === "ENGLISH" ? "en-GB" : "es-AR",
-                                        "UTC",
-                                    )}
-                                </p>
-                                <p className="mt-3 text-sm">
-                                    {event.language === "ENGLISH"
-                                        ? "Tickets: USD $50 Global North · USD $20 Global South"
-                                        : "Entradas: USD $50 Norte Global · USD $20 Sur Global"}
-                                </p>
-                                {purchaseUrlFor(event.language) ? (
-                                    <a
-                                        href={purchaseUrlFor(event.language)}
-                                        className="btn-primary mt-3 inline-flex min-h-12 w-full items-center justify-center text-center sm:w-auto"
-                                        rel="noreferrer noopener"
-                                        target="_blank"
-                                    >
+                </section>
+
+                {/* Sessions */}
+                <section className="space-y-4" aria-labelledby="events-heading">
+                    <h2 id="events-heading" className="text-xs font-mono uppercase tracking-[0.14em] text-[var(--muted)]">
+                        Choose your portal / Elegí tu portal
+                    </h2>
+
+                    {events === null ? (
+                        <div className="event-alert event-alert--warning">
+                            Session times are temporarily unavailable — your ticket code still works.
+                            <span className="mt-1 block opacity-80">
+                                Los horarios no están disponibles por el momento — tu código de entrada sigue funcionando.
+                            </span>
+                        </div>
+                    ) : events.length === 0 ? (
+                        <div className="event-alert event-alert--info">
+                            No sessions are currently scheduled. Check back soon.
+                            <span className="mt-1 block opacity-80">
+                                No hay sesiones programadas por el momento. Volvé a consultar pronto.
+                            </span>
+                        </div>
+                    ) : (
+                        <ul className="space-y-4">
+                            {events.map((event) => (
+                                <li key={event.id} className="event-card">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="space-y-1">
+                                            <p className="text-[11px] font-mono uppercase tracking-[0.11em] text-[var(--cream)]">
+                                                {event.language === "ENGLISH" ? "English" : "Español"}
+                                            </p>
+                                            <p className="text-sm text-[var(--text-secondary)]">
+                                                <span className="font-medium text-[var(--cream)]">Costa Rica: </span>
+                                                {formatEventTime(event.scheduledAt, event.language === "ENGLISH" ? "en-US" : "es-CR", "America/Costa_Rica")}
+                                            </p>
+                                            <p className="text-xs text-[var(--text-muted)]">
+                                                <span className="font-medium">Argentina: </span>
+                                                {formatEventTime(event.scheduledAt, event.language === "ENGLISH" ? "en-GB" : "es-AR", "America/Argentina/Buenos_Aires")}
+                                            </p>
+                                            <p className="text-xs text-[var(--text-muted)]">
+                                                <span className="font-medium">UTC: </span>
+                                                {formatEventTime(event.scheduledAt, event.language === "ENGLISH" ? "en-GB" : "es-AR", "UTC")}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="font-mono text-lg font-normal text-[var(--gold)]">
+                                                {formatTimeOnly(event.scheduledAt, event.language === "ENGLISH" ? "en-US" : "es-CR", "America/Costa_Rica")}
+                                            </p>
+                                            <p className="text-[10px] font-mono text-[var(--cyan)]">
+                                                {event.language === "ENGLISH" ? "US $50" : "US $20"}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <p className="mt-3 text-xs text-[var(--text-secondary)]">
                                         {event.language === "ENGLISH"
-                                            ? "Buy a ticket"
-                                            : "Comprar entrada"}
-                                    </a>
-                                ) : (
-                                    <p className="mt-2 text-sm text-[var(--text-secondary)]">
-                                        {event.language === "ENGLISH"
-                                            ? "Ticket sales open shortly."
-                                            : "Las entradas se abren en breve."}
+                                            ? "Tickets: USD $50 Global North · USD $20 Global South"
+                                            : "Entradas: USD $50 Norte Global · USD $20 Sur Global"}
                                     </p>
-                                )}
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </section>
 
-            <section className="space-y-3" aria-labelledby="login-heading">
-                <h2 id="login-heading" className="text-lg font-semibold">
-                    Already have a ticket? <span className="text-[var(--text-secondary)]">/ ¿Ya tenés tu entrada?</span>
-                </h2>
-                <LoginClient next={next} />
-            </section>
+                                    {purchaseUrlFor(event.language) ? (
+                                        <a
+                                            href={purchaseUrlFor(event.language)}
+                                            className="event-button event-button--primary mt-4 inline-flex w-full text-center sm:w-auto"
+                                            rel="noreferrer noopener"
+                                            target="_blank"
+                                        >
+                                            {event.language === "ENGLISH" ? "Buy a ticket" : "Comprar entrada"}
+                                            <span aria-hidden="true" className="text-base">↗</span>
+                                        </a>
+                                    ) : (
+                                        <p className="mt-3 text-xs text-[var(--text-muted)]">
+                                            {event.language === "ENGLISH"
+                                                ? "Ticket sales open shortly."
+                                                : "Las entradas se abren en breve."}
+                                        </p>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </section>
 
-            <footer className="mt-auto flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
-                <a
-                    href="https://harmonicbeacon.com/politica/"
-                    className="underline"
-                    rel="noreferrer noopener"
-                    target="_blank"
-                >
-                    Terms &amp; privacy <span>/ Términos y privacidad</span>
-                </a>
-                <Link href="/staff/login" className="underline">
-                    Staff sign-in <span>/ Ingreso del equipo</span>
-                </Link>
-            </footer>
+                {/* Login */}
+                <section className="space-y-4" aria-labelledby="login-heading">
+                    <h2 id="login-heading" className="text-xs font-mono uppercase tracking-[0.14em] text-[var(--muted)]">
+                        Already have a ticket? / ¿Ya tenés tu entrada?
+                    </h2>
+                    <LoginClient next={next} />
+                </section>
+
+                {/* Footer */}
+                <footer className="mt-auto flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-[var(--text-muted)]">
+                    <a
+                        href="https://harmonicbeacon.com/politica/"
+                        className="underline underline-offset-2 transition-colors hover:text-[var(--cream)]"
+                        rel="noreferrer noopener"
+                        target="_blank"
+                    >
+                        Terms &amp; privacy / Términos y privacidad
+                    </a>
+                    <Link
+                        href="/staff/login"
+                        className="underline underline-offset-2 transition-colors hover:text-[var(--cream)]"
+                    >
+                        Staff sign-in / Ingreso del equipo
+                    </Link>
+                </footer>
+            </div>
         </main>
     );
 }

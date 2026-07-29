@@ -58,8 +58,8 @@ describe('landing page', () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        expect(screen.getByText('In English')).toBeInTheDocument();
-        expect(screen.getByText('En español')).toBeInTheDocument();
+        expect(screen.getByText('English')).toBeInTheDocument();
+        expect(screen.getByText('Español')).toBeInTheDocument();
 
         // The event's advertised Costa Rica time comes first, with operator and
         // universal references explicitly labelled below it.
