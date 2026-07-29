@@ -77,9 +77,11 @@ export default async function LandingPage({
 }) {
     const next = safeNext((await searchParams).next);
     const events = await weekendEvents();
-    // TBD until WS6-01 proves the payout rail and WS6-02 configures the two
-    // events; ticket sales stay closed until then.
-    const purchaseUrl = process.env.TICKET_PURCHASE_URL;
+    // Per-session ticket purchase links; unset until WS6-01/02 configure them.
+    const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
+    const purchaseUrlSession2 = process.env.TICKET_PURCHASE_URL_SESSION_2 || process.env.TICKET_PURCHASE_URL;
+    const purchaseUrlFor = (language: string) =>
+        language === "SPANISH" ? purchaseUrlSession1 : purchaseUrlSession2;
 
     return (
         <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-10 px-6 py-12">
@@ -126,24 +128,27 @@ export default async function LandingPage({
                                         "UTC",
                                     )}
                                 </p>
+                                {purchaseUrlFor(event.language) ? (
+                                    <a
+                                        href={purchaseUrlFor(event.language)}
+                                        className="mt-2 inline-block text-sm underline"
+                                        rel="noreferrer noopener"
+                                        target="_blank"
+                                    >
+                                        {event.language === "ENGLISH"
+                                            ? "Buy a ticket"
+                                            : "Comprar entrada"}
+                                    </a>
+                                ) : (
+                                    <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                                        {event.language === "ENGLISH"
+                                            ? "Ticket sales open shortly."
+                                            : "Las entradas se abren en breve."}
+                                    </p>
+                                )}
                             </li>
                         ))}
                     </ul>
-                )}
-
-                {purchaseUrl ? (
-                    <a
-                        href={purchaseUrl}
-                        className="inline-block text-sm underline"
-                        rel="noreferrer noopener"
-                        target="_blank"
-                    >
-                        Buy a ticket <span className="text-[var(--text-secondary)]">/ Comprar una entrada</span>
-                    </a>
-                ) : (
-                    <p className="text-sm text-[var(--text-secondary)]">
-                        Ticket sales open shortly. <span>Las entradas se abren en breve.</span>
-                    </p>
                 )}
             </section>
 
