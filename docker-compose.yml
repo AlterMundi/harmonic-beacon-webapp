@@ -1,41 +1,98 @@
-# Harmonic Beacon - Production Docker Compose
-# Next.js app + playlist bot
-# PostgreSQL runs on the host (not containerized)
+# Harmonic Beacon — Production Docker Compose (mona)
+# Weekend 2026-07-31 / 2026-08-02
+#
+# Services: postgres, livekit, app (Next.js), playlist-bot, tapestry
+# Reverse proxy: nginx on host (TLS terminated at nginx -> containers via docker network)
 #
 # Prerequisites:
-#   - Host PostgreSQL with beacon user/db (see deploy/setup-host-postgres.sh)
-#   - Secrets persisted in /etc/sai-harmonic-beacon/production.env
-#     (written by deploy workflow, survives container restarts)
+#   - /etc/harmonic-beacon/production.env  (secrets, mode 0600)
+#   - /etc/harmonic-beacon/livekit.yaml     (LiveKit server config)
+#   - /etc/harmonic-beacon/keys.yaml        (LiveKit API key:secret)
+#   - /mnt/beacon-data/postgres/            (persistent PG data)
+#   - /mnt/beacon-data/beacon-records/      (bed audio library, read-only)
+#   - nginx + TLS on host (deploy/nginx-harmonic-beacon.conf)
 #
 # Usage:
 #   docker compose build
 #   docker compose up -d
 
 services:
+  # ── PostgreSQL ──────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: beacon-postgres
+    restart: unless-stopped
+    env_file:
+      - /etc/harmonic-beacon/production.env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-beacon}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?required}
+      - POSTGRES_DB=${POSTGRES_DB:-beacon}
+    volumes:
+      - /mnt/beacon-data/postgres:/var/lib/postgresql/data
+    networks:
+      - beacon
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beacon} -d ${POSTGRES_DB:-beacon}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ── LiveKit SFU ──────────────────────────────────────────────────
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: beacon-livekit
+    restart: unless-stopped
+    environment:
+      - LIVEKIT_KEYS=${LIVEKIT_KEYS:?required}
+    volumes:
+      - /etc/harmonic-beacon/livekit.yaml:/etc/livekit.yaml:ro
+    command: --config /etc/livekit.yaml
+    ports:
+      - "7881:7881/udp"                       # WebRTC ICE / media
+      - "7881:7881/tcp"                        # ICE TCP fallback
+      - "3478:3478"                             # TURN UDP
+      - "3478:3478/udp"                        # TURN UDP
+      - "127.0.0.1:7880:7880"                 # signaling (nginx-only)
+    networks:
+      - beacon
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 3G
+        reservations:
+          cpus: '2'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "30m"
+        max-file: "3"
+
+  # ── Next.js app ───────────────────────────────────────────────────
   app:
     build: .
-    container_name: harmonic-beacon
+    container_name: beacon-app
     restart: unless-stopped
-    ports:
-      - "3003:3000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     env_file:
-      - /etc/sai-harmonic-beacon/production.env
+      - /etc/harmonic-beacon/production.env
     environment:
       - NODE_ENV=production
-      - AUTH_ZITADEL_ISSUER=${AUTH_ZITADEL_ISSUER:-https://auth.altermundi.net}
-      - AUTH_TRUST_HOST=true
-      - AUTH_URL=${AUTH_URL:-https://beacon.altermundi.net}
-      - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
-      - MEDITATIONS_STORAGE_PATH=/data/meditations
-      - UPLOADS_PATH=/data/uploads
-      - MAX_UPLOAD_SIZE_MB=100
-      - RECORDINGS_PATH=/data/recordings
-    volumes:
-      - /mnt/n8n-data/harmonic-beacon/meditations:/data/meditations
-      - /mnt/n8n-data/harmonic-beacon/uploads:/data/uploads
-      - /mnt/n8n-data/harmonic-beacon/recordings:/data/recordings
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+      - LIVEKIT_INTERNAL_URL=http://livekit:7880
+    ports:
+      - "127.0.0.1:3000:3000"                # nginx-only
     networks:
       - beacon
     healthcheck:
@@ -43,22 +100,37 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
+  # ── Playlist bot (crossfader bed) ────────────────────────────────
   playlist-bot:
     build: ./services/playlist-bot
-    container_name: harmonic-beacon-playlist-bot
+    container_name: beacon-playlist-bot
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     env_file:
-      - /etc/sai-harmonic-beacon/production.env
+      - /etc/harmonic-beacon/production.env
     environment:
-      - LIVEKIT_URL=${LIVEKIT_INTERNAL_URL:-ws://host.docker.internal:7880}
+      - LIVEKIT_URL=ws://livekit:7880
       - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
       - BOT_IDENTITY=playlist-bot
       - BEACON_RECORDS_PATH=/data/beacon-records
     volumes:
-      - /mnt/n8n-data/harmonic-beacon/beacon-records:/data/beacon-records:ro
+      - /mnt/beacon-data/beacon-records:/data/beacon-records:ro
     networks:
       - beacon
     healthcheck:
@@ -67,6 +139,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    depends_on:
+      - livekit
     deploy:
       resources:
         limits:
@@ -80,6 +154,43 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # ── Tapestry (audience presence grid) ────────────────────────────
+  tapestry:
+    build:
+      context: ./services/tapestry
+      dockerfile: Dockerfile
+    container_name: beacon-tapestry
+    restart: unless-stopped
+    env_file:
+      - /etc/harmonic-beacon/production.env
+    environment:
+      - TAPESTRY_PORT=3100
+      - TAPESTRY_HOST=0.0.0.0
+      - MALLOC_ARENA_MAX=2                          # prevents libvips RSS hoard
+    ports:
+      - "127.0.0.1:3100:3100"                      # nginx-only
+    networks:
+      - beacon
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
 
 networks:
   beacon:

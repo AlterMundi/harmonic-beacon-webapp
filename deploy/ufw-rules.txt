@@ -1,0 +1,22 @@
+# Harmonic Beacon — Port Plan (mona)
+# Applied via `ufw` on the host.
+#
+# Rule of thumb: only open what a container publishes, plus SSH.
+# nginx terminates TLS and proxies to container-localhost ports.
+# LiveKit publishes media + TURN directly on host ports.
+#
+#   PORT       PROTO   SOURCE    SERVICE
+#   ────       ─────   ──────    ───────
+#   22         tcp     Anywhere  SSH
+#   80         tcp     Anywhere  nginx → HTTPS redirect
+#   443        tcp     Anywhere  nginx TLS
+#   3478       udp     Anywhere  LiveKit TURN
+#   7881       udp     Anywhere  LiveKit ICE / WebRTC media
+#   7881       tcp     Anywhere  LiveKit ICE TCP fallback (restrictive nets)
+#   30000:30200 udp    Anywhere  LiveKit TURN relay port range
+#
+# Internal (container-only, NOT exposed):
+#   3000  tcp  app         (127.0.0.1 only → nginx proxy)
+#   3100  tcp  tapestry    (127.0.0.1 only → nginx proxy)
+#   5432  tcp  postgres    (docker network beacon only)
+#   7880  tcp  livekit     (127.0.0.1 only → nginx proxy)
