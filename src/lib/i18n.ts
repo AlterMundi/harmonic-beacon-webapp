@@ -108,6 +108,14 @@ export type Messages = {
         beaconAudioError: string;
         audioError: string;
         yourTurn: string;
+        invitationHeading: string;
+        invitationBody: string;
+        acceptInvitation: string;
+        declineInvitation: string;
+        acceptingInvitation: string;
+        decliningInvitation: string;
+        invitationDeviceError: string;
+        invitationDeclineError: string;
         masterVolume: string;
         mix: string;
         sessionChannel: string;
@@ -277,6 +285,14 @@ export const messages: Record<UiLocale, Messages> = {
             beaconAudioError: 'No se pudo iniciar el audio del Beacon. Comprobá que esta pestaña no esté silenciada e intentá de nuevo.',
             audioError: 'No se pudo iniciar el audio. Comprobá que esta pestaña no esté silenciada e intentá de nuevo.',
             yourTurn: 'Tu turno — activá la cámara y el micrófono',
+            invitationHeading: 'Te invitan a entrar en escena',
+            invitationBody: 'Podés sumarte con cámara y micrófono, o quedarte en el público. Nada se activará hasta que aceptes.',
+            acceptInvitation: 'Aceptar y entrar',
+            declineInvitation: 'Ahora no',
+            acceptingInvitation: 'Preparando cámara y micrófono…',
+            decliningInvitation: 'Volviendo al público…',
+            invitationDeviceError: 'Aceptaste la invitación, pero el navegador no pudo activar la cámara o el micrófono. Podés volver a intentarlo con los controles.',
+            invitationDeclineError: 'No pudimos completar la vuelta al público. Intentá de nuevo.',
             masterVolume: 'Volumen general',
             mix: 'Mezcla de Beacon y sesión',
             sessionChannel: 'Sesión',
@@ -449,6 +465,14 @@ export const messages: Record<UiLocale, Messages> = {
             beaconAudioError: 'Beacon audio could not start. Check that this tab is not muted, then try again.',
             audioError: 'Audio could not start. Check that this tab is not muted, then try again.',
             yourTurn: 'Your turn — enable camera and microphone',
+            invitationHeading: 'You’re invited into the scene',
+            invitationBody: 'You can join with camera and microphone, or remain in the audience. Nothing will turn on until you accept.',
+            acceptInvitation: 'Accept and join',
+            declineInvitation: 'Not now',
+            acceptingInvitation: 'Preparing camera and microphone…',
+            decliningInvitation: 'Returning to the audience…',
+            invitationDeviceError: 'You accepted, but the browser could not turn on the camera or microphone. You can retry with the controls.',
+            invitationDeclineError: 'We could not complete your return to the audience. Try again.',
             masterVolume: 'Master volume',
             mix: 'Beacon and session mix',
             sessionChannel: 'Session',

@@ -21,6 +21,7 @@ type OwnHandState = {
 type Props = {
     sessionId: string;
     onPublishGrantChange?: (canPublish: boolean) => void;
+    stageInvitationAccepted?: boolean;
 };
 
 class HandRequestError extends Error {
@@ -62,7 +63,11 @@ function handFailureMessage(
     return copy.statusUnavailable;
 }
 
-export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Props) {
+export default function HandRaiseButton({
+    sessionId,
+    onPublishGrantChange,
+    stageInvitationAccepted = false,
+}: Props) {
     const { copy } = useLocale();
     const [state, setState] = useState<OwnHandState | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -148,7 +153,7 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
                     {state?.raised ? copy.hand.lower : copy.hand.raise}
                 </button>
             ) : null}
-            {state?.canPublish ? (
+            {state?.canPublish && stageInvitationAccepted ? (
                 <p role="status" className="text-xs text-[var(--lime)]">
                     {copy.hand.onStage}
                 </p>

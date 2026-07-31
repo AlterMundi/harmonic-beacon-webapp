@@ -95,7 +95,8 @@ const CONNECTION_DOT: Record<string, string> = {
 };
 
 function isStagePublisher(participant: Participant): boolean {
-    return Boolean(participant.permissions?.canPublish) || participant.trackPublications.size > 0;
+    return participantMetadata(participant).isAssignedFacilitator ||
+        participant.trackPublications.size > 0;
 }
 
 function cameraPublication(participant: Participant): StageVideoPublication | null {
@@ -160,6 +161,9 @@ function SessionRoom() {
     const [retryToken, setRetryToken] = useState(0);
     const [audioActivationError, setAudioActivationError] = useState<string | null>(null);
     const [viewerInfo, setViewerInfo] = useState<ViewerInfo | null>(null);
+    const [stageInvitationAccepted, setStageInvitationAccepted] = useState(false);
+    const [stageInvitationBusy, setStageInvitationBusy] = useState<'accept' | 'decline' | null>(null);
+    const [stageInvitationError, setStageInvitationError] = useState<string | null>(null);
 
     const roomRef = useRef<Room | null>(null);
     // Keep ownership by track so an unsubscribe can remove the exact DOM node
@@ -174,6 +178,7 @@ function SessionRoom() {
     const stageRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const intentionalDisconnectRef = useRef(false);
     const terminalViewRef = useRef<HTMLDivElement>(null);
+    const stageInvitationRef = useRef<HTMLDivElement>(null);
     const participantFallbackRef = useRef(copy.session.participantFallback);
     participantFallbackRef.current = copy.session.participantFallback;
 
@@ -298,6 +303,50 @@ function SessionRoom() {
             );
         }
     }, [startBeaconAudio, copy.session.beaconAudioError, copy.session.audioError]);
+
+    const acceptStageInvitation = useCallback(async () => {
+        const room = roomRef.current;
+        if (!room || principalKind !== 'ticket' || !canPublish || stageInvitationBusy) return;
+
+        setStageInvitationBusy('accept');
+        setStageInvitationError(null);
+        const results = await Promise.allSettled([
+            room.localParticipant.setCameraEnabled(true),
+            room.localParticipant.setMicrophoneEnabled(true),
+        ]);
+        if (!room.localParticipant.permissions?.canPublish) {
+            setStageInvitationBusy(null);
+            return;
+        }
+        setStageInvitationAccepted(true);
+        if (results.some((result) => result.status === 'rejected')) {
+            setStageInvitationError(copy.session.invitationDeviceError);
+        }
+        readStage();
+        setStageInvitationBusy(null);
+    }, [canPublish, copy.session.invitationDeviceError, principalKind, readStage, stageInvitationBusy]);
+
+    const declineStageInvitation = useCallback(async () => {
+        if (principalKind !== 'ticket' || !canPublish || stageInvitationBusy) return;
+
+        setStageInvitationBusy('decline');
+        setStageInvitationError(null);
+        try {
+            const response = await fetch(`/api/scheduled-sessions/${id}/hand`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'decline_invitation' }),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            setStageInvitationAccepted(false);
+            setCanPublish(false);
+        } catch (failure) {
+            console.error('Failed to decline stage invitation:', redactErrorDetail(failure));
+            setStageInvitationError(copy.session.invitationDeclineError);
+        } finally {
+            setStageInvitationBusy(null);
+        }
+    }, [canPublish, copy.session.invitationDeclineError, id, principalKind, stageInvitationBusy]);
 
     // Connect to LiveKit room
     useEffect(() => {
@@ -470,6 +519,17 @@ function SessionRoom() {
     }, [disconnectState]);
 
     useEffect(() => {
+        if (principalKind === 'ticket' && canPublish && !stageInvitationAccepted) {
+            stageInvitationRef.current?.focus();
+            return;
+        }
+        if (!canPublish) {
+            setStageInvitationAccepted(false);
+            setStageInvitationError(null);
+        }
+    }, [canPublish, principalKind, stageInvitationAccepted]);
+
+    useEffect(() => {
         const sessionVol = volume * mix;
         const beaconVol = volume * (1 - mix);
         stageVolumeRef.current = sessionVol;
@@ -601,7 +661,11 @@ function SessionRoom() {
     const connectionKey = connectionState === "signalReconnecting" ? "reconnecting" : connectionState;
     const connectionLabel = copy.session.connection[connectionKey as keyof typeof copy.session.connection]
         ?? copy.session.connection.connecting;
-    const needsDeviceGesture = canPublish && !isMicOn && !isCameraOn;
+    const canControlStageDevices = canPublish &&
+        (principalKind === 'staff' || stageInvitationAccepted);
+    const hasPendingStageInvitation = principalKind === 'ticket' &&
+        canPublish && !stageInvitationAccepted;
+    const needsDeviceGesture = canControlStageDevices && !isMicOn && !isCameraOn;
 
     return (
         <main className="event-shell">
@@ -627,8 +691,7 @@ function SessionRoom() {
                         {viewerInfo && (
                             <p className="mt-1 truncate text-[10px] text-[var(--gold)]" data-testid="viewer-identity">
                                 {copy.session.signedIn}: <strong>{viewerInfo.name}</strong>
-                                {' · '}{viewerInfo.role}
-                                {' · '}ID <span className="font-mono">{viewerInfo.identity.slice(-8)}</span>
+                                {principalKind === 'staff' ? <>{' · '}{viewerInfo.role}</> : null}
                             </p>
                         )}
                     </div>
@@ -669,16 +732,69 @@ function SessionRoom() {
                         </div>
                     )}
 
+                    {hasPendingStageInvitation && (
+                        <div
+                            ref={stageInvitationRef}
+                            tabIndex={-1}
+                            role="dialog"
+                            aria-labelledby="stage-invitation-title"
+                            aria-describedby="stage-invitation-body"
+                            className="event-card w-full max-w-md text-center outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)]"
+                        >
+                            <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-[var(--gold)]">
+                                {sessionInfo?.title}
+                            </p>
+                            <h2 id="stage-invitation-title" className="mt-2 font-serif text-2xl text-[var(--paper)]">
+                                {copy.session.invitationHeading}
+                            </h2>
+                            <p id="stage-invitation-body" className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                                {copy.session.invitationBody}
+                            </p>
+                            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                                <button
+                                    type="button"
+                                    className="event-button event-button--primary w-full"
+                                    onClick={() => void acceptStageInvitation()}
+                                    disabled={stageInvitationBusy !== null}
+                                >
+                                    {stageInvitationBusy === 'accept'
+                                        ? copy.session.acceptingInvitation
+                                        : copy.session.acceptInvitation}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="event-button event-button--secondary w-full"
+                                    onClick={() => void declineStageInvitation()}
+                                    disabled={stageInvitationBusy !== null}
+                                >
+                                    {stageInvitationBusy === 'decline'
+                                        ? copy.session.decliningInvitation
+                                        : copy.session.declineInvitation}
+                                </button>
+                            </div>
+                            {stageInvitationError ? (
+                                <p className="mt-3 text-sm text-[var(--danger)]" role="alert">
+                                    {stageInvitationError}
+                                </p>
+                            ) : null}
+                        </div>
+                    )}
+
                     {needsDeviceGesture && (
                         <p className="text-center text-sm text-[var(--lime)]">
                             {copy.session.yourTurn}
                         </p>
                     )}
+                    {stageInvitationAccepted && stageInvitationError ? (
+                        <p className="max-w-md text-center text-sm text-[var(--danger)]" role="alert">
+                            {stageInvitationError}
+                        </p>
+                    ) : null}
 
                     <ThumbnailSender
                         sessionId={id}
                         connected={isConnected}
-                        isPublishing={canPublish}
+                        isPublishing={canControlStageDevices}
                     />
 
                     <ThumbnailTapestry sessionId={id} />
@@ -719,13 +835,14 @@ function SessionRoom() {
                     </div>
                 </div>
 
-                {/* Beacon audio debug — see AudioContext connection/stream state at a glance */}
-                <div className="mx-auto mb-3 max-w-md rounded border border-[var(--border-subtle)] bg-[var(--surface-alt)] px-3 py-2 text-center text-[10px] text-[var(--text-muted)]">
-                    {copy.session.beaconRoom}: {beaconConnected ? <span className="text-[var(--lime)]">{copy.session.connection.connected}</span> : <span className="text-[var(--danger)]">{copy.session.connection.disconnected}</span>}
-                    {' · '}{copy.session.playlist}: {hasPlaylistStream ? <span className="text-[var(--lime)]">{copy.session.active}</span> : <span className="text-[var(--danger)]">{copy.session.none}</span>}
-                    {' · '}{copy.session.live}: {hasLiveStream ? <span className="text-[var(--lime)]">{copy.session.active}</span> : <span className="text-[var(--danger)]">{copy.session.none}</span>}
-                    {beaconAudioError ? <>{' · '}<span className="text-[var(--danger)]">{copy.session.error}: {beaconAudioError}</span></> : null}
-                </div>
+                {principalKind === 'staff' && (
+                    <div className="mx-auto mb-3 max-w-md rounded border border-[var(--border-subtle)] bg-[var(--surface-alt)] px-3 py-2 text-center text-[10px] text-[var(--text-muted)]">
+                        {copy.session.beaconRoom}: {beaconConnected ? <span className="text-[var(--lime)]">{copy.session.connection.connected}</span> : <span className="text-[var(--danger)]">{copy.session.connection.disconnected}</span>}
+                        {' · '}{copy.session.playlist}: {hasPlaylistStream ? <span className="text-[var(--lime)]">{copy.session.active}</span> : <span className="text-[var(--danger)]">{copy.session.none}</span>}
+                        {' · '}{copy.session.live}: {hasLiveStream ? <span className="text-[var(--lime)]">{copy.session.active}</span> : <span className="text-[var(--danger)]">{copy.session.none}</span>}
+                        {beaconAudioError ? <>{' · '}<span className="text-[var(--danger)]">{copy.session.error}: {beaconAudioError}</span></> : null}
+                    </div>
+                )}
 
                 {/* Bottom controls */}
                 <div className="border-t border-[var(--border-subtle)] px-4 py-4">
@@ -734,11 +851,12 @@ function SessionRoom() {
                             <HandRaiseButton
                                 sessionId={id}
                                 onPublishGrantChange={setCanPublish}
+                                stageInvitationAccepted={stageInvitationAccepted}
                             />
                         </div>
                     )}
                     <div className="flex items-start justify-center gap-4">
-                        {canPublish && (
+                        {canControlStageDevices && (
                             <div className="flex flex-col items-center gap-1">
                                 <button
                                     onClick={toggleMic}
@@ -765,7 +883,7 @@ function SessionRoom() {
                             </div>
                         )}
 
-                        {canPublish && (
+                        {canControlStageDevices && (
                             <div className="flex flex-col items-center gap-1">
                                 <button
                                     onClick={toggleCamera}

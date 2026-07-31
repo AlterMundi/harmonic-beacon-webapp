@@ -128,6 +128,11 @@ interface EmittableRoom {
     emit: (event: string, ...args: unknown[]) => void;
     disconnect: ReturnType<typeof vi.fn>;
     startAudio: ReturnType<typeof vi.fn>;
+    localParticipant: {
+        permissions: { canPublish: boolean };
+        setMicrophoneEnabled: ReturnType<typeof vi.fn>;
+        setCameraEnabled: ReturnType<typeof vi.fn>;
+    };
 }
 
 function currentRoom(): EmittableRoom {
@@ -328,17 +333,19 @@ describe('SessionRoomPage - event entry', () => {
         fireEvent.focus(window);
 
         expect(await screen.findByText('Session ended')).toBeInTheDocument();
-        expect(connectedRoom.disconnect).toHaveBeenCalledOnce();
+        await waitFor(() => expect(connectedRoom.disconnect).toHaveBeenCalledOnce());
     });
 });
 
 describe('SessionRoomPage - participant identity', () => {
-    it('shows the server-authorized display name, role and short identity without diagnostics', async () => {
+    it('shows the server-authorized attendee name without exposing role, opaque identity, or diagnostics', async () => {
         await renderConnected();
 
         expect(screen.getByTestId('viewer-identity')).toHaveTextContent(
-            'Signed in as: Nico · ATTENDEE · ID 12345678',
+            'Signed in as: Nico',
         );
+        expect(screen.getByTestId('viewer-identity')).not.toHaveTextContent(/ATTENDEE|12345678|ID/);
+        expect(screen.queryByText(/Beacon room:/)).not.toBeInTheDocument();
         expect(screen.queryByText('Audio A/B check')).not.toBeInTheDocument();
         expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).toBeNull();
     });
@@ -358,6 +365,98 @@ describe('SessionRoomPage - participant identity', () => {
         expect(await screen.findByRole('button', { name: 'Iniciar audio' })).toBeInTheDocument();
         expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
         expect(connectedRoom.disconnect).not.toHaveBeenCalled();
+    });
+});
+
+describe('SessionRoomPage - stage invitation consent', () => {
+    function installGrantedHand() {
+        let canPublish = true;
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+            const target = String(url);
+            if (target.includes('/entry')) {
+                return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+            }
+            if (target.includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            if (target.includes('/hand')) {
+                if (init?.method === 'PATCH') canPublish = false;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        participantId: 'participant-1',
+                        raised: false,
+                        raisedAt: null,
+                        queuePosition: null,
+                        canPublish,
+                    }),
+                } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+    }
+
+    async function receiveInvitation() {
+        installGrantedHand();
+        await renderConnected();
+        const room = currentRoom();
+        room.localParticipant.permissions.canPublish = true;
+        act(() => {
+            room.emit('participantPermissionsChanged', null, room.localParticipant);
+        });
+        return {
+            room,
+            dialog: await screen.findByRole('dialog', { name: 'You’re invited into the scene' }),
+        };
+    }
+
+    it('requests no device and exposes no stage controls before the attendee accepts', async () => {
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+        const { room, dialog } = await receiveInvitation();
+
+        expect(dialog).toHaveFocus();
+        expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+        expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+        expect(screen.queryByRole('button', { name: 'Turn camera on' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Unmute microphone' })).not.toBeInTheDocument();
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount + 1);
+        expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('starts camera and microphone only from Accept without recreating the room', async () => {
+        const { room } = await receiveInvitation();
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+
+        await waitFor(() => {
+            expect(room.localParticipant.setCameraEnabled).toHaveBeenCalledWith(true);
+            expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+        });
+        expect(await screen.findByRole('button', { name: 'Turn camera on' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeInTheDocument();
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
+        expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('declines the invitation durably without touching devices or the room lifecycle', async () => {
+        const { room } = await receiveInvitation();
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+        fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/scheduled-sessions/session-1/hand',
+            expect.objectContaining({
+                method: 'PATCH',
+                body: JSON.stringify({ action: 'decline_invitation' }),
+            }),
+        );
+        expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+        expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
+        expect(room.disconnect).not.toHaveBeenCalled();
     });
 });
 

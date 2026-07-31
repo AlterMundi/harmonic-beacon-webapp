@@ -102,17 +102,24 @@ describe('HandRaiseButton', () => {
         ]);
         vi.stubGlobal('fetch', fetchMock);
         const onGrant = vi.fn();
-        render(<HandRaiseButton sessionId="event-1" onPublishGrantChange={onGrant} />);
+        const view = render(<HandRaiseButton sessionId="event-1" onPublishGrantChange={onGrant} />);
 
         // First poll: no grant, callback fires once with false.
         await waitFor(() => expect(onGrant).toHaveBeenCalledWith(false));
         // Second poll (2s interval): the durable grant flipped — the room page
         // can now offer mic/camera. No token refetch, no reconnect.
         await waitFor(() => expect(onGrant).toHaveBeenCalledWith(true), { timeout: 4000 });
-        await waitFor(() => {
-            expect(screen.getByText(/You are on stage — enable microphone and camera/)).toBeInTheDocument();
-        });
+        expect(screen.queryByText(/You are on stage — enable microphone and camera/)).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /hand/i })).not.toBeInTheDocument();
+
+        view.rerender(
+            <HandRaiseButton
+                sessionId="event-1"
+                onPublishGrantChange={onGrant}
+                stageInvitationAccepted
+            />,
+        );
+        expect(screen.getByText(/You are on stage — enable microphone and camera/)).toBeInTheDocument();
     });
 
     it('surfaces a polling failure without clearing the current state', async () => {

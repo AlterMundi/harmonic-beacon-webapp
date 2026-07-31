@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     raiseHand: vi.fn(),
     lowerHand: vi.fn(),
     getHandState: vi.fn(),
+    declineStageInvitation: vi.fn(),
 }));
 
 vi.mock('@/lib/room-entitlement', () => ({
@@ -19,6 +20,13 @@ vi.mock('@/lib/hand-queue', async (importOriginal) => {
         raiseHand: mocks.raiseHand,
         lowerHand: mocks.lowerHand,
         getHandState: mocks.getHandState,
+    };
+});
+vi.mock('@/lib/stage-control', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@/lib/stage-control')>();
+    return {
+        ...original,
+        declineStageInvitation: mocks.declineStageInvitation,
     };
 });
 
@@ -62,6 +70,13 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
             queuePosition: null,
         }));
         mocks.getHandState.mockResolvedValue(handState());
+        mocks.declineStageInvitation.mockResolvedValue({
+            participantId: 'participant-1',
+            participantIdentity: 'opaque-attendee-1',
+            canPublish: false,
+            reconcileNeeded: false,
+            grantVersion: 2,
+        });
     });
 
     it('denies an unauthenticated or unentitled caller at the entitlement gate', async () => {
@@ -139,6 +154,46 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
             scheduledSessionId: 'event-1',
             participantIdentity: 'opaque-attendee-1',
         });
+    });
+
+    it('declines only the caller\u2019s own stage invitation and returns to the audience', async () => {
+        mocks.getHandState.mockResolvedValue(handState({
+            raised: false,
+            raisedAt: null,
+            queuePosition: null,
+            canPublish: false,
+        }));
+        const { PATCH } = await import('../route');
+
+        const { status, body } = await parseResponse(await PATCH(
+            createRequest('/api/scheduled-sessions/event-1/hand', {
+                method: 'PATCH',
+                body: { action: 'decline_invitation' },
+            }),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(status).toBe(200);
+        expect(body).toMatchObject({ raised: false, canPublish: false });
+        expect(mocks.declineStageInvitation).toHaveBeenCalledWith({
+            scheduledSessionId: 'event-1',
+            participantIdentity: 'opaque-attendee-1',
+        });
+    });
+
+    it('rejects an unknown invitation action without changing a grant', async () => {
+        const { PATCH } = await import('../route');
+
+        const response = await PATCH(
+            createRequest('/api/scheduled-sessions/event-1/hand', {
+                method: 'PATCH',
+                body: { action: 'promote_someone_else' },
+            }),
+            mockParams({ id: 'event-1' }),
+        );
+
+        expect(response.status).toBe(400);
+        expect(mocks.declineStageInvitation).not.toHaveBeenCalled();
     });
 
     it('returns the caller\u2019s own state for the polling loop, without PII', async () => {
