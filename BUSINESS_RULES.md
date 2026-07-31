@@ -109,9 +109,16 @@ It is the invariant because it preserves what the content's publication state wa
 
 ### 2.2 Scheduled sessions
 
-A `ScheduledSession` is a live, interactive event hosted by a Provider. Status transitions: `SCHEDULED → LIVE → ENDED | CANCELLED`.
+A `ScheduledSession` is a live, interactive event. Its single supported state
+machine is `SCHEDULED → LIVE → ENDED`, with cancellation allowed from
+`SCHEDULED` or `LIVE`. Terminal states cannot be reopened.
 
-- A session will not transition `SCHEDULED → LIVE` more than 10 minutes before `scheduledAt`, or 60 minutes after, without Admin override. The start action currently checks only that status is `SCHEDULED`. **[Planned — Phase 1]**
+- Assigned facilitators and operations staff may open and close an event through
+  the staff console. A session will not transition `SCHEDULED → LIVE` more than
+  10 minutes before `scheduledAt`, or 60 minutes after, without an Admin override
+  carrying a non-PII reason. Cancellation is Admin-only and always requires a
+  non-PII reason. Every successful change atomically records actor, prior state,
+  new state, time and reason in `AuditLog`; repeated requests are idempotent.
 - A session may be recorded (`SessionRecording`). Recording will be disclosed in-UI before joining, and joining will require affirmative consent — an explicit accept, not participation treated as agreement. **[Planned — Phase 1]**
 - The disclosure will state three things, because the consent is only meaningful if it covers all of them: that the session is recorded, that the participant's own audio is captured as a separate track, and that the resulting recording belongs to the Provider — so a participant cannot afterwards have their track withdrawn from it. The arrangement is legitimate at the point of joining or not at all: a person who accepts knowing the consequence has given consent, where a person promised a right the platform cannot deliver has been misled. See §9.1 for what this means at account deletion. **[Planned — Phase 1]**
 - This is the platform's position, not a settled legal one. Counsel has to confirm it against the Provider Content Agreement, which has not been drafted.
