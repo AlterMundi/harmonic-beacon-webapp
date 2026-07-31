@@ -38,9 +38,15 @@ export async function GET(
             room: principal.session.roomName,
             canPublish: principal.canPublish,
             displayName: principal.displayName,
+            role: principal.ticketEntitlementId
+                ? 'ATTENDEE'
+                : principal.displayName === 'Administrator'
+                    ? 'ADMIN'
+                    : principal.displayName.toUpperCase(),
             // Lets the room page gate attendee-only controls (hand queue)
             // without probing an endpoint that 403s for staff.
             principalKind: principal.ticketEntitlementId ? 'ticket' : 'staff',
+            audioDiagnosticEnabled: process.env.E2E_DASHBOARD_ENABLED === '1',
             session: {
                 id: principal.session.id,
                 title: principal.session.title,

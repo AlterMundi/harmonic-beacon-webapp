@@ -9,7 +9,6 @@ import {
     Track,
     VideoPresets,
     type Participant,
-    type RemoteParticipant,
     type RemoteTrack,
     type RemoteTrackPublication,
     type RoomOptions,
@@ -48,6 +47,12 @@ interface SessionInfo {
     title: string;
     status: string;
     startedAt: string | null;
+}
+
+interface ViewerInfo {
+    name: string;
+    role: string;
+    identity: string;
 }
 
 type DisconnectKind = "ended" | "transport" | "unknown";
@@ -135,16 +140,23 @@ function SessionRoom() {
     const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState<string | null>(null);
     const [participantCount, setParticipantCount] = useState(0);
     const [volume, setVolume] = useState(0.8);
-    const [mix, setMix] = useState(0.8);
+    // Start centered: the previous 0.8 default reduced the Beacon bed to
+    // 16% gain before the listener touched the crossfader.
+    const [mix, setMix] = useState(0.5);
     const [duration, setDuration] = useState(0);
     const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
     const [retryToken, setRetryToken] = useState(0);
     const [audioActivationError, setAudioActivationError] = useState<string | null>(null);
+    const [viewerInfo, setViewerInfo] = useState<ViewerInfo | null>(null);
+    const [audioDiagnosticEnabled, setAudioDiagnosticEnabled] = useState(false);
+    const [tonePlaying, setTonePlaying] = useState(false);
 
     const roomRef = useRef<Room | null>(null);
-    const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+    // Keep ownership by track so an unsubscribe can remove the exact DOM node
+    // even after LiveKit has already cleared its srcObject.
+    const audioElementsRef = useRef<Map<RemoteTrack, HTMLAudioElement>>(new Map());
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const volumeRef = useRef(volume);
+    const stageVolumeRef = useRef(volume * mix);
     const audioOnlyRef = useRef(audioOnly);
     const slotOrderRef = useRef<Map<string, number>>(new Map());
     const nextSlotRef = useRef(0);
@@ -152,8 +164,6 @@ function SessionRoom() {
     const stageRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const intentionalDisconnectRef = useRef(false);
     const terminalViewRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => { volumeRef.current = volume; }, [volume]);
 
     const slotFor = useCallback((identity: string): number => {
         const existing = slotOrderRef.current.get(identity);
@@ -252,11 +262,18 @@ function SessionRoom() {
     const startListening = useCallback(async () => {
         setAudioActivationError(null);
         try {
-            await roomRef.current?.startAudio();
-            await Promise.all(
-                [...audioElementsRef.current.values()].map((element) => element.play()),
+            // Fire every native media play while the browser gesture is still
+            // active, before either LiveKit room resumes an AudioContext.
+            const stageElementStarts = [...audioElementsRef.current.values()].map(
+                (element) => element.play(),
             );
-            const beaconStarted = await startBeaconAudio();
+            const beaconStart = startBeaconAudio();
+            const stageStart = roomRef.current?.startAudio() ?? Promise.resolve();
+            const [, beaconStarted] = await Promise.all([
+                Promise.all(stageElementStarts),
+                beaconStart,
+                stageStart,
+            ]);
             if (!beaconStarted) {
                 setAudioActivationError(
                     "Beacon audio could not start. Check that this tab is not muted, then try again.",
@@ -291,6 +308,22 @@ function SessionRoom() {
                 setSessionInfo(data.session);
                 setCanPublish(data.canPublish);
                 setPrincipalKind(data.principalKind === "staff" ? "staff" : "ticket");
+                let viewerName = typeof data.displayName === "string" ? data.displayName : "Participant";
+                try {
+                    const stored = JSON.parse(window.sessionStorage.getItem("hb:e2e-viewer") || "null") as {
+                        name?: unknown;
+                        role?: unknown;
+                    } | null;
+                    if (stored && stored.role === data.role && typeof stored.name === "string" && stored.name.trim()) {
+                        viewerName = stored.name.trim();
+                    }
+                } catch { /* Ignore a malformed UI-only test label. */ }
+                setViewerInfo({
+                    name: viewerName,
+                    role: typeof data.role === "string" ? data.role : "PARTICIPANT",
+                    identity: typeof data.identity === "string" ? data.identity : "unknown",
+                });
+                setAudioDiagnosticEnabled(data.audioDiagnosticEnabled === true);
                 if (data.session.startedAt) {
                     const elapsed = Math.floor((Date.now() - new Date(data.session.startedAt).getTime()) / 1000);
                     setDuration(Math.max(0, elapsed));
@@ -299,13 +332,22 @@ function SessionRoom() {
                 const room = new Room(STAGE_ROOM_OPTIONS);
                 roomRef.current = room;
 
-                room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+                room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication) => {
                     if (track.kind === Track.Kind.Audio) {
+                        if (cancelled) {
+                            track.detach().forEach((element) => element.remove());
+                            return;
+                        }
+                        const previous = audioElementsRef.current.get(track);
+                        if (previous) {
+                            previous.pause();
+                            previous.remove();
+                        }
                         const audioElement = track.attach() as HTMLAudioElement;
-                        audioElement.volume = volumeRef.current;
+                        audioElement.volume = stageVolumeRef.current;
                         audioElement.style.display = "none";
                         document.body.appendChild(audioElement);
-                        audioElementsRef.current.set(participant.identity, audioElement);
+                        audioElementsRef.current.set(track, audioElement);
                         try { await audioElement.play(); } catch { /* Autoplay blocked */ }
                     } else if (audioOnlyRef.current) {
                         publication.setSubscribed(false);
@@ -313,10 +355,15 @@ function SessionRoom() {
                     scheduleStageRefresh();
                 });
 
-                room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: RemoteParticipant) => {
+                room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
                     if (track.kind === Track.Kind.Audio) {
+                        const tracked = audioElementsRef.current.get(track);
                         track.detach().forEach((el) => el.remove());
-                        audioElementsRef.current.delete(participant.identity);
+                        if (tracked) {
+                            tracked.pause();
+                            tracked.remove();
+                            audioElementsRef.current.delete(track);
+                        }
                     }
                     scheduleStageRefresh();
                 });
@@ -423,6 +470,7 @@ function SessionRoom() {
     useEffect(() => {
         const sessionVol = volume * mix;
         const beaconVol = volume * (1 - mix);
+        stageVolumeRef.current = sessionVol;
         audioElementsRef.current.forEach((el) => {
             el.volume = sessionVol;
         });
@@ -555,6 +603,35 @@ function SessionRoom() {
     const connectionLabel = CONNECTION_COPY[connectionState] ?? "Connecting";
     const needsDeviceGesture = canPublish && !isMicOn && !isCameraOn;
 
+    const playBrowserTestTone = async () => {
+        if (tonePlaying) return;
+        setTonePlaying(true);
+        const context = new AudioContext();
+        const gain = context.createGain();
+        gain.gain.value = 0.035;
+        gain.connect(context.destination);
+        const tones = [
+            { frequency: 440, pan: -1 },
+            { frequency: 660, pan: 1 },
+        ];
+        const oscillators = tones.map(({ frequency, pan }) => {
+            const oscillator = context.createOscillator();
+            const panner = context.createStereoPanner();
+            oscillator.type = "sine";
+            oscillator.frequency.value = frequency;
+            panner.pan.value = pan;
+            oscillator.connect(panner).connect(gain);
+            oscillator.start();
+            oscillator.stop(context.currentTime + 1.5);
+            return oscillator;
+        });
+        await context.resume();
+        await new Promise((resolve) => setTimeout(resolve, 1600));
+        oscillators.forEach((oscillator) => oscillator.disconnect());
+        await context.close();
+        setTonePlaying(false);
+    };
+
     return (
         <main className="event-shell">
             <div className="relative z-10 flex min-h-screen flex-col">
@@ -575,6 +652,13 @@ function SessionRoom() {
                                 {connectionLabel}
                             </span>
                         </p>
+                        {viewerInfo && (
+                            <p className="mt-1 truncate text-[10px] text-[var(--gold)]" data-testid="viewer-identity">
+                                Signed in: <strong>{viewerInfo.name}</strong>
+                                {' · '}{viewerInfo.role}
+                                {' · '}ID <span className="font-mono">{viewerInfo.identity.slice(-8)}</span>
+                            </p>
+                        )}
                     </div>
                     <span className="font-mono text-xs text-[var(--gold)]">{formatTime(duration)}</span>
                 </header>
@@ -662,6 +746,28 @@ function SessionRoom() {
                     {' · '}Live: {hasLiveStream ? <span className="text-[var(--lime)]">active</span> : <span className="text-[var(--danger)]">none</span>}
                     {beaconAudioError ? <>{' · '}<span className="text-[var(--danger)]">error: {beaconAudioError}</span></> : null}
                 </div>
+
+                {audioDiagnosticEnabled && (
+                    <details className="mx-auto mb-3 w-[calc(100%-2rem)] max-w-md rounded border border-[var(--gold)]/30 bg-[var(--surface-alt)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+                        <summary className="cursor-pointer font-semibold text-[var(--gold)]">Audio A/B check</summary>
+                        <ol className="mt-3 space-y-3">
+                            <li>
+                                <button type="button" onClick={() => void playBrowserTestTone()} disabled={tonePlaying} className="event-button event-button--secondary w-full">
+                                    {tonePlaying ? "Playing left/right tones…" : "1. Test browser output (left 440 / right 660)"}
+                                </button>
+                            </li>
+                            <li>
+                                <p className="mb-1">2. Original OGG directly in this browser (bypasses LiveKit)</p>
+                                <audio controls preload="metadata" className="w-full" src={`/api/audio-diagnostic?sessionId=${encodeURIComponent(id)}`}>
+                                    Your browser does not support OGG audio.
+                                </audio>
+                            </li>
+                            <li>
+                                3. LiveKit stream: use “Start audio” above, then compare it with step 2.
+                            </li>
+                        </ol>
+                    </details>
+                )}
 
                 {/* Bottom controls */}
                 <div className="border-t border-[var(--border-subtle)] px-4 py-4">

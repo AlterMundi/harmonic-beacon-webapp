@@ -48,6 +48,12 @@ export default function TestLoginPage() {
                 setBusy(false);
                 return;
             }
+            // UI-only test label. Authorization continues to come exclusively
+            // from the HttpOnly session cookie and the server-side role.
+            window.sessionStorage.setItem(
+                "hb:e2e-viewer",
+                JSON.stringify({ name: name.trim(), role }),
+            );
             window.location.assign(landing);
         } catch {
             setError("Network error");

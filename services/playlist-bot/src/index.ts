@@ -13,6 +13,18 @@ import { AccessToken } from 'livekit-server-sdk';
 import { spawn, execSync } from 'node:child_process';
 import { readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { hasAvailableBeaconAudio } from './beaconAvailability.js';
+import {
+  BYTES_PER_FRAME,
+  decoderArgs,
+  MUSIC_BITRATE,
+  MUSIC_DTX,
+  MUSIC_RED,
+  NUM_CHANNELS,
+  ownedPcm16Frame,
+  SAMPLE_RATE,
+  SAMPLES_PER_CHANNEL,
+} from './audioFormat.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -26,11 +38,7 @@ const BOT_IDENTITY = process.env.BOT_IDENTITY || 'playlist-bot';
 const RECORDS_PATH = process.env.BEACON_RECORDS_PATH || '/data/beacon-records';
 const BEACON_IDENTITY = 'beacon01';
 
-const SAMPLE_RATE = 48000;
-const NUM_CHANNELS = 1;
 const FRAME_DURATION_MS = 20;
-const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 960
-const BYTES_PER_FRAME = SAMPLES_PER_FRAME * NUM_CHANNELS * 2; // 1920
 
 const CROSSFADE_DURATION_MS = 2000;
 const CROSSFADE_FRAMES = CROSSFADE_DURATION_MS / FRAME_DURATION_MS; // 100
@@ -98,15 +106,7 @@ function spawnDecoder(filePath: string) {
   log('INFO', `Decoding: ${filePath}`);
   return spawn(
     'ffmpeg',
-    [
-      '-hide_banner',
-      '-loglevel', 'error',
-      '-i', filePath,
-      '-f', 's16le',
-      '-ar', String(SAMPLE_RATE),
-      '-ac', String(NUM_CHANNELS),
-      'pipe:1',
-    ],
+    decoderArgs(filePath),
     { stdio: ['ignore', 'pipe', 'pipe'] },
   );
 }
@@ -120,7 +120,7 @@ class PlaylistBot {
   private source: AudioSource | null = null;
   private track: LocalAudioTrack | null = null;
 
-  private beaconPresent = false;
+  private beaconAudioAvailable = false;
   private shouldPublish = false;
   private publishGeneration = 0; // incremented on each start; stale loops exit
   private abortController: AbortController | null = null;
@@ -199,17 +199,23 @@ class PlaylistBot {
     this.source = new AudioSource(SAMPLE_RATE, NUM_CHANNELS);
     this.track = LocalAudioTrack.createAudioTrack('playlist-audio', this.source);
 
-    const opts = new TrackPublishOptions();
-    opts.source = TrackSource.SOURCE_MICROPHONE;
+    const opts = new TrackPublishOptions({
+      source: TrackSource.SOURCE_MICROPHONE,
+      // The bed is continuous music, not speech. Preserve its stereo image,
+      // avoid DTX gating, and give Opus enough bitrate for spatial detail.
+      dtx: MUSIC_DTX,
+      red: MUSIC_RED,
+      audioEncoding: { maxBitrate: MUSIC_BITRATE },
+    });
 
     await this.room.localParticipant!.publishTrack(this.track, opts);
     log('INFO', 'Audio track published');
 
-    // Check if beacon01 is already in the room
-    this.beaconPresent = this.isBeaconInRoom();
-    log('INFO', `beacon01 present: ${this.beaconPresent}`);
+    // Presence alone is not enough: beacon01 may connect before publishing.
+    this.beaconAudioAvailable = this.isBeaconAudioAvailable();
+    log('INFO', `beacon01 audio available: ${this.beaconAudioAvailable}`);
 
-    if (!this.beaconPresent) {
+    if (!this.beaconAudioAvailable) {
       this.startPublishing();
     } else {
       // Mute — beacon is live
@@ -239,18 +245,26 @@ class PlaylistBot {
     this.room.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
       log('INFO', `Participant joined: ${p.identity}`);
       if (p.identity === BEACON_IDENTITY) {
-        this.beaconPresent = true;
-        this.onBeaconPresenceChanged();
+        this.refreshBeaconAudioAvailability();
       }
     });
 
     this.room.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
       log('INFO', `Participant left: ${p.identity}`);
       if (p.identity === BEACON_IDENTITY) {
-        this.beaconPresent = false;
-        this.onBeaconPresenceChanged();
+        this.setBeaconAudioAvailable(false);
       }
     });
+
+    const refreshForBeacon = (_publication: unknown, participant: { identity: string }) => {
+      if (participant.identity === BEACON_IDENTITY) {
+        this.refreshBeaconAudioAvailability();
+      }
+    };
+    this.room.on(RoomEvent.TrackPublished, refreshForBeacon);
+    this.room.on(RoomEvent.TrackUnpublished, refreshForBeacon);
+    this.room.on(RoomEvent.TrackMuted, refreshForBeacon);
+    this.room.on(RoomEvent.TrackUnmuted, refreshForBeacon);
 
     this.room.on(RoomEvent.Reconnecting, () => {
       log('WARN', 'Reconnecting...');
@@ -258,30 +272,35 @@ class PlaylistBot {
 
     this.room.on(RoomEvent.Reconnected, () => {
       log('INFO', 'Reconnected');
-      // Re-check beacon presence
-      this.beaconPresent = this.isBeaconInRoom();
-      this.onBeaconPresenceChanged();
+      this.refreshBeaconAudioAvailability();
     });
   }
 
-  private isBeaconInRoom(): boolean {
+  private isBeaconAudioAvailable(): boolean {
     if (!this.room) return false;
-    for (const [, p] of this.room.remoteParticipants) {
-      if (p.identity === BEACON_IDENTITY) return true;
-    }
-    return false;
+    return hasAvailableBeaconAudio(this.room.remoteParticipants.values(), BEACON_IDENTITY);
+  }
+
+  private refreshBeaconAudioAvailability(): void {
+    this.setBeaconAudioAvailable(this.isBeaconAudioAvailable());
+  }
+
+  private setBeaconAudioAvailable(available: boolean): void {
+    if (available === this.beaconAudioAvailable) return;
+    this.beaconAudioAvailable = available;
+    this.onBeaconAvailabilityChanged();
   }
 
   // -------------------------------------------------------------------------
-  // Beacon presence → publish/stop decision
+  // Beacon audio availability → publish/stop decision
   // -------------------------------------------------------------------------
 
-  private onBeaconPresenceChanged(): void {
-    if (this.beaconPresent) {
-      log('INFO', 'beacon01 is LIVE — fading out playlist');
+  private onBeaconAvailabilityChanged(): void {
+    if (this.beaconAudioAvailable) {
+      log('INFO', 'beacon01 audio is LIVE — fading out playlist');
       this.startFade('out');
     } else {
-      log('INFO', 'beacon01 OFFLINE — fading in playlist');
+      log('INFO', 'beacon01 audio unavailable — fading in playlist');
       if (!this.shouldPublish) {
         this.volume = 0;
         this.startPublishing();
@@ -416,23 +435,20 @@ class PlaylistBot {
             return;
           }
 
-          // Copy frame bytes into a fresh buffer to guarantee 2-byte alignment
-          const frameBuffer = Buffer.from(buffer.subarray(0, BYTES_PER_FRAME));
+          const frameBuffer = buffer.subarray(0, BYTES_PER_FRAME);
           buffer = buffer.subarray(BYTES_PER_FRAME);
 
-          // View as Int16 samples (alignment guaranteed by Buffer.from copy)
-          const frameSamples = new Int16Array(
-            frameBuffer.buffer,
-            frameBuffer.byteOffset,
-            SAMPLES_PER_FRAME * NUM_CHANNELS,
-          );
+          // rtc-node 0.13.x forwards AudioFrame.data.buffer rather than the
+          // view's byteOffset. Use a dedicated zero-offset buffer or pooled
+          // Node bytes outside this frame will be encoded as audio.
+          const frameSamples = ownedPcm16Frame(frameBuffer);
           this.applyFade(frameSamples);
 
           const frame = new AudioFrame(
             frameSamples,
             SAMPLE_RATE,
             NUM_CHANNELS,
-            SAMPLES_PER_FRAME,
+            SAMPLES_PER_CHANNEL,
           );
 
           try {

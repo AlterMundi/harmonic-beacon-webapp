@@ -144,9 +144,17 @@ const TOKEN_RESPONSE = {
     },
     canPublish: false,
     token: 'test-token',
+    identity: 'opaque-attendee-12345678',
+    displayName: 'Attendee',
+    role: 'ATTENDEE',
+    principalKind: 'ticket',
+    audioDiagnosticEnabled: true,
 };
 
 beforeEach(() => {
+    window.sessionStorage.clear();
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     audioMocks.setBeaconVolume.mockClear();
     audioMocks.startBeaconAudio.mockClear();
     audioMocks.startBeaconAudio.mockResolvedValue(true);
@@ -161,12 +169,31 @@ beforeEach(() => {
 afterEach(() => {
     cleanup();
     mockPush.mockClear();
+    vi.restoreAllMocks();
 });
 
 async function renderConnected() {
     render(<SessionRoomPage />);
     await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
 }
+
+describe('SessionRoomPage - test identity and audio diagnostics', () => {
+    it('shows the selected test name, authorized role, short identity, and A/B controls', async () => {
+        window.sessionStorage.setItem(
+            'hb:e2e-viewer',
+            JSON.stringify({ name: 'Nico', role: 'ATTENDEE' }),
+        );
+
+        await renderConnected();
+
+        expect(screen.getByTestId('viewer-identity')).toHaveTextContent(
+            'Signed in: Nico · ATTENDEE · ID 12345678',
+        );
+        expect(screen.getByText('Audio A/B check')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Test browser output/i })).toBeInTheDocument();
+        expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).not.toBeNull();
+    });
+});
 
 describe('SessionRoomPage - server-ended disconnect', () => {
     it('says the session ended, without a rejoin option, and announces it', async () => {
@@ -273,6 +300,14 @@ describe('SessionRoomPage - intentional disconnects are not terminal states', ()
 describe('SessionRoomPage - two-room crossfader', () => {
     it('changes stage voice and Beacon bed gains independently', async () => {
         await renderConnected();
+        const sliders = screen.getAllByRole('slider');
+
+        expect(sliders[1]).toHaveValue('0.5');
+        await waitFor(() => {
+            const initialBedGain = audioMocks.setBeaconVolume.mock.lastCall?.[0];
+            expect(initialBedGain).toBeCloseTo(0.4);
+        });
+
         const stageAudio = document.createElement('audio');
         const stageTrack = {
             kind: 'audio',
@@ -288,8 +323,8 @@ describe('SessionRoomPage - two-room crossfader', () => {
                 { identity: 'facilitator' },
             );
         });
+        expect(stageAudio.volume).toBeCloseTo(0.4);
 
-        const sliders = screen.getAllByRole('slider');
         fireEvent.change(sliders[1], { target: { value: '0.25' } });
 
         await waitFor(() => {
@@ -298,17 +333,85 @@ describe('SessionRoomPage - two-room crossfader', () => {
             expect(bedGain).toBeCloseTo(0.6);
         });
     });
+
+    it('removes its owned stage element when LiveKit detach returns none', async () => {
+        await renderConnected();
+        const stageAudio = document.createElement('audio');
+        const stageTrack = {
+            kind: 'audio',
+            attach: vi.fn(() => stageAudio),
+            detach: vi.fn(() => []),
+        };
+
+        act(() => {
+            currentRoom().emit('trackSubscribed', stageTrack, {}, { identity: 'facilitator' });
+        });
+        expect(stageAudio.isConnected).toBe(true);
+
+        act(() => {
+            currentRoom().emit('trackUnsubscribed', stageTrack, {}, { identity: 'facilitator' });
+        });
+        expect(stageTrack.detach).toHaveBeenCalledOnce();
+        expect(stageAudio.isConnected).toBe(false);
+    });
+
+    it('discards stage audio delivered to a room after page cleanup', async () => {
+        await renderConnected();
+        const obsoleteRoom = currentRoom();
+        cleanup();
+
+        const stageAudio = document.createElement('audio');
+        document.body.appendChild(stageAudio);
+        const stageTrack = {
+            kind: 'audio',
+            attach: vi.fn(() => stageAudio),
+            detach: vi.fn(() => [stageAudio]),
+        };
+        act(() => {
+            obsoleteRoom.emit('trackSubscribed', stageTrack, {}, { identity: 'facilitator' });
+        });
+
+        expect(stageTrack.attach).not.toHaveBeenCalled();
+        expect(stageTrack.detach).toHaveBeenCalledOnce();
+        expect(stageAudio.isConnected).toBe(false);
+    });
 });
 
 describe('SessionRoomPage - audio activation', () => {
-    it('unlocks both LiveKit rooms from one explicit bilingual control', async () => {
+    it('starts both LiveKit rooms before awaiting either one', async () => {
         await renderConnected();
+        const stageAudio = document.createElement('audio');
+        const stagePlay = vi.spyOn(stageAudio, 'play').mockResolvedValue(undefined);
+        const stageTrack = {
+            kind: 'audio',
+            attach: () => stageAudio,
+            detach: () => [stageAudio],
+        };
+        act(() => {
+            currentRoom().emit(
+                'trackSubscribed',
+                stageTrack,
+                {},
+                { identity: 'facilitator' },
+            );
+        });
+
+        let releaseStage!: () => void;
+        const stageStart = new Promise<void>((resolve) => {
+            releaseStage = resolve;
+        });
+        currentRoom().startAudio.mockReturnValueOnce(stageStart);
+        stagePlay.mockClear();
 
         fireEvent.click(screen.getByRole('button', { name: 'Start audio · Iniciar audio' }));
 
-        await waitFor(() => {
-            expect(currentRoom().startAudio).toHaveBeenCalledOnce();
-            expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
+        expect(currentRoom().startAudio).toHaveBeenCalledOnce();
+        expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
+        expect(stagePlay).toHaveBeenCalledOnce();
+
+        await act(async () => {
+            releaseStage();
+            await stageStart;
         });
     });
 });

@@ -94,6 +94,9 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
       - LIVEKIT_INTERNAL_URL=http://beacon-livekit:7880
+      - BEACON_REFERENCE_AUDIO_PATH=/data/beacon-records/luz_de_manana.ogg
+    volumes:
+      - /mnt/beacon-data/beacon-records:/data/beacon-records:ro
     ports:
       - "127.0.0.1:3000:3000"                # nginx-only
     networks:
@@ -176,7 +179,7 @@ services:
     networks:
       - beacon
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3100/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.TAPESTRY_PORT||3100)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 3
