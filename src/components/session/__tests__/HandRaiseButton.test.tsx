@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import HandRaiseButton from '../HandRaiseButton';
+import { LocaleProvider } from '@/context/LocaleContext';
+
+function render(ui: ReactNode) {
+    return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale="en">{children}</LocaleProvider> });
+}
 
 type HandState = Record<string, unknown>;
 
@@ -60,7 +66,7 @@ describe('HandRaiseButton', () => {
         await userEvent.click(screen.getByRole('button', { name: /Raise hand/i }));
 
         await waitFor(() => {
-            expect(screen.getByRole('status')).toHaveTextContent('you are #2 in the queue');
+            expect(screen.getByRole('status')).toHaveTextContent('you are number #2 in the queue');
         });
         expect(calls).toContainEqual({
             url: '/api/scheduled-sessions/event-1/hand',
@@ -104,7 +110,7 @@ describe('HandRaiseButton', () => {
         // can now offer mic/camera. No token refetch, no reconnect.
         await waitFor(() => expect(onGrant).toHaveBeenCalledWith(true), { timeout: 4000 });
         await waitFor(() => {
-            expect(screen.getByText(/You are on stage — enable mic and camera/)).toBeInTheDocument();
+            expect(screen.getByText(/You are on stage — enable microphone and camera/)).toBeInTheDocument();
         });
         expect(screen.queryByRole('button', { name: /hand/i })).not.toBeInTheDocument();
     });
@@ -121,12 +127,12 @@ describe('HandRaiseButton', () => {
         render(<HandRaiseButton sessionId="event-1" />);
 
         await waitFor(() => {
-            expect(screen.getByRole('status')).toHaveTextContent('you are #1 in the queue');
+            expect(screen.getByRole('status')).toHaveTextContent('you are number #1 in the queue');
         });
         await waitFor(() => {
             expect(screen.getByRole('alert')).toHaveTextContent('Hand status unavailable');
         }, { timeout: 4000 });
-        expect(screen.getByRole('status')).toHaveTextContent('you are #1 in the queue');
+        expect(screen.getByRole('status')).toHaveTextContent('you are number #1 in the queue');
     });
 
     it('explains a staff-cookie collision and stops attendee actions', async () => {

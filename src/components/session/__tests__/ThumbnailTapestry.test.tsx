@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render as rtlRender, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ThumbnailTapestry from '../ThumbnailTapestry';
+import { LocaleProvider } from '@/context/LocaleContext';
+
+function render(ui: ReactNode) {
+    return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale="en">{children}</LocaleProvider> });
+}
 
 afterEach(() => cleanup());
 

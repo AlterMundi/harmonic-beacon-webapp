@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useLocale } from "@/context/LocaleContext";
 
 import {
     AUXILIARY_DIMENSIONS,
@@ -30,14 +31,6 @@ export interface StageTileProps {
     connectionQuality: StageConnectionQuality;
     videoPublication?: StageVideoPublication | null;
 }
-
-const QUALITY_COPY: Record<StageConnectionQuality, string> = {
-    excellent: "Connection excellent",
-    good: "Connection good",
-    poor: "Connection poor",
-    lost: "Connection lost",
-    unknown: "Connection unknown",
-};
 
 const QUALITY_COLOR: Record<StageConnectionQuality, string> = {
     excellent: "bg-[var(--lime)]",
@@ -75,6 +68,7 @@ export default function StageTile({
     connectionQuality,
     videoPublication,
 }: StageTileProps) {
+    const { copy } = useLocale();
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const isSpotlight = variant === "spotlight";
 
@@ -100,7 +94,7 @@ export default function StageTile({
             data-testid="stage-tile"
             data-variant={variant}
             data-identity-label={label}
-            aria-label={`${label}${isLocal ? " (you)" : ""}`}
+            aria-label={`${label}${isLocal ? ` (${copy.stage.you})` : ""}`}
             className={[
                 "relative aspect-video overflow-hidden rounded-lg border bg-white/5",
                 isSpotlight ? "col-span-5 stage-tile--spotlight" : "col-span-1",
@@ -123,7 +117,7 @@ export default function StageTile({
                     <span
                         className={`text-[var(--text-muted)] ${isSpotlight ? "text-sm" : "text-[9px]"}`}
                     >
-                        {cameraOn ? "Connecting…" : "Camera off"}
+                        {cameraOn ? copy.stage.connecting : copy.stage.cameraOff}
                     </span>
                 </div>
             )}
@@ -132,22 +126,22 @@ export default function StageTile({
                 <span
                     className={`truncate text-white ${isSpotlight ? "text-xs" : "text-[9px]"}`}
                 >
-                    {isLocal ? `${label} (you)` : label}
+                    {isLocal ? `${label} (${copy.stage.you})` : label}
                 </span>
                 <span className="flex-1" />
                 {!micOn && (
-                    <span role="img" aria-label={`${label} microphone muted`} className="text-[var(--danger)]">
+                    <span role="img" aria-label={`${label} ${copy.stage.microphoneMuted}`} className="text-[var(--danger)]">
                         <MicOffIcon />
                     </span>
                 )}
                 {!cameraOn && (
-                    <span role="img" aria-label={`${label} camera off`} className="text-[var(--danger)]">
+                    <span role="img" aria-label={`${label} ${copy.stage.cameraOff.toLocaleLowerCase()}`} className="text-[var(--danger)]">
                         <CameraOffIcon />
                     </span>
                 )}
                 <span
                     role="img"
-                    aria-label={`${label} ${QUALITY_COPY[connectionQuality].toLowerCase()}`}
+                    aria-label={`${label} ${copy.stage.quality[connectionQuality]}`}
                     data-quality={connectionQuality}
                     className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${QUALITY_COLOR[connectionQuality]}`}
                 />

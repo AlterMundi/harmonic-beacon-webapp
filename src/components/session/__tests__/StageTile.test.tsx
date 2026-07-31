@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, cleanup } from '@testing-library/react';
+import type { ReactNode } from 'react';
 
 import StageTile, { type StageVideoPublication } from '../StageTile';
+import { LocaleProvider } from '@/context/LocaleContext';
+
+function render(ui: ReactNode) {
+    return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale="en">{children}</LocaleProvider> });
+}
 
 /**
  * WS2-02: the spotlight requests the 720p layer and every auxiliary requests

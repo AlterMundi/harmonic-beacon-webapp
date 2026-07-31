@@ -23,6 +23,7 @@ type LocaleValue = {
     locale: UiLocale;
     copy: Messages;
     setLocale: (locale: UiLocale) => void;
+    seedLocale: (locale: UiLocale) => void;
 };
 
 const LocaleContext = createContext<LocaleValue | null>(null);
@@ -41,6 +42,22 @@ function persistLocale(locale: UiLocale): void {
     document.cookie = `${UI_LOCALE_COOKIE}=${locale}; Path=/; Max-Age=${UI_LOCALE_MAX_AGE_SECONDS}; SameSite=Lax`;
 }
 
+function readPersistedLocale(): UiLocale | null {
+    const cookieLocale = document.cookie
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(`${UI_LOCALE_COOKIE}=`))
+        ?.slice(UI_LOCALE_COOKIE.length + 1);
+    const parsedCookie = parseUiLocale(cookieLocale);
+    if (parsedCookie) return parsedCookie;
+
+    try {
+        return parseUiLocale(window.localStorage.getItem(UI_LOCALE_STORAGE));
+    } catch {
+        return null;
+    }
+}
+
 export function LocaleProvider({
     initialLocale,
     children,
@@ -52,7 +69,6 @@ export function LocaleProvider({
 
     useEffect(() => {
         applyDocumentLocale(locale);
-        persistLocale(locale);
     }, [locale]);
 
     useEffect(() => {
@@ -67,12 +83,26 @@ export function LocaleProvider({
     }, []);
 
     const setLocale = useCallback((next: UiLocale) => {
+        persistLocale(next);
+        setLocaleState(next);
+    }, []);
+
+    const seedLocale = useCallback((next: UiLocale) => {
+        // Event language is only a first-visit default. Re-read persistence at
+        // the moment the event response arrives so it cannot race and undo a
+        // language the person chose while that request was in flight.
+        const persisted = readPersistedLocale();
+        if (persisted) {
+            setLocaleState(persisted);
+            return;
+        }
+        persistLocale(next);
         setLocaleState(next);
     }, []);
 
     const value = useMemo<LocaleValue>(
-        () => ({ locale, copy: messages[locale], setLocale }),
-        [locale, setLocale],
+        () => ({ locale, copy: messages[locale], setLocale, seedLocale }),
+        [locale, setLocale, seedLocale],
     );
 
     return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;

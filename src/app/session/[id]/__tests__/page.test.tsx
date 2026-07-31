@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { LocaleProvider } from '@/context/LocaleContext';
+import type { UiLocale } from '@/lib/i18n';
 
 // TRUST_AND_SAFETY §4 item 5: a participant must be told a session ended,
 // not just dropped. These tests exercise the RoomEvent.Disconnected handler
@@ -163,6 +165,8 @@ const ENTRY_RESPONSE = {
 
 beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
+    document.cookie = 'hb_locale=; Path=/; Max-Age=0';
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     audioMocks.setBeaconVolume.mockClear();
@@ -186,8 +190,16 @@ afterEach(() => {
 });
 
 async function renderConnected() {
-    render(<SessionRoomPage />);
+    renderPage('en');
     await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
+}
+
+function renderPage(locale: UiLocale = 'en') {
+    return render(
+        <LocaleProvider initialLocale={locale}>
+            <SessionRoomPage />
+        </LocaleProvider>,
+    );
 }
 
 describe('SessionRoomPage - event entry', () => {
@@ -209,13 +221,37 @@ describe('SessionRoomPage - event entry', () => {
             throw new Error(`Unexpected request: ${String(url)}`);
         });
 
-        render(<SessionRoomPage />);
+        renderPage();
 
         expect(await screen.findByText('Entrada confirmada')).toBeInTheDocument();
         expect(screen.getByText('Test Session')).toBeInTheDocument();
         expect(screen.getByText(/automáticamente cuando el equipo las abra/)).toBeInTheDocument();
         expect(Room).not.toHaveBeenCalled();
         expect(global.fetch).not.toHaveBeenCalledWith(expect.stringContaining('/token'));
+    });
+
+    it('preserves an explicit English preference for a Spanish event, including long waiting copy', async () => {
+        document.cookie = 'hb_locale=en; Path=/';
+        window.localStorage.setItem('hb-locale', 'en');
+        vi.mocked(global.fetch).mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                state: 'WAITING',
+                session: {
+                    ...ENTRY_RESPONSE.session,
+                    language: 'SPANISH',
+                    status: 'SCHEDULED',
+                },
+            }),
+        } as Response);
+
+        renderPage('en');
+
+        expect(await screen.findByText('Ticket confirmed')).toBeInTheDocument();
+        expect(screen.getByText(
+            'The doors are not open yet. This page will bring you in automatically when the team opens them.',
+        )).toBeInTheDocument();
+        expect(document.documentElement.lang).toBe('en');
     });
 
     it('renders the designed closing state without mounting LiveKit', async () => {
@@ -227,7 +263,7 @@ describe('SessionRoomPage - event entry', () => {
             }),
         } as Response);
 
-        render(<SessionRoomPage />);
+        renderPage();
 
         expect(await screen.findByText('Session ended')).toBeInTheDocument();
         expect(screen.getByText('Thank you for being part of it.')).toBeInTheDocument();
@@ -255,7 +291,7 @@ describe('SessionRoomPage - event entry', () => {
             return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
         });
 
-        render(<SessionRoomPage />);
+        renderPage();
         expect(await screen.findByText('Ticket confirmed')).toBeInTheDocument();
 
         fireEvent.focus(window);
@@ -285,7 +321,7 @@ describe('SessionRoomPage - event entry', () => {
             return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
         });
 
-        render(<SessionRoomPage />);
+        renderPage();
         await screen.findByText('Test Session');
         const connectedRoom = currentRoom();
 
@@ -301,10 +337,27 @@ describe('SessionRoomPage - participant identity', () => {
         await renderConnected();
 
         expect(screen.getByTestId('viewer-identity')).toHaveTextContent(
-            'Signed in: Nico · ATTENDEE · ID 12345678',
+            'Signed in as: Nico · ATTENDEE · ID 12345678',
         );
         expect(screen.queryByText('Audio A/B check')).not.toBeInTheDocument();
         expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).toBeNull();
+    });
+
+    it('changes visible language without reconnecting either media room', async () => {
+        await renderConnected();
+        const connectedRoom = currentRoom();
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+        act(() => {
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: 'hb-locale',
+                newValue: 'es',
+            }));
+        });
+
+        expect(await screen.findByRole('button', { name: 'Iniciar audio' })).toBeInTheDocument();
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
+        expect(connectedRoom.disconnect).not.toHaveBeenCalled();
     });
 });
 
@@ -388,6 +441,35 @@ describe('SessionRoomPage - ambiguous disconnect', () => {
         expect(within(status).getByText('Disconnected')).toBeInTheDocument();
         expect(within(status).getByText(/can't tell whether it ended or your connection dropped/i)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Rejoin/i })).toBeInTheDocument();
+    });
+
+    it('announces the full terminal lifecycle in Spanish when the event seeded a first visit', async () => {
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        ...ENTRY_RESPONSE,
+                        session: { ...ENTRY_RESPONSE.session, language: 'SPANISH' },
+                    }),
+                } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        renderPage('en');
+        await screen.findByText('Test Session');
+        act(() => currentRoom().emit('disconnected', undefined));
+
+        const status = await screen.findByRole('status');
+        expect(within(status).getByText('Desconectado')).toBeInTheDocument();
+        expect(within(status).getByText(
+            'Ya no estás conectado a esta sesión. No podemos saber si terminó o si se cortó tu conexión.',
+        )).toBeInTheDocument();
+        expect(document.documentElement.lang).toBe('es');
     });
 });
 
@@ -516,7 +598,7 @@ describe('SessionRoomPage - audio activation', () => {
         currentRoom().startAudio.mockReturnValueOnce(stageStart);
         stagePlay.mockClear();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Start audio · Iniciar audio' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
 
         expect(currentRoom().startAudio).toHaveBeenCalledOnce();
         expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
@@ -545,7 +627,7 @@ describe('SessionRoomPage - initial connection failure', () => {
             return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
         });
 
-        render(<SessionRoomPage />);
+        renderPage();
         expect(await screen.findByText('Room is temporarily unavailable')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

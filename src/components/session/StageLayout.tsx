@@ -5,6 +5,7 @@ import {
     selectStageArrangement,
     type StagePublisher,
 } from "@/lib/stage-layout";
+import { useLocale } from "@/context/LocaleContext";
 
 import StageTile, { type StageVideoPublication } from "./StageTile";
 
@@ -25,6 +26,7 @@ export default function StageLayout({
     pinnedIdentity,
     audioOnly = false,
 }: StageLayoutProps) {
+    const { copy } = useLocale();
     const { spotlight, auxiliaries, overflow } = selectStageArrangement(publishers, {
         pinnedIdentity,
         activeSpeakerIdentity,
@@ -34,7 +36,7 @@ export default function StageLayout({
 
     return (
         <section
-            aria-label="Stage"
+            aria-label={copy.stage.label}
             data-testid="stage-layout"
             data-overflow={overflow.length || undefined}
             className="mx-auto w-full max-w-4xl"
@@ -44,21 +46,14 @@ export default function StageLayout({
                     role="status"
                     className="mb-3 text-center text-xs text-[var(--text-muted)]"
                 >
-                    Audio-only mode. Video is off; you are still hearing the stage and
-                    the Beacon bed.
-                    <span className="mt-0.5 block opacity-70">
-                        Modo solo audio. El video está apagado; seguís escuchando el escenario y el Beacon.
-                    </span>
+                    {copy.stage.audioOnly}
                 </p>
             )}
 
             {tiles.length === 0 ? (
                 <div className="terminal-state py-10">
                     <p className="terminal-state__body">
-                        Waiting for the facilitator to open the stage.
-                        <span className="mt-1 block opacity-70">
-                            Esperando que el facilitador abra el escenario.
-                        </span>
+                        {copy.stage.waiting}
                     </p>
                 </div>
             ) : (

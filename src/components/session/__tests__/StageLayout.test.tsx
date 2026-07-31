@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, cleanup } from '@testing-library/react';
+import type { ReactNode } from 'react';
 
 import StageLayout, { type StagePublisherView } from '../StageLayout';
 import type { StageVideoPublication } from '../StageTile';
+import { LocaleProvider } from '@/context/LocaleContext';
+
+function render(ui: ReactNode) {
+    return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale="en">{children}</LocaleProvider> });
+}
 
 /**
  * WS2-02 acceptance: "every audience client renders exactly one spotlight at the

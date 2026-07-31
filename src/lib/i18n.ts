@@ -74,6 +74,93 @@ export type Messages = {
         signIn: string;
         attendeeSignIn: string;
     };
+    session: {
+        participantFallback: string;
+        connection: Record<'connected' | 'connecting' | 'reconnecting' | 'disconnected', string>;
+        connectingHeading: string;
+        connectingBody: string;
+        connectionErrorHeading: string;
+        tryAgain: string;
+        backToSessions: string;
+        endedHeading: string;
+        endedBody: string;
+        connectionLostHeading: string;
+        connectionLostBody: string;
+        disconnectedHeading: string;
+        disconnectedBody: string;
+        rejoin: string;
+        sessionFallback: string;
+        participantSingular: string;
+        participantPlural: string;
+        signedIn: string;
+        staffConsole: string;
+        audioActivationLabel: string;
+        audioPrompt: string;
+        startAudio: string;
+        beaconAudioError: string;
+        audioError: string;
+        yourTurn: string;
+        masterVolume: string;
+        mix: string;
+        sessionChannel: string;
+        beaconRoom: string;
+        playlist: string;
+        live: string;
+        active: string;
+        none: string;
+        error: string;
+        mic: string;
+        muteMicrophone: string;
+        unmuteMicrophone: string;
+        camera: string;
+        turnCameraOff: string;
+        turnCameraOn: string;
+        audioOnly: string;
+        turnVideoOn: string;
+        switchToAudioOnly: string;
+        leave: string;
+        leaveSession: string;
+        preparingRoom: string;
+        confirmingEntry: string;
+        entryUnavailable: string;
+        ticketConfirmed: string;
+        doorsClosed: string;
+        doorsReconnecting: string;
+        doorsChecking: string;
+        cancelledHeading: string;
+        cancelledBody: string;
+        closingBody: string;
+    };
+    hand: {
+        staffCollision: string;
+        unauthorized: string;
+        raiseFailed: string;
+        lowerFailed: string;
+        statusUnavailable: string;
+        raise: string;
+        lower: string;
+        onStage: string;
+        queuedPrefix: string;
+        queuedSuffix: string;
+    };
+    stage: {
+        label: string;
+        audioOnly: string;
+        waiting: string;
+        you: string;
+        connecting: string;
+        cameraOff: string;
+        microphoneMuted: string;
+        quality: Record<'excellent' | 'good' | 'poor' | 'lost' | 'unknown', string>;
+    };
+    tapestry: {
+        label: string;
+        latestAlt: string;
+        waiting: string;
+        stopCamera: string;
+        shareSnapshot: string;
+        permissionDenied: string;
+    };
 };
 
 export const messages: Record<UiLocale, Messages> = {
@@ -131,6 +218,93 @@ export const messages: Record<UiLocale, Messages> = {
             signIn: 'Ingresar',
             attendeeSignIn: 'Ingreso de participantes',
         },
+        session: {
+            participantFallback: 'Participante',
+            connection: { connected: 'Conectado', connecting: 'Conectando', reconnecting: 'Reconectando', disconnected: 'Desconectado' },
+            connectingHeading: 'Conectando',
+            connectingBody: 'Entrando al campo armónico…',
+            connectionErrorHeading: 'Error de conexión',
+            tryAgain: 'Intentar de nuevo',
+            backToSessions: 'Volver a las sesiones',
+            endedHeading: 'La sesión terminó',
+            endedBody: 'Esta sesión terminó. Ya no estás conectado.',
+            connectionLostHeading: 'Se perdió la conexión',
+            connectionLostBody: 'Se perdió tu conexión con esta sesión.',
+            disconnectedHeading: 'Desconectado',
+            disconnectedBody: 'Ya no estás conectado a esta sesión. No podemos saber si terminó o si se cortó tu conexión.',
+            rejoin: 'Volver a entrar',
+            sessionFallback: 'Sesión',
+            participantSingular: 'participante',
+            participantPlural: 'participantes',
+            signedIn: 'Ingresaste como',
+            staffConsole: 'Escena y manos',
+            audioActivationLabel: 'Activación de audio',
+            audioPrompt: 'Presioná una vez para escuchar la sesión y el Beacon.',
+            startAudio: 'Iniciar audio',
+            beaconAudioError: 'No se pudo iniciar el audio del Beacon. Comprobá que esta pestaña no esté silenciada e intentá de nuevo.',
+            audioError: 'No se pudo iniciar el audio. Comprobá que esta pestaña no esté silenciada e intentá de nuevo.',
+            yourTurn: 'Tu turno — activá la cámara y el micrófono',
+            masterVolume: 'Volumen general',
+            mix: 'Mezcla de Beacon y sesión',
+            sessionChannel: 'Sesión',
+            beaconRoom: 'Sala Beacon',
+            playlist: 'Playlist',
+            live: 'En vivo',
+            active: 'activo',
+            none: 'ninguno',
+            error: 'error',
+            mic: 'Micrófono',
+            muteMicrophone: 'Silenciar micrófono',
+            unmuteMicrophone: 'Activar micrófono',
+            camera: 'Cámara',
+            turnCameraOff: 'Apagar cámara',
+            turnCameraOn: 'Encender cámara',
+            audioOnly: 'Solo audio',
+            turnVideoOn: 'Volver a encender el video',
+            switchToAudioOnly: 'Cambiar a solo audio',
+            leave: 'Salir',
+            leaveSession: 'Salir de la sesión',
+            preparingRoom: 'Preparando tu sala',
+            confirmingEntry: 'Confirmando tu entrada y el estado del evento…',
+            entryUnavailable: 'No se pudo comprobar el ingreso',
+            ticketConfirmed: 'Entrada confirmada',
+            doorsClosed: 'Las puertas todavía están cerradas. Esta página te hará entrar automáticamente cuando el equipo las abra.',
+            doorsReconnecting: 'Estamos recuperando la conexión para comprobar las puertas. Tu entrada sigue confirmada.',
+            doorsChecking: 'Comprobando las puertas automáticamente…',
+            cancelledHeading: 'Sesión cancelada',
+            cancelledBody: 'Esta sesión no se realizará.',
+            closingBody: 'Gracias por haber sido parte.',
+        },
+        hand: {
+            staffCollision: 'Este navegador tiene una sesión del equipo abierta. Abrí la vista de participante en una ventana privada o en otro perfil del navegador.',
+            unauthorized: 'Esta sesión de participante ya no está autorizada. Volvé a ingresar desde una ventana privada o desde otro perfil del navegador.',
+            raiseFailed: 'No se pudo levantar la mano',
+            lowerFailed: 'No se pudo bajar la mano',
+            statusUnavailable: 'El estado de tu mano no está disponible',
+            raise: 'Levantar la mano',
+            lower: 'Bajar la mano',
+            onStage: 'Estás en escena — activá el micrófono y la cámara abajo.',
+            queuedPrefix: 'Mano levantada — sos la persona número',
+            queuedSuffix: 'en la fila.',
+        },
+        stage: {
+            label: 'Escena',
+            audioOnly: 'Modo solo audio. El video está apagado; seguís escuchando la escena y el Beacon.',
+            waiting: 'Esperando que la persona facilitadora abra la escena.',
+            you: 'vos',
+            connecting: 'Conectando…',
+            cameraOff: 'Cámara apagada',
+            microphoneMuted: 'micrófono silenciado',
+            quality: { excellent: 'conexión excelente', good: 'conexión buena', poor: 'conexión débil', lost: 'conexión perdida', unknown: 'conexión desconocida' },
+        },
+        tapestry: {
+            label: 'Tapiz',
+            latestAlt: 'Último tapiz de participantes',
+            waiting: 'Esperando imágenes.',
+            stopCamera: 'Dejar de compartir la cámara con el tapiz',
+            shareSnapshot: 'Compartir una imagen de cámara',
+            permissionDenied: 'No se otorgó permiso para usar la cámara. Igual podés participar de la sesión.',
+        },
     },
     en: {
         language: { label: 'Language', spanish: 'Spanish', english: 'English' },
@@ -185,6 +359,93 @@ export const messages: Record<UiLocale, Messages> = {
             signingIn: 'Signing in…',
             signIn: 'Sign in',
             attendeeSignIn: 'Attendee sign-in',
+        },
+        session: {
+            participantFallback: 'Participant',
+            connection: { connected: 'Connected', connecting: 'Connecting', reconnecting: 'Reconnecting', disconnected: 'Disconnected' },
+            connectingHeading: 'Connecting',
+            connectingBody: 'Entering the Harmonic field…',
+            connectionErrorHeading: 'Connection error',
+            tryAgain: 'Try again',
+            backToSessions: 'Back to sessions',
+            endedHeading: 'Session ended',
+            endedBody: "This session has ended. You're no longer connected.",
+            connectionLostHeading: 'Connection lost',
+            connectionLostBody: 'Your connection to this session was lost.',
+            disconnectedHeading: 'Disconnected',
+            disconnectedBody: "You're no longer connected to this session. We can't tell whether it ended or your connection dropped.",
+            rejoin: 'Rejoin',
+            sessionFallback: 'Session',
+            participantSingular: 'participant',
+            participantPlural: 'participants',
+            signedIn: 'Signed in as',
+            staffConsole: 'Stage and hands',
+            audioActivationLabel: 'Audio activation',
+            audioPrompt: 'Press once to hear the session and Beacon.',
+            startAudio: 'Start audio',
+            beaconAudioError: 'Beacon audio could not start. Check that this tab is not muted, then try again.',
+            audioError: 'Audio could not start. Check that this tab is not muted, then try again.',
+            yourTurn: 'Your turn — enable camera and microphone',
+            masterVolume: 'Master volume',
+            mix: 'Beacon and session mix',
+            sessionChannel: 'Session',
+            beaconRoom: 'Beacon room',
+            playlist: 'Playlist',
+            live: 'Live',
+            active: 'active',
+            none: 'none',
+            error: 'error',
+            mic: 'Mic',
+            muteMicrophone: 'Mute microphone',
+            unmuteMicrophone: 'Unmute microphone',
+            camera: 'Camera',
+            turnCameraOff: 'Turn camera off',
+            turnCameraOn: 'Turn camera on',
+            audioOnly: 'Audio only',
+            turnVideoOn: 'Turn video back on',
+            switchToAudioOnly: 'Switch to audio only',
+            leave: 'Leave',
+            leaveSession: 'Leave session',
+            preparingRoom: 'Preparing your room',
+            confirmingEntry: 'Confirming your ticket and event status…',
+            entryUnavailable: 'Entry status unavailable',
+            ticketConfirmed: 'Ticket confirmed',
+            doorsClosed: 'The doors are not open yet. This page will bring you in automatically when the team opens them.',
+            doorsReconnecting: 'We are reconnecting to check the doors. Your ticket remains confirmed.',
+            doorsChecking: 'Checking the doors automatically…',
+            cancelledHeading: 'Session cancelled',
+            cancelledBody: 'This session will not take place.',
+            closingBody: 'Thank you for being part of it.',
+        },
+        hand: {
+            staffCollision: 'This browser is signed in as staff. Open the attendee view in a private window or separate browser profile.',
+            unauthorized: 'This attendee session is no longer authorized. Sign in again in a private window or separate browser profile.',
+            raiseFailed: 'Could not raise hand',
+            lowerFailed: 'Could not lower hand',
+            statusUnavailable: 'Hand status unavailable',
+            raise: 'Raise hand',
+            lower: 'Lower hand',
+            onStage: 'You are on stage — enable microphone and camera below.',
+            queuedPrefix: 'Hand raised — you are number',
+            queuedSuffix: 'in the queue.',
+        },
+        stage: {
+            label: 'Stage',
+            audioOnly: 'Audio-only mode. Video is off; you are still hearing the stage and the Beacon bed.',
+            waiting: 'Waiting for the facilitator to open the stage.',
+            you: 'you',
+            connecting: 'Connecting…',
+            cameraOff: 'Camera off',
+            microphoneMuted: 'microphone muted',
+            quality: { excellent: 'connection excellent', good: 'connection good', poor: 'connection poor', lost: 'connection lost', unknown: 'connection unknown' },
+        },
+        tapestry: {
+            label: 'Tapestry',
+            latestAlt: 'Latest participant tapestry',
+            waiting: 'Waiting for snapshots.',
+            stopCamera: 'Stop sharing your camera with the tapestry',
+            shareSnapshot: 'Share a camera snapshot',
+            permissionDenied: 'Camera permission was not granted. You can still take part in the session.',
         },
     },
 };
