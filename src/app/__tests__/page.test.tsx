@@ -63,9 +63,12 @@ describe('landing page', () => {
 
         // The event's advertised Costa Rica time comes first, with operator and
         // universal references explicitly labelled below it.
+        // Note: bilingual content renders both ES and EN versions in DOM;
+        // CSS hides the inactive language. Tests use getAllByText.
         expect(screen.getAllByText(/Costa Rica:/)).toHaveLength(2);
-        expect(screen.getByText(/Saturday, August 1 at 12:30 PM CST/)).toBeInTheDocument();
-        expect(screen.getByText(/sábado, 1 de agosto.*08:30.*GMT-6/)).toBeInTheDocument();
+        // Spanish session formatted in Spanish, English session in English
+        expect(screen.getAllByText(/sábado, 1 de agosto.*08:30.*GMT-6/)).toHaveLength(1);
+        expect(screen.getAllByText(/Saturday, August 1 at 12:30 PM CST/)).toHaveLength(1);
         expect(screen.getAllByText(/Argentina:/)).toHaveLength(2);
         expect(screen.getAllByText(/UTC:/)).toHaveLength(2);
     });
@@ -99,9 +102,11 @@ describe('landing page', () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        const link = screen.getByRole('link', { name: /Buy a ticket/ });
-        expect(link).toHaveAttribute('href', 'https://tickets.example.invalid/harmonic-beacon');
-        expect(link).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
+        // Bilingual content renders both ES and EN versions; get the first link
+        const links = screen.getAllByRole('link', { name: /Buy a ticket/ });
+        expect(links.length).toBeGreaterThanOrEqual(1);
+        expect(links[0]).toHaveAttribute('href', 'https://tickets.example.invalid/harmonic-beacon');
+        expect(links[0]).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
         expect(screen.getByText(/USD \$50 Global North.*USD \$20 Global South/)).toBeInTheDocument();
     });
 
@@ -111,8 +116,9 @@ describe('landing page', () => {
         await renderPage();
 
         expect(screen.queryByRole('link', { name: /Buy a ticket/ })).toBeNull();
-        expect(screen.getByText(/Ticket sales open shortly/)).toBeInTheDocument();
-        expect(screen.getByText(/Las entradas se abren en breve/)).toBeInTheDocument();
+        // Bilingual content: both ES and EN versions exist in DOM
+        expect(screen.getAllByText(/Ticket sales open shortly/).length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText(/Las entradas se abren en breve/).length).toBeGreaterThanOrEqual(1);
     });
 
     it('passes a room path through to the form so a reconnect returns there', async () => {
