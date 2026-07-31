@@ -5,6 +5,14 @@ export const UI_LOCALE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 export type UiLocale = 'es' | 'en';
 export type EventLanguage = 'SPANISH' | 'ENGLISH';
 
+export const STAFF_ROLE_KEYS = [
+    'FACILITATOR',
+    'FACILITATOR_OP',
+    'OPERATOR',
+    'ADMIN',
+] as const;
+export type LocalizedStaffRole = (typeof STAFF_ROLE_KEYS)[number];
+
 export function parseUiLocale(value: unknown): UiLocale | null {
     return value === 'es' || value === 'en' ? value : null;
 }
@@ -161,6 +169,31 @@ export type Messages = {
         shareSnapshot: string;
         permissionDenied: string;
     };
+    staffRoles: Record<LocalizedStaffRole, string>;
+    ops: {
+        brand: string;
+        events: string;
+        health: string;
+        admission: string;
+        publicSite: string;
+        signedInAs: string;
+        signOut: string;
+        hubTitle: string;
+        hubIntro: string;
+        live: string;
+        scheduled: string;
+        facilitator: string;
+        openEvent: string;
+        noEvents: string;
+        testEvents: string;
+        testEventsHint: string;
+        eventConsole: string;
+        enterRoom: string;
+        eventHealth: string;
+        unavailableTitle: string;
+        unavailableBody: string;
+        recover: string;
+    };
 };
 
 export const messages: Record<UiLocale, Messages> = {
@@ -305,6 +338,36 @@ export const messages: Record<UiLocale, Messages> = {
             shareSnapshot: 'Compartir una imagen de cámara',
             permissionDenied: 'No se otorgó permiso para usar la cámara. Igual podés participar de la sesión.',
         },
+        staffRoles: {
+            FACILITATOR: 'Facilitador/a',
+            FACILITATOR_OP: 'Facilitación y operaciones',
+            OPERATOR: 'Operaciones',
+            ADMIN: 'Administración',
+        },
+        ops: {
+            brand: 'Beacon · Equipo',
+            events: 'Eventos',
+            health: 'Estado técnico',
+            admission: 'Entradas',
+            publicSite: 'Sitio público',
+            signedInAs: 'Sesión de equipo',
+            signOut: 'Cerrar sesión',
+            hubTitle: 'Eventos',
+            hubIntro: 'Entrá a un evento para dirigir la escena, abrir la sala y acompañar a sus participantes.',
+            live: 'En vivo',
+            scheduled: 'Próximo',
+            facilitator: 'Facilitación',
+            openEvent: 'Abrir evento',
+            noEvents: 'No tenés eventos activos o próximos disponibles.',
+            testEvents: 'Eventos de prueba',
+            testEventsHint: 'Fixtures internos, separados de la programación pública.',
+            eventConsole: 'Conducción del evento',
+            enterRoom: 'Entrar a la sala',
+            eventHealth: 'Estado del evento',
+            unavailableTitle: 'Este evento no está disponible',
+            unavailableBody: 'El enlace puede estar vencido o pertenecer a otro equipo. No se mostraron datos del evento.',
+            recover: 'Volver a tus eventos',
+        },
     },
     en: {
         language: { label: 'Language', spanish: 'Spanish', english: 'English' },
@@ -447,5 +510,39 @@ export const messages: Record<UiLocale, Messages> = {
             shareSnapshot: 'Share a camera snapshot',
             permissionDenied: 'Camera permission was not granted. You can still take part in the session.',
         },
+        staffRoles: {
+            FACILITATOR: 'Facilitator',
+            FACILITATOR_OP: 'Facilitator and operations',
+            OPERATOR: 'Operations',
+            ADMIN: 'Administration',
+        },
+        ops: {
+            brand: 'Beacon · Staff',
+            events: 'Events',
+            health: 'System health',
+            admission: 'Admission',
+            publicSite: 'Public site',
+            signedInAs: 'Staff session',
+            signOut: 'Sign out',
+            hubTitle: 'Events',
+            hubIntro: 'Enter an event to conduct the scene, open the room, and support its participants.',
+            live: 'Live',
+            scheduled: 'Upcoming',
+            facilitator: 'Facilitator',
+            openEvent: 'Open event',
+            noEvents: 'You have no active or upcoming events available.',
+            testEvents: 'Test events',
+            testEventsHint: 'Internal fixtures, kept separate from the public programme.',
+            eventConsole: 'Event conductor',
+            enterRoom: 'Enter the room',
+            eventHealth: 'Event health',
+            unavailableTitle: 'This event is unavailable',
+            unavailableBody: 'The link may be stale or belong to another team. No event details were disclosed.',
+            recover: 'Return to your events',
+        },
     },
 };
+
+export function staffRoleLabel(copy: Messages, role: LocalizedStaffRole): string {
+    return copy.staffRoles[role];
+}

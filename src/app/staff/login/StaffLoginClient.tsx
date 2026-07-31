@@ -4,9 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/context/LocaleContext";
 
-/** Where an operator goes after signing in. */
-const OPERATOR_HOME = "/ops/health";
-
 type MessageKey = "rejected" | "rateLimited" | "unavailable" | "required";
 
 export default function StaffLoginClient() {
@@ -33,8 +30,13 @@ export default function StaffLoginClient() {
             });
 
             if (response.ok) {
+                const result = (await response.json()) as { landing?: unknown };
+                const landing = typeof result.landing === "string" &&
+                    result.landing.startsWith("/ops/")
+                    ? result.landing
+                    : "/ops/events";
                 setPassword("");
-                router.push(OPERATOR_HOME);
+                router.push(landing);
                 router.refresh();
                 return;
             }

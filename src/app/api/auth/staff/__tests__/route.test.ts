@@ -118,6 +118,9 @@ function mountDb(users: UserRow[]) {
                 };
             },
         },
+        scheduledSession: {
+            findMany: async () => [],
+        },
     };
 
     vi.doMock('@/lib/db', () => ({ prisma, default: prisma }));
@@ -168,7 +171,11 @@ describe('POST /api/auth/staff', () => {
             const { status, body } = await parseResponse(response);
 
             expect(status).toBe(200);
-            expect(body).toEqual({ ok: true, role: person.role });
+            expect(body).toEqual({
+                ok: true,
+                role: person.role,
+                landing: '/ops/events',
+            });
 
             // The role the cookie actually resolves to on a later request, which
             // is the one that governs the operator console.
@@ -198,6 +205,7 @@ describe('POST /api/auth/staff', () => {
         expect((await parseResponse(response)).body).toEqual({
             ok: true,
             role: 'FACILITATOR_OP',
+            landing: '/ops/events',
         });
         const cookie = sessionCookieOf(response);
         expect(await principalFromToken(cookie!.value)).toMatchObject({

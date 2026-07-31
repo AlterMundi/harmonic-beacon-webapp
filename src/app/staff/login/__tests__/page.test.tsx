@@ -24,6 +24,9 @@ vi.mock('next/navigation', () => ({
 // which is before a plain `const` in this file would be initialized.
 const { currentPrincipal } = vi.hoisted(() => ({ currentPrincipal: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ currentPrincipal }));
+vi.mock('@/lib/staff-navigation', () => ({
+    resolveStaffLanding: vi.fn().mockResolvedValue('/ops/events/event-live'),
+}));
 vi.mock('@/lib/i18n-server', () => ({ requestLocale: vi.fn().mockResolvedValue('en') }));
 vi.mock('@/components/brand/LanguageControl', () => ({ default: () => <div data-testid="language-control" /> }));
 
@@ -91,8 +94,8 @@ describe('staff login page', () => {
         await renderPage();
 
         expect(screen.getByText(/Signed in as/)).toBeInTheDocument();
-        expect(screen.getByText('OPERATOR')).toBeInTheDocument();
-        expect(screen.getByRole('link', { name: /event controls/ })).toHaveAttribute('href', '/ops/health');
+        expect(screen.getByText('Operations')).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /event controls/ })).toHaveAttribute('href', '/ops/events/event-live');
         expect(screen.queryByLabelText('Password')).toBeNull();
     });
 
@@ -123,7 +126,11 @@ describe('StaffLoginClient', () => {
     }
 
     it('posts the credential and goes to the operator controls', async () => {
-        const fetchMock = mockFetch(200, { ok: true, role: 'ADMIN' });
+        const fetchMock = mockFetch(200, {
+            ok: true,
+            role: 'ADMIN',
+            landing: '/ops/events',
+        });
         renderClient();
 
         await signIn();
@@ -136,7 +143,7 @@ describe('StaffLoginClient', () => {
             password: 'weekend-passphrase',
         });
 
-        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/ops/health'));
+        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/ops/events'));
         expect(mockRefresh).toHaveBeenCalled();
         // The password does not stay in the DOM after it has been used.
         expect(screen.getByLabelText('Password')).toHaveValue('');

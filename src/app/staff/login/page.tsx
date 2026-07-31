@@ -16,6 +16,8 @@ import BrandLockup from "@/components/brand/BrandLockup";
 import LanguageControl from "@/components/brand/LanguageControl";
 import { messages } from "@/lib/i18n";
 import { requestLocale } from "@/lib/i18n-server";
+import { staffRoleLabel } from "@/lib/i18n";
+import { resolveStaffLanding } from "@/lib/staff-navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,9 @@ export default async function StaffLoginPage() {
     const copy = messages[locale].staffLogin;
     const principal = await currentPrincipal().catch(() => null);
     const signedInRole = principal?.kind === "staff" ? principal.role : null;
+    const signedInLanding = principal?.kind === "staff"
+        ? await resolveStaffLanding({ id: principal.userId, role: principal.role })
+        : null;
 
     return (
         <main className="event-shell">
@@ -44,10 +49,13 @@ export default async function StaffLoginPage() {
                 {signedInRole ? (
                     <div className="space-y-4">
                         <div className="event-alert event-alert--info">
-                            {copy.signedInAs} <span className="font-medium text-[var(--paper)]">{signedInRole}</span>.
+                            {copy.signedInAs}{' '}
+                            <span className="font-medium text-[var(--paper)]">
+                                {staffRoleLabel(messages[locale], signedInRole)}
+                            </span>.
                         </div>
                         <Link
-                            href="/ops/health"
+                            href={signedInLanding ?? "/ops/events"}
                             className="event-button event-button--primary inline-flex w-full"
                         >
                             {copy.controls}
