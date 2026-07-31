@@ -12,6 +12,10 @@ rtc:
   udp_port: 7881
   tcp_port: 7881
   use_external_ip: true
+  # Mona is a public-only SFU. Advertising the Docker bridge address alongside
+  # its mapped public address lets browsers repeatedly switch ICE pairs, which
+  # produces audible gaps. Keep client media on the stable public candidate.
+  external_ip_only: true
 
 turn:
   enabled: true
