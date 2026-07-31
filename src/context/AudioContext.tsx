@@ -1,7 +1,16 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, RemoteTrackPublication } from 'livekit-client';
+import {
+    Room,
+    RoomEvent,
+    Track,
+    RemoteTrack,
+    RemoteParticipant,
+    RemoteTrackPublication,
+    type Participant,
+    type TrackPublication,
+} from 'livekit-client';
 import { redactErrorDetail } from '@/lib/redact';
 
 // Participant identity for the live USB audio source
@@ -89,8 +98,14 @@ export function AudioProvider({
     const [currentMeditationFile, setCurrentMeditationFile] = useState<string | null>(null);
 
     const roomRef = useRef<Room | null>(null);
-    // Track audio elements per participant identity
-    const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+    // Own exactly one DOM element per subscribed track. LiveKit may clear an
+    // element's srcObject before TrackUnsubscribed and then return no elements
+    // from detach(), so the application must retain and remove its own node.
+    const audioElementsRef = useRef<Map<RemoteTrack, {
+        element: HTMLAudioElement;
+        identity: string;
+        publication: RemoteTrackPublication;
+    }>>(new Map());
     const meditationAudioRef = useRef<HTMLAudioElement | null>(null);
 
     // Refs for values accessed in callbacks (to avoid reconnection loops)
@@ -107,42 +122,68 @@ export function AudioProvider({
 
     // Initialize LiveKit connection - runs once on mount
     useEffect(() => {
+        let cancelled = false;
         const room = new Room();
         const audioElements = audioElementsRef.current;
         roomRef.current = room;
 
+        const removeTrackedAudio = (track: RemoteTrack) => {
+            const tracked = audioElementsRef.current.get(track);
+            track.detach().forEach((element) => element.remove());
+            if (tracked) {
+                tracked.element.pause();
+                tracked.element.remove();
+                audioElementsRef.current.delete(track);
+            }
+        };
+
+        const syncSourceAvailability = () => {
+            const entries = [...audioElementsRef.current.values()];
+            const liveAvailable = entries.some(
+                (entry) => entry.identity === BEACON_IDENTITY && entry.publication.isMuted !== true,
+            );
+            const playlistAvailable = entries.some(
+                (entry) => entry.identity !== BEACON_IDENTITY,
+            );
+            hasLiveStreamRef.current = liveAvailable;
+            setHasLiveStream(liveAvailable);
+            setHasPlaylistStream(playlistAvailable);
+            entries.forEach((entry) => {
+                if (entry.identity !== BEACON_IDENTITY) {
+                    entry.element.muted = liveAvailable;
+                }
+            });
+        };
+
         room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
             if (track.kind === Track.Kind.Audio) {
+                if (cancelled) {
+                    track.detach().forEach((element) => element.remove());
+                    return;
+                }
                 const identity = participant.identity;
                 const isLive = identity === BEACON_IDENTITY;
 
                 console.log(`✓ Subscribed to ${isLive ? 'LIVE' : 'playlist'} audio track (${identity})`);
 
+                // A republished source can arrive before the old unsubscribe.
+                // Retire any prior track from this identity without allowing a
+                // stale unsubscribe to remove the replacement later.
+                for (const [previousTrack, entry] of audioElementsRef.current) {
+                    if (previousTrack === track || entry.identity === identity) {
+                        removeTrackedAudio(previousTrack);
+                    }
+                }
                 const audioElement = track.attach() as HTMLAudioElement;
                 audioElement.volume = volumeRef.current;
                 audioElement.style.display = "none";
                 document.body.appendChild(audioElement);
 
-                // Store audio element by participant identity
-                audioElementsRef.current.set(identity, audioElement);
+                audioElementsRef.current.set(track, { element: audioElement, identity, publication });
+                syncSourceAvailability();
 
-                if (isLive) {
-                    setHasLiveStream(true);
-                    // Beacon just went live — mute all playlist audio elements
-                    audioElementsRef.current.forEach((el, id) => {
-                        if (id !== BEACON_IDENTITY) {
-                            el.muted = true;
-                        }
-                    });
-                } else {
-                    setHasPlaylistStream(true);
-                    // If beacon is already live, mute this playlist track immediately
-                    if (hasLiveStreamRef.current) {
-                        audioElement.muted = true;
-                    }
-                }
-
-                // Auto-play if user already toggled play
+                // Tracks can arrive after the user has already unlocked audio.
+                // Start them immediately without rebuilding the SDK attachment.
                 if (isPlayingRef.current) {
                     try {
                         await audioElement.play();
@@ -153,64 +194,69 @@ export function AudioProvider({
             }
         });
 
-        room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+        room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _publication: RemoteTrackPublication, participant: RemoteParticipant) => {
             if (track.kind === Track.Kind.Audio) {
                 const identity = participant.identity;
                 const isLive = identity === BEACON_IDENTITY;
 
                 console.log(`✗ ${isLive ? 'LIVE' : 'Playlist'} audio track removed (${identity})`);
 
-                track.detach().forEach((el) => el.remove());
-                audioElementsRef.current.delete(identity);
-
-                if (isLive) {
-                    setHasLiveStream(false);
-                    // Beacon went offline — unmute all playlist audio elements
-                    audioElementsRef.current.forEach((el, id) => {
-                        if (id !== BEACON_IDENTITY) {
-                            el.muted = false;
-                        }
-                    });
-                } else {
-                    setHasPlaylistStream(false);
-                }
+                removeTrackedAudio(track);
+                syncSourceAvailability();
             }
         });
 
+        const handleTrackMuteChanged = (_publication: TrackPublication, participant: Participant) => {
+            if (participant.identity === BEACON_IDENTITY) syncSourceAvailability();
+        };
+        room.on(RoomEvent.TrackMuted, handleTrackMuteChanged);
+        room.on(RoomEvent.TrackUnmuted, handleTrackMuteChanged);
+
         room.on(RoomEvent.Disconnected, () => {
+            if (cancelled) return;
             console.log("Disconnected from LiveKit room");
             setIsConnected(false);
             setHasLiveStream(false);
             setHasPlaylistStream(false);
         });
 
-        // Fetch token from server-side API and connect
-        fetch(`/api/livekit/token?sessionId=${encodeURIComponent(sessionId)}`)
-            .then((res) => {
+        async function connect() {
+            try {
+                const res = await fetch(`/api/livekit/token?sessionId=${encodeURIComponent(sessionId)}`);
                 // The endpoint requires a session. Without this check a 401 body
                 // has no `token`, and the failure surfaces as an opaque connect
                 // error against an undefined token rather than as "not signed in".
                 if (!res.ok) {
                     throw new Error(`token request failed: ${res.status}`);
                 }
-                return res.json();
-            })
-            .then(({ token }) => room.connect(LIVEKIT_URL, token))
-            .then(() => {
+                const { token } = await res.json();
+                if (cancelled) return;
+
+                await room.connect(LIVEKIT_URL, token);
+                if (cancelled) {
+                    room.disconnect();
+                    return;
+                }
+
                 console.log("✓ Connected to LiveKit room");
                 setIsConnected(true);
                 setAudioError(null);
-            })
-            .catch((err) => {
+            } catch (err) {
+                if (cancelled) return;
                 console.error("Failed to connect to LiveKit:", redactErrorDetail(err));
                 setAudioError("Beacon audio could not connect. Check your connection and try again.");
-            });
+            }
+        }
+
+        void connect();
 
         return () => {
+            cancelled = true;
             room.disconnect();
-            audioElements.forEach((el) => {
-                el.pause();
-                el.remove();
+            if (roomRef.current === room) roomRef.current = null;
+            audioElements.forEach(({ element }) => {
+                element.pause();
+                element.remove();
             });
             audioElements.clear();
         };
@@ -218,17 +264,17 @@ export function AudioProvider({
 
     // When beacon goes live, mute playlist audio; unmute when beacon goes offline
     useEffect(() => {
-        audioElementsRef.current.forEach((el, identity) => {
+        audioElementsRef.current.forEach(({ element, identity }) => {
             if (identity !== BEACON_IDENTITY) {
-                el.muted = hasLiveStream;
+                element.muted = hasLiveStream;
             }
         });
     }, [hasLiveStream]);
 
     // Update volumes when changed
     useEffect(() => {
-        audioElementsRef.current.forEach((el) => {
-            el.volume = volume;
+        audioElementsRef.current.forEach(({ element }) => {
+            element.volume = volume;
         });
     }, [volume]);
 
@@ -238,45 +284,36 @@ export function AudioProvider({
         }
     }, [meditationVolume]);
 
-    /**
-     * Browser audio policies require this to run directly from a click. Unlock
-     * the LiveKit WebAudio graph as well as every currently attached element;
-     * `isPlayingRef` makes tracks arriving later start immediately too.
-     */
+    /** Browser audio policies require this to run directly from a click. */
     const startAudio = useCallback(async (): Promise<boolean> => {
+        // Set this before awaiting anything so a subscription delivered while
+        // either LiveKit room is still unlocking starts in the same gesture.
+        isPlayingRef.current = true;
         try {
-            await roomRef.current?.startAudio();
-            // Tracks that arrived before startAudio() was called may be attached
-            // to a disconnected audio graph — detach and re-attach so the SDK
-            // wires them through the now-active WebAudio context.
-            const room = roomRef.current;
-            if (room?.remoteParticipants) {
-                for (const participant of room.remoteParticipants.values()) {
-                    for (const pub of participant.trackPublications.values()) {
-                        const track = pub.track;
-                        if (track && track.kind === Track.Kind.Audio && pub.isSubscribed) {
-                            track.detach();
-                            const audioElement = track.attach() as HTMLAudioElement;
-                            audioElement.volume = volumeRef.current;
-                            audioElement.style.display = "none";
-                            document.body.appendChild(audioElement);
-                            audioElementsRef.current.set(participant.identity, audioElement);
-                            // Mute if live stream is active
-                            if (hasLiveStreamRef.current && participant.identity !== BEACON_IDENTITY) {
-                                audioElement.muted = true;
-                            }
-                        }
-                    }
-                }
-            }
-            await Promise.all(
-                [...audioElementsRef.current.values()].map((element) => element.play()),
+            // Invoke native playback before LiveKit resumes its AudioContext.
+            // With two rooms, a context resume can consume Safari/iOS's user
+            // activation before the other room gets a chance to call play().
+            const elementStarts = [...audioElementsRef.current.values()].map(
+                ({ element }) => element.play(),
             );
+            const roomStart = roomRef.current?.startAudio() ?? Promise.resolve();
+            await Promise.all([roomStart, ...elementStarts]);
+
+            // LiveKit's startAudio() unmutes all remote audio elements. Restore
+            // the live-source priority so playlist and beacon01 never overlap.
+            audioElementsRef.current.forEach(({ element, identity }) => {
+                element.muted = hasLiveStreamRef.current && identity !== BEACON_IDENTITY;
+            });
+
+            // Never detach/re-attach here: that discards a working element and
+            // leaks it in document.body.
+            isPlayingRef.current = true;
             setIsPlaying(true);
             setAudioError(null);
             return true;
         } catch (err) {
             console.error("Failed to start Beacon audio:", redactErrorDetail(err));
+            isPlayingRef.current = false;
             setIsPlaying(false);
             setAudioError("Audio could not start. Check that this tab is not muted, then try again.");
             return false;
@@ -285,7 +322,8 @@ export function AudioProvider({
 
     const togglePlay = useCallback(() => {
         if (isPlaying) {
-            audioElementsRef.current.forEach((el) => el.pause());
+            audioElementsRef.current.forEach(({ element }) => element.pause());
+            isPlayingRef.current = false;
             setIsPlaying(false);
             return;
         }

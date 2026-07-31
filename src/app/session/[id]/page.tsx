@@ -9,7 +9,6 @@ import {
     Track,
     VideoPresets,
     type Participant,
-    type RemoteParticipant,
     type RemoteTrack,
     type RemoteTrackPublication,
     type RoomOptions,
@@ -135,16 +134,20 @@ function SessionRoom() {
     const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState<string | null>(null);
     const [participantCount, setParticipantCount] = useState(0);
     const [volume, setVolume] = useState(0.8);
-    const [mix, setMix] = useState(0.8);
+    // Start centered: the previous 0.8 default reduced the Beacon bed to
+    // 16% gain before the listener touched the crossfader.
+    const [mix, setMix] = useState(0.5);
     const [duration, setDuration] = useState(0);
     const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
     const [retryToken, setRetryToken] = useState(0);
     const [audioActivationError, setAudioActivationError] = useState<string | null>(null);
 
     const roomRef = useRef<Room | null>(null);
-    const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+    // Keep ownership by track so an unsubscribe can remove the exact DOM node
+    // even after LiveKit has already cleared its srcObject.
+    const audioElementsRef = useRef<Map<RemoteTrack, HTMLAudioElement>>(new Map());
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const volumeRef = useRef(volume);
+    const stageVolumeRef = useRef(volume * mix);
     const audioOnlyRef = useRef(audioOnly);
     const slotOrderRef = useRef<Map<string, number>>(new Map());
     const nextSlotRef = useRef(0);
@@ -152,8 +155,6 @@ function SessionRoom() {
     const stageRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const intentionalDisconnectRef = useRef(false);
     const terminalViewRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => { volumeRef.current = volume; }, [volume]);
 
     const slotFor = useCallback((identity: string): number => {
         const existing = slotOrderRef.current.get(identity);
@@ -252,11 +253,18 @@ function SessionRoom() {
     const startListening = useCallback(async () => {
         setAudioActivationError(null);
         try {
-            await roomRef.current?.startAudio();
-            await Promise.all(
-                [...audioElementsRef.current.values()].map((element) => element.play()),
+            // Fire every native media play while the browser gesture is still
+            // active, before either LiveKit room resumes an AudioContext.
+            const stageElementStarts = [...audioElementsRef.current.values()].map(
+                (element) => element.play(),
             );
-            const beaconStarted = await startBeaconAudio();
+            const beaconStart = startBeaconAudio();
+            const stageStart = roomRef.current?.startAudio() ?? Promise.resolve();
+            const [, beaconStarted] = await Promise.all([
+                Promise.all(stageElementStarts),
+                beaconStart,
+                stageStart,
+            ]);
             if (!beaconStarted) {
                 setAudioActivationError(
                     "Beacon audio could not start. Check that this tab is not muted, then try again.",
@@ -299,13 +307,22 @@ function SessionRoom() {
                 const room = new Room(STAGE_ROOM_OPTIONS);
                 roomRef.current = room;
 
-                room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+                room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication) => {
                     if (track.kind === Track.Kind.Audio) {
+                        if (cancelled) {
+                            track.detach().forEach((element) => element.remove());
+                            return;
+                        }
+                        const previous = audioElementsRef.current.get(track);
+                        if (previous) {
+                            previous.pause();
+                            previous.remove();
+                        }
                         const audioElement = track.attach() as HTMLAudioElement;
-                        audioElement.volume = volumeRef.current;
+                        audioElement.volume = stageVolumeRef.current;
                         audioElement.style.display = "none";
                         document.body.appendChild(audioElement);
-                        audioElementsRef.current.set(participant.identity, audioElement);
+                        audioElementsRef.current.set(track, audioElement);
                         try { await audioElement.play(); } catch { /* Autoplay blocked */ }
                     } else if (audioOnlyRef.current) {
                         publication.setSubscribed(false);
@@ -313,10 +330,15 @@ function SessionRoom() {
                     scheduleStageRefresh();
                 });
 
-                room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: RemoteParticipant) => {
+                room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
                     if (track.kind === Track.Kind.Audio) {
+                        const tracked = audioElementsRef.current.get(track);
                         track.detach().forEach((el) => el.remove());
-                        audioElementsRef.current.delete(participant.identity);
+                        if (tracked) {
+                            tracked.pause();
+                            tracked.remove();
+                            audioElementsRef.current.delete(track);
+                        }
                     }
                     scheduleStageRefresh();
                 });
@@ -423,6 +445,7 @@ function SessionRoom() {
     useEffect(() => {
         const sessionVol = volume * mix;
         const beaconVol = volume * (1 - mix);
+        stageVolumeRef.current = sessionVol;
         audioElementsRef.current.forEach((el) => {
             el.volume = sessionVol;
         });
