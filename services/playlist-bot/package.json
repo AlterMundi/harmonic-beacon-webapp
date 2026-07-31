@@ -11,7 +11,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@livekit/rtc-node": "^0.13.0",
+    "@livekit/rtc-node": "^0.13.32",
     "livekit-server-sdk": "^2.9.0"
   },
   "devDependencies": {
