@@ -528,6 +528,13 @@ export async function demoteParticipant(
 export async function muteParticipantTrack(
     input: MuteInput,
 ): Promise<TrackMuteResult> {
+    if (!input.muted) {
+        throw new StageControlError(
+            'invalid_request',
+            400,
+            'Staff may mute participant media, but the participant must re-enable it',
+        );
+    }
     if (!input.trackSid.trim()) {
         throw new StageControlError(
             'invalid_request',
@@ -560,7 +567,7 @@ export async function muteParticipantTrack(
             participant.scheduledSession.roomName,
             participant.participantIdentity,
             input.trackSid,
-            input.muted,
+            true,
         );
     } catch {
         throw new StageControlError(
@@ -573,7 +580,7 @@ export async function muteParticipantTrack(
     await prisma.auditLog.create({
         data: {
             actorUserId: input.actorUserId,
-            action: input.muted ? 'stage.mute' : 'stage.unmute',
+            action: 'stage.mute',
             targetType: 'SESSION_PARTICIPANT',
             targetId: participant.id,
             metadata: { trackSid: input.trackSid },
@@ -582,7 +589,7 @@ export async function muteParticipantTrack(
     return {
         participantId: participant.id,
         trackSid: input.trackSid,
-        muted: input.muted,
+        muted: true,
     };
 }
 

@@ -98,10 +98,10 @@ export async function POST(
             if (
                 !participantId ||
                 typeof body.trackSid !== 'string' ||
-                typeof body.muted !== 'boolean'
+                body.muted !== true
             ) {
                 return invalidRequest(
-                    'Participant ID, track SID, and muted state are required',
+                    'Participant ID and track SID are required; staff may mute but cannot remotely unmute participant media',
                 );
             }
             const result = await muteParticipantTrack({

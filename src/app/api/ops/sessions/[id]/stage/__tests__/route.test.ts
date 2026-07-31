@@ -163,11 +163,11 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
         });
     });
 
-    it('passes mute and unmute state to the track controller', async () => {
+    it('passes a mute request to the track controller', async () => {
         mocks.muteParticipantTrack.mockResolvedValue({
             participantId: 'participant-1',
             trackSid: 'TR_audio',
-            muted: false,
+            muted: true,
         });
         const { POST } = await import('../route');
         const response = await POST(
@@ -175,7 +175,7 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
                 action: 'mute',
                 participantId: 'participant-1',
                 trackSid: 'TR_audio',
-                muted: false,
+                muted: true,
             }),
             mockParams({ id: 'event-1' }),
         );
@@ -186,8 +186,24 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
             participantId: 'participant-1',
             actorUserId: 'operator-1',
             trackSid: 'TR_audio',
-            muted: false,
+            muted: true,
         });
+    });
+
+    it('rejects remote unmute before calling the track controller', async () => {
+        const { POST } = await import('../route');
+        const response = await POST(
+            stageRequest({
+                action: 'mute',
+                participantId: 'participant-1',
+                trackSid: 'TR_video',
+                muted: false,
+            }),
+            mockParams({ id: 'event-1' }),
+        );
+
+        expect(response.status).toBe(400);
+        expect(mocks.muteParticipantTrack).not.toHaveBeenCalled();
     });
 
     it('lowers a served hand through the audited queue operation', async () => {
