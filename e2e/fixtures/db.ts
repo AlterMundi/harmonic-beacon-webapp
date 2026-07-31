@@ -1,5 +1,6 @@
 import pg from 'pg';
 import type { TestInfo } from '@playwright/test';
+import { isSafeFixtureDatabaseUrl } from './database-url';
 
 /**
  * Direct access to the throwaway fixture database, for the rare cases where
@@ -15,8 +16,8 @@ import type { TestInfo } from '@playwright/test';
 export function requireDirectDb(testInfo: TestInfo): string {
     const url = process.env.E2E_DATABASE_URL;
     testInfo.skip(
-        !url,
-        'E2E_DATABASE_URL not set — this test flips fixture session state directly (see e2e/README.md)',
+        !isSafeFixtureDatabaseUrl(url),
+        'E2E_DATABASE_URL is absent or is not the local beacon_test database — refusing to mutate it (see e2e/README.md)',
     );
     return url as string;
 }

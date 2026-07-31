@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
+import { LocaleProvider } from '@/context/LocaleContext';
 
 /**
  * Media-continuity invariants (issue #69, epic #64 rubric §4) at the
@@ -28,6 +29,9 @@ vi.mock('@/context/AudioContext', () => ({
         isPlaying: false,
         setVolume: audioMocks.setBeaconVolume,
         startAudio: audioMocks.startBeaconAudio,
+        isConnected: true,
+        hasPlaylistStream: true,
+        hasLiveStream: false,
     }),
 }));
 
@@ -67,6 +71,17 @@ const TOKEN_RESPONSE = {
     principalKind: 'ticket',
 };
 
+const ENTRY_RESPONSE = {
+    state: 'READY',
+    session: {
+        id: 'session-1',
+        title: 'Test Session',
+        language: 'ENGLISH',
+        scheduledAt: '2026-08-01T18:00:00.000Z',
+        status: 'LIVE',
+    },
+};
+
 function roomConstructionCount(): number {
     return (Room as unknown as { mock: { results: unknown[] } }).mock.results.length;
 }
@@ -77,6 +92,8 @@ function bodyMediaElements(): HTMLMediaElement[] {
 
 beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
+    document.cookie = 'hb_locale=; Path=/; Max-Age=0';
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     audioMocks.setBeaconVolume.mockClear();
@@ -84,6 +101,9 @@ beforeEach(() => {
     audioMocks.startBeaconAudio.mockResolvedValue(true);
     let handRaised = false;
     global.fetch = vi.fn().mockImplementation((url: string, init?: { method?: string }) => {
+        if (url.includes('/entry')) {
+            return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE });
+        }
         if (url.includes('/token')) {
             return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE });
         }
@@ -105,7 +125,11 @@ afterEach(() => {
 });
 
 async function renderConnectedWithRemoteAudio() {
-    render(<SessionRoomPage />);
+    render(
+        <LocaleProvider initialLocale="en">
+            <SessionRoomPage />
+        </LocaleProvider>,
+    );
     await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
 
     const remoteAudio = document.createElement('audio');
@@ -126,7 +150,7 @@ describe('session shell — media continuity invariants', () => {
         const room = latestFakeRoom(Room);
 
         // The single audio-activation gesture for the session lifetime.
-        fireEvent.click(screen.getByRole('button', { name: 'Start audio · Iniciar audio' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
         expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
         const playCallsAfterActivation = (
             HTMLMediaElement.prototype.play as ReturnType<typeof vi.fn>
@@ -145,10 +169,10 @@ describe('session shell — media continuity invariants', () => {
         fireEvent.change(screen.getByRole('slider', { name: 'Beacon and session mix' }), {
             target: { value: '0.25' },
         });
-        fireEvent.click(screen.getByRole('button', { name: 'Raise hand / Levantar mano' }));
-        await screen.findByRole('button', { name: 'Lower hand / Bajar mano' });
-        fireEvent.click(screen.getByRole('button', { name: 'Lower hand / Bajar mano' }));
-        await screen.findByRole('button', { name: 'Raise hand / Levantar mano' });
+        fireEvent.click(screen.getByRole('button', { name: 'Raise hand' }));
+        await screen.findByRole('button', { name: 'Lower hand' });
+        fireEvent.click(screen.getByRole('button', { name: 'Lower hand' }));
+        await screen.findByRole('button', { name: 'Raise hand' });
 
         // Zero Room.disconnect() calls, zero room remounts.
         expect(room.disconnect).not.toHaveBeenCalled();

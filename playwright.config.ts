@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { assertSafeFixtureDatabaseUrl } from './e2e/fixtures/database-url';
 
 /**
  * Browser quality gates for Harmonic Beacon (issue #69, epic #64).
@@ -23,6 +24,7 @@ const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 // talk to the same throwaway database.
 const DATABASE_URL =
     process.env.E2E_DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/beacon_test';
+assertSafeFixtureDatabaseUrl(DATABASE_URL);
 if (!process.env.E2E_BASE_URL) {
     process.env.E2E_DATABASE_URL = DATABASE_URL;
 }
