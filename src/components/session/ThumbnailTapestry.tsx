@@ -30,7 +30,9 @@ export default function ThumbnailTapestry({ sessionId, staffOnly = false }: Prop
         <h2 className="mb-2 text-sm font-medium text-[var(--cream)]">Tapestry</h2>
         {src ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={src} alt="Latest participant tapestry" className="w-full rounded-lg border border-[var(--border-subtle)]" />
+            // The composite is sized to the active participant set; render at
+            // natural size (capped by the container) instead of stretching.
+            <img src={src} alt="Latest participant tapestry" className="max-w-full rounded-lg border border-[var(--border-subtle)]" />
         ) : <p className="text-xs text-[var(--text-muted)]">Waiting for snapshots.</p>}
     </section>;
 }

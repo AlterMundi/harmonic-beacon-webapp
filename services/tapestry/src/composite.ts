@@ -1,8 +1,10 @@
 /**
  * Composite rendering for the tapestry service.
  *
- * One fixed-size grid per session (columns x rows sized for the participant
- * cap), 100px tiles laid out in first-seen order, JPEG output. Rebuilds are
+ * The grid is sized for the ACTIVE participants, not the session cap: with
+ * three people online the composite is a 3-tile strip, not a 150-slot wall.
+ * Columns fill up to gridColumns before a new row opens, so existing tiles
+ * keep their positions as participants join within a row. Rebuilds are
  * rate-limited to at most one per interval per session and skipped entirely
  * while the session's frame set is unchanged; in between, the last built
  * JPEG is served from memory.
@@ -117,16 +119,19 @@ export class TapestryCompositor {
       this.config.frameTtlMs,
     );
     const tile = this.config.tileSizePx;
+    // Dynamic grid: never larger than the active set needs (1x1 when empty).
+    const columns = Math.max(1, Math.min(this.config.gridColumns, participants.length));
+    const rows = Math.max(1, Math.ceil(participants.length / columns));
     const inputs = participants.map(({ participant }, index) => ({
       input: participant.tile,
-      left: (index % this.config.gridColumns) * tile,
-      top: Math.floor(index / this.config.gridColumns) * tile,
+      left: (index % columns) * tile,
+      top: Math.floor(index / columns) * tile,
     }));
 
     return sharp({
       create: {
-        width: this.gridWidthPx,
-        height: this.gridHeightPx,
+        width: columns * tile,
+        height: rows * tile,
         channels: 3,
         background: { r: 17, g: 17, b: 17 },
       },

@@ -1,7 +1,9 @@
 /**
  * Composite acceptance tests: valid JPEG output, fixed 1500x1000 grid of
- * 100px tiles in deterministic first-seen order, at most one rebuild per
- * second, and expiry of stale participants within 12 seconds.
+ * Composite acceptance tests: valid JPEG output, grid dynamically sized to
+ * the active participant set (100px tiles in deterministic first-seen
+ * order), at most one rebuild per second, and expiry of stale participants
+ * within 12 seconds.
  */
 
 import assert from "node:assert/strict";
@@ -26,7 +28,7 @@ async function compositesBuilt(baseUrl: string): Promise<number> {
   return body.compositesBuilt;
 }
 
-test("composite is a valid 1500x1000 JPEG (15x10 grid for 150 tiles)", async () => {
+test("composite grid is sized to the active participants, not the cap", async () => {
   const service = await startService(testConfig());
   try {
     await postFrame(service.baseUrl, SESSION_A, "p1", await makeJpeg(255, 0, 0));
@@ -36,14 +38,23 @@ test("composite is a valid 1500x1000 JPEG (15x10 grid for 150 tiles)", async () 
     const jpeg = Buffer.from(await res.arrayBuffer());
     const metadata = await sharp(jpeg).metadata();
     assert.equal(metadata.format, "jpeg");
-    assert.equal(metadata.width, 1500);
-    assert.equal(metadata.height, 1000);
+    assert.equal(metadata.width, 100, "one participant is a single tile, not the 150-slot wall");
+    assert.equal(metadata.height, 100);
+
+    // A second arrival widens the strip; a third still fits in one row.
+    await postFrame(service.baseUrl, SESSION_A, "p2", await makeJpeg(0, 255, 0));
+    await postFrame(service.baseUrl, SESSION_A, "p3", await makeJpeg(0, 0, 255));
+    await sleep(1100); // rebuild rate limit
+    const res2 = await getComposite(service.baseUrl, SESSION_A);
+    const meta2 = await sharp(Buffer.from(await res2.arrayBuffer())).metadata();
+    assert.equal(meta2.width, 300);
+    assert.equal(meta2.height, 100);
   } finally {
     await service.close();
   }
 });
 
-test("tiles land in deterministic first-seen order, 100px each", async () => {
+test("tiles land in deterministic first-seen order, 100px each, no trailing empty grid", async () => {
   const service = await startService(testConfig());
   try {
     // Deliberately ingest "zz" before "aa": grid order is by arrival, not name.
@@ -53,19 +64,17 @@ test("tiles land in deterministic first-seen order, 100px each", async () => {
 
     const res = await getComposite(service.baseUrl, SESSION_A);
     const jpeg = Buffer.from(await res.arrayBuffer());
+    const metadata = await sharp(jpeg).metadata();
+    assert.equal(metadata.width, 300, "three participants fill exactly three tiles");
+    assert.equal(metadata.height, 100);
 
     const first = await tileColor(jpeg, 0, 0);
     const second = await tileColor(jpeg, 100, 0);
     const third = await tileColor(jpeg, 200, 0);
-    const empty = await tileColor(jpeg, 300, 0);
 
     assert.ok(first.r > 150 && first.b < 80, `tile 0 should be red, got ${JSON.stringify(first)}`);
     assert.ok(second.b > 150 && second.r < 80, `tile 1 should be blue, got ${JSON.stringify(second)}`);
     assert.ok(third.g > 120 && third.r < 80, `tile 2 should be green, got ${JSON.stringify(third)}`);
-    assert.ok(
-      Math.abs(empty.r - 17) < 8 && Math.abs(empty.g - 17) < 8 && Math.abs(empty.b - 17) < 8,
-      `tile 3 should be the dark background, got ${JSON.stringify(empty)}`,
-    );
   } finally {
     await service.close();
   }
