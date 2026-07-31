@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harmonic Beacon — stage grammar prototype</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --night: #07120f;
+      --forest: #0d211a;
+      --paper: #fff9e9;
+      --text: #eef5e9;
+      --muted: #c4d1c7;
+      --gold: #ffd875;
+      --cyan: #7ceaff;
+      --pink: #ff8fc8;
+      --violet: #9e72ff;
+      --border: rgba(238, 245, 233, 0.18);
+      --gap: 16px;
+      --gutter: 24px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { background: #030806; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--paper);
+      background: #030806;
+    }
+
+    button { font: inherit; }
+
+    .review-tools {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 20px;
+      min-height: 64px;
+      padding: 10px 16px;
+      color: var(--text);
+      background: rgba(3, 8, 6, 0.96);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .review-tools fieldset {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+
+    .review-tools legend {
+      float: left;
+      margin: 0 8px 0 0;
+      font: 10px/32px ui-monospace, monospace;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .review-tools button {
+      min-width: 38px;
+      min-height: 32px;
+      padding: 4px 9px;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+
+    .review-tools button[aria-pressed="true"] {
+      color: #07120f;
+      background: var(--gold);
+      border-color: var(--gold);
+    }
+
+    .review-tools button:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    .prototype-note {
+      margin-left: auto;
+      max-width: 360px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    .review-surface {
+      min-width: max-content;
+      padding: 28px;
+    }
+
+    .viewport {
+      width: 1440px;
+      min-height: 900px;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse at 12% 8%, rgba(158, 114, 255, 0.09), transparent 42%),
+        radial-gradient(ellipse at 88% 82%, rgba(124, 234, 255, 0.07), transparent 45%),
+        var(--night);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      box-shadow: 0 28px 100px rgba(0, 0, 0, 0.55);
+    }
+
+    .viewport[data-width="1024"] { width: 1024px; min-height: 820px; --gap: 14px; }
+    .viewport[data-width="390"] { width: 390px; min-height: 844px; --gap: 8px; --gutter: 12px; }
+    .viewport[data-width="320"] { width: 320px; min-height: 720px; --gap: 8px; --gutter: 12px; }
+
+    .room-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 66px;
+      padding: 12px var(--gutter);
+      border-bottom: 1px solid rgba(238, 245, 233, 0.1);
+    }
+
+    .room-kicker {
+      margin: 0 0 4px;
+      font: 10px/1 ui-monospace, monospace;
+      color: var(--gold);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .room-title {
+      margin: 0;
+      font: 400 24px/1.05 Georgia, serif;
+      letter-spacing: -0.02em;
+    }
+
+    .room-presence {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .room-presence::before {
+      width: 7px;
+      height: 7px;
+      content: "";
+      background: var(--cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(124, 234, 255, 0.65);
+    }
+
+    .viewport[data-width="390"] .room-title,
+    .viewport[data-width="320"] .room-title { font-size: 18px; }
+
+    .viewport[data-width="320"] .room-presence span { display: none; }
+
+    .scene-shell {
+      position: relative;
+      isolation: isolate;
+      width: min(1184px, calc(100% - (2 * var(--gutter))));
+      min-height: 690px;
+      margin: 0 auto;
+      padding: 54px 0 150px;
+    }
+
+    .viewport[data-width="1024"] .scene-shell {
+      min-height: 650px;
+      padding-top: 48px;
+      padding-bottom: 138px;
+    }
+
+    .viewport[data-width="390"] .scene-shell,
+    .viewport[data-width="320"] .scene-shell {
+      width: calc(100% - (2 * var(--gutter)));
+      min-height: 650px;
+      padding: 28px 0 94px;
+    }
+
+    .scene-intro {
+      position: relative;
+      z-index: 3;
+      margin-bottom: 18px;
+      text-align: center;
+    }
+
+    .scene-intro p { margin: 0; }
+
+    .scene-kind {
+      font: 10px/1 ui-monospace, monospace;
+      color: var(--gold);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .scene-line {
+      margin-top: 7px !important;
+      font: 400 20px/1.2 Georgia, serif;
+      color: var(--text);
+    }
+
+    .viewport[data-width="390"] .scene-line,
+    .viewport[data-width="320"] .scene-line { font-size: 17px; }
+
+    .collective-ground {
+      position: absolute;
+      z-index: 0;
+      right: 0;
+      bottom: 28px;
+      left: 0;
+      height: 124px;
+      overflow: hidden;
+      border: 1px solid rgba(238, 245, 233, 0.08);
+      border-radius: 28px;
+      background: rgba(13, 33, 26, 0.38);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 38%, black 100%);
+      mask-image: linear-gradient(to bottom, transparent 0, black 38%, black 100%);
+    }
+
+    .viewport[data-width="1024"] .collective-ground { height: 112px; }
+    .viewport[data-width="390"] .collective-ground { height: 76px; bottom: 12px; border-radius: 20px; }
+    .viewport[data-width="320"] .collective-ground { height: 68px; bottom: 12px; border-radius: 18px; }
+
+    .collective-cells {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      height: 100%;
+      opacity: 0.64;
+    }
+
+    .collective-cell {
+      position: relative;
+      min-width: 0;
+      background:
+        radial-gradient(circle at 50% 38%, rgba(255, 249, 233, 0.25) 0 10%, transparent 11%),
+        linear-gradient(145deg, var(--cell-a), var(--cell-b));
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .collective-cell--self::after {
+      position: absolute;
+      inset: 4px;
+      content: "";
+      border: 2px solid var(--gold);
+      border-radius: 6px;
+    }
+
+    .collective-label {
+      position: absolute;
+      z-index: 1;
+      bottom: 12px;
+      left: 18px;
+      margin: 0;
+      font: 11px/1 ui-monospace, monospace;
+      color: var(--paper);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-shadow: 0 1px 5px #000;
+    }
+
+    .collective-self-label {
+      position: absolute;
+      z-index: 2;
+      right: 50.5%;
+      bottom: 12px;
+      margin: 0;
+      padding: 3px 6px;
+      color: var(--night);
+      background: var(--gold);
+      border-radius: 999px;
+      font: 9px/1 ui-monospace, monospace;
+      text-transform: uppercase;
+    }
+
+    .viewport[data-width="390"] .collective-label,
+    .viewport[data-width="320"] .collective-label { bottom: 8px; left: 10px; font-size: 9px; }
+
+    .viewport[data-width="390"] .collective-self-label,
+    .viewport[data-width="320"] .collective-self-label { display: none; }
+
+    .stage {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      gap: var(--gap);
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .tile {
+      position: relative;
+      min-width: 0;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      color: var(--paper);
+      background:
+        radial-gradient(circle at 50% 30%, rgba(255, 249, 233, 0.18), transparent 26%),
+        linear-gradient(142deg, var(--tile-a), var(--tile-b));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 18px 54px rgba(0, 0, 0, 0.32);
+    }
+
+    .tile::before {
+      position: absolute;
+      inset: 0;
+      content: "";
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse at 50% 42%, transparent 0 28%, rgba(3, 8, 6, 0.26) 70%),
+        linear-gradient(to top, rgba(3, 8, 6, 0.92), transparent 48%);
+    }
+
+    .tile--protagonist {
+      border-color: rgba(255, 216, 117, 0.76);
+      box-shadow: 0 0 0 1px rgba(255, 216, 117, 0.15), 0 22px 62px rgba(0, 0, 0, 0.35);
+    }
+
+    .tile--speaking { border-color: rgba(124, 234, 255, 0.78); }
+
+    .portrait-mark {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 21%;
+      aspect-ratio: 1;
+      transform: translate(-50%, -58%);
+      background: rgba(255, 249, 233, 0.14);
+      border: 1px solid rgba(255, 249, 233, 0.22);
+      border-radius: 50%;
+    }
+
+    .tile--camera-off .portrait-mark {
+      width: auto;
+      height: auto;
+      padding: 8px 12px;
+      font: 400 18px/1 Georgia, serif;
+      background: rgba(7, 18, 15, 0.44);
+      border-radius: 999px;
+    }
+
+    .tile-meta {
+      position: absolute;
+      z-index: 2;
+      right: 12px;
+      bottom: 11px;
+      left: 12px;
+      display: flex;
+      align-items: end;
+      gap: 8px;
+    }
+
+    .tile-name {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.2;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tile-state {
+      display: block;
+      margin-top: 3px;
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    .tile-role {
+      flex: 0 0 auto;
+      padding: 4px 7px;
+      font: 9px/1 ui-monospace, monospace;
+      color: var(--night);
+      background: var(--gold);
+      border-radius: 999px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .tile-status-icon {
+      flex: 0 0 auto;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .viewport[data-width="1024"] .tile-name { font-size: 13px; }
+
+    .viewport[data-width="390"] .tile,
+    .viewport[data-width="320"] .tile { border-radius: 12px; }
+
+    .viewport[data-width="390"] .tile-meta,
+    .viewport[data-width="320"] .tile-meta { right: 8px; bottom: 7px; left: 8px; }
+
+    .viewport[data-width="390"] .tile-name,
+    .viewport[data-width="320"] .tile-name { font-size: 12px; }
+
+    .viewport[data-width="390"] .tile-state,
+    .viewport[data-width="320"] .tile-state { font-size: 12px; }
+
+    .viewport[data-width="390"] .tile-role,
+    .viewport[data-width="320"] .tile-role { padding: 3px 5px; font-size: 8px; }
+
+    /* Solo */
+    .stage--solo { grid-template-columns: 1fr; justify-items: center; }
+    .stage--solo .tile { width: min(864px, 100%); }
+    .viewport[data-width="1024"] .stage--solo .tile { width: min(800px, 100%); }
+
+    /* Dyad */
+    .stage--dyad { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    /* Circle: centered protagonist, equal holders. */
+    .stage--circle { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+    .stage--circle .tile--protagonist { grid-column: 3 / span 8; }
+    .stage--circle[data-count="3"] .tile:not(.tile--protagonist) { grid-column: span 6; }
+    .stage--circle[data-count="4"] .tile:not(.tile--protagonist) { grid-column: span 4; }
+
+    /* Chorus uses six columns so a five-person final row can stay centered. */
+    .stage--chorus { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .stage--chorus .tile { grid-column: span 2; }
+    .stage--chorus[data-count="5"] .tile:nth-child(4) { grid-column: 2 / span 2; }
+    .stage--chorus[data-count="5"] .tile:nth-child(5) { grid-column: 4 / span 2; }
+
+    .viewport[data-width="390"] .stage--dyad,
+    .viewport[data-width="320"] .stage--dyad { grid-template-columns: 1fr; }
+
+    .viewport[data-width="390"] .stage--circle,
+    .viewport[data-width="320"] .stage--circle,
+    .viewport[data-width="390"] .stage--chorus,
+    .viewport[data-width="320"] .stage--chorus { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .viewport[data-width="390"] .stage--circle .tile--protagonist,
+    .viewport[data-width="320"] .stage--circle .tile--protagonist,
+    .viewport[data-width="390"] .stage--chorus .tile--protagonist,
+    .viewport[data-width="320"] .stage--chorus .tile--protagonist { grid-column: 1 / span 2; }
+
+    .viewport[data-width="390"] .stage--circle .tile:not(.tile--protagonist),
+    .viewport[data-width="320"] .stage--circle .tile:not(.tile--protagonist),
+    .viewport[data-width="390"] .stage--chorus .tile,
+    .viewport[data-width="320"] .stage--chorus .tile { grid-column: span 1; }
+
+    .viewport[data-width="390"] .stage--chorus > .tile.tile--protagonist,
+    .viewport[data-width="320"] .stage--chorus > .tile.tile--protagonist {
+      grid-column: 1 / -1;
+    }
+
+    .viewport[data-width="390"] .stage--chorus[data-count="5"] .tile:nth-child(4),
+    .viewport[data-width="390"] .stage--chorus[data-count="5"] .tile:nth-child(5),
+    .viewport[data-width="320"] .stage--chorus[data-count="5"] .tile:nth-child(4),
+    .viewport[data-width="320"] .stage--chorus[data-count="5"] .tile:nth-child(5) {
+      grid-column: span 1;
+    }
+
+    .viewport[data-width="390"] .stage--circle[data-count="4"] .tile:last-child,
+    .viewport[data-width="320"] .stage--circle[data-count="4"] .tile:last-child,
+    .viewport[data-width="390"] .stage--chorus[data-count="6"] .tile:last-child,
+    .viewport[data-width="320"] .stage--chorus[data-count="6"] .tile:last-child {
+      grid-column: 1 / span 2;
+      justify-self: center;
+      width: calc((100% - var(--gap)) / 2);
+    }
+
+    .empty-scene {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      min-height: 320px;
+      place-items: center;
+      text-align: center;
+    }
+
+    .empty-scene[hidden] { display: none; }
+
+    .empty-scene p {
+      max-width: 420px;
+      margin: 0;
+      font: 400 28px/1.25 Georgia, serif;
+      color: var(--text);
+    }
+
+    .viewport[data-width="390"] .empty-scene p,
+    .viewport[data-width="320"] .empty-scene p { font-size: 22px; }
+
+    .prototype-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px var(--gutter) 18px;
+      color: var(--muted);
+      border-top: 1px solid rgba(238, 245, 233, 0.08);
+      font: 10px/1.5 ui-monospace, monospace;
+    }
+
+    .viewport[data-width="390"] .prototype-footer,
+    .viewport[data-width="320"] .prototype-footer { flex-direction: column; }
+
+    .reduced-motion *,
+    .reduced-motion *::before,
+    .reduced-motion *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0s !important;
+      transition-duration: 0s !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0s !important;
+        transition-duration: 0s !important;
+      }
+    }
+
+    @media print {
+      .review-tools { display: none; }
+      .review-surface { padding: 0; }
+      .viewport { border: 0; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="review-tools" aria-label="Prototype controls">
+    <fieldset id="width-controls">
+      <legend>Viewport</legend>
+      <button type="button" data-width="1440" aria-pressed="true">1440</button>
+      <button type="button" data-width="1024" aria-pressed="false">1024</button>
+      <button type="button" data-width="390" aria-pressed="false">390</button>
+      <button type="button" data-width="320" aria-pressed="false">320</button>
+    </fieldset>
+    <fieldset id="count-controls">
+      <legend>Stage members</legend>
+      <button type="button" data-count="0" aria-pressed="false">0</button>
+      <button type="button" data-count="1" aria-pressed="false">1</button>
+      <button type="button" data-count="2" aria-pressed="true">2</button>
+      <button type="button" data-count="3" aria-pressed="false">3</button>
+      <button type="button" data-count="4" aria-pressed="false">4</button>
+      <button type="button" data-count="5" aria-pressed="false">5</button>
+      <button type="button" data-count="6" aria-pressed="false">6</button>
+    </fieldset>
+    <button id="motion-control" type="button" aria-pressed="false">Reduced motion</button>
+    <p class="prototype-note">Static design artifact only · no LiveKit, camera, audio, or production component is mounted.</p>
+  </nav>
+
+  <main class="review-surface">
+    <article class="viewport" id="viewport" data-width="1440" aria-label="Responsive stage prototype">
+      <header class="room-header">
+        <div>
+          <p class="room-kicker">Harmonic Beacon · live</p>
+          <h1 class="room-title">The threshold between us</h1>
+        </div>
+        <p class="room-presence"><span>96 people are holding the room</span></p>
+      </header>
+
+      <section class="scene-shell" aria-labelledby="scene-heading">
+        <header class="scene-intro">
+          <p class="scene-kind" id="scene-kind">Dyad</p>
+          <p class="scene-line" id="scene-heading">A meeting held by the room</p>
+        </header>
+
+        <ol class="stage stage--dyad" id="stage" data-count="2" aria-label="People in the scene"></ol>
+        <div class="empty-scene" id="empty-scene" hidden>
+          <p>The scene is opening</p>
+        </div>
+
+        <figure class="collective-ground" aria-label="The room, gathered">
+          <div class="collective-cells" aria-hidden="true">
+            <span class="collective-cell" style="--cell-a:#402e61;--cell-b:#10271f"></span>
+            <span class="collective-cell" style="--cell-a:#163c3f;--cell-b:#201d38"></span>
+            <span class="collective-cell" style="--cell-a:#4a332d;--cell-b:#132d25"></span>
+            <span class="collective-cell" style="--cell-a:#2b2f59;--cell-b:#0c3029"></span>
+            <span class="collective-cell" style="--cell-a:#4b2943;--cell-b:#14352d"></span>
+            <span class="collective-cell collective-cell--self" style="--cell-a:#53502d;--cell-b:#17332d"></span>
+            <span class="collective-cell" style="--cell-a:#213d4f;--cell-b:#241d37"></span>
+            <span class="collective-cell" style="--cell-a:#54394b;--cell-b:#172f29"></span>
+            <span class="collective-cell" style="--cell-a:#3b355d;--cell-b:#112c27"></span>
+            <span class="collective-cell" style="--cell-a:#284e45;--cell-b:#24213c"></span>
+            <span class="collective-cell" style="--cell-a:#493f2b;--cell-b:#153328"></span>
+            <span class="collective-cell" style="--cell-a:#3e2948;--cell-b:#15372f"></span>
+          </div>
+          <figcaption class="collective-label">The room, gathered</figcaption>
+          <p class="collective-self-label">You</p>
+        </figure>
+      </section>
+
+      <footer class="prototype-footer">
+        <span id="measurement">1440 viewport · 1184 stage · 16 gap</span>
+        <span>Names are primary · media state is secondary · one shared JPEG ground</span>
+      </footer>
+    </article>
+  </main>
+
+  <script>
+    const fixtures = {
+      facilitator: {
+        name: "Julián",
+        role: "Facilitator",
+        state: "Holding the room",
+        className: "tile--speaking",
+        colors: ["#304757", "#172a36"]
+      },
+      protagonist: {
+        name: "Maia",
+        role: "Protagonist",
+        state: "Present",
+        className: "tile--protagonist",
+        colors: ["#61465f", "#2b263f"]
+      },
+      holders: [
+        { name: "Sol", state: "Present", className: "", colors: ["#305448", "#183029"] },
+        { name: "Rafael", state: "Microphone muted", className: "", colors: ["#4e4431", "#263025"], icon: "Mic off" },
+        { name: "Ana", state: "Present without camera", className: "tile--camera-off", colors: ["#4b3450", "#1c302b"], mark: "Here" },
+        { name: "Eko", state: "Reconnecting", className: "tile--camera-off", colors: ["#334458", "#1a292c"], mark: "Returning" }
+      ]
+    };
+
+    const viewport = document.querySelector("#viewport");
+    const stage = document.querySelector("#stage");
+    const empty = document.querySelector("#empty-scene");
+    const kindLabel = document.querySelector("#scene-kind");
+    const heading = document.querySelector("#scene-heading");
+    const measurement = document.querySelector("#measurement");
+
+    const sceneFor = (count) => {
+      if (count === 0) return "empty";
+      if (count === 1) return "solo";
+      if (count === 2) return "dyad";
+      if (count <= 4) return "circle";
+      return "chorus";
+    };
+
+    const copyFor = {
+      empty: "The scene is opening",
+      solo: "One person holds the room",
+      dyad: "A meeting held by the room",
+      circle: "A center held by others",
+      chorus: "Many voices, one scene"
+    };
+
+    function tileMarkup(member, scene, index) {
+      const protagonist = member.role === "Protagonist";
+      const role = protagonist ? `<span class="tile-role">Protagonist</span>` : "";
+      const icon = member.icon ? `<span class="tile-status-icon" aria-label="${member.icon}">●</span>` : "";
+      const mark = member.mark ?? "";
+      return `<li class="tile ${member.className}" style="--tile-a:${member.colors[0]};--tile-b:${member.colors[1]}" aria-label="${member.name}, ${member.role}, ${member.state}" data-fixture="${index}">
+        <span class="portrait-mark" aria-hidden="true">${mark}</span>
+        <div class="tile-meta">
+          <div class="tile-name">${member.name}<span class="tile-state">${member.state}</span></div>
+          ${icon}${role}
+        </div>
+      </li>`;
+    }
+
+    function membersFor(count) {
+      if (count === 0) return [];
+      if (count === 1) return [fixtures.facilitator];
+      return [fixtures.protagonist, fixtures.facilitator, ...fixtures.holders.slice(0, count - 2)];
+    }
+
+    function renderCount(count) {
+      const scene = sceneFor(count);
+      const members = membersFor(count);
+      stage.className = `stage stage--${scene}`;
+      stage.dataset.count = String(count);
+      stage.innerHTML = members.map((member, index) => tileMarkup(member, scene, index)).join("");
+      stage.hidden = count === 0;
+      empty.hidden = count !== 0;
+      kindLabel.textContent = scene[0].toUpperCase() + scene.slice(1);
+      heading.textContent = copyFor[scene];
+      document.querySelectorAll("[data-count]").forEach((button) => {
+        if (button.closest("#count-controls")) button.setAttribute("aria-pressed", String(button.dataset.count === String(count)));
+      });
+    }
+
+    function renderWidth(width) {
+      viewport.dataset.width = width;
+      const stageWidth = width === "1440" ? "1184" : width === "1024" ? "928" : width === "390" ? "366" : "296";
+      const gap = Number(width) <= 390 ? "8" : width === "1024" ? "14" : "16";
+      measurement.textContent = `${width} viewport · ${stageWidth} stage · ${gap} gap`;
+      document.querySelectorAll("#width-controls [data-width]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.width === width));
+      });
+    }
+
+    document.querySelector("#width-controls").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-width]");
+      if (button) renderWidth(button.dataset.width);
+    });
+
+    document.querySelector("#count-controls").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-count]");
+      if (button) renderCount(Number(button.dataset.count));
+    });
+
+    document.querySelector("#motion-control").addEventListener("click", (event) => {
+      const pressed = event.currentTarget.getAttribute("aria-pressed") === "true";
+      event.currentTarget.setAttribute("aria-pressed", String(!pressed));
+      viewport.classList.toggle("reduced-motion", !pressed);
+    });
+
+    const query = new URLSearchParams(window.location.search);
+    const queryWidth = ["1440", "1024", "390", "320"].includes(query.get("width")) ? query.get("width") : "1440";
+    const parsedCount = Number(query.get("count"));
+    const queryCount = Number.isInteger(parsedCount) && parsedCount >= 0 && parsedCount <= 6 ? parsedCount : 2;
+    renderCount(queryCount);
+    renderWidth(queryWidth);
+    if (query.get("motion") === "reduce") {
+      document.querySelector("#motion-control").setAttribute("aria-pressed", "true");
+      viewport.classList.add("reduced-motion");
+    }
+  </script>
+</body>
+</html>
