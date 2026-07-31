@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const CAPTURE_INTERVAL_MS = 2_500;
+// Product decision (2026-07-31, Nico): the tapestry camera is ON BY DEFAULT
+// for every attendee — each participant appears in the composite as a small
+// jpeg refreshed at ~1 FPS. Explicit opt-out via the stop button.
+const CAPTURE_INTERVAL_MS = 1_000;
 
 type Props = { sessionId: string; connected: boolean; isPublishing: boolean };
 
@@ -11,6 +14,9 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const sendingRef = useRef(false);
+    // Set only by the explicit opt-out button; lifecycle stops (tab hidden,
+    // disconnect, promotion to publisher) never opt the attendee out.
+    const optedOutRef = useRef(false);
     const [enabled, setEnabled] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
 
@@ -66,7 +72,7 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     useEffect(() => { if (isPublishing || !connected) stop(); }, [connected, isPublishing, stop]);
     useEffect(() => () => stop(), [stop]);
 
-    const enable = async () => {
+    const enable = useCallback(async () => {
         if (isPublishing) return;
         setMessage(null);
         try {
@@ -78,13 +84,33 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
         } catch {
             setMessage('Camera permission was not granted. You can still take part in the session.');
         }
-    };
+    }, [isPublishing]);
+
+    // Default-on: as soon as the room is connected (and the attendee is not
+    // a publisher), start the tapestry camera unless they opted out. A denied
+    // permission leaves `enabled` false and shows the message without looping
+    // (the effect deps stay stable until something real changes).
+    useEffect(() => {
+        if (connected && !isPublishing && !enabled && !optedOutRef.current) {
+            void enable();
+        }
+    }, [connected, isPublishing, enabled, enable]);
+
+    const optOut = useCallback(() => {
+        optedOutRef.current = true;
+        stop();
+    }, [stop]);
+
+    const optIn = useCallback(() => {
+        optedOutRef.current = false;
+        void enable();
+    }, [enable]);
 
     if (isPublishing) return null;
     return <section className="w-full max-w-xs text-center" aria-live="polite">
         <video ref={videoRef} muted playsInline className="hidden" />
-        {enabled ? <button type="button" className="text-xs text-[var(--text-muted)] underline" onClick={stop}>Stop tapestry camera</button> :
-            <button type="button" className="text-xs text-[var(--gold)] underline" onClick={() => void enable()} disabled={!connected}>Share an optional camera snapshot</button>}
+        {enabled ? <button type="button" className="text-xs text-[var(--text-muted)] underline" onClick={optOut}>Stop tapestry camera</button> :
+            <button type="button" className="text-xs text-[var(--gold)] underline" onClick={optIn} disabled={!connected}>Share a camera snapshot</button>}
         {message ? <p className="mt-1 text-xs text-[var(--text-muted)]">{message}</p> : null}
     </section>;
 }

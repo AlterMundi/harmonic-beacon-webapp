@@ -123,6 +123,7 @@ function SessionRoom() {
     const [isConnecting, setIsConnecting] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [canPublish, setCanPublish] = useState(false);
+    const [principalKind, setPrincipalKind] = useState<"ticket" | "staff">("ticket");
     const [isMicOn, setIsMicOn] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(false);
     const [audioOnly, setAudioOnly] = useState(false);
@@ -286,6 +287,7 @@ function SessionRoom() {
 
                 setSessionInfo(data.session);
                 setCanPublish(data.canPublish);
+                setPrincipalKind(data.principalKind === "staff" ? "staff" : "ticket");
                 if (data.session.startedAt) {
                     const elapsed = Math.floor((Date.now() - new Date(data.session.startedAt).getTime()) / 1000);
                     setDuration(Math.max(0, elapsed));
@@ -612,9 +614,7 @@ function SessionRoom() {
                         isPublishing={canPublish}
                     />
 
-                    {process.env.NEXT_PUBLIC_TAPESTRY_PUBLIC_ENABLED === "true" && (
-                        <ThumbnailTapestry sessionId={id} />
-                    )}
+                    <ThumbnailTapestry sessionId={id} />
 
                     {/* Volume + Mix controls */}
                     <div className="w-full max-w-xs space-y-4">
@@ -654,7 +654,7 @@ function SessionRoom() {
 
                 {/* Bottom controls */}
                 <div className="border-t border-[var(--border-subtle)] px-4 py-4">
-                    {isConnected && (
+                    {isConnected && principalKind === "ticket" && (
                         <div className="mb-4 flex justify-center">
                             <HandRaiseButton
                                 sessionId={id}
