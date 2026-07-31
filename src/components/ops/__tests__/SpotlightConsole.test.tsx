@@ -284,6 +284,19 @@ describe('SpotlightConsole', () => {
         });
     });
 
+    it('does not offer remote unmute for participant media', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('on-stage', {
+                canPublish: true,
+                media: [{ trackSid: 'TR_video', source: 'CAMERA', muted: true }],
+            }),
+        ])));
+        render(<SpotlightConsole sessionId="event-1" role="OPERATOR" />);
+
+        expect(await screen.findByText('Participant must re-enable camera')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Unmute camera/i })).not.toBeInTheDocument();
+    });
+
     it('marks the facilitator slot as reserved instead of offering demotion', async () => {
         vi.stubGlobal('fetch', mockFetch(snapshot([
             attendee('facilitator', {

@@ -360,7 +360,7 @@ describe('stage control', () => {
         expect(mocks.mutePublishedTrack).not.toHaveBeenCalled();
     });
 
-    it('mutes and unmutes only a current publisher track', async () => {
+    it('mutes a current publisher track', async () => {
         participants = [attendee('target', true)];
         const { muteParticipantTrack } = await import('../stage-control');
 
@@ -371,28 +371,29 @@ describe('stage control', () => {
             trackSid: 'TR_audio',
             muted: true,
         });
-        await muteParticipantTrack({
-            scheduledSessionId: event.id,
-            participantId: 'target',
-            actorUserId: 'operator-1',
-            trackSid: 'TR_audio',
-            muted: false,
-        });
-
-        expect(mocks.mutePublishedTrack).toHaveBeenNthCalledWith(
-            1,
+        expect(mocks.mutePublishedTrack).toHaveBeenCalledWith(
             event.roomName,
             'opaque-target',
             'TR_audio',
             true,
         );
-        expect(mocks.mutePublishedTrack).toHaveBeenNthCalledWith(
-            2,
-            event.roomName,
-            'opaque-target',
-            'TR_audio',
-            false,
-        );
+    });
+
+    it('requires the participant to re-enable muted media', async () => {
+        participants = [attendee('target', true)];
+        const { muteParticipantTrack } = await import('../stage-control');
+
+        await expect(muteParticipantTrack({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+            trackSid: 'TR_video',
+            muted: false,
+        })).rejects.toMatchObject({
+            code: 'invalid_request',
+            status: 400,
+        });
+        expect(mocks.mutePublishedTrack).not.toHaveBeenCalled();
     });
 
     it('reconciles durable grants into LiveKit and clears successful flags', async () => {

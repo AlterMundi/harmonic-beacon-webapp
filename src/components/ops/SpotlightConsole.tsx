@@ -251,16 +251,16 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
             `${participantLabel(participant)}'s hand was lowered`,
         );
 
-    const setTrackMuted = (participant: ConsoleParticipant, track: LiveTrack, muted: boolean) =>
+    const muteTrack = (participant: ConsoleParticipant, track: LiveTrack) =>
         runAction(
             `mute:${track.trackSid}`,
             {
                 action: 'mute',
                 participantId: participant.id,
                 trackSid: track.trackSid,
-                muted,
+                muted: true,
             },
-            `${track.source.toLowerCase()} ${muted ? 'muted' : 'unmuted'}`,
+            `${track.source.toLowerCase()} muted; the participant can re-enable it`,
         );
 
     const reconcile = () =>
@@ -353,15 +353,19 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                         </div>
                                     </div>
                                     <div className="flex shrink-0 flex-wrap items-center gap-2">
-                                        {participant.media.map((track) => (
+                                        {participant.media.map((track) => track.muted ? (
+                                            <span key={track.trackSid} className="text-xs text-[var(--text-muted)]">
+                                                Participant must re-enable {track.source.toLowerCase()}
+                                            </span>
+                                        ) : (
                                             <button
                                                 key={track.trackSid}
                                                 type="button"
                                                 disabled={busyKey !== null}
-                                                onClick={() => void setTrackMuted(participant, track, !track.muted)}
+                                                onClick={() => void muteTrack(participant, track)}
                                                 className="rounded border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-white/5 disabled:opacity-50"
                                             >
-                                                {track.muted ? 'Unmute' : 'Mute'} {track.source.toLowerCase()}
+                                                Mute {track.source.toLowerCase()}
                                             </button>
                                         ))}
                                         {participant.staffRole !== 'FACILITATOR' ? (

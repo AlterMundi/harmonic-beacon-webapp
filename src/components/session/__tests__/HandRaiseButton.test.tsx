@@ -127,4 +127,22 @@ describe('HandRaiseButton', () => {
         }, { timeout: 4000 });
         expect(screen.getByRole('status')).toHaveTextContent('you are #1 in the queue');
     });
+
+    it('explains a staff-cookie collision and stops attendee actions', async () => {
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: false,
+            status: 403,
+            json: async () => ({ error: 'Insufficient permissions' }),
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        render(<HandRaiseButton sessionId="event-1" />);
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'signed in as staff',
+        );
+        const button = screen.getByRole('button', { name: /Raise hand/i });
+        expect(button).toBeDisabled();
+        await userEvent.click(button);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
 });

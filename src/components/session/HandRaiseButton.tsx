@@ -21,11 +21,48 @@ type Props = {
     onPublishGrantChange?: (canPublish: boolean) => void;
 };
 
+class HandRequestError extends Error {
+    constructor(
+        readonly status: number,
+        readonly code: string | null,
+    ) {
+        super(code ?? `HTTP ${status}`);
+        this.name = 'HandRequestError';
+    }
+}
+
+async function handStateFrom(response: Response): Promise<OwnHandState> {
+    const body = (await response.json().catch(() => ({}))) as Partial<OwnHandState> & {
+        error?: unknown;
+    };
+    if (!response.ok) {
+        throw new HandRequestError(
+            response.status,
+            typeof body.error === 'string' ? body.error : null,
+        );
+    }
+    return body as OwnHandState;
+}
+
+function handFailureMessage(error: unknown, action: 'status' | 'raise' | 'lower'): string {
+    if (error instanceof HandRequestError && error.status === 403) {
+        if (error.code === 'Insufficient permissions') {
+            return 'This browser is signed in as staff. Open the attendee in a private window or separate browser profile.';
+        }
+        return 'This attendee session is no longer authorized. Sign in again in a private window or separate browser profile.';
+    }
+    if (action === 'raise') return 'Could not raise hand';
+    if (action === 'lower') return 'Could not lower hand';
+    return 'Hand status unavailable';
+}
+
 export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Props) {
     const [state, setState] = useState<OwnHandState | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [authorizationBlocked, setAuthorizationBlocked] = useState(false);
     const mounted = useRef(true);
+    const authorizationBlockedRef = useRef(false);
     const lastGrant = useRef<boolean | null>(null);
 
     const applyState = useCallback((next: OwnHandState) => {
@@ -37,21 +74,23 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
     }, [onPublishGrantChange]);
 
     const refresh = useCallback(async () => {
+        if (authorizationBlockedRef.current) return;
         try {
             const response = await fetch(
                 `/api/scheduled-sessions/${sessionId}/hand`,
                 { cache: 'no-store' },
             );
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
+            const next = await handStateFrom(response);
             if (mounted.current) {
-                applyState((await response.json()) as OwnHandState);
+                applyState(next);
                 setError(null);
             }
-        } catch {
+        } catch (failure) {
             if (mounted.current) {
-                setError('Hand status unavailable');
+                const blocked = failure instanceof HandRequestError && failure.status === 403;
+                authorizationBlockedRef.current = blocked;
+                setAuthorizationBlocked(blocked);
+                setError(handFailureMessage(failure, 'status'));
             }
         }
     }, [sessionId, applyState]);
@@ -74,12 +113,12 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
                 `/api/scheduled-sessions/${sessionId}/hand`,
                 { method: raised ? 'POST' : 'DELETE' },
             );
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            applyState((await response.json()) as OwnHandState);
-        } catch {
-            setError(raised ? 'Could not raise hand' : 'Could not lower hand');
+            applyState(await handStateFrom(response));
+        } catch (failure) {
+            const blocked = failure instanceof HandRequestError && failure.status === 403;
+            authorizationBlockedRef.current = blocked;
+            setAuthorizationBlocked(blocked);
+            setError(handFailureMessage(failure, raised ? 'raise' : 'lower'));
         } finally {
             setBusy(false);
             void refresh();
@@ -91,7 +130,7 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
             <button
                 type="button"
                 onClick={() => void setHand(!(state?.raised ?? false))}
-                disabled={busy}
+                disabled={busy || authorizationBlocked}
                 className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
                     state?.raised
                         ? 'bg-[var(--pink)] text-[var(--ink)] shadow-[0_0_16px_rgba(255,113,189,0.3)]'
