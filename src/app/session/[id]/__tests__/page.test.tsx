@@ -144,9 +144,15 @@ const TOKEN_RESPONSE = {
     },
     canPublish: false,
     token: 'test-token',
+    identity: 'opaque-attendee-12345678',
+    displayName: 'Attendee',
+    role: 'ATTENDEE',
+    principalKind: 'ticket',
+    audioDiagnosticEnabled: true,
 };
 
 beforeEach(() => {
+    window.sessionStorage.clear();
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     audioMocks.setBeaconVolume.mockClear();
@@ -170,6 +176,24 @@ async function renderConnected() {
     render(<SessionRoomPage />);
     await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
 }
+
+describe('SessionRoomPage - test identity and audio diagnostics', () => {
+    it('shows the selected test name, authorized role, short identity, and A/B controls', async () => {
+        window.sessionStorage.setItem(
+            'hb:e2e-viewer',
+            JSON.stringify({ name: 'Nico', role: 'ATTENDEE' }),
+        );
+
+        await renderConnected();
+
+        expect(screen.getByTestId('viewer-identity')).toHaveTextContent(
+            'Signed in: Nico · ATTENDEE · ID 12345678',
+        );
+        expect(screen.getByText('Audio A/B check')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Test browser output/i })).toBeInTheDocument();
+        expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).not.toBeNull();
+    });
+});
 
 describe('SessionRoomPage - server-ended disconnect', () => {
     it('says the session ended, without a rejoin option, and announces it', async () => {

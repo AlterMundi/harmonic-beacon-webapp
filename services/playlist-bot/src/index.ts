@@ -14,6 +14,16 @@ import { spawn, execSync } from 'node:child_process';
 import { readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hasAvailableBeaconAudio } from './beaconAvailability.js';
+import {
+  BYTES_PER_FRAME,
+  decoderArgs,
+  MUSIC_BITRATE,
+  MUSIC_DTX,
+  MUSIC_RED,
+  NUM_CHANNELS,
+  SAMPLE_RATE,
+  SAMPLES_PER_CHANNEL,
+} from './audioFormat.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -27,11 +37,7 @@ const BOT_IDENTITY = process.env.BOT_IDENTITY || 'playlist-bot';
 const RECORDS_PATH = process.env.BEACON_RECORDS_PATH || '/data/beacon-records';
 const BEACON_IDENTITY = 'beacon01';
 
-const SAMPLE_RATE = 48000;
-const NUM_CHANNELS = 1;
 const FRAME_DURATION_MS = 20;
-const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 960
-const BYTES_PER_FRAME = SAMPLES_PER_FRAME * NUM_CHANNELS * 2; // 1920
 
 const CROSSFADE_DURATION_MS = 2000;
 const CROSSFADE_FRAMES = CROSSFADE_DURATION_MS / FRAME_DURATION_MS; // 100
@@ -99,15 +105,7 @@ function spawnDecoder(filePath: string) {
   log('INFO', `Decoding: ${filePath}`);
   return spawn(
     'ffmpeg',
-    [
-      '-hide_banner',
-      '-loglevel', 'error',
-      '-i', filePath,
-      '-f', 's16le',
-      '-ar', String(SAMPLE_RATE),
-      '-ac', String(NUM_CHANNELS),
-      'pipe:1',
-    ],
+    decoderArgs(filePath),
     { stdio: ['ignore', 'pipe', 'pipe'] },
   );
 }
@@ -200,8 +198,14 @@ class PlaylistBot {
     this.source = new AudioSource(SAMPLE_RATE, NUM_CHANNELS);
     this.track = LocalAudioTrack.createAudioTrack('playlist-audio', this.source);
 
-    const opts = new TrackPublishOptions();
-    opts.source = TrackSource.SOURCE_MICROPHONE;
+    const opts = new TrackPublishOptions({
+      source: TrackSource.SOURCE_MICROPHONE,
+      // The bed is continuous music, not speech. Preserve its stereo image,
+      // avoid DTX gating, and give Opus enough bitrate for spatial detail.
+      dtx: MUSIC_DTX,
+      red: MUSIC_RED,
+      audioEncoding: { maxBitrate: MUSIC_BITRATE },
+    });
 
     await this.room.localParticipant!.publishTrack(this.track, opts);
     log('INFO', 'Audio track published');
@@ -438,7 +442,7 @@ class PlaylistBot {
           const frameSamples = new Int16Array(
             frameBuffer.buffer,
             frameBuffer.byteOffset,
-            SAMPLES_PER_FRAME * NUM_CHANNELS,
+            SAMPLES_PER_CHANNEL * NUM_CHANNELS,
           );
           this.applyFade(frameSamples);
 
@@ -446,7 +450,7 @@ class PlaylistBot {
             frameSamples,
             SAMPLE_RATE,
             NUM_CHANNELS,
-            SAMPLES_PER_FRAME,
+            SAMPLES_PER_CHANNEL,
           );
 
           try {
