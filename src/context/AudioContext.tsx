@@ -246,6 +246,29 @@ export function AudioProvider({
     const startAudio = useCallback(async (): Promise<boolean> => {
         try {
             await roomRef.current?.startAudio();
+            // Tracks that arrived before startAudio() was called may be attached
+            // to a disconnected audio graph — detach and re-attach so the SDK
+            // wires them through the now-active WebAudio context.
+            const room = roomRef.current;
+            if (room?.remoteParticipants) {
+                for (const participant of room.remoteParticipants.values()) {
+                    for (const pub of participant.trackPublications.values()) {
+                        const track = pub.track;
+                        if (track && track.kind === Track.Kind.Audio && pub.isSubscribed) {
+                            track.detach();
+                            const audioElement = track.attach() as HTMLAudioElement;
+                            audioElement.volume = volumeRef.current;
+                            audioElement.style.display = "none";
+                            document.body.appendChild(audioElement);
+                            audioElementsRef.current.set(participant.identity, audioElement);
+                            // Mute if live stream is active
+                            if (hasLiveStreamRef.current && participant.identity !== BEACON_IDENTITY) {
+                                audioElement.muted = true;
+                            }
+                        }
+                    }
+                }
+            }
             await Promise.all(
                 [...audioElementsRef.current.values()].map((element) => element.play()),
             );
