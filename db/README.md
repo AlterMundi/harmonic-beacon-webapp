@@ -12,10 +12,10 @@ database in the repo, and it is regenerated from `prisma/seed-test-fixtures.ts`.
 
 | Email | Role |
 |---|---|
-| `facilitator@test.beacon` | FACILITATOR |
-| `operator1@test.beacon` | OPERATOR |
-| `operator2@test.beacon` | OPERATOR |
-| `admin@test.beacon` | ADMIN |
+| `facilitator@altermundi.net` | FACILITATOR |
+| `operator1@altermundi.net` | OPERATOR |
+| `operator2@altermundi.net` | OPERATOR |
+| `admin@altermundi.net` | ADMIN |
 
 ### Sessions (Saturday 2026-08-01, both `SCHEDULED`)
 
@@ -34,7 +34,7 @@ letter for Spanish, `TEST-TEST-TEST-TEN` + one letter for English.
 | `TEST-TEST-TEST-TESA` | `TEST-TEST-TEST-TENA` | ISSUED | log in with any email (binds on first use) |
 | `TEST-TEST-TEST-TESB` | `TEST-TEST-TEST-TENB` | ISSUED | |
 | `TEST-TEST-TEST-TESC` | `TEST-TEST-TEST-TENC` | ISSUED | |
-| `TEST-TEST-TEST-TESD` | `TEST-TEST-TEST-TEND` | BOUND | email must be `asistente@test.beacon` / `attendee@test.beacon` |
+| `TEST-TEST-TEST-TESD` | `TEST-TEST-TEST-TEND` | BOUND | email must be `asistente@altermundi.net` / `attendee@altermundi.net` |
 | `TEST-TEST-TEST-TESE` | `TEST-TEST-TEST-TENE` | REVOKED | login must fail |
 | `TEST-TEST-TEST-TESF` | `TEST-TEST-TEST-TENF` | ISSUED | COMP tier |
 

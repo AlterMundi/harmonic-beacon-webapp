@@ -62,10 +62,10 @@ const STAFF_FIXTURES: ReadonlyArray<{
     role: StaffRole;
     salt: string;
 }> = [
-    { name: 'Test Facilitator', email: 'facilitator@test.beacon', role: 'FACILITATOR', salt: 'fixture-salt-fac01' },
-    { name: 'Test Operator One', email: 'operator1@test.beacon', role: 'OPERATOR', salt: 'fixture-salt-op001' },
-    { name: 'Test Operator Two', email: 'operator2@test.beacon', role: 'OPERATOR', salt: 'fixture-salt-op002' },
-    { name: 'Test Admin', email: 'admin@test.beacon', role: 'ADMIN', salt: 'fixture-salt-adm01' },
+    { name: 'Test Facilitator', email: 'facilitator@altermundi.net', role: 'FACILITATOR', salt: 'fixture-salt-fac01' },
+    { name: 'Test Operator One', email: 'operator1@altermundi.net', role: 'OPERATOR', salt: 'fixture-salt-op001' },
+    { name: 'Test Operator Two', email: 'operator2@altermundi.net', role: 'OPERATOR', salt: 'fixture-salt-op002' },
+    { name: 'Test Admin', email: 'admin@altermundi.net', role: 'ADMIN', salt: 'fixture-salt-adm01' },
 ];
 
 /** Both sessions on Saturday 2026-08-01; times are the database truth (CR = UTC-6). */
@@ -102,8 +102,8 @@ const SESSION_FIXTURES: ReadonlyArray<{
 ];
 
 const ATTENDEE_EMAILS: Record<string, string> = {
-    'TEST-ES': 'asistente@test.beacon',
-    'TEST-EN': 'attendee@test.beacon',
+    'TEST-ES': 'asistente@altermundi.net',
+    'TEST-EN': 'attendee@altermundi.net',
 };
 
 async function digestTestPassword(salt: string): Promise<string> {
