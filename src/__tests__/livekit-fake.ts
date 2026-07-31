@@ -107,6 +107,7 @@ export class FakeRoom {
         this.state = 'connected';
     });
     disconnect = vi.fn();
+    startAudio = vi.fn().mockResolvedValue(undefined);
 
     on(event: string, cb: (...args: unknown[]) => void) {
         (this.listeners[event] ||= []).push(cb);

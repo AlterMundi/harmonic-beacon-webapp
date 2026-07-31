@@ -278,6 +278,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                     <div className="mb-3 flex flex-wrap gap-2">
                         <select
                             className="event-field"
+                            aria-label="Event"
                             value={batchEvent}
                             onChange={(event) => setBatchEvent(event.target.value)}
                         >
@@ -295,6 +296,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     className="event-field"
+                                    aria-label="Ticket tier"
                                     value={batchTier}
                                     onChange={(event) => setBatchTier(event.target.value)}
                                 >
@@ -341,6 +343,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     className="event-field"
+                                    aria-label="Override tier"
                                     value={compTier}
                                     onChange={(event) => setCompTier(event.target.value)}
                                 >

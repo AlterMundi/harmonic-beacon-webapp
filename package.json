@@ -14,11 +14,15 @@
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "db:seed:test": "npx tsx prisma/seed-test-fixtures.ts",
+    "db:fixture:load": "node scripts/load-test-fixture.mjs",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
+    "test:e2e:update-snapshots": "playwright test --update-snapshots"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.3.0",
@@ -44,6 +48,8 @@
     "seed": "npx tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.61.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -61,5 +67,8 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "playwright-core": "1.61.0"
   }
 }

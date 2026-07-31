@@ -1,0 +1,13 @@
+# Frozen audio boundaries (epic #64, issue #69)
+#
+# These paths carry the media invariants: no codec, bitrate, sample-rate,
+# buffer, gain, crossfader, or audio-lifecycle change without the
+# `audio-touching` PR label and explicit review from Nico. The
+# .github/workflows/audio-boundary.yml check enforces the label in CI.
+#
+# Note: GitHub CODEOWNERS cannot escape the `[id]` glob in App Router paths,
+# so the whole session route directory is owned instead.
+
+/src/context/AudioContext.tsx @nicoechaniz
+/src/app/session/ @nicoechaniz
+/services/playlist-bot/ @nicoechaniz
