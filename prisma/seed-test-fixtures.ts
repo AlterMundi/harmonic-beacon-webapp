@@ -172,14 +172,26 @@ async function main() {
                     },
                 });
 
+                // Look up the baseline grant by its constant placeholder
+                // identity, not by staffUserId: if the fixture facilitator's
+                // email changes, the re-seed creates a new user and the old
+                // baseline row must be reassigned, not duplicated (the
+                // (session, identity) unique index would reject the insert).
                 const existingFacilitator = await tx.sessionParticipant.findFirst({
-                    where: { scheduledSessionId: event.id, staffUserId: facilitator.id },
+                    where: {
+                        scheduledSessionId: event.id,
+                        participantIdentity: 'test-facilitator-identity',
+                    },
                     select: { id: true },
                 });
                 if (existingFacilitator) {
                     await tx.sessionParticipant.update({
                         where: { id: existingFacilitator.id },
-                        data: { publishRevokedAt: null, grantReconcileNeeded: false },
+                        data: {
+                            staffUserId: facilitator.id,
+                            publishRevokedAt: null,
+                            grantReconcileNeeded: false,
+                        },
                     });
                 } else {
                     await tx.sessionParticipant.create({
