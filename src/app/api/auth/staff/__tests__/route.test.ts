@@ -183,6 +183,29 @@ describe('POST /api/auth/staff', () => {
         expect(new Set(db.webSessions.map((session) => session.staffUserId)).size).toBe(4);
     });
 
+    it('returns and persists FACILITATOR_OP when the facilitator seed explicitly configures it', async () => {
+        const env = seedEnvironment();
+        env.STAFF_FACILITATOR_ROLE = 'FACILITATOR_OP';
+        staff = loadSeedContract(env).staff;
+        mountDb(seedUsers(staff));
+        const { POST } = await importRoute();
+        const { principalFromToken } = await import('@/lib/principal');
+
+        const response = await POST(loginRequest({
+            email: 'facilitator@example.invalid',
+            password: PASSWORDS.facilitator,
+        }));
+        expect((await parseResponse(response)).body).toEqual({
+            ok: true,
+            role: 'FACILITATOR_OP',
+        });
+        const cookie = sessionCookieOf(response);
+        expect(await principalFromToken(cookie!.value)).toMatchObject({
+            kind: 'staff',
+            role: 'FACILITATOR_OP',
+        });
+    });
+
     it('accepts an address typed with different capitalization', async () => {
         mountDb(seedUsers(staff));
         const { POST } = await importRoute();

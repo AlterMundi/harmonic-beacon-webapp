@@ -30,7 +30,10 @@ export async function GET(
             principal.identity,
             principal.displayName,
             principal.canPublish,
-            principal.role,
+            {
+                role: principal.role,
+                isAssignedFacilitator: principal.isAssignedFacilitator,
+            },
         );
 
         return NextResponse.json({
@@ -40,6 +43,7 @@ export async function GET(
             canPublish: principal.canPublish,
             displayName: principal.displayName,
             role: principal.role,
+            isAssignedFacilitator: principal.isAssignedFacilitator,
             // Lets the room page gate attendee-only controls (hand queue)
             // without probing an endpoint that 403s for staff.
             principalKind: principal.ticketEntitlementId ? 'ticket' : 'staff',

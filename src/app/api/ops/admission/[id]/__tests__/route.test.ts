@@ -5,7 +5,7 @@ import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 /**
  * /api/ops/admission/[id]: single-entitlement detail, revoke, and
  * clear/rebind. Both mutations demand a mandatory non-PII reason, are limited
- * to ADMIN and OPERATOR, and write an audit row; the tests also prove a
+ * to staff with `mutate_entitlement`, and write an audit row; tests prove a
  * facilitator can never silently rebind a ticket.
  */
 
@@ -143,6 +143,7 @@ describe('/api/ops/admission/[id]', () => {
             expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
                 data: expect.objectContaining({
                     actorUserId: 'staff-admin',
+                    actorRole: 'ADMIN',
                     action: 'ticket.revoke',
                     targetType: 'TICKET_ENTITLEMENT',
                     targetId: ENTITLEMENT_ID,
@@ -160,6 +161,22 @@ describe('/api/ops/admission/[id]', () => {
                 await POST(authed({ action: 'revoke', reason: 'duplicate purchase' }), params),
             );
             expect(status).toBe(200);
+        });
+
+        it('allows FACILITATOR_OP to revoke under its real identity and role', async () => {
+            mockPrisma.webSession.findUnique.mockResolvedValue(staffSession('FACILITATOR_OP'));
+            const { POST } = await loadRoute();
+            const { status } = await parseResponse(
+                await POST(authed({ action: 'revoke', reason: 'approved correction' }), params),
+            );
+
+            expect(status).toBe(200);
+            expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
+                data: expect.objectContaining({
+                    actorUserId: 'staff-facilitator_op',
+                    actorRole: 'FACILITATOR_OP',
+                }),
+            });
         });
 
         it('refuses to revoke an already-revoked entitlement', async () => {

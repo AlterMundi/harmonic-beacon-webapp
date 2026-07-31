@@ -16,6 +16,7 @@ import TapestryArrange from '@/components/ops/TapestryArrange';
 import { prisma } from '@/lib/db';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,10 +48,10 @@ export default async function OpsSessionPage({
     if (!scheduledSession) {
         notFound();
     }
-    if (
-        staff.role === 'FACILITATOR' &&
-        scheduledSession.facilitatorId !== staff.id
-    ) {
+    if (!eventStaffPolicy(
+        staff.role,
+        scheduledSession.facilitatorId === staff.id,
+    ).canOperateEvent) {
         return (
             <main className="mx-auto max-w-3xl px-4 py-8">
                 <h1 className="mb-2 text-2xl font-semibold">Not your event</h1>

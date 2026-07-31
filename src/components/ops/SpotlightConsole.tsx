@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { StaffRole } from '@prisma/client';
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -28,6 +29,7 @@ type ConsoleParticipant = {
     displayName: string;
     principalType: 'staff' | 'attendee';
     staffRole: string | null;
+    isAssignedFacilitator: boolean;
     joinedAt: string;
     leftAt: string | null;
     raisedAt: string | null;
@@ -47,6 +49,7 @@ function normalizeParticipant(p: ConsoleParticipant): ConsoleParticipant {
         connected: p.connected ?? null,
         media: p.media ?? [],
         connectionQuality: p.connectionQuality ?? null,
+        isAssignedFacilitator: p.isAssignedFacilitator ?? false,
     };
 }
 
@@ -67,7 +70,7 @@ type ActionError = {
 
 type Props = {
     sessionId: string;
-    role: 'FACILITATOR' | 'OPERATOR' | 'ADMIN';
+    role: StaffRole;
 };
 
 async function postStage(
@@ -414,7 +417,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                                 Mute {track.source.toLowerCase()}
                                             </button>
                                         ))}
-                                        {participant.staffRole !== 'FACILITATOR' ? (
+                                        {!participant.isAssignedFacilitator ? (
                                             <button
                                                 type="button"
                                                 disabled={busyKey !== null}

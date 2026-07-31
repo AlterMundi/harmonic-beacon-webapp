@@ -46,6 +46,7 @@ CREATE TYPE public."SessionLanguage" AS ENUM (
 
 CREATE TYPE public."StaffRole" AS ENUM (
     'FACILITATOR',
+    'FACILITATOR_OP',
     'OPERATOR',
     'ADMIN'
 );
@@ -102,6 +103,7 @@ CREATE TABLE public._prisma_migrations (
 CREATE TABLE public.audit_logs (
     id uuid NOT NULL,
     actor_user_id uuid,
+    actor_role public."StaffRole",
     action text NOT NULL,
     target_type text NOT NULL,
     target_id text NOT NULL,
@@ -240,7 +242,7 @@ COPY public._prisma_migrations (id, checksum, finished_at, migration_name, logs,
 -- Data for Name: audit_logs; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.audit_logs (id, actor_user_id, action, target_type, target_id, reason, metadata, created_at) FROM stdin;
+COPY public.audit_logs (id, actor_user_id, actor_role, action, target_type, target_id, reason, metadata, created_at) FROM stdin;
 \.
 
 
@@ -587,4 +589,3 @@ ALTER TABLE ONLY public.web_sessions
 --
 
 \unrestrict HfdulNi6iRYG5ik2xVFyvsLq0gcjrmkMXLcwxegYIXQrNAKlUnSnbrCpXni7pix
-

@@ -48,7 +48,10 @@ describe('livekit-server', () => {
 
     it('limits publishing grants to microphone and camera', async () => {
         const { createSessionToken } = await import('../livekit-server');
-        await createSessionToken('stage', 'identity', 'Ana', true, 'ATTENDEE');
+        await createSessionToken('stage', 'identity', 'Ana', true, {
+            role: 'ATTENDEE',
+            isAssignedFacilitator: false,
+        });
 
         expect(AccessToken).toHaveBeenCalledWith(
             'key',
@@ -56,7 +59,10 @@ describe('livekit-server', () => {
             {
                 identity: 'identity',
                 name: 'Ana',
-                metadata: JSON.stringify({ role: 'ATTENDEE' }),
+                metadata: JSON.stringify({
+                    role: 'ATTENDEE',
+                    isAssignedFacilitator: false,
+                }),
                 ttl: '4h',
             },
         );

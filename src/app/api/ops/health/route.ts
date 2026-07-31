@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { requireStaff } from '@/lib/auth';
+import { requireStaffCapability } from '@/lib/auth';
 import { collectOperatorHealth } from '@/lib/ops-health';
 
 export const dynamic = 'force-dynamic';
@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
     // Every staff role may watch the board: Julián on stage and both
     // operators need the same picture during the event.
-    const [staff, errorResponse] = await requireStaff('ADMIN', 'OPERATOR', 'FACILITATOR');
+    const [staff, errorResponse] = await requireStaffCapability('view_operations_health');
     if (!staff) {
         return errorResponse;
     }

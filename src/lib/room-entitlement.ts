@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { prisma } from '@/lib/db';
 import { stableRoomIdentity } from '@/lib/livekit-server';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 import {
     SESSION_COOKIE_NAME,
     digestSessionToken,
@@ -17,7 +18,8 @@ export type RoomPrincipal = {
     };
     identity: string;
     displayName: string;
-    role: 'ATTENDEE' | 'FACILITATOR' | 'OPERATOR' | 'ADMIN';
+    role: 'ATTENDEE' | 'FACILITATOR' | 'FACILITATOR_OP' | 'OPERATOR' | 'ADMIN';
+    isAssignedFacilitator: boolean;
     canPublish: boolean;
     ticketEntitlementId: string | null;
     staffUserId: string | null;
@@ -113,7 +115,8 @@ export async function resolveRoomPrincipal(
     let staffUserId: string | null = null;
     let displayName: RoomPrincipal['displayName'];
     let role: RoomPrincipal['role'];
-    let facilitatorCanPublish = false;
+    let canPublishInitially = false;
+    let isAssignedFacilitator = false;
 
     if (ticket) {
         if (
@@ -142,25 +145,27 @@ export async function resolveRoomPrincipal(
             return { ok: false, status: 403, error: 'Not authorized' };
         }
 
-        const isFacilitator =
-            staff.role === 'FACILITATOR' &&
-            scheduledSession.facilitatorId === staff.id;
-        const isOperationsStaff =
-            staff.role === 'OPERATOR' || staff.role === 'ADMIN';
-        if (!isFacilitator && !isOperationsStaff) {
+        const policy = eventStaffPolicy(
+            staff.role,
+            scheduledSession.facilitatorId === staff.id,
+        );
+        if (!policy.canOperateEvent) {
             return { ok: false, status: 403, error: 'Not authorized' };
         }
 
         principalId = staff.id;
         principalKind = 'staff';
         staffUserId = staff.id;
-        facilitatorCanPublish = isFacilitator;
+        canPublishInitially = policy.canPublishInitially;
+        isAssignedFacilitator = policy.isAssignedFacilitator;
         displayName = staff.name?.trim() || (
-            staff.role === 'FACILITATOR'
+            policy.isAssignedFacilitator
                 ? 'Facilitator'
                 : staff.role === 'OPERATOR'
                     ? 'Operator'
-                    : 'Administrator'
+                    : staff.role === 'ADMIN'
+                        ? 'Administrator'
+                        : 'Facilitator operator'
         );
         role = staff.role;
     }
@@ -208,9 +213,9 @@ export async function resolveRoomPrincipal(
                 participantIdentity: identity,
                 ticketEntitlementId,
                 staffUserId,
-                publishGrantedAt: facilitatorCanPublish ? now : null,
-                grantVersion: facilitatorCanPublish ? 1 : 0,
-                grantReason: facilitatorCanPublish
+                publishGrantedAt: canPublishInitially ? now : null,
+                grantVersion: canPublishInitially ? 1 : 0,
+                grantReason: canPublishInitially
                     ? 'Facilitator preflight grant'
                     : null,
             },
@@ -236,6 +241,7 @@ export async function resolveRoomPrincipal(
             identity,
             displayName,
             role,
+            isAssignedFacilitator,
             canPublish:
                 participant.publishGrantedAt !== null &&
                 participant.publishRevokedAt === null,

@@ -21,7 +21,7 @@ const LANDING_PRESETS = [
     { label: "Login asistente", path: "/login" },
 ];
 
-const ROLES = ["ATTENDEE", "FACILITATOR", "OPERATOR", "ADMIN"] as const;
+const ROLES = ["ATTENDEE", "FACILITATOR", "FACILITATOR_OP", "OPERATOR", "ADMIN"] as const;
 
 export default function TestLoginPage() {
     const [name, setName] = useState("");

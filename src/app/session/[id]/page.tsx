@@ -53,6 +53,7 @@ interface ViewerInfo {
     name: string;
     role: string;
     identity: string;
+    isAssignedFacilitator: boolean;
 }
 
 type DisconnectKind = "ended" | "transport" | "unknown";
@@ -110,12 +111,21 @@ function cameraPublication(participant: Participant): StageVideoPublication | nu
     return publication ?? null;
 }
 
-function participantRole(participant: Participant): string | null {
+function participantMetadata(participant: Participant): {
+    role: string | null;
+    isAssignedFacilitator: boolean;
+} {
     try {
-        const metadata = JSON.parse(participant.metadata || "{}") as { role?: unknown };
-        return typeof metadata.role === "string" ? metadata.role : null;
+        const metadata = JSON.parse(participant.metadata || "{}") as {
+            role?: unknown;
+            isAssignedFacilitator?: unknown;
+        };
+        return {
+            role: typeof metadata.role === "string" ? metadata.role : null,
+            isAssignedFacilitator: metadata.isAssignedFacilitator === true,
+        };
     } catch {
-        return null;
+        return { role: null, isAssignedFacilitator: false };
     }
 }
 
@@ -195,7 +205,7 @@ function SessionRoom() {
                     identity: participant.identity,
                     label,
                     isLocal: participant === local,
-                    isFacilitator: participantRole(participant) === "FACILITATOR",
+                    isFacilitator: participantMetadata(participant).isAssignedFacilitator,
                     isSpeaking: participant.isSpeaking,
                     cameraOn: participant.isCameraEnabled,
                     micOn: participant.isMicrophoneEnabled,
@@ -319,6 +329,7 @@ function SessionRoom() {
                     name: typeof data.displayName === "string" ? data.displayName : "Participant",
                     role: typeof data.role === "string" ? data.role : "PARTICIPANT",
                     identity: typeof data.identity === "string" ? data.identity : "unknown",
+                    isAssignedFacilitator: data.isAssignedFacilitator === true,
                 });
                 if (data.session.startedAt) {
                     const elapsed = Math.floor((Date.now() - new Date(data.session.startedAt).getTime()) / 1000);

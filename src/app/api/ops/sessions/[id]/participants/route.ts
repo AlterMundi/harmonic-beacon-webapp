@@ -4,6 +4,7 @@ import { TrackSource } from 'livekit-server-sdk';
 import { requireStaff } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getRoomService } from '@/lib/livekit-server';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,11 +12,7 @@ export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const [staff, errorResponse] = await requireStaff(
-        'FACILITATOR',
-        'OPERATOR',
-        'ADMIN',
-    );
+    const [staff, errorResponse] = await requireStaff();
     if (!staff) {
         return errorResponse;
     }
@@ -45,6 +42,7 @@ export async function GET(
                     grantReconcileNeeded: true,
                     staffUser: {
                         select: {
+                            id: true,
                             name: true,
                             role: true,
                         },
@@ -59,10 +57,10 @@ export async function GET(
             { status: 404 },
         );
     }
-    if (
-        staff.role === 'FACILITATOR' &&
-        scheduledSession.facilitatorId !== staff.userId
-    ) {
+    if (!eventStaffPolicy(
+        staff.role,
+        scheduledSession.facilitatorId === staff.userId,
+    ).canOperateEvent) {
         return NextResponse.json(
             { error: 'Insufficient permissions' },
             { status: 403 },
@@ -105,12 +103,19 @@ export async function GET(
             queuePosition += 1;
         }
         const live = liveParticipants.get(participant.participantIdentity);
+        const isAssignedFacilitator = participant.staffUser
+            ? eventStaffPolicy(
+                participant.staffUser.role,
+                participant.staffUser.id === scheduledSession.facilitatorId,
+            ).isAssignedFacilitator
+            : false;
         return {
             id: participant.id,
             identity: participant.participantIdentity,
             displayName: participant.staffUser?.name ?? (live?.name?.trim() || 'Attendee'),
             principalType: participant.staffUser ? 'staff' : 'attendee',
             staffRole: participant.staffUser?.role ?? null,
+            isAssignedFacilitator,
             joinedAt: participant.joinedAt.toISOString(),
             leftAt: participant.leftAt?.toISOString() ?? null,
             raisedAt: participant.raisedAt?.toISOString() ?? null,
@@ -135,7 +140,7 @@ export async function GET(
         activePublishers: 1 + participants.filter(
             (participant) =>
                 participant.canPublish &&
-                participant.staffRole !== 'FACILITATOR',
+                !participant.isAssignedFacilitator,
         ).length,
         liveStateAvailable,
         participants,

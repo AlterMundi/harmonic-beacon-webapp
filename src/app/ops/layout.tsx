@@ -6,6 +6,7 @@ import OpsNavLinks from '@/components/ops/OpsNavLinks';
 import { prisma } from '@/lib/db';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
+import { hasGlobalEventAccess } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,7 @@ export default async function OpsLayout({
     const sessions = await prisma.scheduledSession.findMany({
         where: {
             status: { in: ['SCHEDULED', 'LIVE'] },
-            ...(staff.role === 'FACILITATOR' ? { facilitatorId: staff.id } : {}),
+            ...(!hasGlobalEventAccess(staff.role) ? { facilitatorId: staff.id } : {}),
         },
         select: { id: true, title: true, language: true, status: true },
         orderBy: { scheduledAt: 'asc' },

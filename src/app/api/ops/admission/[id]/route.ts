@@ -12,11 +12,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { normalizeEmail } from '@/lib/admission';
 import { recordAuditEvent } from '@/lib/audit';
 import { prisma } from '@/lib/db';
-import { hasAnyRole, resolveStaffSession, type StaffPrincipal } from '@/lib/ops-auth';
+import { resolveStaffSession, type StaffPrincipal } from '@/lib/ops-auth';
+import { hasStaffCapability } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
-
-const MUTATION_ROLES = ['ADMIN', 'OPERATOR'] as const;
 
 function error(status: number, code: string, message: string) {
     return NextResponse.json({ error: code, message }, { status });
@@ -93,6 +92,7 @@ async function handleRevoke(staff: StaffPrincipal, id: string, reason: string) {
 
     await recordAuditEvent({
         actorUserId: staff.id,
+        actorRole: staff.role,
         action: 'ticket.revoke',
         targetType: 'TICKET_ENTITLEMENT',
         targetId: id,
@@ -147,6 +147,7 @@ async function handleRebind(staff: StaffPrincipal, id: string, email: string | u
 
     await recordAuditEvent({
         actorUserId: staff.id,
+        actorRole: staff.role,
         action: 'ticket.rebind',
         targetType: 'TICKET_ENTITLEMENT',
         targetId: id,
@@ -180,8 +181,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (body.action !== 'revoke' && body.action !== 'rebind') {
         return error(400, 'invalid_request', 'action must be revoke or rebind');
     }
-    if (!hasAnyRole(staff, [...MUTATION_ROLES])) {
-        return error(403, 'forbidden', 'Only ADMIN or OPERATOR may mutate an entitlement');
+    if (!hasStaffCapability(staff.role, 'mutate_entitlement')) {
+        return error(403, 'forbidden', 'Your role may not mutate an entitlement');
     }
 
     const reason = body.reason?.trim();

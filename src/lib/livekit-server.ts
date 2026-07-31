@@ -6,6 +6,15 @@ import {
     TrackSource,
 } from 'livekit-server-sdk';
 
+import type { StaffRole } from '@prisma/client';
+
+export type SessionParticipantRole = 'ATTENDEE' | StaffRole;
+
+export type SessionTokenMetadata = {
+    role: SessionParticipantRole;
+    isAssignedFacilitator: boolean;
+};
+
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://live.altermundi.net';
@@ -68,13 +77,13 @@ export async function createSessionToken(
     identity: string,
     name: string,
     canPublish: boolean,
-    role?: 'ATTENDEE' | 'FACILITATOR' | 'OPERATOR' | 'ADMIN',
+    metadata?: SessionTokenMetadata,
 ): Promise<string> {
     requireLiveKitCredentials();
     const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
         identity,
         name,
-        metadata: role ? JSON.stringify({ role }) : undefined,
+        metadata: metadata ? JSON.stringify(metadata) : undefined,
         ttl: '4h',
     });
 

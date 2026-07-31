@@ -60,6 +60,25 @@ describe('weekend seed contract', () => {
         expect(contract.events[0]).not.toHaveProperty('maxPublishers');
     });
 
+    it('allows an explicit composite facilitator role without changing the default', () => {
+        const defaultContract = loadSeedContract(validEnvironment());
+        const compositeEnvironment = validEnvironment();
+        compositeEnvironment.STAFF_FACILITATOR_ROLE = 'FACILITATOR_OP';
+        const compositeContract = loadSeedContract(compositeEnvironment);
+
+        expect(defaultContract.staff[0].role).toBe('FACILITATOR');
+        expect(compositeContract.staff[0].role).toBe('FACILITATOR_OP');
+    });
+
+    it('rejects any unsupported facilitator seed role', () => {
+        const env = validEnvironment();
+        env.STAFF_FACILITATOR_ROLE = 'ADMIN';
+
+        expect(() => loadSeedContract(env)).toThrow(
+            'STAFF_FACILITATOR_ROLE must be FACILITATOR or FACILITATOR_OP',
+        );
+    });
+
     it.each([
         'STAFF_FACILITATOR_PASSWORD_DIGEST',
         'STAFF_OPERATOR_ONE_PASSWORD_DIGEST',
@@ -91,5 +110,18 @@ describe('weekend seed contract', () => {
 
         expect(migration).toContain('"max_publishers" INTEGER NOT NULL DEFAULT 6');
         expect(migration).toContain('CHECK ("max_publishers" = 6)');
+    });
+
+    it('ships FACILITATOR_OP as an additive enum migration with an audit role snapshot', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260731234500_facilitator_op/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain(`ALTER TYPE "StaffRole" ADD VALUE 'FACILITATOR_OP'`);
+        expect(migration).toContain('ADD COLUMN "actor_role" "StaffRole"');
     });
 });

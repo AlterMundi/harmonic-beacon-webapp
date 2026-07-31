@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireStaff } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { tapestryInternalUrl } from '@/lib/tapestry';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,11 +15,7 @@ export const dynamic = 'force-dynamic';
  */
 
 async function resolveStaffSession(id: string) {
-    const [staff, errorResponse] = await requireStaff(
-        'FACILITATOR',
-        'OPERATOR',
-        'ADMIN',
-    );
+    const [staff, errorResponse] = await requireStaff();
     if (!staff) {
         return { error: errorResponse };
     }
@@ -29,10 +26,10 @@ async function resolveStaffSession(id: string) {
     if (!scheduledSession) {
         return { error: NextResponse.json({ error: 'session_not_found' }, { status: 404 }) };
     }
-    if (
-        staff.role === 'FACILITATOR' &&
-        scheduledSession.facilitatorId !== staff.userId
-    ) {
+    if (!eventStaffPolicy(
+        staff.role,
+        scheduledSession.facilitatorId === staff.userId,
+    ).canOperateEvent) {
         return { error: NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 }) };
     }
     return { staff };

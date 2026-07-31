@@ -4,10 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseResponse } from '@/__tests__/helpers';
 import type { OperatorHealthReport } from '@/lib/ops-health';
 
-const requireStaff = vi.fn();
+const requireStaffCapability = vi.fn();
 const collectOperatorHealth = vi.fn();
 
-vi.mock('@/lib/auth', () => ({ requireStaff }));
+vi.mock('@/lib/auth', () => ({ requireStaffCapability }));
 vi.mock('@/lib/ops-health', () => ({ collectOperatorHealth }));
 
 const GREEN_REPORT: OperatorHealthReport = {
@@ -32,7 +32,7 @@ describe('GET /api/ops/health', () => {
     });
 
     it('rejects an unauthenticated caller before running any check', async () => {
-        requireStaff.mockResolvedValue([
+        requireStaffCapability.mockResolvedValue([
             null,
             NextResponse.json({ error: 'Authentication required' }, { status: 401 }),
         ]);
@@ -46,7 +46,7 @@ describe('GET /api/ops/health', () => {
     });
 
     it('rejects a ticket holder — the board names internal infrastructure', async () => {
-        requireStaff.mockResolvedValue([
+        requireStaffCapability.mockResolvedValue([
             null,
             NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 }),
         ]);
@@ -59,7 +59,7 @@ describe('GET /api/ops/health', () => {
     });
 
     it('returns the full report for staff, always with HTTP 200', async () => {
-        requireStaff.mockResolvedValue([
+        requireStaffCapability.mockResolvedValue([
             { kind: 'staff', webSessionId: 'ws-1', userId: 'user-1', role: 'OPERATOR' },
             null,
         ]);
@@ -69,10 +69,11 @@ describe('GET /api/ops/health', () => {
 
         expect(status).toBe(200);
         expect(body).toEqual(GREEN_REPORT);
+        expect(requireStaffCapability).toHaveBeenCalledWith('view_operations_health');
     });
 
     it('keeps HTTP 200 even when the report is red — the endpoint itself is healthy', async () => {
-        requireStaff.mockResolvedValue([
+        requireStaffCapability.mockResolvedValue([
             { kind: 'staff', webSessionId: 'ws-1', userId: 'user-1', role: 'ADMIN' },
             null,
         ]);

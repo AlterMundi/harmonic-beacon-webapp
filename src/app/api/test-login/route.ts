@@ -29,7 +29,7 @@ import { redactError } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
-const ROLES = ['ATTENDEE', 'FACILITATOR', 'OPERATOR', 'ADMIN'] as const;
+const ROLES = ['ATTENDEE', 'FACILITATOR', 'FACILITATOR_OP', 'OPERATOR', 'ADMIN'] as const;
 type DashboardRole = (typeof ROLES)[number];
 
 const TEST_ROOM_NAME = 'weekend-test-spanish';
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         } else {
             // The facilitator MUST reuse the fixture user: room access checks
             // scheduledSession.facilitatorId against the staff user id.
-            const email = role === 'FACILITATOR'
+            const email = role === 'FACILITATOR' || role === 'FACILITATOR_OP'
                 ? FACILITATOR_FIXTURE_EMAIL
                 : `e2e-${role.toLowerCase()}@altermundi.net`;
             const staff = await prisma.user.upsert({
