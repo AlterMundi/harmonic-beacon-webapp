@@ -22,10 +22,13 @@ vi.mock('next/navigation', () => ({
 
 // Hoisted: the page under test imports this module at module-evaluation time,
 // which is before a plain `const` in this file would be initialized.
-const { currentPrincipal } = vi.hoisted(() => ({ currentPrincipal: vi.fn() }));
+const { currentPrincipal, resolveStaffLanding } = vi.hoisted(() => ({
+    currentPrincipal: vi.fn(),
+    resolveStaffLanding: vi.fn(),
+}));
 vi.mock('@/lib/auth', () => ({ currentPrincipal }));
 vi.mock('@/lib/staff-navigation', () => ({
-    resolveStaffLanding: vi.fn().mockResolvedValue('/ops/events/event-live'),
+    resolveStaffLanding,
 }));
 vi.mock('@/lib/i18n-server', () => ({ requestLocale: vi.fn().mockResolvedValue('en') }));
 vi.mock('@/components/brand/LanguageControl', () => ({ default: () => <div data-testid="language-control" /> }));
@@ -63,6 +66,8 @@ function renderClient() {
 describe('staff login page', () => {
     beforeEach(() => {
         currentPrincipal.mockReset();
+        resolveStaffLanding.mockReset();
+        resolveStaffLanding.mockResolvedValue('/ops/events/event-live');
         mockPush.mockClear();
         mockRefresh.mockClear();
         window.localStorage.clear();
@@ -104,6 +109,17 @@ describe('staff login page', () => {
         await renderPage();
 
         expect(screen.getByLabelText('Staff email')).toBeInTheDocument();
+    });
+
+    it('keeps a safe hub link when assignment lookup is temporarily unavailable', async () => {
+        currentPrincipal.mockResolvedValue({ kind: 'staff', role: 'OPERATOR', userId: 'user-2' });
+        resolveStaffLanding.mockRejectedValue(new Error('connection refused'));
+
+        await renderPage();
+
+        expect(screen.getByRole('link', { name: /event controls/ })).toHaveAttribute(
+            'href', '/ops/events',
+        );
     });
 });
 

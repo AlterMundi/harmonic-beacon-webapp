@@ -28,6 +28,7 @@ export default async function StaffLoginPage() {
     const signedInRole = principal?.kind === "staff" ? principal.role : null;
     const signedInLanding = principal?.kind === "staff"
         ? await resolveStaffLanding({ id: principal.userId, role: principal.role })
+            .catch(() => "/ops/events")
         : null;
 
     return (
