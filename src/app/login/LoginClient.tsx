@@ -9,9 +9,6 @@
  * now redirects there.
  *
  * Bilingual by showing both languages at once rather than by detecting one.
- * Session 1 is Spanish (morning) and Session 2 is English (afternoon), both Saturday, the two audiences
- * share this page, and an attendee who cannot read the half addressed to someone
- * else must still be able to get into the event they paid for.
  */
 
 import { useState } from "react";
@@ -61,12 +58,7 @@ export default function LoginClient({ next }: { next?: string }) {
 
             if (response.ok) {
                 const { scheduledSessionId } = (await response.json()) as { scheduledSessionId: string };
-                // `next` is already validated server-side; the ticket's own session
-                // is the fallback so a first-time visitor still lands in the right
-                // room without choosing one.
                 router.push(next ?? `/session/${scheduledSessionId}`);
-                // The cookie was set by the response, and the room page resolves it
-                // server-side, so the router cache has to be dropped.
                 router.refresh();
                 return;
             }
@@ -88,11 +80,13 @@ export default function LoginClient({ next }: { next?: string }) {
     }
 
     return (
-        <form onSubmit={onSubmit} className="space-y-4" noValidate>
-            <div className="space-y-1">
-                <label htmlFor="ticket-code" className="block text-sm font-medium">
+        <form onSubmit={onSubmit} className="space-y-5" noValidate>
+            <div className="space-y-1.5">
+                <label htmlFor="ticket-code" className="block text-sm font-medium text-[var(--cream)]">
                     Ticket code
-                    <span className="block text-xs text-[var(--text-secondary)]">Código de entrada</span>
+                    <span className="mt-0.5 block text-xs font-normal text-[var(--text-muted)]">
+                        Código de entrada
+                    </span>
                 </label>
                 <input
                     id="ticket-code"
@@ -103,14 +97,14 @@ export default function LoginClient({ next }: { next?: string }) {
                     autoComplete="off"
                     autoCapitalize="characters"
                     spellCheck={false}
-                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 font-mono tracking-wider"
+                    className="event-field font-mono tracking-wider"
                 />
             </div>
 
-            <div className="space-y-1">
-                <label htmlFor="ticket-email" className="block text-sm font-medium">
+            <div className="space-y-1.5">
+                <label htmlFor="ticket-email" className="block text-sm font-medium text-[var(--cream)]">
                     Email used to buy the ticket
-                    <span className="block text-xs text-[var(--text-secondary)]">
+                    <span className="mt-0.5 block text-xs font-normal text-[var(--text-muted)]">
                         Correo con el que compraste la entrada
                     </span>
                 </label>
@@ -123,31 +117,29 @@ export default function LoginClient({ next }: { next?: string }) {
                     required
                     autoComplete="email"
                     spellCheck={false}
-                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2"
+                    className="event-field"
                 />
             </div>
 
             {error && (
-                <p role="alert" className="text-sm text-[var(--danger-400,#fca5a5)]">
+                <div role="alert" className="event-alert event-alert--danger">
                     <span className="block">{MESSAGES[error].en}</span>
-                    <span className="block opacity-80">{MESSAGES[error].es}</span>
-                </p>
+                    <span className="mt-1 block opacity-80">{MESSAGES[error].es}</span>
+                </div>
             )}
 
             <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-lg bg-[var(--primary-600)] px-4 py-2.5 font-medium disabled:opacity-60"
+                className="event-button event-button--primary w-full"
             >
                 {submitting ? "Signing in… / Ingresando…" : "Enter the event / Entrar al evento"}
             </button>
 
-            <p className="text-xs text-[var(--text-secondary)]">
-                Your ticket admits one person. The same code and email work again after a refresh or a dropped
-                connection.
-                <span className="block">
-                    Tu entrada admite a una persona. El mismo código y correo funcionan de nuevo si recargás o se corta
-                    la conexión.
+            <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+                Your ticket admits one person. The same code and email work again after a refresh or a dropped connection.
+                <span className="mt-1 block opacity-80">
+                    Tu entrada admite a una persona. El mismo código y correo funcionan de nuevo si recargás o se corta la conexión.
                 </span>
             </p>
         </form>

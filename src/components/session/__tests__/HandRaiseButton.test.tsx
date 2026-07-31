@@ -56,8 +56,8 @@ describe('HandRaiseButton', () => {
         vi.stubGlobal('fetch', fetchMock);
         render(<HandRaiseButton sessionId="event-1" />);
 
-        await waitFor(() => screen.getByRole('button', { name: 'Raise hand' }));
-        await userEvent.click(screen.getByRole('button', { name: 'Raise hand' }));
+        await waitFor(() => screen.getByRole('button', { name: /Raise hand/i }));
+        await userEvent.click(screen.getByRole('button', { name: /Raise hand/i }));
 
         await waitFor(() => {
             expect(screen.getByRole('status')).toHaveTextContent('you are #2 in the queue');
@@ -66,7 +66,7 @@ describe('HandRaiseButton', () => {
             url: '/api/scheduled-sessions/event-1/hand',
             method: 'POST',
         });
-        expect(screen.getByRole('button', { name: 'Lower hand' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Lower hand/i })).toBeInTheDocument();
     });
 
     it('lowers a raised hand with DELETE', async () => {
@@ -77,8 +77,8 @@ describe('HandRaiseButton', () => {
         vi.stubGlobal('fetch', fetchMock);
         render(<HandRaiseButton sessionId="event-1" />);
 
-        await waitFor(() => screen.getByRole('button', { name: 'Lower hand' }));
-        await userEvent.click(screen.getByRole('button', { name: 'Lower hand' }));
+        await waitFor(() => screen.getByRole('button', { name: /Lower hand/i }));
+        await userEvent.click(screen.getByRole('button', { name: /Lower hand/i }));
 
         await waitFor(() => {
             expect(calls).toContainEqual({
@@ -86,7 +86,7 @@ describe('HandRaiseButton', () => {
                 method: 'DELETE',
             });
         });
-        await waitFor(() => screen.getByRole('button', { name: 'Raise hand' }));
+        await waitFor(() => screen.getByRole('button', { name: /Raise hand/i }));
     });
 
     it('notifies the room page when polling observes a promotion, without a reconnect', async () => {

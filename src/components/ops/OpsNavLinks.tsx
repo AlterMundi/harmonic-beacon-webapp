@@ -23,15 +23,15 @@ export default function OpsNavLinks({ links }: { links: NavLink[] }) {
                     <Link
                         key={link.href}
                         href={link.href}
-                        className={`rounded-md px-2 py-1 transition-colors ${
+                        className={`rounded-md px-2 py-1 text-xs transition-colors ${
                             isActive
-                                ? 'bg-white/15 text-[var(--text-primary)]'
-                                : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--text-primary)]'
+                                ? 'bg-white/15 text-[var(--cream)]'
+                                : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--cream)]'
                         }`}
                     >
                         {link.label}
                         {link.live && (
-                            <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-green-400 align-middle" />
+                            <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-[var(--lime)] align-middle" />
                         )}
                     </Link>
                 );

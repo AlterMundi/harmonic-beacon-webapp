@@ -60,9 +60,9 @@ export default function StaffLoginClient() {
     }
 
     return (
-        <form onSubmit={onSubmit} className="space-y-4" noValidate>
-            <div className="space-y-1">
-                <label htmlFor="staff-email" className="block text-sm font-medium">
+        <form onSubmit={onSubmit} className="space-y-5" noValidate>
+            <div className="space-y-1.5">
+                <label htmlFor="staff-email" className="block text-sm font-medium text-[var(--cream)]">
                     Staff email
                 </label>
                 <input
@@ -74,12 +74,12 @@ export default function StaffLoginClient() {
                     required
                     autoComplete="username"
                     spellCheck={false}
-                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2"
+                    className="event-field"
                 />
             </div>
 
-            <div className="space-y-1">
-                <label htmlFor="staff-password" className="block text-sm font-medium">
+            <div className="space-y-1.5">
+                <label htmlFor="staff-password" className="block text-sm font-medium text-[var(--cream)]">
                     Password
                 </label>
                 <input
@@ -90,20 +90,20 @@ export default function StaffLoginClient() {
                     onChange={(event) => setPassword(event.target.value)}
                     required
                     autoComplete="current-password"
-                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2"
+                    className="event-field"
                 />
             </div>
 
             {error && (
-                <p role="alert" className="text-sm text-[var(--danger-400,#fca5a5)]">
+                <div role="alert" className="event-alert event-alert--danger">
                     {MESSAGES[error]}
-                </p>
+                </div>
             )}
 
             <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-lg bg-[var(--primary-600)] px-4 py-2.5 font-medium disabled:opacity-60"
+                className="event-button event-button--primary w-full"
             >
                 {submitting ? "Signing in…" : "Sign in"}
             </button>

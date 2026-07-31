@@ -206,13 +206,8 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
             `${participant.displayName} has the floor`,
         );
         if (!promoted) {
-            // stage_full / LiveKit failure leave the hand raised; the banner
-            // above says which one happened.
             return;
         }
-        // The hand is served: remove it so a later demotion does not drop the
-        // attendee back into the queue at their original timestamp. Failure is
-        // non-fatal — the operator can still use Remove hand.
         await runAction(
             `lower:${participant.id}`,
             { action: 'lower_hand', participantId: participant.id, reason: 'Promoted to stage' },
@@ -267,22 +262,22 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
         <section className="space-y-6" aria-live="polite">
             {/* Status banners */}
             {pollError ? (
-                <div role="alert" className="rounded border border-red-600 bg-red-950/40 px-4 py-2 text-sm text-red-300">
+                <div role="alert" className="rounded border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-2 text-sm text-[var(--danger)]">
                     Polling failed ({pollError}) — showing the last known state. Retrying every {POLL_INTERVAL_MS / 1000}s.
                 </div>
             ) : null}
             {snapshot && !snapshot.liveStateAvailable ? (
-                <div role="alert" className="rounded border border-amber-500 bg-amber-950/40 px-4 py-2 text-sm text-amber-300">
+                <div role="alert" className="rounded border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-2 text-sm text-[var(--warning)]">
                     LiveKit live state unavailable — connection and media are unknown. Durable grants and the hand queue are still current.
                 </div>
             ) : null}
             {reconcilePending.length > 0 ? (
-                <div role="alert" className="rounded border border-amber-500 bg-amber-950/40 px-4 py-2 text-sm text-amber-300">
+                <div role="alert" className="rounded border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-2 text-sm text-[var(--warning)]">
                     {reconcilePending.length} participant{reconcilePending.length !== 1 ? 's' : ''} need{reconcilePending.length === 1 ? 's' : ''} reconciliation — the durable grant and LiveKit disagree.
                 </div>
             ) : null}
             {actionError ? (
-                <div role="alert" className="rounded border border-red-600 bg-red-950/40 px-4 py-2 text-sm text-red-300">
+                <div role="alert" className="rounded border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-2 text-sm text-[var(--danger)]">
                     {actionError.code === 'stage_full'
                         ? `Stage is full — this hand stays #${actionError.queuePosition ?? '?'} in the queue. Take a floor first.`
                         : actionError.code === 'livekit_failed'
@@ -291,13 +286,13 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                 </div>
             ) : null}
             {notice ? (
-                <div role="status" className="rounded border border-green-600 bg-green-950/40 px-4 py-2 text-sm text-green-300">
+                <div role="status" className="rounded border border-[var(--lime)]/40 bg-[var(--lime)]/10 px-4 py-2 text-sm text-[var(--lime)]">
                     {notice}
                 </div>
             ) : null}
 
             <div className="flex items-center justify-between text-sm">
-                <span>
+                <span className="text-[var(--text-secondary)]">
                     Stage: {snapshot ? `${snapshot.activePublishers}/${snapshot.maxPublishers}` : '…'} publishers ·{' '}
                     {queue.length} hand{queue.length !== 1 ? 's' : ''} raised
                 </span>
@@ -305,7 +300,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                     type="button"
                     onClick={() => void reconcile()}
                     disabled={busyKey === 'reconcile'}
-                    className="rounded border border-current px-3 py-1 text-xs hover:opacity-80 disabled:opacity-50"
+                    className="rounded border border-[var(--border-subtle)] px-3 py-1 text-xs hover:bg-white/5 disabled:opacity-50"
                 >
                     Reconcile grants
                 </button>
@@ -313,18 +308,18 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
 
             {/* Stage */}
             <div>
-                <h2 className="mb-2 text-lg font-semibold">On stage</h2>
+                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">On stage</h2>
                 {onStage.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">Nobody has the floor yet.</p>
                 ) : (
                     <ul className="space-y-2">
                         {onStage.map((participant) => (
-                            <li key={participant.id} className="rounded border border-[var(--border,#333)] px-4 py-3">
+                            <li key={participant.id} className="operational-panel">
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="min-w-0">
-                                        <span className="font-medium">{participant.displayName}</span>
+                                        <span className="font-medium text-[var(--cream)]">{participant.displayName}</span>
                                         {participant.staffRole ? (
-                                            <span className="ml-2 text-xs uppercase text-[var(--text-secondary)]">{participant.staffRole}</span>
+                                            <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{participant.staffRole}</span>
                                         ) : null}
                                         <div className="text-xs text-[var(--text-secondary)]">
                                             {connectionBadge(participant)}
@@ -340,7 +335,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                                 type="button"
                                                 disabled={busyKey !== null}
                                                 onClick={() => void setTrackMuted(participant, track, !track.muted)}
-                                                className="rounded border border-current px-2 py-1 text-xs hover:opacity-80 disabled:opacity-50"
+                                                className="rounded border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-white/5 disabled:opacity-50"
                                             >
                                                 {track.muted ? 'Unmute' : 'Mute'} {track.source.toLowerCase()}
                                             </button>
@@ -350,12 +345,12 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                                 type="button"
                                                 disabled={busyKey !== null}
                                                 onClick={() => void takeFloor(participant)}
-                                                className="min-h-10 rounded border border-red-500 px-3 py-2 text-xs text-red-300 hover:opacity-80 disabled:opacity-50"
+                                                className="min-h-10 rounded border border-[var(--danger)] px-3 py-2 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/10 disabled:opacity-50"
                                             >
                                                 Take floor
                                             </button>
                                         ) : (
-                                            <span className="text-xs font-medium text-[var(--text-secondary)]">
+                                            <span className="text-xs font-medium text-[var(--text-muted)]">
                                                 Reserved facilitator slot
                                             </span>
                                         )}
@@ -369,15 +364,15 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
 
             {/* Hand queue */}
             <div>
-                <h2 className="mb-2 text-lg font-semibold">Hand queue</h2>
+                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">Hand queue</h2>
                 {queue.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">No hands raised.</p>
                 ) : (
                     <ul className="space-y-2">
                         {queue.map((participant) => (
-                            <li key={participant.id} className="flex items-center justify-between gap-3 rounded border border-[var(--border,#333)] px-4 py-3">
+                            <li key={participant.id} className="flex items-center justify-between gap-3 operational-panel">
                                 <div className="min-w-0">
-                                    <span className="font-medium">#{participant.queuePosition} — {participant.displayName}</span>
+                                    <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participant.displayName}</span>
                                     <div className="text-xs text-[var(--text-secondary)]">
                                         waiting {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
                                         {' · '}{connectionBadge(participant)}
@@ -390,7 +385,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                         type="button"
                                         disabled={busyKey !== null}
                                         onClick={() => void giveFloor(participant)}
-                                        className="min-h-10 rounded border border-green-500 px-3 py-2 text-xs text-green-300 hover:opacity-80 disabled:opacity-50"
+                                        className="min-h-10 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
                                     >
                                         Give floor
                                     </button>
@@ -398,7 +393,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                         type="button"
                                         disabled={busyKey !== null}
                                         onClick={() => void removeHand(participant)}
-                                        className="min-h-10 rounded border border-current px-3 py-2 text-xs hover:opacity-80 disabled:opacity-50"
+                                        className="min-h-10 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
                                     >
                                         Remove hand
                                     </button>
@@ -411,17 +406,17 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
 
             {/* Audience */}
             <div>
-                <h2 className="mb-2 text-lg font-semibold">Audience ({audience.length})</h2>
+                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">Audience ({audience.length})</h2>
                 {audience.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">No other participants.</p>
                 ) : (
                     <ul className="space-y-1 text-sm">
                         {audience.map((participant) => (
                             <li key={participant.id} className="flex items-center justify-between rounded px-2 py-1">
-                                <span>
+                                <span className="text-[var(--cream)]">
                                     {participant.displayName}
                                     {participant.staffRole ? (
-                                        <span className="ml-2 text-xs uppercase text-[var(--text-secondary)]">{participant.staffRole}</span>
+                                        <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{participant.staffRole}</span>
                                     ) : null}
                                 </span>
                                 <span className="text-xs text-[var(--text-secondary)]">
@@ -434,7 +429,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                 )}
             </div>
 
-            <p className="text-xs text-[var(--text-secondary)]">
+            <p className="text-xs text-[var(--text-muted)]">
                 Signed in as {role}. Queue refreshes every {POLL_INTERVAL_MS / 1000}s; durable grants are the authority.
             </p>
         </section>
