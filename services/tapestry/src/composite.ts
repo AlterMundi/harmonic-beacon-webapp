@@ -52,10 +52,16 @@ export class TapestryCompositor {
   }
 
   /** Mark a session's composite stale (called on ingest and on expiry sweeps). */
-  markDirty(sessionId: string): void {
+  markDirty(sessionId: string, immediate = false): void {
     const entry = this.cache.get(sessionId);
     if (entry) {
       entry.dirty = true;
+      // Staff actions (arrangement changes) must be visible at once — the
+      // rate limit exists to bound ingest-driven rebuild churn, not to make
+      // the ops console feel broken.
+      if (immediate) {
+        entry.builtAtMs = 0;
+      }
     }
   }
 
@@ -104,13 +110,14 @@ export class TapestryCompositor {
   }
 
   private async build(sessionId: string): Promise<Buffer> {
-    const participants = this.store.activeParticipants(
+    // Display order = staff arrangement first, then first-seen (store.orderedActive).
+    const participants = this.store.orderedActive(
       sessionId,
       this.nowMs(),
       this.config.frameTtlMs,
     );
     const tile = this.config.tileSizePx;
-    const inputs = participants.map((participant, index) => ({
+    const inputs = participants.map(({ participant }, index) => ({
       input: participant.tile,
       left: (index % this.config.gridColumns) * tile,
       top: Math.floor(index / this.config.gridColumns) * tile,
