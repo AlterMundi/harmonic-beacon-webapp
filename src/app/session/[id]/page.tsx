@@ -116,6 +116,9 @@ function SessionRoom() {
         isPlaying: isBeaconPlaying,
         setVolume: setBeaconVolume,
         startAudio: startBeaconAudio,
+        isConnected: beaconConnected,
+        hasPlaylistStream,
+        hasLiveStream,
     } = useAudio();
 
     const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
@@ -650,6 +653,14 @@ function SessionRoom() {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* Beacon audio debug — see AudioContext connection/stream state at a glance */}
+                <div className="mx-auto mb-3 max-w-md rounded border border-[var(--border-subtle)] bg-[var(--surface-alt)] px-3 py-2 text-center text-[10px] text-[var(--text-muted)]">
+                    Beacon room: {beaconConnected ? <span className="text-[var(--lime)]">connected</span> : <span className="text-[var(--danger)]">disconnected</span>}
+                    {' · '}Playlist: {hasPlaylistStream ? <span className="text-[var(--lime)]">active</span> : <span className="text-[var(--danger)]">none</span>}
+                    {' · '}Live: {hasLiveStream ? <span className="text-[var(--lime)]">active</span> : <span className="text-[var(--danger)]">none</span>}
+                    {beaconAudioError ? <>{' · '}<span className="text-[var(--danger)]">error: {beaconAudioError}</span></> : null}
                 </div>
 
                 {/* Bottom controls */}
