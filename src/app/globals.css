@@ -595,7 +595,8 @@ body {
    OPERATOR PANEL
    ============================================ */
 
-.operator-panel {
+.operator-panel,
+.operational-panel {
   background: var(--bg-operator);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -735,24 +736,6 @@ body {
 .stage-tile--speaking {
   border-color: rgba(124, 234, 255, 0.5);
   box-shadow: 0 0 16px rgba(124, 234, 255, 0.15);
-}
-
-/* ============================================
-   LANGUAGE-SPECIFIC CONTENT
-   ============================================ */
-
-/* Default: show Spanish, hide English */
-[data-copy="en"] {
-  display: none !important;
-}
-
-/* When English is selected, hide Spanish, show English */
-html[data-lang="en"] [data-copy="es"] {
-  display: none !important;
-}
-
-html[data-lang="en"] [data-copy="en"] {
-  display: revert !important;
 }
 
 /* ============================================
