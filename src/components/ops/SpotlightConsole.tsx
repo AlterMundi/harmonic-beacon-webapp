@@ -125,6 +125,13 @@ function mediaSummary(participant: ConsoleParticipant): string {
         .join(' · ');
 }
 
+function participantLabel(participant: ConsoleParticipant): string {
+    if (participant.principalType === 'staff') {
+        return participant.displayName;
+    }
+    return `${participant.displayName} · ID ${participant.identity.slice(-8)}`;
+}
+
 export default function SpotlightConsole({ sessionId, role }: Props) {
     const [snapshot, setSnapshot] = useState<ParticipantsSnapshot | null>(null);
     const [pollError, setPollError] = useState<string | null>(null);
@@ -200,10 +207,18 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
     }
 
     async function giveFloor(participant: ConsoleParticipant) {
+        if (participant.connected !== true) {
+            setActionError({
+                code: 'participant_not_connected',
+                message: 'This participant is not connected. Wait for them to rejoin or remove the stale hand.',
+            });
+            return;
+        }
+        const label = participantLabel(participant);
         const promoted = await runAction(
             `promote:${participant.id}`,
             { action: 'promote', participantId: participant.id, reason: 'Hand queue' },
-            `${participant.displayName} has the floor`,
+            `${label} has the floor`,
         );
         if (!promoted) {
             return;
@@ -211,22 +226,29 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
         await runAction(
             `lower:${participant.id}`,
             { action: 'lower_hand', participantId: participant.id, reason: 'Promoted to stage' },
-            `${participant.displayName} has the floor`,
+            `${label} has the floor`,
         );
     }
+
+    const inviteToStage = (participant: ConsoleParticipant) =>
+        runAction(
+            `promote:${participant.id}`,
+            { action: 'promote', participantId: participant.id, reason: 'Invited from audience' },
+            `${participantLabel(participant)} was invited to the stage`,
+        );
 
     const takeFloor = (participant: ConsoleParticipant) =>
         runAction(
             `demote:${participant.id}`,
             { action: 'demote', participantId: participant.id, reason: 'Operator took the floor' },
-            `${participant.displayName} was taken off the stage`,
+            `${participantLabel(participant)} was taken off the stage`,
         );
 
     const removeHand = (participant: ConsoleParticipant) =>
         runAction(
             `lower:${participant.id}`,
             { action: 'lower_hand', participantId: participant.id, reason: 'Removed from hand queue' },
-            `${participant.displayName}'s hand was lowered`,
+            `${participantLabel(participant)}'s hand was lowered`,
         );
 
     const setTrackMuted = (participant: ConsoleParticipant, track: LiveTrack, muted: boolean) =>
@@ -280,7 +302,9 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                 <div role="alert" className="rounded border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-2 text-sm text-[var(--danger)]">
                     {actionError.code === 'stage_full'
                         ? `Stage is full — this hand stays #${actionError.queuePosition ?? '?'} in the queue. Take a floor first.`
-                        : actionError.code === 'livekit_failed'
+                        : actionError.code === 'participant_not_connected'
+                          ? actionError.message
+                        : actionError.code === 'livekit_failed' && actionError.reconcileNeeded
                           ? `${actionError.message}. The durable grant was revoked; press Reconcile to retry the LiveKit update.`
                           : `${actionError.message} (${actionError.code})`}
                 </div>
@@ -317,7 +341,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                             <li key={participant.id} className="operational-panel">
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="min-w-0">
-                                        <span className="font-medium text-[var(--cream)]">{participant.displayName}</span>
+                                        <span className="font-medium text-[var(--cream)]">{participantLabel(participant)}</span>
                                         {participant.staffRole ? (
                                             <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{participant.staffRole}</span>
                                         ) : null}
@@ -372,7 +396,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                         {queue.map((participant) => (
                             <li key={participant.id} className="flex items-center justify-between gap-3 operational-panel">
                                 <div className="min-w-0">
-                                    <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participant.displayName}</span>
+                                    <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participantLabel(participant)}</span>
                                     <div className="text-xs text-[var(--text-secondary)]">
                                         waiting {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
                                         {' · '}{connectionBadge(participant)}
@@ -383,11 +407,12 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                 <div className="flex shrink-0 items-center gap-2">
                                     <button
                                         type="button"
-                                        disabled={busyKey !== null}
+                                        disabled={busyKey !== null || participant.connected !== true}
                                         onClick={() => void giveFloor(participant)}
+                                        title={participant.connected === true ? undefined : 'Participant must be connected before joining the stage'}
                                         className="min-h-10 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
                                     >
-                                        Give floor
+                                        {participant.connected === true ? 'Give floor' : 'Waiting for reconnect'}
                                     </button>
                                     <button
                                         type="button"
@@ -414,14 +439,26 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                         {audience.map((participant) => (
                             <li key={participant.id} className="flex items-center justify-between rounded px-2 py-1">
                                 <span className="text-[var(--cream)]">
-                                    {participant.displayName}
+                                    {participantLabel(participant)}
                                     {participant.staffRole ? (
                                         <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{participant.staffRole}</span>
                                     ) : null}
                                 </span>
-                                <span className="text-xs text-[var(--text-secondary)]">
-                                    {connectionBadge(participant)}
-                                    {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()}` : ''}
+                                <span className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                                    <span>
+                                        {connectionBadge(participant)}
+                                        {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()}` : ''}
+                                    </span>
+                                    {participant.connected === true ? (
+                                        <button
+                                            type="button"
+                                            disabled={busyKey !== null}
+                                            onClick={() => void inviteToStage(participant)}
+                                            className="min-h-10 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
+                                        >
+                                            Invite to stage
+                                        </button>
+                                    ) : null}
                                 </span>
                             </li>
                         ))}
