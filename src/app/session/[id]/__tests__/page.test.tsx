@@ -150,6 +150,17 @@ const TOKEN_RESPONSE = {
     principalKind: 'ticket',
 };
 
+const ENTRY_RESPONSE = {
+    state: 'READY',
+    session: {
+        id: 'session-1',
+        title: 'Test Session',
+        language: 'ENGLISH',
+        scheduledAt: '2026-08-01T18:00:00.000Z',
+        status: 'LIVE',
+    },
+};
+
 beforeEach(() => {
     window.sessionStorage.clear();
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
@@ -158,6 +169,9 @@ beforeEach(() => {
     audioMocks.startBeaconAudio.mockClear();
     audioMocks.startBeaconAudio.mockResolvedValue(true);
     global.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/entry')) {
+            return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE });
+        }
         if (url.includes('/token')) {
             return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE });
         }
@@ -175,6 +189,112 @@ async function renderConnected() {
     render(<SessionRoomPage />);
     await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
 }
+
+describe('SessionRoomPage - event entry', () => {
+    it('shows a truthful waiting room and mints no LiveKit token before doors open', async () => {
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        state: 'WAITING',
+                        session: {
+                            ...ENTRY_RESPONSE.session,
+                            language: 'SPANISH',
+                            status: 'SCHEDULED',
+                        },
+                    }),
+                } as Response);
+            }
+            throw new Error(`Unexpected request: ${String(url)}`);
+        });
+
+        render(<SessionRoomPage />);
+
+        expect(await screen.findByText('Entrada confirmada')).toBeInTheDocument();
+        expect(screen.getByText('Test Session')).toBeInTheDocument();
+        expect(screen.getByText(/automáticamente cuando el equipo las abra/)).toBeInTheDocument();
+        expect(Room).not.toHaveBeenCalled();
+        expect(global.fetch).not.toHaveBeenCalledWith(expect.stringContaining('/token'));
+    });
+
+    it('renders the designed closing state without mounting LiveKit', async () => {
+        vi.mocked(global.fetch).mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                state: 'ENDED',
+                session: { ...ENTRY_RESPONSE.session, status: 'ENDED' },
+            }),
+        } as Response);
+
+        render(<SessionRoomPage />);
+
+        expect(await screen.findByText('Session ended')).toBeInTheDocument();
+        expect(screen.getByText('Thank you for being part of it.')).toBeInTheDocument();
+        expect(Room).not.toHaveBeenCalled();
+    });
+
+    it('enters automatically when a status refresh observes open doors', async () => {
+        let entryChecks = 0;
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                entryChecks += 1;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => entryChecks === 1
+                        ? {
+                            state: 'WAITING',
+                            session: { ...ENTRY_RESPONSE.session, status: 'SCHEDULED' },
+                        }
+                        : ENTRY_RESPONSE,
+                } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        render(<SessionRoomPage />);
+        expect(await screen.findByText('Ticket confirmed')).toBeInTheDocument();
+
+        fireEvent.focus(window);
+
+        await waitFor(() => expect(Room).toHaveBeenCalledOnce());
+        expect(await screen.findByTestId('viewer-identity')).toBeInTheDocument();
+    });
+
+    it('disconnects the media room and shows closing copy when staff ends the event', async () => {
+        let entryChecks = 0;
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                entryChecks += 1;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => entryChecks === 1
+                        ? ENTRY_RESPONSE
+                        : {
+                            state: 'ENDED',
+                            session: { ...ENTRY_RESPONSE.session, status: 'ENDED' },
+                        },
+                } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        render(<SessionRoomPage />);
+        await screen.findByText('Test Session');
+        const connectedRoom = currentRoom();
+
+        fireEvent.focus(window);
+
+        expect(await screen.findByText('Session ended')).toBeInTheDocument();
+        expect(connectedRoom.disconnect).toHaveBeenCalledOnce();
+    });
+});
 
 describe('SessionRoomPage - participant identity', () => {
     it('shows the server-authorized display name, role and short identity without diagnostics', async () => {
@@ -411,9 +531,18 @@ describe('SessionRoomPage - audio activation', () => {
 
 describe('SessionRoomPage - initial connection failure', () => {
     it('offers a retry without forcing the attendee back through login', async () => {
-        (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-            ok: false,
-            json: async () => ({ error: 'Room is temporarily unavailable' }),
+        let tokenAttempts = 0;
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+            }
+            if (String(url).includes('/token') && tokenAttempts++ === 0) {
+                return Promise.resolve({
+                    ok: false,
+                    json: async () => ({ error: 'Room is temporarily unavailable' }),
+                } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
         });
 
         render(<SessionRoomPage />);

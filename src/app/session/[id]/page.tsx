@@ -834,8 +834,178 @@ function SessionRoom() {
 export default function SessionRoomPage() {
     const { id } = useParams<{ id: string }>();
 
+    return <SessionEntryGate sessionId={id} />;
+}
+
+type EntryState = 'WAITING' | 'READY' | 'ENDED' | 'CANCELLED';
+
+type EntrySession = {
+    id: string;
+    title: string;
+    language: 'ENGLISH' | 'SPANISH';
+    scheduledAt: string;
+    status: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
+};
+
+type EntryResponse = {
+    state: EntryState;
+    session: EntrySession;
+};
+
+const ENTRY_POLL_MS = 3_000;
+
+function SessionEntryGate({ sessionId }: { sessionId: string }) {
+    const router = useRouter();
+    const [entry, setEntry] = useState<EntryResponse | null>(null);
+    const [entryError, setEntryError] = useState<string | null>(null);
+    const [retryEntry, setRetryEntry] = useState(0);
+
+    useEffect(() => {
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        let inFlight = false;
+
+        const checkEntry = async () => {
+            if (cancelled || inFlight) return;
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            inFlight = true;
+            try {
+                const response = await fetch(`/api/scheduled-sessions/${sessionId}/entry`, {
+                    cache: 'no-store',
+                });
+                const data = await response.json().catch(() => ({})) as Partial<EntryResponse> & { error?: string };
+                if (!response.ok || !data.state || !data.session) {
+                    throw new Error(data.error || `Entry status unavailable (HTTP ${response.status})`);
+                }
+                if (!cancelled) {
+                    setEntry(data as EntryResponse);
+                    setEntryError(null);
+                }
+            } catch (failure) {
+                if (!cancelled) {
+                    setEntryError(failure instanceof Error ? failure.message : 'Entry status unavailable');
+                }
+            } finally {
+                inFlight = false;
+                if (!cancelled) timer = setTimeout(checkEntry, ENTRY_POLL_MS);
+            }
+        };
+
+        const checkWhenVisible = () => {
+            if (document.visibilityState === 'visible') void checkEntry();
+        };
+        void checkEntry();
+        window.addEventListener('focus', checkWhenVisible);
+        window.addEventListener('online', checkWhenVisible);
+        document.addEventListener('visibilitychange', checkWhenVisible);
+        return () => {
+            cancelled = true;
+            if (timer) clearTimeout(timer);
+            window.removeEventListener('focus', checkWhenVisible);
+            window.removeEventListener('online', checkWhenVisible);
+            document.removeEventListener('visibilitychange', checkWhenVisible);
+        };
+    }, [sessionId, retryEntry]);
+
+    if (!entry) {
+        return (
+            <main className="event-shell">
+                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                    <div className="terminal-state">
+                        <div className="terminal-state__icon">&#10022;</div>
+                        <h1 className="terminal-state__title">Preparing your room</h1>
+                        <p className="terminal-state__body">
+                            {entryError || 'Confirming your ticket and event status…'}
+                        </p>
+                        {entryError ? (
+                            <button
+                                type="button"
+                                onClick={() => setRetryEntry((value) => value + 1)}
+                                className="event-button event-button--primary mt-4"
+                            >
+                                Try again / Reintentar
+                            </button>
+                        ) : null}
+                    </div>
+                </div>
+            </main>
+        );
+    }
+
+    if (entry.state === 'WAITING') {
+        const spanish = entry.session.language === 'SPANISH';
+        const startsAt = new Intl.DateTimeFormat(spanish ? 'es-AR' : 'en-US', {
+            dateStyle: 'full',
+            timeStyle: 'short',
+        }).format(new Date(entry.session.scheduledAt));
+        return (
+            <main className="event-shell">
+                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                    <section role="status" aria-live="polite" className="event-card w-full max-w-md text-center">
+                        <div className="terminal-state__icon text-[var(--lime)]">&#10022;</div>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--lime)]">
+                            {spanish ? 'Entrada confirmada' : 'Ticket confirmed'}
+                        </p>
+                        <h1 className="terminal-state__title mt-2">{entry.session.title}</h1>
+                        <p className="terminal-state__body mt-2">
+                            {spanish
+                                ? 'Las puertas todavía están cerradas. Esta página te hará entrar automáticamente cuando el equipo las abra.'
+                                : 'The doors are not open yet. This page will bring you in automatically when the team opens them.'}
+                        </p>
+                        <p className="mt-4 text-sm font-medium text-[var(--gold)]">{startsAt}</p>
+                        {entryError ? (
+                            <p className="mt-4 text-xs text-[var(--warning)]">
+                                {spanish
+                                    ? 'Estamos recuperando la conexión para comprobar las puertas. Tu entrada sigue confirmada.'
+                                    : 'We are reconnecting to check the doors. Your ticket remains confirmed.'}
+                            </p>
+                        ) : (
+                            <p className="mt-4 text-xs text-[var(--text-muted)]">
+                                {spanish ? 'Comprobando las puertas automáticamente…' : 'Checking the doors automatically…'}
+                            </p>
+                        )}
+                    </section>
+                </div>
+            </main>
+        );
+    }
+
+    if (entry.state === 'ENDED' || entry.state === 'CANCELLED') {
+        const spanish = entry.session.language === 'SPANISH';
+        const cancelled = entry.state === 'CANCELLED';
+        return (
+            <main className="event-shell">
+                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                    <section role="status" aria-live="polite" className="event-card w-full max-w-sm text-center">
+                        <div className="terminal-state__icon">&#10022;</div>
+                        <h1 className="terminal-state__title">
+                            {cancelled
+                                ? (spanish ? 'Sesión cancelada' : 'Session cancelled')
+                                : (spanish ? 'La sesión terminó' : 'Session ended')}
+                        </h1>
+                        <p className="terminal-state__body">
+                            {cancelled
+                                ? (spanish ? 'Esta sesión no se realizará.' : 'This session will not take place.')
+                                : (spanish ? 'Gracias por haber sido parte.' : 'Thank you for being part of it.')}
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => router.push('/')}
+                            className="event-button event-button--secondary mt-4 w-full"
+                        >
+                            {spanish ? 'Volver' : 'Back to sessions'}
+                        </button>
+                    </section>
+                </div>
+            </main>
+        );
+    }
+
     return (
-        <AudioProvider sessionId={id}>
+        <AudioProvider sessionId={sessionId}>
             <SessionRoom />
         </AudioProvider>
     );
