@@ -37,6 +37,10 @@ export async function GET(
             identity: principal.identity,
             room: principal.session.roomName,
             canPublish: principal.canPublish,
+            displayName: principal.displayName,
+            // Lets the room page gate attendee-only controls (hand queue)
+            // without probing an endpoint that 403s for staff.
+            principalKind: principal.ticketEntitlementId ? 'ticket' : 'staff',
             session: {
                 id: principal.session.id,
                 title: principal.session.title,
