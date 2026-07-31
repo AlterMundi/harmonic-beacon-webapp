@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { principalFromToken } from '@/lib/principal';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,10 +46,11 @@ export async function GET(
         return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
     if (principal.kind === 'staff') {
-        const assignedFacilitator =
-            principal.role === 'FACILITATOR' && session.facilitatorId === principal.userId;
-        const operations = principal.role === 'OPERATOR' || principal.role === 'ADMIN';
-        if (!assignedFacilitator && !operations) {
+        const policy = eventStaffPolicy(
+            principal.role,
+            session.facilitatorId === principal.userId,
+        );
+        if (!policy.canOperateEvent) {
             return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
         }
     }

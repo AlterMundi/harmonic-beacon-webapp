@@ -97,7 +97,7 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
         expect((await getEntry()).status).toBe(403);
     });
 
-    it.each(['OPERATOR', 'ADMIN'])('lets %s preflight any event', async (role) => {
+    it.each(['OPERATOR', 'ADMIN', 'FACILITATOR_OP'])('lets %s preflight any event', async (role) => {
         principalFromToken.mockResolvedValue({
             kind: 'staff',
             webSessionId: 'web-staff',

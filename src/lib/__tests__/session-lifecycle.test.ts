@@ -40,7 +40,7 @@ describe('decideSessionTransition', () => {
         ['SCHEDULED', 'CANCELLED'],
         ['LIVE', 'CANCELLED'],
     ] as const)('allows %s → %s', (status, targetStatus) => {
-        const actor = targetStatus === 'CANCELLED'
+        const actor: Parameters<typeof decideSessionTransition>[0]['actor'] = targetStatus === 'CANCELLED'
             ? { id: 'admin-1', role: 'ADMIN' }
             : { id: 'facilitator-1', role: 'FACILITATOR' };
         expect(decide({
@@ -85,7 +85,7 @@ describe('decideSessionTransition', () => {
         }), 'forbidden');
     });
 
-    it.each(['OPERATOR', 'ADMIN'])('allows %s to operate any event', (role) => {
+    it.each(['OPERATOR', 'ADMIN', 'FACILITATOR_OP'] as const)('allows %s to operate any event', (role) => {
         expect(decide({ actor: { id: 'staff-1', role } }).kind).toBe('transition');
     });
 
@@ -110,6 +110,20 @@ describe('decideSessionTransition', () => {
             now: new Date('2026-08-01T12:00:00Z'),
             reason: 'Approved rehearsal',
         })).toMatchObject({ kind: 'transition', adminOverride: true });
+    });
+
+    it('gives FACILITATOR_OP the same reasoned lifecycle override without treating other events as assigned', () => {
+        expect(decide({
+            actor: { id: 'facilitator-op-1', role: 'FACILITATOR_OP' },
+            now: new Date('2026-08-01T12:00:00Z'),
+            reason: 'Approved rehearsal',
+        })).toMatchObject({ kind: 'transition', adminOverride: true });
+        expect(decide({
+            session: { ...baseSession, status: 'LIVE' },
+            actor: { id: 'facilitator-op-1', role: 'FACILITATOR_OP' },
+            targetStatus: 'CANCELLED',
+            reason: 'Safety cancellation',
+        }).kind).toBe('transition');
     });
 
     it('requires a reason for exceptional transitions', () => {

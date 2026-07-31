@@ -77,4 +77,17 @@ describe('SessionLifecycleControl', () => {
         });
         expect(screen.getByRole('button', { name: 'Open doors' })).toBeEnabled();
     });
+
+    it('lets FACILITATOR_OP provide the same audited override reason', () => {
+        render(<SessionLifecycleControl
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            scheduledAt="2026-08-02T18:00:00Z"
+            role="FACILITATOR_OP"
+        />);
+        fireEvent.change(screen.getByLabelText(/Operational reason/), {
+            target: { value: 'Approved rehearsal' },
+        });
+        expect(screen.getByRole('button', { name: 'Open doors' })).toBeEnabled();
+    });
 });

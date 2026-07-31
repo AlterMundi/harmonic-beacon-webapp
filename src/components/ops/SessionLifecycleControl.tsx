@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { StaffRole } from '@prisma/client';
 
 type Props = {
     sessionId: string;
     initialStatus: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
     scheduledAt: string;
-    role: string;
+    role: StaffRole;
 };
 
 const EARLY_MS = 10 * 60 * 1000;
@@ -35,7 +36,7 @@ export default function SessionLifecycleControl({
         const start = new Date(scheduledAt).getTime();
         return nowMs < start - EARLY_MS || nowMs > start + LATE_MS;
     }, [scheduledAt, nowMs]);
-    const canOverrideWindow = role === 'ADMIN';
+    const canOverrideWindow = role === 'ADMIN' || role === 'FACILITATOR_OP';
 
     async function transition(targetStatus: 'LIVE' | 'ENDED') {
         setBusy(true);

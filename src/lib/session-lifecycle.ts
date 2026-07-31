@@ -1,6 +1,7 @@
-import { Prisma, type ScheduledSessionStatus } from '@prisma/client';
+import { Prisma, type ScheduledSessionStatus, type StaffRole } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
+import { eventStaffPolicy, hasStaffCapability } from '@/lib/staff-capabilities';
 
 export const SESSION_OPEN_EARLY_MS = 10 * 60 * 1000;
 export const SESSION_OPEN_LATE_MS = 60 * 60 * 1000;
@@ -12,7 +13,7 @@ export type LifecycleTargetStatus = Extract<
 
 type LifecycleActor = {
     id: string;
-    role: string;
+    role: StaffRole;
 };
 
 type TransitionableSession = {
@@ -55,11 +56,11 @@ export function decideSessionTransition(input: {
 }): TransitionDecision {
     const { session, actor, targetStatus, now } = input;
     const reason = input.reason?.trim() || '';
-    const globallyAuthorized = actor.role === 'OPERATOR' || actor.role === 'ADMIN';
-    const assignedFacilitator =
-        actor.role === 'FACILITATOR' && session.facilitatorId === actor.id;
-
-    if (!globallyAuthorized && !assignedFacilitator) {
+    const policy = eventStaffPolicy(
+        actor.role,
+        session.facilitatorId === actor.id,
+    );
+    if (!policy.canOperateEvent) {
         throw new SessionLifecycleError(
             403,
             'forbidden',
@@ -69,7 +70,7 @@ export function decideSessionTransition(input: {
 
     // Cancellation is an administrative action even when a repeated request
     // has nothing left to mutate.
-    if (targetStatus === 'CANCELLED' && actor.role !== 'ADMIN') {
+    if (targetStatus === 'CANCELLED' && !hasStaffCapability(actor.role, 'administer_system')) {
         throw new SessionLifecycleError(
             403,
             'forbidden',
@@ -108,7 +109,7 @@ export function decideSessionTransition(input: {
         const latest = session.scheduledAt.getTime() + SESSION_OPEN_LATE_MS;
         const outsideWindow = now.getTime() < earliest || now.getTime() > latest;
         if (outsideWindow) {
-            if (actor.role !== 'ADMIN') {
+            if (!hasStaffCapability(actor.role, 'administer_system')) {
                 throw new SessionLifecycleError(
                     409,
                     'outside_open_window',
@@ -212,6 +213,7 @@ export async function transitionScheduledSession(input: {
         await tx.auditLog.create({
             data: {
                 actorUserId: input.actor.id,
+                actorRole: input.actor.role,
                 action: 'session.lifecycle_transition',
                 targetType: 'SCHEDULED_SESSION',
                 targetId: session.id,
