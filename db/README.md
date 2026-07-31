@@ -26,17 +26,22 @@ database in the repo, and it is regenerated from `prisma/seed-test-fixtures.ts`.
 
 ### Ticket codes (6 per session)
 
+Near-identical on purpose for easy manual typing: `TEST-TEST-TEST-TES` + one
+letter for Spanish, `TEST-TEST-TEST-TEN` + one letter for English.
+
 | Spanish session | English session | State | Notes |
 |---|---|---|---|
-| `TEST-ES-0001-000A` | `TEST-EN-0001-001A` | ISSUED | log in with any email (binds on first use) |
-| `TEST-ES-0002-000B` | `TEST-EN-0002-001B` | ISSUED | |
-| `TEST-ES-0003-000C` | `TEST-EN-0003-001C` | ISSUED | |
-| `TEST-ES-0004-000D` | `TEST-EN-0004-001D` | BOUND | email must be `asistente@test.beacon` / `attendee@test.beacon` |
-| `TEST-ES-0005-000E` | `TEST-EN-0005-001E` | REVOKED | login must fail |
-| `TEST-ES-0006-000F` | `TEST-EN-0006-001F` | ISSUED | COMP tier |
+| `TEST-TEST-TEST-TESA` | `TEST-TEST-TEST-TENA` | ISSUED | log in with any email (binds on first use) |
+| `TEST-TEST-TEST-TESB` | `TEST-TEST-TEST-TENB` | ISSUED | |
+| `TEST-TEST-TEST-TESC` | `TEST-TEST-TEST-TENC` | ISSUED | |
+| `TEST-TEST-TEST-TESD` | `TEST-TEST-TEST-TEND` | BOUND | email must be `asistente@test.beacon` / `attendee@test.beacon` |
+| `TEST-TEST-TEST-TESE` | `TEST-TEST-TEST-TENE` | REVOKED | login must fail |
+| `TEST-TEST-TEST-TESF` | `TEST-TEST-TEST-TENF` | ISSUED | COMP tier |
 
-ES and EN tickets use distinct last-fours (`000x` vs `001x`) so operator
-last-four lookups stay unambiguous.
+ES last-fours start with `TES`, EN with `TEN`, so operator last-four lookups
+stay unambiguous. (A bare `test` code is impossible by design: the login
+route and `digestTicketCode` require ≥16 characters, and `codeDigest` is
+unique across the whole table.)
 
 ## Restore it
 

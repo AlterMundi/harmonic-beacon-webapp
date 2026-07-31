@@ -195,21 +195,23 @@ async function main() {
                 }
 
                 // ── Tickets: 3 issued, 1 bound, 1 revoked, 1 comp ────
+                // Codes are near-identical for easy manual typing during
+                // testing: TEST-TEST-TEST-TESx (ES) / TENx (EN). They must
+                // stay unique across the whole table (codeDigest is @unique)
+                // and satisfy TICKET_CODE_PATTERN (16 body chars, A-Z2-9).
                 const expiresAt = ticketExpiresAt(event.scheduledAt);
-                // ES and EN use distinct last-fours (000x vs 001x) so operator
-                // last-four lookups stay unambiguous in the test dataset.
-                const lastFourBase = event.codePrefix === 'TEST-ES' ? '000' : '001';
+                const letterBase = event.codePrefix === 'TEST-ES' ? 'TES' : 'TEN';
                 const tickets = [
-                    { suffix: `0001-${lastFourBase}A`, state: 'ISSUED' as const, tier: event.tier },
-                    { suffix: `0002-${lastFourBase}B`, state: 'ISSUED' as const, tier: event.tier },
-                    { suffix: `0003-${lastFourBase}C`, state: 'ISSUED' as const, tier: event.tier },
-                    { suffix: `0004-${lastFourBase}D`, state: 'BOUND' as const, tier: event.tier },
-                    { suffix: `0005-${lastFourBase}E`, state: 'REVOKED' as const, tier: event.tier },
-                    { suffix: `0006-${lastFourBase}F`, state: 'ISSUED' as const, tier: 'COMP' as const },
+                    { letter: 'A', state: 'ISSUED' as const, tier: event.tier },
+                    { letter: 'B', state: 'ISSUED' as const, tier: event.tier },
+                    { letter: 'C', state: 'ISSUED' as const, tier: event.tier },
+                    { letter: 'D', state: 'BOUND' as const, tier: event.tier },
+                    { letter: 'E', state: 'REVOKED' as const, tier: event.tier },
+                    { letter: 'F', state: 'ISSUED' as const, tier: 'COMP' as const },
                 ];
 
                 for (const ticket of tickets) {
-                    const code = `${event.codePrefix}-${ticket.suffix}`;
+                    const code = `TEST-TEST-TEST-${letterBase}${ticket.letter}`;
                     const storage = ticketCodeStorage(code);
                     const boundEmail = ticket.state === 'BOUND' ? ATTENDEE_EMAILS[event.codePrefix] : null;
                     const revoked = ticket.state === 'REVOKED';
