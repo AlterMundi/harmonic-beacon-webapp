@@ -18,8 +18,6 @@ import LanguageControl from "@/components/brand/LanguageControl";
 
 export const dynamic = "force-dynamic";
 
-type Lang = "es" | "en";
-
 type WeekendEvent = {
     id: string;
     language: "ENGLISH" | "SPANISH";
@@ -62,15 +60,6 @@ function formatTimeOnly(at: Date, locale: string, timeZone: string): string {
     return new Intl.DateTimeFormat(locale, {
         hour: "2-digit",
         minute: "2-digit",
-        timeZone,
-    }).format(at);
-}
-
-function formatDateOnly(at: Date, locale: string, timeZone: string): string {
-    return new Intl.DateTimeFormat(locale, {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
         timeZone,
     }).format(at);
 }
