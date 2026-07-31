@@ -5,6 +5,12 @@
  *        Authenticated JPEG ingest (raw image/jpeg body, size-capped).
  *   GET  /tapestry/sessions/:sessionId/composite.jpg
  *        Authenticated composite JPEG.
+ *   GET  /tapestry/sessions/:sessionId/participants
+ *        Authenticated list of active participant ids in display order.
+ *   PUT  /tapestry/sessions/:sessionId/order
+ *        Authenticated staff arrangement: JSON {"order": string[]}.
+ *   GET  /tapestry/sessions/:sessionId/participants/:participantId/frame.jpg
+ *        Authenticated single tile JPEG (for the ops arrange UI).
  *   GET  /health
  *        Unauthenticated liveness/state: counts only, never identifiers.
  *
@@ -24,6 +30,10 @@ export const INTERNAL_SECRET_HEADER = "x-tapestry-internal-secret";
 const FRAME_ROUTE =
   /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/participants\/([A-Za-z0-9_-]{1,128})\/frame$/;
 const COMPOSITE_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/composite\.jpg$/;
+const PARTICIPANTS_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/participants$/;
+const ORDER_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/order$/;
+const TILE_ROUTE =
+  /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/participants\/([A-Za-z0-9_-]{1,128})\/frame\.jpg$/;
 
 export interface TapestryServer {
   server: Server;
@@ -188,11 +198,102 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
     });
   }
 
+  async function handleParticipants(
+    req: IncomingMessage,
+    res: ServerResponse,
+    sessionId: string,
+  ): Promise<void> {
+    if (!secretMatches(req.headers[INTERNAL_SECRET_HEADER] as string | undefined, config.internalSecret)) {
+      sendJson(res, 401, { error: "unauthorized" });
+      return;
+    }
+    if (!store.hasSession(sessionId)) {
+      sendJson(res, 404, { error: "unknown_session" });
+      return;
+    }
+    const ids = store
+      .orderedActive(sessionId, Date.now(), config.frameTtlMs)
+      .map(({ id }) => id);
+    sendJson(res, 200, { participants: ids });
+  }
+
+  async function handleOrder(
+    req: IncomingMessage,
+    res: ServerResponse,
+    sessionId: string,
+  ): Promise<void> {
+    if (!secretMatches(req.headers[INTERNAL_SECRET_HEADER] as string | undefined, config.internalSecret)) {
+      sendJson(res, 401, { error: "unauthorized" });
+      return;
+    }
+    if (!store.hasSession(sessionId)) {
+      sendJson(res, 404, { error: "unknown_session" });
+      return;
+    }
+    let body: Buffer;
+    try {
+      body = await readBody(req, 64 * 1024);
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        sendJson(res, 413, { error: "body_too_large" });
+        return;
+      }
+      throw error;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body.toString("utf8"));
+    } catch {
+      sendJson(res, 400, { error: "invalid_json" });
+      return;
+    }
+    const order = (parsed as { order?: unknown }).order;
+    if (
+      !Array.isArray(order) ||
+      order.some((id) => typeof id !== "string" || !isValidOpaqueId(id)) ||
+      new Set(order).size !== order.length
+    ) {
+      sendJson(res, 400, { error: "invalid_order" });
+      return;
+    }
+    store.setOrder(sessionId, order as string[]);
+    compositor.markDirty(sessionId, true);
+    sendJson(res, 200, { ok: true, stored: (order as string[]).length });
+  }
+
+  async function handleTile(
+    req: IncomingMessage,
+    res: ServerResponse,
+    sessionId: string,
+    participantId: string,
+  ): Promise<void> {
+    if (!secretMatches(req.headers[INTERNAL_SECRET_HEADER] as string | undefined, config.internalSecret)) {
+      sendJson(res, 401, { error: "unauthorized" });
+      return;
+    }
+    const entry = store
+      .orderedActive(sessionId, Date.now(), config.frameTtlMs)
+      .find(({ id }) => id === participantId);
+    if (!entry) {
+      sendJson(res, 404, { error: "unknown_participant" });
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "image/jpeg",
+      "content-length": entry.participant.tile.length,
+      "cache-control": "no-store",
+    });
+    res.end(entry.participant.tile);
+  }
+
   const server = createServer((req, res) => {
     void (async () => {
       const url = new URL(req.url ?? "/", "http://tapestry.internal");
       const frameMatch = url.pathname.match(FRAME_ROUTE);
       const compositeMatch = url.pathname.match(COMPOSITE_ROUTE);
+      const participantsMatch = url.pathname.match(PARTICIPANTS_ROUTE);
+      const orderMatch = url.pathname.match(ORDER_ROUTE);
+      const tileMatch = url.pathname.match(TILE_ROUTE);
 
       if (req.method === "POST" && frameMatch) {
         const [, sessionId, participantId] = frameMatch;
@@ -205,6 +306,23 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
       }
       if (req.method === "GET" && compositeMatch) {
         await handleComposite(req, res, compositeMatch[1]);
+        return;
+      }
+      if (req.method === "GET" && participantsMatch) {
+        await handleParticipants(req, res, participantsMatch[1]);
+        return;
+      }
+      if (req.method === "PUT" && orderMatch) {
+        await handleOrder(req, res, orderMatch[1]);
+        return;
+      }
+      if (req.method === "GET" && tileMatch) {
+        const [, sessionId, participantId] = tileMatch;
+        if (!isValidOpaqueId(sessionId) || !isValidOpaqueId(participantId)) {
+          sendJson(res, 400, { error: "invalid_id" });
+          return;
+        }
+        await handleTile(req, res, sessionId, participantId);
         return;
       }
       if (req.method === "GET" && url.pathname === "/health") {

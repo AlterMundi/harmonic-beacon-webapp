@@ -11,6 +11,7 @@ import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 
 import SpotlightConsole from '@/components/ops/SpotlightConsole';
+import TapestryArrange from '@/components/ops/TapestryArrange';
 import { prisma } from '@/lib/db';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
@@ -71,6 +72,7 @@ export default async function OpsSessionPage({
                 {staff.name} ({staff.role})
             </p>
             <SpotlightConsole sessionId={scheduledSession.id} role={staff.role} />
+            <TapestryArrange sessionId={scheduledSession.id} />
         </main>
     );
 }

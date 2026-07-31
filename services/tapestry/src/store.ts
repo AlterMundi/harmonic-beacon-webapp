@@ -22,6 +22,8 @@ export type IngestResult =
 
 export class TapestryStore {
   private readonly sessions = new Map<string, Map<string, StoredParticipant>>();
+  /** Staff-set display order per session: opaque participant ids, front of grid first. */
+  private readonly orders = new Map<string, string[]>();
 
   constructor(
     sessionIds: readonly string[],
@@ -86,6 +88,56 @@ export class TapestryStore {
     return [...session.values()]
       .filter((p) => nowMs - p.lastSeenMs <= ttlMs)
       .sort((a, b) => a.firstSeenMs - b.firstSeenMs);
+  }
+
+  /**
+   * Persist a staff arrangement for a session. Ids are stored verbatim —
+   * ids without an active frame are simply skipped at render time, so an
+   * arrangement survives participants leaving and rejoining.
+   */
+  setOrder(sessionId: string, order: readonly string[]): boolean {
+    if (!this.sessions.has(sessionId)) {
+      return false;
+    }
+    this.orders.set(sessionId, [...order].slice(0, this.maxParticipantsPerSession));
+    return true;
+  }
+
+  /**
+   * Active participants of a session in display order: the staff arrangement
+   * first (in its stored sequence, skipping inactive ids), then everyone else
+   * by first-seen. Each entry carries its opaque id so callers can address
+   * individual tiles.
+   */
+  orderedActive(
+    sessionId: string,
+    nowMs: number,
+    ttlMs: number,
+  ): Array<{ id: string; participant: StoredParticipant }> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return [];
+    }
+    const active = [...session.entries()].filter(
+      ([, p]) => nowMs - p.lastSeenMs <= ttlMs,
+    );
+    const byId = new Map(active);
+    const ordered: Array<{ id: string; participant: StoredParticipant }> = [];
+    const seen = new Set<string>();
+    for (const id of this.orders.get(sessionId) ?? []) {
+      const participant = byId.get(id);
+      if (participant && !seen.has(id)) {
+        ordered.push({ id, participant });
+        seen.add(id);
+      }
+    }
+    const rest = active
+      .filter(([id]) => !seen.has(id))
+      .sort(([, a], [, b]) => a.firstSeenMs - b.firstSeenMs);
+    for (const [id, participant] of rest) {
+      ordered.push({ id, participant });
+    }
+    return ordered;
   }
 
   hasSession(sessionId: string): boolean {
