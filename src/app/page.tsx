@@ -36,7 +36,10 @@ function safeNext(raw: string | string[] | undefined): string | undefined {
 async function weekendEvents(): Promise<WeekendEvent[] | null> {
     try {
         return await prisma.scheduledSession.findMany({
-            where: { status: { in: ["SCHEDULED", "LIVE"] } },
+            where: {
+                status: { in: ["SCHEDULED", "LIVE"] },
+                isTest: false,
+            },
             orderBy: { scheduledAt: "asc" },
             select: { id: true, language: true, scheduledAt: true },
         });

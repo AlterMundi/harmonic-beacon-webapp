@@ -12,6 +12,7 @@ export type EventDefinition = {
     roomName: string;
     scheduledAt: Date;
     language: WeekendLanguage;
+    isTest: false;
 };
 
 export type StaffDefinition = {
@@ -86,7 +87,7 @@ function parseEvent(
         throw new Error(`${name}.scheduledAt must fall on ${expectedDate} UTC`);
     }
 
-    return { id, title, description, roomName, scheduledAt, language };
+    return { id, title, description, roomName, scheduledAt, language, isTest: false };
 }
 
 export function loadSeedContract(

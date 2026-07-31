@@ -73,6 +73,7 @@ model ScheduledSession {
   startedAt     DateTime?              @map("started_at")
   endedAt       DateTime?              @map("ended_at")
   status        ScheduledSessionStatus @default(SCHEDULED)
+  isTest        Boolean                @default(false) @map("is_test")
   paidMode      Boolean                @default(true) @map("paid_mode")
   attendeeCap   Int                    @default(150) @map("attendee_cap")
   maxPublishers Int                    @default(6) @map("max_publishers")

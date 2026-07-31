@@ -83,11 +83,26 @@ describe('landing page', () => {
         await renderPage();
 
         expect(findMany).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { status: { in: ['SCHEDULED', 'LIVE'] } } }),
+            expect.objectContaining({
+                where: {
+                    status: { in: ['SCHEDULED', 'LIVE'] },
+                    isTest: false,
+                },
+            }),
         );
         // No paid-mode or attendee-cap columns leak into the public page.
         const select = findMany.mock.calls[0][0].select;
         expect(Object.keys(select).sort()).toEqual(['id', 'language', 'scheduledAt']);
+    });
+
+    it('excludes test fixtures from public discovery and purchase links by durable data', async () => {
+        const findMany = mountDb(vi.fn().mockResolvedValue([]));
+        vi.stubEnv('TICKET_PURCHASE_URL', 'https://tickets.example.invalid/harmonic-beacon');
+
+        await renderPage();
+
+        expect(findMany.mock.calls[0][0].where.isTest).toBe(false);
+        expect(screen.queryByRole('link', { name: /Comprar entrada/ })).toBeNull();
     });
 
     it('still offers the login form when the schedule cannot be read', async () => {
