@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 
 /**
  * The public landing page: the two event times, where to buy, and the code +
- * email form. Bilingual because both audiences arrive at the same URL.
+ * email form. Locale is resolved once and only that language is rendered.
  */
 
 vi.mock('next/link', () => ({
@@ -13,6 +13,9 @@ vi.mock('next/link', () => ({
 vi.mock('@/components/brand/LanguageControl', () => ({
     default: () => <div data-testid="language-control" />,
 }));
+
+const { requestLocaleMock } = vi.hoisted(() => ({ requestLocaleMock: vi.fn() }));
+vi.mock('@/lib/i18n-server', () => ({ requestLocale: requestLocaleMock }));
 
 const loginFormProps = vi.fn();
 vi.mock('@/app/login/LoginClient', () => ({
@@ -48,6 +51,8 @@ describe('landing page', () => {
     beforeEach(() => {
         vi.resetModules();
         loginFormProps.mockClear();
+        requestLocaleMock.mockReset();
+        requestLocaleMock.mockResolvedValue('es');
     });
 
     afterEach(() => {
@@ -61,17 +66,14 @@ describe('landing page', () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        expect(screen.getByText('English')).toBeInTheDocument();
+        expect(screen.getByText('Inglés')).toBeInTheDocument();
         expect(screen.getByText('Español')).toBeInTheDocument();
 
         // The event's advertised Costa Rica time comes first, with operator and
         // universal references explicitly labelled below it.
-        // Note: bilingual content renders both ES and EN versions in DOM;
-        // CSS hides the inactive language. Tests use getAllByText.
         expect(screen.getAllByText(/Costa Rica:/)).toHaveLength(2);
-        // Spanish session formatted in Spanish, English session in English
-        expect(screen.getAllByText(/sábado, 1 de agosto.*08:30.*GMT-6/)).toHaveLength(1);
-        expect(screen.getAllByText(/Saturday, August 1 at 12:30 PM CST/)).toHaveLength(1);
+        expect(screen.getByText(/sábado, 1 de agosto.*08:30.*GMT-6/)).toBeInTheDocument();
+        expect(screen.getByText(/sábado, 1 de agosto.*12:30.*GMT-6/)).toBeInTheDocument();
         expect(screen.getAllByText(/Argentina:/)).toHaveLength(2);
         expect(screen.getAllByText(/UTC:/)).toHaveLength(2);
     });
@@ -95,7 +97,6 @@ describe('landing page', () => {
         await renderPage();
 
         expect(screen.getByTestId('ticket-login-form')).toBeInTheDocument();
-        expect(screen.getByText(/Session times are temporarily unavailable/)).toBeInTheDocument();
         expect(screen.getByText(/Los horarios no están disponibles/)).toBeInTheDocument();
         expect(error).toHaveBeenCalled();
     });
@@ -105,12 +106,10 @@ describe('landing page', () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        // Bilingual content renders both ES and EN versions; get the first link
-        const links = screen.getAllByRole('link', { name: /Buy a ticket/ });
-        expect(links.length).toBeGreaterThanOrEqual(1);
+        const links = screen.getAllByRole('link', { name: /Comprar entrada/ });
         expect(links[0]).toHaveAttribute('href', 'https://tickets.example.invalid/harmonic-beacon');
         expect(links[0]).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
-        expect(screen.getByText(/USD \$50 Global North.*USD \$20 Global South/)).toBeInTheDocument();
+        expect(screen.getAllByText(/USD \$50 Norte Global.*USD \$20 Sur Global/)).toHaveLength(2);
     });
 
     it('says sales open shortly while the external platform is still TBD', async () => {
@@ -118,9 +117,7 @@ describe('landing page', () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        expect(screen.queryByRole('link', { name: /Buy a ticket/ })).toBeNull();
-        // Bilingual content: both ES and EN versions exist in DOM
-        expect(screen.getAllByText(/Ticket sales open shortly/).length).toBeGreaterThanOrEqual(1);
+        expect(screen.queryByRole('link', { name: /Comprar entrada/ })).toBeNull();
         expect(screen.getAllByText(/Las entradas se abren en breve/).length).toBeGreaterThanOrEqual(1);
     });
 
@@ -154,6 +151,19 @@ describe('landing page', () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        expect(screen.getByRole('link', { name: /Staff sign-in/ })).toHaveAttribute('href', '/staff/login');
+        expect(screen.getByRole('link', { name: /Ingreso del equipo/ })).toHaveAttribute('href', '/staff/login');
+    });
+
+    it('renders one coherent English surface when that locale is persisted', async () => {
+        requestLocaleMock.mockResolvedValue('en');
+        mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
+        await renderPage();
+
+        expect(screen.getByText('The myth', { exact: false })).toBeInTheDocument();
+        expect(screen.getByText('is alive.')).toBeInTheDocument();
+        expect(screen.getByText('English')).toBeInTheDocument();
+        expect(screen.getByText('Spanish')).toBeInTheDocument();
+        expect(screen.getByText(/Saturday, August 1 at 0?8:30 AM CST/)).toBeInTheDocument();
+        expect(screen.queryByText(/El mito/)).toBeNull();
     });
 });

@@ -22,6 +22,28 @@ export function resolveUiLocale(
 
 export type Messages = {
     language: { label: string; spanish: string; english: string };
+    landing: {
+        eyebrow: string;
+        heroLead: string;
+        heroAccent: string;
+        lead: string;
+        portalLabel: string;
+        portalSub: string;
+        sessionsHeading: string;
+        loginHeading: string;
+        terms: string;
+        staff: string;
+        costaRica: string;
+        argentina: string;
+        buyTicket: string;
+        salesSoon: string;
+        unavailable: string;
+        noSessions: string;
+        english: string;
+        spanish: string;
+        globalNorth: string;
+        globalSouth: string;
+    };
     ticketLogin: {
         displayName: string;
         ticketCode: string;
@@ -57,6 +79,28 @@ export type Messages = {
 export const messages: Record<UiLocale, Messages> = {
     es: {
         language: { label: 'Idioma', spanish: 'Español', english: 'Inglés' },
+        landing: {
+            eyebrow: 'PROYECCIÓN ARMÓNICA · SESIÓN VIRTUAL',
+            heroLead: 'El mito',
+            heroAccent: 'está vivo.',
+            lead: 'Una experiencia online en vivo para entrar en tu paisaje interior a través del cuerpo, el sonido y las imágenes que ya viven dentro tuyo.',
+            portalLabel: 'el regreso',
+            portalSub: 'PAGO → PRESENCIA',
+            sessionsHeading: 'ELEGÍ TU PORTAL',
+            loginHeading: '¿YA TENÉS TU ENTRADA?',
+            terms: 'Términos y privacidad',
+            staff: 'Ingreso del equipo',
+            costaRica: 'Costa Rica',
+            argentina: 'Argentina',
+            buyTicket: 'Comprar entrada',
+            salesSoon: 'Las entradas se abren en breve.',
+            unavailable: 'Los horarios no están disponibles por el momento — tu código de entrada sigue funcionando.',
+            noSessions: 'No hay sesiones programadas por el momento. Volvé a consultar pronto.',
+            english: 'Inglés',
+            spanish: 'Español',
+            globalNorth: 'Norte Global',
+            globalSouth: 'Sur Global',
+        },
         ticketLogin: {
             displayName: 'Nombre visible en la sala',
             ticketCode: 'Código de entrada',
@@ -90,6 +134,28 @@ export const messages: Record<UiLocale, Messages> = {
     },
     en: {
         language: { label: 'Language', spanish: 'Spanish', english: 'English' },
+        landing: {
+            eyebrow: 'HARMONIC PROJECTION · VIRTUAL SESSION',
+            heroLead: 'The myth',
+            heroAccent: 'is alive.',
+            lead: 'A live online experience to enter your inner landscape through body, sound, and the images already living inside you.',
+            portalLabel: 'the return',
+            portalSub: 'PAYMENT → PRESENCE',
+            sessionsHeading: 'CHOOSE YOUR PORTAL',
+            loginHeading: 'ALREADY HAVE A TICKET?',
+            terms: 'Terms & privacy',
+            staff: 'Staff sign-in',
+            costaRica: 'Costa Rica',
+            argentina: 'Argentina',
+            buyTicket: 'Buy a ticket',
+            salesSoon: 'Ticket sales open shortly.',
+            unavailable: 'Session times are temporarily unavailable — your ticket code still works.',
+            noSessions: 'No sessions are currently scheduled. Check back soon.',
+            english: 'English',
+            spanish: 'Spanish',
+            globalNorth: 'Global North',
+            globalSouth: 'Global South',
+        },
         ticketLogin: {
             displayName: 'Name shown in the room',
             ticketCode: 'Ticket code',
