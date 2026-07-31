@@ -10,6 +10,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 vi.mock('next/link', () => ({
     default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
 }));
+vi.mock('@/components/brand/LanguageControl', () => ({
+    default: () => <div data-testid="language-control" />,
+}));
 
 const loginFormProps = vi.fn();
 vi.mock('@/app/login/LoginClient', () => ({

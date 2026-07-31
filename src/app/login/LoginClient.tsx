@@ -7,30 +7,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLocale } from "@/context/LocaleContext";
 
-const MESSAGES = {
-    rejected: {
-        en: "That code and email do not match an active ticket. Check both, exactly as they appear in your ticket email.",
-        es: "Ese código y ese correo no coinciden con una entrada activa. Revisá ambos, tal como aparecen en el correo de tu entrada.",
-    },
-    rateLimited: {
-        en: "Too many attempts. Please wait a few minutes and try again.",
-        es: "Demasiados intentos. Esperá unos minutos y volvé a intentar.",
-    },
-    unavailable: {
-        en: "Sign-in is unavailable right now. Please try again in a moment.",
-        es: "El ingreso no está disponible en este momento. Probá de nuevo en un momento.",
-    },
-    required: {
-        en: "Enter your name, ticket code and the email you used to buy it.",
-        es: "Ingresá tu nombre, código de entrada y el correo con el que la compraste.",
-    },
-} as const;
-
-type MessageKey = keyof typeof MESSAGES;
+type MessageKey = "rejected" | "rateLimited" | "unavailable" | "required";
 
 export default function LoginClient({ next }: { next?: string }) {
     const router = useRouter();
+    const { copy } = useLocale();
+    const messages = copy.ticketLogin;
     const [name, setName] = useState("");
     const [code, setCode] = useState("");
     const [email, setEmail] = useState("");
@@ -78,8 +62,7 @@ export default function LoginClient({ next }: { next?: string }) {
         <form onSubmit={onSubmit} className="space-y-5" noValidate>
             <div className="space-y-1.5">
                 <label htmlFor="display-name" className="block text-sm font-medium text-[var(--paper)]">
-                    <span data-copy="en">Name shown in the room</span>
-                    <span data-copy="es">Nombre visible en la sala</span>
+                    {messages.displayName}
                 </label>
                 <input
                     id="display-name"
@@ -95,8 +78,7 @@ export default function LoginClient({ next }: { next?: string }) {
 
             <div className="space-y-1.5">
                 <label htmlFor="ticket-code" className="block text-sm font-medium text-[var(--paper)]">
-                    <span data-copy="en">Ticket code</span>
-                    <span data-copy="es">Código de entrada</span>
+                    {messages.ticketCode}
                 </label>
                 <input
                     id="ticket-code"
@@ -111,15 +93,13 @@ export default function LoginClient({ next }: { next?: string }) {
                     aria-describedby="ticket-code-hint"
                 />
                 <p id="ticket-code-hint" className="text-xs text-[var(--text-muted)]">
-                    <span data-copy="en">Exactly as it appears in your ticket email</span>
-                    <span data-copy="es">Exactamente como aparece en el correo de tu entrada</span>
+                    {messages.ticketCodeHint}
                 </p>
             </div>
 
             <div className="space-y-1.5">
                 <label htmlFor="ticket-email" className="block text-sm font-medium text-[var(--paper)]">
-                    <span data-copy="en">Email used to buy the ticket</span>
-                    <span data-copy="es">Correo con el que compraste la entrada</span>
+                    {messages.email}
                 </label>
                 <input
                     id="ticket-email"
@@ -136,8 +116,7 @@ export default function LoginClient({ next }: { next?: string }) {
 
             {error && (
                 <div role="alert" className="event-alert event-alert--danger">
-                    <span data-copy="en" className="block">{MESSAGES[error].en}</span>
-                    <span data-copy="es" className="block">{MESSAGES[error].es}</span>
+                    {messages[error]}
                 </div>
             )}
 
@@ -147,17 +126,11 @@ export default function LoginClient({ next }: { next?: string }) {
                 className="event-button event-button--primary w-full"
                 aria-busy={submitting}
             >
-                <span data-copy="en">{submitting ? "Signing in…" : "Enter the event"}</span>
-                <span data-copy="es">{submitting ? "Ingresando…" : "Entrar al evento"}</span>
+                {submitting ? messages.signingIn : messages.enter}
             </button>
 
             <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-                <span data-copy="en">
-                    Your ticket admits one person. The same code and email work again after a refresh or a dropped connection.
-                </span>
-                <span data-copy="es">
-                    Tu entrada admite a una persona. El mismo código y correo funcionan de nuevo si recargás o se corta la conexión.
-                </span>
+                {messages.reconnectHint}
             </p>
         </form>
     );

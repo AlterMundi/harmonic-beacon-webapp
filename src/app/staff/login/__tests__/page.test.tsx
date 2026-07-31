@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { LocaleProvider } from '@/context/LocaleContext';
 
 /**
  * Staff sign-in. Two things are worth asserting: the page resolves an existing
@@ -23,6 +24,8 @@ vi.mock('next/navigation', () => ({
 // which is before a plain `const` in this file would be initialized.
 const { currentPrincipal } = vi.hoisted(() => ({ currentPrincipal: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ currentPrincipal }));
+vi.mock('@/lib/i18n-server', () => ({ requestLocale: vi.fn().mockResolvedValue('en') }));
+vi.mock('@/components/brand/LanguageControl', () => ({ default: () => <div data-testid="language-control" /> }));
 
 import StaffLoginPage from '../page';
 import StaffLoginClient from '../StaffLoginClient';
@@ -38,7 +41,20 @@ function mockFetch(status: number, body: unknown = {}) {
 }
 
 async function renderPage() {
-    render(await StaffLoginPage());
+    render(
+        <LocaleProvider initialLocale="en">
+            {await StaffLoginPage()}
+        </LocaleProvider>,
+    );
+}
+
+function renderClient() {
+    window.localStorage.setItem('hb-locale', 'en');
+    return render(
+        <LocaleProvider initialLocale="en">
+            <StaffLoginClient />
+        </LocaleProvider>,
+    );
 }
 
 describe('staff login page', () => {
@@ -46,6 +62,7 @@ describe('staff login page', () => {
         currentPrincipal.mockReset();
         mockPush.mockClear();
         mockRefresh.mockClear();
+        window.localStorage.clear();
     });
 
     afterEach(() => {
@@ -75,7 +92,7 @@ describe('staff login page', () => {
 
         expect(screen.getByText(/Signed in as/)).toBeInTheDocument();
         expect(screen.getByText('OPERATOR')).toBeInTheDocument();
-        expect(screen.getByRole('link', { name: /operator controls/ })).toHaveAttribute('href', '/ops/health');
+        expect(screen.getByRole('link', { name: /event controls/ })).toHaveAttribute('href', '/ops/health');
         expect(screen.queryByLabelText('Password')).toBeNull();
     });
 
@@ -107,7 +124,7 @@ describe('StaffLoginClient', () => {
 
     it('posts the credential and goes to the operator controls', async () => {
         const fetchMock = mockFetch(200, { ok: true, role: 'ADMIN' });
-        render(<StaffLoginClient />);
+        renderClient();
 
         await signIn();
 
@@ -127,7 +144,7 @@ describe('StaffLoginClient', () => {
 
     it('does not say which half of the credential was wrong', async () => {
         mockFetch(401, { error: 'Those credentials are not valid.' });
-        render(<StaffLoginClient />);
+        renderClient();
 
         await signIn();
 
@@ -139,13 +156,13 @@ describe('StaffLoginClient', () => {
 
     it('reports rate limiting and outages distinctly', async () => {
         mockFetch(429);
-        const { unmount } = render(<StaffLoginClient />);
+        const { unmount } = renderClient();
         await signIn();
         expect(await screen.findByRole('alert')).toHaveTextContent(/Too many attempts/);
         unmount();
 
         mockFetch(503);
-        render(<StaffLoginClient />);
+        renderClient();
         await signIn();
         expect(await screen.findByRole('alert')).toHaveTextContent(/unavailable/);
     });
