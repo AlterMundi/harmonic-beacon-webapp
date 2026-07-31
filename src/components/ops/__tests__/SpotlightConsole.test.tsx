@@ -94,18 +94,49 @@ describe('SpotlightConsole', () => {
         render(<SpotlightConsole sessionId="event-1" role="OPERATOR" />);
 
         await waitFor(() => {
-            expect(screen.getByText('#1 — Attendee')).toBeInTheDocument();
+            expect(screen.getByText('#1 — Attendee · ID ue-first')).toBeInTheDocument();
         });
-        const queueItems = screen.getAllByText(/^#\d — Attendee$/);
+        const queueItems = screen.getAllByText(/^#\d — Attendee · ID /);
         expect(queueItems.map((item) => item.textContent)).toEqual([
-            '#1 — Attendee',
-            '#2 — Attendee',
+            '#1 — Attendee · ID ue-first',
+            '#2 — Attendee · ID e-second',
         ]);
         expect(screen.getByText('On stage')).toBeInTheDocument();
         expect(screen.getByText(/microphone muted/)).toBeInTheDocument();
         expect(screen.getByText(/left/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Take floor' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: 'Give floor' })).toHaveLength(2);
+    });
+
+    it('does not offer the floor to a stale disconnected hand', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('stale', {
+                raisedAt: '2026-08-01T15:10:00.000Z',
+                queuePosition: 1,
+                connected: false,
+            }),
+        ])));
+        render(<SpotlightConsole sessionId="event-1" role="FACILITATOR" />);
+
+        const reconnect = await screen.findByRole('button', { name: 'Waiting for reconnect' });
+        expect(reconnect).toBeDisabled();
+        await userEvent.click(reconnect);
+        expect(stagePosts).toHaveLength(0);
+    });
+
+    it('invites a connected audience member directly to the stage', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([attendee('audience')])));
+        render(<SpotlightConsole sessionId="event-1" role="FACILITATOR" />);
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Invite to stage' }));
+
+        await waitFor(() => {
+            expect(stagePosts).toContainEqual({
+                action: 'promote',
+                participantId: 'audience',
+                reason: 'Invited from audience',
+            });
+        });
     });
 
     it('gives the floor by promoting through stage control, then clears the hand', async () => {
@@ -177,6 +208,30 @@ describe('SpotlightConsole', () => {
             expect(screen.getByRole('alert')).toHaveTextContent(
                 'LiveKit promotion failed. The durable grant was revoked; press Reconcile to retry',
             );
+        });
+    });
+
+    it('reports a disconnected promotion without asking for reconciliation', async () => {
+        vi.stubGlobal('fetch', mockFetch(
+            snapshot([attendee('first', {
+                raisedAt: '2026-08-01T15:10:00.000Z',
+                queuePosition: 1,
+            })]),
+            () => ({
+                status: 409,
+                data: {
+                    error: 'participant_not_connected',
+                    message: 'This participant is not connected. Wait for them to rejoin before giving the floor.',
+                },
+            }),
+        ));
+        render(<SpotlightConsole sessionId="event-1" role="OPERATOR" />);
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Give floor' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('alert')).toHaveTextContent('This participant is not connected');
+            expect(screen.getByRole('alert')).not.toHaveTextContent('Reconcile');
         });
     });
 

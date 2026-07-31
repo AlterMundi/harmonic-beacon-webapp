@@ -212,6 +212,29 @@ describe('stage control', () => {
         expect(participants[0].publishRevokedAt).toBeNull();
     });
 
+    it('rejects a disconnected participant without changing durable grant state', async () => {
+        participants = [attendee('target')];
+        mocks.listParticipants.mockResolvedValue([]);
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        })).rejects.toMatchObject({
+            code: 'participant_not_connected',
+            status: 409,
+        });
+
+        expect(participants[0]).toMatchObject({
+            publishGrantedAt: null,
+            publishRevokedAt: null,
+            grantReconcileNeeded: false,
+            grantVersion: 0,
+        });
+        expect(mocks.updateParticipant).not.toHaveBeenCalled();
+    });
+
     it('serializes two promotions for the last slot so only one wins', async () => {
         participants = [
             attendee('active-1', true),

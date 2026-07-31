@@ -38,6 +38,7 @@ export class StageControlError extends Error {
         public readonly code:
             | 'session_not_found'
             | 'participant_not_found'
+            | 'participant_not_connected'
             | 'stage_full'
             | 'not_publisher'
             | 'facilitator_required'
@@ -89,6 +90,47 @@ type MuteInput = {
     trackSid: string;
     muted: boolean;
 };
+
+async function requireConnectedParticipant(input: GrantInput): Promise<void> {
+    const participant = await prisma.sessionParticipant.findFirst({
+        where: {
+            id: input.participantId,
+            scheduledSessionId: input.scheduledSessionId,
+        },
+        select: {
+            participantIdentity: true,
+            scheduledSession: { select: { roomName: true } },
+        },
+    });
+    if (!participant) {
+        throw new StageControlError(
+            'participant_not_found',
+            404,
+            'Participant not found',
+        );
+    }
+
+    let connected: boolean;
+    try {
+        connected = (await getRoomService().listParticipants(
+            participant.scheduledSession.roomName,
+        )).some((liveParticipant) =>
+            liveParticipant.identity === participant.participantIdentity);
+    } catch {
+        throw new StageControlError(
+            'livekit_failed',
+            502,
+            'LiveKit participant state is unavailable; no grant was changed',
+        );
+    }
+    if (!connected) {
+        throw new StageControlError(
+            'participant_not_connected',
+            409,
+            'This participant is not connected. Wait for them to rejoin before giving the floor.',
+        );
+    }
+}
 
 /**
  * Lock the ScheduledSession row before reading or changing grants. PostgreSQL
@@ -239,6 +281,10 @@ async function markReconcileNeeded(
 export async function promoteParticipant(
     input: GrantInput,
 ): Promise<StageGrantResult> {
+    // Updating permissions for a disconnected LiveKit identity always fails.
+    // Reject before reserving a durable slot so a stale hand cannot create a
+    // false reconciliation incident or occupy the stage after a long absence.
+    await requireConnectedParticipant(input);
     const now = input.now ?? new Date();
     const reservation = await prisma.$transaction(async (transaction) => {
         await lockScheduledSession(transaction, input.scheduledSessionId);
