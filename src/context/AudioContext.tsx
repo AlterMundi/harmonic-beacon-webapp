@@ -15,6 +15,10 @@ import { redactErrorDetail } from '@/lib/redact';
 
 // Participant identity for the live USB audio source
 const BEACON_IDENTITY = "beacon01";
+// The playlist is not interactive audio. A larger receiver buffer prevents
+// Chrome from audibly stretching/compressing music to chase WebRTC's default
+// low-latency target. Apply it before attach/play so the buffer fills silently.
+const PLAYLIST_JITTER_BUFFER_MS = 500;
 
 interface AudioContextType {
     // LiveKit / Beacon Audio
@@ -172,6 +176,15 @@ export function AudioProvider({
                 for (const [previousTrack, entry] of audioElementsRef.current) {
                     if (previousTrack === track || entry.identity === identity) {
                         removeTrackedAudio(previousTrack);
+                    }
+                }
+
+                if (!isLive && track.receiver && 'jitterBufferTarget' in track.receiver) {
+                    try {
+                        track.receiver.jitterBufferTarget = PLAYLIST_JITTER_BUFFER_MS;
+                    } catch {
+                        // Experimental browser control: unsupported engines keep
+                        // their native jitter-buffer policy.
                     }
                 }
                 const audioElement = track.attach() as HTMLAudioElement;

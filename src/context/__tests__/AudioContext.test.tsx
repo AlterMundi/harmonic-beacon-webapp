@@ -143,6 +143,49 @@ describe('AudioProvider', () => {
         expect(audio.isConnected).toBe(false);
     });
 
+    it('buffers playlist music before attaching it without delaying live beacon audio', async () => {
+        render(
+            <AudioProvider sessionId="session-1">
+                <AudioControl />
+            </AudioProvider>,
+        );
+        await screen.findByText('connected');
+
+        const playlistAudio = document.createElement('audio');
+        const playlistReceiver = { jitterBufferTarget: null as number | null };
+        const playlistTrack = {
+            kind: 'audio',
+            receiver: playlistReceiver,
+            attach: vi.fn(() => {
+                expect(playlistReceiver.jitterBufferTarget).toBe(500);
+                return playlistAudio;
+            }),
+            detach: vi.fn(() => [playlistAudio]),
+        };
+        roomMocks.handlers.get('trackSubscribed')?.(
+            playlistTrack,
+            { track: playlistTrack, isSubscribed: true },
+            { identity: 'playlist-bot', trackPublications: new Map() },
+        );
+
+        const liveAudio = document.createElement('audio');
+        const liveReceiver = { jitterBufferTarget: null as number | null };
+        const liveTrack = {
+            kind: 'audio',
+            receiver: liveReceiver,
+            attach: vi.fn(() => liveAudio),
+            detach: vi.fn(() => [liveAudio]),
+        };
+        roomMocks.handlers.get('trackSubscribed')?.(
+            liveTrack,
+            { track: liveTrack, isSubscribed: true },
+            { identity: 'beacon01', trackPublications: new Map() },
+        );
+
+        expect(playlistReceiver.jitterBufferTarget).toBe(500);
+        expect(liveReceiver.jitterBufferTarget).toBeNull();
+    });
+
     it('does not connect an obsolete room after the provider unmounts', async () => {
         let resolveToken!: (response: Response) => void;
         const tokenResponse = new Promise<Response>((resolve) => {
