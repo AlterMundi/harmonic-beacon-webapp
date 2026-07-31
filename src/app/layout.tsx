@@ -42,7 +42,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#080B16",
+  themeColor: "#07120f",
 };
 
 export default function RootLayout({
@@ -53,34 +53,6 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${cormorant.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
-        {/* Restrained dark event atmosphere */}
-        <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-          <div
-            className="absolute opacity-[0.04]"
-            style={{
-              width: "600px",
-              height: "600px",
-              borderRadius: "50%",
-              filter: "blur(120px)",
-              background: "radial-gradient(circle, rgba(158,114,255,0.3), transparent 70%)",
-              top: "-10%",
-              right: "-5%",
-            }}
-          />
-          <div
-            className="absolute opacity-[0.03]"
-            style={{
-              width: "500px",
-              height: "500px",
-              borderRadius: "50%",
-              filter: "blur(100px)",
-              background: "radial-gradient(circle, rgba(99,237,255,0.2), transparent 70%)",
-              bottom: "10%",
-              left: "-10%",
-            }}
-          />
-        </div>
-
         {/* Main content */}
         <div className="relative z-10">{children}</div>
 
@@ -89,10 +61,10 @@ export default function RootLayout({
           position="top-center"
           toastOptions={{
             style: {
-              background: "rgba(8, 11, 22, 0.96)",
+              background: "rgba(7, 18, 15, 0.96)",
               backdropFilter: "blur(16px)",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              color: "#FFF6DF",
+              border: "1px solid rgba(238, 245, 233, 0.12)",
+              color: "#fff9e9",
               fontFamily: "var(--font-syne), system-ui, sans-serif",
               fontSize: "13px",
             },
