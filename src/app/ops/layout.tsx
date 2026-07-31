@@ -23,6 +23,10 @@ export default async function OpsLayout({
     }
 
     const sessions = await prisma.scheduledSession.findMany({
+        where: {
+            status: { in: ['SCHEDULED', 'LIVE'] },
+            ...(staff.role === 'FACILITATOR' ? { facilitatorId: staff.id } : {}),
+        },
         select: { id: true, title: true, language: true, status: true },
         orderBy: { scheduledAt: 'asc' },
     });
@@ -30,11 +34,22 @@ export default async function OpsLayout({
     const links = [
         { href: '/ops/health', label: 'Health' },
         { href: '/ops/admission', label: 'Admission' },
-        ...sessions.map((s) => ({
-            href: `/ops/session/${s.id}`,
-            label: s.language === 'SPANISH' ? 'ES Spotlight' : 'EN Spotlight',
-            live: s.status === 'LIVE',
-        })),
+        ...sessions.flatMap((s) => {
+            const language = s.language === 'SPANISH' ? 'ES' : 'EN';
+            const test = s.title.toLowerCase().includes('(test)') ? ' test' : '';
+            return [
+                {
+                    href: `/session/${s.id}`,
+                    label: `${language} Room${test}`,
+                    live: s.status === 'LIVE',
+                },
+                {
+                    href: `/ops/session/${s.id}`,
+                    label: `${language} Spotlight${test}`,
+                    live: s.status === 'LIVE',
+                },
+            ];
+        }),
     ];
 
     return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import {
     DisconnectReason,
@@ -37,7 +38,6 @@ const STAGE_ROOM_OPTIONS: RoomOptions = {
     },
 };
 
-const FACILITATOR_LABEL = "Facilitator";
 const FALLBACK_LABEL = "Participant";
 
 const STAGE_REFRESH_MS = 100;
@@ -110,6 +110,15 @@ function cameraPublication(participant: Participant): StageVideoPublication | nu
     return publication ?? null;
 }
 
+function participantRole(participant: Participant): string | null {
+    try {
+        const metadata = JSON.parse(participant.metadata || "{}") as { role?: unknown };
+        return typeof metadata.role === "string" ? metadata.role : null;
+    } catch {
+        return null;
+    }
+}
+
 function SessionRoom() {
     const { id } = useParams<{ id: string }>();
     const searchParams = useSearchParams();
@@ -148,8 +157,6 @@ function SessionRoom() {
     const [retryToken, setRetryToken] = useState(0);
     const [audioActivationError, setAudioActivationError] = useState<string | null>(null);
     const [viewerInfo, setViewerInfo] = useState<ViewerInfo | null>(null);
-    const [audioDiagnosticEnabled, setAudioDiagnosticEnabled] = useState(false);
-    const [tonePlaying, setTonePlaying] = useState(false);
 
     const roomRef = useRef<Room | null>(null);
     // Keep ownership by track so an unsubscribe can remove the exact DOM node
@@ -188,7 +195,7 @@ function SessionRoom() {
                     identity: participant.identity,
                     label,
                     isLocal: participant === local,
-                    isFacilitator: label === FACILITATOR_LABEL,
+                    isFacilitator: participantRole(participant) === "FACILITATOR",
                     isSpeaking: participant.isSpeaking,
                     cameraOn: participant.isCameraEnabled,
                     micOn: participant.isMicrophoneEnabled,
@@ -308,22 +315,11 @@ function SessionRoom() {
                 setSessionInfo(data.session);
                 setCanPublish(data.canPublish);
                 setPrincipalKind(data.principalKind === "staff" ? "staff" : "ticket");
-                let viewerName = typeof data.displayName === "string" ? data.displayName : "Participant";
-                try {
-                    const stored = JSON.parse(window.sessionStorage.getItem("hb:e2e-viewer") || "null") as {
-                        name?: unknown;
-                        role?: unknown;
-                    } | null;
-                    if (stored && stored.role === data.role && typeof stored.name === "string" && stored.name.trim()) {
-                        viewerName = stored.name.trim();
-                    }
-                } catch { /* Ignore a malformed UI-only test label. */ }
                 setViewerInfo({
-                    name: viewerName,
+                    name: typeof data.displayName === "string" ? data.displayName : "Participant",
                     role: typeof data.role === "string" ? data.role : "PARTICIPANT",
                     identity: typeof data.identity === "string" ? data.identity : "unknown",
                 });
-                setAudioDiagnosticEnabled(data.audioDiagnosticEnabled === true);
                 if (data.session.startedAt) {
                     const elapsed = Math.floor((Date.now() - new Date(data.session.startedAt).getTime()) / 1000);
                     setDuration(Math.max(0, elapsed));
@@ -603,35 +599,6 @@ function SessionRoom() {
     const connectionLabel = CONNECTION_COPY[connectionState] ?? "Connecting";
     const needsDeviceGesture = canPublish && !isMicOn && !isCameraOn;
 
-    const playBrowserTestTone = async () => {
-        if (tonePlaying) return;
-        setTonePlaying(true);
-        const context = new AudioContext();
-        const gain = context.createGain();
-        gain.gain.value = 0.035;
-        gain.connect(context.destination);
-        const tones = [
-            { frequency: 440, pan: -1 },
-            { frequency: 660, pan: 1 },
-        ];
-        const oscillators = tones.map(({ frequency, pan }) => {
-            const oscillator = context.createOscillator();
-            const panner = context.createStereoPanner();
-            oscillator.type = "sine";
-            oscillator.frequency.value = frequency;
-            panner.pan.value = pan;
-            oscillator.connect(panner).connect(gain);
-            oscillator.start();
-            oscillator.stop(context.currentTime + 1.5);
-            return oscillator;
-        });
-        await context.resume();
-        await new Promise((resolve) => setTimeout(resolve, 1600));
-        oscillators.forEach((oscillator) => oscillator.disconnect());
-        await context.close();
-        setTonePlaying(false);
-    };
-
     return (
         <main className="event-shell">
             <div className="relative z-10 flex min-h-screen flex-col">
@@ -660,7 +627,17 @@ function SessionRoom() {
                             </p>
                         )}
                     </div>
-                    <span className="font-mono text-xs text-[var(--gold)]">{formatTime(duration)}</span>
+                    <div className="ml-3 flex shrink-0 items-center gap-3">
+                        {principalKind === "staff" && (
+                            <Link
+                                href={`/ops/session/${id}`}
+                                className="rounded border border-[var(--gold)]/40 px-2 py-1 text-xs text-[var(--gold)] hover:bg-[var(--gold)]/10"
+                            >
+                                Spotlight · hands
+                            </Link>
+                        )}
+                        <span className="font-mono text-xs text-[var(--gold)]">{formatTime(duration)}</span>
+                    </div>
                 </header>
 
                 {/* Stage */}
@@ -746,28 +723,6 @@ function SessionRoom() {
                     {' · '}Live: {hasLiveStream ? <span className="text-[var(--lime)]">active</span> : <span className="text-[var(--danger)]">none</span>}
                     {beaconAudioError ? <>{' · '}<span className="text-[var(--danger)]">error: {beaconAudioError}</span></> : null}
                 </div>
-
-                {audioDiagnosticEnabled && (
-                    <details className="mx-auto mb-3 w-[calc(100%-2rem)] max-w-md rounded border border-[var(--gold)]/30 bg-[var(--surface-alt)] px-3 py-2 text-xs text-[var(--text-secondary)]">
-                        <summary className="cursor-pointer font-semibold text-[var(--gold)]">Audio A/B check</summary>
-                        <ol className="mt-3 space-y-3">
-                            <li>
-                                <button type="button" onClick={() => void playBrowserTestTone()} disabled={tonePlaying} className="event-button event-button--secondary w-full">
-                                    {tonePlaying ? "Playing left/right tones…" : "1. Test browser output (left 440 / right 660)"}
-                                </button>
-                            </li>
-                            <li>
-                                <p className="mb-1">2. Original OGG directly in this browser (bypasses LiveKit)</p>
-                                <audio controls preload="metadata" className="w-full" src={`/api/audio-diagnostic?sessionId=${encodeURIComponent(id)}`}>
-                                    Your browser does not support OGG audio.
-                                </audio>
-                            </li>
-                            <li>
-                                3. LiveKit stream: use “Start audio” above, then compare it with step 2.
-                            </li>
-                        </ol>
-                    </details>
-                )}
 
                 {/* Bottom controls */}
                 <div className="border-t border-[var(--border-subtle)] px-4 py-4">

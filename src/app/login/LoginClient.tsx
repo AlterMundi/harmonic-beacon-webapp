@@ -22,8 +22,8 @@ const MESSAGES = {
         es: "El ingreso no está disponible en este momento. Probá de nuevo en un momento.",
     },
     required: {
-        en: "Enter your ticket code and the email you used to buy it.",
-        es: "Ingresá tu código de entrada y el correo con el que la compraste.",
+        en: "Enter your name, ticket code and the email you used to buy it.",
+        es: "Ingresá tu nombre, código de entrada y el correo con el que la compraste.",
     },
 } as const;
 
@@ -31,6 +31,7 @@ type MessageKey = keyof typeof MESSAGES;
 
 export default function LoginClient({ next }: { next?: string }) {
     const router = useRouter();
+    const [name, setName] = useState("");
     const [code, setCode] = useState("");
     const [email, setEmail] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -47,7 +48,7 @@ export default function LoginClient({ next }: { next?: string }) {
             const response = await fetch("/api/auth/ticket", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ code, email }),
+                body: JSON.stringify({ name, code, email }),
             });
 
             if (response.ok) {
@@ -75,6 +76,23 @@ export default function LoginClient({ next }: { next?: string }) {
 
     return (
         <form onSubmit={onSubmit} className="space-y-5" noValidate>
+            <div className="space-y-1.5">
+                <label htmlFor="display-name" className="block text-sm font-medium text-[var(--paper)]">
+                    <span data-copy="en">Name shown in the room</span>
+                    <span data-copy="es">Nombre visible en la sala</span>
+                </label>
+                <input
+                    id="display-name"
+                    name="name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    required
+                    maxLength={60}
+                    autoComplete="name"
+                    className="event-field"
+                />
+            </div>
+
             <div className="space-y-1.5">
                 <label htmlFor="ticket-code" className="block text-sm font-medium text-[var(--paper)]">
                     <span data-copy="en">Ticket code</span>

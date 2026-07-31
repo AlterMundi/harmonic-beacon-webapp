@@ -16,7 +16,8 @@ export type RoomPrincipal = {
         startedAt: Date | null;
     };
     identity: string;
-    displayName: 'Attendee' | 'Facilitator' | 'Operator' | 'Administrator';
+    displayName: string;
+    role: 'ATTENDEE' | 'FACILITATOR' | 'OPERATOR' | 'ADMIN';
     canPublish: boolean;
     ticketEntitlementId: string | null;
     staffUserId: string | null;
@@ -51,11 +52,13 @@ export async function resolveRoomPrincipal(
     const webSession = await prisma.webSession.findUnique({
         where: { tokenDigest: digestSessionToken(cookieValue) },
         select: {
+            displayName: true,
             expiresAt: true,
             revokedAt: true,
             staffUser: {
                 select: {
                     id: true,
+                    name: true,
                     role: true,
                     disabledAt: true,
                 },
@@ -109,6 +112,7 @@ export async function resolveRoomPrincipal(
     let ticketEntitlementId: string | null = null;
     let staffUserId: string | null = null;
     let displayName: RoomPrincipal['displayName'];
+    let role: RoomPrincipal['role'];
     let facilitatorCanPublish = false;
 
     if (ticket) {
@@ -126,7 +130,8 @@ export async function resolveRoomPrincipal(
         principalId = ticket.id;
         principalKind = 'ticket';
         ticketEntitlementId = ticket.id;
-        displayName = 'Attendee';
+        displayName = webSession.displayName?.trim() || 'Attendee';
+        role = 'ATTENDEE';
     } else {
         if (
             !staff ||
@@ -150,12 +155,14 @@ export async function resolveRoomPrincipal(
         principalKind = 'staff';
         staffUserId = staff.id;
         facilitatorCanPublish = isFacilitator;
-        displayName =
+        displayName = staff.name?.trim() || (
             staff.role === 'FACILITATOR'
                 ? 'Facilitator'
                 : staff.role === 'OPERATOR'
                     ? 'Operator'
-                    : 'Administrator';
+                    : 'Administrator'
+        );
+        role = staff.role;
     }
 
     const identity = stableRoomIdentity(
@@ -228,6 +235,7 @@ export async function resolveRoomPrincipal(
             },
             identity,
             displayName,
+            role,
             canPublish:
                 participant.publishGrantedAt !== null &&
                 participant.publishRevokedAt === null,

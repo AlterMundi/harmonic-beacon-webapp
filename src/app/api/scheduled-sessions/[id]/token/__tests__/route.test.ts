@@ -18,6 +18,7 @@ const principal = {
     },
     identity: 'event-stable-opaque',
     displayName: 'Attendee',
+    role: 'ATTENDEE',
     canPublish: false,
 };
 
@@ -64,6 +65,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             'event-stable-opaque',
             'Attendee',
             false,
+            'ATTENDEE',
         );
         expect(body).toMatchObject({
             token: 'stage-jwt',
@@ -80,6 +82,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             principal: {
                 ...principal,
                 displayName: 'Facilitator',
+                role: 'FACILITATOR',
                 canPublish: true,
             },
         });
@@ -95,6 +98,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             'event-stable-opaque',
             'Facilitator',
             true,
+            'FACILITATOR',
         );
     });
 });

@@ -71,6 +71,7 @@ export async function GET(
 
     let liveStateAvailable = true;
     let liveParticipants = new Map<string, {
+        name: string;
         media: Array<{ trackSid: string; source: string; muted: boolean }>;
     }>();
     try {
@@ -79,6 +80,7 @@ export async function GET(
                 .map((participant) => [
                     participant.identity,
                     {
+                        name: participant.name,
                         media: participant.tracks.map((track) => ({
                             trackSid: track.sid,
                             source: trackSourceLabel(track.source),
@@ -106,7 +108,7 @@ export async function GET(
         return {
             id: participant.id,
             identity: participant.participantIdentity,
-            displayName: participant.staffUser?.name ?? 'Attendee',
+            displayName: participant.staffUser?.name ?? (live?.name?.trim() || 'Attendee'),
             principalType: participant.staffUser ? 'staff' : 'attendee',
             staffRole: participant.staffUser?.role ?? null,
             joinedAt: participant.joinedAt.toISOString(),

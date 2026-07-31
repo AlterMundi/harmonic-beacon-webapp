@@ -330,6 +330,52 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                 </button>
             </div>
 
+            {/* Hand queue comes first so a facilitator never has to hunt below the stage. */}
+            <div>
+                <h2 className="mb-1 text-lg font-semibold text-[var(--cream)]">Hand queue</h2>
+                <p className="mb-2 text-xs text-[var(--text-muted)]">
+                    Raised hands appear here automatically. Give floor moves a connected person to the stage; Remove hand clears the request.
+                </p>
+                {queue.length === 0 ? (
+                    <p className="text-sm text-[var(--text-secondary)]">No hands raised.</p>
+                ) : (
+                    <ul className="space-y-2">
+                        {queue.map((participant) => (
+                            <li key={participant.id} className="flex items-center justify-between gap-3 operational-panel">
+                                <div className="min-w-0">
+                                    <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participantLabel(participant)}</span>
+                                    <div className="text-xs text-[var(--text-secondary)]">
+                                        waiting {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
+                                        {' · '}{connectionBadge(participant)}
+                                        {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()} quality` : ''}
+                                        {participant.reconcileNeeded ? ' · reconcile needed' : ''}
+                                    </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={busyKey !== null || participant.connected !== true}
+                                        onClick={() => void giveFloor(participant)}
+                                        title={participant.connected === true ? undefined : 'Participant must be connected before joining the stage'}
+                                        className="min-h-10 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
+                                    >
+                                        {participant.connected === true ? 'Give floor' : 'Waiting for reconnect'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={busyKey !== null}
+                                        onClick={() => void removeHand(participant)}
+                                        className="min-h-10 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
+                                    >
+                                        Remove hand
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
             {/* Stage */}
             <div>
                 <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">On stage</h2>
@@ -383,49 +429,6 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                             </span>
                                         )}
                                     </div>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
-
-            {/* Hand queue */}
-            <div>
-                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">Hand queue</h2>
-                {queue.length === 0 ? (
-                    <p className="text-sm text-[var(--text-secondary)]">No hands raised.</p>
-                ) : (
-                    <ul className="space-y-2">
-                        {queue.map((participant) => (
-                            <li key={participant.id} className="flex items-center justify-between gap-3 operational-panel">
-                                <div className="min-w-0">
-                                    <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participantLabel(participant)}</span>
-                                    <div className="text-xs text-[var(--text-secondary)]">
-                                        waiting {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
-                                        {' · '}{connectionBadge(participant)}
-                                        {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()} quality` : ''}
-                                        {participant.reconcileNeeded ? ' · reconcile needed' : ''}
-                                    </div>
-                                </div>
-                                <div className="flex shrink-0 items-center gap-2">
-                                    <button
-                                        type="button"
-                                        disabled={busyKey !== null || participant.connected !== true}
-                                        onClick={() => void giveFloor(participant)}
-                                        title={participant.connected === true ? undefined : 'Participant must be connected before joining the stage'}
-                                        className="min-h-10 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
-                                    >
-                                        {participant.connected === true ? 'Give floor' : 'Waiting for reconnect'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={busyKey !== null}
-                                        onClick={() => void removeHand(participant)}
-                                        className="min-h-10 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
-                                    >
-                                        Remove hand
-                                    </button>
                                 </div>
                             </li>
                         ))}

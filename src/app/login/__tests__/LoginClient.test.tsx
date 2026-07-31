@@ -20,6 +20,7 @@ import LoginClient from '../LoginClient';
 
 const CODE = 'HB26-A7NQ-92KM-4XZP';
 const EMAIL = 'ana@example.com';
+const NAME = 'Ana';
 
 function mockFetch(response: { status: number; body?: unknown }) {
     const fetchMock = vi.fn().mockResolvedValue({
@@ -33,6 +34,7 @@ function mockFetch(response: { status: number; body?: unknown }) {
 
 async function fillAndSubmit() {
     const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/Name shown in the room/), NAME);
     await user.type(screen.getByLabelText(/Ticket code/), CODE);
     await user.type(screen.getByLabelText(/Email used to buy the ticket/), EMAIL);
     await user.click(screen.getByRole('button', { name: /Enter the event/ }));
@@ -59,7 +61,7 @@ describe('LoginClient', () => {
         const [url, init] = fetchMock.mock.calls[0];
         expect(url).toBe('/api/auth/ticket');
         expect(init.method).toBe('POST');
-        expect(JSON.parse(init.body)).toEqual({ code: CODE, email: EMAIL });
+        expect(JSON.parse(init.body)).toEqual({ name: NAME, code: CODE, email: EMAIL });
 
         await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/session/session-saturday'));
         // The cookie arrived on the response, so the cached router tree is stale.
@@ -142,6 +144,7 @@ describe('LoginClient', () => {
         render(<LoginClient />);
 
         expect(screen.getByText('Código de entrada')).toBeInTheDocument();
+        expect(screen.getByText('Nombre visible en la sala')).toBeInTheDocument();
         expect(screen.getByText('Correo con el que compraste la entrada')).toBeInTheDocument();
         // The reconnect promise, which is the whole point of binding the email.
         expect(screen.getByText(/work again after a refresh or a dropped/)).toBeInTheDocument();

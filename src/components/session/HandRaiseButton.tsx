@@ -127,22 +127,24 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
 
     return (
         <div className="flex flex-col items-center gap-2">
-            <button
-                type="button"
-                onClick={() => void setHand(!(state?.raised ?? false))}
-                disabled={busy || authorizationBlocked}
-                className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
-                    state?.raised
-                        ? 'bg-[var(--pink)] text-[var(--ink)] shadow-[0_0_16px_rgba(255,113,189,0.3)]'
-                        : 'bg-white/10 text-[var(--text-muted)] hover:bg-white/20'
-                } disabled:opacity-50`}
-            >
-                {state?.raised ? 'Lower hand / Bajar mano' : 'Raise hand / Levantar mano'}
-            </button>
+            {!state?.canPublish ? (
+                <button
+                    type="button"
+                    onClick={() => void setHand(!(state?.raised ?? false))}
+                    disabled={busy || authorizationBlocked}
+                    className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
+                        state?.raised
+                            ? 'bg-[var(--pink)] text-[var(--ink)] shadow-[0_0_16px_rgba(255,113,189,0.3)]'
+                            : 'bg-white/10 text-[var(--text-muted)] hover:bg-white/20'
+                    } disabled:opacity-50`}
+                >
+                    {state?.raised ? 'Lower hand / Bajar mano' : 'Raise hand / Levantar mano'}
+                </button>
+            ) : null}
             {state?.canPublish ? (
                 <p role="status" className="text-xs text-[var(--lime)]">
-                    Your turn — enable mic and camera below.
-                    <span className="mt-0.5 block opacity-80">Tu turno — activá micrófono y cámara abajo.</span>
+                    You are on stage — enable mic and camera below.
+                    <span className="mt-0.5 block opacity-80">Estás en escena — activá micrófono y cámara abajo.</span>
                 </p>
             ) : state?.raised && state.queuePosition !== null ? (
                 <p role="status" className="text-xs text-[var(--text-muted)]">

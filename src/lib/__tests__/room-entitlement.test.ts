@@ -35,6 +35,7 @@ const activeEvent = {
     facilitatorId: 'facilitator-1',
 };
 const activeTicketSession = {
+    displayName: 'Ana',
     expiresAt: new Date('2026-08-03T00:00:00Z'),
     revokedAt: null,
     staffUser: null,
@@ -141,7 +142,8 @@ describe('resolveRoomPrincipal', () => {
             principal: {
                 identity: 'opaque:event-1:ticket:ticket-1',
                 canPublish: true,
-                displayName: 'Attendee',
+                displayName: 'Ana',
+                role: 'ATTENDEE',
             },
         });
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
@@ -156,6 +158,7 @@ describe('resolveRoomPrincipal', () => {
             ticketEntitlement: null,
             staffUser: {
                 id: 'facilitator-1',
+                name: 'Julián',
                 role: 'FACILITATOR',
                 disabledAt: null,
             },
@@ -205,6 +208,7 @@ describe('resolveRoomPrincipal', () => {
             ticketEntitlement: null,
             staffUser: {
                 id: 'facilitator-1',
+                name: 'Julián',
                 role: 'FACILITATOR',
                 disabledAt: null,
             },
@@ -218,7 +222,7 @@ describe('resolveRoomPrincipal', () => {
 
         expect(result).toMatchObject({
             ok: true,
-            principal: { canPublish: true, displayName: 'Facilitator' },
+            principal: { canPublish: true, displayName: 'Julián', role: 'FACILITATOR' },
         });
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
             create: expect.objectContaining({
@@ -235,6 +239,7 @@ describe('resolveRoomPrincipal', () => {
             ticketEntitlement: null,
             staffUser: {
                 id: 'operator-1',
+                name: 'Oliva',
                 role: 'OPERATOR',
                 disabledAt: null,
             },
@@ -244,7 +249,7 @@ describe('resolveRoomPrincipal', () => {
 
         expect(result).toMatchObject({
             ok: true,
-            principal: { canPublish: false, displayName: 'Operator' },
+            principal: { canPublish: false, displayName: 'Oliva', role: 'OPERATOR' },
         });
     });
 
@@ -255,6 +260,7 @@ describe('resolveRoomPrincipal', () => {
             ticketEntitlement: null,
             staffUser: {
                 id: 'facilitator-2',
+                name: 'Other facilitator',
                 role: 'FACILITATOR',
                 disabledAt: null,
             },

@@ -19,7 +19,9 @@ import type { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { ticketExpiresAt } from '@/lib/admission';
 import {
+    isValidDisplayName,
     newSessionToken,
+    normalizeDisplayName,
     sessionCookie,
     webSessionExpiry,
 } from '@/lib/principal';
@@ -77,7 +79,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
         const body = (await request.json()) as unknown;
         const fields = (body ?? {}) as Record<string, unknown>;
-        name = typeof fields.name === 'string' ? fields.name.trim().slice(0, 60) : '';
+        name = typeof fields.name === 'string' ? normalizeDisplayName(fields.name) : '';
         role = ROLES.includes(fields.role as DashboardRole)
             ? (fields.role as DashboardRole)
             : 'ATTENDEE';
@@ -86,7 +88,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }
 
-    if (name.length === 0 || !landing) {
+    if (!isValidDisplayName(name) || !landing) {
         return NextResponse.json(
             { error: 'A name, a role and a same-origin landing path are required.' },
             { status: 400 },
@@ -147,6 +149,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await prisma.webSession.create({
             data: {
                 tokenDigest: issued.database.tokenDigest,
+                displayName: name,
                 staffUserId,
                 ticketEntitlementId,
                 expiresAt: webSessionExpiry(now),

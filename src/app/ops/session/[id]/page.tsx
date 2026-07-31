@@ -8,6 +8,7 @@
  */
 
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import SpotlightConsole from '@/components/ops/SpotlightConsole';
@@ -63,9 +64,17 @@ export default async function OpsSessionPage({
 
     return (
         <main className="mx-auto max-w-4xl px-4 py-8">
-            <h1 className="mb-1 text-2xl font-semibold">
-                Spotlight console — {scheduledSession.title}
-            </h1>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
+                <h1 className="text-2xl font-semibold">
+                    Spotlight console — {scheduledSession.title}
+                </h1>
+                <Link
+                    href={`/session/${scheduledSession.id}`}
+                    className="rounded border border-[var(--gold)]/40 px-3 py-2 text-sm text-[var(--gold)] hover:bg-[var(--gold)]/10"
+                >
+                    Enter session room →
+                </Link>
+            </div>
             <p className="mb-6 text-sm text-[var(--text-secondary)]">
                 {scheduledSession.language} · {scheduledSession.status} ·{' '}
                 {scheduledSession.scheduledAt.toISOString()} · signed in as{' '}

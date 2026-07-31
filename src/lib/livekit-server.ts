@@ -68,11 +68,13 @@ export async function createSessionToken(
     identity: string,
     name: string,
     canPublish: boolean,
+    role?: 'ATTENDEE' | 'FACILITATOR' | 'OPERATOR' | 'ADMIN',
 ): Promise<string> {
     requireLiveKitCredentials();
     const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
         identity,
         name,
+        metadata: role ? JSON.stringify({ role }) : undefined,
         ttl: '4h',
     });
 

@@ -104,8 +104,9 @@ describe('HandRaiseButton', () => {
         // can now offer mic/camera. No token refetch, no reconnect.
         await waitFor(() => expect(onGrant).toHaveBeenCalledWith(true), { timeout: 4000 });
         await waitFor(() => {
-            expect(screen.getByText(/Your turn — enable mic and camera/)).toBeInTheDocument();
+            expect(screen.getByText(/You are on stage — enable mic and camera/)).toBeInTheDocument();
         });
+        expect(screen.queryByRole('button', { name: /hand/i })).not.toBeInTheDocument();
     });
 
     it('surfaces a polling failure without clearing the current state', async () => {

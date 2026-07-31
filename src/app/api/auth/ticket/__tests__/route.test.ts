@@ -15,6 +15,7 @@ const PEPPER = 'route-test-pepper-with-at-least-32-characters';
 const CODE = 'HB26-A7NQ-92KM-4XZP';
 const OTHER_CODE = 'HB26-ZZZZ-0000-9YQT';
 const EMAIL = 'ana@example.com';
+const NAME = 'Ana';
 const CLIENT = '203.0.113.9';
 
 type EntitlementRow = {
@@ -46,7 +47,12 @@ function ticketRow(overrides: Partial<EntitlementRow> = {}): EntitlementRow {
     };
 }
 
-type WebSessionRow = { tokenDigest: string; ticketEntitlementId?: string; expiresAt: Date };
+type WebSessionRow = {
+    tokenDigest: string;
+    displayName?: string;
+    ticketEntitlementId?: string;
+    expiresAt: Date;
+};
 
 type FakePrisma = {
     $transaction: <T>(fn: (tx: FakePrisma) => Promise<T>) => Promise<T>;
@@ -115,9 +121,12 @@ function mountDb(rows: EntitlementRow[]) {
 }
 
 function loginRequest(body: unknown, address = CLIENT) {
+    const namedBody = body && typeof body === 'object' && !Array.isArray(body)
+        ? { name: NAME, ...body as Record<string, unknown> }
+        : body;
     return createRequest('/api/auth/ticket', {
         method: 'POST',
-        body,
+        body: namedBody,
         headers: { 'x-forwarded-for': address },
     });
 }
@@ -174,15 +183,21 @@ describe('POST /api/auth/ticket', () => {
         expect(db.webSessions[0].tokenDigest).toBe(digestSessionToken(cookie!.value));
         expect(JSON.stringify(db.webSessions[0])).not.toContain(cookie!.value);
         expect(db.webSessions[0].ticketEntitlementId).toBe('ticket-1');
+        expect(db.webSessions[0].displayName).toBe(NAME);
     });
 
     it('normalizes the bound email so a refresh and a later login both work', async () => {
         const db = mountDb([ticketRow()]);
         const { POST } = await importRoute();
 
-        const first = await POST(loginRequest({ code: `  ${CODE.toLowerCase()} `, email: '  Ana@Example.COM ' }));
+        const first = await POST(loginRequest({
+            name: '  Ana   María  ',
+            code: `  ${CODE.toLowerCase()} `,
+            email: '  Ana@Example.COM ',
+        }));
         expect(first.status).toBe(200);
         expect(db.entitlements[0].boundEmail).toBe(EMAIL);
+        expect(db.webSessions[0].displayName).toBe('Ana María');
 
         // A second login — new browser, new tab, or a reconnect after the laptop
         // slept — issues a second session for the same ticket.
@@ -293,6 +308,11 @@ describe('POST /api/auth/ticket', () => {
         ]) {
             expect((await POST(loginRequest(body))).status).toBe(400);
         }
+        expect((await POST(createRequest('/api/auth/ticket', {
+            method: 'POST',
+            body: { code: CODE, email: EMAIL },
+            headers: { 'x-forwarded-for': CLIENT },
+        }))).status).toBe(400);
         expect(db.webSessions).toHaveLength(0);
         expect(db.entitlements[0].state).toBe('ISSUED');
     });

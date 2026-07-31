@@ -119,6 +119,7 @@ model TicketEntitlement {
 model WebSession {
   id                  String              @id @default(uuid()) @db.Uuid
   tokenDigest         String              @unique @map("token_digest")
+  displayName         String?             @map("display_name")
   staffUserId         String?             @map("staff_user_id") @db.Uuid
   staffUser           User?               @relation("StaffWebSessions", fields: [staffUserId], references: [id], onDelete: Cascade)
   ticketEntitlementId String?             @map("ticket_entitlement_id") @db.Uuid

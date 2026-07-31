@@ -145,10 +145,9 @@ const TOKEN_RESPONSE = {
     canPublish: false,
     token: 'test-token',
     identity: 'opaque-attendee-12345678',
-    displayName: 'Attendee',
+    displayName: 'Nico',
     role: 'ATTENDEE',
     principalKind: 'ticket',
-    audioDiagnosticEnabled: true,
 };
 
 beforeEach(() => {
@@ -177,21 +176,15 @@ async function renderConnected() {
     await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
 }
 
-describe('SessionRoomPage - test identity and audio diagnostics', () => {
-    it('shows the selected test name, authorized role, short identity, and A/B controls', async () => {
-        window.sessionStorage.setItem(
-            'hb:e2e-viewer',
-            JSON.stringify({ name: 'Nico', role: 'ATTENDEE' }),
-        );
-
+describe('SessionRoomPage - participant identity', () => {
+    it('shows the server-authorized display name, role and short identity without diagnostics', async () => {
         await renderConnected();
 
         expect(screen.getByTestId('viewer-identity')).toHaveTextContent(
             'Signed in: Nico · ATTENDEE · ID 12345678',
         );
-        expect(screen.getByText('Audio A/B check')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Test browser output/i })).toBeInTheDocument();
-        expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).not.toBeNull();
+        expect(screen.queryByText('Audio A/B check')).not.toBeInTheDocument();
+        expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).toBeNull();
     });
 });
 
