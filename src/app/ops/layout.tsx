@@ -3,10 +3,11 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import OpsNavLinks from '@/components/ops/OpsNavLinks';
-import { prisma } from '@/lib/db';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
-import { hasGlobalEventAccess } from '@/lib/staff-capabilities';
+import { messages, staffRoleLabel } from '@/lib/i18n';
+import { requestLocale } from '@/lib/i18n-server';
+import StaffIdentityMenu from '@/components/ops/StaffIdentityMenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,34 +24,13 @@ export default async function OpsLayout({
         redirect('/staff/login');
     }
 
-    const sessions = await prisma.scheduledSession.findMany({
-        where: {
-            status: { in: ['SCHEDULED', 'LIVE'] },
-            ...(!hasGlobalEventAccess(staff.role) ? { facilitatorId: staff.id } : {}),
-        },
-        select: { id: true, title: true, language: true, status: true },
-        orderBy: { scheduledAt: 'asc' },
-    });
+    const locale = await requestLocale();
+    const copy = messages[locale];
 
     const links = [
-        { href: '/ops/health', label: 'Health' },
-        { href: '/ops/admission', label: 'Admission' },
-        ...sessions.flatMap((s) => {
-            const language = s.language === 'SPANISH' ? 'ES' : 'EN';
-            const test = s.title.toLowerCase().includes('(test)') ? ' test' : '';
-            return [
-                {
-                    href: `/session/${s.id}`,
-                    label: `${language} Room${test}`,
-                    live: s.status === 'LIVE',
-                },
-                {
-                    href: `/ops/session/${s.id}`,
-                    label: `${language} Spotlight${test}`,
-                    live: s.status === 'LIVE',
-                },
-            ];
-        }),
+        { href: '/ops/events', label: copy.ops.events },
+        { href: '/ops/health', label: copy.ops.health },
+        { href: '/ops/admission', label: copy.ops.admission },
     ];
 
     return (
@@ -58,14 +38,11 @@ export default async function OpsLayout({
             <nav className="border-b border-[var(--border-subtle)] bg-[var(--forest)]/80 px-4 py-2.5">
                 <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                     <Link
-                        href="/ops/health"
+                        href="/ops/events"
                         className="font-semibold text-[var(--paper)]"
                     >
-                        Beacon Ops
+                        {copy.ops.brand}
                     </Link>
-                    <span className="font-mono text-[10px] text-[var(--text-muted)]">
-                        {staff.name} · {staff.role}
-                    </span>
                     <span className="mx-1 hidden text-white/20 sm:inline">|</span>
                     <OpsNavLinks links={links} />
                     <span className="mx-1 hidden text-white/20 sm:inline">|</span>
@@ -73,8 +50,14 @@ export default async function OpsLayout({
                         href="/"
                         className="text-[var(--text-secondary)] hover:text-[var(--paper)]"
                     >
-                        Public site
+                        {copy.ops.publicSite}
                     </Link>
+                    <StaffIdentityMenu
+                        name={staff.name}
+                        roleLabel={staffRoleLabel(copy, staff.role)}
+                        signedInAs={copy.ops.signedInAs}
+                        signOut={copy.ops.signOut}
+                    />
                 </div>
             </nav>
             <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>

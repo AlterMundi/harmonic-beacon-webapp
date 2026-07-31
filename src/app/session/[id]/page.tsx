@@ -635,7 +635,7 @@ function SessionRoom() {
                     <div className="ml-3 flex shrink-0 items-center gap-3">
                         {principalKind === "staff" && (
                             <Link
-                                href={`/ops/session/${id}`}
+                                href={`/ops/events/${id}`}
                                 className="rounded border border-[var(--gold)]/40 px-2 py-1 text-xs text-[var(--gold)] hover:bg-[var(--gold)]/10"
                             >
                                 {copy.session.staffConsole}

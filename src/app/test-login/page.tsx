@@ -14,7 +14,8 @@ const TEST_SESSION_ID = "10000000-0000-4000-8000-000000000101";
 
 const LANDING_PRESETS = [
     { label: "Sala ES (asistente/facilitador)", path: `/session/${TEST_SESSION_ID}` },
-    { label: "Ops — sala ES", path: `/ops/session/${TEST_SESSION_ID}` },
+    { label: "Ops — evento ES", path: `/ops/events/${TEST_SESSION_ID}` },
+    { label: "Ops — eventos", path: "/ops/events" },
     { label: "Ops — admission", path: "/ops/admission" },
     { label: "Ops — health", path: "/ops/health" },
     { label: "Landing", path: "/" },

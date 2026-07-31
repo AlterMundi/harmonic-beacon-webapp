@@ -21,7 +21,7 @@ The deployed product has four surfaces and no general-purpose account area:
 | Public landing and ticket login | `/` | Anyone | Bilingual EN/ES page with the two event times, $50/$20 purchase links, terms/refund links, and a code + email form. It never exposes a room token. |
 | Paid session room | `/session/[id]` | Entitled attendee or staff | Joins the stage and beacon-bed LiveKit rooms, renders the six-person stage, provides the Beacon/Voice crossfader, audio-only fallback, hand raise, and optional tapestry camera contribution. |
 | Staff login | `/staff/login` | Julián, two operators, one admin | Seeded per-person credentials; no Zitadel/OIDC, public signup, password reset, or listener account. |
-| Operator controls | `/ops/session/[id]`, `/ops/admission` | Facilitator/operator/admin according to role | Hand queue, promote/demote/mute, participant and service health, ticket lookup, revoke, rebind, and comp/override issuance. |
+| Operator controls | `/ops/events/[id]` (`/ops/session/[id]` redirects), `/ops/admission` | Facilitator/operator/admin according to role | Unified event entry, hand queue, promote/demote/mute, participant and service health, ticket lookup, revoke, rebind, and comp/override issuance. |
 
 Only two `ScheduledSession` rows are seeded. They have language, start time, `paidMode=true`, attendee cap `150` including comps, and `maxPublishers=6`. This is a psychodrama scene: `maxPublishers` includes facilitator Julián, leaving at most five rotating slots for the protagonist, director, and auxiliaries. The app does not offer event creation, meditation, playback, profile, provider library, admin moderation, recording, voucher, plan, billing, or in-app purchase surfaces.
 

@@ -124,4 +124,20 @@ describe('weekend seed contract', () => {
         expect(migration).toContain(`ALTER TYPE "StaffRole" ADD VALUE 'FACILITATOR_OP'`);
         expect(migration).toContain('ADD COLUMN "actor_role" "StaffRole"');
     });
+
+    it('marks production and fixture events explicitly without title inference', () => {
+        expect(loadSeedContract(validEnvironment()).events.every((event) => event.isTest === false))
+            .toBe(true);
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260801010000_scheduled_session_is_test/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+        expect(migration).toContain('"is_test" BOOLEAN NOT NULL DEFAULT false');
+        expect(migration).toContain('10000000-0000-4000-8000-000000000101');
+        expect(migration).toContain('10000000-0000-4000-8000-000000000102');
+        expect(migration).not.toMatch(/(?:lower\s*\()?"?title"?\)?\s+(?:like|ilike)/i);
+    });
 });

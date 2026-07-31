@@ -103,9 +103,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (role === 'ATTENDEE') {
             const session = await prisma.scheduledSession.findUnique({
                 where: { roomName: TEST_ROOM_NAME },
-                select: { id: true, scheduledAt: true, status: true },
+                select: { id: true, scheduledAt: true, status: true, isTest: true },
             });
-            if (!session) {
+            if (!session?.isTest) {
                 return NextResponse.json(
                     { error: `Test session ${TEST_ROOM_NAME} not found.` },
                     { status: 409 },
