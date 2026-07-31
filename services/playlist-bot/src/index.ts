@@ -13,6 +13,7 @@ import { AccessToken } from 'livekit-server-sdk';
 import { spawn, execSync } from 'node:child_process';
 import { readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { hasAvailableBeaconAudio } from './beaconAvailability.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -120,7 +121,7 @@ class PlaylistBot {
   private source: AudioSource | null = null;
   private track: LocalAudioTrack | null = null;
 
-  private beaconPresent = false;
+  private beaconAudioAvailable = false;
   private shouldPublish = false;
   private publishGeneration = 0; // incremented on each start; stale loops exit
   private abortController: AbortController | null = null;
@@ -205,11 +206,11 @@ class PlaylistBot {
     await this.room.localParticipant!.publishTrack(this.track, opts);
     log('INFO', 'Audio track published');
 
-    // Check if beacon01 is already in the room
-    this.beaconPresent = this.isBeaconInRoom();
-    log('INFO', `beacon01 present: ${this.beaconPresent}`);
+    // Presence alone is not enough: beacon01 may connect before publishing.
+    this.beaconAudioAvailable = this.isBeaconAudioAvailable();
+    log('INFO', `beacon01 audio available: ${this.beaconAudioAvailable}`);
 
-    if (!this.beaconPresent) {
+    if (!this.beaconAudioAvailable) {
       this.startPublishing();
     } else {
       // Mute — beacon is live
@@ -239,18 +240,26 @@ class PlaylistBot {
     this.room.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
       log('INFO', `Participant joined: ${p.identity}`);
       if (p.identity === BEACON_IDENTITY) {
-        this.beaconPresent = true;
-        this.onBeaconPresenceChanged();
+        this.refreshBeaconAudioAvailability();
       }
     });
 
     this.room.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
       log('INFO', `Participant left: ${p.identity}`);
       if (p.identity === BEACON_IDENTITY) {
-        this.beaconPresent = false;
-        this.onBeaconPresenceChanged();
+        this.setBeaconAudioAvailable(false);
       }
     });
+
+    const refreshForBeacon = (_publication: unknown, participant: { identity: string }) => {
+      if (participant.identity === BEACON_IDENTITY) {
+        this.refreshBeaconAudioAvailability();
+      }
+    };
+    this.room.on(RoomEvent.TrackPublished, refreshForBeacon);
+    this.room.on(RoomEvent.TrackUnpublished, refreshForBeacon);
+    this.room.on(RoomEvent.TrackMuted, refreshForBeacon);
+    this.room.on(RoomEvent.TrackUnmuted, refreshForBeacon);
 
     this.room.on(RoomEvent.Reconnecting, () => {
       log('WARN', 'Reconnecting...');
@@ -258,30 +267,35 @@ class PlaylistBot {
 
     this.room.on(RoomEvent.Reconnected, () => {
       log('INFO', 'Reconnected');
-      // Re-check beacon presence
-      this.beaconPresent = this.isBeaconInRoom();
-      this.onBeaconPresenceChanged();
+      this.refreshBeaconAudioAvailability();
     });
   }
 
-  private isBeaconInRoom(): boolean {
+  private isBeaconAudioAvailable(): boolean {
     if (!this.room) return false;
-    for (const [, p] of this.room.remoteParticipants) {
-      if (p.identity === BEACON_IDENTITY) return true;
-    }
-    return false;
+    return hasAvailableBeaconAudio(this.room.remoteParticipants.values(), BEACON_IDENTITY);
+  }
+
+  private refreshBeaconAudioAvailability(): void {
+    this.setBeaconAudioAvailable(this.isBeaconAudioAvailable());
+  }
+
+  private setBeaconAudioAvailable(available: boolean): void {
+    if (available === this.beaconAudioAvailable) return;
+    this.beaconAudioAvailable = available;
+    this.onBeaconAvailabilityChanged();
   }
 
   // -------------------------------------------------------------------------
-  // Beacon presence → publish/stop decision
+  // Beacon audio availability → publish/stop decision
   // -------------------------------------------------------------------------
 
-  private onBeaconPresenceChanged(): void {
-    if (this.beaconPresent) {
-      log('INFO', 'beacon01 is LIVE — fading out playlist');
+  private onBeaconAvailabilityChanged(): void {
+    if (this.beaconAudioAvailable) {
+      log('INFO', 'beacon01 audio is LIVE — fading out playlist');
       this.startFade('out');
     } else {
-      log('INFO', 'beacon01 OFFLINE — fading in playlist');
+      log('INFO', 'beacon01 audio unavailable — fading in playlist');
       if (!this.shouldPublish) {
         this.volume = 0;
         this.startPublishing();
