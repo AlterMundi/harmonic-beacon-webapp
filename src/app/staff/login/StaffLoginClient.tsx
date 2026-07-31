@@ -62,7 +62,7 @@ export default function StaffLoginClient() {
     return (
         <form onSubmit={onSubmit} className="space-y-5" noValidate>
             <div className="space-y-1.5">
-                <label htmlFor="staff-email" className="block text-sm font-medium text-[var(--cream)]">
+                <label htmlFor="staff-email" className="block text-sm font-medium text-[var(--paper)]">
                     Staff email
                 </label>
                 <input
@@ -75,11 +75,15 @@ export default function StaffLoginClient() {
                     autoComplete="username"
                     spellCheck={false}
                     className="event-field"
+                    aria-describedby="staff-email-hint"
                 />
+                <p id="staff-email-hint" className="text-xs text-[var(--text-muted)]">
+                    The address you were given by the event producer.
+                </p>
             </div>
 
             <div className="space-y-1.5">
-                <label htmlFor="staff-password" className="block text-sm font-medium text-[var(--cream)]">
+                <label htmlFor="staff-password" className="block text-sm font-medium text-[var(--paper)]">
                     Password
                 </label>
                 <input
@@ -91,11 +95,15 @@ export default function StaffLoginClient() {
                     required
                     autoComplete="current-password"
                     className="event-field"
+                    aria-describedby="staff-password-hint"
                 />
+                <p id="staff-password-hint" className="text-xs text-[var(--text-muted)]">
+                    Delivered out of band. A lost one is re-seeded, not recovered.
+                </p>
             </div>
 
             {error && (
-                <div role="alert" className="event-alert event-alert--danger">
+                <div role="alert" className="event-alert event-alert--danger" aria-live="polite">
                     {MESSAGES[error]}
                 </div>
             )}
@@ -104,6 +112,7 @@ export default function StaffLoginClient() {
                 type="submit"
                 disabled={submitting}
                 className="event-button event-button--primary w-full"
+                aria-busy={submitting}
             >
                 {submitting ? "Signing in…" : "Sign in"}
             </button>

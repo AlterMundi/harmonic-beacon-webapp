@@ -25,8 +25,8 @@ export default function OpsNavLinks({ links }: { links: NavLink[] }) {
                         href={link.href}
                         className={`rounded-md px-2 py-1 text-xs transition-colors ${
                             isActive
-                                ? 'bg-white/15 text-[var(--cream)]'
-                                : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--cream)]'
+                                ? 'bg-white/15 text-[var(--paper)]'
+                                : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--paper)]'
                         }`}
                     >
                         {link.label}

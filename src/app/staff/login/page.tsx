@@ -25,7 +25,7 @@ export default async function StaffLoginPage() {
             <div className="relative z-10 mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-6 py-12">
                 <header className="space-y-1">
                     <BrandLockup href="/" />
-                    <h1 className="pt-4 font-serif text-2xl font-normal text-[var(--cream)]">
+                    <h1 className="pt-4 font-serif text-2xl font-normal text-[var(--paper)]">
                         Staff sign-in
                     </h1>
                     <p className="text-sm text-[var(--text-muted)]">
@@ -36,7 +36,7 @@ export default async function StaffLoginPage() {
                 {signedInRole ? (
                     <div className="space-y-4">
                         <div className="event-alert event-alert--info">
-                            Signed in as <span className="font-medium text-[var(--cream)]">{signedInRole}</span>.
+                            Signed in as <span className="font-medium text-[var(--paper)]">{signedInRole}</span>.
                         </div>
                         <Link
                             href="/ops/health"
@@ -50,7 +50,7 @@ export default async function StaffLoginPage() {
                 )}
 
                 <footer className="text-xs text-[var(--text-muted)]">
-                    <Link href="/" className="underline underline-offset-2 transition-colors hover:text-[var(--cream)]">
+                    <Link href="/" className="underline underline-offset-2 transition-colors hover:text-[var(--paper)]">
                         Attendee sign-in / Ingreso de participantes
                     </Link>
                 </footer>

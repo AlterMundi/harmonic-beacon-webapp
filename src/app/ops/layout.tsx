@@ -38,12 +38,12 @@ export default async function OpsLayout({
     ];
 
     return (
-        <div className="min-h-screen bg-[var(--ink)]">
-            <nav className="border-b border-[var(--border-subtle)] bg-[var(--deep)]/80 px-4 py-2.5">
+        <div className="min-h-screen bg-[var(--night)]">
+            <nav className="border-b border-[var(--border-subtle)] bg-[var(--forest)]/80 px-4 py-2.5">
                 <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                     <Link
                         href="/ops/health"
-                        className="font-semibold text-[var(--cream)]"
+                        className="font-semibold text-[var(--paper)]"
                     >
                         Beacon Ops
                     </Link>
@@ -55,7 +55,7 @@ export default async function OpsLayout({
                     <span className="mx-1 hidden text-white/20 sm:inline">|</span>
                     <Link
                         href="/"
-                        className="text-[var(--text-secondary)] hover:text-[var(--cream)]"
+                        className="text-[var(--text-secondary)] hover:text-[var(--paper)]"
                     >
                         Public site
                     </Link>

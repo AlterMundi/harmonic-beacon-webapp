@@ -1,14 +1,8 @@
 "use client";
 
 /**
- * The attendee login form: ticket code plus email, and nothing else.
- *
- * Rendered by the landing page at `/`, which is where the identity contract puts
- * it. It stays in this directory because `/login` is the address the old product
- * used and the file the auth strip is tracked against; `src/app/login/page.tsx`
- * now redirects there.
- *
- * Bilingual by showing both languages at once rather than by detecting one.
+ * The attendee login form: ticket code plus email.
+ * Phase 5: Bilingual via LanguageControl, refined states.
  */
 
 import { useState } from "react";
@@ -82,11 +76,9 @@ export default function LoginClient({ next }: { next?: string }) {
     return (
         <form onSubmit={onSubmit} className="space-y-5" noValidate>
             <div className="space-y-1.5">
-                <label htmlFor="ticket-code" className="block text-sm font-medium text-[var(--cream)]">
-                    Ticket code
-                    <span className="mt-0.5 block text-xs font-normal text-[var(--text-muted)]">
-                        Código de entrada
-                    </span>
+                <label htmlFor="ticket-code" className="block text-sm font-medium text-[var(--paper)]">
+                    <span data-copy="en">Ticket code</span>
+                    <span data-copy="es">Código de entrada</span>
                 </label>
                 <input
                     id="ticket-code"
@@ -98,15 +90,18 @@ export default function LoginClient({ next }: { next?: string }) {
                     autoCapitalize="characters"
                     spellCheck={false}
                     className="event-field font-mono tracking-wider"
+                    aria-describedby="ticket-code-hint"
                 />
+                <p id="ticket-code-hint" className="text-xs text-[var(--text-muted)]">
+                    <span data-copy="en">Exactly as it appears in your ticket email</span>
+                    <span data-copy="es">Exactamente como aparece en el correo de tu entrada</span>
+                </p>
             </div>
 
             <div className="space-y-1.5">
-                <label htmlFor="ticket-email" className="block text-sm font-medium text-[var(--cream)]">
-                    Email used to buy the ticket
-                    <span className="mt-0.5 block text-xs font-normal text-[var(--text-muted)]">
-                        Correo con el que compraste la entrada
-                    </span>
+                <label htmlFor="ticket-email" className="block text-sm font-medium text-[var(--paper)]">
+                    <span data-copy="en">Email used to buy the ticket</span>
+                    <span data-copy="es">Correo con el que compraste la entrada</span>
                 </label>
                 <input
                     id="ticket-email"
@@ -123,8 +118,8 @@ export default function LoginClient({ next }: { next?: string }) {
 
             {error && (
                 <div role="alert" className="event-alert event-alert--danger">
-                    <span className="block">{MESSAGES[error].en}</span>
-                    <span className="mt-1 block opacity-80">{MESSAGES[error].es}</span>
+                    <span data-copy="en" className="block">{MESSAGES[error].en}</span>
+                    <span data-copy="es" className="block">{MESSAGES[error].es}</span>
                 </div>
             )}
 
@@ -132,13 +127,17 @@ export default function LoginClient({ next }: { next?: string }) {
                 type="submit"
                 disabled={submitting}
                 className="event-button event-button--primary w-full"
+                aria-busy={submitting}
             >
-                {submitting ? "Signing in… / Ingresando…" : "Enter the event / Entrar al evento"}
+                <span data-copy="en">{submitting ? "Signing in…" : "Enter the event"}</span>
+                <span data-copy="es">{submitting ? "Ingresando…" : "Entrar al evento"}</span>
             </button>
 
             <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-                Your ticket admits one person. The same code and email work again after a refresh or a dropped connection.
-                <span className="mt-1 block opacity-80">
+                <span data-copy="en">
+                    Your ticket admits one person. The same code and email work again after a refresh or a dropped connection.
+                </span>
+                <span data-copy="es">
                     Tu entrada admite a una persona. El mismo código y correo funcionan de nuevo si recargás o se corta la conexión.
                 </span>
             </p>
