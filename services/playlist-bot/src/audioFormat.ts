@@ -21,3 +21,20 @@ export function decoderArgs(filePath: string): string[] {
     'pipe:1',
   ];
 }
+
+/**
+ * Give LiveKit an exact, zero-offset ArrayBuffer.
+ *
+ * Node Buffers smaller than the pool size commonly share a larger backing
+ * ArrayBuffer with a non-zero byteOffset. rtc-node 0.13.x passes the backing
+ * buffer pointer to native code, so handing it a view can encode unrelated
+ * pooled bytes. An owned copy keeps the PCM frame boundary exact.
+ */
+export function ownedPcm16Frame(bytes: Uint8Array): Int16Array {
+  if (bytes.byteLength !== BYTES_PER_FRAME) {
+    throw new RangeError(`expected ${BYTES_PER_FRAME} PCM bytes, got ${bytes.byteLength}`);
+  }
+  const owned = new Uint8Array(BYTES_PER_FRAME);
+  owned.set(bytes);
+  return new Int16Array(owned.buffer);
+}

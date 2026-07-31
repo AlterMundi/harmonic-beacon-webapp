@@ -21,6 +21,7 @@ import {
   MUSIC_DTX,
   MUSIC_RED,
   NUM_CHANNELS,
+  ownedPcm16Frame,
   SAMPLE_RATE,
   SAMPLES_PER_CHANNEL,
 } from './audioFormat.js';
@@ -434,16 +435,13 @@ class PlaylistBot {
             return;
           }
 
-          // Copy frame bytes into a fresh buffer to guarantee 2-byte alignment
-          const frameBuffer = Buffer.from(buffer.subarray(0, BYTES_PER_FRAME));
+          const frameBuffer = buffer.subarray(0, BYTES_PER_FRAME);
           buffer = buffer.subarray(BYTES_PER_FRAME);
 
-          // View as Int16 samples (alignment guaranteed by Buffer.from copy)
-          const frameSamples = new Int16Array(
-            frameBuffer.buffer,
-            frameBuffer.byteOffset,
-            SAMPLES_PER_CHANNEL * NUM_CHANNELS,
-          );
+          // rtc-node 0.13.x forwards AudioFrame.data.buffer rather than the
+          // view's byteOffset. Use a dedicated zero-offset buffer or pooled
+          // Node bytes outside this frame will be encoded as audio.
+          const frameSamples = ownedPcm16Frame(frameBuffer);
           this.applyFade(frameSamples);
 
           const frame = new AudioFrame(
