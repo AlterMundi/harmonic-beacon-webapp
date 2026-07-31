@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import SpotlightConsole from '@/components/ops/SpotlightConsole';
+import SessionLifecycleControl from '@/components/ops/SessionLifecycleControl';
 import TapestryArrange from '@/components/ops/TapestryArrange';
 import { prisma } from '@/lib/db';
 import { resolveStaffByToken } from '@/lib/ops-auth';
@@ -69,18 +70,32 @@ export default async function OpsSessionPage({
                 <h1 className="text-2xl font-semibold">
                     Spotlight console — {scheduledSession.title}
                 </h1>
-                <Link
-                    href={`/session/${scheduledSession.id}`}
-                    className="rounded border border-[var(--gold)]/40 px-3 py-2 text-sm text-[var(--gold)] hover:bg-[var(--gold)]/10"
-                >
-                    Enter session room →
-                </Link>
+                <div className="flex flex-wrap gap-2">
+                    <Link
+                        href={`/session/${scheduledSession.id}`}
+                        className="rounded border border-[var(--gold)]/40 px-3 py-2 text-sm text-[var(--gold)] hover:bg-[var(--gold)]/10"
+                    >
+                        Enter session room →
+                    </Link>
+                    <Link
+                        href={`/ops/health?sessionId=${scheduledSession.id}`}
+                        className="rounded border border-[var(--border-subtle)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-white/5"
+                    >
+                        Event health
+                    </Link>
+                </div>
             </div>
             <p className="mb-6 text-sm text-[var(--text-secondary)]">
                 {scheduledSession.language} · {scheduledSession.status} ·{' '}
                 {scheduledSession.scheduledAt.toISOString()} · signed in as{' '}
                 {staff.name} ({staff.role})
             </p>
+            <SessionLifecycleControl
+                sessionId={scheduledSession.id}
+                initialStatus={scheduledSession.status}
+                scheduledAt={scheduledSession.scheduledAt.toISOString()}
+                role={staff.role}
+            />
             <SpotlightConsole sessionId={scheduledSession.id} role={staff.role} />
             <TapestryArrange sessionId={scheduledSession.id} />
         </main>

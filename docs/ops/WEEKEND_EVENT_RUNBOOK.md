@@ -10,6 +10,25 @@ nginx).
 
 Print this or keep it open next to `/ops/health` during both sessions.
 
+## Event doors and lifecycle
+
+Use the selected event's Spotlight console; routine event status changes no
+longer require SQL.
+
+1. At T-10 minutes or later, confirm the selected event's health link names the
+   correct title, then press **Open doors**. A repeated press is harmless.
+2. Keep the waiting-room page open on a test attendee: it must move into the
+   room automatically, without re-entering the ticket.
+3. After the session, press **Close event**, review the impact copy, and confirm.
+   Connected attendee clients move to the closing state and both media rooms
+   disconnect locally on their next status check.
+4. Admin cancellation and opening outside the -10/+60 minute window require a
+   short operational reason. Never put attendee names, emails, ticket codes or
+   session tokens in that field.
+
+If a lifecycle action fails, do not edit the database. Record the response code,
+refresh the event console, and escalate to the incident commander.
+
 ---
 
 ## 1. Roles and authority

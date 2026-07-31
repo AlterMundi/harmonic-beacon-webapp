@@ -15,11 +15,19 @@ import OpsHealthClient from './OpsHealthClient';
 
 export const dynamic = 'force-dynamic';
 
-export default async function OpsHealthPage() {
+export default async function OpsHealthPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ sessionId?: string | string[] }>;
+}) {
     const principal = await currentPrincipal().catch(() => null);
     if (!principal || principal.kind !== 'staff') {
         redirect('/staff/login');
     }
+    const requestedSessionId = (await searchParams).sessionId;
+    const sessionId = typeof requestedSessionId === 'string'
+        ? requestedSessionId
+        : undefined;
 
     return (
         <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-6 py-10">
@@ -32,7 +40,10 @@ export default async function OpsHealthPage() {
                 </p>
             </header>
 
-            <OpsHealthClient role={principal.role} />
+            <OpsHealthClient
+                role={principal.role}
+                sessionId={sessionId}
+            />
         </main>
     );
 }

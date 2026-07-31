@@ -78,7 +78,7 @@ function CheckRow({ label, check }: { label: string; check: SubsystemCheck }) {
     );
 }
 
-export default function OpsHealthClient({ role }: { role: string }) {
+export default function OpsHealthClient({ role, sessionId }: { role: string; sessionId?: string }) {
     const [report, setReport] = useState<OperatorHealthReport | null>(null);
     const [endpointError, setEndpointError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -86,7 +86,10 @@ export default function OpsHealthClient({ role }: { role: string }) {
 
     const refresh = useCallback(async () => {
         try {
-            const response = await fetch('/api/ops/health', { cache: 'no-store' });
+            const endpoint = sessionId
+                ? `/api/ops/health?sessionId=${encodeURIComponent(sessionId)}`
+                : '/api/ops/health';
+            const response = await fetch(endpoint, { cache: 'no-store' });
             if (!response.ok) {
                 throw new Error(`Endpoint answered HTTP ${response.status}`);
             }
@@ -106,7 +109,7 @@ export default function OpsHealthClient({ role }: { role: string }) {
                 setLoading(false);
             }
         }
-    }, []);
+    }, [sessionId]);
 
     useEffect(() => {
         mounted.current = true;
