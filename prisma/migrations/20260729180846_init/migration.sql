@@ -1,0 +1,5 @@
+-- RenameIndex
+ALTER INDEX "session_participants_scheduled_session_id_participant_identity_" RENAME TO "session_participants_scheduled_session_id_participant_ident_key";
+
+-- RenameIndex
+ALTER INDEX "session_participants_scheduled_session_id_publish_granted_at_id" RENAME TO "session_participants_scheduled_session_id_publish_granted_a_idx";

@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "dist/**",
     "next-env.d.ts",
     // Compiled output of the playlist-bot, checked in so the deploy does not
     // need a build step for it. It is generated CommonJS, so linting it reports
