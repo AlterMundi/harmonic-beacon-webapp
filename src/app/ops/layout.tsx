@@ -48,7 +48,7 @@ export default async function OpsLayout({
                     <span className="mx-1 hidden text-white/20 sm:inline">|</span>
                     <Link
                         href="/"
-                        className="text-[var(--text-secondary)] hover:text-[var(--paper)]"
+                        className="inline-flex min-h-11 items-center px-2 text-[var(--text-secondary)] hover:text-[var(--paper)]"
                     >
                         {copy.ops.publicSite}
                     </Link>

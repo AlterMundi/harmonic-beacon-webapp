@@ -19,14 +19,8 @@ vi.mock('@/lib/db', () => ({ prisma: { scheduledSession: { findUnique: mocks.fin
 vi.mock('@/lib/ops-auth', () => ({ resolveStaffByToken: mocks.resolveStaffByToken }));
 vi.mock('@/lib/staff-navigation', () => ({ resolveStaffLanding: mocks.resolveStaffLanding }));
 vi.mock('@/lib/i18n-server', () => ({ requestLocale: vi.fn().mockResolvedValue('en') }));
-vi.mock('@/components/ops/SessionLifecycleControl', () => ({
-    default: ({ sessionId }: { sessionId: string }) => <div data-testid="lifecycle">{sessionId}</div>,
-}));
-vi.mock('@/components/ops/SpotlightConsole', () => ({
-    default: ({ sessionId }: { sessionId: string }) => <div data-testid="spotlight">{sessionId}</div>,
-}));
-vi.mock('@/components/ops/TapestryArrange', () => ({
-    default: ({ sessionId }: { sessionId: string }) => <div data-testid="tapestry">{sessionId}</div>,
+vi.mock('@/components/ops/ConductorCockpit', () => ({
+    default: ({ session }: { session: { id: string } }) => <div data-testid="cockpit">{session.id}</div>,
 }));
 
 import EventPage from '../page';
@@ -53,12 +47,8 @@ describe('canonical staff event page', () => {
         render(await EventPage({ params: Promise.resolve({ id: 'event-1' }) }));
 
         expect(screen.getByRole('heading', { name: 'The living scene' })).toBeInTheDocument();
-        expect(screen.getByRole('link', { name: /Enter the room/ })).toHaveAttribute(
-            'href', '/session/event-1',
-        );
-        expect(screen.getByTestId('lifecycle')).toHaveTextContent('event-1');
-        expect(screen.getByTestId('spotlight')).toHaveTextContent('event-1');
-        expect(screen.getByTestId('tapestry')).toHaveTextContent('event-1');
+        expect(screen.queryByRole('link', { name: /Enter the room/ })).toBeNull();
+        expect(screen.getByTestId('cockpit')).toHaveTextContent('event-1');
     });
 
     it('recovers from inaccessible IDs without leaking their title or facilitator', async () => {

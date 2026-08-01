@@ -23,7 +23,8 @@ export default function OpsNavLinks({ links }: { links: NavLink[] }) {
                     <Link
                         key={link.href}
                         href={link.href}
-                        className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                        aria-current={isActive ? 'page' : undefined}
+                        className={`inline-flex min-h-11 items-center rounded-md px-3 py-2 text-xs transition-colors ${
                             isActive
                                 ? 'bg-white/15 text-[var(--paper)]'
                                 : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--paper)]'

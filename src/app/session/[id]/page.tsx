@@ -128,6 +128,7 @@ function SessionRoom() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const inviteCode = searchParams.get("invite");
+    const embeddedInCockpit = searchParams.get("surface") === "cockpit";
 
     const {
         audioError: beaconAudioError,
@@ -696,10 +697,10 @@ function SessionRoom() {
                         )}
                     </div>
                     <div className="ml-3 flex shrink-0 items-center gap-3">
-                        {principalKind === "staff" && (
+                        {principalKind === "staff" && !embeddedInCockpit && (
                             <Link
                                 href={`/ops/events/${id}`}
-                                className="rounded border border-[var(--gold)]/40 px-2 py-1 text-xs text-[var(--gold)] hover:bg-[var(--gold)]/10"
+                                className="inline-flex min-h-11 items-center rounded border border-[var(--gold)]/40 px-3 py-2 text-xs text-[var(--gold)] hover:bg-[var(--gold)]/10"
                             >
                                 {copy.session.staffConsole}
                             </Link>

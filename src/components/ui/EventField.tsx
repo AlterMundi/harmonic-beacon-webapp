@@ -2,7 +2,7 @@
  * Event field: text input styled for the event design system.
  */
 
-import type { InputHTMLAttributes } from "react";
+import { useId, type InputHTMLAttributes } from "react";
 
 interface EventFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: React.ReactNode;
@@ -14,9 +14,13 @@ export default function EventField({
   error,
   className = "",
   id,
+  "aria-describedby": describedBy,
+  "aria-invalid": invalid,
   ...props
 }: EventFieldProps) {
-  const fieldId = id || (typeof label === "string" ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
+  const generatedId = useId();
+  const fieldId = id || `event-field-${generatedId.replace(/:/g, "")}`;
+  const errorId = `${fieldId}-error`;
   return (
     <div className={`space-y-1 ${className}`}>
       {label && (
@@ -24,9 +28,15 @@ export default function EventField({
           {label}
         </label>
       )}
-      <input id={fieldId} className="event-field" {...props} />
+      <input
+        id={fieldId}
+        className="event-field"
+        aria-invalid={error ? true : invalid}
+        aria-describedby={[describedBy, error ? errorId : null].filter(Boolean).join(" ") || undefined}
+        {...props}
+      />
       {error && (
-        <p role="alert" className="text-xs text-[var(--danger)]">
+        <p id={errorId} role="alert" className="text-xs text-[var(--danger)]">
           {error}
         </p>
       )}

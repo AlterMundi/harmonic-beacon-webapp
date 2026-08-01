@@ -24,8 +24,8 @@ const dotClass: Record<PillVariant, string> = {
   success: "status-pill__dot--success",
   warning: "status-pill__dot--warning",
   danger: "status-pill__dot--danger",
-  request: "status-pill__dot--danger",
-  brand: "status-pill__dot--success",
+  request: "status-pill__dot--request",
+  brand: "status-pill__dot--brand",
 };
 
 export default function StatusPill({ variant, children, dot = true }: StatusPillProps) {

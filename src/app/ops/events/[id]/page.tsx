@@ -2,9 +2,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import SessionLifecycleControl from '@/components/ops/SessionLifecycleControl';
-import SpotlightConsole from '@/components/ops/SpotlightConsole';
-import TapestryArrange from '@/components/ops/TapestryArrange';
+import ConductorCockpit from '@/components/ops/ConductorCockpit';
 import { prisma } from '@/lib/db';
 import { messages } from '@/lib/i18n';
 import { requestLocale } from '@/lib/i18n-server';
@@ -34,6 +32,7 @@ export default async function EventPage({
             status: true,
             scheduledAt: true,
             facilitatorId: true,
+            attendeeCap: true,
         },
     });
     const canOpen = scheduledSession &&
@@ -74,20 +73,6 @@ export default async function EventPage({
                         {scheduledSession.title}
                     </h1>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    <Link
-                        href={`/session/${scheduledSession.id}`}
-                        className="rounded border border-[var(--gold)]/40 px-3 py-2 text-sm text-[var(--gold)] hover:bg-[var(--gold)]/10"
-                    >
-                        {copy.enterRoom} →
-                    </Link>
-                    <Link
-                        href={`/ops/health?sessionId=${scheduledSession.id}`}
-                        className="rounded border border-[var(--border-subtle)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-white/5"
-                    >
-                        {copy.eventHealth}
-                    </Link>
-                </div>
             </div>
             <p className="mb-6 text-sm text-[var(--text-secondary)]">
                 {scheduledSession.language === 'SPANISH' ? 'ES' : 'EN'} ·{' '}
@@ -97,14 +82,23 @@ export default async function EventPage({
                     timeStyle: 'short',
                 }).format(scheduledSession.scheduledAt)}
             </p>
-            <SessionLifecycleControl
-                sessionId={scheduledSession.id}
-                initialStatus={scheduledSession.status}
-                scheduledAt={scheduledSession.scheduledAt.toISOString()}
+            <ConductorCockpit
+                session={{
+                    id: scheduledSession.id,
+                    title: scheduledSession.title,
+                    status: scheduledSession.status,
+                    scheduledAt: scheduledSession.scheduledAt.toISOString(),
+                }}
                 role={staff.role}
+                admissionEvents={[{
+                    id: scheduledSession.id,
+                    title: scheduledSession.title,
+                    language: scheduledSession.language,
+                    scheduledAt: scheduledSession.scheduledAt.toISOString(),
+                    attendeeCap: scheduledSession.attendeeCap,
+                }]}
+                copy={copy.cockpit}
             />
-            <SpotlightConsole sessionId={scheduledSession.id} role={staff.role} />
-            <TapestryArrange sessionId={scheduledSession.id} />
         </section>
     );
 }

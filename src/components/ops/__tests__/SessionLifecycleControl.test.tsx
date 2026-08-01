@@ -90,4 +90,24 @@ describe('SessionLifecycleControl', () => {
         });
         expect(screen.getByRole('button', { name: 'Open doors' })).toBeEnabled();
     });
+
+    it('adopts status observed by another operator without a reload', async () => {
+        const { rerender } = render(<SessionLifecycleControl
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            observedStatus="SCHEDULED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="OPERATOR"
+        />);
+        expect(screen.getByRole('button', { name: 'Open doors' })).toBeInTheDocument();
+
+        rerender(<SessionLifecycleControl
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            observedStatus="LIVE"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="OPERATOR"
+        />);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Close event' })).toBeInTheDocument());
+    });
 });

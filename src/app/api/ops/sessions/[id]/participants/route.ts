@@ -23,6 +23,7 @@ export async function GET(
         select: {
             id: true,
             roomName: true,
+            status: true,
             facilitatorId: true,
             maxPublishers: true,
             participants: {
@@ -133,6 +134,7 @@ export async function GET(
 
     return NextResponse.json({
         sessionId: scheduledSession.id,
+        sessionStatus: scheduledSession.status,
         maxPublishers: scheduledSession.maxPublishers,
         // Julián's facilitator slot is reserved even before preflight creates
         // his participant row. Exclude an active facilitator row to avoid

@@ -3,6 +3,8 @@
  * Same brand family, utilitarian presentation.
  */
 
+import { useId } from "react";
+
 interface OperationalPanelProps {
   children: React.ReactNode;
   className?: string;
@@ -14,14 +16,16 @@ export default function OperationalPanel({
   className = "",
   title,
 }: OperationalPanelProps) {
+  const generatedId = useId();
+  const titleId = title ? `operational-panel-${generatedId.replace(/:/g, "")}` : undefined;
   return (
-    <div className={`operator-panel ${className}`}>
+    <section className={`operational-panel ${className}`} aria-labelledby={titleId}>
       {title && (
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+        <h3 id={titleId} className="mb-3 text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           {title}
         </h3>
       )}
       {children}
-    </div>
+    </section>
   );
 }

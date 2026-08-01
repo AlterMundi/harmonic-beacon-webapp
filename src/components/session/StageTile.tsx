@@ -7,6 +7,9 @@ import {
     AUXILIARY_DIMENSIONS,
     SPOTLIGHT_DIMENSIONS,
     type StageConnectionQuality,
+    type StagePresence,
+    type StageQualityPriority,
+    type StageSceneRole,
     type StageVideoDimensions,
 } from "@/lib/stage-layout";
 
@@ -19,11 +22,12 @@ export interface StageVideoPublication {
     setVideoDimensions?(dimensions: StageVideoDimensions): void;
 }
 
-export type StageTileVariant = "spotlight" | "auxiliary";
-
 export interface StageTileProps {
     label: string;
-    variant: StageTileVariant;
+    sceneRole: StageSceneRole;
+    qualityPriority: StageQualityPriority;
+    presence: StagePresence;
+    presenceTone: 0 | 1 | 2 | 3;
     isLocal: boolean;
     isSpeaking: boolean;
     cameraOn: boolean;
@@ -60,7 +64,10 @@ function CameraOffIcon() {
 
 export default function StageTile({
     label,
-    variant,
+    sceneRole,
+    qualityPriority,
+    presence,
+    presenceTone,
     isLocal,
     isSpeaking,
     cameraOn,
@@ -70,9 +77,24 @@ export default function StageTile({
 }: StageTileProps) {
     const { copy } = useLocale();
     const videoRef = useRef<HTMLVideoElement | null>(null);
-    const isSpotlight = variant === "spotlight";
 
-    const track = cameraOn ? videoPublication?.videoTrack ?? null : null;
+    const track = presence === "connected" && cameraOn
+        ? videoPublication?.videoTrack ?? null
+        : null;
+    const roleLabel = copy.stage[sceneRole];
+    const mediaState = presence === "reconnecting"
+        ? copy.stage.reconnecting
+        : cameraOn
+            ? track
+                ? null
+                : copy.stage.connecting
+            : copy.stage.presentWithoutCamera;
+    const accessibleLabel = [
+        isLocal ? `${label} (${copy.stage.you})` : label,
+        roleLabel,
+        mediaState,
+        !micOn ? copy.stage.microphoneMuted : null,
+    ].filter(Boolean).join(", ");
 
     useEffect(() => {
         const element = videoRef.current;
@@ -84,23 +106,25 @@ export default function StageTile({
     }, [track]);
 
     useEffect(() => {
+        if (qualityPriority === "none") return;
         videoPublication?.setVideoDimensions?.(
-            isSpotlight ? SPOTLIGHT_DIMENSIONS : AUXILIARY_DIMENSIONS,
+            qualityPriority === "high" ? SPOTLIGHT_DIMENSIONS : AUXILIARY_DIMENSIONS,
         );
-    }, [videoPublication, isSpotlight]);
+    }, [videoPublication, qualityPriority]);
 
     return (
         <li
             data-testid="stage-tile"
-            data-variant={variant}
+            data-role={sceneRole}
+            data-quality-priority={qualityPriority}
+            data-presence={presence}
+            data-presence-tone={presenceTone}
             data-identity-label={label}
-            aria-label={`${label}${isLocal ? ` (${copy.stage.you})` : ""}`}
+            aria-label={accessibleLabel}
             className={[
-                "relative aspect-video overflow-hidden rounded-lg border bg-white/5",
-                isSpotlight ? "col-span-5 stage-tile--spotlight" : "col-span-1",
-                isSpeaking
-                    ? "stage-tile--speaking"
-                    : "border-[var(--border-subtle)]",
+                "stage-tile",
+                `stage-tile--${sceneRole}`,
+                isSpeaking ? "stage-tile--speaking" : "",
             ].join(" ")}
         >
             {track ? (
@@ -110,32 +134,29 @@ export default function StageTile({
                     autoPlay
                     playsInline
                     muted={isLocal}
-                    className={`h-full w-full object-cover ${isLocal ? "scale-x-[-1]" : ""}`}
+                    className={`stage-tile__video ${isLocal ? "scale-x-[-1]" : ""}`}
                 />
             ) : (
-                <div className="flex h-full w-full items-center justify-center">
-                    <span
-                        className={`text-[var(--text-muted)] ${isSpotlight ? "text-sm" : "text-[9px]"}`}
-                    >
-                        {cameraOn ? copy.stage.connecting : copy.stage.cameraOff}
-                    </span>
+                <div className="stage-tile__presence" data-testid="stage-tile-presence">
+                    <span>{mediaState}</span>
                 </div>
             )}
 
-            <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-black/60 px-1.5 py-1">
-                <span
-                    className={`truncate text-white ${isSpotlight ? "text-xs" : "text-[9px]"}`}
-                >
-                    {isLocal ? `${label} (${copy.stage.you})` : label}
-                </span>
+            <div className="stage-tile__identity">
+                <div className="min-w-0">
+                    <span className="stage-tile__name" title={label}>
+                        {isLocal ? `${label} (${copy.stage.you})` : label}
+                    </span>
+                    <span className="stage-tile__role" aria-hidden="true">{roleLabel}</span>
+                </div>
                 <span className="flex-1" />
                 {!micOn && (
-                    <span role="img" aria-label={`${label} ${copy.stage.microphoneMuted}`} className="text-[var(--danger)]">
+                    <span role="img" aria-label={`${label} ${copy.stage.microphoneMuted}`} className="text-white/80">
                         <MicOffIcon />
                     </span>
                 )}
                 {!cameraOn && (
-                    <span role="img" aria-label={`${label} ${copy.stage.cameraOff.toLocaleLowerCase()}`} className="text-[var(--danger)]">
+                    <span role="img" aria-label={`${label} ${copy.stage.cameraOff.toLocaleLowerCase()}`} className="text-white/80">
                         <CameraOffIcon />
                     </span>
                 )}

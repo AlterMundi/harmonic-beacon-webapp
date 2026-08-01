@@ -78,7 +78,15 @@ function CheckRow({ label, check }: { label: string; check: SubsystemCheck }) {
     );
 }
 
-export default function OpsHealthClient({ role, sessionId }: { role: string; sessionId?: string }) {
+export default function OpsHealthClient({
+    role,
+    sessionId,
+    onLevelChange,
+}: {
+    role: string;
+    sessionId?: string;
+    onLevelChange?: (level: HealthLevel) => void;
+}) {
     const [report, setReport] = useState<OperatorHealthReport | null>(null);
     const [endpointError, setEndpointError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -97,19 +105,21 @@ export default function OpsHealthClient({ role, sessionId }: { role: string; ses
             if (mounted.current) {
                 setReport(body);
                 setEndpointError(null);
+                onLevelChange?.(body.status);
             }
         } catch (error) {
             if (mounted.current) {
                 setEndpointError(
                     error instanceof Error ? error.message : 'Health endpoint unreachable',
                 );
+                onLevelChange?.('red');
             }
         } finally {
             if (mounted.current) {
                 setLoading(false);
             }
         }
-    }, [sessionId]);
+    }, [sessionId, onLevelChange]);
 
     useEffect(() => {
         mounted.current = true;
@@ -166,7 +176,7 @@ export default function OpsHealthClient({ role, sessionId }: { role: string; ses
                 <button
                     type="button"
                     onClick={() => void refresh()}
-                    className="rounded border border-[var(--border-subtle)] px-3 py-1 text-xs hover:bg-white/5"
+                    className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5"
                 >
                     Refresh now
                 </button>

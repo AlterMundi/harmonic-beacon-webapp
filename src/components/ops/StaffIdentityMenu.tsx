@@ -30,7 +30,7 @@ export default function StaffIdentityMenu({
 
     return (
         <details className="relative ml-auto">
-            <summary className="cursor-pointer list-none rounded-md border border-white/10 px-3 py-1.5 text-right hover:bg-white/5">
+            <summary className="flex min-h-11 cursor-pointer list-none flex-col justify-center rounded-md border border-white/10 px-3 py-1.5 text-right hover:bg-white/5">
                 <span className="block text-xs font-medium text-[var(--paper)]">{name}</span>
                 <span className="block text-[10px] text-[var(--text-muted)]">{roleLabel}</span>
             </summary>
@@ -42,7 +42,7 @@ export default function StaffIdentityMenu({
                     type="button"
                     disabled={busy}
                     onClick={logout}
-                    className="mt-3 w-full rounded border border-white/15 px-3 py-1.5 text-left text-xs text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--paper)] disabled:opacity-50"
+                    className="mt-3 min-h-11 w-full rounded border border-white/15 px-3 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--paper)] disabled:opacity-50"
                 >
                     {signOut}
                 </button>

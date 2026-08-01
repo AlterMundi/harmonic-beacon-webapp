@@ -55,6 +55,7 @@ function normalizeParticipant(p: ConsoleParticipant): ConsoleParticipant {
 
 type ParticipantsSnapshot = {
     sessionId: string;
+    sessionStatus?: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
     maxPublishers: number;
     activePublishers: number;
     liveStateAvailable: boolean;
@@ -71,6 +72,17 @@ type ActionError = {
 type Props = {
     sessionId: string;
     role: StaffRole;
+    onSummary?: (summary: SpotlightSummary) => void;
+};
+
+export type SpotlightSummary = {
+    activePublishers: number;
+    maxPublishers: number;
+    handCount: number;
+    nextName: string | null;
+    reconcileCount: number;
+    liveStateAvailable: boolean;
+    sessionStatus?: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
 };
 
 async function postStage(
@@ -135,7 +147,7 @@ function participantLabel(participant: ConsoleParticipant): string {
     return `${participant.displayName} · ID ${participant.identity.slice(-8)}`;
 }
 
-export default function SpotlightConsole({ sessionId, role }: Props) {
+export default function SpotlightConsole({ sessionId, role, onSummary }: Props) {
     const [snapshot, setSnapshot] = useState<ParticipantsSnapshot | null>(null);
     const [pollError, setPollError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<ActionError | null>(null);
@@ -155,9 +167,22 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
             }
             const body = (await response.json()) as ParticipantsSnapshot;
             if (mounted.current) {
+                const participants = body.participants.map(normalizeParticipant);
                 setSnapshot({
                     ...body,
-                    participants: body.participants.map(normalizeParticipant),
+                    participants,
+                });
+                const queue = participants
+                    .filter((participant) => participant.queuePosition !== null)
+                    .sort((left, right) => (left.queuePosition ?? 0) - (right.queuePosition ?? 0));
+                onSummary?.({
+                    activePublishers: body.activePublishers,
+                    maxPublishers: body.maxPublishers,
+                    handCount: queue.length,
+                    nextName: queue[0]?.displayName ?? null,
+                    reconcileCount: participants.filter((participant) => participant.reconcileNeeded).length,
+                    liveStateAvailable: body.liveStateAvailable,
+                    sessionStatus: body.sessionStatus,
                 });
                 setPollError(null);
                 setNowMs(Date.now());
@@ -169,7 +194,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                 );
             }
         }
-    }, [sessionId]);
+    }, [sessionId, onSummary]);
 
     useEffect(() => {
         mounted.current = true;
@@ -327,7 +352,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                     type="button"
                     onClick={() => void reconcile()}
                     disabled={busyKey === 'reconcile'}
-                    className="rounded border border-[var(--border-subtle)] px-3 py-1 text-xs hover:bg-white/5 disabled:opacity-50"
+                    className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
                 >
                     Reconcile grants
                 </button>
@@ -344,7 +369,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                 ) : (
                     <ul className="space-y-2">
                         {queue.map((participant) => (
-                            <li key={participant.id} className="flex items-center justify-between gap-3 operational-panel">
+                            <li key={participant.id} className="operational-panel flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                                 <div className="min-w-0">
                                     <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participantLabel(participant)}</span>
                                     <div className="text-xs text-[var(--text-secondary)]">
@@ -360,7 +385,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                         disabled={busyKey !== null || participant.connected !== true}
                                         onClick={() => void giveFloor(participant)}
                                         title={participant.connected === true ? undefined : 'Participant must be connected before joining the stage'}
-                                        className="min-h-10 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
+                                    className="min-h-11 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
                                     >
                                         {participant.connected === true ? 'Give floor' : 'Waiting for reconnect'}
                                     </button>
@@ -368,7 +393,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                         type="button"
                                         disabled={busyKey !== null}
                                         onClick={() => void removeHand(participant)}
-                                        className="min-h-10 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
+                                        className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
                                     >
                                         Remove hand
                                     </button>
@@ -412,7 +437,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                                 type="button"
                                                 disabled={busyKey !== null}
                                                 onClick={() => void muteTrack(participant, track)}
-                                                className="rounded border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-white/5 disabled:opacity-50"
+                                                className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
                                             >
                                                 Mute {track.source.toLowerCase()}
                                             </button>
@@ -422,7 +447,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                                 type="button"
                                                 disabled={busyKey !== null}
                                                 onClick={() => void takeFloor(participant)}
-                                                className="min-h-10 rounded border border-[var(--danger)] px-3 py-2 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/10 disabled:opacity-50"
+                                                className="min-h-11 rounded border border-[var(--danger)] px-3 py-2 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/10 disabled:opacity-50"
                                             >
                                                 Take floor
                                             </button>
@@ -447,7 +472,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                 ) : (
                     <ul className="space-y-1 text-sm">
                         {audience.map((participant) => (
-                            <li key={participant.id} className="flex items-center justify-between rounded px-2 py-1">
+                            <li key={participant.id} className="flex flex-col items-start justify-between gap-2 rounded px-2 py-1 sm:flex-row sm:items-center">
                                 <span className="text-[var(--cream)]">
                                     {participantLabel(participant)}
                                     {participant.staffRole ? (
@@ -464,7 +489,7 @@ export default function SpotlightConsole({ sessionId, role }: Props) {
                                             type="button"
                                             disabled={busyKey !== null}
                                             onClick={() => void inviteToStage(participant)}
-                                            className="min-h-10 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
+                                            className="min-h-11 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
                                         >
                                             Invite to stage
                                         </button>

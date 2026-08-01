@@ -1,23 +1,16 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render as rtlRender, screen, cleanup } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render as rtlRender, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import StageTile, { type StageVideoPublication } from '../StageTile';
 import { LocaleProvider } from '@/context/LocaleContext';
 
 function render(ui: ReactNode) {
-    return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale="en">{children}</LocaleProvider> });
+    return rtlRender(ui, {
+        wrapper: ({ children }) => <LocaleProvider initialLocale="en">{children}</LocaleProvider>,
+    });
 }
-
-/**
- * WS2-02: the spotlight requests the 720p layer and every auxiliary requests
- * 360p, each tile shows camera/mic mute state and connection quality, and no
- * tile leaks a video element when it changes role.
- *
- * StageTile takes structural props rather than SDK objects, so these are real
- * assertions about the rendered tile and not about a mock's shape.
- */
 
 function fakePublication(overrides: Partial<StageVideoPublication> = {}): StageVideoPublication {
     return {
@@ -29,8 +22,11 @@ function fakePublication(overrides: Partial<StageVideoPublication> = {}): StageV
 }
 
 const BASE_PROPS = {
-    label: 'Facilitator',
-    variant: 'spotlight' as const,
+    label: 'Julian',
+    sceneRole: 'facilitator' as const,
+    qualityPriority: 'high' as const,
+    presence: 'connected' as const,
+    presenceTone: 0 as const,
     isLocal: false,
     isSpeaking: false,
     cameraOn: true,
@@ -40,136 +36,148 @@ const BASE_PROPS = {
 
 afterEach(cleanup);
 
-describe('StageTile - requested simulcast layer', () => {
-    it('asks the SFU for 720p in the spotlight', () => {
+describe('StageTile — requested simulcast quality', () => {
+    it('requests 720p only for the high-priority publication', () => {
         const publication = fakePublication();
-        render(<StageTile {...BASE_PROPS} variant="spotlight" videoPublication={publication} />);
-
+        render(<StageTile {...BASE_PROPS} qualityPriority="high" videoPublication={publication} />);
         expect(publication.setVideoDimensions).toHaveBeenCalledWith({ width: 1280, height: 720 });
     });
 
-    it('asks the SFU for 360p in an auxiliary slot', () => {
+    it('requests 360p for a standard publication', () => {
         const publication = fakePublication();
-        render(<StageTile {...BASE_PROPS} variant="auxiliary" videoPublication={publication} />);
-
+        render(<StageTile {...BASE_PROPS} qualityPriority="standard" videoPublication={publication} />);
         expect(publication.setVideoDimensions).toHaveBeenCalledWith({ width: 640, height: 360 });
     });
 
-    it('re-requests the layer when a tile is promoted, reusing the same video element', () => {
+    it('changes quality without replacing, attaching, or detaching the video element', () => {
         const publication = fakePublication();
         const { rerender } = render(
-            <StageTile {...BASE_PROPS} variant="auxiliary" videoPublication={publication} />,
+            <StageTile {...BASE_PROPS} qualityPriority="standard" videoPublication={publication} />,
         );
-        const elementBefore = screen.getByTestId('stage-tile-video');
+        const video = screen.getByTestId('stage-tile-video');
 
-        rerender(<StageTile {...BASE_PROPS} variant="spotlight" videoPublication={publication} />);
+        rerender(<StageTile {...BASE_PROPS} qualityPriority="high" videoPublication={publication} />);
 
-        expect(publication.setVideoDimensions).toHaveBeenLastCalledWith({
-            width: 1280,
-            height: 720,
-        });
-        // The whole point of promoting in place: one element, attached once.
-        expect(screen.getByTestId('stage-tile-video')).toBe(elementBefore);
+        expect(screen.getByTestId('stage-tile-video')).toBe(video);
+        expect(publication.setVideoDimensions).toHaveBeenLastCalledWith({ width: 1280, height: 720 });
         expect(publication.videoTrack?.attach).toHaveBeenCalledTimes(1);
         expect(publication.videoTrack?.detach).not.toHaveBeenCalled();
     });
 
-    it('tolerates a local publication, which cannot request a layer', () => {
-        // LocalTrackPublication has no setVideoDimensions; the tile must render.
-        const publication = fakePublication({ setVideoDimensions: undefined });
+    it('makes no dimension request for camera-off and reconnecting presence cards', () => {
+        const cameraOff = fakePublication();
+        const reconnecting = fakePublication();
+        const { rerender } = render(
+            <StageTile {...BASE_PROPS} cameraOn={false} qualityPriority="none" videoPublication={cameraOff} />,
+        );
+        expect(cameraOff.setVideoDimensions).not.toHaveBeenCalled();
 
-        expect(() =>
-            render(<StageTile {...BASE_PROPS} videoPublication={publication} />),
-        ).not.toThrow();
-        expect(screen.getByTestId('stage-tile-video')).toBeInTheDocument();
+        rerender(
+            <StageTile {...BASE_PROPS} presence="reconnecting" qualityPriority="none" videoPublication={reconnecting} />,
+        );
+        expect(reconnecting.setVideoDimensions).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('stage-tile-video')).not.toBeInTheDocument();
+    });
+
+    it('tolerates a local publication that cannot request a remote layer', () => {
+        const publication = fakePublication({ setVideoDimensions: undefined });
+        expect(() => render(<StageTile {...BASE_PROPS} videoPublication={publication} />)).not.toThrow();
     });
 });
 
-describe('StageTile - video element lifecycle', () => {
-    it('attaches the track to exactly one element and detaches it on unmount', () => {
+describe('StageTile — video element lifecycle', () => {
+    it('attaches to one element and detaches that exact element on unmount', () => {
         const publication = fakePublication();
         const { unmount } = render(<StageTile {...BASE_PROPS} videoPublication={publication} />);
+        const video = screen.getByTestId('stage-tile-video');
 
-        const element = screen.getByTestId('stage-tile-video');
-        expect(publication.videoTrack?.attach).toHaveBeenCalledWith(element);
         expect(publication.videoTrack?.attach).toHaveBeenCalledTimes(1);
-
+        expect(publication.videoTrack?.attach).toHaveBeenCalledWith(video);
         unmount();
-        expect(publication.videoTrack?.detach).toHaveBeenCalledWith(element);
+        expect(publication.videoTrack?.detach).toHaveBeenCalledWith(video);
     });
 
-    it('renders no video element for a publisher with no camera publication', () => {
-        render(<StageTile {...BASE_PROPS} videoPublication={null} />);
+    it('replaces a track on the existing identity-owned video without leaving an obsolete attachment', () => {
+        const original = fakePublication({ trackSid: 'old' });
+        const replacement = fakePublication({ trackSid: 'new' });
+        const { rerender } = render(<StageTile {...BASE_PROPS} videoPublication={original} />);
+        const video = screen.getByTestId('stage-tile-video');
 
+        rerender(<StageTile {...BASE_PROPS} videoPublication={replacement} />);
+
+        expect(screen.getByTestId('stage-tile-video')).toBe(video);
+        expect(original.videoTrack?.detach).toHaveBeenCalledTimes(1);
+        expect(original.videoTrack?.detach).toHaveBeenCalledWith(video);
+        expect(replacement.videoTrack?.attach).toHaveBeenCalledTimes(1);
+        expect(replacement.videoTrack?.attach).toHaveBeenCalledWith(video);
+    });
+
+    it('uses a truthful connecting card only for an expected camera track', () => {
+        render(<StageTile {...BASE_PROPS} videoPublication={null} />);
         expect(screen.queryByTestId('stage-tile-video')).not.toBeInTheDocument();
         expect(screen.getByText('Connecting…')).toBeInTheDocument();
     });
 
-    it('drops the video element when the camera is muted rather than freezing a frame', () => {
-        const publication = fakePublication();
+    it('uses dignified camera-off and reconnecting copy in the same tile geometry', () => {
         const { rerender } = render(
-            <StageTile {...BASE_PROPS} cameraOn videoPublication={publication} />,
+            <StageTile {...BASE_PROPS} cameraOn={false} qualityPriority="none" />,
         );
-        const element = screen.getByTestId('stage-tile-video');
+        const tile = screen.getByTestId('stage-tile');
+        expect(screen.getByText('Present without camera')).toBeInTheDocument();
 
-        rerender(<StageTile {...BASE_PROPS} cameraOn={false} videoPublication={publication} />);
-
-        expect(publication.videoTrack?.detach).toHaveBeenCalledWith(element);
-        expect(screen.queryByTestId('stage-tile-video')).not.toBeInTheDocument();
-        expect(screen.getByText('Camera off')).toBeInTheDocument();
+        rerender(<StageTile {...BASE_PROPS} presence="reconnecting" qualityPriority="none" />);
+        expect(screen.getByTestId('stage-tile')).toBe(tile);
+        expect(screen.getByText('Reconnecting…')).toBeInTheDocument();
     });
 
-    it('never plays a local preview back through the speakers', () => {
+    it('never plays a local preview through the speakers', () => {
         render(<StageTile {...BASE_PROPS} isLocal videoPublication={fakePublication()} />);
-
         expect(screen.getByTestId('stage-tile-video')).toHaveProperty('muted', true);
-        expect(screen.getByLabelText('Facilitator (you)')).toBeInTheDocument();
+        expect(screen.getByLabelText(/Julian \(you\), facilitator/)).toBeInTheDocument();
     });
 });
 
-describe('StageTile - per-tile indicators', () => {
-    it('shows a mute indicator only while the microphone is muted', () => {
-        const { rerender } = render(<StageTile {...BASE_PROPS} micOn />);
-        expect(
-            screen.queryByRole('img', { name: 'Facilitator microphone muted' }),
-        ).not.toBeInTheDocument();
-
-        rerender(<StageTile {...BASE_PROPS} micOn={false} />);
-        expect(
-            screen.getByRole('img', { name: 'Facilitator microphone muted' }),
-        ).toBeInTheDocument();
-    });
-
-    it('shows a camera indicator only while the camera is off', () => {
-        const { rerender } = render(<StageTile {...BASE_PROPS} cameraOn />);
-        expect(screen.queryByRole('img', { name: 'Facilitator camera off' })).not.toBeInTheDocument();
-
-        rerender(<StageTile {...BASE_PROPS} cameraOn={false} />);
-        expect(screen.getByRole('img', { name: 'Facilitator camera off' })).toBeInTheDocument();
-    });
-
-    it('reports the participant connection quality LiveKit gives us', () => {
-        const { rerender } = render(<StageTile {...BASE_PROPS} connectionQuality="excellent" />);
-        expect(screen.getByRole('img', { name: 'Facilitator connection excellent' })).toBeInTheDocument();
-
-        rerender(<StageTile {...BASE_PROPS} connectionQuality="poor" />);
-        const indicator = screen.getByRole('img', { name: 'Facilitator connection poor' });
-        expect(indicator).toHaveAttribute('data-quality', 'poor');
-    });
-
-    it('marks the active speaker so the audience can see who has the floor', () => {
-        const { rerender } = render(<StageTile {...BASE_PROPS} isSpeaking={false} />);
-        expect(screen.getByTestId('stage-tile').className).not.toMatch(/stage-tile--speaking/);
-
-        rerender(<StageTile {...BASE_PROPS} isSpeaking />);
-        expect(screen.getByTestId('stage-tile').className).toMatch(/stage-tile--speaking/);
-    });
-
-    it('labels a tile with the non-PII role word only', () => {
-        render(<StageTile {...BASE_PROPS} label="Attendee" />);
-
+describe('StageTile — legible role and media state', () => {
+    it('makes actual name primary and role explicit without exposing an opaque identity', () => {
+        render(
+            <StageTile
+                {...BASE_PROPS}
+                label="Julian Alvarez"
+                sceneRole="protagonist"
+                videoPublication={fakePublication()}
+            />,
+        );
         const tile = screen.getByTestId('stage-tile');
-        expect(tile).toHaveAttribute('aria-label', 'Attendee');
-        expect(tile.textContent).not.toMatch(/@/);
+
+        expect(tile).toHaveAttribute('aria-label', 'Julian Alvarez, protagonist');
+        expect(screen.getByTitle('Julian Alvarez')).toHaveTextContent('Julian Alvarez');
+        expect(screen.getByText('protagonist')).toBeInTheDocument();
+        expect(tile.textContent).not.toMatch(/participant-|ticket-|@/);
+    });
+
+    it('shows microphone and camera indicators only for those explicit states', () => {
+        const { rerender } = render(<StageTile {...BASE_PROPS} />);
+        expect(screen.queryByRole('img', { name: 'Julian microphone muted' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('img', { name: 'Julian camera off' })).not.toBeInTheDocument();
+
+        rerender(<StageTile {...BASE_PROPS} micOn={false} cameraOn={false} qualityPriority="none" />);
+        expect(screen.getByRole('img', { name: 'Julian microphone muted' })).toBeInTheDocument();
+        expect(screen.getByRole('img', { name: 'Julian camera off' })).toBeInTheDocument();
+    });
+
+    it('reports connection quality and speaking without changing geometry', () => {
+        const { rerender } = render(<StageTile {...BASE_PROPS} />);
+        const tile = screen.getByTestId('stage-tile');
+        expect(screen.getByRole('img', { name: 'Julian connection excellent' })).toBeInTheDocument();
+
+        rerender(<StageTile {...BASE_PROPS} connectionQuality="poor" isSpeaking />);
+        expect(screen.getByTestId('stage-tile')).toBe(tile);
+        expect(tile).toHaveClass('stage-tile--speaking');
+        expect(screen.getByRole('img', { name: 'Julian connection poor' })).toHaveAttribute('data-quality', 'poor');
+    });
+
+    it('carries the deterministic presence tone as styling metadata', () => {
+        render(<StageTile {...BASE_PROPS} cameraOn={false} qualityPriority="none" presenceTone={3} />);
+        expect(screen.getByTestId('stage-tile')).toHaveAttribute('data-presence-tone', '3');
     });
 });

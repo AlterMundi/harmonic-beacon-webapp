@@ -8,6 +8,8 @@ type Props = {
     initialStatus: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
     scheduledAt: string;
     role: StaffRole;
+    observedStatus?: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
+    onStatusChange?: (status: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED') => void;
 };
 
 const EARLY_MS = 10 * 60 * 1000;
@@ -18,6 +20,8 @@ export default function SessionLifecycleControl({
     initialStatus,
     scheduledAt,
     role,
+    observedStatus,
+    onStatusChange,
 }: Props) {
     const [status, setStatus] = useState(initialStatus);
     const [confirmClose, setConfirmClose] = useState(false);
@@ -31,6 +35,14 @@ export default function SessionLifecycleControl({
         const timer = setInterval(() => setNowMs(Date.now()), 30_000);
         return () => clearInterval(timer);
     }, []);
+
+    useEffect(() => {
+        if (!observedStatus || observedStatus === status) return;
+        setStatus(observedStatus);
+        setConfirmClose(false);
+        setNotice(null);
+        setError(null);
+    }, [observedStatus, status]);
 
     const outsideOpenWindow = useMemo(() => {
         const start = new Date(scheduledAt).getTime();
@@ -59,7 +71,9 @@ export default function SessionLifecycleControl({
             if (!response.ok) {
                 throw new Error(data.message || `Status change failed (HTTP ${response.status})`);
             }
-            setStatus((data.status as typeof status) || targetStatus);
+            const nextStatus = (data.status as typeof status) || targetStatus;
+            setStatus(nextStatus);
+            onStatusChange?.(nextStatus);
             setConfirmClose(false);
             setReason('');
             setNotice(targetStatus === 'LIVE'

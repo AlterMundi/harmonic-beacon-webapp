@@ -164,8 +164,13 @@ export type Messages = {
         audioOnly: string;
         waiting: string;
         you: string;
+        protagonist: string;
+        facilitator: string;
+        holder: string;
         connecting: string;
         cameraOff: string;
+        presentWithoutCamera: string;
+        reconnecting: string;
         microphoneMuted: string;
         quality: Record<'excellent' | 'good' | 'poor' | 'lost' | 'unknown', string>;
     };
@@ -201,6 +206,32 @@ export type Messages = {
         unavailableTitle: string;
         unavailableBody: string;
         recover: string;
+        cockpit: {
+            roomTitle: string;
+            roomHint: string;
+            door: string;
+            hands: string;
+            stage: string;
+            primary: string;
+            healthSignal: string;
+            open: string;
+            closed: string;
+            next: string;
+            noHands: string;
+            manageHands: string;
+            inspectStage: string;
+            reconcileStage: string;
+            inspectStageConnection: string;
+            inspectHealth: string;
+            openDoors: string;
+            doorsPanel: string;
+            handsPanel: string;
+            tapestryPanel: string;
+            admissionPanel: string;
+            healthPanel: string;
+            closePanel: string;
+            tools: string;
+        };
     };
 };
 
@@ -341,8 +372,13 @@ export const messages: Record<UiLocale, Messages> = {
             audioOnly: 'Modo solo audio. El video está apagado; seguís escuchando la escena y el Beacon.',
             waiting: 'Esperando que la persona facilitadora abra la escena.',
             you: 'vos',
+            protagonist: 'protagonista',
+            facilitator: 'facilitación',
+            holder: 'acompaña la escena',
             connecting: 'Conectando…',
             cameraOff: 'Cámara apagada',
+            presentWithoutCamera: 'Presente sin cámara',
+            reconnecting: 'Reconectando…',
             microphoneMuted: 'micrófono silenciado',
             quality: { excellent: 'conexión excelente', good: 'conexión buena', poor: 'conexión débil', lost: 'conexión perdida', unknown: 'conexión desconocida' },
         },
@@ -383,6 +419,32 @@ export const messages: Record<UiLocale, Messages> = {
             unavailableTitle: 'Este evento no está disponible',
             unavailableBody: 'El enlace puede estar vencido o pertenecer a otro equipo. No se mostraron datos del evento.',
             recover: 'Volver a tus eventos',
+            cockpit: {
+                roomTitle: 'Sala en vivo',
+                roomHint: 'La escena permanece conectada mientras abrís las herramientas.',
+                door: 'Puerta',
+                hands: 'Manos',
+                stage: 'Escena',
+                primary: 'Siguiente acción',
+                healthSignal: 'Salud',
+                open: 'Abierta',
+                closed: 'Cerrada',
+                next: 'Sigue',
+                noHands: 'Sin manos',
+                manageHands: 'Atender la próxima mano',
+                inspectStage: 'Revisar la escena',
+                reconcileStage: 'Reconciliar la escena',
+                inspectStageConnection: 'Revisar conexión de escena',
+                inspectHealth: 'Revisar estado técnico',
+                openDoors: 'Abrir puertas',
+                doorsPanel: 'Puertas del evento',
+                handsPanel: 'Manos, escena y público',
+                tapestryPanel: 'Composición del tapiz',
+                admissionPanel: 'Soporte de entradas',
+                healthPanel: 'Estado técnico',
+                closePanel: 'Cerrar herramienta',
+                tools: 'Herramientas',
+            },
         },
     },
     en: {
@@ -521,8 +583,13 @@ export const messages: Record<UiLocale, Messages> = {
             audioOnly: 'Audio-only mode. Video is off; you are still hearing the stage and the Beacon bed.',
             waiting: 'Waiting for the facilitator to open the stage.',
             you: 'you',
+            protagonist: 'protagonist',
+            facilitator: 'facilitator',
+            holder: 'holding the scene',
             connecting: 'Connecting…',
             cameraOff: 'Camera off',
+            presentWithoutCamera: 'Present without camera',
+            reconnecting: 'Reconnecting…',
             microphoneMuted: 'microphone muted',
             quality: { excellent: 'connection excellent', good: 'connection good', poor: 'connection poor', lost: 'connection lost', unknown: 'connection unknown' },
         },
@@ -563,6 +630,32 @@ export const messages: Record<UiLocale, Messages> = {
             unavailableTitle: 'This event is unavailable',
             unavailableBody: 'The link may be stale or belong to another team. No event details were disclosed.',
             recover: 'Return to your events',
+            cockpit: {
+                roomTitle: 'Live room',
+                roomHint: 'The scene stays connected while you open tools.',
+                door: 'Door',
+                hands: 'Hands',
+                stage: 'Stage',
+                primary: 'Next action',
+                healthSignal: 'Health',
+                open: 'Open',
+                closed: 'Closed',
+                next: 'Next',
+                noHands: 'No hands',
+                manageHands: 'Handle the next hand',
+                inspectStage: 'Review the stage',
+                reconcileStage: 'Reconcile the stage',
+                inspectStageConnection: 'Check the stage connection',
+                inspectHealth: 'Review system health',
+                openDoors: 'Open doors',
+                doorsPanel: 'Event doors',
+                handsPanel: 'Hands, stage, and audience',
+                tapestryPanel: 'Tapestry composition',
+                admissionPanel: 'Admission support',
+                healthPanel: 'System health',
+                closePanel: 'Close tool',
+                tools: 'Tools',
+            },
         },
     },
 };
