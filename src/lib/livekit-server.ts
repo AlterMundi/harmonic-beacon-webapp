@@ -17,6 +17,11 @@ export type SessionTokenMetadata = {
 
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
+// Keep participant identities stable across routine LiveKit API-key rotation.
+// The first rollout deliberately falls back to the current API secret so it
+// does not rename already connected participants; production then pins the
+// separate value for subsequent rotations.
+const LIVEKIT_IDENTITY_SECRET = process.env.LIVEKIT_IDENTITY_SECRET || LIVEKIT_API_SECRET;
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://live.altermundi.net';
 // Server-to-server API endpoint inside the deploy network (compose sets this to
 // http://livekit:7880). When present it wins over the public signaling URL:
@@ -53,7 +58,7 @@ export function stableRoomIdentity(
     principalId: string,
 ): string {
     requireLiveKitCredentials();
-    const digest = createHmac('sha256', LIVEKIT_API_SECRET)
+    const digest = createHmac('sha256', LIVEKIT_IDENTITY_SECRET)
         .update(`${scheduledSessionId}:${principalKind}:${principalId}`)
         .digest('base64url')
         .slice(0, 32);
@@ -62,7 +67,7 @@ export function stableRoomIdentity(
 
 export function bedRoomIdentity(stageIdentity: string): string {
     requireLiveKitCredentials();
-    const digest = createHmac('sha256', LIVEKIT_API_SECRET)
+    const digest = createHmac('sha256', LIVEKIT_IDENTITY_SECRET)
         .update(`bed:${stageIdentity}`)
         .digest('base64url')
         .slice(0, 32);
@@ -78,13 +83,14 @@ export async function createSessionToken(
     name: string,
     canPublish: boolean,
     metadata?: SessionTokenMetadata,
+    ttl: string = '4h',
 ): Promise<string> {
     requireLiveKitCredentials();
     const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
         identity,
         name,
         metadata: metadata ? JSON.stringify(metadata) : undefined,
-        ttl: '4h',
+        ttl,
     });
 
     token.addGrant({
@@ -104,6 +110,7 @@ export async function createSessionToken(
 export async function createBedToken(
     room: string,
     identity: string,
+    ttl?: string,
 ): Promise<string> {
-    return createSessionToken(room, identity, 'Event audio', false);
+    return createSessionToken(room, identity, 'Event audio', false, undefined, ttl);
 }

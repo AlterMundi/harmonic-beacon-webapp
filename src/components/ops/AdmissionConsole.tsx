@@ -32,6 +32,12 @@ type Entitlement = {
     revokedAt: string | null;
     revocationReason: string | null;
     event: { id: string; title: string; language: string; scheduledAt: string };
+    commerce: {
+        provider: 'TICKET_TAILOR';
+        providerState: 'ACTIVE' | 'REVOKED';
+        administrativeState: 'CLEAR' | 'SUSPENDED';
+        mediaStatus: string;
+    } | null;
 };
 
 type Props = {
@@ -104,7 +110,7 @@ export default function AdmissionConsole({ role, events }: Props) {
         }
     }
 
-    async function runEntitlementAction(id: string, action: 'revoke' | 'rebind', email?: string) {
+    async function runEntitlementAction(id: string, action: 'revoke' | 'rebind' | 'resume', email?: string) {
         setBusy(true);
         flash(null, null);
         try {
@@ -116,7 +122,14 @@ export default function AdmissionConsole({ role, events }: Props) {
             if (status >= 400) {
                 flash(null, errorMessage(status, data));
             } else {
-                flash(action === 'revoke' ? 'Entitlement revoked.' : 'Binding updated.', null);
+                flash(
+                    action === 'revoke'
+                        ? 'Access suspended or revoked.'
+                        : action === 'resume'
+                            ? 'Administrative suspension cleared.'
+                            : 'Binding updated.',
+                    null,
+                );
                 setResults((current) =>
                     current?.map((item) =>
                         item.id === id
@@ -124,7 +137,16 @@ export default function AdmissionConsole({ role, events }: Props) {
                                 ...item,
                                 state: data.state as string,
                                 boundEmail: (data.boundEmail as string | null) ?? item.boundEmail,
-                                revokedAt: action === 'revoke' ? new Date().toISOString() : item.revokedAt,
+                                revokedAt: action === 'revoke'
+                                    ? new Date().toISOString()
+                                    : action === 'resume'
+                                        ? null
+                                        : item.revokedAt,
+                                commerce: item.commerce ? {
+                                    ...item.commerce,
+                                    administrativeState: action === 'resume' ? 'CLEAR' :
+                                        action === 'revoke' ? 'SUSPENDED' : item.commerce.administrativeState,
+                                } : null,
                             }
                             : item,
                     ) ?? null,
@@ -222,6 +244,12 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     <span><strong className="text-[var(--cream)]">Bound email:</strong> {item.boundEmail ?? '—'}</span>
                                     <span><strong className="text-[var(--cream)]">Event:</strong> {item.event.title}</span>
                                     <span><strong className="text-[var(--cream)]">Expires:</strong> {new Date(item.expiresAt).toLocaleString()}</span>
+                                    {item.commerce && (
+                                        <span>
+                                            <strong className="text-[var(--cream)]">Commerce:</strong>{' '}
+                                            {item.commerce.providerState} · admin {item.commerce.administrativeState} · media {item.commerce.mediaStatus}
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="mt-1 font-mono text-[10px] text-[var(--text-muted)]">ID: {item.id}</div>
                                 {item.revokedAt && (
@@ -230,7 +258,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     </div>
                                 )}
 
-                                {canMutate && item.state !== 'REVOKED' && (
+                                {canMutate && (item.state !== 'REVOKED' || item.commerce !== null) && (
                                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-3">
                                         <input
                                             className="event-field min-w-56 flex-1"
@@ -240,30 +268,45 @@ export default function AdmissionConsole({ role, events }: Props) {
                                                 setReasons((current) => ({ ...current, [item.id]: event.target.value }))
                                             }
                                         />
-                                        <input
-                                            className="event-field min-w-56 flex-1"
-                                            placeholder="New email (optional rebind)"
-                                            value={emails[item.id] ?? ''}
-                                            onChange={(event) =>
-                                                setEmails((current) => ({ ...current, [item.id]: event.target.value }))
-                                            }
-                                        />
-                                        <button
-                                            type="button"
-                                            disabled={busy || !(reasons[item.id] ?? '').trim()}
-                                            onClick={() => runEntitlementAction(item.id, 'rebind', emails[item.id] ?? '')}
-                                            className="event-button event-button--secondary disabled:opacity-50"
-                                        >
-                                            {(emails[item.id] ?? '').trim() ? 'Rebind to email' : 'Clear binding'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            disabled={busy || !(reasons[item.id] ?? '').trim()}
-                                            onClick={() => runEntitlementAction(item.id, 'revoke')}
-                                            className="event-button bg-[var(--danger)] text-white hover:bg-[var(--danger)]/80 disabled:opacity-50"
-                                        >
-                                            Revoke
-                                        </button>
+                                        {!item.commerce && (
+                                            <>
+                                                <input
+                                                    className="event-field min-w-56 flex-1"
+                                                    placeholder="New email (optional rebind)"
+                                                    value={emails[item.id] ?? ''}
+                                                    onChange={(event) =>
+                                                        setEmails((current) => ({ ...current, [item.id]: event.target.value }))
+                                                    }
+                                                />
+                                                <button
+                                                    type="button"
+                                                    disabled={busy || !(reasons[item.id] ?? '').trim()}
+                                                    onClick={() => runEntitlementAction(item.id, 'rebind', emails[item.id] ?? '')}
+                                                    className="event-button event-button--secondary disabled:opacity-50"
+                                                >
+                                                    {(emails[item.id] ?? '').trim() ? 'Rebind to email' : 'Clear binding'}
+                                                </button>
+                                            </>
+                                        )}
+                                        {item.commerce?.administrativeState === 'SUSPENDED' ? (
+                                            <button
+                                                type="button"
+                                                disabled={busy || !(reasons[item.id] ?? '').trim()}
+                                                onClick={() => runEntitlementAction(item.id, 'resume')}
+                                                className="event-button event-button--primary disabled:opacity-50"
+                                            >
+                                                Resume access
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                disabled={busy || !(reasons[item.id] ?? '').trim()}
+                                                onClick={() => runEntitlementAction(item.id, 'revoke')}
+                                                className="event-button bg-[var(--danger)] text-white hover:bg-[var(--danger)]/80 disabled:opacity-50"
+                                            >
+                                                {item.commerce ? 'Suspend access' : 'Revoke'}
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>

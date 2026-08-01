@@ -39,8 +39,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 # Guarded one-time event stabilization command (dry-run by default).
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/weekend-stabilize.ts ./scripts/weekend-stabilize.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/commerce-media-worker.ts ./scripts/commerce-media-worker.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/event-stabilization.ts ./src/lib/event-stabilization.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/redact.ts ./src/lib/redact.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/commerce-media-reconciler.ts ./src/lib/commerce-media-reconciler.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/db.ts ./src/lib/db.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/livekit-server.ts ./src/lib/livekit-server.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/with-timeout.ts ./src/lib/with-timeout.ts
+COPY --from=builder --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
 # Full node_modules so prisma/seed and config scripts work in production
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 

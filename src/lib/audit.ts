@@ -43,7 +43,8 @@ export type AdmissionAuditAction =
     | 'ticket.batch_import'
     | 'ticket.comp_issue'
     | 'ticket.revoke'
-    | 'ticket.rebind';
+    | 'ticket.rebind'
+    | 'ticket.commerce_resume';
 
 export type AdmissionAuditTargetType = 'TICKET_ENTITLEMENT' | 'SCHEDULED_SESSION';
 

@@ -73,6 +73,9 @@ export async function resolveRoomPrincipal(
                     boundEmail: true,
                     expiresAt: true,
                     revokedAt: true,
+                    commerceEntitlement: {
+                        select: { livekitIdentityVersion: true },
+                    },
                 },
             },
         },
@@ -130,7 +133,9 @@ export async function resolveRoomPrincipal(
             return { ok: false, status: 403, error: 'Not authorized' };
         }
 
-        principalId = ticket.id;
+        principalId = ticket.commerceEntitlement
+            ? `${ticket.id}:v${ticket.commerceEntitlement.livekitIdentityVersion}`
+            : ticket.id;
         principalKind = 'ticket';
         ticketEntitlementId = ticket.id;
         displayName = webSession.displayName?.trim() || 'Attendee';

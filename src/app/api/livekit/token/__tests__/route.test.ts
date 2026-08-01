@@ -5,16 +5,22 @@ import { createRequest, parseResponse } from '@/__tests__/helpers';
 const resolveRoomPrincipal = vi.fn();
 const bedRoomIdentity = vi.fn().mockReturnValue('bed-opaque');
 const createBedToken = vi.fn().mockResolvedValue('bed-jwt');
+const finalizeTicketTokenIssue = vi.fn();
 
 vi.mock('@/lib/room-entitlement', () => ({ resolveRoomPrincipal }));
 vi.mock('@/lib/livekit-server', () => ({
     bedRoomIdentity,
     createBedToken,
 }));
+vi.mock('@/lib/commerce-entitlement', () => ({
+    finalizeTicketTokenIssue,
+    TICKET_LIVEKIT_TOKEN_TTL_SECONDS: 300,
+}));
 
 describe('GET /api/livekit/token', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        finalizeTicketTokenIssue.mockResolvedValue(true);
     });
 
     it('requires an event scope before resolving authorization', async () => {
@@ -72,5 +78,24 @@ describe('GET /api/livekit/token', () => {
             room: 'beacon',
             canPublish: false,
         });
+    });
+
+    it('uses the same five-minute horizon for a ticket-backed bed token', async () => {
+        resolveRoomPrincipal.mockResolvedValue({
+            ok: true,
+            principal: { identity: 'event-stage-opaque', ticketEntitlementId: 'ticket-1' },
+        });
+        const { GET } = await import('../route');
+        const response = await GET(createRequest('/api/livekit/token', {
+            searchParams: { sessionId: 'event-1' },
+            headers: { cookie: 'hb_session=cookie-value' },
+        }));
+        expect(response.status).toBe(200);
+        expect(createBedToken).toHaveBeenCalledWith('beacon', 'bed-opaque', '300s');
+        expect(finalizeTicketTokenIssue).toHaveBeenCalledWith(
+            'cookie-value',
+            'ticket-1',
+            expect.any(Date),
+        );
     });
 });

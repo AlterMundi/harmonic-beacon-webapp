@@ -13,7 +13,7 @@ name: E2E quality gates
 
 on:
   pull_request:
-    branches: [release]
+    branches: [main, release]
 
 concurrency:
   group: e2e-${{ github.head_ref || github.run_id }}
@@ -69,6 +69,15 @@ jobs:
           DATABASE_URL="$E2E_DATABASE_URL" npx prisma migrate deploy
 
       - run: npm run test:e2e
+
+      - name: Verify commerce transaction and durable outbox contract
+        run: npx vitest run src/lib/__tests__/commerce-entitlement.integration.test.ts
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          COMMERCE_INTEGRATION_TEST: '1'
+          TICKET_CODE_PEPPER: commerce-ci-ticket-pepper-at-least-32-characters
+          LIVEKIT_API_KEY: devkey
+          LIVEKIT_API_SECRET: commerce-ci-livekit-secret-at-least-32-characters
 
       - uses: actions/upload-artifact@v4
         if: always()

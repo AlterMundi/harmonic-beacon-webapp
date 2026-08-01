@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { clientAddress } from '@/lib/client-address';
@@ -145,6 +146,12 @@ async function redeem(
     now = new Date(),
 ): Promise<Attempt> {
     return prisma.$transaction(async (tx) => {
+        // Shared commerce mutex: provisioning/revocation updates this same row.
+        // Holding it through WebSession creation prevents a login from using a
+        // pre-revocation read and committing a fresh session afterwards.
+        await tx.$queryRaw(
+            Prisma.sql`SELECT "id" FROM "ticket_entitlements" WHERE "code_digest" = ${codeDigest} FOR UPDATE`,
+        );
         const entitlement = await tx.ticketEntitlement.findUnique({
             where: { codeDigest },
             select: {

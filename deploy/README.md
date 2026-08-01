@@ -1,133 +1,93 @@
-# Harmonic Beacon Production Deployment
+# Harmonic Beacon production deployment
 
-> **This file is public, and it is a decision nobody has made.** The repository
-> has been public since 2026-01-23, so everything below is too: the production
-> IP, the CI runner's filesystem path, internal port assignments, and the host
-> storage layout. None of it is a secret — the git history was scanned and holds
-> no credentials — but together they are a tidy reconnaissance page for anyone
-> deciding where to point a scanner.
->
-> Three options, and the choice is deliberate either way: keep it public and
-> accept that (defensible — the information has limited value on its own),
-> genericise it so the runbook survives without the specifics, or move `deploy/`
-> to a private ops repository. What should not continue is the current state,
-> where it is public because nobody chose. Tracked as TECH_AUDIT Appendix A.3.
+The production-shaped stack is the root `docker-compose.yml`: Next.js,
+PostgreSQL, LiveKit, playlist fallback, tapestry and the durable commerce media
+reconciler. Host Nginx terminates TLS for `live.harmonicbeacon.com` and proxies
+only the public application and LiveKit signaling ports.
 
-Docker Compose deployment for the Next.js app. Meditation audio is served by
-the app over plain HTTP with range requests (`src/lib/stream-file.ts`); go2rtc
-was removed under migration decision D1 and no streaming sidecar remains.
+## Host prerequisites
 
-## Architecture
+- Docker Engine and Compose v2.
+- `/etc/harmonic-beacon/production.env`, root-owned mode `0600`, based on
+  `deploy/production.env.example`.
+- `/etc/harmonic-beacon/commerce.env`, root-owned mode `0600`, based on
+  `deploy/commerce.env.example`. Only `beacon-app` loads this file.
+- `/etc/harmonic-beacon/livekit.yaml` and `/etc/harmonic-beacon/keys.yaml`.
+- Persistent directories below `/mnt/beacon-data` for PostgreSQL, records and
+  verified backups.
+- The private cross-project network created once with:
 
-```
-Client (beacon.altermundi.net)
-  ↓ HTTPS
-Host Nginx (SSL, reverse proxy)
-  └── / → Next.js (port 3003)
-```
+  ```bash
+  sudo -n docker network create --driver bridge --internal pmp_beacon_internal
+  ```
 
-## Services
+  Its only permitted members are `beacon-app` and the PMP Myth worker.
 
-| Service | Container | Port | Purpose |
-|---------|-----------|------|---------|
-| `app` | harmonic-beacon | 3003:3000 | Next.js web app |
+## Automated release deploy
 
-## Prerequisites
+A push to `release` runs `.github/workflows/deploy.yml` on the managed host. It:
 
-- Docker + Docker Compose v2
-- Host nginx with SSL (Certbot) for `beacon.altermundi.net`
-- Zitadel OIDC application at `auth.altermundi.net`
-- Meditation files uploaded via Provider Studio and approved by admin
+1. runs contract, unit, type and lint gates;
+2. verifies both root-owned env files and the private network membership;
+3. preserves the currently running app image under an immutable rollback tag;
+4. builds a commit-tagged image;
+5. applies additive Prisma migrations and verifies migration status;
+6. replaces only app and commerce reconciler; and
+7. waits for app readiness and reconciler health.
 
-## Deployment
+On failure it restores the preserved app image. It never uses `compose down`,
+deletes data or pretends that rebuilding the same tag is a rollback.
 
-Deployment is automated via GitHub Actions (`.github/workflows/deploy.yml`):
+## Manual deploy on mona
 
-1. Push to `release` branch triggers deploy
-2. Docker Compose builds the services
-3. Prisma migrations run automatically
-4. Health checks verify the services are up
-
-### Manual deploy
-
-Note where migrations run. CI applies them **on the host, before the containers
-start** — they are not part of the compose lifecycle, so `docker compose up`
-alone will start an app against an un-migrated database. A manual deploy has to
-run the migrate step itself; omitting it is the foot-gun this section used to
-have.
+From `/opt/beacon/app`, preserve the untracked production compose override and
+use the canonical project name and environment file:
 
 ```bash
-# On the deploy host
-cd /home/github-runner/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp
-
-# 1. Migrations FIRST, against the host Postgres. Not optional.
-DATABASE_URL="postgresql://beacon:<password>@localhost:5432/harmonic_beacon?schema=public" \
-  npx prisma migrate deploy
-
-# 2. Build and start
-docker compose build --no-cache
-docker compose up -d
-
-# 3. Verify — /api/health is a real liveness endpoint; / is a DB-backed page and
-#    a poor health signal
-curl -f http://localhost:3003/api/health
-curl -f http://localhost:3003/api/health/ready    # 503 if the DB is unreachable
+export BEACON_IMAGE_TAG=<exact-commit-sha>
+sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
+  --project-name app --env-file /etc/harmonic-beacon/production.env \
+  build app
+sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
+  --project-name app --env-file /etc/harmonic-beacon/production.env \
+  run --rm --no-deps app npx prisma migrate deploy
+sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
+  --project-name app --env-file /etc/harmonic-beacon/production.env \
+  up -d --no-deps --force-recreate app commerce-reconciler
 ```
 
-## Configuration
-
-### Environment Variables
-
-**There is no `.env` file on the server, and creating one is not how this
-deploys.** The deploy workflow writes `/etc/sai-harmonic-beacon/production.env`
-from GitHub Secrets (`.github/workflows/deploy.yml`), and both compose services
-read it via `env_file`. That file survives container restarts and is owned
-`root:github-runner` at mode 0640. `.env.example` documents the variable surface
-for local development only.
-
-An earlier version of this section told you to create `.env` at the project root
-with these values:
+Wait for both health checks; do not use a fixed sleep as proof:
 
 ```bash
-MEDITATIONS_PATH=/mnt/raid1/harmonic-beacon/meditations   # WRONG on both counts
+sudo -n docker inspect beacon-app --format '{{.State.Health.Status}}'
+sudo -n docker inspect beacon-commerce-reconciler --format '{{.State.Health.Status}}'
+curl --fail http://127.0.0.1:3000/api/health/ready
+curl --fail https://live.harmonicbeacon.com/api/health/ready
 ```
 
-Both halves were wrong and following them breaks the deploy silently: the code
-reads **`MEDITATIONS_STORAGE_PATH`**, not `MEDITATIONS_PATH`, and production
-mounts **`/mnt/n8n-data/harmonic-beacon/meditations`**, not `/mnt/raid1/...`
-(`docker-compose.yml:32,37`). The troubleshooting section further down this file
-had the correct path all along, which is how the error survived.
+For commerce rollout, also execute the synthetic ACTIVE/replay/stale/rotation/
+revoke fixtures from the PMP worker and prove public GET and PUT under
+`/api/internal` both return `404` before enabling real Ticket Tailor events.
 
-The authoritative list of what must be in `production.env` is the "Persist
-secrets to env file" step of the deploy workflow. To add a variable: add it to
-GitHub Secrets, add it to that heredoc, and add it to `.env.example` with a
-comment.
+## Rollback
 
-### Nginx
+Use an image tag/digest captured before deploy. For commerce incidents, first
+put PMP in mock mode so no new commands enter. Keep the reconciler running until
+pending jobs reach zero and target identities are absent. Restore the previous
+app image, then stop the reconciler only if the old image does not contain it.
+The additive migration may remain; never drop commerce tables during an
+incident because they contain the command ledger and unfinished reconciliation.
 
-Copy `deploy/nginx-harmonic-beacon.conf` to `/etc/nginx/sites-enabled/` and reload nginx.
-
-## Monitoring
+## Useful diagnostics
 
 ```bash
-# Container status
-docker compose ps
-
-# Logs
-docker compose logs -f app
-
-# Health checks
-curl -f http://localhost:3003
+sudo -n docker compose --project-name app \
+  --env-file /etc/harmonic-beacon/production.env ps
+sudo -n docker logs --tail 200 beacon-app
+sudo -n docker logs --tail 200 beacon-commerce-reconciler
+curl --fail http://127.0.0.1:3000/api/health
+curl --fail http://127.0.0.1:3000/api/health/ready
 ```
 
-## Troubleshooting
-
-### Auth redirects failing
-- Verify Zitadel OIDC app redirect URI: `https://beacon.altermundi.net/api/auth/callback/zitadel`
-- Check `AUTH_SECRET` is set
-- Verify `AUTH_TRUST_HOST=true`
-
-### No audio
-- Check meditation files exist: `ls /mnt/n8n-data/harmonic-beacon/meditations/`
-- Check app logs: `docker compose logs app`
-- Verify the file resolves: `curl -I -H 'Range: bytes=0-1' http://localhost:3003/api/meditations/<id>/audio`
+Never print production env files, authorization headers, ticket codes, email
+addresses or raw request bodies while troubleshooting.

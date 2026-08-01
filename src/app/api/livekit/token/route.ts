@@ -4,7 +4,12 @@ import {
     bedRoomIdentity,
     createBedToken,
 } from '@/lib/livekit-server';
+import {
+    finalizeTicketTokenIssue,
+    TICKET_LIVEKIT_TOKEN_TTL_SECONDS,
+} from '@/lib/commerce-entitlement';
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +39,21 @@ export async function GET(request: NextRequest) {
 
     try {
         const identity = bedRoomIdentity(entitlement.principal.identity);
-        const token = await createBedToken(BED_ROOM_NAME, identity);
+        const ticketId = entitlement.principal.ticketEntitlementId;
+        const token = ticketId
+            ? await createBedToken(
+                BED_ROOM_NAME,
+                identity,
+                `${TICKET_LIVEKIT_TOKEN_TTL_SECONDS}s`,
+            )
+            : await createBedToken(BED_ROOM_NAME, identity);
+        if (ticketId) {
+            const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+            const tokenExpiresAt = new Date(Date.now() + TICKET_LIVEKIT_TOKEN_TTL_SECONDS * 1000);
+            if (!cookieValue || !await finalizeTicketTokenIssue(cookieValue, ticketId, tokenExpiresAt)) {
+                return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+            }
+        }
         return NextResponse.json({
             token,
             identity,
