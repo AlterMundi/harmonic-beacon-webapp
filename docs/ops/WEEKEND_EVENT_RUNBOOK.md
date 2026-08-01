@@ -118,6 +118,10 @@ It never deletes data or disconnects participants. Never bypass these checks
 with ad-hoc SQL; if one fails, investigate the changed state and take a new
 backup/dry-run.
 
+Because all four rooms must be empty, apply also clears stale reconciliation
+flags on disconnected production participants. It does not revoke their
+durable grants or alter their hand state.
+
 Rollback: if verification immediately after apply fails, freeze admission and
 restore the just-verified pre-apply PostgreSQL backup before admitting anyone.
 The mutation is a single serializable transaction, so there is no partial

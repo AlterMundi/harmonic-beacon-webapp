@@ -223,6 +223,7 @@ async function applyStabilization(
             webSessionsRevoked: 0,
             grantsRevoked: 0,
             participantFlagsCleared: 0,
+            realReconciliationFlagsCleared: 0,
             livekitRooms,
         };
 
@@ -288,6 +289,19 @@ async function applyStabilization(
                     data: { raisedAt: null, grantReconcileNeeded: false },
                 });
                 summary.participantFlagsCleared += flags.count;
+            } else {
+                // Every stage room was checked empty twice. A reconciliation
+                // flag on a disconnected real-event participant cannot
+                // represent a live LiveKit disagreement and would otherwise
+                // create a false incident in the event cockpit.
+                const flags = await tx.sessionParticipant.updateMany({
+                    where: {
+                        scheduledSessionId: contract.id,
+                        grantReconcileNeeded: true,
+                    },
+                    data: { grantReconcileNeeded: false },
+                });
+                summary.realReconciliationFlagsCleared += flags.count;
             }
         }
 
