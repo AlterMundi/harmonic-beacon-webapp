@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 export const COMMERCE_COMMAND_SCHEMA = 'commerce-entitlement.command.v1' as const;
 export const COMMERCE_RESULT_SCHEMA = 'commerce-entitlement.result.v1' as const;
@@ -8,6 +8,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const EXTERNAL_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const CANONICAL_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const HUMAN_CODE = /^HB1(?:-[A-HJ-NP-Z2-9]{4}){8}$/;
+const HUMAN_BASE32_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const ACTIVE_REASONS = [
@@ -283,4 +284,32 @@ export function commerceCommandHash(command: CommerceCommand): string {
     return createHash('sha256')
         .update(canonicalJson(materialCommerceCommand(command)), 'utf8')
         .digest('hex');
+}
+
+/** Exact PMP-owned credential derivation, exposed here only for shared fixtures. */
+export function deriveCommerceCredentialCode(
+    secretUtf8: string,
+    grantId: string,
+    generation: number,
+): string {
+    const digest = createHmac('sha256', Buffer.from(secretUtf8, 'utf8'))
+        .update(Buffer.from(`${grantId}|${generation}`, 'utf8'))
+        .digest()
+        .subarray(0, 20);
+    let bits = 0;
+    let value = 0;
+    let encoded = '';
+    for (const byte of digest) {
+        value = (value << 8) | byte;
+        bits += 8;
+        while (bits >= 5) {
+            encoded += HUMAN_BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+            bits -= 5;
+            value &= (1 << bits) - 1;
+        }
+    }
+    if (bits > 0) {
+        encoded += HUMAN_BASE32_ALPHABET[(value << (5 - bits)) & 31];
+    }
+    return `HB1-${encoded.match(/.{4}/g)!.join('-')}`;
 }

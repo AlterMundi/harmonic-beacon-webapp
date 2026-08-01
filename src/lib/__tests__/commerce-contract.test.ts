@@ -7,6 +7,7 @@ import {
     CommerceContractError,
     canonicalJson,
     commerceCommandHash,
+    deriveCommerceCredentialCode,
     materialCommerceCommand,
     parseCommerceCommand,
 } from '@/lib/commerce-contract';
@@ -19,6 +20,15 @@ const fixture = JSON.parse(fs.readFileSync(
     canonical_utf8: string;
     sha256: string;
 };
+const derivationFixture = JSON.parse(fs.readFileSync(
+    path.join(process.cwd(), 'contracts/commerce-entitlement/v1/credential-derivation.fixture.json'),
+    'utf8',
+)) as {
+    secret_utf8: string;
+    grant_id: string;
+    generation: number;
+    code: string;
+};
 
 describe('commerce command contract', () => {
     it('normalizes then produces the cross-language RFC 8785 fixture and SHA-256', () => {
@@ -26,6 +36,14 @@ describe('commerce command contract', () => {
         expect(command.bound_email).toBe('persóna+mito@example.com');
         expect(canonicalJson(materialCommerceCommand(command))).toBe(fixture.canonical_utf8);
         expect(commerceCommandHash(command)).toBe(fixture.sha256);
+    });
+
+    it('derives the exact human Base32 credential fixture', () => {
+        expect(deriveCommerceCredentialCode(
+            derivationFixture.secret_utf8,
+            derivationFixture.grant_id,
+            derivationFixture.generation,
+        )).toBe(derivationFixture.code);
     });
 
     it('excludes request_id but includes every material field', () => {
