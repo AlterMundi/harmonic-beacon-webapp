@@ -1,10 +1,10 @@
 # Quality Gates — Browser, Accessibility, Visual, Media Continuity
 
-**Branch:** `feat/ux-09-quality`
+**Branch:** `feat/ux-professionalization`
 **Issue:** #69 (parent epic #64)
 **Date:** 2026-07-31
 
-*Draft · 2026-07-31 · pending validation*
+*Validated locally · 2026-07-31*
 
 This document records what the issue #69 quality gates are, what they
 proved on the branch that introduced them, and what they deliberately do
@@ -20,6 +20,7 @@ this file is the evidence register, not the how-to.
 | Responsive geometry (1440/1024/390/320 px) | `e2e/tests/responsive.spec.ts` | same |
 | Visual baselines (same four widths) | `e2e/tests/visual.spec.ts` + snapshots | same |
 | Media continuity, real browser + LiveKit | `e2e/tests/media-continuity.spec.ts` + `e2e/helpers/media-probe.ts` | same |
+| Stage invitation consent, two browsers + LiveKit | `e2e/tests/stage-invitation.spec.ts` | same |
 | Media continuity, integration level | `src/app/session/[id]/__tests__/media-continuity.test.tsx` | existing `test` job (Vitest) |
 | Frozen audio boundaries | `.github/CODEOWNERS` | `.github/workflows/audio-boundary.yml` (`audio-touching` label) |
 
@@ -30,46 +31,54 @@ Environment: throwaway Postgres 16 container seeded from
 dev container (`devkey`/`secret`); production build (`next build`) served
 by Playwright; Chromium 149 (Playwright 1.61.0).
 
-- **Smoke: 9/9 passed.** Attendee ticket login, identical generic failure
+- **Smoke: 10/10 passed.** Attendee ticket login, identical generic failure
   for revoked and unknown codes, facilitator/operator/admin staff journeys,
   keyboard-only path with visible focus.
 - **Accessibility: 6/6 passed**, zero critical/serious violations on
   landing (also under `prefers-reduced-motion`), staff login, attendee
-  session shell, operator admission, facilitator console. The gate caught
+  session shell, operator admission, facilitator console and each of its
+  five open drawers. The gate caught
   one real defect on introduction: unnamed `<select>` elements in
   `AdmissionConsole` (fixed with accessible names in the same branch).
-- **Responsive: 12/12 passed** (3 tests × 4 widths) — no horizontal
-  overflow, login controls inside the viewport at 320 px.
-- **Visual: 8/8 passed** (2 surfaces × 4 widths) against baselines blessed
-  in the same environment.
+- **Responsive: 20/20 passed** (5 tests × 4 widths) — no horizontal
+  overflow on the landing, staff portal, attendee room or conductor cockpit;
+  controls remain inside the viewport at 320 px.
+- **Visual: 16/16 passed** (4 surfaces × 4 widths) against reviewed
+  baselines for the landing, staff portal, attendee audio prompt and
+  conductor cockpit. Dynamic participant state is explicitly masked.
 - **Media continuity, browser: 2/2 passed.** Facilitator published real
   mic+camera; attendee activated audio once; exercising every mounted
   control (volume, mix, hand raise/lower) and audio-only off/on produced
   zero signaling-socket closes, zero `RTCPeerConnection` closes, zero media
   element detachments, zero duplicate sources, zero extra `play()` or
-  `AudioContext.resume()` calls. Ops cockpit surfaces mount no media at
-  all (zero sockets, peer connections, audio contexts).
+  `AudioContext.resume()` calls. The staff cockpit mounts exactly one
+  subscribe-only preview room in its persistent same-origin frame; opening
+  all five conductor signals produces the same zero-close, zero-detach,
+  zero-reactivation result.
+- **Stage invitation: 1/1 passed.** Two independent browser identities
+  completed hand raise → invite → decline and hand raise → invite → accept
+  with fake camera+microphone → staff return. The test waits on durable
+  UI state and real LiveKit publication rather than request completion.
 - **Media continuity, Vitest: 2/2 passed** in the standard `npm test`
   gate with the LiveKit client faked.
+- **Repository gates: 576/576 unit/integration tests passed**, together
+  with TypeScript, ESLint and the production build.
 
 ## Deliberate gaps (not silently weakened, tracked)
 
-- **`color-contrast` axe rule disabled.** Measured contrast is part of the
-  #73 visual-system acceptance; the rule must be re-enabled when that
-  lands. Comment in `accessibility.spec.ts`.
-- **Cockpit panels are not yet in the live shell.** Today's ops consoles
-  are separate pages that mount no media (pinned by a test). The #70
-  single-mount cockpit must extend the exercise in
-  `media-continuity.spec.ts` — the probe and assertions are already
-  panel-agnostic.
-- **Attendees cannot enter a SCHEDULED session** (stage token requires
-  `LIVE`, see `src/lib/room-entitlement.ts`), so tests open doors by
-  flipping the fixture session to `LIVE` and restoring it. A truthful
-  waiting room is #65's scope.
-- **Phase B of issue #69 is not automated here**: two consecutive event
-  lifecycles, full hand-flow journeys, operator-preview-muted, and
-  real-device Safari/iOS + Firefox/Chrome evidence remain rehearsal
-  activities (#24) that can now cite these gates instead of re-verifying
-  the layers they cover.
+- **Color contrast is enforced.** Axe runs WCAG AA contrast against rendered
+  translucent surfaces; no accessibility rule is disabled.
+- **The cockpit uses a persistent same-origin room frame.** This isolates the
+  frozen audio provider from operational drawer renders while keeping one
+  staff experience and one room mount. The real-browser continuity test
+  measures the frame directly across all panel changes.
+- **Scheduled sessions have a truthful waiting-room boundary.** Tests that
+  need a live room transition the local fixture session to `LIVE` and
+  restore it in `finally`; the database guard accepts only a loopback host
+  and a database named exactly `beacon_test`.
+- **Remaining Phase B evidence is intentionally physical:** two consecutive
+  complete event lifecycles and real-device Safari/iOS + Firefox/Chrome
+  rehearsal remain tracked by #24. The automated suite now covers the full
+  hand/invitation consent journey and the muted subscribe-only cockpit.
 - **The #64 0–3 rubric is not yet scored per surface**; these gates supply
   the Continuity and Reach evidence for that scoring.

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Frame, Page } from '@playwright/test';
 
 /**
  * Browser media-continuity probe (issue #69 — media invariants).
@@ -202,8 +202,8 @@ export async function installMediaProbe(page: Page): Promise<void> {
     });
 }
 
-export async function mediaProbeSnapshot(page: Page): Promise<MediaProbeSnapshot> {
-    return page.evaluate(() => {
+export async function mediaProbeSnapshot(surface: Page | Frame): Promise<MediaProbeSnapshot> {
+    return surface.evaluate(() => {
         const probe = window.__hbMediaProbe;
         if (!probe) {
             throw new Error('media probe not installed — call installMediaProbe before goto()');

@@ -1,5 +1,7 @@
-import { expect, test } from '../fixtures/stack';
-import { ROUTES } from '../fixtures/test-data';
+import { expect, stackTest, test } from '../fixtures/stack';
+import { loginViaDashboard } from '../fixtures/auth';
+import { requireDirectDb, withSessionStatus } from '../fixtures/db';
+import { ROUTES, SESSION_ES } from '../fixtures/test-data';
 
 /**
  * Responsive gate — runs once per viewport project (1440 / 1024 / 390 / 320
@@ -53,5 +55,84 @@ test.describe('responsive public surfaces', () => {
         const box = await email.boundingBox();
         expect(box).not.toBeNull();
         expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 1);
+    });
+});
+
+stackTest.describe('responsive live surfaces', () => {
+    stackTest('attendee shell never overflows and keeps room controls reachable', async ({ page }, testInfo) => {
+        const db = requireDirectDb(testInfo);
+        await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+            await loginViaDashboard(
+                page,
+                'ATTENDEE',
+                'E2E Attendee',
+                ROUTES.session(SESSION_ES.id),
+            );
+            await expect(
+                page
+                    .getByTestId('connection-state')
+                    .or(page.getByRole('heading', { name: /Connection error|Error de conexión/i })),
+            ).toBeVisible({ timeout: 30_000 });
+            await expectNoHorizontalScroll(page);
+
+            const startAudio = page.getByRole('button', { name: /Start audio|Iniciar audio/i });
+            if (await startAudio.count()) {
+                const box = await startAudio.boundingBox();
+                expect(box).not.toBeNull();
+                expect(box!.height).toBeGreaterThanOrEqual(44);
+                expect(box!.x).toBeGreaterThanOrEqual(0);
+                expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+            }
+        });
+    });
+
+    stackTest('conductor cockpit keeps all five signals in-bounds and touchable', async ({ page }) => {
+        await loginViaDashboard(
+            page,
+            'FACILITATOR',
+            'E2E Facilitator',
+            ROUTES.opsSession(SESSION_ES.id),
+        );
+        await expect(page.getByTestId('conductor-cockpit')).toBeVisible();
+        await expectNoHorizontalScroll(page);
+
+        for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
+            const control = page.locator(`[data-signal="${signal}"]`);
+            const box = await control.boundingBox();
+            expect(box, `${signal} has no layout box`).not.toBeNull();
+            expect(box!.height).toBeGreaterThanOrEqual(44);
+            expect(box!.x).toBeGreaterThanOrEqual(0);
+            expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+            expect(box!.y).toBeGreaterThanOrEqual(0);
+            expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
+        }
+
+        for (const selector of [
+            '[data-signal="door"]',
+            '[data-signal="hands"]',
+            '[data-tool="tapestry"]',
+            '[data-tool="admission"]',
+            '[data-signal="health"]',
+        ]) {
+            await page.locator(selector).click();
+            const dialog = page.getByRole('dialog');
+            await expect(dialog).toBeVisible();
+            const box = await dialog.boundingBox();
+            expect(box, `${selector} drawer has no layout box`).not.toBeNull();
+            expect(box!.x).toBeGreaterThanOrEqual(0);
+            expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+
+            const buttons = dialog.locator('button:visible');
+            for (let index = 0; index < await buttons.count(); index += 1) {
+                const buttonBox = await buttons.nth(index).boundingBox();
+                expect(buttonBox, `${selector} button ${index} has no layout box`).not.toBeNull();
+                expect(buttonBox!.height).toBeGreaterThanOrEqual(44);
+                expect(buttonBox!.x).toBeGreaterThanOrEqual(0);
+                expect(buttonBox!.x + buttonBox!.width)
+                    .toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+            }
+            await page.keyboard.press('Escape');
+            await expect(dialog).toBeHidden();
+        }
     });
 });

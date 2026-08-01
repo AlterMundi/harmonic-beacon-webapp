@@ -13,6 +13,7 @@ deterministic fixtures, no production credentials or participant data.
 | `tests/responsive.spec.ts` | nothing | layout geometry at 1440/1024/390/320 px |
 | `tests/visual.spec.ts` | stack | screenshot baselines at the same four widths |
 | `tests/media-continuity.spec.ts` | stack + LiveKit | the four media invariants, real browser + server |
+| `tests/stage-invitation.spec.ts` | stack + LiveKit | two-browser hand → decline/accept → return journey |
 | `src/app/session/[id]/__tests__/media-continuity.test.tsx` | nothing | same invariants in Vitest/jsdom (`npm test`) |
 
 Suites that need the stack skip with a precise reason when it is missing —
@@ -66,16 +67,18 @@ WebSocket close, `RTCPeerConnection.close`, `<audio>/<video>` attach/detach
 and duplicate sources, `HTMLMediaElement.play`, `AudioContext` creation and
 resume. A flow is bracketed by two snapshots and
 `expectMediaContinuity(before, after)` fails with the exact broken
-invariant. The probe is panel-agnostic: when the #70 single-mount cockpit
-lands, opening its panels is added to the exercise in
-`media-continuity.spec.ts` and the same assertions prove the invariant.
+invariant. The probe is panel-agnostic. For the #70 cockpit it snapshots the
+persistent same-origin room frame before and after every conductor drawer,
+proving that operational UI changes do not replace or reactivate media.
 
 ## Screenshot baselines
 
 Baselines live in `tests/visual.spec.ts-snapshots/` and are blessed
-intentionally: surfaces contain fixture data only, no time-based content,
-animations disabled, 1% pixel tolerance for font rasterization. Regenerate
-on the reference environment and review the diff before committing:
+intentionally for four surfaces (landing, staff portal, attendee audio
+prompt and conductor cockpit) at all four widths. They contain fixture data
+only; the one dynamic participant summary is masked explicitly, animations
+are disabled, and the 1% pixel tolerance only absorbs font rasterization.
+Regenerate on the reference environment and review the diff before committing:
 
 ```bash
 E2E_DATABASE_URL=... npm run test:e2e:update-snapshots
@@ -86,9 +89,8 @@ there — never bump the tolerance to absorb a different platform.
 
 ## Known boundaries
 
-- The `color-contrast` axe rule is disabled with a comment in
-  `accessibility.spec.ts`: measured contrast is part of the #73 visual
-  system acceptance, and the rule must be re-enabled when it lands.
+- Axe runs the WCAG AA `color-contrast` rule against rendered surfaces; no
+  accessibility rule is disabled.
 - Real-device Safari/iOS and Firefox/Chrome evidence remains a human
   supplement (issue #69 Phase B), not automation.
 - The `audio-touching` label check for frozen audio paths lives in

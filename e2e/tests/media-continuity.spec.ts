@@ -19,10 +19,10 @@ import {
  * - zero new AudioContexts after activation (no gain/codec/buffer churn can
  *   hide behind a rebuilt audio pipeline).
  *
- * The probe is panel-agnostic: when the #70 single-mount cockpit lands its
- * panels inside this shell, opening them is added to `exerciseInRoomPanels`
- * and the same assertions prove the invariant. Today's /ops/* pages mount
- * no media at all, which the ops-surface test below pins down.
+ * The probe is panel-agnostic. The canonical staff cockpit keeps its one room
+ * in a same-origin persistent frame so opening operational drawers cannot
+ * replace the room or its audio provider; the second test exercises that
+ * boundary directly inside the frame.
  *
  * Requires the full local stack plus a LiveKit server (see e2e/README.md);
  * without LiveKit the suite skips with a precise reason rather than
@@ -39,6 +39,27 @@ async function livekitReachable(): Promise<boolean> {
     } catch {
         return false;
     }
+}
+
+async function settledMediaSnapshot(
+    frame: import('@playwright/test').Frame,
+): Promise<Awaited<ReturnType<typeof mediaProbeSnapshot>>> {
+    let previous = await mediaProbeSnapshot(frame);
+    let stableReads = 0;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const current = await mediaProbeSnapshot(frame);
+        const unchanged =
+            current.audioElements === previous.audioElements &&
+            current.videoElements === previous.videoElements &&
+            current.playCalls === previous.playCalls &&
+            current.mediaElementsAttached === previous.mediaElementsAttached &&
+            current.mediaElementsRemoved === previous.mediaElementsRemoved;
+        stableReads = unchanged ? stableReads + 1 : 0;
+        previous = current;
+        if (stableReads >= 4) return current;
+    }
+    throw new Error('cockpit preview media did not settle before panel exercise');
 }
 
 stackTest.describe('media continuity', () => {
@@ -146,17 +167,42 @@ stackTest.describe('media continuity', () => {
         });
     });
 
-    stackTest('ops cockpit surfaces mount no media at all', async ({ page }) => {
+    stackTest('cockpit drawers preserve the single mounted preview room', async ({ page }, testInfo) => {
         await installMediaProbe(page);
-        await loginViaDashboard(page, 'OPERATOR', 'E2E Operator', ROUTES.opsHealth);
-        await page.goto(ROUTES.opsAdmission);
-        await page.goto(ROUTES.opsSession(SESSION_ES.id));
-        await expect(page.getByText(SESSION_ES.title)).toBeVisible();
+        const db = requireDirectDb(testInfo);
+        await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+            await loginViaDashboard(
+                page,
+                'OPERATOR',
+                'E2E Operator',
+                ROUTES.opsSession(SESSION_ES.id),
+            );
+            await expect(page.getByTestId('persistent-room')).toHaveCount(1);
 
-        const snapshot = await mediaProbeSnapshot(page);
-        expect(snapshot.audioElements + snapshot.videoElements).toBe(0);
-        expect(snapshot.livekitSocketsOpened).toBe(0);
-        expect(snapshot.peerConnectionsCreated).toBe(0);
-        expect(snapshot.audioContextsCreated).toBe(0);
+            const iframe = page.locator('iframe[data-testid="persistent-room"]');
+            const handle = await iframe.elementHandle();
+            const roomFrame = await handle?.contentFrame();
+            expect(roomFrame, 'persistent room frame did not mount').not.toBeNull();
+            if (!roomFrame) return;
+
+            await expect(
+                roomFrame.getByTestId('connection-state'),
+            ).toHaveAttribute('data-state', 'connected', { timeout: 20_000 });
+            const before = await settledMediaSnapshot(roomFrame);
+            expect(before.livekitSocketsOpened).toBeGreaterThan(0);
+            expect(before.peerConnectionsCreated).toBeGreaterThan(0);
+
+            for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
+                await page.locator(`[data-signal="${signal}"]`).click();
+                const dialog = page.getByRole('dialog');
+                await expect(dialog).toBeVisible();
+                await dialog.getByRole('button', { name: /Close tool|Cerrar herramienta/i }).click();
+                await expect(dialog).toBeHidden();
+                await expect(page.getByTestId('persistent-room')).toHaveCount(1);
+            }
+
+            const after = await mediaProbeSnapshot(roomFrame);
+            expectMediaContinuity(before, after);
+        });
     });
 });

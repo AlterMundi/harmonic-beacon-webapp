@@ -46,5 +46,5 @@ export async function loginStaffWithPassword(
     await page.goto('/staff/login');
     await page.locator('#staff-email').fill(credentials.email);
     await page.locator('#staff-password').fill(credentials.password);
-    await page.getByRole('button', { name: /sign in|iniciar|entrar/i }).click();
+    await page.getByRole('button', { name: /sign in|iniciar|ingresar|entrar/i }).click();
 }

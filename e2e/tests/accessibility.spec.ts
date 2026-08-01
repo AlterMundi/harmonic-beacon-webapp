@@ -14,10 +14,8 @@ import { ROUTES, SESSION_ES } from '../fixtures/test-data';
  * attached to the test report as evidence without failing, so the gate is
  * strict where it protects people and informative elsewhere.
  *
- * Deliberate, documented exclusions (do not extend silently):
- * - `color-contrast` — the nocturnal visual system is being rebuilt under
- *   child issue #73; measured contrast becomes part of that acceptance and
- *   this rule must be re-enabled when it lands.
+ * No WCAG AA rule is excluded. In particular, translucent nocturnal surfaces
+ * are measured in their rendered context by axe's color-contrast rule.
  */
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
@@ -25,7 +23,6 @@ const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 async function assertAccessible(page: Page, surface: string, testInfo: TestInfo): Promise<void> {
     const results = await new AxeBuilder({ page })
         .withTags(WCAG_TAGS)
-        .disableRules(['color-contrast'])
         .analyze();
 
     const blocking = results.violations.filter(
@@ -67,6 +64,15 @@ test.describe('public surfaces', () => {
             window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         );
         expect(prefersReduced).toBe(true);
+        const motion = await page.locator('.animate-portal-orbit').first().evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { animationName: style.animationName, transitionDuration: style.transitionDuration };
+        });
+        expect(motion.animationName).toBe('none');
+        const transitionMs = motion.transitionDuration.endsWith('ms')
+            ? Number.parseFloat(motion.transitionDuration)
+            : Number.parseFloat(motion.transitionDuration) * 1_000;
+        expect(transitionMs).toBeLessThanOrEqual(0.01);
         await assertAccessible(page, 'landing-reduced-motion', testInfo);
         await context.close();
     });
@@ -112,5 +118,19 @@ stackTest.describe('role surfaces', () => {
         );
         await expect(page.getByText(SESSION_ES.title)).toBeVisible();
         await assertAccessible(page, 'ops-session-console', testInfo);
+
+        for (const [name, selector] of [
+            ['doors', '[data-signal="door"]'],
+            ['scene', '[data-signal="hands"]'],
+            ['tapestry', '[data-tool="tapestry"]'],
+            ['admission', '[data-tool="admission"]'],
+            ['health', '[data-signal="health"]'],
+        ] as const) {
+            await page.locator(selector).click();
+            await expect(page.getByRole('dialog')).toBeVisible();
+            await assertAccessible(page, `ops-session-${name}-drawer`, testInfo);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('dialog')).toBeHidden();
+        }
     });
 });
