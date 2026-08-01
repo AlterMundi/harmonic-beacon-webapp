@@ -380,7 +380,13 @@ describe('SessionRoomPage - stage invitation consent', () => {
                 return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
             }
             if (target.includes('/hand')) {
-                if (init?.method === 'PATCH') canPublish = false;
+                if (init?.method === 'PATCH') {
+                    canPublish = false;
+                    // Mirror the LiveKit permission update completed by the
+                    // decline endpoint. Leaving the SDK mock grant at `true`
+                    // lets a queued stage refresh resurrect the invitation.
+                    currentRoom().localParticipant.permissions.canPublish = false;
+                }
                 return Promise.resolve({
                     ok: true,
                     json: async () => ({

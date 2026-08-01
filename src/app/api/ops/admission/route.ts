@@ -51,6 +51,12 @@ function serializeEntitlement(entitlement: {
     revocationReason: string | null;
     createdAt: Date;
     scheduledSession: { id: string; title: string; language: string; scheduledAt: Date };
+    commerceEntitlement: {
+        provider: string;
+        providerState: string;
+        administrativeState: string;
+        mediaStatus: string;
+    } | null;
 }) {
     return {
         id: entitlement.id,
@@ -64,11 +70,20 @@ function serializeEntitlement(entitlement: {
         revocationReason: entitlement.revocationReason,
         createdAt: entitlement.createdAt,
         event: entitlement.scheduledSession,
+        commerce: entitlement.commerceEntitlement,
     };
 }
 
 const ENTITLEMENT_INCLUDE = {
     scheduledSession: { select: { id: true, title: true, language: true, scheduledAt: true } },
+    commerceEntitlement: {
+        select: {
+            provider: true,
+            providerState: true,
+            administrativeState: true,
+            mediaStatus: true,
+        },
+    },
 } as const;
 
 /**

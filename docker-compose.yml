@@ -82,6 +82,7 @@ services:
 
   # ── Next.js app ───────────────────────────────────────────────────
   app:
+    image: harmonic-beacon/app:${BEACON_IMAGE_TAG:-latest}
     build:
       context: .
       args:
@@ -90,6 +91,9 @@ services:
     restart: unless-stopped
     env_file:
       - /etc/harmonic-beacon/production.env
+      # Kept separate so playlist, tapestry, Postgres and the media worker can
+      # never inherit the private PMP bearer from the shared stack env.
+      - /etc/harmonic-beacon/commerce.env
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
@@ -101,8 +105,9 @@ services:
       - "127.0.0.1:3000:3000"                # nginx-only
     networks:
       - beacon
+      - pmp_beacon_internal
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -121,6 +126,43 @@ services:
       driver: "json-file"
       options:
         max-size: "20m"
+        max-file: "3"
+
+  # Durable owner of post-commit participant expulsion for commerce revocations.
+  commerce-reconciler:
+    image: harmonic-beacon/app:${BEACON_IMAGE_TAG:-latest}
+    build: .
+    container_name: beacon-commerce-reconciler
+    restart: unless-stopped
+    command: ["npx", "tsx", "scripts/commerce-media-worker.ts"]
+    env_file:
+      - /etc/harmonic-beacon/production.env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+      - LIVEKIT_INTERNAL_URL=http://beacon-livekit:7880
+    networks:
+      - beacon
+    depends_on:
+      postgres:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('fs');const t=Number(fs.readFileSync('/tmp/commerce-reconciler-heartbeat','utf8'));if(Date.now()-t>30000)process.exit(1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
         max-file: "3"
 
   # ── Playlist bot (crossfader bed) ────────────────────────────────
@@ -201,3 +243,8 @@ services:
 networks:
   beacon:
     driver: bridge
+  # Pre-created with: docker network create --driver bridge --internal pmp_beacon_internal
+  # Only beacon-app and the separately deployed pmp-myth-worker join it.
+  pmp_beacon_internal:
+    external: true
+    name: pmp_beacon_internal

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { createSessionToken } from '@/lib/livekit-server';
+import {
+    finalizeTicketTokenIssue,
+    TICKET_LIVEKIT_TOKEN_TTL_SECONDS,
+} from '@/lib/commerce-entitlement';
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,16 +30,39 @@ export async function GET(
 
     const { principal } = entitlement;
     try {
-        const token = await createSessionToken(
-            principal.session.roomName,
-            principal.identity,
-            principal.displayName,
-            principal.canPublish,
-            {
-                role: principal.role,
-                isAssignedFacilitator: principal.isAssignedFacilitator,
-            },
-        );
+        const ticketTtl = `${TICKET_LIVEKIT_TOKEN_TTL_SECONDS}s`;
+        const tokenMetadata = {
+            role: principal.role,
+            isAssignedFacilitator: principal.isAssignedFacilitator,
+        };
+        const token = principal.ticketEntitlementId
+            ? await createSessionToken(
+                principal.session.roomName,
+                principal.identity,
+                principal.displayName,
+                principal.canPublish,
+                tokenMetadata,
+                ticketTtl,
+            )
+            : await createSessionToken(
+                principal.session.roomName,
+                principal.identity,
+                principal.displayName,
+                principal.canPublish,
+                tokenMetadata,
+            );
+
+        if (principal.ticketEntitlementId) {
+            const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+            const tokenExpiresAt = new Date(Date.now() + TICKET_LIVEKIT_TOKEN_TTL_SECONDS * 1000);
+            if (!cookieValue || !await finalizeTicketTokenIssue(
+                cookieValue,
+                principal.ticketEntitlementId,
+                tokenExpiresAt,
+            )) {
+                return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+            }
+        }
 
         return NextResponse.json({
             token,

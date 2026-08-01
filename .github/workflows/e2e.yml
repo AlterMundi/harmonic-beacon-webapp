@@ -8,12 +8,12 @@ name: E2E quality gates
 # Everything is throwaway and seeded from db/test-fixture.sql — no
 # production credentials or participant data.
 #
-# Runner prerequisites (one-time): Docker, and Playwright Chromium system
-# dependencies (`npx playwright install-deps chromium` once, as root).
+# GitHub's hosted Linux runner supplies Docker for service containers and the
+# LiveKit fixture. Playwright installs Chromium and its OS dependencies below.
 
 on:
   pull_request:
-    branches: [release]
+    branches: [main, release]
 
 concurrency:
   group: e2e-${{ github.head_ref || github.run_id }}
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16-alpine
@@ -50,12 +50,12 @@ jobs:
 
       - run: npm ci
 
-      - run: npx playwright install chromium
+      - run: npx playwright install --with-deps chromium
 
       - name: Start LiveKit dev server
         run: |
           docker run -d --rm --name e2e-livekit --network host \
-            livekit/livekit-server:latest --dev --node-ip 127.0.0.1
+            livekit/livekit-server:v1.13.4 --dev --bind 0.0.0.0
           for i in $(seq 1 30); do
             curl -sf http://localhost:7880 >/dev/null && exit 0
             sleep 1
@@ -69,6 +69,19 @@ jobs:
           DATABASE_URL="$E2E_DATABASE_URL" npx prisma migrate deploy
 
       - run: npm run test:e2e
+
+      - name: Verify commerce transaction and durable outbox contract
+        run: npx vitest run src/lib/__tests__/commerce-entitlement.integration.test.ts
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          COMMERCE_INTEGRATION_TEST: '1'
+          TICKET_CODE_PEPPER: commerce-ci-ticket-pepper-at-least-32-characters
+          LIVEKIT_API_KEY: devkey
+          LIVEKIT_API_SECRET: commerce-ci-livekit-secret-at-least-32-characters
+
+      - name: Capture LiveKit diagnostics
+        if: failure()
+        run: docker logs --tail 300 e2e-livekit
 
       - uses: actions/upload-artifact@v4
         if: always()

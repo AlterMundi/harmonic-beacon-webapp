@@ -58,7 +58,11 @@ type MockFn = ReturnType<typeof vi.fn>;
 type MockPrisma = {
     webSession: { findUnique: MockFn; updateMany: MockFn };
     ticketEntitlement: { findUnique: MockFn; update: MockFn };
+    commerceEntitlement: { findUnique: MockFn; update: MockFn };
+    commerceMediaOutbox: { upsert: MockFn };
+    sessionParticipant: { findFirst: MockFn };
     auditLog: { create: MockFn };
+    $queryRaw: MockFn;
     $transaction: MockFn;
 };
 
@@ -76,11 +80,21 @@ describe('/api/ops/admission/[id]', () => {
                 findUnique: vi.fn().mockResolvedValue(entitlementRow),
                 update: vi.fn().mockImplementation(async ({ data }) => ({ id: ENTITLEMENT_ID, ...data })),
             },
+            commerceEntitlement: {
+                findUnique: vi.fn().mockResolvedValue(null),
+                update: vi.fn().mockResolvedValue({}),
+            },
+            commerceMediaOutbox: { upsert: vi.fn().mockResolvedValue({}) },
+            sessionParticipant: { findFirst: vi.fn().mockResolvedValue(null) },
             auditLog: { create: vi.fn().mockResolvedValue({}) },
+            $queryRaw: vi.fn().mockResolvedValue([]),
             $transaction: vi.fn().mockImplementation(async (arg: unknown) =>
                 Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => unknown)(mockPrisma)),
         };
         vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+        vi.doMock('@/lib/livekit-server', () => ({
+            bedRoomIdentity: (identity: string) => `bed-${identity}`,
+        }));
     });
 
     async function loadRoute() {
@@ -195,6 +209,77 @@ describe('/api/ops/admission/[id]', () => {
             expect(status).toBe(400);
             expect((body as { error: string }).error).toBe('reason_required');
             expect(mockPrisma.ticketEntitlement.update).not.toHaveBeenCalled();
+        });
+
+        it('turns an operator revocation into a durable commerce hold and media job', async () => {
+            mockPrisma.ticketEntitlement.findUnique.mockResolvedValue({
+                ...entitlementRow,
+                commerceEntitlement: { administrativeState: 'CLEAR' },
+            });
+            mockPrisma.commerceEntitlement.findUnique.mockResolvedValue({
+                id: 'commerce-1',
+                scheduledSessionId: entitlementRow.scheduledSession.id,
+                provisionRevision: 4,
+                maxLivekitTokenExpiresAt: new Date(Date.now() + 300_000),
+                scheduledSession: { roomName: 'weekend-stage' },
+            });
+            mockPrisma.sessionParticipant.findFirst.mockResolvedValue({
+                participantIdentity: 'event-target',
+            });
+            const { POST } = await loadRoute();
+            const response = await POST(
+                authed({ action: 'revoke', reason: 'safety hold' }),
+                params,
+            );
+            expect(response.status).toBe(200);
+            expect(mockPrisma.commerceEntitlement.update).toHaveBeenCalledWith({
+                where: { id: 'commerce-1' },
+                data: {
+                    administrativeState: 'SUSPENDED',
+                    mediaStatus: 'RECONCILIATION_REQUIRED',
+                },
+            });
+            expect(mockPrisma.commerceMediaOutbox.upsert).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    create: expect.objectContaining({
+                        participantIdentity: 'event-target',
+                        stageRoomName: 'weekend-stage',
+                    }),
+                }),
+            );
+        });
+    });
+
+    describe('commerce resume', () => {
+        it('clears only the administrative hold and restores provider-active access', async () => {
+            mockPrisma.commerceEntitlement.findUnique.mockResolvedValue({
+                id: 'commerce-1',
+                administrativeState: 'SUSPENDED',
+                providerState: 'ACTIVE',
+                mediaStatus: 'DISCONNECTED',
+                ticketEntitlement: {
+                    expiresAt: new Date(Date.now() + 300_000),
+                },
+            });
+            const { POST } = await loadRoute();
+            const { status, body } = await parseResponse(await POST(
+                authed({ action: 'resume', reason: 'safety review complete' }),
+                params,
+            ));
+            expect(status).toBe(200);
+            expect(body).toMatchObject({ state: 'BOUND', administrativeState: 'CLEAR' });
+            expect(mockPrisma.commerceEntitlement.update).toHaveBeenCalledWith({
+                where: { id: 'commerce-1' },
+                data: {
+                    administrativeState: 'CLEAR',
+                    livekitIdentityVersion: { increment: 1 },
+                    mediaStatus: 'NOT_REQUIRED',
+                },
+            });
+            expect(mockPrisma.ticketEntitlement.update).toHaveBeenCalledWith({
+                where: { id: ENTITLEMENT_ID },
+                data: expect.objectContaining({ state: 'BOUND', revokedAt: null }),
+            });
         });
     });
 

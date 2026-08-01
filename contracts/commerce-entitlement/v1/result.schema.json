@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/commerce-entitlement/v1/result.schema.json",
+  "title": "Commerce entitlement result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "entitlement_id", "outcome", "applied_revision", "provider_state",
+    "administrative_state", "effective_state", "credential_action", "credential_binding",
+    "web_sessions_revoked_on_apply", "media_disconnection", "reconciliation_required"
+  ],
+  "properties": {
+    "schema_version": { "const": "commerce-entitlement.result.v1" },
+    "entitlement_id": { "type": "string", "format": "uuid" },
+    "outcome": { "enum": ["APPLIED", "REPLAYED", "STALE"] },
+    "applied_revision": { "type": "integer", "minimum": 1 },
+    "provider_state": { "enum": ["ACTIVE", "REVOKED"] },
+    "administrative_state": { "enum": ["CLEAR", "SUSPENDED"] },
+    "effective_state": { "enum": ["ACTIVE", "SUSPENDED", "REVOKED", "EXPIRED"] },
+    "credential_action": { "enum": ["CREATED", "ROTATED", "UNCHANGED", "REVOKED", "NONE"] },
+    "credential_binding": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["grant_id", "generation", "derivation_key_version"],
+          "properties": {
+            "grant_id": { "type": "string", "format": "uuid" },
+            "generation": { "type": "integer", "minimum": 1 },
+            "derivation_key_version": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "web_sessions_revoked_on_apply": { "type": "integer", "minimum": 0 },
+    "media_disconnection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "stage_removed", "bed_removed"],
+      "properties": {
+        "status": { "enum": ["NOT_REQUIRED", "RECONCILIATION_REQUIRED", "DISCONNECTED"] },
+        "stage_removed": { "type": "integer", "minimum": 0 },
+        "bed_removed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "reconciliation_required": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "provider_state": { "const": "REVOKED" } } },
+      "then": { "properties": { "credential_binding": { "type": "null" } } },
+      "else": { "properties": { "credential_binding": { "type": "object" } } }
+    },
+    {
+      "if": { "properties": { "reconciliation_required": { "const": true } } },
+      "then": {
+        "properties": {
+          "media_disconnection": {
+            "properties": { "status": { "const": "RECONCILIATION_REQUIRED" } }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "media_disconnection": {
+            "properties": { "status": { "enum": ["NOT_REQUIRED", "DISCONNECTED"] } }
+          }
+        }
+      }
+    }
+  ]
+}

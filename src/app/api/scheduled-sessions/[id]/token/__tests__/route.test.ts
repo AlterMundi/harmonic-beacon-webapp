@@ -4,9 +4,14 @@ import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 
 const resolveRoomPrincipal = vi.fn();
 const createSessionToken = vi.fn();
+const finalizeTicketTokenIssue = vi.fn();
 
 vi.mock('@/lib/room-entitlement', () => ({ resolveRoomPrincipal }));
 vi.mock('@/lib/livekit-server', () => ({ createSessionToken }));
+vi.mock('@/lib/commerce-entitlement', () => ({
+    finalizeTicketTokenIssue,
+    TICKET_LIVEKIT_TOKEN_TTL_SECONDS: 300,
+}));
 
 const principal = {
     session: {
@@ -27,6 +32,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         createSessionToken.mockResolvedValue('stage-jwt');
+        finalizeTicketTokenIssue.mockResolvedValue(true);
     });
 
     it.each([
@@ -133,5 +139,33 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             role: 'FACILITATOR_OP',
             isAssignedFacilitator: true,
         });
+    });
+
+    it('uses a five-minute ticket token and rechecks under the commerce mutex before returning it', async () => {
+        resolveRoomPrincipal.mockResolvedValue({
+            ok: true,
+            principal: { ...principal, ticketEntitlementId: 'ticket-1', staffUserId: null },
+        });
+        const { GET } = await import('../route');
+        const response = await GET(
+            createRequest('/api/scheduled-sessions/event-1/token', {
+                headers: { cookie: 'hb_session=cookie-value' },
+            }),
+            mockParams({ id: 'event-1' }),
+        );
+        expect(response.status).toBe(200);
+        expect(createSessionToken).toHaveBeenCalledWith(
+            'weekend-stage',
+            'event-stable-opaque',
+            'Attendee',
+            false,
+            { role: 'ATTENDEE', isAssignedFacilitator: false },
+            '300s',
+        );
+        expect(finalizeTicketTokenIssue).toHaveBeenCalledWith(
+            'cookie-value',
+            'ticket-1',
+            expect.any(Date),
+        );
     });
 });

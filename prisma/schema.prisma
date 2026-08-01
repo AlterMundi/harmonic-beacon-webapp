@@ -41,6 +41,32 @@ enum TicketEntitlementState {
   EXPIRED
 }
 
+enum CommerceProvider {
+  TICKET_TAILOR
+}
+
+enum CommerceProviderState {
+  ACTIVE
+  REVOKED
+}
+
+enum CommerceAdministrativeState {
+  CLEAR
+  SUSPENDED
+}
+
+enum CommerceMediaStatus {
+  NOT_REQUIRED
+  RECONCILIATION_REQUIRED
+  DISCONNECTED
+}
+
+enum CommerceOutboxStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+}
+
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String    @unique
@@ -82,8 +108,9 @@ model ScheduledSession {
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
 
-  tickets      TicketEntitlement[]
-  participants SessionParticipant[]
+  tickets              TicketEntitlement[]
+  participants         SessionParticipant[]
+  commerceEntitlements CommerceEntitlement[]
 
   @@index([status, scheduledAt])
   @@map("scheduled_sessions")
@@ -109,13 +136,113 @@ model TicketEntitlement {
   createdAt          DateTime               @default(now()) @map("created_at")
   updatedAt          DateTime               @updatedAt @map("updated_at")
 
-  webSessions    WebSession[]
-  participations SessionParticipant[]
+  webSessions         WebSession[]
+  participations      SessionParticipant[]
+  commerceEntitlement CommerceEntitlement?
 
   @@index([scheduledSessionId, state])
   @@index([boundEmail])
   @@index([codeLastFour])
   @@map("ticket_entitlements")
+}
+
+model CommerceEntitlement {
+  id                          String                      @id @default(uuid()) @db.Uuid
+  provider                    CommerceProvider
+  externalTicketId            String                      @map("external_ticket_id")
+  externalOrderId             String                      @map("external_order_id")
+  registrationId              String                      @map("registration_id") @db.Uuid
+  scheduledSessionId          String                      @map("scheduled_session_id") @db.Uuid
+  scheduledSession            ScheduledSession            @relation(fields: [scheduledSessionId], references: [id], onDelete: Restrict)
+  ticketEntitlementId         String                      @unique @map("ticket_entitlement_id") @db.Uuid
+  ticketEntitlement           TicketEntitlement           @relation(fields: [ticketEntitlementId], references: [id], onDelete: Restrict)
+  providerState               CommerceProviderState       @map("provider_state")
+  administrativeState         CommerceAdministrativeState @default(CLEAR) @map("administrative_state")
+  reasonCode                  String                      @map("reason_code")
+  provisionRevision           Int                         @map("provision_revision")
+  commandHash                 String                      @map("command_hash") @db.Char(64)
+  boundEmail                  String                      @map("bound_email")
+  tier                        TicketTier
+  bindingGrantId              String?                     @map("binding_grant_id") @db.Uuid
+  highestGrantGeneration      Int?                        @map("highest_grant_generation")
+  bindingDerivationKeyVersion Int?                        @map("binding_derivation_key_version")
+  bindingCodeDigest           String?                     @map("binding_code_digest") @db.Char(64)
+  grantId                     String?                     @map("grant_id") @db.Uuid
+  grantGeneration             Int?                        @map("grant_generation")
+  derivationKeyVersion        Int?                        @map("derivation_key_version")
+  codeDigestVersion           Int?                        @map("code_digest_version")
+  providerObservedAt          DateTime                    @map("provider_observed_at")
+  mediaStatus                 CommerceMediaStatus         @default(NOT_REQUIRED) @map("media_status")
+  livekitIdentityVersion      Int                         @default(1) @map("livekit_identity_version")
+  maxLivekitTokenExpiresAt    DateTime?                   @map("max_livekit_token_expires_at")
+  createdAt                   DateTime                    @default(now()) @map("created_at")
+  updatedAt                   DateTime                    @updatedAt @map("updated_at")
+
+  commands  CommerceEntitlementCommand[]
+  receipts  CommerceRequestReceipt[]
+  mediaJobs CommerceMediaOutbox[]
+
+  @@unique([provider, externalTicketId])
+  @@index([scheduledSessionId, providerState, administrativeState])
+  @@index([grantId, grantGeneration])
+  @@map("commerce_entitlements")
+}
+
+model CommerceRequestReceipt {
+  id                    String              @id @default(uuid()) @db.Uuid
+  commerceEntitlementId String              @map("commerce_entitlement_id") @db.Uuid
+  commerceEntitlement   CommerceEntitlement @relation(fields: [commerceEntitlementId], references: [id], onDelete: Cascade)
+  source                String
+  requestId             String              @map("request_id") @db.Uuid
+  provisionRevision     Int                 @map("provision_revision")
+  commandHash           String              @map("command_hash") @db.Char(64)
+  createdAt             DateTime            @default(now()) @map("created_at")
+
+  @@unique([source, requestId])
+  @@index([commerceEntitlementId, provisionRevision])
+  @@map("commerce_request_receipts")
+}
+
+model CommerceEntitlementCommand {
+  id                    String              @id @default(uuid()) @db.Uuid
+  commerceEntitlementId String              @map("commerce_entitlement_id") @db.Uuid
+  commerceEntitlement   CommerceEntitlement @relation(fields: [commerceEntitlementId], references: [id], onDelete: Cascade)
+  source                String
+  requestId             String              @map("request_id") @db.Uuid
+  provisionRevision     Int                 @map("provision_revision")
+  commandHash           String              @map("command_hash") @db.Char(64)
+  appliedSnapshot       Json                @map("applied_snapshot")
+  webSessionsRevoked    Int                 @default(0) @map("web_sessions_revoked")
+  createdAt             DateTime            @default(now()) @map("created_at")
+
+  @@unique([source, requestId])
+  @@unique([commerceEntitlementId, provisionRevision])
+  @@map("commerce_entitlement_commands")
+}
+
+model CommerceMediaOutbox {
+  id                    String               @id @default(uuid()) @db.Uuid
+  commerceEntitlementId String               @map("commerce_entitlement_id") @db.Uuid
+  commerceEntitlement   CommerceEntitlement  @relation(fields: [commerceEntitlementId], references: [id], onDelete: Cascade)
+  provisionRevision     Int                  @map("provision_revision")
+  stageRoomName         String               @map("stage_room_name")
+  participantIdentity   String               @map("participant_identity")
+  bedIdentity           String               @map("bed_identity")
+  tokenHorizonAt        DateTime             @map("token_horizon_at")
+  status                CommerceOutboxStatus @default(PENDING)
+  attempts              Int                  @default(0)
+  stageRemoved          Int                  @default(0) @map("stage_removed")
+  bedRemoved            Int                  @default(0) @map("bed_removed")
+  nextAttemptAt         DateTime             @default(now()) @map("next_attempt_at")
+  lastAttemptAt         DateTime?            @map("last_attempt_at")
+  lastErrorCode         String?              @map("last_error_code")
+  completedAt           DateTime?            @map("completed_at")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+
+  @@unique([commerceEntitlementId, provisionRevision])
+  @@index([status, nextAttemptAt])
+  @@map("commerce_media_outbox")
 }
 
 model WebSession {

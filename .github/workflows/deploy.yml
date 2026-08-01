@@ -17,64 +17,104 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run database migrations
-        env:
-          DATABASE_URL: postgresql://beacon:${{ secrets.DB_PASSWORD }}@localhost:5432/harmonic_beacon?schema=public
-        run: npx prisma migrate deploy
-
-      - name: Build Docker images
+      - name: Verify code and shared contract
         run: |
-          docker compose build \
-            --build-arg NEXT_PUBLIC_LIVEKIT_URL="${{ secrets.NEXT_PUBLIC_LIVEKIT_URL }}"
+          npm ci
+          npm run contract:commerce:verify
+          npm test
+          npx tsc --noEmit
+          npm run lint -- --quiet
 
-      - name: Persist secrets to env file
+      - name: Verify production prerequisites
+        shell: bash
         run: |
-          sudo mkdir -p /etc/sai-harmonic-beacon
-          sudo tee /etc/sai-harmonic-beacon/production.env > /dev/null <<'ENVFILE'
-          # Harmonic Beacon - Production Environment
-          # Written by deploy workflow — survives container restarts
-          DATABASE_URL=postgresql://beacon:${{ secrets.DB_PASSWORD }}@host.docker.internal:5432/harmonic_beacon?schema=public
-          AUTH_SECRET=${{ secrets.AUTH_SECRET }}
-          AUTH_ZITADEL_ID=${{ secrets.AUTH_ZITADEL_ID }}
-          LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}
-          LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}
-          PUBLIC_IP=${{ secrets.PUBLIC_IP }}
-          ENVFILE
-          sudo chown root:github-runner /etc/sai-harmonic-beacon/production.env
-          sudo chmod 0640 /etc/sai-harmonic-beacon/production.env
+          set -euo pipefail
+          sudo -n test -r /etc/harmonic-beacon/production.env
+          sudo -n test -r /etc/harmonic-beacon/commerce.env
+          test "$(sudo -n docker network inspect pmp_beacon_internal --format '{{.Internal}}')" = true
+          while IFS= read -r member; do
+            case "$member" in
+              ''|beacon-app|pmp-myth-worker|pmp-myth-bot-worker) ;;
+              *) echo "Unexpected container on pmp_beacon_internal: $member" >&2; exit 1 ;;
+            esac
+          done < <(sudo -n docker network inspect pmp_beacon_internal \
+            --format '{{range .Containers}}{{println .Name}}{{end}}')
+          sudo -n docker compose --project-name app \
+            --env-file /etc/harmonic-beacon/production.env config --quiet
 
-      - name: Deploy services
+      - name: Preserve immutable rollback image
+        id: rollback
+        shell: bash
         run: |
-          # Stop old standalone container if it exists
-          docker stop harmonic-beacon 2>/dev/null || true
-          docker rm harmonic-beacon 2>/dev/null || true
+          set -euo pipefail
+          previous="$(sudo -n docker inspect beacon-app --format '{{.Image}}' 2>/dev/null || true)"
+          if [ -n "$previous" ]; then
+            sudo -n docker tag "$previous" "harmonic-beacon/app:rollback-${GITHUB_RUN_ID}"
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
 
-          # Deploy with compose (secrets from /etc/sai-harmonic-beacon/production.env)
-          docker compose up -d --remove-orphans
-
-          # Wait for services to be healthy
-          echo "Waiting for services to be healthy..."
-          sleep 10
-
-          # Verify app is responding
-          curl -f http://localhost:3003/api/health || exit 1
-
-          echo "Deployment successful"
-
-      - name: Cleanup old images
-        if: success()
+      - name: Build commit image
+        shell: bash
         run: |
-          docker image prune -f --filter "until=168h" 2>/dev/null || true
+          sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
+            --project-name app --env-file /etc/harmonic-beacon/production.env \
+            build app
 
-      - name: Rollback on failure
-        if: failure()
+      - name: Apply additive migrations
+        shell: bash
         run: |
-          echo "Deployment failed, attempting rollback..."
-          docker compose down 2>/dev/null || true
-          # Try to restart with previous images
-          docker compose up -d 2>/dev/null || true
+          sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
+            --project-name app --env-file /etc/harmonic-beacon/production.env \
+            run --rm --no-deps app npx prisma migrate deploy
+          sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
+            --project-name app --env-file /etc/harmonic-beacon/production.env \
+            run --rm --no-deps app npx prisma migrate status
+
+      - name: Replace app and reconciler
+        shell: bash
+        run: |
+          sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
+            --project-name app --env-file /etc/harmonic-beacon/production.env \
+            up -d --no-deps --force-recreate app commerce-reconciler
+
+      - name: Wait for readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            app_health="$(sudo -n docker inspect beacon-app --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            worker_health="$(sudo -n docker inspect beacon-commerce-reconciler --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            if [ "$app_health" = healthy ] && [ "$worker_health" = healthy ] && \
+              curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          sudo -n docker compose --project-name app \
+            --env-file /etc/harmonic-beacon/production.env ps
+          sudo -n docker logs --tail 100 beacon-app || true
+          sudo -n docker logs --tail 100 beacon-commerce-reconciler || true
+          exit 1
+
+      - name: Roll back immutable app image on failure
+        if: failure() && steps.rollback.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
+            --project-name app --env-file /etc/harmonic-beacon/production.env \
+            up -d --no-deps --force-recreate app
+          if sudo -n docker run --rm --entrypoint test \
+            "harmonic-beacon/app:rollback-${GITHUB_RUN_ID}" \
+            -f /app/scripts/commerce-media-worker.ts; then
+            sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
+              --project-name app --env-file /etc/harmonic-beacon/production.env \
+              up -d --no-deps --force-recreate commerce-reconciler
+          else
+            sudo -n docker stop beacon-commerce-reconciler 2>/dev/null || true
+          fi
+          curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null

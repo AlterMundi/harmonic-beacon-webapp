@@ -56,6 +56,7 @@ type WebSessionRow = {
 
 type FakePrisma = {
     $transaction: <T>(fn: (tx: FakePrisma) => Promise<T>) => Promise<T>;
+    $queryRaw: () => Promise<Array<{ id: string }>>;
     ticketEntitlement: {
         findUnique: (args: { where: Record<string, unknown> }) => Promise<EntitlementRow | null>;
         updateMany: (args: {
@@ -91,6 +92,7 @@ function createFakeDb(rows: EntitlementRow[]) {
 
     const prisma: FakePrisma = {
         $transaction: async (fn) => fn(prisma),
+        $queryRaw: async () => [],
         ticketEntitlement: {
             findUnique: async ({ where }) => {
                 await new Promise((resolve) => setTimeout(resolve, 0));

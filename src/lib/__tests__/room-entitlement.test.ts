@@ -46,6 +46,7 @@ const activeTicketSession = {
         boundEmail: 'private@example.com',
         expiresAt: new Date('2026-08-02T00:00:00Z'),
         revokedAt: null,
+        commerceEntitlement: null,
     },
 };
 
@@ -150,6 +151,23 @@ describe('resolveRoomPrincipal', () => {
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
             update: { leftAt: null },
         }));
+    });
+
+    it('versions commerce identities so old-token cleanup cannot kick restored access', async () => {
+        findWebSession.mockResolvedValue({
+            ...activeTicketSession,
+            ticketEntitlement: {
+                ...activeTicketSession.ticketEntitlement,
+                commerceEntitlement: { livekitIdentityVersion: 3 },
+            },
+        });
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: { identity: 'opaque:event-1:ticket:ticket-1:v3' },
+        });
     });
 
     it('migrates the seeded facilitator row to the stable identity instead of inserting a duplicate', async () => {
