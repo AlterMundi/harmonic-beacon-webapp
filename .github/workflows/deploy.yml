@@ -33,6 +33,7 @@ jobs:
           set -euo pipefail
           sudo -n test -r /etc/harmonic-beacon/production.env
           sudo -n test -r /etc/harmonic-beacon/commerce.env
+          test "$(sudo -n stat -c '%a:%U:%G' /etc/harmonic-beacon/commerce.env)" = "600:root:root"
           test "$(sudo -n docker network inspect pmp_beacon_internal --format '{{.Internal}}')" = true
           while IFS= read -r member; do
             case "$member" in
@@ -99,6 +100,47 @@ jobs:
           sudo -n docker logs --tail 100 beacon-app || true
           sudo -n docker logs --tail 100 beacon-commerce-reconciler || true
           exit 1
+
+      - name: Verify private boundary and secret isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          members="$(sudo -n docker network inspect pmp_beacon_internal \
+            --format '{{range .Containers}}{{println .Name}}{{end}}' | sort)"
+          test "$members" = $'beacon-app\npmp-myth-worker'
+
+          container_has_env_name() {
+            sudo -n docker inspect "$1" \
+              --format '{{range .Config.Env}}{{println .}}{{end}}' | \
+              cut -d= -f1 | grep -Fxq "$2"
+          }
+          container_has_commerce_key() {
+            sudo -n docker inspect "$1" \
+              --format '{{range .Config.Env}}{{println .}}{{end}}' | \
+              cut -d= -f1 | grep -Eq '^BEACON_COMMERCE_SERVICE_KEY_'
+          }
+          container_has_env_name beacon-app BEACON_COMMERCE_SERVICE_KEY_CURRENT_ID
+          container_has_env_name beacon-app BEACON_COMMERCE_SERVICE_KEY_CURRENT
+          for container in beacon-postgres beacon-livekit beacon-playlist-bot \
+            beacon-tapestry beacon-commerce-reconciler pmp-myth-api \
+            pmp-myth-postgres pmp-myth-waha pmp-myth-rag pmp-myth-gateway; do
+            if sudo -n docker inspect "$container" >/dev/null 2>&1 && \
+              container_has_commerce_key "$container"; then
+              echo "Commerce bearer reached unexpected container: $container" >&2
+              exit 1
+            fi
+          done
+
+          for method in GET PUT; do
+            code="$(curl --silent --show-error --output /dev/null \
+              --request "$method" --header 'Content-Type: application/json' \
+              --data '{}' --write-out '%{http_code}' \
+              https://live.harmonicbeacon.com/api/internal/v1/commerce-entitlements/ticket-tailor/deploy-probe)"
+            test "$code" = 404 || {
+              echo "Public internal $method returned $code instead of 404" >&2
+              exit 1
+            }
+          done
 
       - name: Roll back immutable app image on failure
         if: failure() && steps.rollback.outputs.available == 'true'
