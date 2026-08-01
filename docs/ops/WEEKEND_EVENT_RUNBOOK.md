@@ -19,15 +19,21 @@ longer require SQL.
    correct title, then press **Open doors**. A repeated press is harmless.
 2. Keep the waiting-room page open on a test attendee: it must move into the
    room automatically, without re-entering the ticket.
-3. After the session, press **Close event**, review the impact copy, and confirm.
-   Connected attendee clients move to the closing state and both media rooms
-   disconnect locally on their next status check.
+3. After the session, press **Close event**, review the impact copy, then press
+   **End & disconnect everyone**. The server first records `ENDED`, then deletes
+   that event's Stage room and removes only that event's listeners from the
+   shared Beacon room. The Beacon source and other events stay connected.
+   Browsers also move to the closing state on their next three-second status
+   check.
 4. Admin cancellation and opening outside the -10/+60 minute window require a
    short operational reason. Never put attendee names, emails, ticket codes or
    session tokens in that field.
 
-If a lifecycle action fails, do not edit the database. Record the response code,
-refresh the event console, and escalate to the incident commander.
+The response reports separate Stage and Beacon disconnection counts. If either
+LiveKit action or its audit is incomplete, use **Disconnect remaining clients**;
+the retry is idempotent and cannot reopen the event. If it still fails, do not
+edit the database. Record the response code, refresh the event console, and
+escalate to the incident commander.
 
 ---
 
