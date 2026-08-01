@@ -8,8 +8,8 @@ name: E2E quality gates
 # Everything is throwaway and seeded from db/test-fixture.sql — no
 # production credentials or participant data.
 #
-# Runner prerequisites (one-time): Docker, and Playwright Chromium system
-# dependencies (`npx playwright install-deps chromium` once, as root).
+# GitHub's hosted Linux runner supplies Docker for service containers and the
+# LiveKit fixture. Playwright installs Chromium and its OS dependencies below.
 
 on:
   pull_request:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16-alpine
@@ -50,7 +50,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npx playwright install chromium
+      - run: npx playwright install --with-deps chromium
 
       - name: Start LiveKit dev server
         run: |
