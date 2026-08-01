@@ -50,7 +50,7 @@ export default function SessionLifecycleControl({
     }, [scheduledAt, nowMs]);
     const canOverrideWindow = role === 'ADMIN' || role === 'FACILITATOR_OP';
 
-    async function transition(targetStatus: 'LIVE' | 'ENDED') {
+    async function transition(targetStatus: 'LIVE' | 'ENDED' | 'CANCELLED') {
         setBusy(true);
         setError(null);
         setNotice(null);
@@ -67,6 +67,11 @@ export default function SessionLifecycleControl({
                 status?: string;
                 message?: string;
                 changed?: boolean;
+                termination?: {
+                    complete: boolean;
+                    stageDisconnected: number;
+                    bedDisconnected: number;
+                };
             };
             if (!response.ok) {
                 throw new Error(data.message || `Status change failed (HTTP ${response.status})`);
@@ -76,9 +81,18 @@ export default function SessionLifecycleControl({
             onStatusChange?.(nextStatus);
             setConfirmClose(false);
             setReason('');
-            setNotice(targetStatus === 'LIVE'
-                ? (data.changed === false ? 'Doors were already open.' : 'Doors are open. Attendees are entering now.')
-                : (data.changed === false ? 'Event was already closed.' : 'Event closed. Connected attendees will see the closing state.'));
+            if (targetStatus === 'LIVE') {
+                setNotice(data.changed === false
+                    ? 'Doors were already open.'
+                    : 'Doors are open. Attendees are entering now.');
+            } else if (data.termination?.complete) {
+                const outcome = targetStatus === 'CANCELLED' ? 'cancelled' : 'ended';
+                setNotice(
+                    `Event ${outcome} now. Disconnected ${data.termination.stageDisconnected} Stage and ${data.termination.bedDisconnected} Beacon connections.`,
+                );
+            } else {
+                setError('Event closed, but an immediate media disconnect was incomplete. Use “Disconnect remaining clients” to retry.');
+            }
         } catch (failure) {
             setError(failure instanceof Error ? failure.message : 'Status change failed');
         } finally {
@@ -119,9 +133,21 @@ export default function SessionLifecycleControl({
                         Close event
                     </button>
                 ) : (
-                    <span className="rounded-full border border-[var(--border-subtle)] px-3 py-1 text-xs text-[var(--text-muted)]">
-                        {status === 'ENDED' ? 'Event closed' : 'Event cancelled'}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-[var(--border-subtle)] px-3 py-1 text-xs text-[var(--text-muted)]">
+                            {status === 'ENDED' ? 'Event closed' : 'Event cancelled'}
+                        </span>
+                        {status === 'ENDED' || canOverrideWindow ? (
+                            <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => setConfirmClose(true)}
+                                className="event-button event-button--secondary"
+                            >
+                                Disconnect remaining clients
+                            </button>
+                        ) : null}
+                    </div>
                 )}
             </div>
 
@@ -148,18 +174,18 @@ export default function SessionLifecycleControl({
 
             {confirmClose ? (
                 <div role="alertdialog" aria-labelledby="close-event-heading" className="mt-3 rounded border border-[var(--warning)]/40 bg-[var(--warning)]/10 p-3">
-                    <h3 id="close-event-heading" className="font-medium text-[var(--cream)]">Close this event?</h3>
+                    <h3 id="close-event-heading" className="font-medium text-[var(--cream)]">End this experience for everyone?</h3>
                     <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                        New tokens will stop immediately. Connected attendees will move to the closing state on their next status check.
+                        New entries stop first. Then every Stage connection and this event&apos;s Beacon listeners are disconnected immediately. Other events and the Beacon source stay online.
                     </p>
                     <div className="mt-3 flex gap-2">
                         <button
                             type="button"
                             disabled={busy}
-                            onClick={() => void transition('ENDED')}
+                            onClick={() => void transition(status === 'CANCELLED' ? 'CANCELLED' : 'ENDED')}
                             className="event-button event-button--primary"
                         >
-                            {busy ? 'Closing…' : 'Confirm close'}
+                            {busy ? 'Disconnecting…' : 'End & disconnect everyone'}
                         </button>
                         <button
                             type="button"

@@ -37,7 +37,11 @@ describe('SessionLifecycleControl', () => {
     it('requires explicit confirmation before closing', async () => {
         vi.mocked(fetch).mockResolvedValue({
             ok: true,
-            json: async () => ({ changed: true, status: 'ENDED' }),
+            json: async () => ({
+                changed: true,
+                status: 'ENDED',
+                termination: { complete: true, stageDisconnected: 3, bedDisconnected: 2 },
+            }),
         } as Response);
         render(<SessionLifecycleControl
             sessionId="event-1"
@@ -47,9 +51,73 @@ describe('SessionLifecycleControl', () => {
         />);
         fireEvent.click(screen.getByRole('button', { name: 'Close event' }));
         expect(fetch).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: 'Confirm close' }));
+        expect(screen.getByText(/every Stage connection/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'End & disconnect everyone' }));
         await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
-        expect(await screen.findByText('Event closed. Connected attendees will see the closing state.')).toBeInTheDocument();
+        expect(await screen.findByText('Event ended now. Disconnected 3 Stage and 2 Beacon connections.')).toBeInTheDocument();
+    });
+
+    it('offers an idempotent disconnect retry after the event is closed', async () => {
+        vi.mocked(fetch).mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                changed: false,
+                status: 'ENDED',
+                termination: { complete: true, stageDisconnected: 1, bedDisconnected: 1 },
+            }),
+        } as Response);
+        render(<SessionLifecycleControl
+            sessionId="event-1"
+            initialStatus="ENDED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="OPERATOR"
+        />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Disconnect remaining clients' }));
+        fireEvent.click(screen.getByRole('button', { name: 'End & disconnect everyone' }));
+
+        await screen.findByText('Event ended now. Disconnected 1 Stage and 1 Beacon connections.');
+        expect(fetch).toHaveBeenCalledWith(
+            '/api/ops/sessions/event-1/lifecycle',
+            expect.objectContaining({ body: JSON.stringify({ status: 'ENDED' }) }),
+        );
+    });
+
+    it('retries a cancelled event without attempting an invalid ENDED transition', async () => {
+        vi.mocked(fetch).mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                changed: false,
+                status: 'CANCELLED',
+                termination: { complete: true, stageDisconnected: 0, bedDisconnected: 2 },
+            }),
+        } as Response);
+        render(<SessionLifecycleControl
+            sessionId="event-1"
+            initialStatus="CANCELLED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="FACILITATOR_OP"
+        />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Disconnect remaining clients' }));
+        fireEvent.click(screen.getByRole('button', { name: 'End & disconnect everyone' }));
+
+        await screen.findByText('Event cancelled now. Disconnected 0 Stage and 2 Beacon connections.');
+        expect(fetch).toHaveBeenCalledWith(
+            '/api/ops/sessions/event-1/lifecycle',
+            expect.objectContaining({ body: JSON.stringify({ status: 'CANCELLED' }) }),
+        );
+    });
+
+    it('does not offer an unauthorized cancellation retry to an operator', () => {
+        render(<SessionLifecycleControl
+            sessionId="event-1"
+            initialStatus="CANCELLED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="OPERATOR"
+        />);
+
+        expect(screen.queryByRole('button', { name: 'Disconnect remaining clients' })).not.toBeInTheDocument();
     });
 
     it('blocks non-admin staff outside the opening window', () => {

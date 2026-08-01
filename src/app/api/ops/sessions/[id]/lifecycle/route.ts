@@ -6,6 +6,7 @@ import {
     transitionScheduledSession,
     type LifecycleTargetStatus,
 } from '@/lib/session-lifecycle';
+import { terminateSessionMedia } from '@/lib/session-termination';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,10 +56,18 @@ export async function POST(
             targetStatus: body.status as LifecycleTargetStatus,
             reason,
         });
+        const termination = result.status === 'ENDED' || result.status === 'CANCELLED'
+            ? await terminateSessionMedia({
+                sessionId: id,
+                actorUserId: staff.id,
+                actorRole: staff.role,
+            })
+            : undefined;
         return NextResponse.json({
             ...result,
             startedAt: result.startedAt?.toISOString() ?? null,
             endedAt: result.endedAt?.toISOString() ?? null,
+            ...(termination ? { termination } : {}),
         });
     } catch (error) {
         if (error instanceof SessionLifecycleError) {

@@ -139,28 +139,32 @@ Legal and privacy considerations may delay disclosure; they never eliminate it.
 
 ## 4. The Session Kill Switch
 
-> **The Kill Switch exists**, at `POST /api/admin/sessions/[id]/terminate`. An
-> Admin can end any live session, including one whose Provider is the problem —
-> a compromised account, abuse from the host mic — which was the case with no
-> control at all. It stops any active egress, disconnects participants, moves the
-> session to ENDED, and requires a written reason: terminating someone else's live
-> session without recording why is what the audit log exists to prevent, so a
-> missing reason is a refusal rather than a default.
+> **The event Kill Switch exists** in the selected event's **Event doors**
+> control and at `POST /api/ops/sessions/[id]/lifecycle`. An authorized assigned
+> facilitator, operator, admin, or facilitator-operator can end a live session.
+> The durable status changes to `ENDED` before LiveKit is touched, so no new
+> tokens can be issued. The server then deletes that event's Stage room and
+> removes only its listeners from the shared Beacon room; the Beacon publisher
+> and other events are deliberately preserved.
 >
-> Three of the five behaviours below are delivered. Locking the session against
-> restart falls out of the status change, since starting requires SCHEDULED.
+> The action and each media-termination attempt are audited, including redacted
+> disconnection counts and failure categories. A partial failure is visible in
+> the cockpit and exposes an idempotent **Disconnect remaining clients** retry.
+> Locking the session against restart falls out of the status change, since
+> starting requires `SCHEDULED`.
 > **Not delivered:** suspending the Provider's ability to open new sessions
-> pending review — there is no suspension field on `User`, so this was left
-> unbuilt rather than invented — and the participant-facing message, which is
-> client-side. Both are tracked. **[Planned — Phase 1]** *(items 3 and 5)*
+> pending review — this event product has no Provider suspension model — and a
+> full incident snapshot. Both remain planned. **[Planned — Phase 1]** *(items
+> 3 and 4)*
 
-A single-click control, available to Admin on any live `ScheduledSession`, that will:
+A confirmation-guarded control on a live `ScheduledSession` that will:
 
 1. Terminate the LiveKit room, disconnecting all participants.
 2. Lock the session to prevent restart from the UI.
 3. Suspend the Provider's ability to start new sessions pending review.
-4. Capture a snapshot of the session metadata for incident records.
-5. Surface a generic "session ended" message to participants.
+4. Capture a full snapshot of the session metadata for incident records.
+5. Surface a generic "session ended" message to participants on the next
+   status poll.
 
 The Kill Switch will be used in response to:
 
@@ -169,7 +173,10 @@ The Kill Switch will be used in response to:
 - Legal compulsion.
 - Severe technical malfunction (inaudible, looping, or corrupted output).
 
-Use of the Kill Switch will be logged with the Admin identity, the timestamp, and the declared reason, and reviewed by a second Admin post-incident. That logging is the audit log of [BUSINESS_RULES.md §1.3](../BUSINESS_RULES.md), which does not exist either; the two ship together or the control ships unaccountable. **[Planned — Phase 1]**
+Use of the Kill Switch is logged with the staff identity, role, timestamp,
+lifecycle transition, disconnection counts and redacted failure categories.
+Admin cancellation additionally requires a printable non-PII reason. A second
+Admin review and the public post-incident workflow remain operational policy.
 
 ---
 
