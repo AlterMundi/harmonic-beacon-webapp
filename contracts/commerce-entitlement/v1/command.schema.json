@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/commerce-entitlement/v1/command.schema.json",
+  "title": "Commerce entitlement command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "request_id", "source", "provider", "provision_revision",
+    "desired_provider_state", "reason_code", "external_order_id", "external_ticket_id",
+    "registration_id", "scheduled_session_id", "bound_email", "tier",
+    "provider_observed_at", "grant"
+  ],
+  "properties": {
+    "schema_version": { "const": "commerce-entitlement.command.v1" },
+    "request_id": { "type": "string", "format": "uuid" },
+    "source": { "const": "PMP_MYTH_BOT" },
+    "provider": { "const": "TICKET_TAILOR" },
+    "provision_revision": { "type": "integer", "minimum": 1 },
+    "desired_provider_state": { "enum": ["ACTIVE", "REVOKED"] },
+    "reason_code": {
+      "enum": [
+        "PAYMENT_VERIFIED", "PARTIAL_REFUND_TICKET_VALID", "CREDENTIAL_ROTATED",
+        "PROVIDER_RECONCILED", "TICKET_VOIDED", "ORDER_CANCELLED", "FULL_REFUND"
+      ]
+    },
+    "external_order_id": { "$ref": "#/$defs/externalId" },
+    "external_ticket_id": { "$ref": "#/$defs/externalId" },
+    "registration_id": { "type": "string", "format": "uuid" },
+    "scheduled_session_id": { "type": "string", "format": "uuid" },
+    "bound_email": { "type": "string", "minLength": 1, "maxLength": 254 },
+    "tier": { "enum": ["GLOBAL_NORTH", "GLOBAL_SOUTH"] },
+    "provider_observed_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "grant": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["grant_id", "generation", "derivation_key_version", "code"],
+          "properties": {
+            "grant_id": { "type": "string", "format": "uuid" },
+            "generation": { "type": "integer", "minimum": 1 },
+            "derivation_key_version": { "type": "integer", "minimum": 1 },
+            "code": { "type": "string", "pattern": "^HB1(?:-[A-HJ-NP-Z2-9]{4}){8}$" }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "externalId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "desired_provider_state": { "const": "ACTIVE" } } },
+      "then": {
+        "properties": {
+          "reason_code": {
+            "enum": ["PAYMENT_VERIFIED", "PARTIAL_REFUND_TICKET_VALID", "CREDENTIAL_ROTATED", "PROVIDER_RECONCILED"]
+          },
+          "grant": { "type": "object" }
+        }
+      },
+      "else": {
+        "properties": {
+          "reason_code": { "enum": ["TICKET_VOIDED", "ORDER_CANCELLED", "FULL_REFUND"] },
+          "grant": { "type": "null" }
+        }
+      }
+    }
+  ]
+}

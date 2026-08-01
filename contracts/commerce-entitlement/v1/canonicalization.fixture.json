@@ -1,0 +1,26 @@
+{
+  "input": {
+    "grant": {
+      "code": "HB1-ABCD-EFGH-JKMP-QRST-UVWX-YZ23-4567-89AB",
+      "derivation_key_version": 2,
+      "generation": 3,
+      "grant_id": "30000000-0000-4000-8000-000000000003"
+    },
+    "provider_observed_at": "2026-08-01T04:00:00.000Z",
+    "tier": "GLOBAL_SOUTH",
+    "bound_email": "  Persóna+Mito@Example.COM  ",
+    "scheduled_session_id": "10000000-0000-4000-8000-000000000001",
+    "registration_id": "20000000-0000-4000-8000-000000000002",
+    "external_ticket_id": "tt_ticket_unicode_01",
+    "external_order_id": "tt-order-0001",
+    "reason_code": "CREDENTIAL_ROTATED",
+    "desired_provider_state": "ACTIVE",
+    "provision_revision": 7,
+    "provider": "TICKET_TAILOR",
+    "source": "PMP_MYTH_BOT",
+    "request_id": "40000000-0000-4000-8000-000000000004",
+    "schema_version": "commerce-entitlement.command.v1"
+  },
+  "canonical_utf8": "{\"bound_email\":\"persóna+mito@example.com\",\"desired_provider_state\":\"ACTIVE\",\"external_order_id\":\"tt-order-0001\",\"external_ticket_id\":\"tt_ticket_unicode_01\",\"grant\":{\"code\":\"HB1-ABCD-EFGH-JKMP-QRST-UVWX-YZ23-4567-89AB\",\"derivation_key_version\":2,\"generation\":3,\"grant_id\":\"30000000-0000-4000-8000-000000000003\"},\"provider\":\"TICKET_TAILOR\",\"provider_observed_at\":\"2026-08-01T04:00:00.000Z\",\"provision_revision\":7,\"reason_code\":\"CREDENTIAL_ROTATED\",\"registration_id\":\"20000000-0000-4000-8000-000000000002\",\"scheduled_session_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":\"commerce-entitlement.command.v1\",\"source\":\"PMP_MYTH_BOT\",\"tier\":\"GLOBAL_SOUTH\"}",
+  "sha256": "1aeec89d608cf208f1057df37079f8ababed1af8bb823c09be669c37b9e79b53"
+}

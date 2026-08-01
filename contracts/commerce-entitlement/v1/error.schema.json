@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/commerce-entitlement/v1/error.schema.json",
+  "title": "Commerce entitlement error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "code", "message", "retryable"],
+  "properties": {
+    "schema_version": { "const": "commerce-entitlement.error.v1" },
+    "request_id": { "type": ["string", "null"], "format": "uuid" },
+    "code": {
+      "enum": [
+        "unauthorized", "not_found", "invalid_request", "invalid_json", "unknown_field",
+        "missing_field", "invalid_field", "invalid_unicode", "request_too_large",
+        "idempotency_key_mismatch", "path_mismatch", "request_id_reused", "revision_conflict",
+        "immutable_binding", "generation_regressed", "generation_conflict", "session_not_found",
+        "session_unavailable", "capacity_exceeded", "credential_conflict", "internal_error"
+      ]
+    },
+    "message": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "retryable": { "type": "boolean" }
+  }
+}
