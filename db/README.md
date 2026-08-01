@@ -22,7 +22,7 @@ database in the repo, and it is regenerated from `prisma/seed-test-fixtures.ts`.
 | Language | Room | Time (Costa Rica) |
 |---|---|---|
 | SPANISH | `weekend-test-spanish` | 08:30 |
-| ENGLISH | `weekend-test-english` | 12:30 |
+| ENGLISH | `weekend-test-english` | 14:00 |
 
 ### Ticket codes (6 per session)
 

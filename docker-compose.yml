@@ -1,5 +1,5 @@
 # Harmonic Beacon — Production Docker Compose (mona)
-# Weekend 2026-07-31 / 2026-08-02
+# Weekend event — Saturday 2026-08-01
 #
 # Services: postgres, livekit, app (Next.js), playlist-bot, tapestry
 # Reverse proxy: nginx on host (TLS terminated at nginx -> containers via docker network)

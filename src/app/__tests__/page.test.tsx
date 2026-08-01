@@ -33,7 +33,7 @@ const SATURDAY = {
 const SESSION_2 = {
     id: 'session-2',
     language: 'ENGLISH' as const,
-    scheduledAt: new Date('2026-08-01T18:30:00.000Z'),
+    scheduledAt: new Date('2026-08-01T20:00:00.000Z'),
 };
 
 function mountDb(findMany: ReturnType<typeof vi.fn>) {
@@ -73,7 +73,7 @@ describe('landing page', () => {
         // universal references explicitly labelled below it.
         expect(screen.getAllByText(/Costa Rica:/)).toHaveLength(2);
         expect(screen.getByText(/sábado, 1 de agosto.*08:30.*GMT-6/)).toBeInTheDocument();
-        expect(screen.getByText(/sábado, 1 de agosto.*12:30.*GMT-6/)).toBeInTheDocument();
+        expect(screen.getByText(/sábado, 1 de agosto.*02:00 p\. m\..*GMT-6/)).toBeInTheDocument();
         expect(screen.getAllByText(/Argentina:/)).toHaveLength(2);
         expect(screen.getAllByText(/UTC:/)).toHaveLength(2);
     });

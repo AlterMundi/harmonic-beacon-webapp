@@ -1,10 +1,10 @@
 # Harmonic Beacon weekend MVP roadmap
 
-**Target:** first paid events on Saturday 2026-08-02 (two sessions)
+**Target:** first paid events on Saturday 2026-08-01 (two sessions)
 
 **Planning baseline:** `main` at `faf5f13d06aff9c47c133818095f32c8153e0086`
 
-**Working event order:** Session 1: Spanish 8:30 AM Costa Rica, Session 2: English 12:30 PM Costa Rica, both Saturday. WS6-02 may swap the languages on Tuesday without changing the build.
+**Final event order:** Session 1: Spanish 8:30 AM Costa Rica (14:30 UTC), Session 2: English 2:00 PM Costa Rica (20:00 UTC), both Saturday.
 
 **Delivery envelope:** 15.0 person-days, assuming four engineering-capable assignees working in parallel plus an ops/commercial owner.
 
