@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     digestTicketCode,
+    isCanonicalCommerceCredential,
     normalizeTicketCode,
     ticketCodeMatchesDigest,
     ticketCodePepper,
@@ -35,5 +36,24 @@ describe('ticket code storage', () => {
     it('fails closed without a sufficiently strong pepper', () => {
         expect(() => ticketCodePepper(undefined)).toThrow(/TICKET_CODE_PEPPER/);
         expect(() => ticketCodePepper('short')).toThrow(/at least 32/);
+    });
+
+    it('canonicalizes long HB1 credentials without changing legacy codes', () => {
+        const canonical = 'HB1-7MMP-T82D-F5UD-DF82-M7QP-XVK7-EXQQ-Q4CS';
+
+        expect(normalizeTicketCode(canonical.toLowerCase())).toBe(canonical);
+        expect(normalizeTicketCode(canonical.replaceAll('-', ''))).toBe(canonical);
+        expect(normalizeTicketCode(`  hb1 7mmp t82d f5ud df82 m7qp xvk7 exqq q4cs  `)).toBe(canonical);
+        expect(normalizeTicketCode(CODE.toLowerCase())).toBe(CODE);
+        expect(isCanonicalCommerceCredential(canonical)).toBe(true);
+        expect(isCanonicalCommerceCredential(canonical.replace('Q4CS', 'Q4O5'))).toBe(false);
+    });
+
+    it('matches a stored long credential after human-friendly input normalization', () => {
+        const canonical = 'HB1-7MMP-T82D-F5UD-DF82-M7QP-XVK7-EXQQ-Q4CS';
+        const digest = digestTicketCode(canonical, PEPPER);
+
+        expect(ticketCodeMatchesDigest(canonical.toLowerCase().replaceAll('-', ' '), digest, PEPPER)).toBe(true);
+        expect(ticketCodeMatchesDigest(canonical.replace(/.$/, 'A'), digest, PEPPER)).toBe(false);
     });
 });
