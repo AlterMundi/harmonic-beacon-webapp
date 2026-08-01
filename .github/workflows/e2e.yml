@@ -55,7 +55,7 @@ jobs:
       - name: Start LiveKit dev server
         run: |
           docker run -d --rm --name e2e-livekit --network host \
-            livekit/livekit-server:latest --dev --node-ip 127.0.0.1
+            livekit/livekit-server:v1.13.4 --dev --bind 0.0.0.0
           for i in $(seq 1 30); do
             curl -sf http://localhost:7880 >/dev/null && exit 0
             sleep 1
@@ -78,6 +78,10 @@ jobs:
           TICKET_CODE_PEPPER: commerce-ci-ticket-pepper-at-least-32-characters
           LIVEKIT_API_KEY: devkey
           LIVEKIT_API_SECRET: commerce-ci-livekit-secret-at-least-32-characters
+
+      - name: Capture LiveKit diagnostics
+        if: failure()
+        run: docker logs --tail 300 e2e-livekit
 
       - uses: actions/upload-artifact@v4
         if: always()
