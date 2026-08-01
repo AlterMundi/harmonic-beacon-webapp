@@ -135,8 +135,8 @@ stackTest.describe('media continuity', () => {
         expect(activated.playCalls).toBeGreaterThan(0);
 
         // --- Exercise every panel/control mounted in the live shell. ---
-        await attendee.getByRole('slider', { name: /Master volume|Volumen general/i }).fill('0.7');
-        await attendee.getByRole('slider', { name: /Beacon and session mix|Mezcla de Beacon y sesión/i }).fill('0.25');
+        await attendee.getByRole('slider', { name: /Overall room volume|Volumen general de la sala/i }).fill('0.7');
+        await attendee.getByRole('slider', { name: /Beacon \/ Session balance|Balance Beacon \/ Sesión/i }).fill('0.25');
         await attendee.getByRole('button', { name: /Raise hand|Levantar la mano/i }).click();
         await expect(
             attendee.getByRole('button', { name: /Lower hand|Bajar la mano/i }),
@@ -196,13 +196,56 @@ stackTest.describe('media continuity', () => {
                 await page.locator(`[data-signal="${signal}"]`).click();
                 const dialog = page.getByRole('dialog');
                 await expect(dialog).toBeVisible();
-                await dialog.getByRole('button', { name: /Close tool|Cerrar herramienta/i }).click();
+                await dialog.getByRole('button', { name: /Return to the live room|Volver a la sala en vivo/i }).click();
                 await expect(dialog).toBeHidden();
                 await expect(page.getByTestId('persistent-room')).toHaveCount(1);
             }
 
             const after = await mediaProbeSnapshot(roomFrame);
             expectMediaContinuity(before, after);
+        });
+    });
+
+    stackTest('standalone staff room hands media off to the cockpit without duplicate identity', async ({ page }, testInfo) => {
+        stackTest.slow();
+        const db = requireDirectDb(testInfo);
+        await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+            await loginViaDashboard(
+                page,
+                'FACILITATOR',
+                'E2E Facilitator',
+                ROUTES.session(SESSION_ES.id),
+            );
+            await expect(page.getByTestId('connection-state')).toHaveAttribute(
+                'data-state',
+                'connected',
+                { timeout: 20_000 },
+            );
+            await page.getByRole('button', { name: /Unmute microphone|Activar micrófono/i }).click();
+            await page.getByRole('button', { name: /Turn camera on|Encender cámara/i }).click();
+
+            await page.getByRole('button', { name: /Stage and hands|Escena y manos/i }).click();
+            await expect(page).toHaveURL(new RegExp(`/ops/events/${SESSION_ES.id}$`));
+
+            const iframe = page.locator('iframe[data-testid="persistent-room"]');
+            const handle = await iframe.elementHandle();
+            const roomFrame = await handle?.contentFrame();
+            expect(roomFrame, 'persistent room frame did not mount after handoff').not.toBeNull();
+            if (!roomFrame) return;
+
+            await expect(roomFrame.getByTestId('connection-state')).toHaveAttribute(
+                'data-state',
+                'connected',
+                { timeout: 20_000 },
+            );
+            await expect(
+                roomFrame.getByRole('button', { name: /Mute microphone|Silenciar micrófono/i }),
+            ).toBeVisible();
+            await expect(
+                roomFrame.getByRole('button', { name: /Turn camera off|Apagar cámara/i }),
+            ).toBeVisible();
+            await expect(roomFrame.getByText(/access is open elsewhere|entrada está abierta en otro lugar/i))
+                .toHaveCount(0);
         });
     });
 });

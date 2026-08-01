@@ -9,13 +9,17 @@ import type { UiLocale } from '@/lib/i18n';
 // in src/app/session/[id]/page.tsx and the three copy variants it renders.
 
 const mockPush = vi.fn();
+const navigationMocks = vi.hoisted(() => ({ surface: null as string | null }));
 const audioMocks = vi.hoisted(() => ({
     setBeaconVolume: vi.fn(),
     startBeaconAudio: vi.fn().mockResolvedValue(true),
 }));
+const liveKitBehavior = vi.hoisted(() => ({ connectFailuresRemaining: 0 }));
 vi.mock('next/navigation', () => ({
     useParams: () => ({ id: 'session-1' }),
-    useSearchParams: () => ({ get: () => null }),
+    useSearchParams: () => ({
+        get: (key: string) => key === 'surface' ? navigationMocks.surface : null,
+    }),
     useRouter: () => ({ push: mockPush }),
 }));
 
@@ -59,8 +63,18 @@ vi.mock('livekit-client', () => {
             unpublishTrack: vi.fn(),
             setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
             setCameraEnabled: vi.fn().mockResolvedValue(undefined),
+            enableCameraAndMicrophone: vi.fn().mockImplementation(async () => {
+                this.localParticipant.isCameraEnabled = true;
+                this.localParticipant.isMicrophoneEnabled = true;
+                return [];
+            }),
         };
-        connect = vi.fn().mockResolvedValue(undefined);
+        connect = vi.fn().mockImplementation(async () => {
+            if (liveKitBehavior.connectFailuresRemaining > 0) {
+                liveKitBehavior.connectFailuresRemaining -= 1;
+                throw new Error('simulated transport failure');
+            }
+        });
         disconnect = vi.fn();
         startAudio = vi.fn().mockResolvedValue(undefined);
         on(event: string, cb: (...args: unknown[]) => void) {
@@ -130,8 +144,11 @@ interface EmittableRoom {
     startAudio: ReturnType<typeof vi.fn>;
     localParticipant: {
         permissions: { canPublish: boolean };
+        isCameraEnabled: boolean;
+        isMicrophoneEnabled: boolean;
         setMicrophoneEnabled: ReturnType<typeof vi.fn>;
         setCameraEnabled: ReturnType<typeof vi.fn>;
+        enableCameraAndMicrophone: ReturnType<typeof vi.fn>;
     };
 }
 
@@ -169,6 +186,8 @@ const ENTRY_RESPONSE = {
 };
 
 beforeEach(() => {
+    navigationMocks.surface = null;
+    liveKitBehavior.connectFailuresRemaining = 0;
     window.sessionStorage.clear();
     window.localStorage.clear();
     document.cookie = 'hb_locale=; Path=/; Max-Age=0';
@@ -189,6 +208,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.useRealTimers();
     cleanup();
     mockPush.mockClear();
     vi.restoreAllMocks();
@@ -368,6 +388,77 @@ describe('SessionRoomPage - participant identity', () => {
     });
 });
 
+describe('SessionRoomPage - staff cockpit handoff', () => {
+    function installStaffToken() {
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        ...TOKEN_RESPONSE,
+                        canPublish: true,
+                        principalKind: 'staff',
+                        role: 'FACILITATOR_OP',
+                    }),
+                } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+    }
+
+    it('disconnects the standalone room and preserves device intent before opening the cockpit', async () => {
+        installStaffToken();
+        await renderConnected();
+        const room = currentRoom();
+        room.localParticipant.permissions.canPublish = true;
+        act(() => room.emit('participantPermissionsChanged', null, room.localParticipant));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Turn camera on' })).toBeInTheDocument());
+        room.localParticipant.setMicrophoneEnabled.mockImplementationOnce(async (enabled: boolean) => {
+            room.localParticipant.isMicrophoneEnabled = enabled;
+        });
+        let releaseCamera: (() => void) | undefined;
+        room.localParticipant.setCameraEnabled.mockImplementationOnce(async (enabled: boolean) => {
+            await new Promise<void>((resolve) => { releaseCamera = resolve; });
+            room.localParticipant.isCameraEnabled = enabled;
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Unmute microphone' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Turn camera on' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Stage and hands' }));
+
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(mockPush).not.toHaveBeenCalled();
+        await waitFor(() => expect(releaseCamera).toBeTypeOf('function'));
+        releaseCamera?.();
+
+        await waitFor(() => expect(room.disconnect).toHaveBeenCalledOnce());
+        expect(mockPush).toHaveBeenCalledWith('/ops/events/session-1');
+        expect(JSON.parse(window.sessionStorage.getItem('hb-stage-handoff:session-1') ?? '{}'))
+            .toEqual(expect.objectContaining({ camera: true, microphone: true, audioOnly: false }));
+    });
+
+    it('consumes a fresh handoff and restores both devices inside the persistent cockpit room', async () => {
+        installStaffToken();
+        navigationMocks.surface = 'cockpit';
+        window.sessionStorage.setItem('hb-stage-handoff:session-1', JSON.stringify({
+            camera: true,
+            microphone: true,
+            audioOnly: true,
+            createdAt: Date.now(),
+        }));
+
+        await renderConnected();
+
+        expect(currentRoom().localParticipant.enableCameraAndMicrophone).toHaveBeenCalledOnce();
+        expect(window.sessionStorage.getItem('hb-stage-handoff:session-1')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Stage and hands' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Turn video back on' })).toHaveAttribute('aria-pressed', 'true');
+    });
+});
+
 describe('SessionRoomPage - stage invitation consent', () => {
     function installGrantedHand() {
         let canPublish = true;
@@ -436,13 +527,48 @@ describe('SessionRoomPage - stage invitation consent', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
 
         await waitFor(() => {
-            expect(room.localParticipant.setCameraEnabled).toHaveBeenCalledWith(true);
-            expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+            expect(room.localParticipant.enableCameraAndMicrophone).toHaveBeenCalledOnce();
         });
-        expect(await screen.findByRole('button', { name: 'Turn camera on' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeInTheDocument();
+        expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+        expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+        expect(await screen.findByRole('button', { name: 'Turn camera off' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeInTheDocument();
         expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
         expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('keeps the attendee on stage and explains when only the camera fails', async () => {
+        const { room } = await receiveInvitation();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        room.localParticipant.enableCameraAndMicrophone.mockImplementationOnce(async () => {
+            room.localParticipant.isMicrophoneEnabled = true;
+            room.localParticipant.isCameraEnabled = false;
+            throw new Error('camera permission denied');
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+
+        expect(await screen.findByText(
+            'The microphone is on, but the camera could not start. Check camera permission and try again.',
+        )).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Turn camera on' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeInTheDocument();
+    });
+
+    it('keeps recovery controls visible and explains when both devices fail', async () => {
+        const { room } = await receiveInvitation();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        room.localParticipant.enableCameraAndMicrophone.mockRejectedValueOnce(
+            new Error('device permissions denied'),
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+
+        expect(await screen.findByText(
+            'You accepted, but the browser could not turn on the camera or microphone. Check both permissions and retry with the controls.',
+        )).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Turn camera on' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeInTheDocument();
     });
 
     it('declines the invitation durably without touching devices or the room lifecycle', async () => {
@@ -502,34 +628,114 @@ describe('SessionRoomPage - server-ended disconnect', () => {
 });
 
 describe('SessionRoomPage - transport-failure disconnect', () => {
-    it('says the connection dropped and offers a rejoin', async () => {
+    it('reconnects automatically with a fresh token before ejecting the attendee', async () => {
         await renderConnected();
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+        const fetchCallsBefore = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
 
         act(() => {
             currentRoom().emit('disconnected', DisconnectReason.SIGNAL_CLOSE);
         });
 
-        const status = await screen.findByRole('status');
-        expect(within(status).getByText('Connection lost')).toBeInTheDocument();
-        expect(within(status).getByText('Your connection to this session was lost.')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Rejoin/i })).toBeInTheDocument();
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        expect(screen.getByTestId('connection-state')).toHaveTextContent('Reconnecting');
+
+        await waitFor(
+            () => expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount + 1),
+            { timeout: 2_000 },
+        );
+        expect(await screen.findByText('Test Session')).toBeInTheDocument();
+        expect(screen.getByTestId('connection-state')).toHaveTextContent('Connected');
+        expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(fetchCallsBefore);
     });
 
-    it('reconnects when Rejoin is clicked', async () => {
-        await renderConnected();
-        const fetchCallsBefore = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    it('restores accepted camera and microphone state after transport recovery', async () => {
+        const { room } = await (async () => {
+            const canPublish = true;
+            vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+                const target = String(url);
+                if (target.includes('/entry')) {
+                    return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+                }
+                if (target.includes('/token')) {
+                    return Promise.resolve({
+                        ok: true,
+                        json: async () => ({ ...TOKEN_RESPONSE, canPublish }),
+                    } as Response);
+                }
+                if (target.includes('/hand')) {
+                    return Promise.resolve({
+                        ok: true,
+                        json: async () => ({ canPublish }),
+                    } as Response);
+                }
+                return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+            });
+            await renderConnected();
+            const invitedRoom = currentRoom();
+            invitedRoom.localParticipant.permissions.canPublish = canPublish;
+            act(() => invitedRoom.emit('participantPermissionsChanged', null, invitedRoom.localParticipant));
+            await screen.findByRole('dialog', { name: 'You’re invited into the scene' });
+            return { room: invitedRoom };
+        })();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+        await waitFor(() => expect(room.localParticipant.enableCameraAndMicrophone).toHaveBeenCalledOnce());
 
         act(() => {
-            currentRoom().emit('disconnected', DisconnectReason.CONNECTION_TIMEOUT);
+            room.emit('disconnected', DisconnectReason.CONNECTION_TIMEOUT);
         });
-        await screen.findByRole('button', { name: /Rejoin/i });
 
-        fireEvent.click(screen.getByRole('button', { name: /Rejoin/i }));
+        await waitFor(
+            () => expect(currentRoom()).not.toBe(room),
+            { timeout: 2_000 },
+        );
+        await waitFor(() => {
+            expect(currentRoom().localParticipant.enableCameraAndMicrophone).toHaveBeenCalledOnce();
+        });
+    });
 
-        // Back to the connecting state immediately, then reconnected.
-        expect(screen.getByText('Connecting')).toBeInTheDocument();
-        await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
-        expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(fetchCallsBefore);
+    it('stops after three failed automatic attempts and offers a manual rejoin', async () => {
+        await renderConnected();
+        liveKitBehavior.connectFailuresRemaining = 3;
+        vi.useFakeTimers();
+
+        act(() => {
+            currentRoom().emit('disconnected', DisconnectReason.MEDIA_FAILURE);
+        });
+        for (const delay of [500, 1_500, 3_000]) {
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(delay);
+                await Promise.resolve();
+            });
+        }
+
+        const status = screen.getByRole('status');
+        expect(within(status).getByText('Connection lost')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Rejoin' })).toBeInTheDocument();
+    });
+});
+
+describe('SessionRoomPage - duplicate identity disconnect', () => {
+    it('explains the conflicting access and waits for an explicit rejoin', async () => {
+        await renderConnected();
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+        act(() => {
+            currentRoom().emit('disconnected', DisconnectReason.DUPLICATE_IDENTITY);
+        });
+
+        const status = await screen.findByRole('status');
+        expect(within(status).getByText('This access is open elsewhere')).toBeInTheDocument();
+        expect(within(status).getByText(
+            'The same access was opened in another tab or device. Close it there, then rejoin here.',
+        )).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Rejoin' })).toBeInTheDocument();
+
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 650));
+        });
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
     });
 });
 

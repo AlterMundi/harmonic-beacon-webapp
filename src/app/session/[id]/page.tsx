@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import Link from "next/link";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import {
     DisconnectReason,
@@ -41,6 +40,39 @@ const STAGE_ROOM_OPTIONS: RoomOptions = {
 };
 
 const STAGE_REFRESH_MS = 100;
+const STAGE_HANDOFF_MAX_AGE_MS = 30_000;
+
+type StageHandoff = {
+    microphone: boolean;
+    camera: boolean;
+    audioOnly: boolean;
+    createdAt: number;
+};
+
+function stageHandoffKey(sessionId: string): string {
+    return `hb-stage-handoff:${sessionId}`;
+}
+
+function takeStageHandoff(sessionId: string): StageHandoff | null {
+    try {
+        const key = stageHandoffKey(sessionId);
+        const serialized = window.sessionStorage.getItem(key);
+        window.sessionStorage.removeItem(key);
+        if (!serialized) return null;
+        const value = JSON.parse(serialized) as Partial<StageHandoff>;
+        if (typeof value.createdAt !== "number" || Date.now() - value.createdAt > STAGE_HANDOFF_MAX_AGE_MS) {
+            return null;
+        }
+        return {
+            microphone: value.microphone === true,
+            camera: value.camera === true,
+            audioOnly: value.audioOnly === true,
+            createdAt: value.createdAt,
+        };
+    } catch {
+        return null;
+    }
+}
 
 interface SessionInfo {
     id: string;
@@ -56,7 +88,9 @@ interface ViewerInfo {
     isAssignedFacilitator: boolean;
 }
 
-type DisconnectKind = "ended" | "transport" | "unknown";
+type DisconnectKind = "ended" | "transport" | "duplicate" | "unknown";
+
+const AUTO_RECONNECT_DELAYS_MS = [500, 1_500, 3_000] as const;
 
 function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
     switch (reason) {
@@ -70,9 +104,10 @@ function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
         case DisconnectReason.CONNECTION_TIMEOUT:
         case DisconnectReason.MEDIA_FAILURE:
         case DisconnectReason.JOIN_FAILURE:
-        case DisconnectReason.DUPLICATE_IDENTITY:
         case DisconnectReason.MIGRATION:
             return "transport";
+        case DisconnectReason.DUPLICATE_IDENTITY:
+            return "duplicate";
         default:
             return "unknown";
     }
@@ -178,10 +213,17 @@ function SessionRoom() {
     const highestSlotRef = useRef(-1);
     const stageRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const intentionalDisconnectRef = useRef(false);
+    const autoReconnectAttemptRef = useRef(0);
+    const autoReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const desiredMicRef = useRef(false);
+    const desiredCameraRef = useRef(false);
+    const deviceOperationRef = useRef<Promise<void> | null>(null);
+    const stageInvitationAcceptedRef = useRef(false);
     const terminalViewRef = useRef<HTMLDivElement>(null);
     const stageInvitationRef = useRef<HTMLDivElement>(null);
     const participantFallbackRef = useRef(copy.session.participantFallback);
     participantFallbackRef.current = copy.session.participantFallback;
+    stageInvitationAcceptedRef.current = stageInvitationAccepted;
 
     const slotFor = useCallback((identity: string): number => {
         const existing = slotOrderRef.current.get(identity);
@@ -268,13 +310,67 @@ function SessionRoom() {
         router.push("/");
     }, [router]);
 
+    const openStaffConsole = useCallback(async () => {
+        const pendingDeviceOperation = deviceOperationRef.current;
+        if (pendingDeviceOperation) {
+            try {
+                await pendingDeviceOperation;
+            } catch {
+                // The effective device state below remains authoritative.
+            }
+        }
+        const room = roomRef.current;
+        try {
+            window.sessionStorage.setItem(stageHandoffKey(id), JSON.stringify({
+                microphone: room?.localParticipant.isMicrophoneEnabled ?? isMicOn,
+                camera: room?.localParticipant.isCameraEnabled ?? isCameraOn,
+                audioOnly: audioOnlyRef.current,
+                createdAt: Date.now(),
+            } satisfies StageHandoff));
+        } catch {
+            // Navigation still works if storage is unavailable.
+        }
+        if (room) {
+            intentionalDisconnectRef.current = true;
+            try {
+                await room.disconnect();
+            } catch (failure) {
+                console.error("Failed to close the room before opening the console:", redactErrorDetail(failure));
+            }
+        }
+        router.push(`/ops/events/${id}`);
+    }, [id, isCameraOn, isMicOn, router]);
+
     const rejoin = useCallback(() => {
+        if (autoReconnectTimerRef.current) {
+            clearTimeout(autoReconnectTimerRef.current);
+            autoReconnectTimerRef.current = null;
+        }
+        autoReconnectAttemptRef.current = 0;
         setDisconnectState(null);
         setIsConnected(false);
         setIsConnecting(true);
         setError(null);
         setAudioActivationError(null);
         setRetryToken((t) => t + 1);
+    }, []);
+
+    const scheduleAutoReconnect = useCallback(() => {
+        if (autoReconnectTimerRef.current) return;
+
+        const attempt = autoReconnectAttemptRef.current;
+        if (attempt >= AUTO_RECONNECT_DELAYS_MS.length) {
+            setConnectionState("disconnected");
+            setDisconnectState("transport");
+            return;
+        }
+
+        setConnectionState("reconnecting");
+        autoReconnectAttemptRef.current = attempt + 1;
+        autoReconnectTimerRef.current = setTimeout(() => {
+            autoReconnectTimerRef.current = null;
+            setRetryToken((token) => token + 1);
+        }, AUTO_RECONNECT_DELAYS_MS[attempt]);
     }, []);
 
     const startListening = useCallback(async () => {
@@ -311,21 +407,40 @@ function SessionRoom() {
 
         setStageInvitationBusy('accept');
         setStageInvitationError(null);
-        const results = await Promise.allSettled([
-            room.localParticipant.setCameraEnabled(true),
-            room.localParticipant.setMicrophoneEnabled(true),
-        ]);
+        try {
+            // One getUserMedia acquisition is substantially more reliable on
+            // mobile Safari/Chrome than racing independent camera and mic calls.
+            await room.localParticipant.enableCameraAndMicrophone();
+        } catch (failure) {
+            console.error("Failed to enable stage devices:", redactErrorDetail(failure));
+        }
         if (!room.localParticipant.permissions?.canPublish) {
             setStageInvitationBusy(null);
             return;
         }
         setStageInvitationAccepted(true);
-        if (results.some((result) => result.status === 'rejected')) {
-            setStageInvitationError(copy.session.invitationDeviceError);
+        desiredCameraRef.current = room.localParticipant.isCameraEnabled;
+        desiredMicRef.current = room.localParticipant.isMicrophoneEnabled;
+        if (!room.localParticipant.isCameraEnabled || !room.localParticipant.isMicrophoneEnabled) {
+            setStageInvitationError(
+                room.localParticipant.isMicrophoneEnabled
+                    ? copy.session.invitationCameraError
+                    : room.localParticipant.isCameraEnabled
+                        ? copy.session.invitationMicrophoneError
+                        : copy.session.invitationDeviceError,
+            );
         }
         readStage();
         setStageInvitationBusy(null);
-    }, [canPublish, copy.session.invitationDeviceError, principalKind, readStage, stageInvitationBusy]);
+    }, [
+        canPublish,
+        copy.session.invitationCameraError,
+        copy.session.invitationDeviceError,
+        copy.session.invitationMicrophoneError,
+        principalKind,
+        readStage,
+        stageInvitationBusy,
+    ]);
 
     const declineStageInvitation = useCallback(async () => {
         if (principalKind !== 'ticket' || !canPublish || stageInvitationBusy) return;
@@ -352,6 +467,7 @@ function SessionRoom() {
     // Connect to LiveKit room
     useEffect(() => {
         let cancelled = false;
+        let ownedRoom: Room | null = null;
         const audioElements = audioElementsRef.current;
         intentionalDisconnectRef.current = false;
 
@@ -376,12 +492,22 @@ function SessionRoom() {
                     identity: typeof data.identity === "string" ? data.identity : "unknown",
                     isAssignedFacilitator: data.isAssignedFacilitator === true,
                 });
+                const handoff = embeddedInCockpit && data.principalKind === "staff"
+                    ? takeStageHandoff(id)
+                    : null;
+                if (handoff) {
+                    desiredCameraRef.current = handoff.camera;
+                    desiredMicRef.current = handoff.microphone;
+                    audioOnlyRef.current = handoff.audioOnly;
+                    setAudioOnly(handoff.audioOnly);
+                }
                 if (data.session.startedAt) {
                     const elapsed = Math.floor((Date.now() - new Date(data.session.startedAt).getTime()) / 1000);
                     setDuration(Math.max(0, elapsed));
                 }
 
                 const room = new Room(STAGE_ROOM_OPTIONS);
+                ownedRoom = room;
                 roomRef.current = room;
 
                 room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication) => {
@@ -461,7 +587,13 @@ function SessionRoom() {
                 room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
                     setIsConnected(false);
                     if (cancelled || intentionalDisconnectRef.current) return;
-                    setDisconnectState(classifyDisconnectReason(reason));
+                    const kind = classifyDisconnectReason(reason);
+                    if (kind === "transport") {
+                        scheduleAutoReconnect();
+                        return;
+                    }
+                    setConnectionState("disconnected");
+                    setDisconnectState(kind);
                 });
 
                 await room.connect(LIVEKIT_URL, data.token);
@@ -472,12 +604,44 @@ function SessionRoom() {
 
                 setIsConnected(true);
                 setIsConnecting(false);
+                setDisconnectState(null);
+                setError(null);
+                autoReconnectAttemptRef.current = 0;
+                if (autoReconnectTimerRef.current) {
+                    clearTimeout(autoReconnectTimerRef.current);
+                    autoReconnectTimerRef.current = null;
+                }
+
+                const mayRestoreDevices = data.canPublish &&
+                    (data.principalKind === "staff" || stageInvitationAcceptedRef.current);
+                if (mayRestoreDevices && desiredCameraRef.current && desiredMicRef.current) {
+                    try {
+                        await room.localParticipant.enableCameraAndMicrophone();
+                    } catch (failure) {
+                        console.error("Failed to restore stage devices:", redactErrorDetail(failure));
+                    }
+                } else if (mayRestoreDevices) {
+                    try {
+                        if (desiredCameraRef.current) {
+                            await room.localParticipant.setCameraEnabled(true);
+                        }
+                        if (desiredMicRef.current) {
+                            await room.localParticipant.setMicrophoneEnabled(true);
+                        }
+                    } catch (failure) {
+                        console.error("Failed to restore a stage device:", redactErrorDetail(failure));
+                    }
+                }
                 if (audioOnlyRef.current) applyVideoSubscriptions(false);
                 readStage();
             } catch (e) {
                 if (!cancelled) {
-                    setError(e instanceof Error ? e.message : "Failed to connect");
-                    setIsConnecting(false);
+                    if (autoReconnectAttemptRef.current > 0) {
+                        scheduleAutoReconnect();
+                    } else {
+                        setError(e instanceof Error ? e.message : "Failed to connect");
+                        setIsConnecting(false);
+                    }
                 }
             }
         }
@@ -490,8 +654,10 @@ function SessionRoom() {
                 clearTimeout(stageRefreshRef.current);
                 stageRefreshRef.current = null;
             }
-            if (roomRef.current) {
-                roomRef.current.disconnect();
+            if (ownedRoom) {
+                intentionalDisconnectRef.current = true;
+                ownedRoom.disconnect();
+                if (roomRef.current === ownedRoom) roomRef.current = null;
             }
             audioElements.forEach((el) => {
                 el.pause();
@@ -499,7 +665,14 @@ function SessionRoom() {
             });
             audioElements.clear();
         };
-    }, [id, inviteCode, retryToken, readStage, scheduleStageRefresh, applyVideoSubscriptions]);
+    }, [id, inviteCode, embeddedInCockpit, retryToken, readStage, scheduleStageRefresh, applyVideoSubscriptions, scheduleAutoReconnect]);
+
+    useEffect(() => () => {
+        if (autoReconnectTimerRef.current) {
+            clearTimeout(autoReconnectTimerRef.current);
+            autoReconnectTimerRef.current = null;
+        }
+    }, []);
 
     // Timer
     useEffect(() => {
@@ -543,23 +716,45 @@ function SessionRoom() {
     const toggleMic = useCallback(async () => {
         const room = roomRef.current;
         if (!room || !canPublish) return;
-        try {
+        const previousOperation = deviceOperationRef.current;
+        const operation = (async () => {
+            if (previousOperation) {
+                try { await previousOperation; } catch { /* Continue with the requested device. */ }
+            }
             await room.localParticipant.setMicrophoneEnabled(!isMicOn);
+            desiredMicRef.current = room.localParticipant.isMicrophoneEnabled;
+            readStage();
+        })();
+        deviceOperationRef.current = operation;
+        try {
+            await operation;
         } catch (e) {
             console.error("Failed to toggle microphone:", redactErrorDetail(e));
+        } finally {
+            if (deviceOperationRef.current === operation) deviceOperationRef.current = null;
         }
-        readStage();
     }, [canPublish, isMicOn, readStage]);
 
     const toggleCamera = useCallback(async () => {
         const room = roomRef.current;
         if (!room || !canPublish) return;
-        try {
+        const previousOperation = deviceOperationRef.current;
+        const operation = (async () => {
+            if (previousOperation) {
+                try { await previousOperation; } catch { /* Continue with the requested device. */ }
+            }
             await room.localParticipant.setCameraEnabled(!isCameraOn);
+            desiredCameraRef.current = room.localParticipant.isCameraEnabled;
+            readStage();
+        })();
+        deviceOperationRef.current = operation;
+        try {
+            await operation;
         } catch (e) {
             console.error("Failed to toggle camera:", redactErrorDetail(e));
+        } finally {
+            if (deviceOperationRef.current === operation) deviceOperationRef.current = null;
         }
-        readStage();
     }, [canPublish, isCameraOn, readStage]);
 
     const formatTime = (seconds: number): string => {
@@ -623,6 +818,11 @@ function SessionRoom() {
                 body: copy.session.connectionLostBody,
                 showRejoin: true,
             },
+            duplicate: {
+                heading: copy.session.duplicateIdentityHeading,
+                body: copy.session.duplicateIdentityBody,
+                showRejoin: true,
+            },
             unknown: {
                 heading: copy.session.disconnectedHeading,
                 body: copy.session.disconnectedBody,
@@ -677,9 +877,8 @@ function SessionRoom() {
                         <h1 className="truncate text-sm font-semibold text-[var(--cream)]">
                             {sessionInfo?.title || copy.session.sessionFallback}
                         </h1>
-                        <p className="text-[10px] text-[var(--text-muted)]" aria-live="polite">
-                            <span className="font-mono">{participantCount}</span>{' '}
-                            {participantCount === 1 ? copy.session.participantSingular : copy.session.participantPlural}
+                        <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]" aria-live="polite">
+                            {copy.session.peopleInRoom}: <strong className="font-mono text-[var(--cream)]">{participantCount}</strong>
                             <span
                                 className="ml-2 inline-flex items-center gap-1"
                                 data-testid="connection-state"
@@ -690,7 +889,7 @@ function SessionRoom() {
                             </span>
                         </p>
                         {viewerInfo && (
-                            <p className="mt-1 truncate text-[10px] text-[var(--gold)]" data-testid="viewer-identity">
+                            <p className="mt-1 truncate text-xs text-[var(--gold)]" data-testid="viewer-identity">
                                 {copy.session.signedIn}: <strong>{viewerInfo.name}</strong>
                                 {principalKind === 'staff' ? <>{' · '}{viewerInfo.role}</> : null}
                             </p>
@@ -698,12 +897,13 @@ function SessionRoom() {
                     </div>
                     <div className="ml-3 flex shrink-0 items-center gap-3">
                         {principalKind === "staff" && !embeddedInCockpit && (
-                            <Link
-                                href={`/ops/events/${id}`}
+                            <button
+                                type="button"
+                                onClick={() => void openStaffConsole()}
                                 className="inline-flex min-h-11 items-center rounded border border-[var(--gold)]/40 px-3 py-2 text-xs text-[var(--gold)] hover:bg-[var(--gold)]/10"
                             >
                                 {copy.session.staffConsole}
-                            </Link>
+                            </button>
                         )}
                         <span className="font-mono text-xs text-[var(--gold)]">{formatTime(duration)}</span>
                     </div>
@@ -801,12 +1001,18 @@ function SessionRoom() {
                     <ThumbnailTapestry sessionId={id} />
 
                     {/* Volume + Mix controls */}
-                    <div className="w-full max-w-xs space-y-4">
-                        <div className="crossfader">
+                    <div className="w-full max-w-sm space-y-5">
+                        <div>
+                            <label htmlFor="room-master-volume" className="mb-2 flex items-center justify-between gap-3 text-sm text-[var(--cream)]">
+                                <span>{copy.session.masterVolume}</span>
+                                <span className="font-mono text-xs text-[var(--gold)]">{Math.round(volume * 100)}%</span>
+                            </label>
+                            <div className="crossfader">
                             <svg className="h-4 w-4 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                             </svg>
                             <input
+                                id="room-master-volume"
                                 type="range"
                                 min="0"
                                 max="1"
@@ -816,11 +1022,16 @@ function SessionRoom() {
                                 className="flex-1 accent-[var(--gold)]"
                                 aria-label={copy.session.masterVolume}
                             />
+                            </div>
                         </div>
                         <div>
+                            <label htmlFor="room-audio-balance" className="mb-2 block text-sm text-[var(--cream)]">
+                                {copy.session.mix}
+                            </label>
                             <div className="flex items-center gap-2">
-                                <span className="w-10 text-right font-mono text-[9px] uppercase tracking-wider text-[var(--gold)]">Beacon</span>
+                                <span className="w-14 text-right font-mono text-xs text-[var(--gold)]">Beacon</span>
                                 <input
+                                    id="room-audio-balance"
                                     type="range"
                                     min="0"
                                     max="1"
@@ -830,14 +1041,14 @@ function SessionRoom() {
                                     className="flex-1 accent-[var(--cyan)]"
                                     aria-label={copy.session.mix}
                                 />
-                                <span className="w-10 font-mono text-[9px] uppercase tracking-wider text-[var(--cyan)]">{copy.session.sessionChannel}</span>
+                                <span className="w-14 font-mono text-xs text-[var(--cyan)]">{copy.session.sessionChannel}</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {principalKind === 'staff' && (
-                    <div className="mx-auto mb-3 max-w-md rounded border border-[var(--border-subtle)] bg-[var(--surface-alt)] px-3 py-2 text-center text-[10px] text-[var(--text-muted)]">
+                    <div className="mx-auto mb-3 max-w-md rounded border border-[var(--border-subtle)] bg-[var(--surface-alt)] px-3 py-2 text-center text-xs leading-5 text-[var(--text-muted)]">
                         {copy.session.beaconRoom}: {beaconConnected ? <span className="text-[var(--lime)]">{copy.session.connection.connected}</span> : <span className="text-[var(--danger)]">{copy.session.connection.disconnected}</span>}
                         {' · '}{copy.session.playlist}: {hasPlaylistStream ? <span className="text-[var(--lime)]">{copy.session.active}</span> : <span className="text-[var(--danger)]">{copy.session.none}</span>}
                         {' · '}{copy.session.live}: {hasLiveStream ? <span className="text-[var(--lime)]">{copy.session.active}</span> : <span className="text-[var(--danger)]">{copy.session.none}</span>}
@@ -880,7 +1091,7 @@ function SessionRoom() {
                                         </svg>
                                     )}
                                 </button>
-                                <span className="text-[9px] text-[var(--text-muted)]">{copy.session.mic}</span>
+                                <span className="text-xs text-[var(--text-secondary)]">{copy.session.mic}</span>
                             </div>
                         )}
 
@@ -901,7 +1112,7 @@ function SessionRoom() {
                                         {!isCameraOn && <line x1="3" y1="3" x2="21" y2="21" strokeLinecap="round" />}
                                     </svg>
                                 </button>
-                                <span className="text-[9px] text-[var(--text-muted)]">{copy.session.camera}</span>
+                                <span className="text-xs text-[var(--text-secondary)]">{copy.session.camera}</span>
                             </div>
                         )}
 
@@ -920,7 +1131,7 @@ function SessionRoom() {
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l7-3v13M9 19a3 3 0 11-6 0 3 3 0 016 0zm7-3a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
                             </button>
-                            <span className="text-[9px] text-[var(--text-muted)]">{copy.session.audioOnly}</span>
+                            <span className="text-xs text-[var(--text-secondary)]">{copy.session.audioOnly}</span>
                         </div>
 
                         <div className="flex flex-col items-center gap-1">
@@ -933,7 +1144,7 @@ function SessionRoom() {
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                                 </svg>
                             </button>
-                            <span className="text-[9px] text-[var(--text-muted)]">{copy.session.leave}</span>
+                            <span className="text-xs text-[var(--text-secondary)]">{copy.session.leave}</span>
                         </div>
                     </div>
                 </div>

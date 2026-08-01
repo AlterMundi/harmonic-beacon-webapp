@@ -147,7 +147,7 @@ export default function ConductorCockpit({ session, role, admissionEvents, copy 
                     onClick={(event) => openDrawer('doors', event.currentTarget)}
                     data-signal="door"
                 >
-                    <span className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{copy.door}</span>
+                    <span className="block text-xs text-[var(--text-secondary)]">{copy.door}</span>
                     <strong className={doorOpen ? 'text-[var(--lime)]' : 'text-[var(--gold)]'}>
                         {doorOpen ? copy.open : copy.closed}
                     </strong>
@@ -158,7 +158,7 @@ export default function ConductorCockpit({ session, role, admissionEvents, copy 
                     onClick={(event) => openDrawer('scene', event.currentTarget)}
                     data-signal="hands"
                 >
-                    <span className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{copy.hands}</span>
+                    <span className="block text-xs text-[var(--text-secondary)]">{copy.hands}</span>
                     <strong className={stage.handCount > 0 ? 'text-[var(--pink)]' : 'text-[var(--cream)]'}>
                         {stage.handCount}
                     </strong>
@@ -173,7 +173,7 @@ export default function ConductorCockpit({ session, role, admissionEvents, copy 
                     data-signal="stage"
                     data-loaded={stageLoaded}
                 >
-                    <span className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{copy.stage}</span>
+                    <span className="block text-xs text-[var(--text-secondary)]">{copy.stage}</span>
                     <strong className={needsReconciliation ? 'text-[var(--danger)]' : 'text-[var(--cream)]'}>
                         {stage.activePublishers}/{stage.maxPublishers}
                     </strong>
@@ -188,22 +188,22 @@ export default function ConductorCockpit({ session, role, admissionEvents, copy 
                 </button>
                 <button
                     type="button"
-                    className="operational-panel min-h-16 text-left"
+                    className="operational-panel col-span-2 min-h-16 text-left md:col-span-1"
                     onClick={(event) => openDrawer(primaryDrawer, event.currentTarget)}
                     data-signal="primary"
                 >
-                    <span className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{copy.primary}</span>
+                    <span className="block text-xs text-[var(--text-secondary)]">{copy.primary}</span>
                     <strong className="text-sm text-[var(--paper)]">
                         {primaryAction}
                     </strong>
                 </button>
                 <button
                     type="button"
-                    className="operational-panel col-span-2 min-h-16 text-left md:col-span-1"
+                    className="operational-panel min-h-16 text-left"
                     onClick={(event) => openDrawer('health', event.currentTarget)}
                     data-signal="health"
                 >
-                    <span className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{copy.healthSignal}</span>
+                    <span className="block text-xs text-[var(--text-secondary)]">{copy.healthSignal}</span>
                     <span className={`mt-1 inline-block h-3 w-3 rounded-full ${HEALTH_DOT[health]}`} />
                     <strong className="ml-2 uppercase text-[var(--cream)]">{health}</strong>
                 </button>
@@ -270,9 +270,8 @@ export default function ConductorCockpit({ session, role, admissionEvents, copy 
                             type="button"
                             onClick={closeDrawer}
                             className="event-button event-button--secondary"
-                            aria-label={copy.closePanel}
                         >
-                            ×
+                            ← {copy.returnToRoom}
                         </button>
                     </div>
                     <div hidden={drawer !== 'doors'}>

@@ -36,6 +36,7 @@ export interface FakeParticipant {
     isMicrophoneEnabled: boolean;
     setCameraEnabled: ReturnType<typeof vi.fn>;
     setMicrophoneEnabled: ReturnType<typeof vi.fn>;
+    enableCameraAndMicrophone: ReturnType<typeof vi.fn>;
 }
 
 export interface FakeParticipantOptions {
@@ -85,6 +86,7 @@ export function createFakeParticipant(options: FakeParticipantOptions): FakePart
         isMicrophoneEnabled: canPublish ? options.mic ?? true : false,
         setCameraEnabled: vi.fn(),
         setMicrophoneEnabled: vi.fn(),
+        enableCameraAndMicrophone: vi.fn(),
     };
 
     // Mirror the SDK: enabling a device flips the getter the UI reads back.
@@ -93,6 +95,11 @@ export function createFakeParticipant(options: FakeParticipantOptions): FakePart
     });
     participant.setMicrophoneEnabled.mockImplementation(async (enabled: boolean) => {
         participant.isMicrophoneEnabled = enabled;
+    });
+    participant.enableCameraAndMicrophone.mockImplementation(async () => {
+        participant.isCameraEnabled = true;
+        participant.isMicrophoneEnabled = true;
+        return [];
     });
 
     return participant;

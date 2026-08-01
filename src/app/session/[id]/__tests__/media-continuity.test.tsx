@@ -163,10 +163,10 @@ describe('session shell — media continuity invariants', () => {
 
         // Exercise every control mounted in the live shell for an attendee
         // (device toggles are grant-gated and absent here by design).
-        fireEvent.change(screen.getByRole('slider', { name: 'Master volume' }), {
+        fireEvent.change(screen.getByRole('slider', { name: 'Overall room volume' }), {
             target: { value: '0.7' },
         });
-        fireEvent.change(screen.getByRole('slider', { name: 'Beacon and session mix' }), {
+        fireEvent.change(screen.getByRole('slider', { name: 'Beacon / Session balance' }), {
             target: { value: '0.25' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Raise hand' }));
