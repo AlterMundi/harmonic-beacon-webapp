@@ -33,6 +33,7 @@ export interface StageTileProps {
     cameraOn: boolean;
     micOn: boolean;
     connectionQuality: StageConnectionQuality;
+    audioOnly?: boolean;
     videoPublication?: StageVideoPublication | null;
 }
 
@@ -73,6 +74,7 @@ export default function StageTile({
     cameraOn,
     micOn,
     connectionQuality,
+    audioOnly = false,
     videoPublication,
 }: StageTileProps) {
     const { copy } = useLocale();
@@ -82,7 +84,9 @@ export default function StageTile({
         ? videoPublication?.videoTrack ?? null
         : null;
     const roleLabel = copy.stage[sceneRole];
-    const mediaState = presence === "reconnecting"
+    const mediaState = audioOnly
+        ? copy.stage.audioOnlyTile
+        : presence === "reconnecting"
         ? copy.stage.reconnecting
         : cameraOn
             ? track
@@ -155,7 +159,7 @@ export default function StageTile({
                         <MicOffIcon />
                     </span>
                 )}
-                {!cameraOn && (
+                {!cameraOn && !audioOnly && (
                     <span role="img" aria-label={`${label} ${copy.stage.cameraOff.toLocaleLowerCase()}`} className="text-white/80">
                         <CameraOffIcon />
                     </span>

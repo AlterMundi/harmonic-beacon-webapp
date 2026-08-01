@@ -77,7 +77,7 @@ describe('ConductorCockpit', () => {
             fireEvent.click(trigger);
             const dialog = screen.getByRole('dialog');
             expect(dialog).toBeVisible();
-            fireEvent.click(within(dialog).getByRole('button', { name: 'Close tool' }));
+            fireEvent.click(within(dialog).getByRole('button', { name: /Return to the live room/ }));
             expect(screen.queryByRole('dialog')).toBeNull();
             expect(screen.getByTestId('persistent-room')).toBe(room);
         }
@@ -128,7 +128,7 @@ describe('ConductorCockpit', () => {
         render(<ConductorCockpit {...props} />);
         const trigger = screen.getByRole('button', { name: /Hands/i });
         fireEvent.click(trigger);
-        expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close tool' })).toHaveFocus();
+        expect(within(screen.getByRole('dialog')).getByRole('button', { name: /Return to the live room/ })).toHaveFocus();
         fireEvent.keyDown(window, { key: 'Escape' });
         await waitFor(() => expect(trigger).toHaveFocus());
         expect(screen.queryByRole('dialog')).toBeNull();

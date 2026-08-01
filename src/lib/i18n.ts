@@ -94,12 +94,15 @@ export type Messages = {
         endedBody: string;
         connectionLostHeading: string;
         connectionLostBody: string;
+        duplicateIdentityHeading: string;
+        duplicateIdentityBody: string;
         disconnectedHeading: string;
         disconnectedBody: string;
         rejoin: string;
         sessionFallback: string;
         participantSingular: string;
         participantPlural: string;
+        peopleInRoom: string;
         signedIn: string;
         staffConsole: string;
         audioActivationLabel: string;
@@ -115,6 +118,8 @@ export type Messages = {
         acceptingInvitation: string;
         decliningInvitation: string;
         invitationDeviceError: string;
+        invitationCameraError: string;
+        invitationMicrophoneError: string;
         invitationDeclineError: string;
         masterVolume: string;
         mix: string;
@@ -162,6 +167,7 @@ export type Messages = {
     stage: {
         label: string;
         audioOnly: string;
+        audioOnlyTile: string;
         waiting: string;
         you: string;
         protagonist: string;
@@ -230,6 +236,7 @@ export type Messages = {
             admissionPanel: string;
             healthPanel: string;
             closePanel: string;
+            returnToRoom: string;
             tools: string;
         };
     };
@@ -302,12 +309,15 @@ export const messages: Record<UiLocale, Messages> = {
             endedBody: 'Esta sesión terminó. Ya no estás conectado.',
             connectionLostHeading: 'Se perdió la conexión',
             connectionLostBody: 'Se perdió tu conexión con esta sesión.',
+            duplicateIdentityHeading: 'Esta entrada está abierta en otro lugar',
+            duplicateIdentityBody: 'El mismo acceso se abrió en otra pestaña o dispositivo. Cerralo allí y después volvé a entrar acá.',
             disconnectedHeading: 'Desconectado',
             disconnectedBody: 'Ya no estás conectado a esta sesión. No podemos saber si terminó o si se cortó tu conexión.',
             rejoin: 'Volver a entrar',
             sessionFallback: 'Sesión',
             participantSingular: 'participante',
             participantPlural: 'participantes',
+            peopleInRoom: 'Personas en la sala (incluyéndote)',
             signedIn: 'Ingresaste como',
             staffConsole: 'Escena y manos',
             audioActivationLabel: 'Activación de audio',
@@ -322,10 +332,12 @@ export const messages: Record<UiLocale, Messages> = {
             declineInvitation: 'Ahora no',
             acceptingInvitation: 'Preparando cámara y micrófono…',
             decliningInvitation: 'Volviendo al público…',
-            invitationDeviceError: 'Aceptaste la invitación, pero el navegador no pudo activar la cámara o el micrófono. Podés volver a intentarlo con los controles.',
+            invitationDeviceError: 'Aceptaste la invitación, pero el navegador no pudo activar la cámara ni el micrófono. Revisá ambos permisos y volvé a intentarlo con los controles.',
+            invitationCameraError: 'El micrófono está activo, pero la cámara no pudo encenderse. Revisá el permiso de cámara y volvé a intentarlo.',
+            invitationMicrophoneError: 'La cámara está activa, pero el micrófono no pudo encenderse. Revisá el permiso de micrófono y volvé a intentarlo.',
             invitationDeclineError: 'No pudimos completar la vuelta al público. Intentá de nuevo.',
-            masterVolume: 'Volumen general',
-            mix: 'Mezcla de Beacon y sesión',
+            masterVolume: 'Volumen general de la sala',
+            mix: 'Balance Beacon / Sesión',
             sessionChannel: 'Sesión',
             beaconRoom: 'Sala Beacon',
             playlist: 'Playlist',
@@ -370,6 +382,7 @@ export const messages: Record<UiLocale, Messages> = {
         stage: {
             label: 'Escena',
             audioOnly: 'Modo solo audio. El video está apagado; seguís escuchando la escena y el Beacon.',
+            audioOnlyTile: 'Solo audio',
             waiting: 'Esperando que la persona facilitadora abra la escena.',
             you: 'vos',
             protagonist: 'protagonista',
@@ -424,7 +437,7 @@ export const messages: Record<UiLocale, Messages> = {
                 roomHint: 'La escena permanece conectada mientras abrís las herramientas.',
                 door: 'Puerta',
                 hands: 'Manos',
-                stage: 'Escena',
+                stage: 'Personas en escena',
                 primary: 'Siguiente acción',
                 healthSignal: 'Salud',
                 open: 'Abierta',
@@ -443,6 +456,7 @@ export const messages: Record<UiLocale, Messages> = {
                 admissionPanel: 'Soporte de entradas',
                 healthPanel: 'Estado técnico',
                 closePanel: 'Cerrar herramienta',
+                returnToRoom: 'Volver a la sala en vivo',
                 tools: 'Herramientas',
             },
         },
@@ -513,12 +527,15 @@ export const messages: Record<UiLocale, Messages> = {
             endedBody: "This session has ended. You're no longer connected.",
             connectionLostHeading: 'Connection lost',
             connectionLostBody: 'Your connection to this session was lost.',
+            duplicateIdentityHeading: 'This access is open elsewhere',
+            duplicateIdentityBody: 'The same access was opened in another tab or device. Close it there, then rejoin here.',
             disconnectedHeading: 'Disconnected',
             disconnectedBody: "You're no longer connected to this session. We can't tell whether it ended or your connection dropped.",
             rejoin: 'Rejoin',
             sessionFallback: 'Session',
             participantSingular: 'participant',
             participantPlural: 'participants',
+            peopleInRoom: 'People in the room (including you)',
             signedIn: 'Signed in as',
             staffConsole: 'Stage and hands',
             audioActivationLabel: 'Audio activation',
@@ -533,10 +550,12 @@ export const messages: Record<UiLocale, Messages> = {
             declineInvitation: 'Not now',
             acceptingInvitation: 'Preparing camera and microphone…',
             decliningInvitation: 'Returning to the audience…',
-            invitationDeviceError: 'You accepted, but the browser could not turn on the camera or microphone. You can retry with the controls.',
+            invitationDeviceError: 'You accepted, but the browser could not turn on the camera or microphone. Check both permissions and retry with the controls.',
+            invitationCameraError: 'The microphone is on, but the camera could not start. Check camera permission and try again.',
+            invitationMicrophoneError: 'The camera is on, but the microphone could not start. Check microphone permission and try again.',
             invitationDeclineError: 'We could not complete your return to the audience. Try again.',
-            masterVolume: 'Master volume',
-            mix: 'Beacon and session mix',
+            masterVolume: 'Overall room volume',
+            mix: 'Beacon / Session balance',
             sessionChannel: 'Session',
             beaconRoom: 'Beacon room',
             playlist: 'Playlist',
@@ -581,6 +600,7 @@ export const messages: Record<UiLocale, Messages> = {
         stage: {
             label: 'Stage',
             audioOnly: 'Audio-only mode. Video is off; you are still hearing the stage and the Beacon bed.',
+            audioOnlyTile: 'Audio only',
             waiting: 'Waiting for the facilitator to open the stage.',
             you: 'you',
             protagonist: 'protagonist',
@@ -635,7 +655,7 @@ export const messages: Record<UiLocale, Messages> = {
                 roomHint: 'The scene stays connected while you open tools.',
                 door: 'Door',
                 hands: 'Hands',
-                stage: 'Stage',
+                stage: 'People on stage',
                 primary: 'Next action',
                 healthSignal: 'Health',
                 open: 'Open',
@@ -654,6 +674,7 @@ export const messages: Record<UiLocale, Messages> = {
                 admissionPanel: 'Admission support',
                 healthPanel: 'System health',
                 closePanel: 'Close tool',
+                returnToRoom: 'Return to the live room',
                 tools: 'Tools',
             },
         },

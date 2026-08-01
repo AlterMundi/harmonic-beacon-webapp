@@ -71,6 +71,7 @@ export default function StageLayout({
                             cameraOn={member.cameraOn}
                             micOn={member.micOn}
                             connectionQuality={member.connectionQuality}
+                            audioOnly={audioOnly}
                             videoPublication={audioOnly ? null : member.videoPublication ?? null}
                         />
                     ))}

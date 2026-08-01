@@ -211,6 +211,8 @@ describe('StageLayout — dignified degraded states', () => {
         expect(screen.getAllByTestId('stage-tile')).toHaveLength(6);
         expect(screen.queryAllByTestId('stage-tile-video')).toHaveLength(0);
         expect(screen.getByRole('status')).toHaveTextContent('Audio-only mode');
+        expect(screen.getAllByText('Audio only')).toHaveLength(6);
+        expect(screen.queryByText('Connecting…')).not.toBeInTheDocument();
         expect(screen.getAllByTestId('stage-tile').every((tile) => tile.getAttribute('data-quality-priority') === 'none')).toBe(true);
         for (const item of publishers) {
             expect(item.videoPublication?.videoTrack?.attach).not.toHaveBeenCalled();

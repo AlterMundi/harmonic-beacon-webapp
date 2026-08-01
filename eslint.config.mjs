@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Browser-gate artifacts contain bundled third-party JavaScript and are
+    // outputs, not source. Keeping them out also makes `npm run lint` stable
+    // regardless of whether Playwright ran first.
+    "playwright-report/**",
+    "test-results/**",
     // Compiled output of the playlist-bot, checked in so the deploy does not
     // need a build step for it. It is generated CommonJS, so linting it reports
     // `require()` against a rule written for our source — five errors that no
