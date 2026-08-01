@@ -15,6 +15,7 @@
     "db:seed": "prisma db seed",
     "db:seed:test": "npx tsx prisma/seed-test-fixtures.ts",
     "db:fixture:load": "node scripts/load-test-fixture.mjs",
+    "event:stabilize": "tsx scripts/weekend-stabilize.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "test": "vitest run",

@@ -1,6 +1,6 @@
 # Weekend Event Runbook
 
-Harmonic Beacon live weekend — Saturday 2026-08-02 — Session 1: Spanish 8:30 AM Costa Rica (14:30 UTC), Session 2: English 12:30 PM Costa Rica (18:30 UTC).
+Harmonic Beacon live event — Saturday 2026-08-01 — Session 1: Spanish 8:30 AM Costa Rica (14:30 UTC), Session 2: English 2:00 PM Costa Rica (20:00 UTC).
 This is the operator's playbook: who owns each failure, how it is detected, the
 first action, when to suspend or issue rainchecks, what attendees are told, and who
 decides rainchecks. It assumes the architecture in
@@ -91,8 +91,40 @@ docker compose logs --tail=100 app livekit playlist-bot tapestry postgres
 720p; verify he counts as 1/6 grants on the board. Bot fades out when Julián
 publishes, fades in when he stops.
 
-**T-20m**: doors open. Stream/Support Operator watches admission; Spotlight
+**T-10m**: doors open. Stream/Support Operator watches admission; Spotlight
 Operator watches the grants counter; IC watches the whole board.
+
+### One-time event-data stabilization
+
+Before the first event, the IC runs the guarded stabilization command from the
+exact release checkout. It corrects the two production schedules and retires
+the two rehearsal fixtures without deleting history.
+
+1. Stop all rehearsal activity and verify all four stage rooms are empty.
+2. Take and verify a PostgreSQL backup.
+3. On `mona`, from the deployment directory, run
+   `docker compose exec app npm run event:stabilize` and review every
+   current/desired row and count.
+4. Run the printed apply command inside the app container (prefix it with
+   `docker compose exec app`). It includes the dry-run SHA-256 digest,
+   `--apply`, and `--backup-confirmed`.
+5. Run the dry-run command again. Confirm production ES is scheduled for
+   14:30 UTC, production EN for 20:00 UTC, and both test events are cancelled.
+
+The command refuses to apply at or after 14:20 UTC, if a LiveKit room contains
+any participant, if the database changed after the dry-run, or if event IDs,
+titles, room names, languages, test flags, caps, or expected statuses differ.
+It never deletes data or disconnects participants. Never bypass these checks
+with ad-hoc SQL; if one fails, investigate the changed state and take a new
+backup/dry-run.
+
+Rollback: if verification immediately after apply fails, freeze admission and
+restore the just-verified pre-apply PostgreSQL backup before admitting anyone.
+The mutation is a single serializable transaction, so there is no partial
+database state to unwind. Re-deploying the previous app image alone does not
+reverse schedule or entitlement data. Keep the failed command output and the
+`event.preflight_stabilization` audit entry for diagnosis; neither contains
+attendee identity data.
 
 ---
 

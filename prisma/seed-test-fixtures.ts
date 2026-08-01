@@ -92,10 +92,10 @@ const SESSION_FIXTURES: ReadonlyArray<{
     {
         id: '10000000-0000-4000-8000-000000000102',
         title: 'Harmonic Projection — English Session (test)',
-        description: 'Test fixture session. English, Saturday 2026-08-01 12:30 Costa Rica.',
+        description: 'Test fixture session. English, Saturday 2026-08-01 14:00 Costa Rica.',
         roomName: 'weekend-test-english',
         language: 'ENGLISH',
-        scheduledAt: new Date('2026-08-01T18:30:00.000Z'), // 12:30 America/Costa_Rica
+        scheduledAt: new Date('2026-08-01T20:00:00.000Z'), // 14:00 America/Costa_Rica
         tier: 'GLOBAL_NORTH',
         codePrefix: 'TEST-EN',
     },

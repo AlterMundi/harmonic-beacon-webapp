@@ -36,6 +36,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Prisma schema + migrations + config module for production DB commands
 COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+# Guarded one-time event stabilization command (dry-run by default).
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/weekend-stabilize.ts ./scripts/weekend-stabilize.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/event-stabilization.ts ./src/lib/event-stabilization.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/redact.ts ./src/lib/redact.ts
 # Full node_modules so prisma/seed and config scripts work in production
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
