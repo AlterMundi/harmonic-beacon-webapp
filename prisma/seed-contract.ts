@@ -3,7 +3,7 @@ export const WEEKEND_MAX_PUBLISHERS = 6;
 export const WEEKEND_SESSION_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export type WeekendLanguage = 'ENGLISH' | 'SPANISH';
-export type WeekendStaffRole = 'FACILITATOR' | 'OPERATOR' | 'ADMIN';
+export type WeekendStaffRole = 'FACILITATOR' | 'FACILITATOR_OP' | 'OPERATOR' | 'ADMIN';
 
 export type EventDefinition = {
     id: string;
@@ -12,6 +12,7 @@ export type EventDefinition = {
     roomName: string;
     scheduledAt: Date;
     language: WeekendLanguage;
+    isTest: false;
 };
 
 export type StaffDefinition = {
@@ -40,6 +41,14 @@ function parseCredentialDigest(env: NodeJS.ProcessEnv, name: string): string {
     const digest = Buffer.from(match[2], 'base64url');
     if (salt.length < 16 || digest.length < 32) {
         throw new Error(`${name} must contain at least a 16-byte salt and 32-byte digest`);
+    }
+    return value;
+}
+
+function facilitatorRole(env: NodeJS.ProcessEnv): 'FACILITATOR' | 'FACILITATOR_OP' {
+    const value = env.STAFF_FACILITATOR_ROLE?.trim() || 'FACILITATOR';
+    if (value !== 'FACILITATOR' && value !== 'FACILITATOR_OP') {
+        throw new Error('STAFF_FACILITATOR_ROLE must be FACILITATOR or FACILITATOR_OP');
     }
     return value;
 }
@@ -78,7 +87,7 @@ function parseEvent(
         throw new Error(`${name}.scheduledAt must fall on ${expectedDate} UTC`);
     }
 
-    return { id, title, description, roomName, scheduledAt, language };
+    return { id, title, description, roomName, scheduledAt, language, isTest: false };
 }
 
 export function loadSeedContract(
@@ -89,7 +98,7 @@ export function loadSeedContract(
             name: required(env, 'STAFF_FACILITATOR_NAME'),
             email: required(env, 'STAFF_FACILITATOR_EMAIL').toLowerCase(),
             passwordDigest: parseCredentialDigest(env, 'STAFF_FACILITATOR_PASSWORD_DIGEST'),
-            role: 'FACILITATOR',
+            role: facilitatorRole(env),
         },
         {
             name: required(env, 'STAFF_OPERATOR_ONE_NAME'),

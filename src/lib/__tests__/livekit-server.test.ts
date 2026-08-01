@@ -3,12 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const addGrant = vi.fn();
 const toJwt = vi.fn().mockResolvedValue('jwt');
 const RoomServiceClient = vi.hoisted(() => vi.fn(function () {}));
+const AccessToken = vi.hoisted(() => vi.fn(function (
+    this: Record<string, unknown>,
+    _key: string,
+    _secret: string,
+    options: Record<string, unknown>,
+) {
+    this.options = options;
+    this.addGrant = addGrant;
+    this.toJwt = toJwt;
+}));
 
 vi.mock('livekit-server-sdk', () => ({
-    AccessToken: vi.fn(function (this: Record<string, unknown>) {
-        this.addGrant = addGrant;
-        this.toJwt = toJwt;
-    }),
+    AccessToken,
     RoomServiceClient,
     TrackSource: {
         MICROPHONE: 2,
@@ -41,7 +48,24 @@ describe('livekit-server', () => {
 
     it('limits publishing grants to microphone and camera', async () => {
         const { createSessionToken } = await import('../livekit-server');
-        await createSessionToken('stage', 'identity', 'Attendee', true);
+        await createSessionToken('stage', 'identity', 'Ana', true, {
+            role: 'ATTENDEE',
+            isAssignedFacilitator: false,
+        });
+
+        expect(AccessToken).toHaveBeenCalledWith(
+            'key',
+            'secret-long-enough',
+            {
+                identity: 'identity',
+                name: 'Ana',
+                metadata: JSON.stringify({
+                    role: 'ATTENDEE',
+                    isAssignedFacilitator: false,
+                }),
+                ttl: '4h',
+            },
+        );
 
         expect(addGrant).toHaveBeenCalledWith({
             roomJoin: true,

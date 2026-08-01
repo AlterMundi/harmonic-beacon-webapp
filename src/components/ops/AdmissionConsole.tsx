@@ -10,6 +10,9 @@
  */
 
 import { useState, type FormEvent } from 'react';
+import type { StaffRole } from '@prisma/client';
+
+import { hasStaffCapability } from '@/lib/staff-capabilities';
 
 type EventOption = {
     id: string;
@@ -32,7 +35,7 @@ type Entitlement = {
 };
 
 type Props = {
-    role: 'FACILITATOR' | 'OPERATOR' | 'ADMIN';
+    role: StaffRole;
     events: EventOption[];
 };
 
@@ -52,8 +55,9 @@ function errorMessage(status: number, data: Record<string, unknown>): string {
 }
 
 export default function AdmissionConsole({ role, events }: Props) {
-    const canMutate = role === 'ADMIN' || role === 'OPERATOR';
-    const canBatch = role === 'ADMIN';
+    const canMutate = hasStaffCapability(role, 'mutate_entitlement');
+    const canBatch = hasStaffCapability(role, 'manage_ticket_batches');
+    const canIssueComp = hasStaffCapability(role, 'issue_comp');
 
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<Entitlement[] | null>(null);
@@ -71,7 +75,7 @@ export default function AdmissionConsole({ role, events }: Props) {
     const [batchTier, setBatchTier] = useState('GLOBAL_NORTH');
     const [batchCount, setBatchCount] = useState('10');
     const [importCsv, setImportCsv] = useState('');
-    const [compTier, setCompTier] = useState('COMP');
+    const [compTier, setCompTier] = useState(canIssueComp ? 'COMP' : 'SUPPORT_OVERRIDE');
     const [compReason, setCompReason] = useState('');
 
     function flash(ok: string | null, err: string | null) {
@@ -274,6 +278,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                     <div className="mb-3 flex flex-wrap gap-2">
                         <select
                             className="event-field"
+                            aria-label="Event"
                             value={batchEvent}
                             onChange={(event) => setBatchEvent(event.target.value)}
                         >
@@ -291,6 +296,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     className="event-field"
+                                    aria-label="Ticket tier"
                                     value={batchTier}
                                     onChange={(event) => setBatchTier(event.target.value)}
                                 >
@@ -337,10 +343,11 @@ export default function AdmissionConsole({ role, events }: Props) {
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     className="event-field"
+                                    aria-label="Override tier"
                                     value={compTier}
                                     onChange={(event) => setCompTier(event.target.value)}
                                 >
-                                    {role === 'ADMIN' && <option value="COMP">Comp</option>}
+                                    {canIssueComp && <option value="COMP">Comp</option>}
                                     <option value="SUPPORT_OVERRIDE">Support override</option>
                                 </select>
                                 <input

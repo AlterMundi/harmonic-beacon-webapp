@@ -14,7 +14,8 @@ describe('GET /api/tapestry/[sessionId]', () => {
         process.env.TAPESTRY_INTERNAL_URL = 'http://tapestry:3100';
         process.env.TAPESTRY_INTERNAL_SECRET = 'test-secret-at-least-16-chars';
         process.env.TAPESTRY_PUBLIC_ENABLED = 'false';
-        requireStaff.mockResolvedValue([{ role: 'OPERATOR' }, null]);
+        requireStaff.mockResolvedValue([{ userId: 'operator-1', role: 'OPERATOR' }, null]);
+        findUnique.mockResolvedValue({ id: 'session-1', facilitatorId: 'facilitator-1' });
         global.fetch = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2]), { status: 200 }));
     });
 
@@ -23,8 +24,17 @@ describe('GET /api/tapestry/[sessionId]', () => {
         const response = await GET(new NextRequest('http://localhost/api/tapestry/session-1'), context);
         expect(response.status).toBe(200);
         expect(response.headers.get('cache-control')).toBe('private, no-store');
-        expect(requireStaff).toHaveBeenCalledWith('FACILITATOR', 'OPERATOR', 'ADMIN');
-        expect(findUnique).not.toHaveBeenCalled();
+        expect(requireStaff).toHaveBeenCalledWith();
+        expect(findUnique).toHaveBeenCalled();
+    });
+
+    it('rejects an unassigned facilitator in private mode', async () => {
+        requireStaff.mockResolvedValue([{ userId: 'facilitator-2', role: 'FACILITATOR' }, null]);
+        const { GET } = await import('../route');
+        const response = await GET(new NextRequest('http://localhost/api/tapestry/session-1'), context);
+
+        expect(response.status).toBe(403);
+        expect(fetch).not.toHaveBeenCalled();
     });
 
     it('rejects unauthorised callers without reaching the internal service', async () => {

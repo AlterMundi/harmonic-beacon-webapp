@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocale } from '@/context/LocaleContext';
 
 // Product decision (2026-07-31, Nico): the tapestry camera is ON BY DEFAULT
 // for every attendee — each participant appears in the composite as a small
@@ -10,6 +11,7 @@ const CAPTURE_INTERVAL_MS = 1_000;
 type Props = { sessionId: string; connected: boolean; isPublishing: boolean };
 
 export default function ThumbnailSender({ sessionId, connected, isPublishing }: Props) {
+    const { copy } = useLocale();
     const streamRef = useRef<MediaStream | null>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,9 +84,9 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
             if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
             setEnabled(true);
         } catch {
-            setMessage('Camera permission was not granted. You can still take part in the session.');
+            setMessage(copy.tapestry.permissionDenied);
         }
-    }, [isPublishing]);
+    }, [isPublishing, copy.tapestry.permissionDenied]);
 
     // Default-on: as soon as the room is connected (and the attendee is not
     // a publisher), start the tapestry camera unless they opted out. A denied
@@ -109,8 +111,8 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     if (isPublishing) return null;
     return <section className="w-full max-w-xs text-center" aria-live="polite">
         <video ref={videoRef} muted playsInline className="hidden" />
-        {enabled ? <button type="button" className="text-xs text-[var(--text-muted)] underline" onClick={optOut}>Stop tapestry camera</button> :
-            <button type="button" className="text-xs text-[var(--gold)] underline" onClick={optIn} disabled={!connected}>Share a camera snapshot</button>}
+        {enabled ? <button type="button" className="text-xs text-[var(--text-muted)] underline" onClick={optOut}>{copy.tapestry.stopCamera}</button> :
+            <button type="button" className="text-xs text-[var(--gold)] underline" onClick={optIn} disabled={!connected}>{copy.tapestry.shareSnapshot}</button>}
         {message ? <p className="mt-1 text-xs text-[var(--text-muted)]">{message}</p> : null}
     </section>;
 }

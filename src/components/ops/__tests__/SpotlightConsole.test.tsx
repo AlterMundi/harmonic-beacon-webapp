@@ -14,6 +14,7 @@ function attendee(id: string, overrides: Partial<Participant> = {}): Participant
         displayName: 'Attendee',
         principalType: 'attendee',
         staffRole: null,
+        isAssignedFacilitator: false,
         joinedAt: '2026-08-01T15:00:00.000Z',
         leftAt: null,
         raisedAt: null,
@@ -302,7 +303,8 @@ describe('SpotlightConsole', () => {
             attendee('facilitator', {
                 displayName: 'Julián',
                 principalType: 'staff',
-                staffRole: 'FACILITATOR',
+                staffRole: 'FACILITATOR_OP',
+                isAssignedFacilitator: true,
                 canPublish: true,
             }),
         ])));

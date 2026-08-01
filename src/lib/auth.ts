@@ -2,12 +2,18 @@ import { NextResponse } from 'next/server';
 import type { StaffRole } from '@prisma/client';
 
 import { auth } from '@/auth';
+import { prisma } from '@/lib/db';
 import {
     type AttendeePrincipal,
     type Principal,
     type StaffPrincipal,
     currentPrincipal,
 } from '@/lib/principal';
+import {
+    hasStaffCapability,
+    eventStaffPolicy,
+    type StaffCapability,
+} from '@/lib/staff-capabilities';
 
 export { auth } from '@/auth';
 
@@ -97,6 +103,20 @@ export async function requireStaff(
     return [principal, null];
 }
 
+/** Require staff authority for a named, non-event-scoped operation. */
+export async function requireStaffCapability(
+    capability: StaffCapability,
+): Promise<[StaffPrincipal, null] | [null, NextResponse]> {
+    const [staff, errorResponse] = await requireStaff();
+    if (!staff) {
+        return [null, errorResponse];
+    }
+    if (!hasStaffCapability(staff.role, capability)) {
+        return [null, forbidden()];
+    }
+    return [staff, null];
+}
+
 /**
  * Require a principal authorized for one scheduled session: the attendee whose
  * ticket names it, or staff who may operate any stage.
@@ -113,6 +133,18 @@ export async function requireSessionAccess(
     }
     if (principal.kind === 'attendee' && principal.scheduledSessionId !== scheduledSessionId) {
         return [null, forbidden()];
+    }
+    if (principal.kind === 'staff') {
+        const session = await prisma.scheduledSession.findUnique({
+            where: { id: scheduledSessionId },
+            select: { facilitatorId: true },
+        });
+        if (!session || !eventStaffPolicy(
+            principal.role,
+            session.facilitatorId === principal.userId,
+        ).canOperateEvent) {
+            return [null, forbidden()];
+        }
     }
     return [principal, null];
 }

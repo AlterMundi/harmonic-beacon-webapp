@@ -25,6 +25,7 @@ import {
 import { authFailureLimiter } from '@/lib/rate-limit';
 import { redactError } from '@/lib/redact';
 import { verifyStaffPassword } from '@/lib/session-auth';
+import { resolveStaffLanding } from '@/lib/staff-navigation';
 
 const GENERIC_REJECTION = 'Those credentials are not valid.';
 const RATE_LIMITED = 'Too many attempts. Please wait and try again.';
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return reject(address, 'disabled_account');
         }
 
+        const landing = await resolveStaffLanding({ id: staff.id, role: staff.role });
         const now = new Date();
         const issued = newSessionToken();
         await prisma.webSession.create({
@@ -100,7 +102,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         console.info(`[auth] staff session issued: user=${staff.id} role=${staff.role} client=${address}`);
 
-        const response = NextResponse.json({ ok: true, role: staff.role });
+        const response = NextResponse.json({ ok: true, role: staff.role, landing });
         response.cookies.set(sessionCookie(issued.cookieValue, now));
         return response;
     } catch (error) {

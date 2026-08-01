@@ -86,12 +86,3 @@ describe('resolveStaffByToken', () => {
         expect(await resolveStaffByToken('cookie-token')).toBeNull();
     });
 });
-
-describe('hasAnyRole', () => {
-    it('matches only the listed roles', async () => {
-        const { hasAnyRole } = await import('../ops-auth');
-        const operator = { id: 'x', email: 'op@x', name: 'Op', role: 'OPERATOR' as const };
-        expect(hasAnyRole(operator, ['ADMIN', 'OPERATOR'])).toBe(true);
-        expect(hasAnyRole(operator, ['ADMIN'])).toBe(false);
-    });
-});

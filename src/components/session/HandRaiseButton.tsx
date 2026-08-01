@@ -5,6 +5,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocale } from '@/context/LocaleContext';
+import type { Messages } from '@/lib/i18n';
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -19,6 +21,7 @@ type OwnHandState = {
 type Props = {
     sessionId: string;
     onPublishGrantChange?: (canPublish: boolean) => void;
+    stageInvitationAccepted?: boolean;
 };
 
 class HandRequestError extends Error {
@@ -44,19 +47,28 @@ async function handStateFrom(response: Response): Promise<OwnHandState> {
     return body as OwnHandState;
 }
 
-function handFailureMessage(error: unknown, action: 'status' | 'raise' | 'lower'): string {
+function handFailureMessage(
+    error: unknown,
+    action: 'status' | 'raise' | 'lower',
+    copy: Messages['hand'],
+): string {
     if (error instanceof HandRequestError && error.status === 403) {
         if (error.code === 'Insufficient permissions') {
-            return 'This browser is signed in as staff. Open the attendee in a private window or separate browser profile.';
+            return copy.staffCollision;
         }
-        return 'This attendee session is no longer authorized. Sign in again in a private window or separate browser profile.';
+        return copy.unauthorized;
     }
-    if (action === 'raise') return 'Could not raise hand';
-    if (action === 'lower') return 'Could not lower hand';
-    return 'Hand status unavailable';
+    if (action === 'raise') return copy.raiseFailed;
+    if (action === 'lower') return copy.lowerFailed;
+    return copy.statusUnavailable;
 }
 
-export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Props) {
+export default function HandRaiseButton({
+    sessionId,
+    onPublishGrantChange,
+    stageInvitationAccepted = false,
+}: Props) {
+    const { copy } = useLocale();
     const [state, setState] = useState<OwnHandState | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -90,10 +102,10 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
                 const blocked = failure instanceof HandRequestError && failure.status === 403;
                 authorizationBlockedRef.current = blocked;
                 setAuthorizationBlocked(blocked);
-                setError(handFailureMessage(failure, 'status'));
+                setError(handFailureMessage(failure, 'status', copy.hand));
             }
         }
-    }, [sessionId, applyState]);
+    }, [sessionId, applyState, copy.hand]);
 
     useEffect(() => {
         mounted.current = true;
@@ -118,7 +130,7 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
             const blocked = failure instanceof HandRequestError && failure.status === 403;
             authorizationBlockedRef.current = blocked;
             setAuthorizationBlocked(blocked);
-            setError(handFailureMessage(failure, raised ? 'raise' : 'lower'));
+            setError(handFailureMessage(failure, raised ? 'raise' : 'lower', copy.hand));
         } finally {
             setBusy(false);
             void refresh();
@@ -127,27 +139,27 @@ export default function HandRaiseButton({ sessionId, onPublishGrantChange }: Pro
 
     return (
         <div className="flex flex-col items-center gap-2">
-            <button
-                type="button"
-                onClick={() => void setHand(!(state?.raised ?? false))}
-                disabled={busy || authorizationBlocked}
-                className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
-                    state?.raised
-                        ? 'bg-[var(--pink)] text-[var(--ink)] shadow-[0_0_16px_rgba(255,113,189,0.3)]'
-                        : 'bg-white/10 text-[var(--text-muted)] hover:bg-white/20'
-                } disabled:opacity-50`}
-            >
-                {state?.raised ? 'Lower hand / Bajar mano' : 'Raise hand / Levantar mano'}
-            </button>
-            {state?.canPublish ? (
+            {!state?.canPublish ? (
+                <button
+                    type="button"
+                    onClick={() => void setHand(!(state?.raised ?? false))}
+                    disabled={busy || authorizationBlocked}
+                    className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
+                        state?.raised
+                            ? 'bg-[var(--pink)] text-[var(--ink)] shadow-[0_0_16px_rgba(255,113,189,0.3)]'
+                            : 'bg-white/10 text-[var(--text-muted)] hover:bg-white/20'
+                    } disabled:opacity-50`}
+                >
+                    {state?.raised ? copy.hand.lower : copy.hand.raise}
+                </button>
+            ) : null}
+            {state?.canPublish && stageInvitationAccepted ? (
                 <p role="status" className="text-xs text-[var(--lime)]">
-                    Your turn — enable mic and camera below.
-                    <span className="mt-0.5 block opacity-80">Tu turno — activá micrófono y cámara abajo.</span>
+                    {copy.hand.onStage}
                 </p>
             ) : state?.raised && state.queuePosition !== null ? (
                 <p role="status" className="text-xs text-[var(--text-muted)]">
-                    Hand raised — you are #{state.queuePosition} in the queue.
-                    <span className="mt-0.5 block opacity-80">Mano levantada — sos #{state.queuePosition} en la fila.</span>
+                    {copy.hand.queuedPrefix} #{state.queuePosition} {copy.hand.queuedSuffix}
                 </p>
             ) : null}
             {error ? (

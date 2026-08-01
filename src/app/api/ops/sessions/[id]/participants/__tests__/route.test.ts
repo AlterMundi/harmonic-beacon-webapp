@@ -31,6 +31,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         listParticipants.mockResolvedValue([
             {
                 identity: 'opaque-publisher',
+                name: 'Ana',
                 tracks: [
                     {
                         sid: 'TR_audio',
@@ -74,6 +75,48 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         });
     });
 
+    it('marks facilitator assignment explicitly instead of inferring it from role', async () => {
+        sessionFindUnique.mockResolvedValue({
+            id: 'event-1',
+            roomName: 'event-stage',
+            facilitatorId: 'facilitator-op-1',
+            maxPublishers: 6,
+            participants: [
+                {
+                    id: 'conductor',
+                    participantIdentity: 'opaque-conductor',
+                    joinedAt: new Date('2026-08-01T15:00:00Z'),
+                    leftAt: null,
+                    raisedAt: null,
+                    publishGrantedAt: new Date('2026-08-01T15:00:00Z'),
+                    publishRevokedAt: null,
+                    grantVersion: 1,
+                    grantReconcileNeeded: false,
+                    staffUser: {
+                        id: 'facilitator-op-1',
+                        name: 'Julián',
+                        role: 'FACILITATOR_OP',
+                    },
+                },
+            ],
+        });
+        listParticipants.mockResolvedValue([]);
+
+        const { GET } = await import('../route');
+        const { body } = await parseResponse(await GET(
+            createRequest('/api/ops/sessions/event-1/participants'),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(body).toMatchObject({
+            activePublishers: 1,
+            participants: [{
+                staffRole: 'FACILITATOR_OP',
+                isAssignedFacilitator: true,
+            }],
+        });
+    });
+
     it('rejects an attendee before reading participant state', async () => {
         requireStaff.mockResolvedValue([
             null,
@@ -92,7 +135,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         expect(sessionFindUnique).not.toHaveBeenCalled();
     });
 
-    it('lists durable grants, queue positions, and reconcile state without PII', async () => {
+    it('lists room display names, durable grants, queue positions, and reconcile state without private admission data', async () => {
         const { GET } = await import('../route');
         const { status, body } = await parseResponse(await GET(
             createRequest('/api/ops/sessions/event-1/participants'),
@@ -107,6 +150,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
             participants: [
                 {
                     id: 'publisher',
+                    displayName: 'Ana',
                     canPublish: true,
                     queuePosition: null,
                     connected: true,

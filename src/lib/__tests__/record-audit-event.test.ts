@@ -4,8 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * The two properties that matter for `recordAuditEvent`:
  *
  *   1. It records actor, action, target, and non-PII reason metadata in one
- *      append-only row — the weekend schema carries no role snapshot or
- *      zitadel indirection, the actor is the staff user id directly.
+ *      append-only row, including an immutable role snapshot when staff act.
  *   2. It never throws. A failed audit write must not fail the admission
  *      mutation it describes. Both directions are tested: the swallow, and
  *      the fact that the failure is still visible on stderr rather than
@@ -39,6 +38,7 @@ describe('recordAuditEvent', () => {
         const { recordAuditEvent } = await import('../audit');
         await recordAuditEvent({
             actorUserId: 'staff-uuid-1',
+            actorRole: 'FACILITATOR_OP',
             action: 'ticket.revoke',
             targetType: 'TICKET_ENTITLEMENT',
             targetId: 'entitlement-uuid-1',
@@ -49,6 +49,7 @@ describe('recordAuditEvent', () => {
         expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
             data: {
                 actorUserId: 'staff-uuid-1',
+                actorRole: 'FACILITATOR_OP',
                 action: 'ticket.revoke',
                 targetType: 'TICKET_ENTITLEMENT',
                 targetId: 'entitlement-uuid-1',

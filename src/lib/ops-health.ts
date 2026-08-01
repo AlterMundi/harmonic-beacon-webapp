@@ -357,7 +357,10 @@ function worstOf(statuses: HealthLevel[]): HealthLevel {
  * (per request), not at module load, so environment changes and tests never
  * fight a cached snapshot.
  */
-export function productionDeps(): OperatorHealthDeps {
+export function productionDeps(options: {
+    sessionId?: string;
+    now?: Date;
+} = {}): OperatorHealthDeps {
     const timeoutMs =
         Number(process.env.OPS_HEALTH_TIMEOUT_MS) > 0
             ? Number(process.env.OPS_HEALTH_TIMEOUT_MS)
@@ -379,15 +382,34 @@ export function productionDeps(): OperatorHealthDeps {
                 roomName: true,
                 maxPublishers: true,
             } as const;
+            if (options.sessionId) {
+                const selected = await prisma.scheduledSession.findFirst({
+                    where: {
+                        id: options.sessionId,
+                        status: { in: ['SCHEDULED', 'LIVE'] },
+                    },
+                    select,
+                });
+                return selected
+                    ? { ...selected, status: selected.status as WatchedSession['status'] }
+                    : null;
+            }
+
+            // Prefer the most recently scheduled live event. An accidentally
+            // stale LIVE row from an earlier session must not hijack the board.
             const live = await prisma.scheduledSession.findFirst({
                 where: { status: 'LIVE' },
-                orderBy: { scheduledAt: 'asc' },
+                orderBy: { scheduledAt: 'desc' },
                 select,
             });
+            const now = options.now ?? new Date();
             const session =
                 live ??
                 (await prisma.scheduledSession.findFirst({
-                    where: { status: 'SCHEDULED' },
+                    where: {
+                        status: 'SCHEDULED',
+                        scheduledAt: { gte: new Date(now.getTime() - 60 * 60 * 1000) },
+                    },
                     orderBy: { scheduledAt: 'asc' },
                     select,
                 }));

@@ -114,6 +114,22 @@ describe('POST /api/ops/sessions/[id]/stage', () => {
         expect(mocks.promoteParticipant).not.toHaveBeenCalled();
     });
 
+    it('lets FACILITATOR_OP operate an unassigned event', async () => {
+        mocks.requireStaff.mockResolvedValue([
+            { ...operator, userId: 'facilitator-op-2', role: 'FACILITATOR_OP' },
+            null,
+        ]);
+        const { POST } = await import('../route');
+
+        const response = await POST(
+            stageRequest({ action: 'promote', participantId: 'participant-1' }),
+            mockParams({ id: 'event-1' }),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mocks.promoteParticipant).toHaveBeenCalled();
+    });
+
     it('promotes through the serialized stage controller', async () => {
         const { POST } = await import('../route');
         const { status, body } = await parseResponse(await POST(

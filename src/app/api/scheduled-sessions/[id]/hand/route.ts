@@ -8,6 +8,10 @@ import {
     type HandState,
 } from '@/lib/hand-queue';
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import {
+    declineStageInvitation,
+    StageControlError,
+} from '@/lib/stage-control';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +66,16 @@ function handErrorResponse(error: unknown): NextResponse {
     if (error instanceof HandQueueError) {
         return NextResponse.json(
             { error: error.code, message: error.message },
+            { status: error.status },
+        );
+    }
+    if (error instanceof StageControlError) {
+        return NextResponse.json(
+            {
+                error: error.code,
+                message: error.message,
+                ...error.details,
+            },
             { status: error.status },
         );
     }
@@ -131,6 +145,47 @@ export async function DELETE(
             participantIdentity: principal.identity,
         });
         return NextResponse.json(serialize(state));
+    } catch (failure) {
+        return handErrorResponse(failure);
+    }
+}
+
+/** Decline the caller's own active stage invitation and release its grant. */
+export async function PATCH(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> },
+) {
+    const { id } = await params;
+    const { principal, error } = await resolveAttendee(request, id);
+    if (!principal) {
+        return error;
+    }
+
+    let body: { action?: unknown };
+    try {
+        body = await request.json() as { action?: unknown };
+    } catch {
+        return NextResponse.json(
+            { error: 'invalid_request', message: 'A JSON request body is required' },
+            { status: 400 },
+        );
+    }
+    if (body.action !== 'decline_invitation') {
+        return NextResponse.json(
+            { error: 'invalid_request', message: 'Action must be decline_invitation' },
+            { status: 400 },
+        );
+    }
+
+    try {
+        await declineStageInvitation({
+            scheduledSessionId: id,
+            participantIdentity: principal.identity,
+        });
+        return NextResponse.json(serialize(await getHandState({
+            scheduledSessionId: id,
+            participantIdentity: principal.identity,
+        })));
     } catch (failure) {
         return handErrorResponse(failure);
     }

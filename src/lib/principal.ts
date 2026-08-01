@@ -61,6 +61,15 @@ export function normalizeLoginEmail(rawEmail: string): string {
     return rawEmail.trim().toLowerCase();
 }
 
+/** A short participant-chosen label safe for room tiles and operator controls. */
+export function normalizeDisplayName(rawName: string): string {
+    return rawName.trim().replace(/\s+/g, ' ').slice(0, 60);
+}
+
+export function isValidDisplayName(name: string): boolean {
+    return name.length > 0 && name.length <= 60 && !/[\u0000-\u001f\u007f]/.test(name);
+}
+
 /**
  * Shape check only. There is no email delivery anywhere in this product, so an
  * address is a matching key rather than a channel and its deliverability is not

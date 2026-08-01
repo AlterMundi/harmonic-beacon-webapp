@@ -21,7 +21,7 @@ The deployed product has four surfaces and no general-purpose account area:
 | Public landing and ticket login | `/` | Anyone | Bilingual EN/ES page with the two event times, $50/$20 purchase links, terms/refund links, and a code + email form. It never exposes a room token. |
 | Paid session room | `/session/[id]` | Entitled attendee or staff | Joins the stage and beacon-bed LiveKit rooms, renders the six-person stage, provides the Beacon/Voice crossfader, audio-only fallback, hand raise, and optional tapestry camera contribution. |
 | Staff login | `/staff/login` | Julián, two operators, one admin | Seeded per-person credentials; no Zitadel/OIDC, public signup, password reset, or listener account. |
-| Operator controls | `/ops/session/[id]`, `/ops/admission` | Facilitator/operator/admin according to role | Hand queue, promote/demote/mute, participant and service health, ticket lookup, revoke, rebind, and comp/override issuance. |
+| Operator controls | `/ops/events/[id]` (`/ops/session/[id]` redirects), `/ops/admission` | Facilitator/operator/admin according to role | Unified event entry, hand queue, promote/demote/mute, participant and service health, ticket lookup, revoke, rebind, and comp/override issuance. |
 
 Only two `ScheduledSession` rows are seeded. They have language, start time, `paidMode=true`, attendee cap `150` including comps, and `maxPublishers=6`. This is a psychodrama scene: `maxPublishers` includes facilitator Julián, leaving at most five rotating slots for the protagonist, director, and auxiliaries. The app does not offer event creation, meditation, playback, profile, provider library, admin moderation, recording, voucher, plan, billing, or in-app purchase surfaces.
 
@@ -33,7 +33,7 @@ Only two `ScheduledSession` rows are seeded. They have language, start time, `pa
 - Every request resolves the session against the database and the current ticket status. Revoking a ticket therefore invalidates an existing cookie as well as new logins.
 - Staff use the same opaque-session mechanism but authenticate at `/staff/login` with individually seeded strong credentials. Passwords use Node's `scrypt` with per-user salt; no plaintext credential is committed or placed in Compose.
 - Login errors do not reveal whether a code or email exists. The endpoint is rate-limited at the app/reverse-proxy boundary. Logs contain ticket IDs/last-four and staff IDs, never codes, credentials, or attendee emails.
-- `ADMIN` may issue/revoke/rebind tickets. `OPERATOR` may revoke and issue a documented support override but cannot create staff. `FACILITATOR`, `OPERATOR`, and `ADMIN` may operate the stage; only `FACILITATOR` starts with publish permission.
+- `ADMIN` and `FACILITATOR_OP` may issue/revoke/rebind tickets. `OPERATOR` may revoke and issue a documented support override but cannot create staff. Every staff role may operate the stage within its event scope; only an assigned `FACILITATOR` or `FACILITATOR_OP` starts with publish permission. [The capability matrix](../../BUSINESS_RULES.md#11-capability-matrix) is authoritative.
 
 ### Media contract
 
@@ -149,7 +149,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 - **Acceptance criteria:**
   - No cookie, wrong-event ticket, revoked ticket, ended/cancelled event, or arbitrary authenticated staff role can obtain an attendee token.
   - A valid attendee receives subscribe-only tokens for exactly their event stage and the configured `beacon` bed room; neither token embeds email or ticket code.
-  - A facilitator may enter a scheduled room for preflight and receives microphone/camera sources; operators/admins remain subscribe-only unless explicitly promoted.
+  - An assigned facilitator (`FACILITATOR` or `FACILITATOR_OP`) may enter a scheduled room for preflight and receives microphone/camera sources; all staff remain subscribe-only in events where they are not the assigned facilitator unless explicitly promoted.
   - Refresh preserves the attendee's stage identity and active grant. Opening a second device has a documented "new connection replaces old" result rather than creating a new floor identity.
   - With the bot publishing in `beacon`, the UI independently changes bed and stage-voice gain through the existing crossfader.
   - Direct tests cover the launch blocker: a live paid event never issues either token without an active entitlement/staff authorization.
@@ -183,7 +183,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
   - Promote grants only microphone and camera; demote immediately revokes permission, force-mutes existing tracks, and clears the durable grant.
   - A promoted attendee who refreshes receives the same grant; a demoted attendee cannot regain it with an old browser state or direct token call.
   - Reconcile makes database grants and connected LiveKit permissions agree after a simulated LiveKit API failure or operator page reload.
-  - Only facilitator/operator/admin roles for the event can mutate grants; every mutation is audited without email/code.
+  - Only staff with event-operation capability can mutate grants; `FACILITATOR` is assignment-scoped while `FACILITATOR_OP`, `OPERATOR`, and `ADMIN` operate globally. Every mutation is audited without email/code.
 - **Risk notes:** Database and LiveKit are not one transaction. Make the database the authority, compensate on failure, surface "reconcile needed" to the operator, and never relax the cap as an error fallback.
 
 #### WS3-02 — Ship the hand queue and spotlight operator console

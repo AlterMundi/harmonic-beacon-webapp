@@ -17,71 +17,65 @@ Detail for most sections lives in dedicated docs inside `docs/`. This file is th
 
 ## 1. Roles
 
-The system is built around three primary user roles. **Zitadel is authoritative for all of them.** A user's role is a projection of their Zitadel project-role claim, written into the `UserRole` enum in Postgres at each sign-in. The stored value is a cache of the claim, not an independently editable field: whatever it holds is overwritten from Zitadel the next time that user signs in.
+The shipped event product uses ticket-bound attendees and four database-backed
+staff roles. Zitadel, the retired `LISTENER`/`PROVIDER` model, and client-side
+role switching are not authorization sources for this product. Every protected
+request resolves the opaque `hb_session` cookie against current database state.
 
-Role changes are therefore made in Zitadel, by someone with the rights to grant project roles there, and it is Zitadel's audit trail that records who granted what and when. The application does not grant roles and offers no path to. **[Delegated — Zitadel]**
+Staff accounts keep one real identity and one `StaffRole`. The application does
+not impersonate another staff member or let a client select a more powerful
+role. Audited actions record the actor's user id and a snapshot of the actual
+role used for the action.
 
-`BEAC_ADMIN` grants ADMIN and `BEAC_PROVIDER` grants PROVIDER. LISTENER is the default and requires no claim — the absence of the other two is what confers it, so no `BEAC_LISTENER` claim is read. A legacy `certified_provider` claim is also accepted as a PROVIDER grant. It is **retained and deprecated**: it still confers PROVIDER, it is documented here rather than left as the silent path §2.2 of [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md) should not tolerate, and it is removed once the accounts holding it have been migrated to `BEAC_PROVIDER`. That migration is an open task; no new grant should use the legacy claim.
+### 1.1 Capability matrix
 
-### 1.1 LISTENER (default)
+“Assigned” means `scheduledSession.facilitatorId === user.id`. Assignment is
+checked by the server and exposed explicitly to LiveKit and UI consumers as
+`isAssignedFacilitator`; no presentation layer may infer it from the role name.
 
-The standard end-user. Anyone who signs up is a Listener by default.
+| Capability | FACILITATOR | OPERATOR | ADMIN | FACILITATOR_OP |
+|---|---:|---:|---:|---:|
+| View operations health | yes | yes | yes | yes |
+| Look up admission records | yes | yes | yes | yes |
+| Revoke or rebind entitlements | no | yes | yes | yes |
+| Issue support overrides | no | yes | yes | yes |
+| Generate/import paid batches or issue comps | no | no | yes | yes |
+| Operate assigned event | yes | yes | yes | yes |
+| Operate unassigned event | no | yes | yes | yes |
+| Initial microphone/camera publication in assigned event | yes | no | no | yes |
+| Initial publication in unassigned event | no | no | no | no |
 
-**Capabilities:**
-- Consume live beacon and approved meditation overlays.
-- Personalize through Favorites and a `ListeningSession` history.
-- Participate, via opt-in, in the research protocol (see [RESEARCH_PROTOCOL.md](./docs/RESEARCH_PROTOCOL.md)).
-- Become a Patron at any supported tier (see [MONETIZATION.md](./docs/MONETIZATION.md)).
-- Join scheduled sessions they've been invited to.
-- Will be able to report content or live-session behaviour (see [TRUST_AND_SAFETY.md](./docs/TRUST_AND_SAFETY.md)). **[Planned — Phase 1]**
+### 1.2 FACILITATOR
 
-**Guarantees owed to a Listener:**
-- Access to the live beacon and at least one approved overlay is always free, always available within SLO.
-- No advertising of any kind.
-- One-click account export and one-click account deletion. **[Planned — Phase 1]**
-- No unsolicited changes to pricing, patronage tiers, or research participation.
+Facilitates only assigned events. An assigned facilitator may enter before an
+event becomes live, receives the reserved initial stage grant, and operates the
+stage and tapestry there. The same account may not view or operate another
+event's private surfaces.
 
-### 1.2 PROVIDER
+### 1.3 OPERATOR
 
-A content creator or guide. Granted to users who have been **vetted** (see §3.2 below). Inherits all Listener capabilities.
+Operates all events and provides admission support within the limits above.
+Being an operator never creates a facilitator assignment or an automatic
+LiveKit publication grant.
 
-**Additional capabilities:**
-- Upload and manage `Meditation` entries (audio/video).
-- Create and host `ScheduledSession`s.
-- Publish via `room_name` on the associated LiveKit surface.
-- Access analytics on their own content and sessions.
-- If enrolled in the revenue-share scheme, receive payouts (see [MONETIZATION.md §3](./docs/MONETIZATION.md)).
+### 1.4 ADMIN
 
-**Obligations:**
-- Agree to the Provider Content Agreement and Content Policy ([CONTENT_POLICY.md](./docs/CONTENT_POLICY.md)).
-- Submit each piece of content to moderation before publication.
-- Not make therapeutic, diagnostic, or prognostic claims in content or metadata.
-- Respond to moderation or abuse reports related to their content or sessions within 72 hours.
+Has full global administration and operation authority. Admin status alone
+never creates facilitator treatment or an automatic publication grant.
 
-### 1.3 ADMIN
+### 1.5 FACILITATOR_OP
 
-System administrator. Inherits all Listener and Provider capabilities.
+Combines ADMIN's global administration/operation authority with facilitator
+treatment in exactly one assigned event. In unassigned events this role may
+operate but remains subscribe-only until the ordinary durable stage workflow
+grants publication. Its actual role remains `FACILITATOR_OP` in principals,
+token metadata, UI data and audit records.
 
-**Additional capabilities:**
-- Superuser access to sessions and resources.
-- Grant or revoke the PROVIDER role — in Zitadel, per §1. The admin surface in this application displays a user's role and does not change it. **[Delegated — Zitadel]**
-- Approve, reject, un-publish, or hide any content.
-- Will hold kill-switch authority on any live session (see [TRUST_AND_SAFETY.md §4](./docs/TRUST_AND_SAFETY.md)). Today the only path that ends a session is the hosting Provider ending their own. **[Planned — Phase 1]**
-- Read-only view of aggregated but not raw research data (raw data access will require a separate Research role; see §6). **[Planned — Phase 3]**
+### 1.6 Attendees
 
-**Obligations:**
-- Every administrative action will be written to the audit log. **[Planned — Phase 1]**
-- No admin reads identifiable research data without the Research role.
-- No admin communicates with a user using their personal account for business purposes; use role-scoped channels.
-
-### 1.4 Future roles (scaffolded, not yet implemented)
-
-Introduced in the roadmap; listed here so policy decisions can anticipate them.
-
-- **RESEARCHER** — read-only access to de-identified research datasets under a data-use agreement.
-- **STEWARD** — a trusted community moderator; can triage reports and apply temporary content holds but not permanent removal.
-- **OPERATOR** — on-call role with infrastructure access, audited separately from ADMIN.
-- **INSTITUTION** — a role that scopes a group of Listeners and a local configuration (e.g. a clinic running a private study).
+An attendee is not a staff role. Access comes from one bound, unexpired,
+unrevoked ticket entitlement and is scoped to that ticket's event. Attendees
+begin subscribe-only and publish only through the durable stage grant flow.
 
 ---
 
@@ -115,9 +109,16 @@ It is the invariant because it preserves what the content's publication state wa
 
 ### 2.2 Scheduled sessions
 
-A `ScheduledSession` is a live, interactive event hosted by a Provider. Status transitions: `SCHEDULED → LIVE → ENDED | CANCELLED`.
+A `ScheduledSession` is a live, interactive event. Its single supported state
+machine is `SCHEDULED → LIVE → ENDED`, with cancellation allowed from
+`SCHEDULED` or `LIVE`. Terminal states cannot be reopened.
 
-- A session will not transition `SCHEDULED → LIVE` more than 10 minutes before `scheduledAt`, or 60 minutes after, without Admin override. The start action currently checks only that status is `SCHEDULED`. **[Planned — Phase 1]**
+- Assigned facilitators and operations staff may open and close an event through
+  the staff console. A session will not transition `SCHEDULED → LIVE` more than
+  10 minutes before `scheduledAt`, or 60 minutes after, without an Admin override
+  carrying a non-PII reason. Cancellation is Admin-only and always requires a
+  non-PII reason. Every successful change atomically records actor, prior state,
+  new state, time and reason in `AuditLog`; repeated requests are idempotent.
 - A session may be recorded (`SessionRecording`). Recording will be disclosed in-UI before joining, and joining will require affirmative consent — an explicit accept, not participation treated as agreement. **[Planned — Phase 1]**
 - The disclosure will state three things, because the consent is only meaningful if it covers all of them: that the session is recorded, that the participant's own audio is captured as a separate track, and that the resulting recording belongs to the Provider — so a participant cannot afterwards have their track withdrawn from it. The arrangement is legitimate at the point of joining or not at all: a person who accepts knowing the consequence has given consent, where a person promised a right the platform cannot deliver has been misled. See §9.1 for what this means at account deletion. **[Planned — Phase 1]**
 - This is the platform's position, not a settled legal one. Counsel has to confirm it against the Provider Content Agreement, which has not been drafted.

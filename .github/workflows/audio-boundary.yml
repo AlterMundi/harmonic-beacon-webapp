@@ -1,0 +1,48 @@
+name: Audio boundary
+
+# CI protection for the frozen audio boundaries (issue #69, epic #64):
+# a PR that touches the paths below must carry the `audio-touching` label;
+# CODEOWNERS then routes the review to Nico. Keep the path list in sync
+# with .github/CODEOWNERS.
+
+on:
+  pull_request:
+    branches: [release]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  frozen-audio-paths:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect audio-boundary changes
+        id: diff
+        shell: bash
+        run: |
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+              | grep -Eq '^(src/context/AudioContext\.tsx|src/app/session/|services/playlist-bot/)'; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false"
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require the audio-touching label
+        if: steps.diff.outputs.touched == 'true'
+        shell: bash
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if echo "$PR_LABELS" | grep -q '"audio-touching"'; then
+            echo "audio-touching label present — Nico review required via CODEOWNERS."
+          else
+            echo "::error::This PR changes frozen audio paths (see .github/CODEOWNERS)."
+            echo "::error::Add the 'audio-touching' label and request @nicoechaniz's review (issue #69)."
+            exit 1
+          fi

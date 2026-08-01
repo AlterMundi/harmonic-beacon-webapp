@@ -14,14 +14,15 @@ const TEST_SESSION_ID = "10000000-0000-4000-8000-000000000101";
 
 const LANDING_PRESETS = [
     { label: "Sala ES (asistente/facilitador)", path: `/session/${TEST_SESSION_ID}` },
-    { label: "Ops — sala ES", path: `/ops/session/${TEST_SESSION_ID}` },
+    { label: "Ops — evento ES", path: `/ops/events/${TEST_SESSION_ID}` },
+    { label: "Ops — eventos", path: "/ops/events" },
     { label: "Ops — admission", path: "/ops/admission" },
     { label: "Ops — health", path: "/ops/health" },
     { label: "Landing", path: "/" },
     { label: "Login asistente", path: "/login" },
 ];
 
-const ROLES = ["ATTENDEE", "FACILITATOR", "OPERATOR", "ADMIN"] as const;
+const ROLES = ["ATTENDEE", "FACILITATOR", "FACILITATOR_OP", "OPERATOR", "ADMIN"] as const;
 
 export default function TestLoginPage() {
     const [name, setName] = useState("");
@@ -48,12 +49,6 @@ export default function TestLoginPage() {
                 setBusy(false);
                 return;
             }
-            // UI-only test label. Authorization continues to come exclusively
-            // from the HttpOnly session cookie and the server-side role.
-            window.sessionStorage.setItem(
-                "hb:e2e-viewer",
-                JSON.stringify({ name: name.trim(), role }),
-            );
             window.location.assign(landing);
         } catch {
             setError("Network error");

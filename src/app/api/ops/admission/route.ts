@@ -21,7 +21,8 @@ import {
 } from '@/lib/admission';
 import { recordAuditEvent } from '@/lib/audit';
 import { prisma } from '@/lib/db';
-import { hasAnyRole, resolveStaffSession, type StaffPrincipal } from '@/lib/ops-auth';
+import { resolveStaffSession, type StaffPrincipal } from '@/lib/ops-auth';
+import { hasStaffCapability } from '@/lib/staff-capabilities';
 import { ticketCodeStorage } from '@/lib/ticket-code';
 
 export const dynamic = 'force-dynamic';
@@ -149,8 +150,8 @@ async function lockScheduledSession(
 }
 
 async function handleGenerate(staff: StaffPrincipal, body: GenerateBody) {
-    if (!hasAnyRole(staff, ['ADMIN'])) {
-        return error(403, 'forbidden', 'Only ADMIN may generate ticket batches');
+    if (!hasStaffCapability(staff.role, 'manage_ticket_batches')) {
+        return error(403, 'forbidden', 'Your role may not generate ticket batches');
     }
     const { sessionId, tier } = body;
     const count = body.count;
@@ -197,6 +198,7 @@ async function handleGenerate(staff: StaffPrincipal, body: GenerateBody) {
 
     await recordAuditEvent({
         actorUserId: staff.id,
+        actorRole: staff.role,
         action: 'ticket.batch_generate',
         targetType: 'SCHEDULED_SESSION',
         targetId: sessionId,
@@ -211,8 +213,8 @@ async function handleGenerate(staff: StaffPrincipal, body: GenerateBody) {
 }
 
 async function handleImport(staff: StaffPrincipal, body: ImportBody) {
-    if (!hasAnyRole(staff, ['ADMIN'])) {
-        return error(403, 'forbidden', 'Only ADMIN may import ticket batches');
+    if (!hasStaffCapability(staff.role, 'manage_ticket_batches')) {
+        return error(403, 'forbidden', 'Your role may not import ticket batches');
     }
     const { sessionId, tier, csv } = body;
     if (!sessionId || !tier || !GENERATABLE_TIERS.includes(tier as typeof GENERATABLE_TIERS[number]) || !csv) {
@@ -278,6 +280,7 @@ async function handleImport(staff: StaffPrincipal, body: ImportBody) {
 
     await recordAuditEvent({
         actorUserId: staff.id,
+        actorRole: staff.role,
         action: 'ticket.batch_import',
         targetType: 'SCHEDULED_SESSION',
         targetId: sessionId,
@@ -295,9 +298,9 @@ async function handleComp(staff: StaffPrincipal, body: CompBody) {
     if (!reason?.trim()) {
         return error(400, 'reason_required', 'A non-PII reason is required for comp/override issuance');
     }
-    // ADMIN issues either comp tier; OPERATOR issues only the documented
-    // support override; FACILITATOR issues nothing.
-    const allowed = staff.role === 'ADMIN' || (staff.role === 'OPERATOR' && tier === 'SUPPORT_OVERRIDE');
+    const allowed = tier === 'COMP'
+        ? hasStaffCapability(staff.role, 'issue_comp')
+        : hasStaffCapability(staff.role, 'issue_support_override');
     if (!allowed) {
         return error(403, 'forbidden', 'Your role may not issue this entitlement tier');
     }
@@ -341,6 +344,7 @@ async function handleComp(staff: StaffPrincipal, body: CompBody) {
 
     await recordAuditEvent({
         actorUserId: staff.id,
+        actorRole: staff.role,
         action: 'ticket.comp_issue',
         targetType: 'TICKET_ENTITLEMENT',
         targetId: result.id,

@@ -19,7 +19,9 @@ import { prisma } from '@/lib/db';
 import { clientAddress } from '@/lib/client-address';
 import {
     isPlausibleEmail,
+    isValidDisplayName,
     newSessionToken,
+    normalizeDisplayName,
     normalizeLoginEmail,
     sessionCookie,
     webSessionExpiry,
@@ -31,7 +33,7 @@ import { digestTicketCode, normalizeTicketCode } from '@/lib/ticket-code';
 /** One message for every rejection. See the module comment. */
 const GENERIC_REJECTION = 'That ticket code and email do not match an active ticket.';
 const RATE_LIMITED = 'Too many attempts. Please wait and try again.';
-const MALFORMED_REQUEST = 'A ticket code and an email address are required.';
+const MALFORMED_REQUEST = 'A display name, ticket code and email address are required.';
 
 type FailureReason =
     | 'malformed_request'
@@ -60,17 +62,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     let code: string;
     let email: string;
+    let displayName: string;
     try {
         const body = (await request.json()) as unknown;
         const fields = (body ?? {}) as Record<string, unknown>;
         code = typeof fields.code === 'string' ? normalizeTicketCode(fields.code) : '';
         email = typeof fields.email === 'string' ? normalizeLoginEmail(fields.email) : '';
+        displayName = typeof fields.name === 'string' ? normalizeDisplayName(fields.name) : '';
     } catch {
         code = '';
         email = '';
+        displayName = '';
     }
 
-    if (code.length < 16 || !isPlausibleEmail(email)) {
+    if (code.length < 16 || !isPlausibleEmail(email) || !isValidDisplayName(displayName)) {
         return reject(address, 'malformed_request');
     }
 
@@ -87,7 +92,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     let attempt: Attempt;
     try {
-        attempt = await redeem(codeDigest, email);
+        attempt = await redeem(codeDigest, email, displayName);
     } catch (error) {
         console.error(`[auth] ticket login failed: client=${address} ${redactError(error)}`);
         return NextResponse.json({ error: 'Login is temporarily unavailable.' }, { status: 500 });
@@ -133,7 +138,12 @@ function reject(address: string, reason: FailureReason): NextResponse {
  * The same path also handles the ordinary repeat login: `count = 0` with a
  * matching email is a re-entry, not a conflict.
  */
-async function redeem(codeDigest: string, email: string, now = new Date()): Promise<Attempt> {
+async function redeem(
+    codeDigest: string,
+    email: string,
+    displayName: string,
+    now = new Date(),
+): Promise<Attempt> {
     return prisma.$transaction(async (tx) => {
         const entitlement = await tx.ticketEntitlement.findUnique({
             where: { codeDigest },
@@ -186,6 +196,7 @@ async function redeem(codeDigest: string, email: string, now = new Date()): Prom
         await tx.webSession.create({
             data: {
                 tokenDigest: issued.database.tokenDigest,
+                displayName,
                 ticketEntitlementId: entitlement.id,
                 expiresAt: webSessionExpiry(now),
                 lastSeenAt: now,

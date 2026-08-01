@@ -83,6 +83,7 @@ function applyUpdate(id: string, data: Record<string, unknown>) {
         'publishGrantedAt',
         'publishRevokedAt',
         'grantReconcileNeeded',
+        'raisedAt',
     ] as const) {
         if (field in data) {
             participant[field] = data[field] as never;
@@ -146,10 +147,12 @@ describe('stage control', () => {
         );
         mocks.participantFindMany.mockImplementation(() => participants);
         mocks.participantFindFirst.mockImplementation(
-            ({ where }: { where: { id: string } }) =>
+            ({ where }: { where: { id?: string; participantIdentity?: string } }) =>
                 (() => {
                     const participant = participants.find(
-                        (item) => item.id === where.id,
+                        (item) => where.id
+                            ? item.id === where.id
+                            : item.participantIdentity === where.participantIdentity,
                     );
                     return participant
                         ? {
@@ -338,6 +341,34 @@ describe('stage control', () => {
             'opaque-target',
             'TR_video',
             true,
+        );
+    });
+
+    it('lets a ticket-backed attendee decline their own invitation and audits without a staff actor', async () => {
+        participants = [attendee('target', true, new Date('2026-08-01T15:10:00Z'))];
+        const { declineStageInvitation } = await import('../stage-control');
+
+        const result = await declineStageInvitation({
+            scheduledSessionId: event.id,
+            participantIdentity: 'opaque-target',
+        });
+
+        expect(result).toMatchObject({ canPublish: false, reconcileNeeded: false });
+        expect(participants[0].publishRevokedAt).not.toBeNull();
+        expect(participants[0].raisedAt).toBeNull();
+        expect(mocks.auditCreate).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                actorUserId: null,
+                action: 'stage.invitation.decline',
+                targetId: 'target',
+            }),
+        });
+        expect(mocks.updateParticipant).toHaveBeenCalledWith(
+            event.roomName,
+            'opaque-target',
+            expect.objectContaining({
+                permission: expect.objectContaining({ canPublish: false }),
+            }),
         );
     });
 

@@ -59,6 +59,7 @@ async function main() {
                         roomName: event.roomName,
                         language: event.language,
                         scheduledAt: event.scheduledAt,
+                        isTest: event.isTest,
                         paidMode: true,
                         attendeeCap: WEEKEND_ATTENDEE_CAP,
                         maxPublishers: WEEKEND_MAX_PUBLISHERS,

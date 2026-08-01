@@ -35,6 +35,7 @@ const activeEvent = {
     facilitatorId: 'facilitator-1',
 };
 const activeTicketSession = {
+    displayName: 'Ana',
     expiresAt: new Date('2026-08-03T00:00:00Z'),
     revokedAt: null,
     staffUser: null,
@@ -141,7 +142,9 @@ describe('resolveRoomPrincipal', () => {
             principal: {
                 identity: 'opaque:event-1:ticket:ticket-1',
                 canPublish: true,
-                displayName: 'Attendee',
+                displayName: 'Ana',
+                role: 'ATTENDEE',
+                isAssignedFacilitator: false,
             },
         });
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
@@ -156,6 +159,7 @@ describe('resolveRoomPrincipal', () => {
             ticketEntitlement: null,
             staffUser: {
                 id: 'facilitator-1',
+                name: 'Julián',
                 role: 'FACILITATOR',
                 disabledAt: null,
             },
@@ -178,6 +182,7 @@ describe('resolveRoomPrincipal', () => {
             principal: {
                 identity: 'opaque:event-1:staff:facilitator-1',
                 canPublish: true,
+                isAssignedFacilitator: true,
             },
         });
         expect(updateParticipant).toHaveBeenCalledWith({
@@ -205,6 +210,7 @@ describe('resolveRoomPrincipal', () => {
             ticketEntitlement: null,
             staffUser: {
                 id: 'facilitator-1',
+                name: 'Julián',
                 role: 'FACILITATOR',
                 disabledAt: null,
             },
@@ -218,7 +224,12 @@ describe('resolveRoomPrincipal', () => {
 
         expect(result).toMatchObject({
             ok: true,
-            principal: { canPublish: true, displayName: 'Facilitator' },
+            principal: {
+                canPublish: true,
+                displayName: 'Julián',
+                role: 'FACILITATOR',
+                isAssignedFacilitator: true,
+            },
         });
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
             create: expect.objectContaining({
@@ -235,6 +246,7 @@ describe('resolveRoomPrincipal', () => {
             ticketEntitlement: null,
             staffUser: {
                 id: 'operator-1',
+                name: 'Oliva',
                 role: 'OPERATOR',
                 disabledAt: null,
             },
@@ -244,7 +256,12 @@ describe('resolveRoomPrincipal', () => {
 
         expect(result).toMatchObject({
             ok: true,
-            principal: { canPublish: false, displayName: 'Operator' },
+            principal: {
+                canPublish: false,
+                displayName: 'Oliva',
+                role: 'OPERATOR',
+                isAssignedFacilitator: false,
+            },
         });
     });
 
@@ -255,6 +272,7 @@ describe('resolveRoomPrincipal', () => {
             ticketEntitlement: null,
             staffUser: {
                 id: 'facilitator-2',
+                name: 'Other facilitator',
                 role: 'FACILITATOR',
                 disabledAt: null,
             },
@@ -264,5 +282,74 @@ describe('resolveRoomPrincipal', () => {
 
         expect(result).toMatchObject({ ok: false, status: 403 });
         expect(upsertParticipant).not.toHaveBeenCalled();
+    });
+
+    it('treats FACILITATOR_OP as facilitator and grants initial publish only when assigned', async () => {
+        upsertParticipant.mockResolvedValue({
+            publishGrantedAt: now,
+            publishRevokedAt: null,
+        });
+        findWebSession.mockResolvedValue({
+            expiresAt: new Date('2026-08-03T00:00:00Z'),
+            revokedAt: null,
+            ticketEntitlement: null,
+            staffUser: {
+                id: 'facilitator-1',
+                name: 'Julián',
+                role: 'FACILITATOR_OP',
+                disabledAt: null,
+            },
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: {
+                role: 'FACILITATOR_OP',
+                canPublish: true,
+                isAssignedFacilitator: true,
+            },
+        });
+        expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
+            create: expect.objectContaining({
+                publishGrantedAt: now,
+                grantReason: 'Facilitator preflight grant',
+            }),
+        }));
+    });
+
+    it('lets FACILITATOR_OP operate another event but never grants initial publish there', async () => {
+        findWebSession.mockResolvedValue({
+            expiresAt: new Date('2026-08-03T00:00:00Z'),
+            revokedAt: null,
+            ticketEntitlement: null,
+            staffUser: {
+                id: 'facilitator-op-2',
+                name: 'Global conductor',
+                role: 'FACILITATOR_OP',
+                disabledAt: null,
+            },
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: {
+                role: 'FACILITATOR_OP',
+                canPublish: false,
+                isAssignedFacilitator: false,
+            },
+        });
+        expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
+            create: expect.objectContaining({
+                publishGrantedAt: null,
+                grantVersion: 0,
+                grantReason: null,
+            }),
+        }));
     });
 });

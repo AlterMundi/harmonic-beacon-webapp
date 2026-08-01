@@ -13,11 +13,12 @@
  */
 
 import type { NextRequest } from 'next/server';
+import type { StaffRole } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { SESSION_COOKIE_NAME, digestSessionToken } from '@/lib/session-auth';
 
-export type StaffRole = 'FACILITATOR' | 'OPERATOR' | 'ADMIN';
+export type { StaffRole } from '@prisma/client';
 
 export type StaffPrincipal = {
     id: string;
@@ -61,8 +62,4 @@ export async function resolveStaffByToken(token: string | undefined): Promise<St
 
 export async function resolveStaffSession(request: NextRequest): Promise<StaffPrincipal | null> {
     return resolveStaffByToken(request.cookies.get(SESSION_COOKIE_NAME)?.value);
-}
-
-export function hasAnyRole(principal: StaffPrincipal, roles: StaffRole[]): boolean {
-    return roles.includes(principal.role);
 }

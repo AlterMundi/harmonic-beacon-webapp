@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Syne, Space_Mono } from "next/font/google";
+import { LocaleProvider } from "@/context/LocaleContext";
+import { requestLocale } from "@/lib/i18n-server";
 import "./globals.css";
 import { Toaster } from "sonner";
 
@@ -45,31 +47,35 @@ export const viewport: Viewport = {
   themeColor: "#07120f",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return (
-    <html lang="en" className={`${cormorant.variable} ${syne.variable} ${spaceMono.variable}`}>
-      <body className="antialiased">
-        {/* Main content */}
-        <div className="relative z-10">{children}</div>
+  const locale = await requestLocale();
 
-        <Toaster
-          theme="dark"
-          position="top-center"
-          toastOptions={{
-            style: {
-              background: "rgba(7, 18, 15, 0.96)",
-              backdropFilter: "blur(16px)",
-              border: "1px solid rgba(238, 245, 233, 0.12)",
-              color: "#fff9e9",
-              fontFamily: "var(--font-syne), system-ui, sans-serif",
-              fontSize: "13px",
-            },
-          }}
-        />
+  return (
+    <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${syne.variable} ${spaceMono.variable}`}>
+      <body className="antialiased">
+        <LocaleProvider initialLocale={locale}>
+          {/* Main content */}
+          <div className="relative z-10">{children}</div>
+
+          <Toaster
+            theme="dark"
+            position="top-center"
+            toastOptions={{
+              style: {
+                background: "rgba(7, 18, 15, 0.96)",
+                backdropFilter: "blur(16px)",
+                border: "1px solid rgba(238, 245, 233, 0.12)",
+                color: "#fff9e9",
+                fontFamily: "var(--font-syne), system-ui, sans-serif",
+                fontSize: "13px",
+              },
+            }}
+          />
+        </LocaleProvider>
       </body>
     </html>
   );

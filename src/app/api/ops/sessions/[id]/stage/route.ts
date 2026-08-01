@@ -10,6 +10,7 @@ import {
     reconcileParticipants,
     StageControlError,
 } from '@/lib/stage-control';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,11 +26,7 @@ export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const [staff, errorResponse] = await requireStaff(
-        'FACILITATOR',
-        'OPERATOR',
-        'ADMIN',
-    );
+    const [staff, errorResponse] = await requireStaff();
     if (!staff) {
         return errorResponse;
     }
@@ -45,10 +42,10 @@ export async function POST(
             { status: 404 },
         );
     }
-    if (
-        staff.role === 'FACILITATOR' &&
-        scheduledSession.facilitatorId !== staff.userId
-    ) {
+    if (!eventStaffPolicy(
+        staff.role,
+        scheduledSession.facilitatorId === staff.userId,
+    ).canOperateEvent) {
         return NextResponse.json(
             { error: 'Insufficient permissions' },
             { status: 403 },

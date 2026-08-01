@@ -83,6 +83,18 @@ type GrantInput = {
     now?: Date;
 };
 
+type DemoteInput = Omit<GrantInput, 'actorUserId'> & {
+    actorUserId: string | null;
+    auditAction?: 'stage.demote' | 'stage.invitation.decline';
+    clearHand?: boolean;
+};
+
+type DeclineInvitationInput = {
+    scheduledSessionId: string;
+    participantIdentity: string;
+    now?: Date;
+};
+
 type MuteInput = {
     scheduledSessionId: string;
     participantId: string;
@@ -174,7 +186,7 @@ function queuePosition(
 
 async function audit(
     transaction: Prisma.TransactionClient,
-    actorUserId: string,
+    actorUserId: string | null,
     action: string,
     participantId: string,
     reason: string | undefined,
@@ -422,7 +434,7 @@ export async function promoteParticipant(
 }
 
 export async function demoteParticipant(
-    input: GrantInput,
+    input: DemoteInput,
 ): Promise<StageGrantResult> {
     const now = input.now ?? new Date();
     const revocation = await prisma.$transaction(async (transaction) => {
@@ -463,6 +475,7 @@ export async function demoteParticipant(
             where: { id: target.id },
             data: {
                 publishRevokedAt: now,
+                ...(input.clearHand ? { raisedAt: null } : {}),
                 grantReconcileNeeded: false,
                 grantChangedByUserId: input.actorUserId,
                 grantReason: input.reason?.trim() || 'Demoted from stage',
@@ -477,7 +490,7 @@ export async function demoteParticipant(
         await audit(
             transaction,
             input.actorUserId,
-            'stage.demote',
+            input.auditAction ?? 'stage.demote',
             participant.id,
             input.reason,
             { grantVersion: participant.grantVersion },
@@ -510,7 +523,7 @@ export async function demoteParticipant(
             await audit(
                 transaction,
                 input.actorUserId,
-                'stage.demote.livekit_failed',
+                `${input.auditAction ?? 'stage.demote'}.livekit_failed`,
                 input.participantId,
                 'LiveKit demotion or forced mute failed',
                 { reconcileNeeded: true },
@@ -523,6 +536,42 @@ export async function demoteParticipant(
             { reconcileNeeded: true },
         );
     }
+}
+
+/**
+ * Let an entitled attendee refuse a stage invitation for their own opaque
+ * event identity. The caller is resolved by the room entitlement route; this
+ * lookup deliberately accepts ticket-backed rows only and never a participant
+ * id supplied by the browser.
+ */
+export async function declineStageInvitation(
+    input: DeclineInvitationInput,
+): Promise<StageGrantResult> {
+    const participant = await prisma.sessionParticipant.findFirst({
+        where: {
+            scheduledSessionId: input.scheduledSessionId,
+            participantIdentity: input.participantIdentity,
+            ticketEntitlementId: { not: null },
+        },
+        select: { id: true },
+    });
+    if (!participant) {
+        throw new StageControlError(
+            'participant_not_found',
+            404,
+            'Participant not found',
+        );
+    }
+
+    return demoteParticipant({
+        scheduledSessionId: input.scheduledSessionId,
+        participantId: participant.id,
+        actorUserId: null,
+        reason: 'Attendee declined stage invitation',
+        auditAction: 'stage.invitation.decline',
+        clearHand: true,
+        now: input.now,
+    });
 }
 
 export async function muteParticipantTrack(

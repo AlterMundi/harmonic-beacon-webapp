@@ -19,7 +19,9 @@ import type { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { ticketExpiresAt } from '@/lib/admission';
 import {
+    isValidDisplayName,
     newSessionToken,
+    normalizeDisplayName,
     sessionCookie,
     webSessionExpiry,
 } from '@/lib/principal';
@@ -27,7 +29,7 @@ import { redactError } from '@/lib/redact';
 
 export const dynamic = 'force-dynamic';
 
-const ROLES = ['ATTENDEE', 'FACILITATOR', 'OPERATOR', 'ADMIN'] as const;
+const ROLES = ['ATTENDEE', 'FACILITATOR', 'FACILITATOR_OP', 'OPERATOR', 'ADMIN'] as const;
 type DashboardRole = (typeof ROLES)[number];
 
 const TEST_ROOM_NAME = 'weekend-test-spanish';
@@ -77,7 +79,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
         const body = (await request.json()) as unknown;
         const fields = (body ?? {}) as Record<string, unknown>;
-        name = typeof fields.name === 'string' ? fields.name.trim().slice(0, 60) : '';
+        name = typeof fields.name === 'string' ? normalizeDisplayName(fields.name) : '';
         role = ROLES.includes(fields.role as DashboardRole)
             ? (fields.role as DashboardRole)
             : 'ATTENDEE';
@@ -86,7 +88,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }
 
-    if (name.length === 0 || !landing) {
+    if (!isValidDisplayName(name) || !landing) {
         return NextResponse.json(
             { error: 'A name, a role and a same-origin landing path are required.' },
             { status: 400 },
@@ -101,9 +103,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (role === 'ATTENDEE') {
             const session = await prisma.scheduledSession.findUnique({
                 where: { roomName: TEST_ROOM_NAME },
-                select: { id: true, scheduledAt: true, status: true },
+                select: { id: true, scheduledAt: true, status: true, isTest: true },
             });
-            if (!session) {
+            if (!session?.isTest) {
                 return NextResponse.json(
                     { error: `Test session ${TEST_ROOM_NAME} not found.` },
                     { status: 409 },
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         } else {
             // The facilitator MUST reuse the fixture user: room access checks
             // scheduledSession.facilitatorId against the staff user id.
-            const email = role === 'FACILITATOR'
+            const email = role === 'FACILITATOR' || role === 'FACILITATOR_OP'
                 ? FACILITATOR_FIXTURE_EMAIL
                 : `e2e-${role.toLowerCase()}@altermundi.net`;
             const staff = await prisma.user.upsert({
@@ -147,6 +149,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await prisma.webSession.create({
             data: {
                 tokenDigest: issued.database.tokenDigest,
+                displayName: name,
                 staffUserId,
                 ticketEntitlementId,
                 expiresAt: webSessionExpiry(now),

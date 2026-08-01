@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { LocaleProvider } from '@/context/LocaleContext';
 
 /**
  * Staff sign-in. Two things are worth asserting: the page resolves an existing
@@ -21,8 +22,16 @@ vi.mock('next/navigation', () => ({
 
 // Hoisted: the page under test imports this module at module-evaluation time,
 // which is before a plain `const` in this file would be initialized.
-const { currentPrincipal } = vi.hoisted(() => ({ currentPrincipal: vi.fn() }));
+const { currentPrincipal, resolveStaffLanding } = vi.hoisted(() => ({
+    currentPrincipal: vi.fn(),
+    resolveStaffLanding: vi.fn(),
+}));
 vi.mock('@/lib/auth', () => ({ currentPrincipal }));
+vi.mock('@/lib/staff-navigation', () => ({
+    resolveStaffLanding,
+}));
+vi.mock('@/lib/i18n-server', () => ({ requestLocale: vi.fn().mockResolvedValue('en') }));
+vi.mock('@/components/brand/LanguageControl', () => ({ default: () => <div data-testid="language-control" /> }));
 
 import StaffLoginPage from '../page';
 import StaffLoginClient from '../StaffLoginClient';
@@ -38,14 +47,30 @@ function mockFetch(status: number, body: unknown = {}) {
 }
 
 async function renderPage() {
-    render(await StaffLoginPage());
+    render(
+        <LocaleProvider initialLocale="en">
+            {await StaffLoginPage()}
+        </LocaleProvider>,
+    );
+}
+
+function renderClient() {
+    window.localStorage.setItem('hb-locale', 'en');
+    return render(
+        <LocaleProvider initialLocale="en">
+            <StaffLoginClient />
+        </LocaleProvider>,
+    );
 }
 
 describe('staff login page', () => {
     beforeEach(() => {
         currentPrincipal.mockReset();
+        resolveStaffLanding.mockReset();
+        resolveStaffLanding.mockResolvedValue('/ops/events/event-live');
         mockPush.mockClear();
         mockRefresh.mockClear();
+        window.localStorage.clear();
     });
 
     afterEach(() => {
@@ -74,8 +99,8 @@ describe('staff login page', () => {
         await renderPage();
 
         expect(screen.getByText(/Signed in as/)).toBeInTheDocument();
-        expect(screen.getByText('OPERATOR')).toBeInTheDocument();
-        expect(screen.getByRole('link', { name: /operator controls/ })).toHaveAttribute('href', '/ops/health');
+        expect(screen.getByText('Operations')).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /event controls/ })).toHaveAttribute('href', '/ops/events/event-live');
         expect(screen.queryByLabelText('Password')).toBeNull();
     });
 
@@ -84,6 +109,17 @@ describe('staff login page', () => {
         await renderPage();
 
         expect(screen.getByLabelText('Staff email')).toBeInTheDocument();
+    });
+
+    it('keeps a safe hub link when assignment lookup is temporarily unavailable', async () => {
+        currentPrincipal.mockResolvedValue({ kind: 'staff', role: 'OPERATOR', userId: 'user-2' });
+        resolveStaffLanding.mockRejectedValue(new Error('connection refused'));
+
+        await renderPage();
+
+        expect(screen.getByRole('link', { name: /event controls/ })).toHaveAttribute(
+            'href', '/ops/events',
+        );
     });
 });
 
@@ -106,8 +142,12 @@ describe('StaffLoginClient', () => {
     }
 
     it('posts the credential and goes to the operator controls', async () => {
-        const fetchMock = mockFetch(200, { ok: true, role: 'ADMIN' });
-        render(<StaffLoginClient />);
+        const fetchMock = mockFetch(200, {
+            ok: true,
+            role: 'ADMIN',
+            landing: '/ops/events',
+        });
+        renderClient();
 
         await signIn();
 
@@ -119,7 +159,7 @@ describe('StaffLoginClient', () => {
             password: 'weekend-passphrase',
         });
 
-        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/ops/health'));
+        await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/ops/events'));
         expect(mockRefresh).toHaveBeenCalled();
         // The password does not stay in the DOM after it has been used.
         expect(screen.getByLabelText('Password')).toHaveValue('');
@@ -127,7 +167,7 @@ describe('StaffLoginClient', () => {
 
     it('does not say which half of the credential was wrong', async () => {
         mockFetch(401, { error: 'Those credentials are not valid.' });
-        render(<StaffLoginClient />);
+        renderClient();
 
         await signIn();
 
@@ -139,13 +179,13 @@ describe('StaffLoginClient', () => {
 
     it('reports rate limiting and outages distinctly', async () => {
         mockFetch(429);
-        const { unmount } = render(<StaffLoginClient />);
+        const { unmount } = renderClient();
         await signIn();
         expect(await screen.findByRole('alert')).toHaveTextContent(/Too many attempts/);
         unmount();
 
         mockFetch(503);
-        render(<StaffLoginClient />);
+        renderClient();
         await signIn();
         expect(await screen.findByRole('alert')).toHaveTextContent(/unavailable/);
     });

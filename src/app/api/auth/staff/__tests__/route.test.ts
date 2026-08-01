@@ -118,6 +118,9 @@ function mountDb(users: UserRow[]) {
                 };
             },
         },
+        scheduledSession: {
+            findMany: async () => [],
+        },
     };
 
     vi.doMock('@/lib/db', () => ({ prisma, default: prisma }));
@@ -168,7 +171,11 @@ describe('POST /api/auth/staff', () => {
             const { status, body } = await parseResponse(response);
 
             expect(status).toBe(200);
-            expect(body).toEqual({ ok: true, role: person.role });
+            expect(body).toEqual({
+                ok: true,
+                role: person.role,
+                landing: '/ops/events',
+            });
 
             // The role the cookie actually resolves to on a later request, which
             // is the one that governs the operator console.
@@ -181,6 +188,30 @@ describe('POST /api/auth/staff', () => {
         expect(db.webSessions).toHaveLength(4);
         // Each person got their own session bound to their own user row.
         expect(new Set(db.webSessions.map((session) => session.staffUserId)).size).toBe(4);
+    });
+
+    it('returns and persists FACILITATOR_OP when the facilitator seed explicitly configures it', async () => {
+        const env = seedEnvironment();
+        env.STAFF_FACILITATOR_ROLE = 'FACILITATOR_OP';
+        staff = loadSeedContract(env).staff;
+        mountDb(seedUsers(staff));
+        const { POST } = await importRoute();
+        const { principalFromToken } = await import('@/lib/principal');
+
+        const response = await POST(loginRequest({
+            email: 'facilitator@example.invalid',
+            password: PASSWORDS.facilitator,
+        }));
+        expect((await parseResponse(response)).body).toEqual({
+            ok: true,
+            role: 'FACILITATOR_OP',
+            landing: '/ops/events',
+        });
+        const cookie = sessionCookieOf(response);
+        expect(await principalFromToken(cookie!.value)).toMatchObject({
+            kind: 'staff',
+            role: 'FACILITATOR_OP',
+        });
     });
 
     it('accepts an address typed with different capitalization', async () => {

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { LocaleProvider } from '@/context/LocaleContext';
+import type { UiLocale } from '@/lib/i18n';
 
 // TRUST_AND_SAFETY §4 item 5: a participant must be told a session ended,
 // not just dropped. These tests exercise the RoomEvent.Disconnected handler
@@ -126,6 +128,11 @@ interface EmittableRoom {
     emit: (event: string, ...args: unknown[]) => void;
     disconnect: ReturnType<typeof vi.fn>;
     startAudio: ReturnType<typeof vi.fn>;
+    localParticipant: {
+        permissions: { canPublish: boolean };
+        setMicrophoneEnabled: ReturnType<typeof vi.fn>;
+        setCameraEnabled: ReturnType<typeof vi.fn>;
+    };
 }
 
 function currentRoom(): EmittableRoom {
@@ -145,20 +152,35 @@ const TOKEN_RESPONSE = {
     canPublish: false,
     token: 'test-token',
     identity: 'opaque-attendee-12345678',
-    displayName: 'Attendee',
+    displayName: 'Nico',
     role: 'ATTENDEE',
     principalKind: 'ticket',
-    audioDiagnosticEnabled: true,
+};
+
+const ENTRY_RESPONSE = {
+    state: 'READY',
+    session: {
+        id: 'session-1',
+        title: 'Test Session',
+        language: 'ENGLISH',
+        scheduledAt: '2026-08-01T18:00:00.000Z',
+        status: 'LIVE',
+    },
 };
 
 beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
+    document.cookie = 'hb_locale=; Path=/; Max-Age=0';
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     audioMocks.setBeaconVolume.mockClear();
     audioMocks.startBeaconAudio.mockClear();
     audioMocks.startBeaconAudio.mockResolvedValue(true);
     global.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/entry')) {
+            return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE });
+        }
         if (url.includes('/token')) {
             return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE });
         }
@@ -173,25 +195,268 @@ afterEach(() => {
 });
 
 async function renderConnected() {
-    render(<SessionRoomPage />);
+    renderPage('en');
     await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
 }
 
-describe('SessionRoomPage - test identity and audio diagnostics', () => {
-    it('shows the selected test name, authorized role, short identity, and A/B controls', async () => {
-        window.sessionStorage.setItem(
-            'hb:e2e-viewer',
-            JSON.stringify({ name: 'Nico', role: 'ATTENDEE' }),
-        );
+function renderPage(locale: UiLocale = 'en') {
+    return render(
+        <LocaleProvider initialLocale={locale}>
+            <SessionRoomPage />
+        </LocaleProvider>,
+    );
+}
 
+describe('SessionRoomPage - event entry', () => {
+    it('shows a truthful waiting room and mints no LiveKit token before doors open', async () => {
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        state: 'WAITING',
+                        session: {
+                            ...ENTRY_RESPONSE.session,
+                            language: 'SPANISH',
+                            status: 'SCHEDULED',
+                        },
+                    }),
+                } as Response);
+            }
+            throw new Error(`Unexpected request: ${String(url)}`);
+        });
+
+        renderPage();
+
+        expect(await screen.findByText('Entrada confirmada')).toBeInTheDocument();
+        expect(screen.getByText('Test Session')).toBeInTheDocument();
+        expect(screen.getByText(/automáticamente cuando el equipo las abra/)).toBeInTheDocument();
+        expect(Room).not.toHaveBeenCalled();
+        expect(global.fetch).not.toHaveBeenCalledWith(expect.stringContaining('/token'));
+    });
+
+    it('preserves an explicit English preference for a Spanish event, including long waiting copy', async () => {
+        document.cookie = 'hb_locale=en; Path=/';
+        window.localStorage.setItem('hb-locale', 'en');
+        vi.mocked(global.fetch).mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                state: 'WAITING',
+                session: {
+                    ...ENTRY_RESPONSE.session,
+                    language: 'SPANISH',
+                    status: 'SCHEDULED',
+                },
+            }),
+        } as Response);
+
+        renderPage('en');
+
+        expect(await screen.findByText('Ticket confirmed')).toBeInTheDocument();
+        expect(screen.getByText(
+            'The doors are not open yet. This page will bring you in automatically when the team opens them.',
+        )).toBeInTheDocument();
+        expect(document.documentElement.lang).toBe('en');
+    });
+
+    it('renders the designed closing state without mounting LiveKit', async () => {
+        vi.mocked(global.fetch).mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                state: 'ENDED',
+                session: { ...ENTRY_RESPONSE.session, status: 'ENDED' },
+            }),
+        } as Response);
+
+        renderPage();
+
+        expect(await screen.findByText('Session ended')).toBeInTheDocument();
+        expect(screen.getByText('Thank you for being part of it.')).toBeInTheDocument();
+        expect(Room).not.toHaveBeenCalled();
+    });
+
+    it('enters automatically when a status refresh observes open doors', async () => {
+        let entryChecks = 0;
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                entryChecks += 1;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => entryChecks === 1
+                        ? {
+                            state: 'WAITING',
+                            session: { ...ENTRY_RESPONSE.session, status: 'SCHEDULED' },
+                        }
+                        : ENTRY_RESPONSE,
+                } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        renderPage();
+        expect(await screen.findByText('Ticket confirmed')).toBeInTheDocument();
+
+        fireEvent.focus(window);
+
+        await waitFor(() => expect(Room).toHaveBeenCalledOnce());
+        expect(await screen.findByTestId('viewer-identity')).toBeInTheDocument();
+    });
+
+    it('disconnects the media room and shows closing copy when staff ends the event', async () => {
+        let entryChecks = 0;
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                entryChecks += 1;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => entryChecks === 1
+                        ? ENTRY_RESPONSE
+                        : {
+                            state: 'ENDED',
+                            session: { ...ENTRY_RESPONSE.session, status: 'ENDED' },
+                        },
+                } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        renderPage();
+        await screen.findByText('Test Session');
+        const connectedRoom = currentRoom();
+
+        fireEvent.focus(window);
+
+        expect(await screen.findByText('Session ended')).toBeInTheDocument();
+        await waitFor(() => expect(connectedRoom.disconnect).toHaveBeenCalledOnce());
+    });
+});
+
+describe('SessionRoomPage - participant identity', () => {
+    it('shows the server-authorized attendee name without exposing role, opaque identity, or diagnostics', async () => {
         await renderConnected();
 
         expect(screen.getByTestId('viewer-identity')).toHaveTextContent(
-            'Signed in: Nico · ATTENDEE · ID 12345678',
+            'Signed in as: Nico',
         );
-        expect(screen.getByText('Audio A/B check')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Test browser output/i })).toBeInTheDocument();
-        expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).not.toBeNull();
+        expect(screen.getByTestId('viewer-identity')).not.toHaveTextContent(/ATTENDEE|12345678|ID/);
+        expect(screen.queryByText(/Beacon room:/)).not.toBeInTheDocument();
+        expect(screen.queryByText('Audio A/B check')).not.toBeInTheDocument();
+        expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).toBeNull();
+    });
+
+    it('changes visible language without reconnecting either media room', async () => {
+        await renderConnected();
+        const connectedRoom = currentRoom();
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+        act(() => {
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: 'hb-locale',
+                newValue: 'es',
+            }));
+        });
+
+        expect(await screen.findByRole('button', { name: 'Iniciar audio' })).toBeInTheDocument();
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
+        expect(connectedRoom.disconnect).not.toHaveBeenCalled();
+    });
+});
+
+describe('SessionRoomPage - stage invitation consent', () => {
+    function installGrantedHand() {
+        let canPublish = true;
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+            const target = String(url);
+            if (target.includes('/entry')) {
+                return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+            }
+            if (target.includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            if (target.includes('/hand')) {
+                if (init?.method === 'PATCH') canPublish = false;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        participantId: 'participant-1',
+                        raised: false,
+                        raisedAt: null,
+                        queuePosition: null,
+                        canPublish,
+                    }),
+                } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+    }
+
+    async function receiveInvitation() {
+        installGrantedHand();
+        await renderConnected();
+        const room = currentRoom();
+        room.localParticipant.permissions.canPublish = true;
+        act(() => {
+            room.emit('participantPermissionsChanged', null, room.localParticipant);
+        });
+        return {
+            room,
+            dialog: await screen.findByRole('dialog', { name: 'You’re invited into the scene' }),
+        };
+    }
+
+    it('requests no device and exposes no stage controls before the attendee accepts', async () => {
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+        const { room, dialog } = await receiveInvitation();
+
+        expect(dialog).toHaveFocus();
+        expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+        expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+        expect(screen.queryByRole('button', { name: 'Turn camera on' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Unmute microphone' })).not.toBeInTheDocument();
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount + 1);
+        expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('starts camera and microphone only from Accept without recreating the room', async () => {
+        const { room } = await receiveInvitation();
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+
+        await waitFor(() => {
+            expect(room.localParticipant.setCameraEnabled).toHaveBeenCalledWith(true);
+            expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+        });
+        expect(await screen.findByRole('button', { name: 'Turn camera on' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeInTheDocument();
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
+        expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('declines the invitation durably without touching devices or the room lifecycle', async () => {
+        const { room } = await receiveInvitation();
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+        fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/scheduled-sessions/session-1/hand',
+            expect.objectContaining({
+                method: 'PATCH',
+                body: JSON.stringify({ action: 'decline_invitation' }),
+            }),
+        );
+        expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
+        expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
+        expect(room.disconnect).not.toHaveBeenCalled();
     });
 });
 
@@ -275,6 +540,35 @@ describe('SessionRoomPage - ambiguous disconnect', () => {
         expect(within(status).getByText('Disconnected')).toBeInTheDocument();
         expect(within(status).getByText(/can't tell whether it ended or your connection dropped/i)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Rejoin/i })).toBeInTheDocument();
+    });
+
+    it('announces the full terminal lifecycle in Spanish when the event seeded a first visit', async () => {
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        ...ENTRY_RESPONSE,
+                        session: { ...ENTRY_RESPONSE.session, language: 'SPANISH' },
+                    }),
+                } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        renderPage('en');
+        await screen.findByText('Test Session');
+        act(() => currentRoom().emit('disconnected', undefined));
+
+        const status = await screen.findByRole('status');
+        expect(within(status).getByText('Desconectado')).toBeInTheDocument();
+        expect(within(status).getByText(
+            'Ya no estás conectado a esta sesión. No podemos saber si terminó o si se cortó tu conexión.',
+        )).toBeInTheDocument();
+        expect(document.documentElement.lang).toBe('es');
     });
 });
 
@@ -403,7 +697,7 @@ describe('SessionRoomPage - audio activation', () => {
         currentRoom().startAudio.mockReturnValueOnce(stageStart);
         stagePlay.mockClear();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Start audio · Iniciar audio' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
 
         expect(currentRoom().startAudio).toHaveBeenCalledOnce();
         expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
@@ -418,12 +712,21 @@ describe('SessionRoomPage - audio activation', () => {
 
 describe('SessionRoomPage - initial connection failure', () => {
     it('offers a retry without forcing the attendee back through login', async () => {
-        (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-            ok: false,
-            json: async () => ({ error: 'Room is temporarily unavailable' }),
+        let tokenAttempts = 0;
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+            if (String(url).includes('/entry')) {
+                return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+            }
+            if (String(url).includes('/token') && tokenAttempts++ === 0) {
+                return Promise.resolve({
+                    ok: false,
+                    json: async () => ({ error: 'Room is temporarily unavailable' }),
+                } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
         });
 
-        render(<SessionRoomPage />);
+        renderPage();
         expect(await screen.findByText('Room is temporarily unavailable')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

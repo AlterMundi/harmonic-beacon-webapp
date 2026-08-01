@@ -20,6 +20,7 @@
  */
 
 import { currentPrincipal } from '@/lib/principal';
+import { hasStaffCapability } from '@/lib/staff-capabilities';
 
 export type LegacySession = {
     user: {
@@ -47,7 +48,9 @@ export async function auth(): Promise<LegacySession | null> {
             email: '',
             name: null,
             image: null,
-            role: principal.kind === 'staff' && principal.role === 'ADMIN' ? 'ADMIN' : 'USER',
+            role: principal.kind === 'staff' && hasStaffCapability(principal.role, 'administer_system')
+                ? 'ADMIN'
+                : 'USER',
         },
     };
 }

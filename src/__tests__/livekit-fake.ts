@@ -26,6 +26,7 @@ export interface FakeVideoPublication {
 export interface FakeParticipant {
     identity: string;
     name: string;
+    metadata: string;
     isSpeaking: boolean;
     connectionQuality: string;
     permissions?: { canPublish: boolean };
@@ -41,6 +42,7 @@ export interface FakeParticipantOptions {
     identity: string;
     /** Non-PII role word, matching `RoomPrincipal.displayName`. */
     name?: string;
+    metadata?: string;
     canPublish?: boolean;
     camera?: boolean;
     mic?: boolean;
@@ -73,6 +75,7 @@ export function createFakeParticipant(options: FakeParticipantOptions): FakePart
     const participant: FakeParticipant = {
         identity: options.identity,
         name: options.name ?? 'Attendee',
+        metadata: options.metadata ?? '',
         isSpeaking: options.speaking ?? false,
         connectionQuality: options.quality ?? 'excellent',
         permissions: { canPublish },
@@ -107,6 +110,7 @@ export class FakeRoom {
         this.state = 'connected';
     });
     disconnect = vi.fn();
+    startAudio = vi.fn().mockResolvedValue(undefined);
 
     on(event: string, cb: (...args: unknown[]) => void) {
         (this.listeners[event] ||= []).push(cb);

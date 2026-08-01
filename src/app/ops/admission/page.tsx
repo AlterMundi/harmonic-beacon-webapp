@@ -32,7 +32,7 @@ export default async function AdmissionPage() {
     return (
         <main className="mx-auto max-w-4xl px-4 py-8">
             <h1 className="mb-1 text-2xl font-semibold">Admission support</h1>
-            <p className="mb-6 text-sm text-gray-600">
+            <p className="mb-6 text-sm text-[var(--text-secondary)]">
                 Signed in as {staff.name} ({staff.role}). Every mutation requires a non-PII reason and is audited.
             </p>
             <AdmissionConsole

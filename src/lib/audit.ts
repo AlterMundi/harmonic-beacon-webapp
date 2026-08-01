@@ -24,6 +24,7 @@
 
 import { prisma } from '@/lib/db';
 import { redactErrorDetail } from '@/lib/redact';
+import type { StaffRole } from '@prisma/client';
 
 /** JSON-safe metadata. Deliberately narrow: audit rows are read by humans. */
 export type AuditMetadata = Record<string, string | number | boolean | null>;
@@ -49,6 +50,8 @@ export type AdmissionAuditTargetType = 'TICKET_ENTITLEMENT' | 'SCHEDULED_SESSION
 export interface AdmissionAuditEvent {
     /** Staff user id, or null for CLI actions that name their source in metadata. */
     actorUserId: string | null;
+    /** Immutable snapshot of the real role used for this action. */
+    actorRole?: StaffRole;
     action: AdmissionAuditAction;
     targetType: AdmissionAuditTargetType;
     targetId: string;
@@ -75,6 +78,7 @@ export async function recordAuditEvent(event: AdmissionAuditEvent): Promise<void
         await prisma.auditLog.create({
             data: {
                 actorUserId: event.actorUserId,
+                ...(event.actorRole !== undefined ? { actorRole: event.actorRole } : {}),
                 action: event.action,
                 targetType: event.targetType,
                 targetId: event.targetId,

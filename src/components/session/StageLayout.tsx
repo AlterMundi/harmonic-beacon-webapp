@@ -2,9 +2,11 @@
 
 import {
     MAX_AUXILIARY_TILES,
-    selectStageArrangement,
+    composeStageScene,
+    stagePresenceTone,
     type StagePublisher,
 } from "@/lib/stage-layout";
+import { useLocale } from "@/context/LocaleContext";
 
 import StageTile, { type StageVideoPublication } from "./StageTile";
 
@@ -15,71 +17,61 @@ export interface StagePublisherView extends StagePublisher {
 export interface StageLayoutProps {
     publishers: readonly StagePublisherView[];
     activeSpeakerIdentity?: string | null;
-    pinnedIdentity?: string | null;
+    /** Future shared state only; this component offers no browser-local pin. */
+    protagonistIdentity?: string | null;
     audioOnly?: boolean;
 }
 
 export default function StageLayout({
     publishers,
     activeSpeakerIdentity,
-    pinnedIdentity,
+    protagonistIdentity,
     audioOnly = false,
 }: StageLayoutProps) {
-    const { spotlight, auxiliaries, overflow } = selectStageArrangement(publishers, {
-        pinnedIdentity,
+    const { copy } = useLocale();
+    const composition = composeStageScene(publishers, {
+        protagonistIdentity,
         activeSpeakerIdentity,
     });
 
-    const tiles = spotlight ? [spotlight, ...auxiliaries] : [];
-
     return (
         <section
-            aria-label="Stage"
+            aria-label={copy.stage.label}
             data-testid="stage-layout"
-            data-overflow={overflow.length || undefined}
-            className="mx-auto w-full max-w-4xl"
+            data-scene={composition.kind}
+            data-overflow={composition.overflow.length || undefined}
+            className="stage-canvas"
         >
             {audioOnly && (
-                <p
-                    role="status"
-                    className="mb-3 text-center text-xs text-[var(--text-muted)]"
-                >
-                    Audio-only mode. Video is off; you are still hearing the stage and
-                    the Beacon bed.
-                    <span className="mt-0.5 block opacity-70">
-                        Modo solo audio. El video está apagado; seguís escuchando el escenario y el Beacon.
-                    </span>
+                <p role="status" className="mb-3 text-center text-xs text-[var(--text-muted)]">
+                    {copy.stage.audioOnly}
                 </p>
             )}
 
-            {tiles.length === 0 ? (
+            {composition.placements.length === 0 ? (
                 <div className="terminal-state py-10">
-                    <p className="terminal-state__body">
-                        Waiting for the facilitator to open the stage.
-                        <span className="mt-1 block opacity-70">
-                            Esperando que el facilitador abra el escenario.
-                        </span>
-                    </p>
+                    <p className="terminal-state__body">{copy.stage.waiting}</p>
                 </div>
             ) : (
-                <ul className="m-0 grid list-none grid-cols-5 gap-1.5 p-0 sm:gap-3">
-                    {tiles.map((publisher) => (
+                <ul
+                    aria-label={copy.stage.label}
+                    className={`stage-scene stage-scene--${composition.kind}`}
+                    data-member-count={composition.placements.length}
+                >
+                    {composition.placements.map(({ member, role, quality, presence }) => (
                         <StageTile
-                            key={publisher.identity}
-                            label={publisher.label}
-                            variant={
-                                publisher.identity === spotlight?.identity
-                                    ? "spotlight"
-                                    : "auxiliary"
-                            }
-                            isLocal={publisher.isLocal}
-                            isSpeaking={publisher.isSpeaking}
-                            cameraOn={publisher.cameraOn}
-                            micOn={publisher.micOn}
-                            connectionQuality={publisher.connectionQuality}
-                            videoPublication={
-                                audioOnly ? null : publisher.videoPublication ?? null
-                            }
+                            key={member.identity}
+                            label={member.label}
+                            sceneRole={role}
+                            qualityPriority={audioOnly ? "none" : quality}
+                            presence={presence}
+                            presenceTone={stagePresenceTone(member.identity)}
+                            isLocal={member.isLocal}
+                            isSpeaking={member.isSpeaking}
+                            cameraOn={member.cameraOn}
+                            micOn={member.micOn}
+                            connectionQuality={member.connectionQuality}
+                            videoPublication={audioOnly ? null : member.videoPublication ?? null}
                         />
                     ))}
                 </ul>

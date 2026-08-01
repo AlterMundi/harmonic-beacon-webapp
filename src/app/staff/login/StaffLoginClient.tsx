@@ -2,21 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLocale } from "@/context/LocaleContext";
 
-/** Where an operator goes after signing in. */
-const OPERATOR_HOME = "/ops/health";
-
-const MESSAGES = {
-    rejected: "Those credentials are not valid.",
-    rateLimited: "Too many attempts. Wait a few minutes and try again.",
-    unavailable: "Sign-in is unavailable right now. Try again in a moment.",
-    required: "Enter your staff email and password.",
-} as const;
-
-type MessageKey = keyof typeof MESSAGES;
+type MessageKey = "rejected" | "rateLimited" | "unavailable" | "required";
 
 export default function StaffLoginClient() {
     const router = useRouter();
+    const { copy } = useLocale();
+    const messages = copy.staffLogin;
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -37,8 +30,13 @@ export default function StaffLoginClient() {
             });
 
             if (response.ok) {
+                const result = (await response.json()) as { landing?: unknown };
+                const landing = typeof result.landing === "string" &&
+                    result.landing.startsWith("/ops/")
+                    ? result.landing
+                    : "/ops/events";
                 setPassword("");
-                router.push(OPERATOR_HOME);
+                router.push(landing);
                 router.refresh();
                 return;
             }
@@ -63,7 +61,7 @@ export default function StaffLoginClient() {
         <form onSubmit={onSubmit} className="space-y-5" noValidate>
             <div className="space-y-1.5">
                 <label htmlFor="staff-email" className="block text-sm font-medium text-[var(--paper)]">
-                    Staff email
+                    {messages.email}
                 </label>
                 <input
                     id="staff-email"
@@ -78,13 +76,13 @@ export default function StaffLoginClient() {
                     aria-describedby="staff-email-hint"
                 />
                 <p id="staff-email-hint" className="text-xs text-[var(--text-muted)]">
-                    The address you were given by the event producer.
+                    {messages.emailHint}
                 </p>
             </div>
 
             <div className="space-y-1.5">
                 <label htmlFor="staff-password" className="block text-sm font-medium text-[var(--paper)]">
-                    Password
+                    {messages.password}
                 </label>
                 <input
                     id="staff-password"
@@ -98,13 +96,13 @@ export default function StaffLoginClient() {
                     aria-describedby="staff-password-hint"
                 />
                 <p id="staff-password-hint" className="text-xs text-[var(--text-muted)]">
-                    Delivered out of band. A lost one is re-seeded, not recovered.
+                    {messages.passwordHint}
                 </p>
             </div>
 
             {error && (
                 <div role="alert" className="event-alert event-alert--danger" aria-live="polite">
-                    {MESSAGES[error]}
+                    {messages[error]}
                 </div>
             )}
 
@@ -114,7 +112,7 @@ export default function StaffLoginClient() {
                 className="event-button event-button--primary w-full"
                 aria-busy={submitting}
             >
-                {submitting ? "Signing in…" : "Sign in"}
+                {submitting ? messages.signingIn : messages.signIn}
             </button>
         </form>
     );

@@ -18,6 +18,8 @@ const principal = {
     },
     identity: 'event-stable-opaque',
     displayName: 'Attendee',
+    role: 'ATTENDEE',
+    isAssignedFacilitator: false,
     canPublish: false,
 };
 
@@ -64,6 +66,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             'event-stable-opaque',
             'Attendee',
             false,
+            { role: 'ATTENDEE', isAssignedFacilitator: false },
         );
         expect(body).toMatchObject({
             token: 'stage-jwt',
@@ -80,6 +83,8 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             principal: {
                 ...principal,
                 displayName: 'Facilitator',
+                role: 'FACILITATOR',
+                isAssignedFacilitator: true,
                 canPublish: true,
             },
         });
@@ -95,6 +100,38 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             'event-stable-opaque',
             'Facilitator',
             true,
+            { role: 'FACILITATOR', isAssignedFacilitator: true },
         );
+    });
+
+    it('keeps the composite role and assignment explicit in response and metadata', async () => {
+        resolveRoomPrincipal.mockResolvedValue({
+            ok: true,
+            principal: {
+                ...principal,
+                displayName: 'Julián',
+                role: 'FACILITATOR_OP',
+                isAssignedFacilitator: true,
+                canPublish: true,
+            },
+        });
+
+        const { GET } = await import('../route');
+        const { body } = await parseResponse(await GET(
+            createRequest('/api/scheduled-sessions/event-1/token'),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(createSessionToken).toHaveBeenCalledWith(
+            'weekend-stage',
+            'event-stable-opaque',
+            'Julián',
+            true,
+            { role: 'FACILITATOR_OP', isAssignedFacilitator: true },
+        );
+        expect(body).toMatchObject({
+            role: 'FACILITATOR_OP',
+            isAssignedFacilitator: true,
+        });
     });
 });

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireStaff } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { publicTapestryEnabled, tapestryInternalUrl } from '@/lib/tapestry';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,8 +22,19 @@ export async function GET(
     const isPublic = publicTapestryEnabled();
 
     if (!isPublic) {
-        const [staff, errorResponse] = await requireStaff('FACILITATOR', 'OPERATOR', 'ADMIN');
+        const [staff, errorResponse] = await requireStaff();
         if (!staff) return errorResponse;
+        const session = await prisma.scheduledSession.findUnique({
+            where: { id: sessionId },
+            select: { facilitatorId: true },
+        });
+        if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+        if (!eventStaffPolicy(
+            staff.role,
+            session.facilitatorId === staff.userId,
+        ).canOperateEvent) {
+            return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
+        }
     } else {
         // A public composite has no cookie-dependent authorization or Vary header,
         // otherwise a shared edge cache could leak an authenticated response.

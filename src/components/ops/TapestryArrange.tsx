@@ -98,7 +98,7 @@ export default function TapestryArrange({ sessionId }: Props) {
                     type="button"
                     onClick={() => void save()}
                     disabled={!dirty || saving}
-                    className="rounded border border-[var(--gold)] px-3 py-1 text-xs text-[var(--gold)] disabled:opacity-40"
+                    className="min-h-11 rounded border border-[var(--gold)] px-3 py-2 text-xs text-[var(--gold)] disabled:opacity-40"
                 >
                     {saving ? 'Saving…' : dirty ? 'Save arrangement' : 'Saved'}
                 </button>
@@ -126,7 +126,7 @@ export default function TapestryArrange({ sessionId }: Props) {
                                     aria-label={`Move tile ${index + 1} left`}
                                     onClick={() => move(index, -1)}
                                     disabled={index === 0}
-                                    className="rounded border border-[var(--border-subtle)] px-2 text-xs disabled:opacity-30"
+                                    className="min-h-11 min-w-11 rounded border border-[var(--border-subtle)] px-2 text-xs disabled:opacity-30"
                                 >
                                     ◀
                                 </button>
@@ -135,7 +135,7 @@ export default function TapestryArrange({ sessionId }: Props) {
                                     aria-label={`Move tile ${index + 1} right`}
                                     onClick={() => move(index, 1)}
                                     disabled={index === order.length - 1}
-                                    className="rounded border border-[var(--border-subtle)] px-2 text-xs disabled:opacity-30"
+                                    className="min-h-11 min-w-11 rounded border border-[var(--border-subtle)] px-2 text-xs disabled:opacity-30"
                                 >
                                     ▶
                                 </button>

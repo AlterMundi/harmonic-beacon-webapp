@@ -1,10 +1,19 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ThumbnailSender from '../ThumbnailSender';
+import { LocaleProvider } from '@/context/LocaleContext';
 
-afterEach(() => vi.restoreAllMocks());
+function render(ui: ReactNode) {
+    return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale="en">{children}</LocaleProvider> });
+}
+
+afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+});
 
 function mockCamera() {
     const stop = vi.fn();
@@ -39,7 +48,7 @@ describe('ThumbnailSender', () => {
         const view = render(<ThumbnailSender sessionId="session-1" connected isPublishing={false} />);
         await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
 
-        fireEvent.click(screen.getByRole('button', { name: 'Stop tapestry camera' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Stop sharing your camera with the tapestry' }));
         await waitFor(() => expect(stop).toHaveBeenCalled());
 
         // A re-render (e.g. state change elsewhere in the room) must not

@@ -146,7 +146,12 @@ describe('requireRole', () => {
 const ATTENDEE_COOKIE = 'attendee-cookie-value';
 
 function mountRequest(webSessionRow: Record<string, unknown> | null, cookie = ATTENDEE_COOKIE) {
-    const prisma = { webSession: { findUnique: vi.fn().mockResolvedValue(webSessionRow) } };
+    const prisma = {
+        webSession: { findUnique: vi.fn().mockResolvedValue(webSessionRow) },
+        scheduledSession: {
+            findUnique: vi.fn().mockResolvedValue({ facilitatorId: 'user-1' }),
+        },
+    };
     vi.doMock('@/lib/db', () => ({ prisma, default: prisma }));
     vi.doMock('next/headers', () => ({
         cookies: vi.fn().mockResolvedValue({
@@ -330,7 +335,7 @@ describe('requireSessionAccess', () => {
         expect(errorResponse!.status).toBe(403);
     });
 
-    it('admits staff for any event they operate', async () => {
+    it('admits an assigned facilitator', async () => {
         mountRequest(await staffRow('FACILITATOR'));
         const { requireSessionAccess } = await import('../auth');
 
@@ -338,6 +343,26 @@ describe('requireSessionAccess', () => {
 
         expect(errorResponse).toBeNull();
         expect(principal).toMatchObject({ kind: 'staff' });
+    });
+
+    it('refuses an unassigned facilitator but admits FACILITATOR_OP globally', async () => {
+        const facilitatorDb = mountRequest(await staffRow('FACILITATOR'));
+        facilitatorDb.scheduledSession.findUnique.mockResolvedValue({
+            facilitatorId: 'other-user',
+        });
+        let authModule = await import('../auth');
+        expect((await authModule.requireSessionAccess('session-2'))[1]!.status).toBe(403);
+
+        vi.resetModules();
+        const compositeDb = mountRequest(await staffRow('FACILITATOR_OP'));
+        compositeDb.scheduledSession.findUnique.mockResolvedValue({
+            facilitatorId: 'other-user',
+        });
+        authModule = await import('../auth');
+        expect((await authModule.requireSessionAccess('session-2'))[0]).toMatchObject({
+            kind: 'staff',
+            role: 'FACILITATOR_OP',
+        });
     });
 
     it('refuses a request with no cookie', async () => {

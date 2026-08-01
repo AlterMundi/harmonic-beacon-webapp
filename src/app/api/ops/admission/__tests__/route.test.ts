@@ -232,6 +232,7 @@ describe('/api/ops/admission', () => {
             expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
                 data: expect.objectContaining({
                     actorUserId: 'staff-admin',
+                    actorRole: 'ADMIN',
                     action: 'ticket.batch_generate',
                     targetType: 'SCHEDULED_SESSION',
                     targetId: SESSION_ID,
@@ -269,6 +270,22 @@ describe('/api/ops/admission', () => {
                 );
                 expect(status).toBe(403);
             }
+        });
+
+        it('gives FACILITATOR_OP the same batch authority as ADMIN', async () => {
+            mockPrisma.webSession.findUnique.mockResolvedValue(staffSession('FACILITATOR_OP'));
+            const { POST } = await loadRoute();
+            const { status } = await parseResponse(
+                await POST(authed('http://localhost/api/ops/admission', {
+                    method: 'POST',
+                    body: generateBody(1),
+                })),
+            );
+
+            expect(status).toBe(201);
+            expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
+                data: expect.objectContaining({ actorRole: 'FACILITATOR_OP' }),
+            });
         });
     });
 
@@ -393,6 +410,26 @@ describe('/api/ops/admission', () => {
                 body: { action: 'comp', sessionId: SESSION_ID, tier: 'SUPPORT_OVERRIDE', reason: 'support case 7' },
             })));
             expect(status).toBe(403);
+        });
+
+        it('lets FACILITATOR_OP issue both comp and support override tiers', async () => {
+            mockPrisma.webSession.findUnique.mockResolvedValue(staffSession('FACILITATOR_OP'));
+            const { POST } = await loadRoute();
+            for (const tier of ['COMP', 'SUPPORT_OVERRIDE']) {
+                const { status } = await parseResponse(await POST(authed(
+                    'http://localhost/api/ops/admission',
+                    {
+                        method: 'POST',
+                        body: {
+                            action: 'comp',
+                            sessionId: SESSION_ID,
+                            tier,
+                            reason: `approved ${tier.toLowerCase()}`,
+                        },
+                    },
+                )));
+                expect(status).toBe(201);
+            }
         });
 
         it('requires a reason', async () => {

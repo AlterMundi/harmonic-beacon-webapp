@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict HfdulNi6iRYG5ik2xVFyvsLq0gcjrmkMXLcwxegYIXQrNAKlUnSnbrCpXni7pix
+\restrict ba5cXSBUBVZE0cRgAciQ7O8yMohpgB3cIhbPNbjdYq2qYWh7YoSzKuz8qQBG37P
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -47,7 +47,8 @@ CREATE TYPE public."SessionLanguage" AS ENUM (
 CREATE TYPE public."StaffRole" AS ENUM (
     'FACILITATOR',
     'OPERATOR',
-    'ADMIN'
+    'ADMIN',
+    'FACILITATOR_OP'
 );
 
 
@@ -107,7 +108,8 @@ CREATE TABLE public.audit_logs (
     target_id text NOT NULL,
     reason text,
     metadata jsonb,
-    created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    actor_role public."StaffRole"
 );
 
 
@@ -131,6 +133,7 @@ CREATE TABLE public.scheduled_sessions (
     facilitator_id uuid NOT NULL,
     created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp(3) without time zone NOT NULL,
+    is_test boolean DEFAULT false NOT NULL,
     CONSTRAINT scheduled_sessions_weekend_attendee_cap_check CHECK ((attendee_cap = 150)),
     CONSTRAINT scheduled_sessions_weekend_max_publishers_check CHECK ((max_publishers = 6)),
     CONSTRAINT scheduled_sessions_weekend_paid_mode_check CHECK ((paid_mode = true))
@@ -222,6 +225,8 @@ CREATE TABLE public.web_sessions (
     revoked_by_user_id uuid,
     revocation_reason text,
     created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    display_name text,
+    CONSTRAINT web_sessions_display_name_length CHECK (((display_name IS NULL) OR ((char_length(display_name) >= 1) AND (char_length(display_name) <= 60)))),
     CONSTRAINT web_sessions_one_principal_check CHECK (((((staff_user_id IS NOT NULL))::integer + ((ticket_entitlement_id IS NOT NULL))::integer) = 1)),
     CONSTRAINT web_sessions_revocation_check CHECK ((((revoked_at IS NULL) AND (revocation_reason IS NULL)) OR ((revoked_at IS NOT NULL) AND (revocation_reason IS NOT NULL))))
 );
@@ -232,7 +237,10 @@ CREATE TABLE public.web_sessions (
 --
 
 COPY public._prisma_migrations (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count) FROM stdin;
-810f3d42-95c1-4935-b9bf-46c2606c5ece	0ebfb48f939f53716f741c62751c82fcfe2f57c461896dc7127ce6ecf8b8eb0b	2026-07-31 03:40:40.34573+00	20260728120000_weekend_mvp	\N	\N	2026-07-31 03:40:40.226566+00	1
+3d1b4d8b-7358-423a-91ac-0683a55de1c4	0ebfb48f939f53716f741c62751c82fcfe2f57c461896dc7127ce6ecf8b8eb0b	2026-07-31 23:05:57.539702+00	20260728120000_weekend_mvp	\N	\N	2026-07-31 23:05:57.449675+00	1
+446a3fc0-8787-4e3f-b8b2-21531e0387af	7f92910f12031b69fc000b9873e6a709fccf7e0c2d199cd45b392825c707e767	2026-07-31 23:05:57.545261+00	20260731223000_web_session_display_name	\N	\N	2026-07-31 23:05:57.540799+00	1
+e1865cfa-9ac2-4aec-949a-0f80e32e4fbf	1e412a1954883d5896e130d3da5822749fe82bf486d5ba2671560e54acfe2fdd	2026-07-31 23:05:57.550187+00	20260731234500_facilitator_op	\N	\N	2026-07-31 23:05:57.546402+00	1
+3da970fb-49e1-4ebd-80ce-9b320c32152f	b1d42f63d95ebb9b9b38a1c76eae804f3c22253b8de98206fc240cdbb4958578	2026-07-31 23:05:57.556546+00	20260801010000_scheduled_session_is_test	\N	\N	2026-07-31 23:05:57.551274+00	1
 \.
 
 
@@ -240,7 +248,7 @@ COPY public._prisma_migrations (id, checksum, finished_at, migration_name, logs,
 -- Data for Name: audit_logs; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.audit_logs (id, actor_user_id, action, target_type, target_id, reason, metadata, created_at) FROM stdin;
+COPY public.audit_logs (id, actor_user_id, action, target_type, target_id, reason, metadata, created_at, actor_role) FROM stdin;
 \.
 
 
@@ -248,9 +256,9 @@ COPY public.audit_logs (id, actor_user_id, action, target_type, target_id, reaso
 -- Data for Name: scheduled_sessions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.scheduled_sessions (id, title, description, room_name, language, scheduled_at, started_at, ended_at, status, paid_mode, attendee_cap, max_publishers, facilitator_id, created_at, updated_at) FROM stdin;
-10000000-0000-4000-8000-000000000101	Harmonic Projection — Sesión en Español (test)	Test fixture session. Spanish, Saturday 2026-08-01 08:30 Costa Rica.	weekend-test-spanish	SPANISH	2026-08-01 14:30:00	\N	\N	SCHEDULED	t	150	6	f9f85a6c-4a8a-4e01-bb21-29aa82f58e2b	2026-07-31 03:40:41.592	2026-07-31 03:40:41.592
-10000000-0000-4000-8000-000000000102	Harmonic Projection — English Session (test)	Test fixture session. English, Saturday 2026-08-01 12:30 Costa Rica.	weekend-test-english	ENGLISH	2026-08-01 18:30:00	\N	\N	SCHEDULED	t	150	6	f9f85a6c-4a8a-4e01-bb21-29aa82f58e2b	2026-07-31 03:40:41.637	2026-07-31 03:40:41.637
+COPY public.scheduled_sessions (id, title, description, room_name, language, scheduled_at, started_at, ended_at, status, paid_mode, attendee_cap, max_publishers, facilitator_id, created_at, updated_at, is_test) FROM stdin;
+10000000-0000-4000-8000-000000000101	Harmonic Projection — Sesión en Español (test)	Test fixture session. Spanish, Saturday 2026-08-01 08:30 Costa Rica.	weekend-test-spanish	SPANISH	2026-08-01 14:30:00	\N	\N	SCHEDULED	t	150	6	4ef2cdd5-bc38-4acc-8011-81e6a0e9846c	2026-07-31 23:05:58.929	2026-07-31 23:05:58.929	t
+10000000-0000-4000-8000-000000000102	Harmonic Projection — English Session (test)	Test fixture session. English, Saturday 2026-08-01 12:30 Costa Rica.	weekend-test-english	ENGLISH	2026-08-01 18:30:00	\N	\N	SCHEDULED	t	150	6	4ef2cdd5-bc38-4acc-8011-81e6a0e9846c	2026-07-31 23:05:58.976	2026-07-31 23:05:58.976	t
 \.
 
 
@@ -259,8 +267,8 @@ COPY public.scheduled_sessions (id, title, description, room_name, language, sch
 --
 
 COPY public.session_participants (id, scheduled_session_id, participant_identity, ticket_entitlement_id, staff_user_id, joined_at, left_at, raised_at, publish_granted_at, publish_revoked_at, grant_version, grant_reconcile_needed, grant_changed_by_user_id, grant_reason, created_at, updated_at) FROM stdin;
-1cd04490-b460-473f-b21c-acb7256e8b24	10000000-0000-4000-8000-000000000101	test-facilitator-identity	\N	f9f85a6c-4a8a-4e01-bb21-29aa82f58e2b	2026-07-31 03:40:41.603	\N	\N	2026-07-31 03:40:41.602	\N	0	f	f9f85a6c-4a8a-4e01-bb21-29aa82f58e2b	Test fixture facilitator baseline grant	2026-07-31 03:40:41.603	2026-07-31 03:40:41.603
-096b14aa-b3f3-4a01-8f11-2fcf767a6d0d	10000000-0000-4000-8000-000000000102	test-facilitator-identity	\N	f9f85a6c-4a8a-4e01-bb21-29aa82f58e2b	2026-07-31 03:40:41.643	\N	\N	2026-07-31 03:40:41.641	\N	0	f	f9f85a6c-4a8a-4e01-bb21-29aa82f58e2b	Test fixture facilitator baseline grant	2026-07-31 03:40:41.643	2026-07-31 03:40:41.643
+9f6671b4-d1ba-4939-8fa8-11a550cda49c	10000000-0000-4000-8000-000000000101	test-facilitator-identity	\N	4ef2cdd5-bc38-4acc-8011-81e6a0e9846c	2026-07-31 23:05:58.941	\N	\N	2026-07-31 23:05:58.939	\N	0	f	4ef2cdd5-bc38-4acc-8011-81e6a0e9846c	Test fixture facilitator baseline grant	2026-07-31 23:05:58.941	2026-07-31 23:05:58.941
+5aa8fee4-f0d2-4bde-84d0-cf285217aa28	10000000-0000-4000-8000-000000000102	test-facilitator-identity	\N	4ef2cdd5-bc38-4acc-8011-81e6a0e9846c	2026-07-31 23:05:58.98	\N	\N	2026-07-31 23:05:58.979	\N	0	f	4ef2cdd5-bc38-4acc-8011-81e6a0e9846c	Test fixture facilitator baseline grant	2026-07-31 23:05:58.98	2026-07-31 23:05:58.98
 \.
 
 
@@ -269,18 +277,18 @@ COPY public.session_participants (id, scheduled_session_id, participant_identity
 --
 
 COPY public.ticket_entitlements (id, scheduled_session_id, code_digest, code_last_four, tier, state, bound_email, bound_at, expires_at, issued_by_user_id, revoked_at, revoked_by_user_id, revocation_reason, created_at, updated_at) FROM stdin;
-a3c934cc-a8f4-4029-b464-97063ac9feaa	10000000-0000-4000-8000-000000000101	42acb76fe9a22737b31c801165e1e001324014b852f26f36951fc89020561ef5	TESA	GLOBAL_SOUTH	ISSUED	\N	\N	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.611	2026-07-31 03:40:41.611
-909cc003-a292-43f6-b019-44e1055fc397	10000000-0000-4000-8000-000000000101	8e7dcbc67f348b16a031d2da0cde54d74e10f299b909246480e280bf3bd94b26	TESB	GLOBAL_SOUTH	ISSUED	\N	\N	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.616	2026-07-31 03:40:41.616
-776ff3f5-a287-4897-a475-eb2d53b12295	10000000-0000-4000-8000-000000000101	1d6a5c3e2afddfe17462ba0a03c704fd0062392f8970d6d9b5306a179ab98077	TESC	GLOBAL_SOUTH	ISSUED	\N	\N	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.62	2026-07-31 03:40:41.62
-3b8e07ff-7ec7-4c6d-a6f6-5d3e7c78ac21	10000000-0000-4000-8000-000000000101	54475508d917139bdbea92a6d747b2add65320daa7b61cac7fe98f14eaf759e4	TESD	GLOBAL_SOUTH	BOUND	asistente@altermundi.net	2026-07-31 03:40:41.623	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.624	2026-07-31 03:40:41.624
-ddc7e0c4-b994-4115-9300-2fe260489996	10000000-0000-4000-8000-000000000101	21844178b5e420716cfc16ebd2a1755e3fbdd1048c954864846a38c17e9960ae	TESE	GLOBAL_SOUTH	REVOKED	\N	\N	2026-08-02 14:30:00	\N	2026-07-31 03:40:41.627	\N	Test fixture revoked ticket	2026-07-31 03:40:41.628	2026-07-31 03:40:41.628
-ddd5352b-afbe-497b-844c-c4a64621368b	10000000-0000-4000-8000-000000000101	b893360dd78d460d6888db315cde27ae17be97327180166d09f8931886ce1233	TESF	COMP	ISSUED	\N	\N	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.633	2026-07-31 03:40:41.633
-18f1f00f-54cc-4b1d-ba23-56421d75c113	10000000-0000-4000-8000-000000000102	a4b3377372c07f8208c70182309db5a38f61691db6fe2dda457cade98d7c079a	TENA	GLOBAL_NORTH	ISSUED	\N	\N	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.647	2026-07-31 03:40:41.647
-d565e399-71ee-43d5-81c6-ebb4e8f2a73d	10000000-0000-4000-8000-000000000102	b240dec0a42847992ec18d5b2eb2a29570c37242d50b8f64df168e13da5db9bc	TENB	GLOBAL_NORTH	ISSUED	\N	\N	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.651	2026-07-31 03:40:41.651
-98ac9525-4b58-4e42-8d94-2e045c5ce66d	10000000-0000-4000-8000-000000000102	5b3a70d2074b8a6f19a421ae972a5ecace18cd293605ec0df881f4f2d296d66d	TENC	GLOBAL_NORTH	ISSUED	\N	\N	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.654	2026-07-31 03:40:41.654
-4a68238d-03df-4ecb-9212-ceb67bf62f6b	10000000-0000-4000-8000-000000000102	6c4d3ec6f95a81a261b1eaf0ef1acde2e3ff93efb2af9dd0eb4eba735c64129d	TEND	GLOBAL_NORTH	BOUND	attendee@altermundi.net	2026-07-31 03:40:41.656	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.657	2026-07-31 03:40:41.657
-2ed0329d-0ad4-455a-8296-40c3d520a5e6	10000000-0000-4000-8000-000000000102	f2389146861c730028f748af029ec30d5e9f80e76c90fe947eb3b0a2d5dcaba7	TENE	GLOBAL_NORTH	REVOKED	\N	\N	2026-08-02 18:30:00	\N	2026-07-31 03:40:41.66	\N	Test fixture revoked ticket	2026-07-31 03:40:41.661	2026-07-31 03:40:41.661
-05413703-182d-423a-9a42-320f910d2355	10000000-0000-4000-8000-000000000102	8816356813cb30cf247d1185981482ee69046203f587d672bb9deece1785be61	TENF	COMP	ISSUED	\N	\N	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 03:40:41.664	2026-07-31 03:40:41.664
+fe43aec5-78e2-4817-a268-57e37a0f065c	10000000-0000-4000-8000-000000000101	42acb76fe9a22737b31c801165e1e001324014b852f26f36951fc89020561ef5	TESA	GLOBAL_SOUTH	ISSUED	\N	\N	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.95	2026-07-31 23:05:58.95
+1011df82-f914-4a78-944d-3882bf161201	10000000-0000-4000-8000-000000000101	8e7dcbc67f348b16a031d2da0cde54d74e10f299b909246480e280bf3bd94b26	TESB	GLOBAL_SOUTH	ISSUED	\N	\N	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.956	2026-07-31 23:05:58.956
+71e19f0f-74b4-4464-9d9d-0738eabcf637	10000000-0000-4000-8000-000000000101	1d6a5c3e2afddfe17462ba0a03c704fd0062392f8970d6d9b5306a179ab98077	TESC	GLOBAL_SOUTH	ISSUED	\N	\N	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.96	2026-07-31 23:05:58.96
+1697613e-9107-43af-8bf5-90ef046f09a3	10000000-0000-4000-8000-000000000101	54475508d917139bdbea92a6d747b2add65320daa7b61cac7fe98f14eaf759e4	TESD	GLOBAL_SOUTH	BOUND	asistente@altermundi.net	2026-07-31 23:05:58.963	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.965	2026-07-31 23:05:58.965
+4288e669-9cdb-47b0-a916-67bcad9deebf	10000000-0000-4000-8000-000000000101	21844178b5e420716cfc16ebd2a1755e3fbdd1048c954864846a38c17e9960ae	TESE	GLOBAL_SOUTH	REVOKED	\N	\N	2026-08-02 14:30:00	\N	2026-07-31 23:05:58.967	\N	Test fixture revoked ticket	2026-07-31 23:05:58.969	2026-07-31 23:05:58.969
+d5ffade1-bebf-40ee-bf29-fdb6ed61d778	10000000-0000-4000-8000-000000000101	b893360dd78d460d6888db315cde27ae17be97327180166d09f8931886ce1233	TESF	COMP	ISSUED	\N	\N	2026-08-02 14:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.973	2026-07-31 23:05:58.973
+fa9e1e29-1340-42ad-821b-900ad5f3d58b	10000000-0000-4000-8000-000000000102	a4b3377372c07f8208c70182309db5a38f61691db6fe2dda457cade98d7c079a	TENA	GLOBAL_NORTH	ISSUED	\N	\N	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.985	2026-07-31 23:05:58.985
+f4701940-f51d-40f0-a6da-00be6a31029e	10000000-0000-4000-8000-000000000102	b240dec0a42847992ec18d5b2eb2a29570c37242d50b8f64df168e13da5db9bc	TENB	GLOBAL_NORTH	ISSUED	\N	\N	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.988	2026-07-31 23:05:58.988
+1341eafe-9e8c-4140-b329-e7f60b10a9cd	10000000-0000-4000-8000-000000000102	5b3a70d2074b8a6f19a421ae972a5ecace18cd293605ec0df881f4f2d296d66d	TENC	GLOBAL_NORTH	ISSUED	\N	\N	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.991	2026-07-31 23:05:58.991
+b7815c2d-1d0f-4490-8a00-a30053653e24	10000000-0000-4000-8000-000000000102	6c4d3ec6f95a81a261b1eaf0ef1acde2e3ff93efb2af9dd0eb4eba735c64129d	TEND	GLOBAL_NORTH	BOUND	attendee@altermundi.net	2026-07-31 23:05:58.994	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 23:05:58.994	2026-07-31 23:05:58.994
+56fa9822-edfb-48f3-8120-a383ccd1966f	10000000-0000-4000-8000-000000000102	f2389146861c730028f748af029ec30d5e9f80e76c90fe947eb3b0a2d5dcaba7	TENE	GLOBAL_NORTH	REVOKED	\N	\N	2026-08-02 18:30:00	\N	2026-07-31 23:05:58.997	\N	Test fixture revoked ticket	2026-07-31 23:05:58.998	2026-07-31 23:05:58.998
+7e73b5de-9119-4823-a37b-58f4e3e22d72	10000000-0000-4000-8000-000000000102	8816356813cb30cf247d1185981482ee69046203f587d672bb9deece1785be61	TENF	COMP	ISSUED	\N	\N	2026-08-02 18:30:00	\N	\N	\N	\N	2026-07-31 23:05:59.001	2026-07-31 23:05:59.001
 \.
 
 
@@ -289,10 +297,10 @@ d565e399-71ee-43d5-81c6-ebb4e8f2a73d	10000000-0000-4000-8000-000000000102	b240de
 --
 
 COPY public.users (id, email, name, role, password_digest, disabled_at, created_at, updated_at) FROM stdin;
-f9f85a6c-4a8a-4e01-bb21-29aa82f58e2b	facilitator@altermundi.net	Test Facilitator	FACILITATOR	scrypt$Zml4dHVyZS1zYWx0LWZhYzAx$YB4mTzvK9c6bopNNFRVz2TVvtVAElu6v58-geir3Vvc	\N	2026-07-31 03:40:41.41	2026-07-31 03:40:41.41
-9a05dae0-c2ed-4fb5-9055-038148771a3d	operator1@altermundi.net	Test Operator One	OPERATOR	scrypt$Zml4dHVyZS1zYWx0LW9wMDAx$Zf4xXnLOsV-mF3HANjmOmh7K9viVI5NgpbnmMYf6TO8	\N	2026-07-31 03:40:41.471	2026-07-31 03:40:41.471
-66eab636-c5b6-4371-8578-c7807d7c266e	operator2@altermundi.net	Test Operator Two	OPERATOR	scrypt$Zml4dHVyZS1zYWx0LW9wMDAy$ua1yfWxwDYrpb3t8_9LJlzlhNWLIisM4mJy-AQ5WOdI	\N	2026-07-31 03:40:41.525	2026-07-31 03:40:41.525
-58792573-09fa-46a5-8eba-166fa4bd45af	admin@altermundi.net	Test Admin	ADMIN	scrypt$Zml4dHVyZS1zYWx0LWFkbTAx$kSd1m-XyTYTZvI1N_z7XOmmlc8-gVXf7ulIzRcIohvg	\N	2026-07-31 03:40:41.578	2026-07-31 03:40:41.578
+4ef2cdd5-bc38-4acc-8011-81e6a0e9846c	facilitator@altermundi.net	Test Facilitator	FACILITATOR	scrypt$Zml4dHVyZS1zYWx0LWZhYzAx$YB4mTzvK9c6bopNNFRVz2TVvtVAElu6v58-geir3Vvc	\N	2026-07-31 23:05:58.738	2026-07-31 23:05:58.738
+5f55d489-f739-4685-b315-3ce8fbb36d57	operator1@altermundi.net	Test Operator One	OPERATOR	scrypt$Zml4dHVyZS1zYWx0LW9wMDAx$Zf4xXnLOsV-mF3HANjmOmh7K9viVI5NgpbnmMYf6TO8	\N	2026-07-31 23:05:58.805	2026-07-31 23:05:58.805
+ca77ec19-55bc-476d-977f-5fe30a4e8554	operator2@altermundi.net	Test Operator Two	OPERATOR	scrypt$Zml4dHVyZS1zYWx0LW9wMDAy$ua1yfWxwDYrpb3t8_9LJlzlhNWLIisM4mJy-AQ5WOdI	\N	2026-07-31 23:05:58.86	2026-07-31 23:05:58.86
+aa79c5c3-6ded-45b5-8813-7802203a3f2b	admin@altermundi.net	Test Admin	ADMIN	scrypt$Zml4dHVyZS1zYWx0LWFkbTAx$kSd1m-XyTYTZvI1N_z7XOmmlc8-gVXf7ulIzRcIohvg	\N	2026-07-31 23:05:58.915	2026-07-31 23:05:58.915
 \.
 
 
@@ -300,7 +308,7 @@ f9f85a6c-4a8a-4e01-bb21-29aa82f58e2b	facilitator@altermundi.net	Test Facilitator
 -- Data for Name: web_sessions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.web_sessions (id, token_digest, staff_user_id, ticket_entitlement_id, expires_at, last_seen_at, revoked_at, revoked_by_user_id, revocation_reason, created_at) FROM stdin;
+COPY public.web_sessions (id, token_digest, staff_user_id, ticket_entitlement_id, expires_at, last_seen_at, revoked_at, revoked_by_user_id, revocation_reason, created_at, display_name) FROM stdin;
 \.
 
 
@@ -586,5 +594,4 @@ ALTER TABLE ONLY public.web_sessions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict HfdulNi6iRYG5ik2xVFyvsLq0gcjrmkMXLcwxegYIXQrNAKlUnSnbrCpXni7pix
-
+\unrestrict ba5cXSBUBVZE0cRgAciQ7O8yMohpgB3cIhbPNbjdYq2qYWh7YoSzKuz8qQBG37P

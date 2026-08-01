@@ -1,27 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
     AUXILIARY_DIMENSIONS,
     MAX_AUXILIARY_TILES,
     SPOTLIGHT_DIMENSIONS,
     STAGE_MAX_PUBLISHERS,
-    selectStageArrangement,
+    composeStageScene,
+    stagePresenceTone,
     type StagePublisher,
 } from '@/lib/stage-layout';
 
-/**
- * WEEKEND_MVP_ROADMAP.md WS2-02: "every audience client renders exactly one
- * spotlight at the 720p-sized layout and at most five 360p-sized tiles;
- * non-publishers never create tiles" and "active-speaker change moves the
- * speaker to the spotlight".
- *
- * Those are decisions about *who* occupies *which* slot, so they are provable
- * here without a browser, a room, or an SDK mock.
- */
-
 function publisher(overrides: Partial<StagePublisher> & { identity: string }): StagePublisher {
     return {
-        label: 'Attendee',
+        label: overrides.identity,
         isLocal: false,
         isFacilitator: false,
         isSpeaking: false,
@@ -33,180 +24,180 @@ function publisher(overrides: Partial<StagePublisher> & { identity: string }): S
     };
 }
 
-/** Julián plus five rotating slots, in the order a stage fills up. */
-function sixPublishers(): StagePublisher[] {
+function roster(count = 6): StagePublisher[] {
     return [
-        publisher({ identity: 'julian', label: 'Facilitator', isFacilitator: true, grantOrder: 0 }),
-        publisher({ identity: 'aux-1', grantOrder: 1 }),
-        publisher({ identity: 'aux-2', grantOrder: 2 }),
-        publisher({ identity: 'aux-3', grantOrder: 3 }),
-        publisher({ identity: 'aux-4', grantOrder: 4 }),
-        publisher({ identity: 'aux-5', grantOrder: 5 }),
-    ];
+        publisher({ identity: 'facilitator', isFacilitator: true, grantOrder: 0 }),
+        ...Array.from({ length: Math.max(0, count - 1) }, (_, index) =>
+            publisher({ identity: `person-${index + 1}`, grantOrder: index + 1 }),
+        ),
+    ].slice(0, count);
 }
 
-describe('stage-layout constants', () => {
-    it('pins the weekend cap at six tiles: one spotlight plus five auxiliaries', () => {
+describe('stage scene constants', () => {
+    it('keeps the six-decoder cap and one high/five standard dimensions', () => {
         expect(STAGE_MAX_PUBLISHERS).toBe(6);
         expect(MAX_AUXILIARY_TILES).toBe(5);
-    });
-
-    it('asks for the 720p layer in the spotlight and 360p in the strip', () => {
         expect(SPOTLIGHT_DIMENSIONS).toEqual({ width: 1280, height: 720 });
         expect(AUXILIARY_DIMENSIONS).toEqual({ width: 640, height: 360 });
     });
 });
 
-describe('selectStageArrangement - the six slots', () => {
-    it('gives Julián and five auxiliaries exactly one spotlight and five strip tiles', () => {
-        const { spotlight, auxiliaries, overflow } = selectStageArrangement(sixPublishers(), {
-            activeSpeakerIdentity: 'julian',
-        });
-
-        expect(spotlight?.identity).toBe('julian');
-        expect(auxiliaries.map((p) => p.identity)).toEqual([
-            'aux-1',
-            'aux-2',
-            'aux-3',
-            'aux-4',
-            'aux-5',
-        ]);
-        expect(overflow).toEqual([]);
+describe('composeStageScene — composition grammar', () => {
+    it.each([
+        [0, 'empty'],
+        [1, 'solo'],
+        [2, 'dyad'],
+        [3, 'circle'],
+        [4, 'circle'],
+        [5, 'chorus'],
+        [6, 'chorus'],
+    ] as const)('maps %i members to %s', (count, kind) => {
+        expect(composeStageScene(roster(count)).kind).toBe(kind);
     });
 
-    it('renders no tiles at all when nobody holds a stage grant', () => {
-        expect(selectStageArrangement([])).toEqual({
-            spotlight: null,
-            auxiliaries: [],
-            overflow: [],
-        });
+    it('collapses duplicate identities before applying the cap and keeps the first record', () => {
+        const first = publisher({ identity: 'same', label: 'First', grantOrder: 0 });
+        const duplicate = publisher({ identity: 'same', label: 'Duplicate', grantOrder: 9 });
+        const composition = composeStageScene([first, duplicate]);
+
+        expect(composition.placements).toHaveLength(1);
+        expect(composition.placements[0].member).toBe(first);
+        expect(composition.overflow).toEqual([]);
     });
 
-    it('refuses a seventh tile even if the room reports a seventh publisher', () => {
-        // The database reservation (WS3-01) is what stops a seventh grant. The
-        // client must not decode a seventh stream on the strength of that.
+    it('caps the canonical grant roster before protagonist selection', () => {
         const eight = [
-            ...sixPublishers(),
-            publisher({ identity: 'aux-6', grantOrder: 6 }),
-            publisher({ identity: 'aux-7', grantOrder: 7 }),
+            ...roster(),
+            publisher({ identity: 'seventh', grantOrder: 6 }),
+            publisher({ identity: 'eighth', grantOrder: 7 }),
         ];
+        const composition = composeStageScene(eight, { protagonistIdentity: 'eighth' });
 
-        const { spotlight, auxiliaries, overflow } = selectStageArrangement(eight, {
-            activeSpeakerIdentity: 'julian',
-        });
-
-        expect(auxiliaries).toHaveLength(MAX_AUXILIARY_TILES);
-        expect(1 + auxiliaries.length).toBe(STAGE_MAX_PUBLISHERS);
-        expect(overflow.map((p) => p.identity)).toEqual(['aux-6', 'aux-7']);
-        expect([spotlight, ...auxiliaries].map((p) => p?.identity)).not.toContain('aux-6');
+        expect(composition.placements).toHaveLength(6);
+        expect(composition.overflow.map((member) => member.identity)).toEqual(['seventh', 'eighth']);
+        expect(composition.placements.map(({ member }) => member.identity)).not.toContain('eighth');
+        expect(composition.placements[0].member.identity).toBe('person-5');
     });
 
-    it('collapses a duplicated identity instead of rendering it twice', () => {
-        const twice = [publisher({ identity: 'aux-1' }), publisher({ identity: 'aux-1' })];
+    it('is permutation-independent when durable grant order is unchanged', () => {
+        const members = roster();
+        const expected = composeStageScene(members).placements.map(({ member }) => member.identity);
 
-        const { spotlight, auxiliaries } = selectStageArrangement(twice);
+        expect(
+            composeStageScene([...members].reverse()).placements.map(({ member }) => member.identity),
+        ).toEqual(expected);
+        expect(
+            composeStageScene([members[3], members[0], members[5], members[2], members[4], members[1]])
+                .placements.map(({ member }) => member.identity),
+        ).toEqual(expected);
+    });
 
-        expect(spotlight?.identity).toBe('aux-1');
-        expect(auxiliaries).toEqual([]);
+    it('uses identity as deterministic tie-breaker', () => {
+        const composition = composeStageScene([
+            publisher({ identity: 'b', grantOrder: 2 }),
+            publisher({ identity: 'a', grantOrder: 2 }),
+        ]);
+
+        // The newest stable canonical non-facilitator is the final tie-broken member.
+        expect(composition.placements.map(({ member }) => member.identity)).toEqual(['b', 'a']);
     });
 });
 
-describe('selectStageArrangement - who gets the spotlight', () => {
-    it('moves the active speaker into the spotlight', () => {
-        const { spotlight, auxiliaries } = selectStageArrangement(sixPublishers(), {
-            activeSpeakerIdentity: 'aux-3',
-        });
+describe('composeStageScene — dramaturgical roles and stable order', () => {
+    it('selects the newest non-facilitator, then facilitator, then holders', () => {
+        const composition = composeStageScene(roster(4));
 
-        expect(spotlight?.identity).toBe('aux-3');
-        expect(auxiliaries.map((p) => p.identity)).toEqual([
-            'julian',
-            'aux-1',
-            'aux-2',
-            'aux-4',
-            'aux-5',
+        expect(composition.placements.map(({ member, role }) => [member.identity, role])).toEqual([
+            ['person-3', 'protagonist'],
+            ['facilitator', 'holder'],
+            ['person-1', 'holder'],
+            ['person-2', 'holder'],
         ]);
     });
 
-    it('keeps the strip in grant order as the speaker changes, so tiles do not shuffle', () => {
-        const publishers = sixPublishers();
-        const firstSpeaker = selectStageArrangement(publishers, { activeSpeakerIdentity: 'aux-1' });
-        const secondSpeaker = selectStageArrangement(publishers, { activeSpeakerIdentity: 'aux-5' });
+    it('makes facilitator and protagonist co-equal dyad members', () => {
+        const composition = composeStageScene(roster(2));
 
-        // Only the two swapped identities move; everyone else holds their slot.
-        expect(firstSpeaker.auxiliaries.map((p) => p.identity)).toEqual([
-            'julian',
-            'aux-2',
-            'aux-3',
-            'aux-4',
-            'aux-5',
-        ]);
-        expect(secondSpeaker.auxiliaries.map((p) => p.identity)).toEqual([
-            'julian',
-            'aux-1',
-            'aux-2',
-            'aux-3',
-            'aux-4',
+        expect(composition.placements.map(({ member, role }) => [member.identity, role])).toEqual([
+            ['person-1', 'protagonist'],
+            ['facilitator', 'facilitator'],
         ]);
     });
 
-    it('lets an operator pin override the active speaker', () => {
-        // Roadmap cut-line 3: automatic switching degrades to an operator pin.
-        const { spotlight } = selectStageArrangement(sixPublishers(), {
-            pinnedIdentity: 'julian',
-            activeSpeakerIdentity: 'aux-3',
-        });
-
-        expect(spotlight?.identity).toBe('julian');
+    it('truthfully labels a facilitator-only solo', () => {
+        expect(composeStageScene(roster(1)).placements[0].role).toBe('facilitator');
     });
 
-    it('spotlights the newest grant when nobody is pinned or speaking', () => {
-        // "The spotlight follows the facilitator-promoted publisher": the
-        // protagonist who was just given the floor is the one to watch.
-        const { spotlight } = selectStageArrangement([
-            publisher({ identity: 'julian', label: 'Facilitator', isFacilitator: true, grantOrder: 0 }),
-            publisher({ identity: 'aux-1', grantOrder: 1 }),
-            publisher({ identity: 'protagonist', grantOrder: 2 }),
-        ]);
+    it('accepts a valid shared protagonist and deterministically ignores a stale one', () => {
+        const members = roster(4);
 
-        expect(spotlight?.identity).toBe('protagonist');
+        expect(
+            composeStageScene(members, { protagonistIdentity: 'person-1' }).placements[0].member.identity,
+        ).toBe('person-1');
+        expect(
+            composeStageScene(members, { protagonistIdentity: 'departed' }).placements[0].member.identity,
+        ).toBe('person-3');
     });
 
-    it('spotlights the facilitator on an otherwise empty stage', () => {
-        const { spotlight } = selectStageArrangement([
-            publisher({ identity: 'operator', label: 'Operator', grantOrder: 0 }),
-            publisher({ identity: 'julian', label: 'Facilitator', isFacilitator: true, grantOrder: 0 }),
-        ]);
+    it('does not change roles or order when the active speaker changes', () => {
+        const members = roster();
+        const first = composeStageScene(members, { activeSpeakerIdentity: 'person-1' });
+        const second = composeStageScene(members, { activeSpeakerIdentity: 'person-4' });
 
-        expect(spotlight?.identity).toBe('julian');
-    });
-
-    it('falls back rather than blanking the stage when the speaker or pin has left', () => {
-        // A demoted or disconnected identity leaves a stale pin/speaker behind.
-        // The stage keeps six tiles and falls through to the newest grant.
-        const publishers = sixPublishers();
-
-        const stalePin = selectStageArrangement(publishers, { pinnedIdentity: 'departed' });
-        const staleSpeaker = selectStageArrangement(publishers, {
-            activeSpeakerIdentity: 'departed',
-        });
-
-        expect(stalePin.spotlight?.identity).toBe('aux-5');
-        expect(staleSpeaker.spotlight?.identity).toBe('aux-5');
-        expect(stalePin.auxiliaries).toHaveLength(5);
-    });
-
-    it('puts the same identities back in the same slots after a rejoin', () => {
-        // A rejoin re-reads the room in whatever order the SDK hands it over.
-        // Slot order comes from the retained grant order, not from arrival order.
-        const original = sixPublishers();
-        const afterRejoin = [...original].reverse();
-
-        const before = selectStageArrangement(original, { activeSpeakerIdentity: 'aux-2' });
-        const after = selectStageArrangement(afterRejoin, { activeSpeakerIdentity: 'aux-2' });
-
-        expect(after.spotlight?.identity).toBe(before.spotlight?.identity);
-        expect(after.auxiliaries.map((p) => p.identity)).toEqual(
-            before.auxiliaries.map((p) => p.identity),
+        expect(second.placements.map(({ member, role, order }) => [member.identity, role, order])).toEqual(
+            first.placements.map(({ member, role, order }) => [member.identity, role, order]),
         );
+        expect(first.placements.find(({ quality }) => quality === 'high')?.member.identity).toBe('person-1');
+        expect(second.placements.find(({ quality }) => quality === 'high')?.member.identity).toBe('person-4');
+    });
+});
+
+describe('composeStageScene — video quality without social reordering', () => {
+    it('gives exactly one connected camera high quality and the others standard', () => {
+        const composition = composeStageScene(roster());
+
+        expect(composition.placements.filter(({ quality }) => quality === 'high')).toHaveLength(1);
+        expect(composition.placements.filter(({ quality }) => quality === 'standard')).toHaveLength(5);
+    });
+
+    it('gives camera-off and reconnecting members no decoder request without moving them', () => {
+        const members = roster(4);
+        members[1] = publisher({ ...members[1], identity: members[1].identity, cameraOn: false });
+        members[2] = publisher({
+            ...members[2],
+            identity: members[2].identity,
+            presence: 'reconnecting',
+        });
+        const baselineOrder = composeStageScene(roster(4)).placements.map(({ member }) => member.identity);
+        const composition = composeStageScene(members, { activeSpeakerIdentity: members[1].identity });
+
+        expect(composition.placements.map(({ member }) => member.identity)).toEqual(baselineOrder);
+        expect(composition.placements.find(({ member }) => member.identity === members[1].identity)?.quality).toBe('none');
+        expect(composition.placements.find(({ member }) => member.identity === members[2].identity)?.quality).toBe('none');
+        expect(composition.placements.filter(({ quality }) => quality === 'high')).toHaveLength(1);
+    });
+
+    it('falls back to the first connected camera when protagonist and active speaker cannot decode', () => {
+        const members = roster(3);
+        members[2] = publisher({ ...members[2], identity: members[2].identity, cameraOn: false });
+        members[1] = publisher({ ...members[1], identity: members[1].identity, cameraOn: false });
+        const composition = composeStageScene(members, { activeSpeakerIdentity: 'person-1' });
+
+        expect(composition.placements.find(({ quality }) => quality === 'high')?.member.identity).toBe('facilitator');
+    });
+
+    it('requests no high layer when every camera is unavailable', () => {
+        const composition = composeStageScene(roster(3).map((member) => ({ ...member, cameraOn: false })));
+        expect(composition.placements.every(({ quality }) => quality === 'none')).toBe(true);
+    });
+});
+
+describe('stagePresenceTone', () => {
+    it('is stable, bounded, and not derived from the display name', () => {
+        expect(stagePresenceTone('opaque-a')).toBe(stagePresenceTone('opaque-a'));
+        for (const identity of ['opaque-a', 'opaque-b', 'opaque-c', 'opaque-d', 'opaque-e']) {
+            expect(stagePresenceTone(identity)).toBeGreaterThanOrEqual(0);
+            expect(stagePresenceTone(identity)).toBeLessThanOrEqual(3);
+        }
     });
 });

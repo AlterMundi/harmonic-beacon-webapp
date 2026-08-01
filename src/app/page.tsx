@@ -15,6 +15,8 @@ import LoginClient from "./login/LoginClient";
 import BrandLockup from "@/components/brand/BrandLockup";
 import PortalOrbit from "@/components/brand/PortalOrbit";
 import LanguageControl from "@/components/brand/LanguageControl";
+import { messages } from "@/lib/i18n";
+import { requestLocale } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +36,10 @@ function safeNext(raw: string | string[] | undefined): string | undefined {
 async function weekendEvents(): Promise<WeekendEvent[] | null> {
     try {
         return await prisma.scheduledSession.findMany({
-            where: { status: { in: ["SCHEDULED", "LIVE"] } },
+            where: {
+                status: { in: ["SCHEDULED", "LIVE"] },
+                isTest: false,
+            },
             orderBy: { scheduledAt: "asc" },
             select: { id: true, language: true, scheduledAt: true },
         });
@@ -64,50 +69,13 @@ function formatTimeOnly(at: Date, locale: string, timeZone: string): string {
     }).format(at);
 }
 
-const COPY = {
-    es: {
-        eyebrow: "PROYECCIÓN ARMÓNICA · SESIÓN VIRTUAL",
-        hero: ["El mito", "está vivo."],
-        lead: "Una experiencia online en vivo para entrar en tu paisaje interior a través del cuerpo, el sonido y las imágenes que ya viven dentro tuyo.",
-        portalLabel: "el regreso",
-        portalSub: "PAGO → PRESENCIA",
-        sessionsHeading: "ELEGÍ TU PORTAL",
-        loginHeading: "¿YA TENÉS TU ENTRADA?",
-        terms: "Términos y privacidad",
-        staff: "Ingreso del equipo",
-        crLabel: "COSTA RICA",
-        arLabel: "ARGENTINA",
-        utcLabel: "UTC",
-        buyTicket: "Comprar entrada",
-        salesSoon: "Las entradas se abren en breve.",
-        unavailable: "Los horarios no están disponibles por el momento — tu código de entrada sigue funcionando.",
-        noSessions: "No hay sesiones programadas por el momento. Volvé a consultar pronto.",
-    },
-    en: {
-        eyebrow: "HARMONIC PROJECTION · VIRTUAL SESSION",
-        hero: ["The myth", "is alive."],
-        lead: "A live online experience to enter your inner landscape through body, sound and the images already living inside you.",
-        portalLabel: "the return",
-        portalSub: "PAYMENT → PRESENCE",
-        sessionsHeading: "CHOOSE YOUR PORTAL",
-        loginHeading: "ALREADY HAVE A TICKET?",
-        terms: "Terms & privacy",
-        staff: "Staff sign-in",
-        crLabel: "COSTA RICA",
-        arLabel: "ARGENTINA",
-        utcLabel: "UTC",
-        buyTicket: "Buy a ticket",
-        salesSoon: "Ticket sales open shortly.",
-        unavailable: "Session times are temporarily unavailable — your ticket code still works.",
-        noSessions: "No sessions are currently scheduled. Check back soon.",
-    },
-} as const;
-
 export default async function LandingPage({
     searchParams,
 }: {
     searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+    const locale = await requestLocale();
+    const copy = messages[locale].landing;
     const next = safeNext((await searchParams).next);
     const events = await weekendEvents();
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
@@ -129,34 +97,24 @@ export default async function LandingPage({
                     <div className="space-y-5">
                         <p className="flex items-center gap-2.5 text-[10px] font-mono uppercase tracking-[0.18em] text-[var(--gold)]">
                             <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--pink)] shadow-[0_0_10px_var(--pink)]" />
-                            <span data-copy="es">{COPY.es.eyebrow}</span>
-                            <span data-copy="en">{COPY.en.eyebrow}</span>
+                            {copy.eyebrow}
                         </p>
                         <h1 className="font-serif text-[clamp(2.8rem,8vw,5rem)] font-normal leading-[0.85] tracking-[-0.04em] text-[var(--paper)]">
-                            <span data-copy="es">{COPY.es.hero[0]}<br />
-                                <em className="text-[var(--lime)] not-italic" style={{ textShadow: "0 0 28px rgba(200,255,122,0.25)" }}>
-                                    {COPY.es.hero[1]}
-                                </em>
-                            </span>
-                            <span data-copy="en">{COPY.en.hero[0]}<br />
-                                <em className="text-[var(--lime)] not-italic" style={{ textShadow: "0 0 28px rgba(200,255,122,0.25)" }}>
-                                    {COPY.en.hero[1]}
-                                </em>
-                            </span>
+                            {copy.heroLead}<br />
+                            <em className="text-[var(--lime)] not-italic" style={{ textShadow: "0 0 28px rgba(200,255,122,0.25)" }}>
+                                {copy.heroAccent}
+                            </em>
                         </h1>
                         <p className="max-w-md text-[15px] leading-[1.75] text-[var(--text-secondary)]">
-                            <span data-copy="es">{COPY.es.lead}</span>
-                            <span data-copy="en">{COPY.en.lead}</span>
+                            {copy.lead}
                         </p>
                     </div>
                     <div className="flex justify-center lg:justify-end">
                         <PortalOrbit size="lg">
                             <div className="text-center">
-                                <span className="block font-serif text-lg text-[var(--gold)]" data-copy="es">{COPY.es.portalLabel}</span>
-                                <span className="block font-serif text-lg text-[var(--gold)]" data-copy="en">{COPY.en.portalLabel}</span>
+                                <span className="block font-serif text-lg text-[var(--gold)]">{copy.portalLabel}</span>
                                 <small className="block font-mono text-[9px] tracking-[0.15em] text-[var(--muted)] uppercase mt-1">
-                                    <span data-copy="es">{COPY.es.portalSub}</span>
-                                    <span data-copy="en">{COPY.en.portalSub}</span>
+                                    {copy.portalSub}
                                 </small>
                             </div>
                         </PortalOrbit>
@@ -166,19 +124,16 @@ export default async function LandingPage({
                 {/* Sessions */}
                 <section className="space-y-5" aria-labelledby="events-heading">
                     <h2 id="events-heading" className="text-xs font-mono uppercase tracking-[0.14em] text-[var(--muted)]">
-                        <span data-copy="es">{COPY.es.sessionsHeading}</span>
-                        <span data-copy="en">{COPY.en.sessionsHeading}</span>
+                        {copy.sessionsHeading}
                     </h2>
 
                     {events === null ? (
                         <div className="event-alert event-alert--warning">
-                            <span data-copy="en">{COPY.en.unavailable}</span>
-                            <span data-copy="es">{COPY.es.unavailable}</span>
+                            {copy.unavailable}
                         </div>
                     ) : events.length === 0 ? (
                         <div className="event-alert event-alert--info">
-                            <span data-copy="en">{COPY.en.noSessions}</span>
-                            <span data-copy="es">{COPY.es.noSessions}</span>
+                            {copy.noSessions}
                         </div>
                     ) : (
                         <ul className="grid gap-4 md:grid-cols-2">
@@ -187,24 +142,24 @@ export default async function LandingPage({
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="space-y-2">
                                             <p className="text-[11px] font-mono uppercase tracking-[0.11em] text-[var(--paper)]">
-                                                {event.language === "ENGLISH" ? "English" : "Español"}
+                                                {event.language === "ENGLISH" ? copy.english : copy.spanish}
                                             </p>
                                             <p className="text-sm text-[var(--text-secondary)]">
-                                                <span className="font-medium text-[var(--paper)]">Costa Rica: </span>
-                                                {formatEventTime(event.scheduledAt, event.language === "ENGLISH" ? "en-US" : "es-CR", "America/Costa_Rica")}
+                                                <span className="font-medium text-[var(--paper)]">{copy.costaRica}: </span>
+                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
                                             </p>
                                             <p className="text-xs text-[var(--text-muted)]">
-                                                <span className="font-medium">Argentina: </span>
-                                                {formatEventTime(event.scheduledAt, event.language === "ENGLISH" ? "en-GB" : "es-AR", "America/Argentina/Buenos_Aires")}
+                                                <span className="font-medium">{copy.argentina}: </span>
+                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-GB" : "es-AR", "America/Argentina/Buenos_Aires")}
                                             </p>
                                             <p className="text-xs text-[var(--text-muted)]">
                                                 <span className="font-medium">UTC: </span>
-                                                {formatEventTime(event.scheduledAt, event.language === "ENGLISH" ? "en-GB" : "es-AR", "UTC")}
+                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-GB" : "es-AR", "UTC")}
                                             </p>
                                         </div>
                                         <div className="text-right">
                                             <p className="font-mono text-lg font-normal text-[var(--gold)]">
-                                                {formatTimeOnly(event.scheduledAt, event.language === "ENGLISH" ? "en-US" : "es-CR", "America/Costa_Rica")}
+                                                {formatTimeOnly(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
                                             </p>
                                             <p className="text-[10px] font-mono text-[var(--cyan)]">
                                                 {event.language === "ENGLISH" ? "US $50" : "US $20"}
@@ -214,9 +169,7 @@ export default async function LandingPage({
 
                                     <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
                                         <p className="text-xs text-[var(--text-secondary)]">
-                                            {event.language === "ENGLISH"
-                                                ? "USD $50 Global North · USD $20 Global South"
-                                                : "USD $50 Norte Global · USD $20 Sur Global"}
+                                            USD $50 {copy.globalNorth} · USD $20 {copy.globalSouth}
                                         </p>
                                         {purchaseUrlFor(event.language) ? (
                                             <a
@@ -225,14 +178,12 @@ export default async function LandingPage({
                                                 rel="noreferrer noopener"
                                                 target="_blank"
                                             >
-                                                <span data-copy="es">{COPY.es.buyTicket}</span>
-                                                <span data-copy="en">{COPY.en.buyTicket}</span>
+                                                {copy.buyTicket}
                                                 <span aria-hidden="true" className="text-base">↗</span>
                                             </a>
                                         ) : (
                                             <p className="mt-3 text-xs text-[var(--text-muted)]">
-                                                <span data-copy="es">{COPY.es.salesSoon}</span>
-                                                <span data-copy="en">{COPY.en.salesSoon}</span>
+                                                {copy.salesSoon}
                                             </p>
                                         )}
                                     </div>
@@ -245,8 +196,7 @@ export default async function LandingPage({
                 {/* Login */}
                 <section className="space-y-5" aria-labelledby="login-heading">
                     <h2 id="login-heading" className="text-xs font-mono uppercase tracking-[0.14em] text-[var(--muted)]">
-                        <span data-copy="es">{COPY.es.loginHeading}</span>
-                        <span data-copy="en">{COPY.en.loginHeading}</span>
+                        {copy.loginHeading}
                     </h2>
                     <div className="max-w-xl">
                         <LoginClient next={next} />
@@ -261,15 +211,13 @@ export default async function LandingPage({
                         rel="noreferrer noopener"
                         target="_blank"
                     >
-                        <span data-copy="es">{COPY.es.terms}</span>
-                        <span data-copy="en">{COPY.en.terms}</span>
+                        {copy.terms}
                     </a>
                     <Link
                         href="/staff/login"
                         className="underline underline-offset-2 transition-colors hover:text-[var(--paper)]"
                     >
-                        <span data-copy="es">{COPY.es.staff}</span>
-                        <span data-copy="en">{COPY.en.staff}</span>
+                        {copy.staff}
                     </Link>
                 </footer>
             </div>

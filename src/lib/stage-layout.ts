@@ -1,20 +1,13 @@
 /**
- * Stage layout policy for the weekend six-publisher room.
+ * Pure dramaturgical stage-composition policy.
  *
- * WEEKEND_MVP_ROADMAP.md §1 "Media contract": the stage carries Julián plus up
- * to five promoted participants. "The active speaker/Julián tile requests the
- * 720p layer; at most five auxiliary tiles request 360p."
- *
- * This module is deliberately free of React and of `livekit-client`: which
- * publisher owns the spotlight is a policy decision that must be provable
- * without a browser, a room, or a mocked SDK. The components in
- * `src/components/session/` render whatever this returns.
+ * This module intentionally knows nothing about React, LiveKit, the DOM, the
+ * viewport, or clocks. It turns a durable stage roster into stable semantic
+ * placement and media-quality decisions. Active speech may change quality,
+ * but never the social or DOM order of the scene.
  */
 
-/** Pinned by the schema and the token route (WS1-01), not by the client. */
 export const STAGE_MAX_PUBLISHERS = 6;
-
-/** One of the six slots is the spotlight, so five auxiliaries remain. */
 export const MAX_AUXILIARY_TILES = STAGE_MAX_PUBLISHERS - 1;
 
 export interface StageVideoDimensions {
@@ -22,121 +15,163 @@ export interface StageVideoDimensions {
     height: number;
 }
 
-/** Layer the spotlight tile asks the SFU for. */
 export const SPOTLIGHT_DIMENSIONS: StageVideoDimensions = { width: 1280, height: 720 };
-
-/** Layer every auxiliary tile asks the SFU for. */
 export const AUXILIARY_DIMENSIONS: StageVideoDimensions = { width: 640, height: 360 };
 
-/**
- * Mirrors `ConnectionQuality` from `livekit-client`, as plain strings so the
- * tile component never imports the SDK.
- */
 export type StageConnectionQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
+export type StagePresence = 'connected' | 'reconnecting' | 'absent';
+export type StageSceneKind = 'empty' | 'solo' | 'dyad' | 'circle' | 'chorus';
+export type StageSceneRole = 'protagonist' | 'facilitator' | 'holder';
+export type StageQualityPriority = 'high' | 'standard' | 'none';
 
 export interface StagePublisher {
-    /** Stable, event-scoped, non-PII identity minted by WS2-01. */
+    /** Stable, event-scoped, non-PII identity. */
     identity: string;
-    /** Role word from the token route ("Facilitator", "Attendee", ...). */
+    /** Actual display name, never the role or opaque identity. */
     label: string;
     isLocal: boolean;
     isFacilitator: boolean;
     isSpeaking: boolean;
-    /** A camera track is published and unmuted. */
     cameraOn: boolean;
-    /** A microphone track is published and unmuted. */
     micOn: boolean;
     connectionQuality: StageConnectionQuality;
-    /**
-     * Monotonic order in which this client first saw the identity hold a stage
-     * grant. Ascending, gap-free per client, and never recycled — so tiles keep
-     * their slot across an active-speaker change, and a rejoin puts the same
-     * identities back in the same places.
-     */
+    /** Stable order assigned when the durable grant is first observed. */
     grantOrder: number;
+    /** Optional explicit reconnect state; old callers degrade from quality. */
+    presence?: StagePresence;
 }
 
-export interface StageArrangement<T> {
-    spotlight: T | null;
-    auxiliaries: T[];
-    /**
-     * Publishers beyond the six-slot cap. The server-side reservation (WS3-01)
-     * makes this empty; the client still refuses to decode a seventh stream
-     * rather than trusting that.
-     */
+export interface StageScenePlacement<T> {
+    member: T;
+    role: StageSceneRole;
+    order: number;
+    quality: StageQualityPriority;
+    presence: StagePresence;
+}
+
+export interface StageSceneComposition<T> {
+    kind: StageSceneKind;
+    placements: StageScenePlacement<T>[];
     overflow: T[];
 }
 
-export interface StageArrangementOptions {
+export interface StageSceneOptions {
     /**
-     * Operator-pinned spotlight. Wins over the active speaker so cut-line 3 of
-     * the roadmap ("automatic active-speaker switching → operator-pinned
-     * spotlight") is a prop change rather than a rewrite.
+     * A shared, durable protagonist selection may be supplied in the future.
+     * This policy does not create, persist, or expose a local pin control.
      */
-    pinnedIdentity?: string | null;
-    /** Loudest current speaker, from `RoomEvent.ActiveSpeakersChanged`. */
+    protagonistIdentity?: string | null;
     activeSpeakerIdentity?: string | null;
 }
 
-/** Slot order: first grant observed goes first, identity breaks exact ties. */
-function bySlot(a: StagePublisher, b: StagePublisher): number {
+function byGrantOrder(a: StagePublisher, b: StagePublisher): number {
     return a.grantOrder - b.grantOrder || a.identity.localeCompare(b.identity);
 }
 
-/**
- * Fallback spotlight when nobody is pinned and nobody is speaking: the most
- * recently granted publisher, which is the participant the facilitator just
- * promoted. A facilitator wins an exact tie, so an empty stage spotlights
- * Julián rather than an arbitrary identity.
- */
-function byMostRecentGrant(a: StagePublisher, b: StagePublisher): number {
-    return (
-        b.grantOrder - a.grantOrder ||
-        Number(b.isFacilitator) - Number(a.isFacilitator) ||
-        a.identity.localeCompare(b.identity)
-    );
+function presenceOf(member: StagePublisher): StagePresence {
+    if (member.presence) return member.presence;
+    return member.connectionQuality === 'lost' ? 'reconnecting' : 'connected';
+}
+
+function sceneKindFor(count: number): StageSceneKind {
+    if (count === 0) return 'empty';
+    if (count === 1) return 'solo';
+    if (count === 2) return 'dyad';
+    if (count <= 4) return 'circle';
+    return 'chorus';
+}
+
+function canRequestVideo(member: StagePublisher): boolean {
+    return presenceOf(member) === 'connected' && member.cameraOn;
 }
 
 /**
- * Split the current stage publishers into one spotlight and up to five
- * auxiliaries.
+ * Compose 0–6 unique grant holders into a stable scene.
  *
- * Callers pass only participants that hold a stage grant; this function never
- * invents a tile for a subscribe-only attendee. Duplicate identities are
- * collapsed, because rendering the same identity twice is how a video element
- * gets leaked.
+ * Duplicate identities collapse before the cap. The first canonical record
+ * wins. The cap is then applied in stable grant order, so a seventh arrival
+ * can never displace or cause decoding of an existing scene member.
  */
-export function selectStageArrangement<T extends StagePublisher>(
+export function composeStageScene<T extends StagePublisher>(
     publishers: readonly T[],
-    options: StageArrangementOptions = {},
-): StageArrangement<T> {
+    options: StageSceneOptions = {},
+): StageSceneComposition<T> {
     const unique = new Map<string, T>();
     for (const publisher of publishers) {
-        if (!unique.has(publisher.identity)) {
-            unique.set(publisher.identity, publisher);
-        }
-    }
-    const candidates = [...unique.values()];
-    if (candidates.length === 0) {
-        return { spotlight: null, auxiliaries: [], overflow: [] };
+        if (!unique.has(publisher.identity)) unique.set(publisher.identity, publisher);
     }
 
-    const spotlight =
-        (options.pinnedIdentity
-            ? candidates.find((p) => p.identity === options.pinnedIdentity)
+    const canonical = [...unique.values()].sort(byGrantOrder);
+    const members = canonical.slice(0, STAGE_MAX_PUBLISHERS);
+    const overflow = canonical.slice(STAGE_MAX_PUBLISHERS);
+    const kind = sceneKindFor(members.length);
+    if (members.length === 0) return { kind, placements: [], overflow };
+
+    const selectedProtagonist =
+        (options.protagonistIdentity
+            ? members.find((member) => member.identity === options.protagonistIdentity)
             : undefined) ??
+        [...members]
+            .filter((member) => !member.isFacilitator)
+            .sort((a, b) => -byGrantOrder(a, b))[0] ??
+        members.find((member) => member.isFacilitator) ??
+        members[0];
+
+    const facilitator = members.find((member) => member.isFacilitator);
+    const ordered = [
+        selectedProtagonist,
+        ...(facilitator && facilitator.identity !== selectedProtagonist.identity
+            ? [facilitator]
+            : []),
+        ...members.filter(
+            (member) =>
+                member.identity !== selectedProtagonist.identity &&
+                member.identity !== facilitator?.identity,
+        ),
+    ];
+
+    const highQualityMember =
         (options.activeSpeakerIdentity
-            ? candidates.find((p) => p.identity === options.activeSpeakerIdentity)
+            ? ordered.find(
+                (member) =>
+                    member.identity === options.activeSpeakerIdentity && canRequestVideo(member),
+            )
             : undefined) ??
-        [...candidates].sort(byMostRecentGrant)[0];
-
-    const rest = candidates
-        .filter((p) => p.identity !== spotlight.identity)
-        .sort(bySlot);
+        (canRequestVideo(selectedProtagonist) ? selectedProtagonist : undefined) ??
+        ordered.find(canRequestVideo);
 
     return {
-        spotlight,
-        auxiliaries: rest.slice(0, MAX_AUXILIARY_TILES),
-        overflow: rest.slice(MAX_AUXILIARY_TILES),
+        kind,
+        placements: ordered.map((member, order) => {
+            const isSelectedProtagonist = member.identity === selectedProtagonist.identity;
+            const isDyadFacilitator =
+                kind === 'dyad' && member.identity === facilitator?.identity && !isSelectedProtagonist;
+            const isSoloFacilitator = kind === 'solo' && member.isFacilitator;
+            const role: StageSceneRole = isSoloFacilitator
+                ? 'facilitator'
+                : isSelectedProtagonist
+                    ? 'protagonist'
+                    : isDyadFacilitator
+                        ? 'facilitator'
+                        : 'holder';
+            const presence = presenceOf(member);
+            const quality: StageQualityPriority = !canRequestVideo(member)
+                ? 'none'
+                : member.identity === highQualityMember?.identity
+                    ? 'high'
+                    : 'standard';
+            return { member, role, order, quality, presence };
+        }),
+        overflow,
     };
+}
+
+/** A stable, non-identifying visual tone derived from the opaque identity. */
+export function stagePresenceTone(identity: string): 0 | 1 | 2 | 3 {
+    let hash = 2166136261;
+    for (let index = 0; index < identity.length; index += 1) {
+        hash ^= identity.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (Math.abs(hash) % 4) as 0 | 1 | 2 | 3;
 }
