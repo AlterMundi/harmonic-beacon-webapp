@@ -88,6 +88,8 @@ export default function LoginClient({ next }: { next?: string }) {
                     required
                     autoComplete="off"
                     autoCapitalize="characters"
+                    maxLength={80}
+                    placeholder="HB1-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
                     spellCheck={false}
                     className="event-field font-mono tracking-wider"
                     aria-describedby="ticket-code-hint"

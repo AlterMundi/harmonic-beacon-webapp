@@ -8,7 +8,17 @@ export type TicketCodeStorage = {
 };
 
 export function normalizeTicketCode(code: string): string {
-    return code.trim().toUpperCase();
+    const normalized = code.trim().toUpperCase();
+    const compact = normalized.replace(/[\s-]/g, '');
+    if (/^HB1[A-HJ-NP-Z2-9]{32}$/.test(compact)) {
+        const payload = compact.slice(3);
+        return `HB1-${payload.match(/.{4}/g)!.join('-')}`;
+    }
+    return normalized;
+}
+
+export function isCanonicalCommerceCredential(code: string): boolean {
+    return /^HB1(?:-[A-HJ-NP-Z2-9]{4}){8}$/.test(code);
 }
 
 export function ticketCodePepper(

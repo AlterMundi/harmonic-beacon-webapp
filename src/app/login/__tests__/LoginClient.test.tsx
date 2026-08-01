@@ -163,4 +163,14 @@ describe('LoginClient', () => {
         expect(screen.getByText('Ticket code')).toBeInTheDocument();
         expect(screen.getByText(/work again after a refresh or a dropped/)).toBeInTheDocument();
     });
+
+    it('shows the canonical long HB1 shape and leaves room for pasted separators', () => {
+        renderLogin('en');
+
+        expect(screen.getByLabelText('Ticket code')).toHaveAttribute(
+            'placeholder',
+            'HB1-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX',
+        );
+        expect(screen.getByLabelText('Ticket code')).toHaveAttribute('maxlength', '80');
+    });
 });
