@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "ci": {
+      "eventLanguage": "es",
+      "attendees": 4,
+      "stagePublishers": 2,
+      "beaconPublishers": 1,
+      "rampPerSecond": 4,
+      "rampDurationSeconds": 6,
+      "soakDurationSeconds": 8,
+      "reconnectDurationSeconds": 4,
+      "reconnectWaves": 1,
+      "reconnectMode": "simultaneous",
+      "interWaveSeconds": 1,
+      "maxDroppedPercent": 0
+    },
+    "rehearsal-es": {
+      "eventLanguage": "es",
+      "attendees": 150,
+      "stagePublishers": 6,
+      "beaconPublishers": 1,
+      "rampPerSecond": 10,
+      "rampDurationSeconds": 60,
+      "soakDurationSeconds": 1200,
+      "reconnectDurationSeconds": 60,
+      "reconnectWaves": 2,
+      "reconnectMode": "staggered",
+      "interWaveSeconds": 10,
+      "maxDroppedPercent": 0.1
+    },
+    "rehearsal-en": {
+      "eventLanguage": "en",
+      "attendees": 150,
+      "stagePublishers": 6,
+      "beaconPublishers": 1,
+      "rampPerSecond": 10,
+      "rampDurationSeconds": 60,
+      "soakDurationSeconds": 1200,
+      "reconnectDurationSeconds": 60,
+      "reconnectWaves": 2,
+      "reconnectMode": "staggered",
+      "interWaveSeconds": 10,
+      "maxDroppedPercent": 0.1
+    }
+  }
+}
