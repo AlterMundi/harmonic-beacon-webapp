@@ -22,8 +22,8 @@ Pre-create the shared network once on mona:
 sudo -n docker network create --driver bridge --internal pmp_beacon_internal
 ```
 
-Only `beacon-app` and `pmp-myth-worker` join it. PostgreSQL, LiveKit, playlist
-bot and tapestry remain off this network. No host port is published. Public
+Only `beacon-app`, `pmp-myth-worker`, and `pmp-myth-worker-secondary` join it.
+PostgreSQL, LiveKit, playlist bot and tapestry remain off this network. No host port is published. Public
 Nginx returns 404 for `/api/internal` and descendants; bearer authentication is
 still mandatory on the private bridge.
 

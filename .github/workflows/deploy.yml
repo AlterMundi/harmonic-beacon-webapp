@@ -35,13 +35,9 @@ jobs:
           sudo -n test -r /etc/harmonic-beacon/commerce.env
           test "$(sudo -n stat -c '%a:%U:%G' /etc/harmonic-beacon/commerce.env)" = "600:root:root"
           test "$(sudo -n docker network inspect pmp_beacon_internal --format '{{.Internal}}')" = true
-          while IFS= read -r member; do
-            case "$member" in
-              ''|beacon-app|pmp-myth-worker|pmp-myth-bot-worker) ;;
-              *) echo "Unexpected container on pmp_beacon_internal: $member" >&2; exit 1 ;;
-            esac
-          done < <(sudo -n docker network inspect pmp_beacon_internal \
-            --format '{{range .Containers}}{{println .Name}}{{end}}')
+          members="$(sudo -n docker network inspect pmp_beacon_internal \
+            --format '{{range .Containers}}{{println .Name}}{{end}}' | sort)"
+          test "$members" = $'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
           sudo -n docker compose --project-name app \
             --env-file /etc/harmonic-beacon/production.env config --quiet
 
@@ -107,7 +103,7 @@ jobs:
           set -euo pipefail
           members="$(sudo -n docker network inspect pmp_beacon_internal \
             --format '{{range .Containers}}{{println .Name}}{{end}}' | sort)"
-          test "$members" = $'beacon-app\npmp-myth-worker'
+          test "$members" = $'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
 
           container_has_env_name() {
             sudo -n docker inspect "$1" \
@@ -123,6 +119,7 @@ jobs:
           container_has_env_name beacon-app BEACON_COMMERCE_SERVICE_KEY_CURRENT
           for container in beacon-postgres beacon-livekit beacon-playlist-bot \
             beacon-tapestry beacon-commerce-reconciler pmp-myth-api \
+            pmp-myth-worker pmp-myth-worker-secondary \
             pmp-myth-postgres pmp-myth-waha pmp-myth-rag pmp-myth-gateway; do
             if sudo -n docker inspect "$container" >/dev/null 2>&1 && \
               container_has_commerce_key "$container"; then
