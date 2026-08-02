@@ -42,6 +42,7 @@ const RATE_LIMITED = 'Too many attempts. Please wait and try again.';
 const MALFORMED_REQUEST = 'A display name, ticket code and email address are required.';
 const INVITATION_TERMS_VERSION = 'personal-invitation-v2';
 const INVITATION_RETURN_URL = 'https://harmonicbeacon.com/invitacion/';
+const PUBLIC_APP_ORIGIN = 'https://live.harmonicbeacon.com';
 
 type FailureReason =
     | 'malformed_request'
@@ -144,7 +145,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const response = isInvitationForm
         ? NextResponse.redirect(
-            new URL(`/session/${attempt.scheduledSessionId}`, request.url),
+            new URL(`/session/${attempt.scheduledSessionId}`, PUBLIC_APP_ORIGIN),
             { status: 303 },
         )
         : NextResponse.json({ ok: true, scheduledSessionId: attempt.scheduledSessionId });

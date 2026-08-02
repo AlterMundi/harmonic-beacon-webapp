@@ -135,7 +135,9 @@ function loginRequest(body: unknown, address = CLIENT) {
 }
 
 function invitationRequest(overrides: Record<string, string> = {}, address = CLIENT) {
-    return new NextRequest('https://live.harmonicbeacon.com/api/auth/ticket', {
+    // Production reverse-proxy requests reach Next.js with this internal
+    // origin; redirects must never expose it to the attendee.
+    return new NextRequest('http://0.0.0.0:3000/api/auth/ticket', {
         method: 'POST',
         headers: {
             'content-type': 'application/x-www-form-urlencoded',
