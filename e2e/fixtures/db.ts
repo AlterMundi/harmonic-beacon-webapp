@@ -63,6 +63,44 @@ export async function withSessionStatus<T>(
     }
 }
 
+/** Replace fixture event titles for a layout test, then restore them exactly. */
+export async function withSessionTitles<T>(
+    databaseUrl: string,
+    titles: ReadonlyArray<{ id: string; title: string }>,
+    run: () => Promise<T>,
+): Promise<T> {
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+        const ids = titles.map(({ id }) => id);
+        const { rows } = await client.query<{ id: string; title: string }>(
+            'select id, title from scheduled_sessions where id = any($1::uuid[])',
+            [ids],
+        );
+        if (rows.length !== ids.length) {
+            throw new Error('one or more fixture sessions were not found');
+        }
+        for (const fixture of titles) {
+            await client.query('update scheduled_sessions set title = $1 where id = $2', [
+                fixture.title,
+                fixture.id,
+            ]);
+        }
+        try {
+            return await run();
+        } finally {
+            for (const original of rows) {
+                await client.query('update scheduled_sessions set title = $1 where id = $2', [
+                    original.title,
+                    original.id,
+                ]);
+            }
+        }
+    } finally {
+        await client.end();
+    }
+}
+
 /**
  * Exercise a complete doors-open/doors-closed journey from a known baseline,
  * then put the shared fixture back exactly as it was. Unlike

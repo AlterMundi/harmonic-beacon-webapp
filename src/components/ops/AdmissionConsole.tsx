@@ -339,13 +339,16 @@ export default function AdmissionConsole({ role, events, locale, copy }: Props) 
         <div className="space-y-10">
             <section>
                 <h2 className="mb-2 text-lg font-medium text-[var(--cream)]">{copy.lookup.heading}</h2>
-                <form onSubmit={runLookup} className="flex gap-2">
-                    <input
-                        className="event-field flex-1"
-                        placeholder={copy.lookup.placeholder}
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                    />
+                <form onSubmit={runLookup} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <label className="text-xs leading-5 text-[var(--text-secondary)]">
+                        {copy.lookup.placeholder}
+                        <input
+                            className="event-field mt-1"
+                            placeholder={copy.lookup.placeholder}
+                            value={query}
+                            onChange={(event) => setQuery(event.target.value)}
+                        />
+                    </label>
                     <button
                         type="submit"
                         disabled={busy || !query.trim()}
@@ -380,7 +383,7 @@ export default function AdmissionConsole({ role, events, locale, copy }: Props) 
                                         </span>
                                     )}
                                 </div>
-                                <div className="mt-1 font-mono text-[10px] text-[var(--text-muted)]">ID: {item.id}</div>
+                                <div className="mt-1 font-mono text-xs text-[var(--text-muted)]">ID: {item.id}</div>
                                 {item.revokedAt && (
                                     <div className="mt-1 text-xs text-[var(--danger)]">
                                         {copy.labels.revoked} {new Date(item.revokedAt).toLocaleString(locale === 'es' ? 'es-AR' : 'en-GB')} — {item.revocationReason}
@@ -493,7 +496,7 @@ export default function AdmissionConsole({ role, events, locale, copy }: Props) 
                                 </button>
                             </div>
                             <textarea
-                                className="event-field h-24 font-mono text-xs"
+                                className="event-field !h-32 py-3 font-mono text-xs sm:!h-24"
                                 placeholder={copy.tickets.importPlaceholder}
                                 value={importCsv}
                                 onChange={(event) => setImportCsv(event.target.value)}
@@ -709,7 +712,7 @@ export default function AdmissionConsole({ role, events, locale, copy }: Props) 
                     </p>
                     <textarea
                         readOnly
-                        className="event-field h-40 font-mono text-xs"
+                        className="event-field !h-40 py-3 font-mono text-xs"
                         value={oneTimeCsv}
                         onFocus={(event) => event.target.select()}
                     />

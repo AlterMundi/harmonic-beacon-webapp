@@ -66,7 +66,7 @@ export default async function EventPage({
         <section className="mx-auto max-w-4xl py-4">
             <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <p className="text-[10px] font-mono uppercase tracking-[0.14em] text-[var(--gold)]">
+                    <p className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gold)]">
                         {copy.eventConsole}
                     </p>
                     <h1 className="mt-1 font-serif text-3xl text-[var(--paper)]">

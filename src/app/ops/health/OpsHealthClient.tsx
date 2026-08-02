@@ -69,10 +69,15 @@ function CheckRow({
                 className={`mt-1.5 inline-block h-3 w-3 shrink-0 rounded-full ${styles.dot}`}
             />
             <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                     <span className="font-medium text-[var(--cream)]">{label}</span>
-                    <span className={`text-xs font-semibold uppercase ${styles.text}`}>
-                        {copy.levels[check.status]}
+                    <span className="flex shrink-0 items-baseline gap-3">
+                        <span className={`text-xs font-semibold uppercase ${styles.text}`}>
+                            {copy.levels[check.status]}
+                        </span>
+                        <span className="font-mono text-xs text-[var(--text-muted)]">
+                            {check.latencyMs} ms
+                        </span>
                     </span>
                 </div>
                 <p className="text-sm text-[var(--text-secondary)]">{check.detail}</p>
@@ -82,9 +87,6 @@ function CheckRow({
                     </p>
                 ) : null}
             </div>
-            <span className="shrink-0 font-mono text-xs text-[var(--text-muted)]">
-                {check.latencyMs} ms
-            </span>
         </li>
     );
 }

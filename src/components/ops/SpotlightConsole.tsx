@@ -228,7 +228,7 @@ function HandThumbnail({
                     ◌
                 </span>
             )}
-            <span className="text-center text-[9px] leading-tight text-[var(--text-muted)]" aria-hidden="true">
+            <span className="text-center text-xs leading-tight text-[var(--text-muted)]" aria-hidden="true">
                 {showImage ? `≤${freshForSeconds}s` : copy.noImage}
             </span>
         </div>
@@ -562,7 +562,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                                     <div className="min-w-0">
                                         <span className="font-medium text-[var(--cream)]">{participantLabel(participant)}</span>
                                         {participant.staffRole ? (
-                                            <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
+                                            <span className="ml-2 text-xs uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
                                         ) : null}
                                         <div className="text-xs text-[var(--text-secondary)]">
                                             {connectionBadge(participant, copy)}
@@ -627,7 +627,7 @@ export default function SpotlightConsole({ sessionId, role, copy, staffRoles, on
                                 <span className="text-[var(--cream)]">
                                     {participantLabel(participant)}
                                     {participant.staffRole ? (
-                                        <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
+                                        <span className="ml-2 text-xs uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
                                     ) : null}
                                 </span>
                                 <span className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">

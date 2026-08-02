@@ -379,7 +379,7 @@ body {
   padding: 0 24px;
   border-radius: 999px;
   font-family: var(--font-space-mono), monospace;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -495,7 +495,7 @@ body {
   padding: 4px 10px;
   border-radius: 999px;
   font-family: var(--font-space-mono), monospace;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   border: 1px solid transparent;
@@ -609,7 +609,6 @@ body {
    OPERATOR PANEL
    ============================================ */
 
-.operator-panel,
 .operational-panel {
   background: var(--bg-operator);
   border: 1px solid var(--border-subtle);
@@ -659,7 +658,7 @@ body {
 
 .mono-meta {
   font-family: var(--font-space-mono), monospace;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
@@ -677,7 +676,7 @@ body {
   border: 1px solid rgba(124, 234, 255, 0.25);
   border-radius: 20px;
   font-family: var(--font-space-mono), monospace;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1000,7 +999,7 @@ body {
   background: transparent;
   color: var(--muted);
   font-family: var(--font-space-mono), monospace;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
@@ -1035,7 +1034,7 @@ body {
   .event-button {
     min-height: 44px;
     padding: 0 18px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .terminal-state__title {
