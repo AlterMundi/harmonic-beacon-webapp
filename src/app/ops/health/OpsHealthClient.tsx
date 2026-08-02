@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StaffRole } from '@prisma/client';
 
-import type { Messages, UiLocale } from '@/lib/i18n';
+import { messages, type Messages, type UiLocale } from '@/lib/i18n';
 import type { HealthLevel, OperatorHealthReport, SubsystemCheck } from '@/lib/ops-health';
 import ThumbnailTapestry from '@/components/session/ThumbnailTapestry';
 
@@ -182,7 +182,13 @@ export default function OpsHealthClient({
                 </ul>
             ) : null}
 
-            {report?.session ? <ThumbnailTapestry sessionId={report.session.id} staffOnly /> : null}
+            {report?.session ? (
+                <ThumbnailTapestry
+                    sessionId={report.session.id}
+                    staffOnly
+                    labels={messages[locale].tapestry}
+                />
+            ) : null}
 
             <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
                 <span>
