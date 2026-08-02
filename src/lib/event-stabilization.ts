@@ -6,7 +6,7 @@ import type {
     TicketEntitlementState,
 } from '@prisma/client';
 
-export const EVENT_STABILIZATION_DEADLINE = new Date('2026-08-01T14:20:00.000Z');
+export const EVENT_STABILIZATION_DEADLINE = new Date('2026-08-08T14:20:00.000Z');
 
 export type EventContract = {
     id: string;
@@ -28,8 +28,11 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
         roomName: 'weekend-session-1',
         language: 'SPANISH',
         isTest: false,
-        scheduledAt: '2026-08-01T14:30:00.000Z',
-        acceptedScheduledAt: ['2026-08-01T14:30:00.000Z'],
+        scheduledAt: '2026-08-08T14:30:00.000Z',
+        acceptedScheduledAt: [
+            '2026-08-01T14:30:00.000Z',
+            '2026-08-08T14:30:00.000Z',
+        ],
         acceptedStatuses: ['SCHEDULED', 'LIVE'],
     },
     {
@@ -39,10 +42,11 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
         roomName: 'weekend-session-2',
         language: 'ENGLISH',
         isTest: false,
-        scheduledAt: '2026-08-01T20:00:00.000Z',
+        scheduledAt: '2026-08-08T20:00:00.000Z',
         acceptedScheduledAt: [
             '2026-08-01T18:30:00.000Z',
             '2026-08-01T20:00:00.000Z',
+            '2026-08-08T20:00:00.000Z',
         ],
         acceptedStatuses: ['SCHEDULED', 'LIVE'],
     },
@@ -53,8 +57,11 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
         roomName: 'weekend-test-spanish',
         language: 'SPANISH',
         isTest: true,
-        scheduledAt: '2026-08-01T14:30:00.000Z',
-        acceptedScheduledAt: ['2026-08-01T14:30:00.000Z'],
+        scheduledAt: '2026-08-08T14:30:00.000Z',
+        acceptedScheduledAt: [
+            '2026-08-01T14:30:00.000Z',
+            '2026-08-08T14:30:00.000Z',
+        ],
         acceptedStatuses: ['SCHEDULED', 'LIVE', 'CANCELLED'],
     },
     {
@@ -64,10 +71,11 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
         roomName: 'weekend-test-english',
         language: 'ENGLISH',
         isTest: true,
-        scheduledAt: '2026-08-01T20:00:00.000Z',
+        scheduledAt: '2026-08-08T20:00:00.000Z',
         acceptedScheduledAt: [
             '2026-08-01T18:30:00.000Z',
             '2026-08-01T20:00:00.000Z',
+            '2026-08-08T20:00:00.000Z',
         ],
         acceptedStatuses: ['SCHEDULED', 'LIVE', 'CANCELLED'],
     },

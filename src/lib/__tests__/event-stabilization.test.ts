@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
     assertStabilizationWindow,
+    desiredSessionState,
     EVENT_CONTRACTS,
+    EVENT_STABILIZATION_DEADLINE,
     stabilizationSnapshotDigest,
     type StabilizationSnapshot,
     validateStabilizationSnapshot,
@@ -81,7 +83,17 @@ describe('event stabilization safety contract', () => {
     });
 
     it('refuses execution at and after the ten-minute doors boundary', () => {
-        expect(() => assertStabilizationWindow(new Date('2026-08-01T14:19:59.999Z'))).not.toThrow();
-        expect(() => assertStabilizationWindow(new Date('2026-08-01T14:20:00.000Z'))).toThrow(/Refusing/);
+        expect(() => assertStabilizationWindow(new Date('2026-08-08T14:19:59.999Z'))).not.toThrow();
+        expect(() => assertStabilizationWindow(new Date('2026-08-08T14:20:00.000Z'))).toThrow(/Refusing/);
+    });
+
+    it('pins both production sessions to August 8 and derives the deadline from that release', () => {
+        const [spanish, english] = EVENT_CONTRACTS;
+
+        expect(EVENT_STABILIZATION_DEADLINE.toISOString()).toBe('2026-08-08T14:20:00.000Z');
+        expect(desiredSessionState(spanish, new Date()).scheduledAt.toISOString())
+            .toBe('2026-08-08T14:30:00.000Z');
+        expect(desiredSessionState(english, new Date()).scheduledAt.toISOString())
+            .toBe('2026-08-08T20:00:00.000Z');
     });
 });

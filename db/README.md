@@ -17,7 +17,7 @@ database in the repo, and it is regenerated from `prisma/seed-test-fixtures.ts`.
 | `operator2@altermundi.net` | OPERATOR |
 | `admin@altermundi.net` | ADMIN |
 
-### Sessions (Saturday 2026-08-01, both `SCHEDULED`)
+### Sessions (Saturday 2026-08-08, both `SCHEDULED`)
 
 | Language | Room | Time (Costa Rica) |
 |---|---|---|

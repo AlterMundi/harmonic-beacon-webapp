@@ -1,10 +1,10 @@
 # Harmonic Beacon weekend MVP roadmap
 
-**Target:** first paid events on Saturday 2026-08-01 (two sessions)
+**Target:** first paid events on Saturday 2026-08-08 (two sessions)
 
 **Planning baseline:** `main` at `faf5f13d06aff9c47c133818095f32c8153e0086`
 
-**Final event order:** Session 1: Spanish 8:30 AM Costa Rica (14:30 UTC), Session 2: English 2:00 PM Costa Rica (20:00 UTC), both Saturday.
+**Final event order:** Session 1: Spanish 8:30 AM Costa Rica (14:30 UTC), Session 2: English 2:00 PM Costa Rica (20:00 UTC), both Saturday 2026-08-08.
 
 **Delivery envelope:** 15.0 person-days, assuming four engineering-capable assignees working in parallel plus an ops/commercial owner.
 
@@ -321,7 +321,7 @@ Cards are ordered within each workstream. A dependency means the upstream card's
 
 ## 4. Critical path and integration schedule
 
-### Critical path to Saturday
+### Critical path to the event
 
 There are three converging paths:
 
@@ -331,7 +331,11 @@ There are three converging paths:
 
 WS1-02 and WS2-02 are mandatory parallel branches that must also converge before rehearsal. WS4 is explicitly outside the critical path. No ticket sale should precede WS6-01; no production freeze should precede WS5-03.
 
-### Day-by-day integration schedule
+### Original integration schedule and current event date
+
+The July 28–August 2 rows below record the completed MVP integration sequence.
+The event-owner decision moved the two production sessions to Saturday
+2026-08-08; that current live date supersedes the original run-day rows.
 
 | Day | Cards and integration outcome |
 |---|---|
@@ -339,8 +343,8 @@ WS1-02 and WS2-02 are mandatory parallel branches that must also converge before
 | **Wed 07-29** | Land WS5-01 on mona, then WS1-02, WS1-03, and WS2-01. Complete WS6-01 and WS6-03; load a tiny test ticket batch. Run the first two-browser smoke: ticket login, both tokens, crossfader, staff login, restart/reconnect. Land WS6-02 only after the real rail test. |
 | **Thu 07-30** | Land WS2-02, WS3-01, WS4-02, and WS5-02. Integrate six real publisher browsers plus a small subscriber load. Exercise cap races, grant reconciliation, bot restart, TURN, audio-only, revoke/rebind, and both language ticket paths. Decide the tapestry cut by **18:00 ART**; after that it is staff-only or absent, not a Friday rescue project. |
 | **Fri 07-31** | Land WS3-02 by 11:00 ART. Run WS5-03 capacity soak at 11:00 and the no-developer-assisted purchase-to-refund dress rehearsal at **14:00 ART**. Fix only rehearsal blockers. Re-run the failed segment plus smoke suite. **Production freeze at 18:00 ART or T-12h before Saturday's doors, whichever is earlier.** |
-| **Sat 08-01** | No routine deploys. T-2h: backups, health, bot, TURN, fallback, staff, and ticket-support checks. T-45m: Julián + operators join; T-20m: attendee doors. Run EN session, record only operational metrics/incidents, execute refunds/fallback per runbook. Post-event 30-minute review may change runbook/content, not production code unless it is a Sev-1 safety/access fix. |
-| **Sun 08-02** | Keep Saturday's artifact and config. Apply no feature changes. Repeat T-2h/T-45m/T-20m checks, run ES session, then export the private attendance/refund ledger and hold the full post-weekend review. |
+| **Sat 08-01 / Sun 08-02** | Original rehearsal window; integration and feedback continued with commerce closed. |
+| **Sat 08-08** | No routine deploys after freeze. Run the T-2h/T-45m/T-20m checks, then ES at 08:30 Costa Rica / 14:30 UTC and EN at 14:00 Costa Rica / 20:00 UTC. Export the private attendance/refund ledger and hold the full post-event review. |
 
 ### Freeze policy
 

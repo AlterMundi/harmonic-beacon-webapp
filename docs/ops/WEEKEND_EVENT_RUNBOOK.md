@@ -1,6 +1,6 @@
 # Weekend Event Runbook
 
-Harmonic Beacon live event — Saturday 2026-08-01 — Session 1: Spanish 8:30 AM Costa Rica (14:30 UTC), Session 2: English 2:00 PM Costa Rica (20:00 UTC).
+Harmonic Beacon live event — Saturday 2026-08-08 — Session 1: Spanish 8:30 AM Costa Rica (14:30 UTC), Session 2: English 2:00 PM Costa Rica (20:00 UTC).
 This is the operator's playbook: who owns each failure, how it is detected, the
 first action, when to suspend or issue rainchecks, what attendees are told, and who
 decides rainchecks. It assumes the architecture in
@@ -115,11 +115,12 @@ the two rehearsal fixtures without deleting history.
    `docker compose exec app`). It includes the dry-run SHA-256 digest,
    `--apply`, and `--backup-confirmed`.
 5. Run the dry-run command again. Confirm production ES is scheduled for
-   14:30 UTC, production EN for 20:00 UTC, and both test events are cancelled.
+   2026-08-08 14:30 UTC, production EN for 2026-08-08 20:00 UTC, and both test
+   events are cancelled.
 
-The command refuses to apply at or after 14:20 UTC, if a LiveKit room contains
-any participant, if the database changed after the dry-run, or if event IDs,
-titles, room names, languages, test flags, caps, or expected statuses differ.
+The command refuses to apply at or after 2026-08-08 14:20 UTC, if a LiveKit
+room contains any participant, if the database changed after the dry-run, or if
+event IDs, titles, room names, languages, test flags, caps, or expected statuses differ.
 It never deletes data or disconnects participants. Never bypass these checks
 with ad-hoc SQL; if one fails, investigate the changed state and take a new
 backup/dry-run.

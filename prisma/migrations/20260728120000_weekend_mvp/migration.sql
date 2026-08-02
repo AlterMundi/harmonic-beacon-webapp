@@ -1,4 +1,4 @@
--- Fresh schema for the 2026-08-01/02 weekend MVP.
+-- Fresh schema for the August 2026 weekend MVP.
 -- This migration intentionally contains no legacy-data or compatibility path.
 
 CREATE TYPE "StaffRole" AS ENUM ('FACILITATOR', 'OPERATOR', 'ADMIN');

@@ -11,7 +11,7 @@ import { type StaffDefinition, loadSeedContract } from '../../../../../../prisma
  * per-user salt, scrypt, `scrypt$salt$digest` — run through the real
  * `loadSeedContract`, and verified by the real `verifyStaffPassword`. Nothing
  * about the digest format is stubbed, so a change to it fails here rather than
- * at 20:00 on Saturday with four people unable to sign in.
+ * at event time with four people unable to sign in.
  */
 
 const CLIENT = '203.0.113.11';
@@ -48,13 +48,13 @@ function seedEnvironment(): NodeJS.ProcessEnv {
             id: '10000000-0000-4000-8000-000000000001',
             title: 'Saturday session',
             roomName: 'weekend-saturday',
-            scheduledAt: '2026-08-01T22:00:00.000Z',
+            scheduledAt: '2026-08-08T22:00:00.000Z',
         }),
         WEEKEND_SESSION_2_EVENT_JSON: JSON.stringify({
             id: '10000000-0000-4000-8000-000000000002',
             title: 'Sunday session',
             roomName: 'weekend-sunday',
-            scheduledAt: '2026-08-01T22:00:00.000Z',
+            scheduledAt: '2026-08-08T22:00:00.000Z',
         }),
     };
 }

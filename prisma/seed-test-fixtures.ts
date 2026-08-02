@@ -2,7 +2,7 @@
  * Shared test fixtures — the seed behind db/test-fixture.sql.
  *
  * Creates a complete, deterministic testing dataset: four staff users (all
- * with the password "test"), the two 2026-08-01 weekend sessions, and ticket
+ * with the password "test"), the two 2026-08-08 weekend sessions, and ticket
  * entitlements in every relevant state (ISSUED, BOUND, REVOKED, COMP).
  *
  * This script is self-contained: it does NOT read the production seed
@@ -68,7 +68,7 @@ const STAFF_FIXTURES: ReadonlyArray<{
     { name: 'Test Admin', email: 'admin@altermundi.net', role: 'ADMIN', salt: 'fixture-salt-adm01' },
 ];
 
-/** Both sessions on Saturday 2026-08-01; times are the database truth (CR = UTC-6). */
+/** Both sessions on Saturday 2026-08-08; times are the database truth (CR = UTC-6). */
 const SESSION_FIXTURES: ReadonlyArray<{
     id: string;
     title: string;
@@ -82,20 +82,20 @@ const SESSION_FIXTURES: ReadonlyArray<{
     {
         id: '10000000-0000-4000-8000-000000000101',
         title: 'Harmonic Projection — Sesión en Español (test)',
-        description: 'Test fixture session. Spanish, Saturday 2026-08-01 08:30 Costa Rica.',
+        description: 'Test fixture session. Spanish, Saturday 2026-08-08 08:30 Costa Rica.',
         roomName: 'weekend-test-spanish',
         language: 'SPANISH',
-        scheduledAt: new Date('2026-08-01T14:30:00.000Z'), // 08:30 America/Costa_Rica
+        scheduledAt: new Date('2026-08-08T14:30:00.000Z'), // 08:30 America/Costa_Rica
         tier: 'GLOBAL_SOUTH',
         codePrefix: 'TEST-ES',
     },
     {
         id: '10000000-0000-4000-8000-000000000102',
         title: 'Harmonic Projection — English Session (test)',
-        description: 'Test fixture session. English, Saturday 2026-08-01 14:00 Costa Rica.',
+        description: 'Test fixture session. English, Saturday 2026-08-08 14:00 Costa Rica.',
         roomName: 'weekend-test-english',
         language: 'ENGLISH',
-        scheduledAt: new Date('2026-08-01T20:00:00.000Z'), // 14:00 America/Costa_Rica
+        scheduledAt: new Date('2026-08-08T20:00:00.000Z'), // 14:00 America/Costa_Rica
         tier: 'GLOBAL_NORTH',
         codePrefix: 'TEST-EN',
     },

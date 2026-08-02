@@ -1,4 +1,4 @@
-// Fresh PostgreSQL schema for the 2026-08-01/02 weekend MVP.
+// Fresh PostgreSQL schema for the August 2026 weekend MVP.
 
 generator client {
   provider = "prisma-client-js"

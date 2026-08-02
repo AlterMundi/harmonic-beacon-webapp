@@ -31,14 +31,14 @@ function validEnvironment(): NodeJS.ProcessEnv {
             id: '10000000-0000-4000-8000-000000000001',
             title: 'Saturday',
             roomName: 'saturday',
-            scheduledAt: '2026-08-01T18:00:00.000Z',
+            scheduledAt: '2026-08-08T18:00:00.000Z',
             maxPublishers: 999,
         }),
         WEEKEND_SESSION_2_EVENT_JSON: JSON.stringify({
             id: '10000000-0000-4000-8000-000000000002',
             title: 'Session 2',
             roomName: 'session-2',
-            scheduledAt: '2026-08-01T18:00:00.000Z',
+            scheduledAt: '2026-08-08T18:00:00.000Z',
         }),
     };
 }
