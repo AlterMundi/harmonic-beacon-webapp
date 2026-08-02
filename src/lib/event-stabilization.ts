@@ -37,7 +37,9 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
             '2026-08-08T14:30:00.000Z',
         ],
         acceptedStatuses: ['SCHEDULED', 'LIVE'],
-        paidMode: false,
+        // Historical weekend rows are constrained to paid_mode=true. Free
+        // admission is represented by the COMP promotion entitlement itself.
+        paidMode: true,
         desiredStatus: 'SCHEDULED',
     },
     {
@@ -54,7 +56,7 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
             '2026-08-08T20:00:00.000Z',
         ],
         acceptedStatuses: ['CANCELLED'],
-        paidMode: false,
+        paidMode: true,
         desiredStatus: 'CANCELLED',
     },
     {
