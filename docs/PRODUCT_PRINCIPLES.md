@@ -104,20 +104,18 @@ We are not a venture-timed business. We will sometimes choose approaches that ar
 - We prefer hand-sold institutional licensing in year one over a productized self-serve enterprise tier.
 - We prefer audit-friendly boring infrastructure over novel stacks, for anything on the trust surface.
 
-The infrastructure half of that holds. The platform runs on self-hosted Postgres and LiveKit on hosts we operate, with Zitadel for identity — boring, inspectable, and portable, which is most of what the third bullet asks for.
+The infrastructure half of that holds. The platform runs on self-hosted Postgres
+and LiveKit on hosts we operate, with durable ticket-bound attendee sessions and
+seeded staff credentials — boring, inspectable, and portable, which is most of
+what the third bullet asks for.
 
-The dependency half does not, and this is worth stating rather than leaving for a reader to notice from `package.json`. The application tracks the current major of nearly everything: Next.js 16, React 19, Prisma 7, Tailwind 4. Most of that is ordinary cost. One item is not: authentication runs on a `5.0.0-beta` release of NextAuth, which puts a pre-release dependency directly on the trust surface the third bullet is about.
-
-That divergence is accepted, deliberately and on the record — see
-[decisions/0001](./decisions/0001-next-auth-beta.md). There is nowhere to go: npm's
-`latest` for `next-auth` is still 4.24.15, so v5 has never shipped stable, and
-moving back is its own migration to an older API we would have to leave again.
-
-What the decision did fix is the shape of the risk. The dependency was declared
-`^5.0.0-beta.30`, and under semver that caret accepts any later beta — so an
-install not honouring the lockfile could have swapped the authentication
-implementation with no diff to review. It is now pinned exactly, with a trigger
-for revisiting.
+The application still tracks current majors of Next.js, React, Prisma and
+Tailwind, so dependency updates remain deliberate work rather than background
+churn. The previous pre-release NextAuth exception no longer exists: the weekend
+product removed Zitadel/NextAuth from its runtime and the unused package was
+removed after its security advisories made the stale dependency itself a risk.
+See [decisions/0001](./decisions/0001-next-auth-beta.md) for the superseded
+decision and its retirement evidence.
 
 The point generalizes past this one package: a principle can be knowingly departed
 from, and the departure costs nothing as long as it is written down. What this

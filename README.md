@@ -19,7 +19,7 @@ Index of all documentation: **[docs/README.md](./docs/README.md)**.
 
 - **Next.js 16** (App Router) + React 19 + TypeScript
 - **PostgreSQL** via Prisma 7
-- **NextAuth v5** with **Zitadel OIDC** (roles `BEAC_ADMIN`, `BEAC_PROVIDER`, `BEAC_LISTENER`)
+- **Durable PostgreSQL sessions** for ticket-bound attendees and seeded staff roles
 - **LiveKit** for the live beacon (WebRTC, room `beacon`, primary publisher `beacon01`)
 - **HTTP range requests** for on-demand meditation playback (`src/lib/stream-file.ts`)
 - **Docker Compose** for production deploy (see `deploy/`)
@@ -34,7 +34,7 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-The app needs a running Postgres, a reachable LiveKit server, and a Zitadel OIDC client. Meditation audio is served by the app itself over HTTP with range requests, so it needs no extra service. See `deploy/` for the production-shaped setup.
+The app needs a running Postgres and reachable LiveKit and tapestry services. Meditation audio is served by the app itself over HTTP with range requests, so it needs no extra service. See `deploy/` for the production-shaped setup.
 
 ## Scripts
 
