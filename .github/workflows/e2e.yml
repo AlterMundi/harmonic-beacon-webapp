@@ -9,7 +9,9 @@ name: E2E quality gates
 # production credentials or participant data.
 #
 # GitHub's hosted Linux runner supplies Docker for service containers and the
-# LiveKit fixture. Playwright installs Chromium and its OS dependencies below.
+# LiveKit fixture. Playwright installs Chromium, WebKit and their OS
+# dependencies below; the mobile projects are emulations, not physical-device
+# launch evidence.
 
 on:
   pull_request:
@@ -50,7 +52,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
 
       - name: Start LiveKit dev server
         run: |

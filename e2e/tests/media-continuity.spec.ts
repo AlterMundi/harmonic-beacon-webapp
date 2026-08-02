@@ -42,7 +42,7 @@ async function livekitReachable(): Promise<boolean> {
 }
 
 async function settledMediaSnapshot(
-    frame: import('@playwright/test').Frame,
+    frame: import('@playwright/test').Frame | import('@playwright/test').Page,
 ): Promise<Awaited<ReturnType<typeof mediaProbeSnapshot>>> {
     let previous = await mediaProbeSnapshot(frame);
     let stableReads = 0;
@@ -164,6 +164,49 @@ stackTest.describe('media continuity', () => {
 
         await attendeeContext.close();
         await facilitatorContext.close();
+        });
+    });
+
+    stackTest('attendee controls without capture preserve the connected rooms', async ({ page }, testInfo) => {
+        await installMediaProbe(page);
+        const db = requireDirectDb(testInfo);
+        await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+            await loginViaDashboard(
+                page,
+                'ATTENDEE',
+                'E2E Listener',
+                ROUTES.session(SESSION_ES.id),
+            );
+            await expect(page.getByTestId('connection-state')).toHaveAttribute(
+                'data-state',
+                'connected',
+                { timeout: 20_000 },
+            );
+
+            await page.getByRole('button', { name: /Start audio|Iniciar audio/i }).click();
+            const activated = await settledMediaSnapshot(page);
+            expect(activated.livekitSocketsOpened).toBeGreaterThan(0);
+            expect(activated.peerConnectionsCreated).toBeGreaterThan(0);
+
+            await page.getByRole('slider', {
+                name: /Overall room volume|Volumen general de la sala/i,
+            }).fill('0.7');
+            await page.getByRole('slider', {
+                name: /Beacon \/ Session balance|Balance Beacon \/ Sesión/i,
+            }).fill('0.25');
+            await page.getByRole('button', { name: /Raise hand|Levantar la mano/i }).click();
+            await expect(
+                page.getByRole('button', { name: /Lower hand|Bajar la mano/i }),
+            ).toBeVisible();
+            await page.getByRole('button', { name: /Lower hand|Bajar la mano/i }).click();
+            await page.getByRole('button', {
+                name: /Switch to audio only|Cambiar a solo audio/i,
+            }).click();
+            await page.getByRole('button', {
+                name: /Turn video back on|Volver a encender el video/i,
+            }).click();
+
+            expectMediaContinuity(activated, await settledMediaSnapshot(page));
         });
     });
 
