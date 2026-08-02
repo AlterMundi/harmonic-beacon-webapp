@@ -8,8 +8,9 @@ import { tapestryInternalUrl } from '@/lib/tapestry';
 export const dynamic = 'force-dynamic';
 
 /**
- * Single tapestry tile proxy for the ops arrange UI. Staff-only, never
- * cached: tiles are live participant snapshots.
+ * Single tapestry tile proxy for staff tools. The short private cache avoids
+ * duplicate downloads across queue/arrange surfaces without making a tile
+ * public or allowing it to outlive the tapestry frame TTL.
  */
 export async function GET(
     _request: NextRequest,
@@ -20,6 +21,9 @@ export async function GET(
         return errorResponse;
     }
     const { id, pid } = await params;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(pid)) {
+        return NextResponse.json({ error: 'invalid_tapestry_participant' }, { status: 400 });
+    }
     const scheduledSession = await prisma.scheduledSession.findUnique({
         where: { id },
         select: { facilitatorId: true },
@@ -51,7 +55,12 @@ export async function GET(
         }
         return new NextResponse(await response.arrayBuffer(), {
             status: 200,
-            headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, no-store' },
+            headers: {
+                'content-type': 'image/jpeg',
+                'cache-control': 'private, max-age=4, must-revalidate',
+                'vary': 'Cookie',
+                'x-content-type-options': 'nosniff',
+            },
         });
     } catch {
         return NextResponse.json({ error: 'Tapestry unavailable' }, { status: 503 });

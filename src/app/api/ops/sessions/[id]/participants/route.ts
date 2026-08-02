@@ -6,8 +6,69 @@ import { prisma } from '@/lib/db';
 import { getRoomService } from '@/lib/livekit-server';
 import { effectiveStageState } from '@/lib/stage-presence';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
+import { tapestryInternalUrl, tapestryParticipantId } from '@/lib/tapestry';
 
 export const dynamic = 'force-dynamic';
+
+const DEFAULT_TAPESTRY_FRAME_TTL_MS = 10_000;
+const THUMBNAIL_REFRESH_MS = 5_000;
+const TAPESTRY_LOOKUP_TIMEOUT_MS = 750;
+const MAX_TAPESTRY_PARTICIPANTS = 150;
+
+type TapestrySnapshot = {
+    available: boolean;
+    participantIds: Set<string>;
+    frameTtlMs: number;
+};
+
+async function currentTapestrySnapshot(sessionId: string): Promise<TapestrySnapshot> {
+    const internalUrl = tapestryInternalUrl();
+    if (!internalUrl || !process.env.TAPESTRY_INTERNAL_SECRET) {
+        return {
+            available: false,
+            participantIds: new Set(),
+            frameTtlMs: DEFAULT_TAPESTRY_FRAME_TTL_MS,
+        };
+    }
+    try {
+        const response = await fetch(
+            `${internalUrl}/tapestry/sessions/${encodeURIComponent(sessionId)}/participants`,
+            {
+                headers: {
+                    'x-tapestry-internal-secret': process.env.TAPESTRY_INTERNAL_SECRET,
+                },
+                cache: 'no-store',
+                signal: AbortSignal.timeout(TAPESTRY_LOOKUP_TIMEOUT_MS),
+            },
+        );
+        if (!response.ok) throw new Error('Tapestry list unavailable');
+        const body = await response.json() as { participants?: unknown; frameTtlMs?: unknown };
+        if (!Array.isArray(body.participants) || body.participants.length > MAX_TAPESTRY_PARTICIPANTS) {
+            throw new Error('Invalid tapestry participant list');
+        }
+        const participantIds = body.participants.filter(
+            (value): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value),
+        );
+        if (participantIds.length !== body.participants.length) {
+            throw new Error('Invalid tapestry participant id');
+        }
+        const frameTtlMs = typeof body.frameTtlMs === 'number' &&
+            Number.isFinite(body.frameTtlMs) &&
+            body.frameTtlMs >= 1_000 &&
+            body.frameTtlMs <= 60_000
+            ? body.frameTtlMs
+            : DEFAULT_TAPESTRY_FRAME_TTL_MS;
+        return { available: true, participantIds: new Set(participantIds), frameTtlMs };
+    } catch {
+        // Thumbnail presence is advisory. LiveKit state, durable grants and
+        // every stage action remain available if tapestry is slow or offline.
+        return {
+            available: false,
+            participantIds: new Set(),
+            frameTtlMs: DEFAULT_TAPESTRY_FRAME_TTL_MS,
+        };
+    }
+}
 
 export async function GET(
     _request: Request,
@@ -69,6 +130,7 @@ export async function GET(
         );
     }
 
+    const tapestrySnapshotPromise = currentTapestrySnapshot(scheduledSession.id);
     let liveStateAvailable = true;
     let liveParticipants = new Map<string, {
         name: string;
@@ -95,6 +157,8 @@ export async function GET(
         liveStateAvailable = false;
     }
 
+    const tapestrySnapshot = await tapestrySnapshotPromise;
+    const thumbnailEpoch = Math.floor(Date.now() / THUMBNAIL_REFRESH_MS);
     let queuePosition = 0;
     const participants = scheduledSession.participants.map((participant) => {
         const canPublish =
@@ -117,6 +181,18 @@ export async function GET(
                 participant.staffUser.id === scheduledSession.facilitatorId,
             ).isAssignedFacilitator
             : false;
+        let thumbnailUrl: string | null = null;
+        if (tapestrySnapshot.available) {
+            try {
+                const tapestryId = tapestryParticipantId(participant.participantIdentity);
+                if (tapestrySnapshot.participantIds.has(tapestryId)) {
+                    thumbnailUrl = `/api/ops/sessions/${encodeURIComponent(scheduledSession.id)}/tapestry/tiles/${encodeURIComponent(tapestryId)}?v=${thumbnailEpoch}`;
+                }
+            } catch {
+                // A missing/invalid secret is the same dignified fallback as
+                // an absent or expired frame; never leak configuration detail.
+            }
+        }
         return {
             id: participant.id,
             identity: participant.participantIdentity,
@@ -137,6 +213,7 @@ export async function GET(
             // RoomService's ParticipantInfo does not expose connection quality.
             // Keep the field explicit so the UI never invents a value.
             connectionQuality: null,
+            thumbnailUrl,
         };
     });
 
@@ -156,6 +233,8 @@ export async function GET(
                 !participant.isAssignedFacilitator,
         ).length,
         liveStateAvailable,
+        tapestryThumbnailsAvailable: tapestrySnapshot.available,
+        thumbnailFreshForSeconds: Math.ceil(tapestrySnapshot.frameTtlMs / 1_000),
         participants,
     });
 }

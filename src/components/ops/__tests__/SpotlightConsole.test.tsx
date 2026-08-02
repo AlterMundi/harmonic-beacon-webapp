@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -108,6 +108,80 @@ describe('SpotlightConsole', () => {
         expect(screen.getByText(/left/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Take floor' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: 'Give floor' })).toHaveLength(2);
+    });
+
+    it('shows a recent private snapshot, uses one neutral fallback, and recovers from image failure', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('fresh', {
+                displayName: 'Ana',
+                raisedAt: '2026-08-01T15:10:00.000Z',
+                queuePosition: 1,
+                thumbnailUrl: '/api/ops/sessions/event-1/tapestry/tiles/tp-safe?v=4',
+            }),
+            attendee('missing', {
+                displayName: 'Beto',
+                raisedAt: '2026-08-01T15:11:00.000Z',
+                queuePosition: 2,
+                thumbnailUrl: null,
+            }),
+        ], { thumbnailFreshForSeconds: 8 })));
+        render(<SpotlightConsole sessionId="event-1" role="FACILITATOR" />);
+
+        const image = await screen.findByRole('img', { name: 'Recent tapestry snapshot of Ana' });
+        expect(image).toHaveAttribute(
+            'src',
+            '/api/ops/sessions/event-1/tapestry/tiles/tp-safe?v=4',
+        );
+        expect(screen.getByText(/disappear after 8s/)).toBeInTheDocument();
+        expect(screen.getByRole('img', { name: 'Beto: no current tapestry snapshot' })).toBeInTheDocument();
+
+        fireEvent.error(image);
+        expect(screen.getByRole('img', { name: 'Ana: no current tapestry snapshot' })).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: 'Give floor' })).toHaveLength(2);
+    });
+
+    it('keeps queue actions usable while tapestry thumbnails are unavailable', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('waiting', {
+                raisedAt: '2026-08-01T15:10:00.000Z',
+                queuePosition: 1,
+                thumbnailUrl: null,
+            }),
+        ], { tapestryThumbnailsAvailable: false })));
+        render(<SpotlightConsole sessionId="event-1" role="FACILITATOR" />);
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Give floor' }));
+
+        await waitFor(() => {
+            expect(stagePosts).toEqual([
+                { action: 'promote', participantId: 'waiting', reason: 'Hand queue' },
+                { action: 'lower_hand', participantId: 'waiting', reason: 'Promoted to stage' },
+            ]);
+        });
+        expect(screen.getByRole('img', {
+            name: 'Attendee: no current tapestry snapshot',
+        })).toBeInTheDocument();
+    });
+
+    it('keeps fifty hand rows stable and actionable from one bounded snapshot request', async () => {
+        const participants = Array.from({ length: 50 }, (_, index) => attendee(`person-${index}`, {
+            displayName: `Person ${index + 1}`,
+            raisedAt: new Date(Date.UTC(2026, 7, 1, 15, 0, index)).toISOString(),
+            queuePosition: index + 1,
+            thumbnailUrl: index % 2 === 0
+                ? `/api/ops/sessions/event-1/tapestry/tiles/tp-${index}?v=1`
+                : null,
+        }));
+        const fetchMock = mockFetch(snapshot(participants));
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<SpotlightConsole sessionId="event-1" role="OPERATOR" />);
+
+        expect(await screen.findByText('#50 — Person 50 · ID erson-49')).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: 'Give floor' })).toHaveLength(50);
+        expect(screen.getAllByRole('button', { name: 'Remove hand' })).toHaveLength(50);
+        expect(screen.getAllByRole('img')).toHaveLength(50);
+        expect(fetchMock).toHaveBeenCalledOnce();
     });
 
     it('does not render a disconnected durable grant as on stage after re-entry', async () => {

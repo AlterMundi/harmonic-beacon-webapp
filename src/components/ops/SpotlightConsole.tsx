@@ -42,6 +42,7 @@ type ConsoleParticipant = {
     connected: boolean | null;
     media: LiveTrack[];
     connectionQuality: string | null;
+    thumbnailUrl?: string | null;
 };
 
 /** Normalize a participant from the API: fill optional live-state fields. */
@@ -61,6 +62,7 @@ function normalizeParticipant(p: ConsoleParticipant): ConsoleParticipant {
         }),
         connectionQuality: p.connectionQuality ?? null,
         isAssignedFacilitator: p.isAssignedFacilitator ?? false,
+        thumbnailUrl: typeof p.thumbnailUrl === 'string' ? p.thumbnailUrl : null,
     };
 }
 
@@ -71,6 +73,8 @@ type ParticipantsSnapshot = {
     activePublishers: number;
     grantedPublishers?: number;
     liveStateAvailable: boolean;
+    tapestryThumbnailsAvailable?: boolean;
+    thumbnailFreshForSeconds?: number;
     participants: ConsoleParticipant[];
 };
 
@@ -157,6 +161,50 @@ function participantLabel(participant: ConsoleParticipant): string {
         return participant.displayName;
     }
     return `${participant.displayName} · ID ${participant.identity.slice(-8)}`;
+}
+
+function HandThumbnail({
+    displayName,
+    src,
+    freshForSeconds,
+}: {
+    displayName: string;
+    src: string | null;
+    freshForSeconds: number;
+}) {
+    const [failedSrc, setFailedSrc] = useState<string | null>(null);
+    const showImage = Boolean(src) && failedSrc !== src;
+
+    return (
+        <div className="flex w-14 shrink-0 flex-col items-center gap-1">
+            {showImage ? (
+                // The URL is staff-only and HMAC-addressed; no name/email is
+                // present in the path. Failure converges to the same fallback.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                    src={src!}
+                    alt={`Recent tapestry snapshot of ${displayName}`}
+                    width={48}
+                    height={48}
+                    loading="lazy"
+                    decoding="async"
+                    onError={() => setFailedSrc(src)}
+                    className="h-12 w-12 rounded-full border border-[var(--gold)]/40 object-cover"
+                />
+            ) : (
+                <span
+                    role="img"
+                    aria-label={`${displayName}: no current tapestry snapshot`}
+                    className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-alt)] text-lg text-[var(--text-muted)]"
+                >
+                    ◌
+                </span>
+            )}
+            <span className="text-center text-[9px] leading-tight text-[var(--text-muted)]" aria-hidden="true">
+                {showImage ? `≤${freshForSeconds}s` : 'no image'}
+            </span>
+        </div>
+    );
 }
 
 export default function SpotlightConsole({ sessionId, role, onSummary }: Props) {
@@ -322,6 +370,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         (participant) => !participant.canPublish && participant.queuePosition === null,
     );
     const reconcilePending = all.filter((participant) => participant.reconcileNeeded);
+    const thumbnailFreshForSeconds = snapshot?.thumbnailFreshForSeconds ?? 10;
 
     return (
         <section className="space-y-6" aria-live="polite">
@@ -381,6 +430,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                 <h2 className="mb-1 text-lg font-semibold text-[var(--cream)]">Hand queue</h2>
                 <p className="mb-2 text-xs text-[var(--text-muted)]">
                     Raised hands appear here automatically. Give floor moves a connected person to the stage; Remove hand clears the request.
+                    {' '}Snapshots are private, refresh together and disappear after {thumbnailFreshForSeconds}s without a new consented frame.
                 </p>
                 {queue.length === 0 ? (
                     <p className="text-sm text-[var(--text-secondary)]">No hands raised.</p>
@@ -388,13 +438,20 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                     <ul className="space-y-2">
                         {queue.map((participant) => (
                             <li key={participant.id} className="operational-panel flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                                <div className="min-w-0">
-                                    <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participantLabel(participant)}</span>
-                                    <div className="text-xs text-[var(--text-secondary)]">
-                                        waiting {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
-                                        {' · '}{connectionBadge(participant)}
-                                        {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()} quality` : ''}
-                                        {participant.reconcileNeeded ? ' · reconcile needed' : ''}
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <HandThumbnail
+                                        displayName={participant.displayName}
+                                        src={participant.thumbnailUrl ?? null}
+                                        freshForSeconds={thumbnailFreshForSeconds}
+                                    />
+                                    <div className="min-w-0">
+                                        <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participantLabel(participant)}</span>
+                                        <div className="text-xs text-[var(--text-secondary)]">
+                                            waiting {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
+                                            {' · '}{connectionBadge(participant)}
+                                            {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()} quality` : ''}
+                                            {participant.reconcileNeeded ? ' · reconcile needed' : ''}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-2">

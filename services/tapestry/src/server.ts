@@ -214,7 +214,12 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
     const ids = store
       .orderedActive(sessionId, Date.now(), config.frameTtlMs)
       .map(({ id }) => id);
-    sendJson(res, 200, { participants: ids });
+    sendJson(res, 200, {
+      participants: ids,
+      // Consumers can communicate freshness truthfully without learning
+      // per-participant timestamps. Existing clients ignore this additive field.
+      frameTtlMs: config.frameTtlMs,
+    });
   }
 
   async function handleOrder(
