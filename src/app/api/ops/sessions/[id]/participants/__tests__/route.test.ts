@@ -109,10 +109,12 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         ));
 
         expect(body).toMatchObject({
-            activePublishers: 1,
+            activePublishers: 0,
+            grantedPublishers: 1,
             participants: [{
                 staffRole: 'FACILITATOR_OP',
                 isAssignedFacilitator: true,
+                stageState: 'RECONNECTING',
             }],
         });
     });
@@ -146,12 +148,14 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         expect(body).toMatchObject({
             sessionId: 'event-1',
             maxPublishers: 6,
-            activePublishers: 2,
+            activePublishers: 1,
+            grantedPublishers: 2,
             participants: [
                 {
                     id: 'publisher',
                     displayName: 'Ana',
                     canPublish: true,
+                    stageState: 'ON_STAGE',
                     queuePosition: null,
                     connected: true,
                     media: [
@@ -168,6 +172,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
                     queuePosition: 1,
                     reconcileNeeded: true,
                     connected: false,
+                    stageState: 'AUDIENCE',
                 },
             ],
         });
@@ -186,9 +191,30 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         expect(body).toMatchObject({
             liveStateAvailable: false,
             participants: [
-                { id: 'publisher', connected: null, media: [] },
+                { id: 'publisher', connected: null, media: [], stageState: 'UNKNOWN' },
                 { id: 'waiting', connected: null, media: [] },
             ],
         });
+    });
+
+    it('keeps a granted reconnect out of the effective stage until media is published again', async () => {
+        listParticipants.mockResolvedValue([]);
+        const { GET } = await import('../route');
+        const { body } = await parseResponse(await GET(
+            createRequest('/api/ops/sessions/event-1/participants'),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(body).toMatchObject({
+            activePublishers: 0,
+            grantedPublishers: 2,
+        });
+        const snapshot = body as { participants: Array<{ id: string }> };
+        expect(snapshot.participants.find((participant) => participant.id === 'publisher'))
+            .toMatchObject({
+                canPublish: true,
+                connected: false,
+                stageState: 'RECONNECTING',
+            });
     });
 });

@@ -62,6 +62,16 @@ async function settledMediaSnapshot(
     throw new Error('cockpit preview media did not settle before panel exercise');
 }
 
+async function leaveConnectedRoom(
+    surface: import('@playwright/test').Frame | import('@playwright/test').Page,
+): Promise<void> {
+    const leave = surface.getByRole('button', { name: /Leave session|Salir de la sesión/i });
+    if (await leave.isVisible()) {
+        await leave.click();
+        await expect(surface.getByTestId('connection-state')).toHaveCount(0);
+    }
+}
+
 stackTest.describe('media continuity', () => {
     stackTest.beforeEach(async ({}, testInfo) => {
         testInfo.skip(
@@ -162,6 +172,12 @@ stackTest.describe('media continuity', () => {
         expect(snapshot.duplicateMediaSources).toEqual([]);
         expect(snapshot.livekitSocketsClosed).toBe(activated.livekitSocketsClosed);
 
+        // Send an intentional LiveKit leave before destroying the browser
+        // contexts. An abrupt context close keeps the publisher resumable for
+        // the server departure timeout and leaks a phantom facilitator into
+        // later visual tests that share the fixture room.
+        await leaveConnectedRoom(attendee);
+        await leaveConnectedRoom(facilitator);
         await attendeeContext.close();
         await facilitatorContext.close();
         });
@@ -292,6 +308,7 @@ stackTest.describe('media continuity', () => {
             ).toBeVisible();
             await expect(roomFrame.getByText(/access is open elsewhere|entrada está abierta en otro lugar/i))
                 .toHaveCount(0);
+            await leaveConnectedRoom(roomFrame);
         });
     });
 });
