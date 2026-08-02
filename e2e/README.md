@@ -55,6 +55,11 @@ they never weaken their assertions to pass.
    npx playwright install chromium webkit
    ```
 
+   CI runs Chromium screenshots before installing WebKit's OS dependencies;
+   the extra WebKit font packages otherwise change Chromium rasterization on a
+   fresh hosted runner. WebKit then runs as a separate command against the same
+   fixture stack.
+
 Environment overrides: `E2E_BASE_URL` (already-running stack; the server
 step is skipped), `E2E_DATABASE_URL`, `E2E_LIVEKIT_URL`,
 `E2E_LIVEKIT_API_KEY`/`_SECRET`, `E2E_PORT`. The managed server always runs
