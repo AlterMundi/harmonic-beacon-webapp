@@ -120,11 +120,11 @@ stackTest.describe('fixture stack', () => {
         page,
     }) => {
         await loginViaDashboard(page, 'OPERATOR', 'E2E Operator', ROUTES.opsAdmission);
-        await expect(page.getByRole('heading', { name: /admission/i })).toBeVisible();
+        await expect(page.getByRole('heading', { name: /Admission support|Soporte de entradas/i })).toBeVisible();
     });
 
     stackTest('admin dashboard login reaches ops health', async ({ page }) => {
         await loginViaDashboard(page, 'ADMIN', 'E2E Admin', ROUTES.opsHealth);
-        await expect(page.getByRole('heading', { name: /health/i })).toBeVisible();
+        await expect(page.getByRole('heading', { name: /Event health|Salud del evento/i })).toBeVisible();
     });
 });

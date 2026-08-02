@@ -103,17 +103,17 @@ stackTest('controlled invitation becomes normal access, replays, then revokes an
 
             try {
                 await loginViaDashboard(staff, 'ADMIN', 'Invitation Admin', ROUTES.opsAdmission);
-                await staff.getByRole('button', { name: 'Load invitations' }).click();
-                await expect(staff.getByRole('status')).toContainText('Public redemption is ON');
-                await staff.getByLabel(/Internal label/).fill(CAMPAIGN_LABEL);
-                await staff.getByLabel(/Human code/).fill(PROMO_CODE);
-                await staff.getByLabel(/Expires/).fill(
+                await staff.getByRole('button', { name: /Load invitations|Cargar invitaciones/i }).click();
+                await expect(staff.getByRole('status')).toContainText(/Public redemption is ON|El canje público está ACTIVADO/i);
+                await staff.getByLabel(/Internal label|Etiqueta interna/i).fill(CAMPAIGN_LABEL);
+                await staff.getByLabel(/Human code|Código para personas/i).fill(PROMO_CODE);
+                await staff.getByLabel(/Expires|Vence/i).fill(
                     localDateTimeInput(new Date(Date.now() + 6 * 60 * 60 * 1000)),
                 );
-                await staff.getByLabel(/Redemption capacity/).fill('1');
-                await staff.getByRole('button', { name: 'Create invitation' }).click();
+                await staff.getByLabel(/Redemption capacity|Cupo de canjes/i).fill('1');
+                await staff.getByRole('button', { name: /Create invitation|Crear invitación/i }).click();
                 const campaign = staff.locator('article').filter({ hasText: CAMPAIGN_LABEL });
-                await expect(campaign).toContainText('0/1 redeemed');
+                await expect(campaign).toContainText(/0\/1 redeemed|0\/1 canjeadas/i);
 
                 await loginAttendeeWithTicket(firstGuest, {
                     name: 'Promotion Guest',
@@ -149,13 +149,13 @@ stackTest('controlled invitation becomes normal access, replays, then revokes an
                 );
                 const participantIdentity = await participantIdentityForCampaign(databaseUrl);
 
-                await staff.getByRole('button', { name: 'Refresh' }).click();
-                await expect(campaign).toContainText('1/1 redeemed');
-                await campaign.getByPlaceholder(/Disable reason/).fill('Synthetic campaign complete');
-                await campaign.getByRole('checkbox', { name: /Also revoke every entitlement/ }).check();
-                await campaign.getByRole('button', { name: 'Disable invitation' }).click();
-                await expect(campaign).toContainText('DISABLED');
-                await expect(staff.getByText(/1 derived access grant\(s\) revoked/)).toBeVisible();
+                await staff.getByRole('button', { name: /Refresh|Actualizar/i }).click();
+                await expect(campaign).toContainText(/1\/1 redeemed|1\/1 canjeadas/i);
+                await campaign.getByPlaceholder(/Disable reason|Motivo de desactivación/i).fill('Synthetic campaign complete');
+                await campaign.getByRole('checkbox', { name: /Also revoke every entitlement|Revocar también todos los accesos/i }).check();
+                await campaign.getByRole('button', { name: /Disable invitation|Desactivar invitación/i }).click();
+                await expect(campaign).toContainText(/Disabled|Desactivada/i);
+                await expect(staff.getByText(/1 derived access grant\(s\) revoked|Se revocaron 1 accesos derivados/i)).toBeVisible();
 
                 await expect.poll(async () => {
                     const response = await returningGuest.request.get(
