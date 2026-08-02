@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { StaffRole } from '@prisma/client';
+import type { Messages, UiLocale } from '@/lib/i18n';
 
 type Props = {
     sessionId: string;
     initialStatus: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
     scheduledAt: string;
     role: StaffRole;
+    locale: UiLocale;
+    copy: Messages['ops']['lifecycle'];
     observedStatus?: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
     onStatusChange?: (status: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED') => void;
 };
@@ -20,6 +23,8 @@ export default function SessionLifecycleControl({
     initialStatus,
     scheduledAt,
     role,
+    locale,
+    copy,
     observedStatus,
     onStatusChange,
 }: Props) {
@@ -50,6 +55,12 @@ export default function SessionLifecycleControl({
     }, [scheduledAt, nowMs]);
     const canOverrideWindow = role === 'ADMIN' || role === 'FACILITATOR_OP';
 
+    function connectionOutcome(template: string, stage: number, beacon: number): string {
+        return template
+            .replace('{stage}', String(stage))
+            .replace('{beacon}', String(beacon));
+    }
+
     async function transition(targetStatus: 'LIVE' | 'ENDED' | 'CANCELLED') {
         setBusy(true);
         setError(null);
@@ -74,7 +85,7 @@ export default function SessionLifecycleControl({
                 };
             };
             if (!response.ok) {
-                throw new Error(data.message || `Status change failed (HTTP ${response.status})`);
+                throw new Error(`${copy.statusChangeFailed} (HTTP ${response.status})`);
             }
             const nextStatus = (data.status as typeof status) || targetStatus;
             setStatus(nextStatus);
@@ -83,18 +94,21 @@ export default function SessionLifecycleControl({
             setReason('');
             if (targetStatus === 'LIVE') {
                 setNotice(data.changed === false
-                    ? 'Doors were already open.'
-                    : 'Doors are open. Attendees are entering now.');
+                    ? copy.doorsAlreadyOpen
+                    : copy.doorsOpened);
             } else if (data.termination?.complete) {
-                const outcome = targetStatus === 'CANCELLED' ? 'cancelled' : 'ended';
                 setNotice(
-                    `Event ${outcome} now. Disconnected ${data.termination.stageDisconnected} Stage and ${data.termination.bedDisconnected} Beacon connections.`,
+                    connectionOutcome(
+                        targetStatus === 'CANCELLED' ? copy.eventCancelled : copy.eventEnded,
+                        data.termination.stageDisconnected,
+                        data.termination.bedDisconnected,
+                    ),
                 );
             } else {
-                setError('Event closed, but an immediate media disconnect was incomplete. Use “Disconnect remaining clients” to retry.');
+                setError(copy.disconnectIncomplete);
             }
         } catch (failure) {
-            setError(failure instanceof Error ? failure.message : 'Status change failed');
+            setError(failure instanceof Error ? failure.message : copy.statusChangeFailed);
         } finally {
             setBusy(false);
         }
@@ -105,11 +119,11 @@ export default function SessionLifecycleControl({
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 id="event-lifecycle-heading" className="font-semibold text-[var(--cream)]">
-                        Event doors
+                        {copy.heading}
                     </h2>
                     <p className="text-xs text-[var(--text-secondary)]">
-                        Status: <strong>{status}</strong> · scheduled{' '}
-                        {new Date(scheduledAt).toLocaleString()}
+                        {copy.status}: <strong>{copy.statuses[status]}</strong> · {copy.scheduled}{' '}
+                        {new Date(scheduledAt).toLocaleString(locale === 'es' ? 'es-AR' : 'en-GB')}
                     </p>
                 </div>
                 {status === 'SCHEDULED' ? (
@@ -121,7 +135,7 @@ export default function SessionLifecycleControl({
                         onClick={() => void transition('LIVE')}
                         className="event-button event-button--primary"
                     >
-                        {busy ? 'Opening…' : 'Open doors'}
+                        {busy ? copy.opening : copy.openDoors}
                     </button>
                 ) : status === 'LIVE' ? (
                     <button
@@ -130,12 +144,12 @@ export default function SessionLifecycleControl({
                         onClick={() => setConfirmClose(true)}
                         className="event-button event-button--secondary"
                     >
-                        Close event
+                        {copy.closeEvent}
                     </button>
                 ) : (
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full border border-[var(--border-subtle)] px-3 py-1 text-xs text-[var(--text-muted)]">
-                            {status === 'ENDED' ? 'Event closed' : 'Event cancelled'}
+                            {copy.statuses[status]}
                         </span>
                         {status === 'ENDED' || canOverrideWindow ? (
                             <button
@@ -144,7 +158,7 @@ export default function SessionLifecycleControl({
                                 onClick={() => setConfirmClose(true)}
                                 className="event-button event-button--secondary"
                             >
-                                Disconnect remaining clients
+                                {copy.disconnectRemaining}
                             </button>
                         ) : null}
                     </div>
@@ -155,12 +169,12 @@ export default function SessionLifecycleControl({
                 <div className="mt-3 space-y-2">
                     <p className="text-xs text-[var(--warning)]">
                         {canOverrideWindow
-                            ? 'This is outside the normal opening window. An audit reason is required.'
-                            : 'Doors can open from 10 minutes before until 60 minutes after the scheduled start.'}
+                            ? copy.outsideWindowOverride
+                            : copy.outsideWindowRestricted}
                     </p>
                     {canOverrideWindow ? (
                         <label className="block text-xs text-[var(--text-secondary)]">
-                            Operational reason (do not include attendee details)
+                            {copy.reasonLabel}
                             <input
                                 value={reason}
                                 maxLength={240}
@@ -174,9 +188,9 @@ export default function SessionLifecycleControl({
 
             {confirmClose ? (
                 <div role="alertdialog" aria-labelledby="close-event-heading" className="mt-3 rounded border border-[var(--warning)]/40 bg-[var(--warning)]/10 p-3">
-                    <h3 id="close-event-heading" className="font-medium text-[var(--cream)]">End this experience for everyone?</h3>
+                    <h3 id="close-event-heading" className="font-medium text-[var(--cream)]">{copy.confirmHeading}</h3>
                     <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                        New entries stop first. Then every Stage connection and this event&apos;s Beacon listeners are disconnected immediately. Other events and the Beacon source stay online.
+                        {copy.confirmBody}
                     </p>
                     <div className="mt-3 flex gap-2">
                         <button
@@ -185,7 +199,7 @@ export default function SessionLifecycleControl({
                             onClick={() => void transition(status === 'CANCELLED' ? 'CANCELLED' : 'ENDED')}
                             className="event-button event-button--primary"
                         >
-                            {busy ? 'Disconnecting…' : 'End & disconnect everyone'}
+                            {busy ? copy.disconnecting : copy.endAndDisconnect}
                         </button>
                         <button
                             type="button"
@@ -193,7 +207,7 @@ export default function SessionLifecycleControl({
                             onClick={() => setConfirmClose(false)}
                             className="event-button event-button--secondary"
                         >
-                            Keep open
+                            {copy.keepOpen}
                         </button>
                     </div>
                 </div>

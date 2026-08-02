@@ -5,6 +5,7 @@ import type { StaffRole } from '@prisma/client';
 
 import OpsHealthClient from '@/app/ops/health/OpsHealthClient';
 import type { Messages } from '@/lib/i18n';
+import type { UiLocale } from '@/lib/i18n';
 import type { HealthLevel } from '@/lib/ops-health';
 
 import AdmissionConsole from './AdmissionConsole';
@@ -31,8 +32,10 @@ type Props = {
         scheduledAt: string;
     };
     role: StaffRole;
+    locale: UiLocale;
     admissionEvents: AdmissionEvent[];
     copy: Messages['ops']['cockpit'];
+    lifecycleCopy: Messages['ops']['lifecycle'];
 };
 
 const EMPTY_STAGE: SpotlightSummary = {
@@ -50,7 +53,14 @@ const HEALTH_DOT: Record<HealthLevel, string> = {
     red: 'bg-[var(--danger)]',
 };
 
-export default function ConductorCockpit({ session, role, admissionEvents, copy }: Props) {
+export default function ConductorCockpit({
+    session,
+    role,
+    locale,
+    admissionEvents,
+    copy,
+    lifecycleCopy,
+}: Props) {
     const [drawer, setDrawer] = useState<Drawer | null>(null);
     const [status, setStatus] = useState<EventStatus>(session.status);
     const [stage, setStage] = useState<SpotlightSummary>(EMPTY_STAGE);
@@ -280,6 +290,8 @@ export default function ConductorCockpit({ session, role, admissionEvents, copy 
                             initialStatus={session.status}
                             scheduledAt={session.scheduledAt}
                             role={role}
+                            locale={locale}
+                            copy={lifecycleCopy}
                             observedStatus={status}
                             onStatusChange={setStatus}
                         />

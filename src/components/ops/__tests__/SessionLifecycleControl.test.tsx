@@ -2,7 +2,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { messages } from '@/lib/i18n';
 import SessionLifecycleControl from '../SessionLifecycleControl';
+
+const localized = { locale: 'en' as const, copy: messages.en.ops.lifecycle };
 
 describe('SessionLifecycleControl', () => {
     beforeEach(() => {
@@ -21,6 +24,7 @@ describe('SessionLifecycleControl', () => {
 
     it('opens doors with one glanceable action', async () => {
         render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="SCHEDULED"
             scheduledAt="2026-08-01T18:00:00Z"
@@ -34,6 +38,24 @@ describe('SessionLifecycleControl', () => {
         );
     });
 
+    it('renders the complete lifecycle control in Spanish from the typed dictionary', async () => {
+        render(<SessionLifecycleControl
+            locale="es"
+            copy={messages.es.ops.lifecycle}
+            sessionId="event-1"
+            initialStatus="SCHEDULED"
+            scheduledAt="2026-08-01T18:00:00Z"
+            role="FACILITATOR"
+        />);
+
+        expect(screen.getByRole('heading', { name: 'Puertas del evento' })).toBeInTheDocument();
+        expect(screen.getByText(/Estado:/)).toHaveTextContent('Próximo');
+        fireEvent.click(screen.getByRole('button', { name: 'Abrir puertas' }));
+        expect(await screen.findByText(
+            'Las puertas están abiertas. Las personas ya pueden entrar.',
+        )).toBeInTheDocument();
+    });
+
     it('requires explicit confirmation before closing', async () => {
         vi.mocked(fetch).mockResolvedValue({
             ok: true,
@@ -44,6 +66,7 @@ describe('SessionLifecycleControl', () => {
             }),
         } as Response);
         render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="LIVE"
             scheduledAt="2026-08-01T18:00:00Z"
@@ -67,6 +90,7 @@ describe('SessionLifecycleControl', () => {
             }),
         } as Response);
         render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="ENDED"
             scheduledAt="2026-08-01T18:00:00Z"
@@ -93,6 +117,7 @@ describe('SessionLifecycleControl', () => {
             }),
         } as Response);
         render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="CANCELLED"
             scheduledAt="2026-08-01T18:00:00Z"
@@ -111,6 +136,7 @@ describe('SessionLifecycleControl', () => {
 
     it('does not offer an unauthorized cancellation retry to an operator', () => {
         render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="CANCELLED"
             scheduledAt="2026-08-01T18:00:00Z"
@@ -122,6 +148,7 @@ describe('SessionLifecycleControl', () => {
 
     it('blocks non-admin staff outside the opening window', () => {
         render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="SCHEDULED"
             scheduledAt="2026-08-02T18:00:00Z"
@@ -133,6 +160,7 @@ describe('SessionLifecycleControl', () => {
 
     it('lets an admin provide an audited override reason', () => {
         render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="SCHEDULED"
             scheduledAt="2026-08-02T18:00:00Z"
@@ -148,6 +176,7 @@ describe('SessionLifecycleControl', () => {
 
     it('lets FACILITATOR_OP provide the same audited override reason', () => {
         render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="SCHEDULED"
             scheduledAt="2026-08-02T18:00:00Z"
@@ -161,6 +190,7 @@ describe('SessionLifecycleControl', () => {
 
     it('adopts status observed by another operator without a reload', async () => {
         const { rerender } = render(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="SCHEDULED"
             observedStatus="SCHEDULED"
@@ -170,6 +200,7 @@ describe('SessionLifecycleControl', () => {
         expect(screen.getByRole('button', { name: 'Open doors' })).toBeInTheDocument();
 
         rerender(<SessionLifecycleControl
+            {...localized}
             sessionId="event-1"
             initialStatus="SCHEDULED"
             observedStatus="LIVE"

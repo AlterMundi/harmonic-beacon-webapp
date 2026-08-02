@@ -52,8 +52,10 @@ const props = {
         scheduledAt: '2026-08-01T18:00:00.000Z',
     },
     role: 'FACILITATOR_OP' as const,
+    locale: 'en' as const,
     admissionEvents: [],
     copy: messages.en.ops.cockpit,
+    lifecycleCopy: messages.en.ops.lifecycle,
 };
 
 afterEach(() => {

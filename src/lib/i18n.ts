@@ -218,6 +218,30 @@ export type Messages = {
         unavailableTitle: string;
         unavailableBody: string;
         recover: string;
+        lifecycle: {
+            heading: string;
+            status: string;
+            scheduled: string;
+            statuses: Record<'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED', string>;
+            opening: string;
+            openDoors: string;
+            closeEvent: string;
+            disconnectRemaining: string;
+            outsideWindowOverride: string;
+            outsideWindowRestricted: string;
+            reasonLabel: string;
+            confirmHeading: string;
+            confirmBody: string;
+            disconnecting: string;
+            endAndDisconnect: string;
+            keepOpen: string;
+            doorsAlreadyOpen: string;
+            doorsOpened: string;
+            eventEnded: string;
+            eventCancelled: string;
+            disconnectIncomplete: string;
+            statusChangeFailed: string;
+        };
         cockpit: {
             roomTitle: string;
             roomHint: string;
@@ -444,6 +468,35 @@ export const messages: Record<UiLocale, Messages> = {
             unavailableTitle: 'Este evento no está disponible',
             unavailableBody: 'El enlace puede estar vencido o pertenecer a otro equipo. No se mostraron datos del evento.',
             recover: 'Volver a tus eventos',
+            lifecycle: {
+                heading: 'Puertas del evento',
+                status: 'Estado',
+                scheduled: 'programado para',
+                statuses: {
+                    SCHEDULED: 'Próximo',
+                    LIVE: 'En vivo',
+                    ENDED: 'Finalizado',
+                    CANCELLED: 'Cancelado',
+                },
+                opening: 'Abriendo…',
+                openDoors: 'Abrir puertas',
+                closeEvent: 'Cerrar evento',
+                disconnectRemaining: 'Desconectar conexiones restantes',
+                outsideWindowOverride: 'Estás fuera del horario normal de apertura. Hace falta dejar un motivo de auditoría.',
+                outsideWindowRestricted: 'Las puertas se pueden abrir desde 10 minutos antes hasta 60 minutos después del horario programado.',
+                reasonLabel: 'Motivo operativo (sin datos de participantes)',
+                confirmHeading: '¿Finalizar esta experiencia para todas las personas?',
+                confirmBody: 'Primero se detienen los nuevos ingresos. Luego se desconectan de inmediato la Escena y quienes escuchan el Beacon de este evento. Los demás eventos y la fuente del Beacon siguen en línea.',
+                disconnecting: 'Desconectando…',
+                endAndDisconnect: 'Finalizar y desconectar a todas las personas',
+                keepOpen: 'Mantener abierto',
+                doorsAlreadyOpen: 'Las puertas ya estaban abiertas.',
+                doorsOpened: 'Las puertas están abiertas. Las personas ya pueden entrar.',
+                eventEnded: 'Evento finalizado. Se desconectaron {stage} conexiones de Escena y {beacon} del Beacon.',
+                eventCancelled: 'Evento cancelado. Se desconectaron {stage} conexiones de Escena y {beacon} del Beacon.',
+                disconnectIncomplete: 'El evento se cerró, pero quedaron conexiones activas. Usá “Desconectar conexiones restantes” para volver a intentarlo.',
+                statusChangeFailed: 'No se pudo cambiar el estado del evento',
+            },
             cockpit: {
                 roomTitle: 'Sala en vivo',
                 roomHint: 'La escena permanece conectada mientras abrís las herramientas.',
@@ -668,6 +721,35 @@ export const messages: Record<UiLocale, Messages> = {
             unavailableTitle: 'This event is unavailable',
             unavailableBody: 'The link may be stale or belong to another team. No event details were disclosed.',
             recover: 'Return to your events',
+            lifecycle: {
+                heading: 'Event doors',
+                status: 'Status',
+                scheduled: 'scheduled',
+                statuses: {
+                    SCHEDULED: 'Upcoming',
+                    LIVE: 'Live',
+                    ENDED: 'Ended',
+                    CANCELLED: 'Cancelled',
+                },
+                opening: 'Opening…',
+                openDoors: 'Open doors',
+                closeEvent: 'Close event',
+                disconnectRemaining: 'Disconnect remaining clients',
+                outsideWindowOverride: 'This is outside the normal opening window. An audit reason is required.',
+                outsideWindowRestricted: 'Doors can open from 10 minutes before until 60 minutes after the scheduled start.',
+                reasonLabel: 'Operational reason (do not include attendee details)',
+                confirmHeading: 'End this experience for everyone?',
+                confirmBody: 'New entries stop first. Then every Stage connection and this event’s Beacon listeners are disconnected immediately. Other events and the Beacon source stay online.',
+                disconnecting: 'Disconnecting…',
+                endAndDisconnect: 'End & disconnect everyone',
+                keepOpen: 'Keep open',
+                doorsAlreadyOpen: 'Doors were already open.',
+                doorsOpened: 'Doors are open. Attendees are entering now.',
+                eventEnded: 'Event ended now. Disconnected {stage} Stage and {beacon} Beacon connections.',
+                eventCancelled: 'Event cancelled now. Disconnected {stage} Stage and {beacon} Beacon connections.',
+                disconnectIncomplete: 'Event closed, but an immediate media disconnect was incomplete. Use “Disconnect remaining clients” to retry.',
+                statusChangeFailed: 'Status change failed',
+            },
             cockpit: {
                 roomTitle: 'Live room',
                 roomHint: 'The scene stays connected while you open tools.',
