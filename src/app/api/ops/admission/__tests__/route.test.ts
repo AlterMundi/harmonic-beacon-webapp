@@ -55,6 +55,8 @@ const entitlementRow = {
     revocationReason: null,
     createdAt: new Date('2026-07-28T00:00:00Z'),
     scheduledSession: eventRow,
+    commerceEntitlement: null,
+    promoRedemption: null,
 };
 
 function authed(url: string, options: Parameters<typeof createRequest>[1] = {}) {
@@ -169,6 +171,38 @@ describe('/api/ops/admission', () => {
             expect(mockPrisma.ticketEntitlement.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({ where: { codeLastFour: 'AB3F' } }),
             );
+        });
+
+        it('identifies promotional provenance without exposing its code digest', async () => {
+            mockPrisma.ticketEntitlement.findMany.mockResolvedValue([{
+                ...entitlementRow,
+                tier: 'COMP',
+                promoRedemption: {
+                    redeemedAt: new Date('2026-08-02T12:00:00Z'),
+                    promoInvitation: {
+                        id: '50000000-0000-4000-8000-000000000001',
+                        label: 'Guest list',
+                        status: 'ACTIVE',
+                        expiresAt: new Date('2026-08-03T12:00:00Z'),
+                    },
+                },
+            }]);
+            const { GET } = await loadRoute();
+            const { status, body } = await parseResponse(
+                await GET(authed('http://localhost/api/ops/admission?q=buyer@example.com')),
+            );
+
+            expect(status).toBe(200);
+            const [result] = (body as { results: Array<Record<string, unknown>> }).results;
+            expect(result).toMatchObject({
+                tier: 'COMP',
+                promotion: {
+                    campaignId: '50000000-0000-4000-8000-000000000001',
+                    label: 'Guest list',
+                    status: 'ACTIVE',
+                },
+            });
+            expect(JSON.stringify(body)).not.toContain('codeDigest');
         });
 
         it('finds a single entitlement by UUID, 404 when absent', async () => {

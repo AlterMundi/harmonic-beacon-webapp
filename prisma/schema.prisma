@@ -41,6 +41,11 @@ enum TicketEntitlementState {
   EXPIRED
 }
 
+enum PromoInvitationStatus {
+  ACTIVE
+  DISABLED
+}
+
 enum CommerceProvider {
   TICKET_TAILOR
 }
@@ -77,14 +82,16 @@ model User {
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  facilitatedSessions ScheduledSession[]   @relation("SessionFacilitator")
-  issuedTickets       TicketEntitlement[]  @relation("TicketIssuer")
-  revokedTickets      TicketEntitlement[]  @relation("TicketRevoker")
-  webSessions         WebSession[]         @relation("StaffWebSessions")
-  revokedWebSessions  WebSession[]         @relation("WebSessionRevoker")
-  participations      SessionParticipant[] @relation("StaffParticipation")
-  grantedParticipants SessionParticipant[] @relation("StageGrantActor")
-  auditEntries        AuditLog[]           @relation("AuditActor")
+  facilitatedSessions  ScheduledSession[]   @relation("SessionFacilitator")
+  issuedTickets        TicketEntitlement[]  @relation("TicketIssuer")
+  revokedTickets       TicketEntitlement[]  @relation("TicketRevoker")
+  issuedPromoInvites   PromoInvitation[]    @relation("PromoInvitationIssuer")
+  disabledPromoInvites PromoInvitation[]    @relation("PromoInvitationDisabler")
+  webSessions          WebSession[]         @relation("StaffWebSessions")
+  revokedWebSessions   WebSession[]         @relation("WebSessionRevoker")
+  participations       SessionParticipant[] @relation("StaffParticipation")
+  grantedParticipants  SessionParticipant[] @relation("StageGrantActor")
+  auditEntries         AuditLog[]           @relation("AuditActor")
 
   @@map("users")
 }
@@ -111,6 +118,7 @@ model ScheduledSession {
   tickets              TicketEntitlement[]
   participants         SessionParticipant[]
   commerceEntitlements CommerceEntitlement[]
+  promoInvitations     PromoInvitation[]
 
   @@index([status, scheduledAt])
   @@map("scheduled_sessions")
@@ -139,11 +147,49 @@ model TicketEntitlement {
   webSessions         WebSession[]
   participations      SessionParticipant[]
   commerceEntitlement CommerceEntitlement?
+  promoRedemption     PromoRedemption?
 
   @@index([scheduledSessionId, state])
   @@index([boundEmail])
   @@index([codeLastFour])
   @@map("ticket_entitlements")
+}
+
+model PromoInvitation {
+  id                 String                @id @default(uuid()) @db.Uuid
+  scheduledSessionId String                @map("scheduled_session_id") @db.Uuid
+  scheduledSession   ScheduledSession      @relation(fields: [scheduledSessionId], references: [id], onDelete: Cascade)
+  codeDigest         String                @unique @map("code_digest") @db.Char(64)
+  label              String
+  status             PromoInvitationStatus @default(ACTIVE)
+  expiresAt          DateTime              @map("expires_at")
+  maxRedemptions     Int                   @map("max_redemptions")
+  redemptionCount    Int                   @default(0) @map("redemption_count")
+  issuedByUserId     String                @map("issued_by_user_id") @db.Uuid
+  issuedBy           User                  @relation("PromoInvitationIssuer", fields: [issuedByUserId], references: [id], onDelete: Restrict)
+  disabledAt         DateTime?             @map("disabled_at")
+  disabledByUserId   String?               @map("disabled_by_user_id") @db.Uuid
+  disabledBy         User?                 @relation("PromoInvitationDisabler", fields: [disabledByUserId], references: [id], onDelete: SetNull)
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+
+  redemptions PromoRedemption[]
+
+  @@index([scheduledSessionId, status, expiresAt])
+  @@map("promo_invitations")
+}
+
+model PromoRedemption {
+  id                  String            @id @default(uuid()) @db.Uuid
+  promoInvitationId   String            @map("promo_invitation_id") @db.Uuid
+  promoInvitation     PromoInvitation   @relation(fields: [promoInvitationId], references: [id], onDelete: Cascade)
+  redeemerDigest      String            @map("redeemer_digest") @db.Char(64)
+  ticketEntitlementId String            @unique @map("ticket_entitlement_id") @db.Uuid
+  ticketEntitlement   TicketEntitlement @relation(fields: [ticketEntitlementId], references: [id], onDelete: Cascade)
+  redeemedAt          DateTime          @default(now()) @map("redeemed_at")
+
+  @@unique([promoInvitationId, redeemerDigest])
+  @@map("promo_redemptions")
 }
 
 model CommerceEntitlement {

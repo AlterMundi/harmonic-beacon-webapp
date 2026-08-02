@@ -29,6 +29,11 @@ import {
 } from '@/lib/principal';
 import { authFailureLimiter } from '@/lib/rate-limit';
 import { redactError } from '@/lib/redact';
+import {
+    isPlausiblePromoCode,
+    promoInvitationsEnabled,
+    redeemPromoInvitation,
+} from '@/lib/promo-invitation';
 import { digestTicketCode, normalizeTicketCode } from '@/lib/ticket-code';
 
 /** One message for every rejection. See the module comment. */
@@ -42,7 +47,8 @@ type FailureReason =
     | 'email_mismatch'
     | 'revoked'
     | 'expired'
-    | 'binding_lost';
+    | 'binding_lost'
+    | 'promo_unavailable';
 
 type Attempt =
     | { ok: true; scheduledSessionId: string; entitlementId: string; codeLastFour: string; cookieValue: string }
@@ -76,25 +82,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         displayName = '';
     }
 
-    if (code.length < 16 || !isPlausibleEmail(email) || !isValidDisplayName(displayName)) {
+    const promoCandidate = isPlausiblePromoCode(code);
+    if ((!promoCandidate && code.length < 16) || !isPlausibleEmail(email) || !isValidDisplayName(displayName)) {
         return reject(address, 'malformed_request');
-    }
-
-    let codeDigest: string;
-    try {
-        codeDigest = digestTicketCode(code);
-    } catch (error) {
-        // A missing or too-short TICKET_CODE_PEPPER is an outage, not a bad code.
-        // Reporting it as a rejection would send operators hunting for a ticket
-        // problem while every attendee is locked out.
-        console.error(`[auth] ticket login misconfigured: ${redactError(error)}`);
-        return NextResponse.json({ error: 'Login is temporarily unavailable.' }, { status: 500 });
     }
 
     let attempt: Attempt;
     try {
-        attempt = await redeem(codeDigest, email, displayName);
+        if (promoCandidate) {
+            if (!promoInvitationsEnabled()) {
+                return reject(address, 'promo_unavailable');
+            }
+            const promoAttempt = await redeemPromoInvitation(code, email, displayName);
+            attempt = promoAttempt.ok
+                ? promoAttempt
+                : { ok: false, reason: 'promo_unavailable' };
+        } else {
+            const codeDigest = digestTicketCode(code);
+            attempt = await redeem(codeDigest, email, displayName);
+        }
     } catch (error) {
+        // Missing/invalid secret configuration is an outage, never evidence
+        // that a particular ticket or invitation exists.
         console.error(`[auth] ticket login failed: client=${address} ${redactError(error)}`);
         return NextResponse.json({ error: 'Login is temporarily unavailable.' }, { status: 500 });
     }

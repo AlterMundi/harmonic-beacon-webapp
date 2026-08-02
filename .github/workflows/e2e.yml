@@ -110,7 +110,7 @@ jobs:
         run: npx playwright test e2e/tests/media-continuity.spec.ts --project=iphone-webkit
 
       - name: Verify commerce transaction and durable outbox contract
-        run: npx vitest run src/lib/__tests__/commerce-entitlement.integration.test.ts
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/commerce-entitlement.integration.test.ts src/lib/__tests__/promo-invitation.integration.test.ts
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
           COMMERCE_INTEGRATION_TEST: '1'

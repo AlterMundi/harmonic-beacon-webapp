@@ -57,6 +57,15 @@ function serializeEntitlement(entitlement: {
         administrativeState: string;
         mediaStatus: string;
     } | null;
+    promoRedemption: {
+        redeemedAt: Date;
+        promoInvitation: {
+            id: string;
+            label: string;
+            status: string;
+            expiresAt: Date;
+        };
+    } | null;
 }) {
     return {
         id: entitlement.id,
@@ -71,6 +80,15 @@ function serializeEntitlement(entitlement: {
         createdAt: entitlement.createdAt,
         event: entitlement.scheduledSession,
         commerce: entitlement.commerceEntitlement,
+        promotion: entitlement.promoRedemption
+            ? {
+                campaignId: entitlement.promoRedemption.promoInvitation.id,
+                label: entitlement.promoRedemption.promoInvitation.label,
+                status: entitlement.promoRedemption.promoInvitation.status,
+                expiresAt: entitlement.promoRedemption.promoInvitation.expiresAt,
+                redeemedAt: entitlement.promoRedemption.redeemedAt,
+            }
+            : null,
     };
 }
 
@@ -82,6 +100,19 @@ const ENTITLEMENT_INCLUDE = {
             providerState: true,
             administrativeState: true,
             mediaStatus: true,
+        },
+    },
+    promoRedemption: {
+        select: {
+            redeemedAt: true,
+            promoInvitation: {
+                select: {
+                    id: true,
+                    label: true,
+                    status: true,
+                    expiresAt: true,
+                },
+            },
         },
     },
 } as const;

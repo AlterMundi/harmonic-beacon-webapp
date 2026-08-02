@@ -153,7 +153,50 @@ describe('POST /api/auth/ticket', () => {
     afterEach(() => {
         vi.unstubAllEnvs();
         vi.doUnmock('@/lib/db');
+        vi.doUnmock('@/lib/promo-invitation');
         vi.restoreAllMocks();
+    });
+
+    it('keeps short invitation codes disabled by default without revealing whether they exist', async () => {
+        const db = mountDb([]);
+        const { POST } = await importRoute();
+
+        const response = await POST(loginRequest({ code: 'NICO100', email: EMAIL }, '203.0.113.81'));
+
+        expect(response.status).toBe(401);
+        expect(await response.json()).toEqual({ error: 'That ticket code and email do not match an active ticket.' });
+        expect(db.webSessions).toHaveLength(0);
+    });
+
+    it('returns the ordinary attendee cookie/session response for an enabled promotion', async () => {
+        const redeemPromoInvitation = vi.fn().mockResolvedValue({
+            ok: true,
+            scheduledSessionId: 'session-saturday',
+            entitlementId: 'promo-entitlement-1',
+            codeLastFour: '7XQP',
+            cookieValue: 'promo-cookie-value',
+            replayed: false,
+        });
+        vi.doMock('@/lib/promo-invitation', () => ({
+            isPlausiblePromoCode: (code: string) => code.trim().toUpperCase() === 'NICO100',
+            promoInvitationsEnabled: () => true,
+            redeemPromoInvitation,
+        }));
+        mountDb([]);
+        const { POST } = await importRoute();
+
+        const response = await POST(loginRequest({ code: 'nico100', email: EMAIL }, '203.0.113.82'));
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ ok: true, scheduledSessionId: 'session-saturday' });
+        expect(redeemPromoInvitation).toHaveBeenCalledWith('NICO100', EMAIL, NAME);
+        expect(sessionCookieOf(response)).toMatchObject({
+            name: 'hb_session',
+            value: 'promo-cookie-value',
+            httpOnly: true,
+            secure: true,
+            sameSite: 'lax',
+        });
     });
 
     it('binds the ticket on first use and returns the secure hb_session cookie', async () => {
