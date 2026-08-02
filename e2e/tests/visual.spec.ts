@@ -60,6 +60,12 @@ stackTest.describe('visual baselines', () => {
                 { timeout: 20_000 },
             );
             await expect(page.getByRole('button', { name: /Start audio|Iniciar audio/i })).toBeVisible();
+            // Camera acquisition is asynchronous. Wait for the complete
+            // mobile camera control instead of snapshotting an intermediate
+            // state that races between "share" and "stop/switch" controls.
+            await expect(page.getByRole('button', {
+                name: /Switch to rear camera|Cambiar a cámara trasera/i,
+            })).toBeVisible();
             await expect(page).toHaveScreenshot('attendee-audio-prompt.png', {
                 mask: [page.getByTestId('connection-state').locator('..')],
                 maskColor: '#07120f',
