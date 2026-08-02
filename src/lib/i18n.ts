@@ -88,6 +88,7 @@ export type Messages = {
         connectingHeading: string;
         connectingBody: string;
         connectionErrorHeading: string;
+        connectionUnavailable: string;
         tryAgain: string;
         backToSessions: string;
         endedHeading: string;
@@ -515,6 +516,7 @@ export const messages: Record<UiLocale, Messages> = {
             connectingHeading: 'Conectando',
             connectingBody: 'Entrando al campo armónico…',
             connectionErrorHeading: 'Error de conexión',
+            connectionUnavailable: 'No pudimos entrar a la sala. Tu acceso sigue confirmado; intentá de nuevo.',
             tryAgain: 'Intentar de nuevo',
             backToSessions: 'Volver a las sesiones',
             endedHeading: 'La sesión terminó',
@@ -983,6 +985,7 @@ export const messages: Record<UiLocale, Messages> = {
             connectingHeading: 'Connecting',
             connectingBody: 'Entering the Harmonic field…',
             connectionErrorHeading: 'Connection error',
+            connectionUnavailable: 'We could not enter the room. Your access is still confirmed; try again.',
             tryAgain: 'Try again',
             backToSessions: 'Back to sessions',
             endedHeading: 'Session ended',
