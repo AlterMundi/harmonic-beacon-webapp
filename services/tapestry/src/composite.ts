@@ -25,8 +25,12 @@ interface CompositeCacheEntry {
   jpeg: Buffer;
   builtAtMs: number;
   inFlight: Promise<Buffer> | null;
-  /** Set on ingest/sweep; cleared when a rebuild picks up the change. */
-  dirty: boolean;
+  /** Monotonic store revision; every ingest/sweep/arrangement advances it. */
+  revision: number;
+  /** Revision captured by the last successfully completed composite. */
+  builtRevision: number;
+  /** A staff change newer than builtRevision bypasses the ingest rate limit. */
+  urgentRevision: number;
 }
 
 export class TapestryCompositor {
@@ -48,7 +52,9 @@ export class TapestryCompositor {
         jpeg: Buffer.alloc(0),
         builtAtMs: 0,
         inFlight: null,
-        dirty: true,
+        revision: 1,
+        builtRevision: 0,
+        urgentRevision: 0,
       });
     }
   }
@@ -57,12 +63,12 @@ export class TapestryCompositor {
   markDirty(sessionId: string, immediate = false): void {
     const entry = this.cache.get(sessionId);
     if (entry) {
-      entry.dirty = true;
+      entry.revision += 1;
       // Staff actions (arrangement changes) must be visible at once — the
       // rate limit exists to bound ingest-driven rebuild churn, not to make
       // the ops console feel broken.
       if (immediate) {
-        entry.builtAtMs = 0;
+        entry.urgentRevision = entry.revision;
       }
     }
   }
@@ -86,22 +92,31 @@ export class TapestryCompositor {
     if (!entry) {
       return null;
     }
-
-    const now = this.nowMs();
-    const freshEnough =
-      !entry.dirty || now - entry.builtAtMs < this.config.compositeMinIntervalMs;
-    if (entry.jpeg.length > 0 && freshEnough) {
-      return entry.jpeg;
-    }
     if (entry.inFlight) {
       return entry.inFlight;
     }
 
+    const now = this.nowMs();
+    const dirty = entry.builtRevision !== entry.revision;
+    const urgent = entry.urgentRevision > entry.builtRevision;
+    const freshEnough =
+      !dirty || (!urgent && now - entry.builtAtMs < this.config.compositeMinIntervalMs);
+    if (entry.jpeg.length > 0 && freshEnough) {
+      return entry.jpeg;
+    }
+
+    // `build()` snapshots the store synchronously before libvips starts its
+    // asynchronous encoding. Only this captured revision may be marked built:
+    // a later ingest must remain pending when this promise settles.
+    const buildRevision = entry.revision;
     entry.inFlight = this.build(sessionId)
       .then((jpeg) => {
         entry.jpeg = jpeg;
         entry.builtAtMs = this.nowMs();
-        entry.dirty = false;
+        entry.builtRevision = buildRevision;
+        if (entry.urgentRevision <= buildRevision) {
+          entry.urgentRevision = 0;
+        }
         this.compositesBuilt += 1;
         return jpeg;
       })

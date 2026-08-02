@@ -11,6 +11,9 @@ import { test } from "node:test";
 
 import sharp from "sharp";
 
+import { TapestryCompositor } from "../src/composite.js";
+import { TapestryStore } from "../src/store.js";
+
 import {
   SESSION_A,
   getComposite,
@@ -104,6 +107,43 @@ test("composite rebuilds at most once per second and only when frames changed", 
   } finally {
     await service.close();
   }
+});
+
+test("a frame ingested during an in-flight build remains dirty for the next bounded rebuild", async () => {
+  let now = 1_000;
+  const config = testConfig({ compositeMinIntervalMs: 1_000 });
+  const store = new TapestryStore(config.sessionIds, config.maxParticipantsPerSession);
+  const compositor = new TapestryCompositor(config, store, () => now);
+  const red = await makeJpeg(255, 0, 0, config.tileSizePx);
+  const blue = await makeJpeg(0, 0, 255, config.tileSizePx);
+
+  store.ingest(SESSION_A, "p1", red, now);
+  compositor.markDirty(SESSION_A);
+  const firstBuild = compositor.composite(SESSION_A);
+  const concurrentCaller = compositor.composite(SESSION_A);
+
+  // `build()` has already captured the red tile, but libvips is still
+  // encoding asynchronously. This ingest must survive completion bookkeeping.
+  store.ingest(SESSION_A, "p1", blue, now);
+  compositor.markDirty(SESSION_A);
+
+  const [first, concurrent] = await Promise.all([firstBuild, concurrentCaller]);
+  assert.ok(first);
+  assert.strictEqual(concurrent, first, "concurrent callers share one completed buffer");
+  assert.equal(compositor.compositesBuiltCount(), 1);
+  const firstColor = await tileColor(first, 0, 0);
+  assert.ok(firstColor.r > 150 && firstColor.b < 80, "the in-flight snapshot stays coherent");
+
+  const rateLimited = await compositor.composite(SESSION_A);
+  assert.strictEqual(rateLimited, first, "ordinary ingest still respects the rebuild interval");
+  assert.equal(compositor.compositesBuiltCount(), 1);
+
+  now += config.compositeMinIntervalMs;
+  const rebuilt = await compositor.composite(SESSION_A);
+  assert.ok(rebuilt);
+  assert.equal(compositor.compositesBuiltCount(), 2, "the intervening ingest triggers a later build");
+  const rebuiltColor = await tileColor(rebuilt, 0, 0);
+  assert.ok(rebuiltColor.b > 150 && rebuiltColor.r < 80, "the newest frame becomes visible");
 });
 
 test("a stale participant disappears from the composite within 12 seconds", async () => {
