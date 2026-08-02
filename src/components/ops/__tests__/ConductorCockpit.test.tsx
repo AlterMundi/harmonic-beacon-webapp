@@ -56,6 +56,8 @@ const props = {
     admissionEvents: [],
     copy: messages.en.ops.cockpit,
     lifecycleCopy: messages.en.ops.lifecycle,
+    spotlightCopy: messages.en.ops.spotlight,
+    staffRoleLabels: messages.en.staffRoles,
 };
 
 afterEach(() => {

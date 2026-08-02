@@ -36,6 +36,8 @@ type Props = {
     admissionEvents: AdmissionEvent[];
     copy: Messages['ops']['cockpit'];
     lifecycleCopy: Messages['ops']['lifecycle'];
+    spotlightCopy: Messages['ops']['spotlight'];
+    staffRoleLabels: Messages['staffRoles'];
 };
 
 const EMPTY_STAGE: SpotlightSummary = {
@@ -60,6 +62,8 @@ export default function ConductorCockpit({
     admissionEvents,
     copy,
     lifecycleCopy,
+    spotlightCopy,
+    staffRoleLabels,
 }: Props) {
     const [drawer, setDrawer] = useState<Drawer | null>(null);
     const [status, setStatus] = useState<EventStatus>(session.status);
@@ -300,6 +304,8 @@ export default function ConductorCockpit({
                         <SpotlightConsole
                             sessionId={session.id}
                             role={role}
+                            copy={spotlightCopy}
+                            staffRoles={staffRoleLabels}
                             onSummary={onStageSummary}
                         />
                     </div>

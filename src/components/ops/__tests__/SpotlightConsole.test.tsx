@@ -1,9 +1,23 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import SpotlightConsole from '../SpotlightConsole';
+import { messages } from '@/lib/i18n';
+import SpotlightConsoleImpl from '../SpotlightConsole';
+
+type SpotlightConsoleProps = Omit<ComponentProps<typeof SpotlightConsoleImpl>, 'copy' | 'staffRoles'>;
+
+function SpotlightConsole(props: SpotlightConsoleProps) {
+    return (
+        <SpotlightConsoleImpl
+            {...props}
+            copy={messages.en.ops.spotlight}
+            staffRoles={messages.en.staffRoles}
+        />
+    );
+}
 
 type Participant = Record<string, unknown>;
 
@@ -108,6 +122,30 @@ describe('SpotlightConsole', () => {
         expect(screen.getByText(/left/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Take floor' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: 'Give floor' })).toHaveLength(2);
+    });
+
+    it('renders the stage workflow and staff role in Spanish', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('raised', {
+                displayName: 'Alguien',
+                raisedAt: '2026-08-01T15:10:00.000Z',
+                queuePosition: 1,
+            }),
+        ], { activePublishers: 0 })));
+
+        render(
+            <SpotlightConsoleImpl
+                sessionId="event-1"
+                role="FACILITATOR_OP"
+                copy={messages.es.ops.spotlight}
+                staffRoles={messages.es.staffRoles}
+            />,
+        );
+
+        expect(await screen.findByRole('heading', { name: 'Fila de manos' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Dar la palabra' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Quitar mano' })).toBeInTheDocument();
+        expect(screen.getByText(/Sesión de Facilitación y operaciones/)).toBeInTheDocument();
     });
 
     it('shows a recent private snapshot, uses one neutral fallback, and recovers from image failure', async () => {

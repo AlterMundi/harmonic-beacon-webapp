@@ -100,6 +100,8 @@ export default async function EventPage({
                 }]}
                 copy={copy.cockpit}
                 lifecycleCopy={copy.lifecycle}
+                spotlightCopy={copy.spotlight}
+                staffRoleLabels={messages[locale].staffRoles}
             />
         </section>
     );
