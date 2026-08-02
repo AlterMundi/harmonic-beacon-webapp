@@ -182,7 +182,7 @@ export default function ConductorCockpit({
                     <strong className={stage.handCount > 0 ? 'text-[var(--pink)]' : 'text-[var(--cream)]'}>
                         {stage.handCount}
                     </strong>
-                    <span className="ml-2 truncate text-xs text-[var(--text-secondary)]">
+                    <span className="mt-1 block break-words text-xs leading-4 text-[var(--text-secondary)]">
                         {stage.nextName ? `${copy.next}: ${stage.nextName}` : copy.noHands}
                     </span>
                 </button>
@@ -231,7 +231,7 @@ export default function ConductorCockpit({
 
             <header className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                    <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-[var(--gold)]">
+                    <p className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gold)]">
                         {copy.roomTitle}
                     </p>
                     <p className="mt-1 text-xs text-[var(--text-secondary)]">{copy.roomHint}</p>

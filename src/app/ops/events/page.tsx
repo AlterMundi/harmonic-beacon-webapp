@@ -20,7 +20,7 @@ function EventCard({ event, locale }: { event: StaffEvent; locale: 'es' | 'en' }
             >
                 <div className="flex items-start justify-between gap-4">
                     <div>
-                        <p className={`text-[10px] font-mono uppercase tracking-[0.14em] ${
+                        <p className={`text-xs font-mono uppercase tracking-[0.12em] ${
                             event.status === 'LIVE' ? 'text-[var(--lime)]' : 'text-[var(--gold)]'
                         }`}>
                             {event.status === 'LIVE' ? copy.live : copy.scheduled}

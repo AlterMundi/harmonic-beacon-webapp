@@ -113,7 +113,7 @@ export default async function LandingPage({
                         <PortalOrbit size="lg">
                             <div className="text-center">
                                 <span className="block font-serif text-lg text-[var(--gold)]">{copy.portalLabel}</span>
-                                <small className="block font-mono text-[9px] tracking-[0.15em] text-[var(--muted)] uppercase mt-1">
+                                <small className="mt-1 block font-mono text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                                     {copy.portalSub}
                                 </small>
                             </div>
@@ -141,7 +141,7 @@ export default async function LandingPage({
                                 <li key={event.id} className="event-card">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="space-y-2">
-                                            <p className="text-[11px] font-mono uppercase tracking-[0.11em] text-[var(--paper)]">
+                                            <p className="text-xs font-mono uppercase tracking-[0.1em] text-[var(--paper)]">
                                                 {event.language === "ENGLISH" ? copy.english : copy.spanish}
                                             </p>
                                             <p className="text-sm text-[var(--text-secondary)]">
@@ -161,7 +161,7 @@ export default async function LandingPage({
                                             <p className="font-mono text-lg font-normal text-[var(--gold)]">
                                                 {formatTimeOnly(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
                                             </p>
-                                            <p className="text-[10px] font-mono text-[var(--cyan)]">
+                                            <p className="text-xs font-mono text-[var(--cyan)]">
                                                 {event.language === "ENGLISH" ? "US $50" : "US $20"}
                                             </p>
                                         </div>
@@ -204,7 +204,7 @@ export default async function LandingPage({
                 </section>
 
                 {/* Footer */}
-                <footer className="mt-auto flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-[var(--text-muted)]">
+                <footer className="mt-auto flex flex-wrap gap-x-5 gap-y-2 text-xs text-[var(--text-muted)]">
                     <a
                         href="https://harmonicbeacon.com/politica/"
                         className="underline underline-offset-2 transition-colors hover:text-[var(--paper)]"

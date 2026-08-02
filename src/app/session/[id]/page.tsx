@@ -928,7 +928,7 @@ function SessionRoom() {
                 {/* Header */}
                 <header className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
                     <div className="min-w-0 flex-1">
-                        <h1 className="truncate text-sm font-semibold text-[var(--cream)]">
+                        <h1 className="break-words text-sm font-semibold leading-5 text-[var(--cream)]">
                             {sessionInfo?.title || copy.session.sessionFallback}
                         </h1>
                         <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]" aria-live="polite">
@@ -943,7 +943,7 @@ function SessionRoom() {
                             </span>
                         </p>
                         {viewerInfo && (
-                            <p className="mt-1 truncate text-xs text-[var(--gold)]" data-testid="viewer-identity">
+                            <p className="mt-1 break-words text-xs leading-5 text-[var(--gold)]" data-testid="viewer-identity">
                                 {copy.session.signedIn}: <strong>{viewerInfo.name}</strong>
                                 {principalKind === 'staff' ? <>{' · '}{viewerInfo.role}</> : null}
                             </p>
@@ -996,7 +996,7 @@ function SessionRoom() {
                             aria-describedby="stage-invitation-body"
                             className="event-card w-full max-w-md text-center outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)]"
                         >
-                            <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-[var(--gold)]">
+                            <p className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gold)]">
                                 {sessionInfo?.title}
                             </p>
                             <h2 id="stage-invitation-title" className="mt-2 font-serif text-2xl text-[var(--paper)]">
@@ -1354,7 +1354,7 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                 <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
                     <section role="status" aria-live="polite" className="event-card w-full max-w-md text-center">
                         <div className="terminal-state__icon text-[var(--lime)]">&#10022;</div>
-                        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--lime)]">
+                        <p className="font-mono text-xs uppercase tracking-[0.12em] text-[var(--lime)]">
                             {copy.session.ticketConfirmed}
                         </p>
                         <h1 className="terminal-state__title mt-2">{entry.session.title}</h1>

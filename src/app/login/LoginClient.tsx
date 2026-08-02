@@ -131,7 +131,7 @@ export default function LoginClient({ next }: { next?: string }) {
                 {submitting ? messages.signingIn : messages.enter}
             </button>
 
-            <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+            <p className="text-xs leading-relaxed text-[var(--text-muted)]">
                 {messages.reconnectHint}
             </p>
         </form>

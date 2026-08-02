@@ -32,10 +32,10 @@ export default function StaffIdentityMenu({
         <details className="relative ml-auto">
             <summary className="flex min-h-11 cursor-pointer list-none flex-col justify-center rounded-md border border-white/10 px-3 py-1.5 text-right hover:bg-white/5">
                 <span className="block text-xs font-medium text-[var(--paper)]">{name}</span>
-                <span className="block text-[10px] text-[var(--text-muted)]">{roleLabel}</span>
+                <span className="block text-xs text-[var(--text-muted)]">{roleLabel}</span>
             </summary>
             <div className="absolute right-0 z-30 mt-2 min-w-52 rounded-lg border border-[var(--border-subtle)] bg-[var(--forest)] p-3 shadow-xl">
-                <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{signedInAs}</p>
+                <p className="text-xs uppercase tracking-wider text-[var(--text-muted)]">{signedInAs}</p>
                 <p className="mt-1 text-sm text-[var(--paper)]">{name}</p>
                 <p className="text-xs text-[var(--text-secondary)]">{roleLabel}</p>
                 <button

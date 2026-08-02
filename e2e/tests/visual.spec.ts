@@ -115,4 +115,24 @@ stackTest.describe('visual baselines', () => {
             maskColor: '#07120f',
         });
     });
+
+    stackTest('event hub', async ({ page }) => {
+        await loginViaDashboard(page, 'OPERATOR', 'E2E Operator', ROUTES.opsEvents);
+        await expect(page.getByRole('heading', { name: /Eventos|Events/i })).toBeVisible();
+        await expect(page).toHaveScreenshot('event-hub.png', { fullPage: true });
+    });
+
+    stackTest('admission operations', async ({ page }) => {
+        await loginViaDashboard(page, 'FACILITATOR_OP', 'E2E Conductor', ROUTES.opsAdmission);
+        await expect(page.getByRole('heading', { name: /Buscar entrada|Look up ticket/i })).toBeVisible();
+        await expect(page).toHaveScreenshot('admission.png', { fullPage: true });
+    });
+
+    stackTest('event health', async ({ page }) => {
+        await page.route('**/api/ops/health**', (route) => route.fulfill({ json: NOMINAL_HEALTH }));
+        await page.route('**/api/tapestry/**', (route) => route.fulfill({ status: 404 }));
+        await loginViaDashboard(page, 'FACILITATOR_OP', 'E2E Conductor', ROUTES.opsHealth);
+        await expect(page.getByText(/(?:VERDE|GREEN) —/i)).toBeVisible();
+        await expect(page).toHaveScreenshot('event-health.png', { fullPage: true });
+    });
 });

@@ -1,7 +1,10 @@
 import { expect, stackTest, test } from '../fixtures/stack';
 import { loginViaDashboard } from '../fixtures/auth';
-import { requireDirectDb, withSessionStatus } from '../fixtures/db';
-import { ROUTES, SESSION_ES } from '../fixtures/test-data';
+import { requireDirectDb, withSessionStatus, withSessionTitles } from '../fixtures/db';
+import { ROUTES, SESSION_EN, SESSION_ES } from '../fixtures/test-data';
+
+const LONG_ES_TITLE = 'Viaje colectivo hacia el bosque interior y las imágenes que todavía nos acompañan';
+const LONG_EN_TITLE = 'A collective journey through the inner forest and the images that still travel with us';
 
 /**
  * Responsive gate — runs once per viewport project (1440 / 1024 / 390 / 320
@@ -80,6 +83,46 @@ stackTest.describe('responsive live surfaces', () => {
                 const box = await startAudio.boundingBox();
                 expect(box).not.toBeNull();
                 expect(box!.height).toBeGreaterThanOrEqual(44);
+                expect(box!.x).toBeGreaterThanOrEqual(0);
+                expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+            }
+
+            const stopTapestry = page.getByRole('button', {
+                name: /Stop sharing your camera with the tapestry|Dejar de compartir la cámara con el tapiz/i,
+            });
+            if (await stopTapestry.count()) {
+                await stopTapestry.click();
+                const optIn = page.getByRole('button', {
+                    name: /Share a camera snapshot|Compartir una imagen de cámara/i,
+                });
+                await expect(optIn).toBeVisible();
+                const optInBox = await optIn.boundingBox();
+                expect(optInBox).not.toBeNull();
+                expect(optInBox!.height).toBeGreaterThanOrEqual(44);
+            }
+        });
+    });
+
+    stackTest('long ES/EN event titles remain complete and in-bounds', async ({ page }, testInfo) => {
+        const db = requireDirectDb(testInfo);
+        await withSessionTitles(db, [
+            { id: SESSION_ES.id, title: LONG_ES_TITLE },
+            { id: SESSION_EN.id, title: LONG_EN_TITLE },
+        ], async () => {
+            await loginViaDashboard(page, 'OPERATOR', 'E2E Operator', ROUTES.opsEvents);
+            await page
+                .locator('details')
+                .filter({ hasText: /Eventos de prueba|Test events/i })
+                .locator('summary')
+                .click();
+            await expectNoHorizontalScroll(page);
+
+            for (const title of [LONG_ES_TITLE, LONG_EN_TITLE]) {
+                const heading = page.getByRole('heading', { name: title });
+                await expect(heading).toBeVisible();
+                await expect(heading).toHaveCSS('text-overflow', 'clip');
+                const box = await heading.boundingBox();
+                expect(box, `${title} has no layout box`).not.toBeNull();
                 expect(box!.x).toBeGreaterThanOrEqual(0);
                 expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
             }

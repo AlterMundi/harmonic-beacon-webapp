@@ -169,7 +169,7 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
             </button>
             <button type="button" className="inline-flex min-h-11 items-center px-2 text-xs text-[var(--text-muted)] underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cyan)]" onClick={optOut}>{copy.tapestry.stopCamera}</button>
         </div> :
-            <button type="button" className="text-xs text-[var(--gold)] underline" onClick={optIn} disabled={!connected}>{copy.tapestry.shareSnapshot}</button>}
+            <button type="button" className="inline-flex min-h-11 items-center px-2 text-xs text-[var(--gold)] underline" onClick={optIn} disabled={!connected}>{copy.tapestry.shareSnapshot}</button>}
         {message ? <p className="mt-1 text-xs text-[var(--text-muted)]">{message}</p> : null}
     </section>;
 }
