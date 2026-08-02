@@ -24,6 +24,12 @@ export function requireDirectDb(testInfo: TestInfo): string {
 
 export type FixtureSessionStatus = 'SCHEDULED' | 'LIVE';
 
+type FixtureSessionLifecycle = {
+    status: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
+    started_at: Date | null;
+    ended_at: Date | null;
+};
+
 /**
  * Flip a fixture session's status for the duration of `run`, restoring the
  * original status afterwards even when the callback throws.
@@ -51,6 +57,82 @@ export async function withSessionStatus<T>(
                 'SCHEDULED',
                 sessionId,
             ]);
+        }
+    } finally {
+        await client.end();
+    }
+}
+
+/**
+ * Exercise a complete doors-open/doors-closed journey from a known baseline,
+ * then put the shared fixture back exactly as it was. Unlike
+ * `withSessionStatus`, this also preserves the lifecycle timestamps mutated
+ * by the product's real transition endpoint.
+ */
+export async function withResetSessionLifecycle<T>(
+    databaseUrl: string,
+    sessionId: string,
+    run: () => Promise<T>,
+): Promise<T> {
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+        const { rows } = await client.query<FixtureSessionLifecycle>(
+            'select status, started_at, ended_at from scheduled_sessions where id = $1',
+            [sessionId],
+        );
+        const original = rows[0];
+        if (!original) {
+            throw new Error(`fixture session ${sessionId} not found`);
+        }
+
+        await client.query(
+            "update scheduled_sessions set status = 'SCHEDULED', started_at = null, ended_at = null where id = $1",
+            [sessionId],
+        );
+        try {
+            return await run();
+        } finally {
+            await client.query(
+                'update scheduled_sessions set status = $1, started_at = $2, ended_at = $3 where id = $4',
+                [original.status, original.started_at, original.ended_at, sessionId],
+            );
+        }
+    } finally {
+        await client.end();
+    }
+}
+
+type FixtureStaffSnapshot = {
+    name: string;
+    role: 'FACILITATOR' | 'FACILITATOR_OP' | 'OPERATOR' | 'ADMIN';
+    disabled_at: Date | null;
+};
+
+/** Preserve the shared facilitator row while the E2E dashboard upgrades it to FACILITATOR_OP. */
+export async function withPreservedFixtureStaff<T>(
+    databaseUrl: string,
+    email: string,
+    run: () => Promise<T>,
+): Promise<T> {
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+        const { rows } = await client.query<FixtureStaffSnapshot>(
+            'select name, role, disabled_at from users where email = $1',
+            [email],
+        );
+        const original = rows[0];
+        if (!original) {
+            throw new Error(`fixture staff ${email} not found`);
+        }
+        try {
+            return await run();
+        } finally {
+            await client.query(
+                'update users set name = $1, role = $2, disabled_at = $3 where email = $4',
+                [original.name, original.role, original.disabled_at, email],
+            );
         }
     } finally {
         await client.end();
