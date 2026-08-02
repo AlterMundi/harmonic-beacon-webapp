@@ -15,6 +15,7 @@
 /test-results/
 /playwright-report/
 /e2e/.auth/
+/artifacts/load-test/
 
 # next.js
 /.next/
