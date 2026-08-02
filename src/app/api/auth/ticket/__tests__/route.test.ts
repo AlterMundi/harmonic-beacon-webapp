@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 
 import { createRequest, parseResponse } from '@/__tests__/helpers';
 import { digestSessionToken } from '@/lib/session-auth';
@@ -133,6 +134,23 @@ function loginRequest(body: unknown, address = CLIENT) {
     });
 }
 
+function invitationRequest(overrides: Record<string, string> = {}, address = CLIENT) {
+    return new NextRequest('https://live.harmonicbeacon.com/api/auth/ticket', {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            'x-forwarded-for': address,
+        },
+        body: new URLSearchParams({
+            name: NAME,
+            email: EMAIL,
+            code: 'NICO100',
+            termsAccepted: 'accepted',
+            ...overrides,
+        }),
+    });
+}
+
 async function importRoute() {
     return import('../route');
 }
@@ -197,6 +215,64 @@ describe('POST /api/auth/ticket', () => {
             secure: true,
             sameSite: 'lax',
         });
+    });
+
+    it('redeems the public invitation form, audits terms, sets the cookie and redirects to its event', async () => {
+        const redeemPromoInvitation = vi.fn().mockResolvedValue({
+            ok: true,
+            scheduledSessionId: '10000000-0000-4000-8000-000000000001',
+            entitlementId: 'promo-entitlement-1',
+            codeLastFour: '7XQP',
+            cookieValue: 'promo-cookie-value',
+            replayed: false,
+        });
+        vi.doMock('@/lib/promo-invitation', () => ({
+            isPlausiblePromoCode: (code: string) => code === 'NICO100',
+            promoInvitationsEnabled: () => true,
+            redeemPromoInvitation,
+        }));
+        mountDb([]);
+        const { POST } = await importRoute();
+
+        const response = await POST(invitationRequest());
+
+        expect(response.status).toBe(303);
+        expect(response.headers.get('location')).toBe(
+            'https://live.harmonicbeacon.com/session/10000000-0000-4000-8000-000000000001',
+        );
+        expect(redeemPromoInvitation).toHaveBeenCalledWith(
+            'NICO100',
+            EMAIL,
+            NAME,
+            expect.any(Date),
+            { version: 'personal-invitation-v2', acceptedAt: expect.any(Date) },
+        );
+        expect(sessionCookieOf(response)).toMatchObject({
+            value: 'promo-cookie-value',
+            httpOnly: true,
+            secure: true,
+            sameSite: 'lax',
+        });
+    });
+
+    it('returns malformed invitation forms to the landing without reflecting PII', async () => {
+        mountDb([]);
+        const { POST } = await importRoute();
+
+        const malformed: Array<Record<string, string>> = [
+            { name: '' },
+            { email: 'not-an-email' },
+            { termsAccepted: '' },
+            { code: CODE },
+        ];
+        for (const [index, overrides] of malformed.entries()) {
+            const response = await POST(invitationRequest(overrides, `198.51.100.${30 + index}`));
+            expect(response.status).toBe(303);
+            expect(response.headers.get('location')).toBe(
+                'https://harmonicbeacon.com/invitacion/?entry_error=invalid',
+            );
+            expect(response.headers.get('location')).not.toContain(EMAIL);
+        }
     });
 
     it('binds the ticket on first use and returns the secure hb_session cookie', async () => {

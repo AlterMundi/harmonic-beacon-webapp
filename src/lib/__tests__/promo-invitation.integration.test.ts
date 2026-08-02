@@ -129,6 +129,10 @@ integration('promotion invitation PostgreSQL contract', () => {
             redemption.ticketEntitlement.boundEmail!,
             'Returning guest',
             new Date('2026-08-04T12:00:00.000Z'),
+            {
+                version: 'personal-invitation-v2',
+                acceptedAt: new Date('2026-08-04T12:00:00.000Z'),
+            },
         );
         expect(replay).toMatchObject({
             ok: true,
@@ -142,5 +146,17 @@ integration('promotion invitation PostgreSQL contract', () => {
             new Date('2026-08-04T12:00:00.000Z'),
         )).resolves.toEqual({ ok: false, reason: 'unavailable' });
         expect(await prisma.ticketEntitlement.count()).toBe(1);
+        await expect(prisma.auditLog.findFirst({
+            where: {
+                action: 'invitation.terms.accept',
+                targetId: redemption.ticketEntitlementId,
+            },
+        })).resolves.toMatchObject({
+            metadata: {
+                promoInvitationId: CAMPAIGN_ID,
+                termsVersion: 'personal-invitation-v2',
+                acceptedAt: '2026-08-04T12:00:00.000Z',
+            },
+        });
     });
 });

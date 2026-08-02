@@ -170,7 +170,7 @@ function printDryRun(snapshot: StabilizationSnapshot, digest: string): void {
         changes: EVENT_CONTRACTS.map((contract) => ({
             event: contract.key,
             id: contract.id,
-            desiredStatus: contract.isTest ? 'CANCELLED' : 'SCHEDULED',
+            desiredStatus: contract.desiredStatus,
             desiredScheduledAt: contract.scheduledAt,
             current: snapshot.sessions.find((session) => session.id === contract.id),
         })),
@@ -183,8 +183,11 @@ function sessionNeedsUpdate(
     session: StabilizationSessionSnapshot,
     contract: (typeof EVENT_CONTRACTS)[number],
 ): boolean {
+    if (session.title !== contract.title || session.paidMode !== contract.paidMode) return true;
     if (session.scheduledAt !== contract.scheduledAt) return true;
-    if (contract.isTest) return session.status !== 'CANCELLED' || session.endedAt === null;
+    if (contract.desiredStatus === 'CANCELLED') {
+        return session.status !== 'CANCELLED' || session.endedAt === null;
+    }
     return session.status !== 'SCHEDULED' || session.startedAt !== null || session.endedAt !== null;
 }
 

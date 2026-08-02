@@ -60,6 +60,11 @@ export type PromoRedemptionAttempt =
     }
     | { ok: false; reason: 'unavailable' };
 
+export type PromoTermsAcceptance = {
+    version: string;
+    acceptedAt: Date;
+};
+
 /**
  * Atomically redeem (or replay) one human promotion code.
  *
@@ -74,6 +79,7 @@ export async function redeemPromoInvitation(
     email: string,
     displayName: string,
     now = new Date(),
+    termsAcceptance?: PromoTermsAcceptance,
 ): Promise<PromoRedemptionAttempt> {
     const codeDigest = digestPromoCode(code);
     const redeemerDigest = promoRedeemerDigest(email);
@@ -189,6 +195,22 @@ export async function redeemPromoInvitation(
                 lastSeenAt: now,
             },
         });
+
+        if (termsAcceptance) {
+            await tx.auditLog.create({
+                data: {
+                    actorUserId: null,
+                    action: 'invitation.terms.accept',
+                    targetType: 'TICKET_ENTITLEMENT',
+                    targetId: entitlement.id,
+                    metadata: {
+                        promoInvitationId: invitation.id,
+                        termsVersion: termsAcceptance.version,
+                        acceptedAt: termsAcceptance.acceptedAt.toISOString(),
+                    },
+                },
+            });
+        }
 
         return {
             ok: true,

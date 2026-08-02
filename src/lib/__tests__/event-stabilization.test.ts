@@ -22,7 +22,7 @@ function validSnapshot(): StabilizationSnapshot {
             endedAt: null,
             status: contract.acceptedStatuses[0],
             isTest: contract.isTest,
-            paidMode: true,
+            paidMode: contract.paidMode,
             attendeeCap: 150,
             maxPublishers: 6,
             facilitatorId: 'facilitator-id',
@@ -82,18 +82,26 @@ describe('event stabilization safety contract', () => {
         expect(() => validateStabilizationSnapshot(moved)).toThrow(/unexpected scheduledAt/);
     });
 
-    it('refuses execution at and after the ten-minute doors boundary', () => {
-        expect(() => assertStabilizationWindow(new Date('2026-08-08T14:19:59.999Z'))).not.toThrow();
-        expect(() => assertStabilizationWindow(new Date('2026-08-08T14:20:00.000Z'))).toThrow(/Refusing/);
+    it('refuses execution at and after the free-event doors boundary', () => {
+        expect(() => assertStabilizationWindow(new Date('2026-08-02T16:49:59.999Z'))).not.toThrow();
+        expect(() => assertStabilizationWindow(new Date('2026-08-02T16:50:00.000Z'))).toThrow(/Refusing/);
     });
 
-    it('pins both production sessions to August 8 and derives the deadline from that release', () => {
+    it('pins the combined free event and retires the unused English session', () => {
         const [spanish, english] = EVENT_CONTRACTS;
 
-        expect(EVENT_STABILIZATION_DEADLINE.toISOString()).toBe('2026-08-08T14:20:00.000Z');
+        expect(EVENT_STABILIZATION_DEADLINE.toISOString()).toBe('2026-08-02T16:50:00.000Z');
         expect(desiredSessionState(spanish, new Date()).scheduledAt.toISOString())
-            .toBe('2026-08-08T14:30:00.000Z');
+            .toBe('2026-08-02T17:00:00.000Z');
+        expect(desiredSessionState(spanish, new Date())).toMatchObject({
+            status: 'SCHEDULED',
+            paidMode: false,
+        });
         expect(desiredSessionState(english, new Date()).scheduledAt.toISOString())
             .toBe('2026-08-08T20:00:00.000Z');
+        expect(desiredSessionState(english, new Date())).toMatchObject({
+            status: 'CANCELLED',
+            paidMode: false,
+        });
     });
 });

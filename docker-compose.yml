@@ -177,6 +177,7 @@ services:
       - LIVEKIT_ROOM_NAME=${LIVEKIT_ROOM_NAME:-beacon}
       - BOT_IDENTITY=playlist-bot
       - BEACON_RECORDS_PATH=/data/beacon-records
+      - BEACON_PLAYLIST_FILE=${BEACON_PLAYLIST_FILE:-}
     volumes:
       - /mnt/beacon-data/beacon-records:/data/beacon-records:ro
     networks:
