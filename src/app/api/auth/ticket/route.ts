@@ -40,6 +40,8 @@ import { digestTicketCode, normalizeTicketCode } from '@/lib/ticket-code';
 const GENERIC_REJECTION = 'That ticket code and email do not match an active ticket.';
 const RATE_LIMITED = 'Too many attempts. Please wait and try again.';
 const MALFORMED_REQUEST = 'A display name, ticket code and email address are required.';
+const INVITATION_TERMS_VERSION = 'personal-invitation-v2';
+const INVITATION_RETURN_URL = 'https://harmonicbeacon.com/invitacion/';
 
 type FailureReason =
     | 'malformed_request'
@@ -56,11 +58,15 @@ type Attempt =
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
     const address = clientAddress(request.headers);
+    const isInvitationForm = request.headers.get('content-type')
+        ?.toLowerCase()
+        .includes('application/x-www-form-urlencoded') ?? false;
 
     if (authFailureLimiter.isLimited(address)) {
         // Nothing about the attempt is examined once the budget is gone, so a
         // limited client learns nothing by continuing to guess.
         console.warn(`[auth] ticket login rate limited: client=${address}`);
+        if (isInvitationForm) return invitationFailure('limited');
         return NextResponse.json({ error: RATE_LIMITED }, {
             status: 429,
             headers: { 'Retry-After': String(authFailureLimiter.retryAfterSeconds(address)) },
@@ -70,12 +76,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let code: string;
     let email: string;
     let displayName: string;
+    let acceptedInvitationTerms = false;
     try {
-        const body = (await request.json()) as unknown;
-        const fields = (body ?? {}) as Record<string, unknown>;
+        const fields = isInvitationForm
+            ? Object.fromEntries(await request.formData())
+            : ((await request.json()) as Record<string, unknown> | null) ?? {};
         code = typeof fields.code === 'string' ? normalizeTicketCode(fields.code) : '';
         email = typeof fields.email === 'string' ? normalizeLoginEmail(fields.email) : '';
         displayName = typeof fields.name === 'string' ? normalizeDisplayName(fields.name) : '';
+        acceptedInvitationTerms = fields.termsAccepted === 'accepted';
     } catch {
         code = '';
         email = '';
@@ -83,17 +92,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const promoCandidate = isPlausiblePromoCode(code);
-    if ((!promoCandidate && code.length < 16) || !isPlausibleEmail(email) || !isValidDisplayName(displayName)) {
-        return reject(address, 'malformed_request');
+    if (
+        (!promoCandidate && code.length < 16) ||
+        !isPlausibleEmail(email) ||
+        !isValidDisplayName(displayName) ||
+        (isInvitationForm && (!promoCandidate || !acceptedInvitationTerms))
+    ) {
+        return reject(address, 'malformed_request', isInvitationForm);
     }
 
     let attempt: Attempt;
     try {
         if (promoCandidate) {
             if (!promoInvitationsEnabled()) {
-                return reject(address, 'promo_unavailable');
+                return reject(address, 'promo_unavailable', isInvitationForm);
             }
-            const promoAttempt = await redeemPromoInvitation(code, email, displayName);
+            const now = new Date();
+            const promoAttempt = isInvitationForm
+                ? await redeemPromoInvitation(
+                    code,
+                    email,
+                    displayName,
+                    now,
+                    { version: INVITATION_TERMS_VERSION, acceptedAt: now },
+                )
+                : await redeemPromoInvitation(code, email, displayName);
             attempt = promoAttempt.ok
                 ? promoAttempt
                 : { ok: false, reason: 'promo_unavailable' };
@@ -105,11 +128,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Missing/invalid secret configuration is an outage, never evidence
         // that a particular ticket or invitation exists.
         console.error(`[auth] ticket login failed: client=${address} ${redactError(error)}`);
+        if (isInvitationForm) return invitationFailure('unavailable');
         return NextResponse.json({ error: 'Login is temporarily unavailable.' }, { status: 500 });
     }
 
     if (!attempt.ok) {
-        return reject(address, attempt.reason);
+        return reject(address, attempt.reason, isInvitationForm);
     }
 
     // Ticket id and last four are the admission-support handles the roadmap
@@ -118,20 +142,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         `[auth] ticket session issued: entitlement=${attempt.entitlementId} last4=${attempt.codeLastFour} client=${address}`,
     );
 
-    const response = NextResponse.json({ ok: true, scheduledSessionId: attempt.scheduledSessionId });
+    const response = isInvitationForm
+        ? NextResponse.redirect(
+            new URL(`/session/${attempt.scheduledSessionId}`, request.url),
+            { status: 303 },
+        )
+        : NextResponse.json({ ok: true, scheduledSessionId: attempt.scheduledSessionId });
     response.cookies.set(sessionCookie(attempt.cookieValue));
     return response;
 }
 
-function reject(address: string, reason: FailureReason): NextResponse {
+function reject(address: string, reason: FailureReason, invitationForm = false): NextResponse {
     authFailureLimiter.recordFailure(address);
     // `reason` is a fixed enum: useful to an operator reading container logs,
     // and free of the code, the email, and any hint of which exists.
     console.warn(`[auth] ticket login rejected: reason=${reason} client=${address}`);
+    if (invitationForm) return invitationFailure(reason === 'malformed_request' ? 'invalid' : 'unavailable');
     return NextResponse.json(
         { error: reason === 'malformed_request' ? MALFORMED_REQUEST : GENERIC_REJECTION },
         { status: reason === 'malformed_request' ? 400 : 401 },
     );
+}
+
+function invitationFailure(reason: 'invalid' | 'limited' | 'unavailable'): NextResponse {
+    const returnUrl = new URL(INVITATION_RETURN_URL);
+    returnUrl.searchParams.set('entry_error', reason);
+    return NextResponse.redirect(returnUrl, { status: 303 });
 }
 
 /**

@@ -11,8 +11,7 @@ import {
 } from '@livekit/rtc-node';
 import { AccessToken } from 'livekit-server-sdk';
 import { spawn, execSync } from 'node:child_process';
-import { readdirSync, existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 import { hasAvailableBeaconAudio } from './beaconAvailability.js';
 import {
   BYTES_PER_FRAME,
@@ -25,6 +24,7 @@ import {
   SAMPLE_RATE,
   SAMPLES_PER_CHANNEL,
 } from './audioFormat.js';
+import { resolvePlaylist } from './playlist.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -36,6 +36,7 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 const ROOM_NAME = process.env.LIVEKIT_ROOM_NAME || 'beacon';
 const BOT_IDENTITY = process.env.BOT_IDENTITY || 'playlist-bot';
 const RECORDS_PATH = process.env.BEACON_RECORDS_PATH || '/data/beacon-records';
+const PLAYLIST_FILE = process.env.BEACON_PLAYLIST_FILE;
 const BEACON_IDENTITY = 'beacon01';
 
 const FRAME_DURATION_MS = 20;
@@ -84,17 +85,9 @@ async function createBotToken(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 function scanPlaylist(): string[] {
-  if (!existsSync(RECORDS_PATH)) {
-    log('WARN', `Records path does not exist: ${RECORDS_PATH}`);
-    return [];
-  }
+  const files = resolvePlaylist(RECORDS_PATH, PLAYLIST_FILE);
 
-  const files = readdirSync(RECORDS_PATH)
-    .filter((f) => f.endsWith('.ogg'))
-    .sort()
-    .map((f) => join(RECORDS_PATH, f));
-
-  log('INFO', `Playlist scanned: ${files.length} file(s)`);
+  log('INFO', `Playlist scanned: ${files.length} file(s)${PLAYLIST_FILE ? ' (explicit source)' : ''}`);
   return files;
 }
 
@@ -393,7 +386,7 @@ class PlaylistBot {
       const playlist = scanPlaylist();
 
       if (playlist.length === 0) {
-        log('WARN', 'No .ogg files found, waiting...');
+        log('WARN', 'No supported audio source found, waiting...');
         await sleep(RESCAN_INTERVAL_MS);
         continue;
       }
