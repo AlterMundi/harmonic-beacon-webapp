@@ -25,6 +25,8 @@ export const TICKETS = {
     esBound: { code: 'TEST-TEST-TEST-TESD', email: 'asistente@altermundi.net' },
     /** REVOKED — login must fail with the generic error. */
     esRevoked: 'TEST-TEST-TEST-TESE',
+    /** ISSUED for the English fixture; reserved for the second lifecycle E2E. */
+    enIssuedB: 'TEST-TEST-TEST-TENB',
 } as const;
 
 /** All fixture staff accounts share the documented password `test`. */
