@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextResponse } from 'next/server';
 
 import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
@@ -6,6 +6,8 @@ import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 const requireStaff = vi.fn();
 const sessionFindUnique = vi.fn();
 const listParticipants = vi.fn();
+const tapestryInternalUrl = vi.fn();
+const tapestryParticipantId = vi.fn();
 
 vi.mock('@/lib/auth', () => ({ requireStaff }));
 vi.mock('@/lib/db', () => ({
@@ -15,6 +17,10 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/livekit-server', () => ({
     getRoomService: () => ({ listParticipants }),
+}));
+vi.mock('@/lib/tapestry', () => ({
+    tapestryInternalUrl,
+    tapestryParticipantId,
 }));
 
 const operator = {
@@ -28,6 +34,9 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         requireStaff.mockResolvedValue([operator, null]);
+        tapestryInternalUrl.mockReturnValue(null);
+        tapestryParticipantId.mockImplementation((identity: string) => `tp-safe-${identity.slice(-7)}`);
+        process.env.TAPESTRY_INTERNAL_SECRET = 'test-tapestry-secret';
         listParticipants.mockResolvedValue([
             {
                 identity: 'opaque-publisher',
@@ -73,6 +82,10 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
                 },
             ],
         });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('marks facilitator assignment explicitly instead of inferring it from role', async () => {
@@ -137,6 +150,24 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         expect(sessionFindUnique).not.toHaveBeenCalled();
     });
 
+    it('rejects a facilitator assigned to another event and an unknown session before tapestry lookup', async () => {
+        requireStaff.mockResolvedValue([{ ...operator, role: 'FACILITATOR', userId: 'facilitator-elsewhere' }, null]);
+        const { GET } = await import('../route');
+        const forbidden = await GET(
+            createRequest('/api/ops/sessions/event-1/participants'),
+            mockParams({ id: 'event-1' }),
+        );
+        expect(forbidden.status).toBe(403);
+
+        sessionFindUnique.mockResolvedValueOnce(null);
+        const missing = await GET(
+            createRequest('/api/ops/sessions/not-this-event/participants'),
+            mockParams({ id: 'not-this-event' }),
+        );
+        expect(missing.status).toBe(404);
+        expect(tapestryInternalUrl).not.toHaveBeenCalled();
+    });
+
     it('lists room display names, durable grants, queue positions, and reconcile state without private admission data', async () => {
         const { GET } = await import('../route');
         const { status, body } = await parseResponse(await GET(
@@ -193,6 +224,60 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
             participants: [
                 { id: 'publisher', connected: null, media: [], stageState: 'UNKNOWN' },
                 { id: 'waiting', connected: null, media: [] },
+            ],
+        });
+    });
+
+    it('adds bounded private thumbnail references from one batch lookup and falls back when frames are absent', async () => {
+        tapestryInternalUrl.mockReturnValue('http://tapestry:3100');
+        const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            participants: ['tp-safe-blisher'],
+            frameTtlMs: 8_000,
+        }), { status: 200 }));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const { GET } = await import('../route');
+        const { status, body } = await parseResponse(await GET(
+            createRequest('/api/ops/sessions/event-1/participants'),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(fetchMock).toHaveBeenCalledWith(
+            'http://tapestry:3100/tapestry/sessions/event-1/participants',
+            expect.objectContaining({ cache: 'no-store' }),
+        );
+        expect(body).toMatchObject({
+            tapestryThumbnailsAvailable: true,
+            thumbnailFreshForSeconds: 8,
+            participants: [
+                { id: 'publisher', thumbnailUrl: expect.stringMatching(/^\/api\/ops\/sessions\/event-1\/tapestry\/tiles\/tp-safe-blisher\?v=\d+$/) },
+                { id: 'waiting', thumbnailUrl: null },
+            ],
+        });
+        const serialized = JSON.stringify(body);
+        expect(serialized.match(/tapestry\/tiles\//g)).toHaveLength(1);
+        expect(serialized).not.toContain('tapestry:3100');
+    });
+
+    it('keeps the complete queue response usable when tapestry is offline or returns invalid data', async () => {
+        tapestryInternalUrl.mockReturnValue('http://tapestry:3100');
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+
+        const { GET } = await import('../route');
+        const { status, body } = await parseResponse(await GET(
+            createRequest('/api/ops/sessions/event-1/participants'),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(status).toBe(200);
+        expect(body).toMatchObject({
+            tapestryThumbnailsAvailable: false,
+            thumbnailFreshForSeconds: 10,
+            participants: [
+                { id: 'publisher', thumbnailUrl: null },
+                { id: 'waiting', thumbnailUrl: null },
             ],
         });
     });

@@ -46,7 +46,9 @@ test("explicit order rearranges the composite and the participants listing", asy
       headers: authHeaders(),
     });
     assert.equal(list.status, 200);
-    assert.deepEqual((await list.json() as { participants: string[] }).participants, ["p-green", "p-red"]);
+    const listing = await list.json() as { participants: string[]; frameTtlMs: number };
+    assert.deepEqual(listing.participants, ["p-green", "p-red"]);
+    assert.equal(listing.frameTtlMs, testConfig().frameTtlMs);
 
     composite = await getComposite(service.baseUrl, SESSION_A);
     color = await tileColor(Buffer.from(await composite.arrayBuffer()), 0, 0);
