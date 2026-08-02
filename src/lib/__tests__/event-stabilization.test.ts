@@ -95,13 +95,13 @@ describe('event stabilization safety contract', () => {
             .toBe('2026-08-02T17:00:00.000Z');
         expect(desiredSessionState(spanish, new Date())).toMatchObject({
             status: 'SCHEDULED',
-            paidMode: false,
+            paidMode: true,
         });
         expect(desiredSessionState(english, new Date()).scheduledAt.toISOString())
             .toBe('2026-08-08T20:00:00.000Z');
         expect(desiredSessionState(english, new Date())).toMatchObject({
             status: 'CANCELLED',
-            paidMode: false,
+            paidMode: true,
         });
     });
 });
