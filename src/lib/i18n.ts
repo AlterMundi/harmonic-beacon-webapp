@@ -298,6 +298,26 @@ export type Messages = {
             noImage: string;
             footer: string;
         };
+        healthPanel: {
+            pageTitle: string;
+            pageIntro: string;
+            headlines: Record<'green' | 'yellow' | 'red', string>;
+            levels: Record<'green' | 'yellow' | 'red', string>;
+            sessionStatuses: Record<'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED', string>;
+            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'bedPublisher' | 'tapestry', string>;
+            endpointHttp: string;
+            endpointUnavailable: string;
+            endpointAlarm: string;
+            checking: string;
+            noReport: string;
+            watchingSession: string;
+            signedInAs: string;
+            noSession: string;
+            lastChecked: string;
+            refreshesEvery: string;
+            waitingFirstReport: string;
+            refreshNow: string;
+        };
         cockpit: {
             roomTitle: string;
             roomHint: string;
@@ -609,6 +629,42 @@ export const messages: Record<UiLocale, Messages> = {
                 noImage: 'sin imagen',
                 footer: 'Sesión de {role}. La fila se actualiza cada {seconds}s; los permisos guardados son la referencia.',
             },
+            healthPanel: {
+                pageTitle: 'Salud del evento',
+                pageIntro: 'Estado en vivo de los subsistemas del evento. Rojo impide abrir; amarillo indica un componente prescindible. Los procedimientos ante fallas están en',
+                headlines: {
+                    green: 'VERDE — todos los subsistemas funcionan normalmente',
+                    yellow: 'AMARILLO — hay una falla degradada y prescindible',
+                    red: 'ROJO — hay una falla que impide abrir el evento',
+                },
+                levels: { green: 'verde', yellow: 'amarillo', red: 'rojo' },
+                sessionStatuses: {
+                    SCHEDULED: 'Próximo',
+                    LIVE: 'En vivo',
+                    ENDED: 'Finalizado',
+                    CANCELLED: 'Cancelado',
+                },
+                checks: {
+                    postgres: 'PostgreSQL',
+                    livekit: 'API de LiveKit',
+                    stageRoom: 'Sala de Escena',
+                    publisherGrants: 'Permisos de publicación',
+                    bedPublisher: 'Fuente del Beacon (playlist bot)',
+                    tapestry: 'Tapiz (prescindible)',
+                },
+                endpointHttp: 'El endpoint respondió HTTP {status}',
+                endpointUnavailable: 'No se pudo contactar el endpoint de salud',
+                endpointAlarm: 'ROJO — no se puede consultar la salud: {error}',
+                checking: 'Comprobando subsistemas…',
+                noReport: 'AMARILLO — todavía no hay informe',
+                watchingSession: 'Observando la sesión',
+                signedInAs: 'identidad activa:',
+                noSession: 'No se está observando ninguna sesión programada o en vivo',
+                lastChecked: 'Última comprobación',
+                refreshesEvery: 'se actualiza cada {seconds}s',
+                waitingFirstReport: 'Esperando el primer informe…',
+                refreshNow: 'Actualizar ahora',
+            },
             cockpit: {
                 roomTitle: 'Sala en vivo',
                 roomHint: 'La escena permanece conectada mientras abrís las herramientas.',
@@ -917,6 +973,42 @@ export const messages: Record<UiLocale, Messages> = {
                 noSnapshotAlt: '{name}: no current tapestry snapshot',
                 noImage: 'no image',
                 footer: 'Signed in as {role}. Queue refreshes every {seconds}s; saved grants are authoritative.',
+            },
+            healthPanel: {
+                pageTitle: 'Event health',
+                pageIntro: 'Live subsystem board for the event. Red means launch-blocking; yellow means cuttable. Failure playbooks are in',
+                headlines: {
+                    green: 'GREEN — all subsystems nominal',
+                    yellow: 'YELLOW — degraded, cuttable subsystem failing',
+                    red: 'RED — launch-blocking subsystem failing',
+                },
+                levels: { green: 'green', yellow: 'yellow', red: 'red' },
+                sessionStatuses: {
+                    SCHEDULED: 'Upcoming',
+                    LIVE: 'Live',
+                    ENDED: 'Ended',
+                    CANCELLED: 'Cancelled',
+                },
+                checks: {
+                    postgres: 'PostgreSQL',
+                    livekit: 'LiveKit API',
+                    stageRoom: 'Stage room',
+                    publisherGrants: 'Publisher grants',
+                    bedPublisher: 'Bed publisher (playlist bot)',
+                    tapestry: 'Tapestry (cuttable)',
+                },
+                endpointHttp: 'Endpoint answered HTTP {status}',
+                endpointUnavailable: 'Health endpoint unreachable',
+                endpointAlarm: 'RED — health endpoint unreachable: {error}',
+                checking: 'Checking subsystems…',
+                noReport: 'YELLOW — no report yet',
+                watchingSession: 'Watching session',
+                signedInAs: 'signed in as',
+                noSession: 'No live or scheduled session is being watched',
+                lastChecked: 'Last checked',
+                refreshesEvery: 'refreshes every {seconds}s',
+                waitingFirstReport: 'Waiting for the first report…',
+                refreshNow: 'Refresh now',
             },
             cockpit: {
                 roomTitle: 'Live room',

@@ -4,8 +4,15 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OperatorHealthReport } from '@/lib/ops-health';
+import { messages } from '@/lib/i18n';
 
 import OpsHealthClient from '../OpsHealthClient';
+
+const englishProps = {
+    locale: 'en' as const,
+    copy: messages.en.ops.healthPanel,
+    staffRoles: messages.en.staffRoles,
+};
 
 function makeReport(overrides: Partial<OperatorHealthReport> = {}): OperatorHealthReport {
     return {
@@ -42,7 +49,7 @@ describe('OpsHealthClient', () => {
     });
 
     it('renders the green board with every subsystem row', async () => {
-        render(<OpsHealthClient role="OPERATOR" />);
+        render(<OpsHealthClient role="OPERATOR" {...englishProps} />);
 
         await waitFor(() => {
             expect(screen.getByText(/GREEN — all subsystems nominal/)).toBeInTheDocument();
@@ -71,7 +78,7 @@ describe('OpsHealthClient', () => {
         });
         vi.stubGlobal('fetch', mockFetchWith(report));
 
-        render(<OpsHealthClient role="ADMIN" />);
+        render(<OpsHealthClient role="ADMIN" {...englishProps} />);
 
         await waitFor(() => {
             expect(screen.getByText(/RED — launch-blocking subsystem failing/)).toBeInTheDocument();
@@ -94,17 +101,35 @@ describe('OpsHealthClient', () => {
         });
         vi.stubGlobal('fetch', mockFetchWith(report));
 
-        render(<OpsHealthClient role="OPERATOR" />);
+        render(<OpsHealthClient role="OPERATOR" {...englishProps} />);
 
         await waitFor(() => {
             expect(screen.getByText(/YELLOW — degraded/)).toBeInTheDocument();
         });
     });
 
+    it('renders the selected session, levels, role and refresh action in Spanish', async () => {
+        render(
+            <OpsHealthClient
+                role="FACILITATOR_OP"
+                locale="es"
+                copy={messages.es.ops.healthPanel}
+                staffRoles={messages.es.staffRoles}
+            />,
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText(/VERDE — todos los subsistemas/)).toBeInTheDocument();
+        });
+        expect(screen.getByText('Sala de Escena')).toBeInTheDocument();
+        expect(screen.getByText(/identidad activa: Facilitación y operaciones/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Actualizar ahora' })).toBeInTheDocument();
+    });
+
     it('treats an unreachable endpoint as its own red alarm', async () => {
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('NetworkError')));
 
-        render(<OpsHealthClient role="OPERATOR" />);
+        render(<OpsHealthClient role="OPERATOR" {...englishProps} />);
 
         await waitFor(() => {
             expect(screen.getByText(/health endpoint unreachable/)).toBeInTheDocument();
@@ -115,7 +140,7 @@ describe('OpsHealthClient', () => {
         const fetchMock = mockFetchWith(makeReport());
         vi.stubGlobal('fetch', fetchMock);
 
-        render(<OpsHealthClient role="OPERATOR" />);
+        render(<OpsHealthClient role="OPERATOR" {...englishProps} />);
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
         await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }));

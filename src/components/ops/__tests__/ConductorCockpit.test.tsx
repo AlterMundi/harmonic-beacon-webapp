@@ -57,6 +57,7 @@ const props = {
     copy: messages.en.ops.cockpit,
     lifecycleCopy: messages.en.ops.lifecycle,
     spotlightCopy: messages.en.ops.spotlight,
+    healthCopy: messages.en.ops.healthPanel,
     staffRoleLabels: messages.en.staffRoles,
 };
 

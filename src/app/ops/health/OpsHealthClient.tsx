@@ -10,19 +10,21 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { StaffRole } from '@prisma/client';
 
+import type { Messages, UiLocale } from '@/lib/i18n';
 import type { HealthLevel, OperatorHealthReport, SubsystemCheck } from '@/lib/ops-health';
 import ThumbnailTapestry from '@/components/session/ThumbnailTapestry';
 
 const POLL_INTERVAL_MS = 10_000;
 
-const CHECK_LABELS: Array<{ key: keyof OperatorHealthReport['checks']; label: string }> = [
-    { key: 'postgres', label: 'PostgreSQL' },
-    { key: 'livekit', label: 'LiveKit API' },
-    { key: 'stageRoom', label: 'Stage room' },
-    { key: 'publisherGrants', label: 'Publisher grants' },
-    { key: 'bedPublisher', label: 'Bed publisher (playlist bot)' },
-    { key: 'tapestry', label: 'Tapestry (cuttable)' },
+const CHECK_KEYS: Array<keyof OperatorHealthReport['checks']> = [
+    'postgres',
+    'livekit',
+    'stageRoom',
+    'publisherGrants',
+    'bedPublisher',
+    'tapestry',
 ];
 
 const LEVEL_STYLES: Record<HealthLevel, { banner: string; dot: string; text: string }> = {
@@ -43,13 +45,22 @@ const LEVEL_STYLES: Record<HealthLevel, { banner: string; dot: string; text: str
     },
 };
 
-const LEVEL_HEADLINES: Record<HealthLevel, string> = {
-    green: 'GREEN — all subsystems nominal',
-    yellow: 'YELLOW — degraded, cuttable subsystem failing',
-    red: 'RED — launch-blocking subsystem failing',
-};
+function fill(template: string, values: Record<string, string | number>): string {
+    return Object.entries(values).reduce(
+        (result, [key, value]) => result.replaceAll(`{${key}}`, String(value)),
+        template,
+    );
+}
 
-function CheckRow({ label, check }: { label: string; check: SubsystemCheck }) {
+function CheckRow({
+    label,
+    check,
+    copy,
+}: {
+    label: string;
+    check: SubsystemCheck;
+    copy: Messages['ops']['healthPanel'];
+}) {
     const styles = LEVEL_STYLES[check.status];
     return (
         <li className="flex items-start gap-3 rounded border border-[var(--border-subtle)] px-4 py-3">
@@ -61,7 +72,7 @@ function CheckRow({ label, check }: { label: string; check: SubsystemCheck }) {
                 <div className="flex items-baseline justify-between gap-3">
                     <span className="font-medium text-[var(--cream)]">{label}</span>
                     <span className={`text-xs font-semibold uppercase ${styles.text}`}>
-                        {check.status}
+                        {copy.levels[check.status]}
                     </span>
                 </div>
                 <p className="text-sm text-[var(--text-secondary)]">{check.detail}</p>
@@ -81,10 +92,16 @@ function CheckRow({ label, check }: { label: string; check: SubsystemCheck }) {
 export default function OpsHealthClient({
     role,
     sessionId,
+    locale,
+    copy,
+    staffRoles,
     onLevelChange,
 }: {
-    role: string;
+    role: StaffRole;
     sessionId?: string;
+    locale: UiLocale;
+    copy: Messages['ops']['healthPanel'];
+    staffRoles: Messages['staffRoles'];
     onLevelChange?: (level: HealthLevel) => void;
 }) {
     const [report, setReport] = useState<OperatorHealthReport | null>(null);
@@ -99,7 +116,7 @@ export default function OpsHealthClient({
                 : '/api/ops/health';
             const response = await fetch(endpoint, { cache: 'no-store' });
             if (!response.ok) {
-                throw new Error(`Endpoint answered HTTP ${response.status}`);
+                throw new Error(fill(copy.endpointHttp, { status: response.status }));
             }
             const body = (await response.json()) as OperatorHealthReport;
             if (mounted.current) {
@@ -110,7 +127,7 @@ export default function OpsHealthClient({
         } catch (error) {
             if (mounted.current) {
                 setEndpointError(
-                    error instanceof Error ? error.message : 'Health endpoint unreachable',
+                    error instanceof Error ? error.message : copy.endpointUnavailable,
                 );
                 onLevelChange?.('red');
             }
@@ -119,7 +136,7 @@ export default function OpsHealthClient({
                 setLoading(false);
             }
         }
-    }, [sessionId, onLevelChange]);
+    }, [sessionId, onLevelChange, copy.endpointHttp, copy.endpointUnavailable]);
 
     useEffect(() => {
         mounted.current = true;
@@ -138,29 +155,29 @@ export default function OpsHealthClient({
         <section className="space-y-4" aria-live="polite">
             <div className={`rounded-lg border px-4 py-3 font-semibold ${styles.banner}`}>
                 {endpointError
-                    ? `RED — health endpoint unreachable: ${endpointError}`
+                    ? fill(copy.endpointAlarm, { error: endpointError })
                     : report
-                      ? LEVEL_HEADLINES[report.status]
+                      ? copy.headlines[report.status]
                       : loading
-                        ? 'Checking subsystems…'
-                        : 'YELLOW — no report yet'}
+                        ? copy.checking
+                        : copy.noReport}
             </div>
 
             {report?.session ? (
                 <p className="text-sm text-[var(--text-secondary)]">
-                    Watching session <span className="font-medium text-[var(--cream)]">{report.session.title}</span>{' '}
-                    ({report.session.status}) — signed in as {role}.
+                    {copy.watchingSession} <span className="font-medium text-[var(--cream)]">{report.session.title}</span>{' '}
+                    ({copy.sessionStatuses[report.session.status]}) — {copy.signedInAs} {staffRoles[role]}.
                 </p>
             ) : (
                 <p className="text-sm text-[var(--text-secondary)]">
-                    No live or scheduled session is being watched — signed in as {role}.
+                    {copy.noSession} — {copy.signedInAs} {staffRoles[role]}.
                 </p>
             )}
 
             {report ? (
                 <ul className="space-y-2">
-                    {CHECK_LABELS.map(({ key, label }) => (
-                        <CheckRow key={key} label={label} check={report.checks[key]} />
+                    {CHECK_KEYS.map((key) => (
+                        <CheckRow key={key} label={copy.checks[key]} check={report.checks[key]} copy={copy} />
                     ))}
                 </ul>
             ) : null}
@@ -170,15 +187,15 @@ export default function OpsHealthClient({
             <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
                 <span>
                     {report
-                        ? `Last checked ${new Date(report.checkedAt).toLocaleTimeString()} — refreshes every ${POLL_INTERVAL_MS / 1000}s`
-                        : 'Waiting for the first report…'}
+                        ? `${copy.lastChecked} ${new Date(report.checkedAt).toLocaleTimeString(locale === 'es' ? 'es-AR' : 'en-GB')} — ${fill(copy.refreshesEvery, { seconds: POLL_INTERVAL_MS / 1000 })}`
+                        : copy.waitingFirstReport}
                 </span>
                 <button
                     type="button"
                     onClick={() => void refresh()}
                     className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5"
                 >
-                    Refresh now
+                    {copy.refreshNow}
                 </button>
             </div>
         </section>

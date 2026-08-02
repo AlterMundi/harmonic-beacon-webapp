@@ -121,9 +121,9 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
 
                         await staff.locator('[data-signal="health"]').click();
                         const health = staff.getByRole('dialog');
-                        await health.getByRole('button', { name: 'Refresh now' }).click();
+                        await health.getByRole('button', { name: /Refresh now|Actualizar ahora/i }).click();
                         const healthSummary = health.locator('p').filter({
-                            hasText: /Watching session.*signed in as FACILITATOR_OP/i,
+                            hasText: /Watching session.*Facilitator and operations|Observando la sesión.*Facilitación y operaciones/i,
                         });
                         await expect(healthSummary).toBeVisible({ timeout: 15_000 });
                         await expect(healthSummary).toContainText(session.title);

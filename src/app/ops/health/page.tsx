@@ -10,6 +10,8 @@
 import { redirect } from 'next/navigation';
 
 import { currentPrincipal } from '@/lib/auth';
+import { messages } from '@/lib/i18n';
+import { requestLocale } from '@/lib/i18n-server';
 
 import OpsHealthClient from './OpsHealthClient';
 
@@ -28,14 +30,15 @@ export default async function OpsHealthPage({
     const sessionId = typeof requestedSessionId === 'string'
         ? requestedSessionId
         : undefined;
+    const locale = await requestLocale();
+    const copy = messages[locale].ops.healthPanel;
 
     return (
         <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-6 py-10">
             <header className="space-y-1">
-                <h1 className="text-2xl font-bold">Event health</h1>
+                <h1 className="text-2xl font-bold">{copy.pageTitle}</h1>
                 <p className="text-sm text-[var(--text-secondary)]">
-                    Live subsystem board for the weekend sessions. Red means launch-blocking;
-                    yellow means cuttable. Failure playbooks are in{' '}
+                    {copy.pageIntro}{' '}
                     <code>docs/ops/WEEKEND_EVENT_RUNBOOK.md</code>.
                 </p>
             </header>
@@ -43,6 +46,9 @@ export default async function OpsHealthPage({
             <OpsHealthClient
                 role={principal.role}
                 sessionId={sessionId}
+                locale={locale}
+                copy={copy}
+                staffRoles={messages[locale].staffRoles}
             />
         </main>
     );

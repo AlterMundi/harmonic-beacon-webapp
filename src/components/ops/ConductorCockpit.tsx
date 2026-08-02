@@ -37,6 +37,7 @@ type Props = {
     copy: Messages['ops']['cockpit'];
     lifecycleCopy: Messages['ops']['lifecycle'];
     spotlightCopy: Messages['ops']['spotlight'];
+    healthCopy: Messages['ops']['healthPanel'];
     staffRoleLabels: Messages['staffRoles'];
 };
 
@@ -63,6 +64,7 @@ export default function ConductorCockpit({
     copy,
     lifecycleCopy,
     spotlightCopy,
+    healthCopy,
     staffRoleLabels,
 }: Props) {
     const [drawer, setDrawer] = useState<Drawer | null>(null);
@@ -319,6 +321,9 @@ export default function ConductorCockpit({
                         <OpsHealthClient
                             role={role}
                             sessionId={session.id}
+                            locale={locale}
+                            copy={healthCopy}
+                            staffRoles={staffRoleLabels}
                             onLevelChange={onHealthChange}
                         />
                     </div>
