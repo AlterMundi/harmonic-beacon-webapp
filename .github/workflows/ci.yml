@@ -16,10 +16,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22.22'
           cache: 'npm'
 
       - run: npm ci
+      - name: Reject high-severity production dependency regressions
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm run build
         env:
@@ -33,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22.22'
           cache: 'npm'
 
       - run: npm ci
