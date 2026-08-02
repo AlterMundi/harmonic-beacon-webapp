@@ -75,16 +75,16 @@ stackTest('private hand thumbnails remain bounded, accessible and actionable at 
     await page.locator('[data-signal="hands"]').click();
     const drawer = page.getByRole('dialog');
 
-    await expect(drawer.getByText('No hands raised.')).toBeVisible();
+    await expect(drawer.getByText(/No hands raised|No hay manos levantadas/i)).toBeVisible();
 
     participants = [handFixture(0)];
     const firstRow = drawer.locator('li').filter({ hasText: 'Queue Person 1' });
     await expect(firstRow.getByRole('img', {
-        name: 'Recent tapestry snapshot of Queue Person 1',
+        name: /Recent tapestry snapshot of Queue Person 1|Imagen reciente del tapiz de Queue Person 1/i,
     })).toBeVisible({ timeout: 10_000 });
 
-    const firstGiveFloor = firstRow.getByRole('button', { name: 'Give floor' });
-    const firstRemoveHand = firstRow.getByRole('button', { name: 'Remove hand' });
+    const firstGiveFloor = firstRow.getByRole('button', { name: /Give floor|Dar la palabra/i });
+    const firstRemoveHand = firstRow.getByRole('button', { name: /Remove hand|Quitar mano/i });
     await firstGiveFloor.focus();
     await page.keyboard.press('Tab');
     await expect(firstRemoveHand).toBeFocused();
@@ -95,9 +95,9 @@ stackTest('private hand thumbnails remain bounded, accessible and actionable at 
         timeout: 10_000,
     });
     expect(snapshotRequests - requestsBeforeFifty).toBeLessThanOrEqual(2);
-    await expect(drawer.getByRole('button', { name: 'Give floor' })).toHaveCount(50);
-    await expect(drawer.getByRole('button', { name: 'Remove hand' })).toHaveCount(50);
-    await expect(drawer.getByRole('img', { name: /Recent tapestry snapshot/ })).toHaveCount(25);
-    await expect(drawer.getByRole('img', { name: /no current tapestry snapshot/ })).toHaveCount(25);
+    await expect(drawer.getByRole('button', { name: /Give floor|Dar la palabra/i })).toHaveCount(50);
+    await expect(drawer.getByRole('button', { name: /Remove hand|Quitar mano/i })).toHaveCount(50);
+    await expect(drawer.getByRole('img', { name: /Recent tapestry snapshot|Imagen reciente del tapiz/i })).toHaveCount(25);
+    await expect(drawer.getByRole('img', { name: /no current tapestry snapshot|sin imagen actual del tapiz/i })).toHaveCount(25);
     expect(tileRequests.size).toBeLessThanOrEqual(25);
 });

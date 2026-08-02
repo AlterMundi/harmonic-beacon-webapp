@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StaffRole } from '@prisma/client';
 import { effectiveStageState, type EffectiveStageState } from '@/lib/stage-presence';
+import type { Messages } from '@/lib/i18n';
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -88,6 +89,8 @@ type ActionError = {
 type Props = {
     sessionId: string;
     role: StaffRole;
+    copy: Messages['ops']['spotlight'];
+    staffRoles: Messages['staffRoles'];
     onSummary?: (summary: SpotlightSummary) => void;
 };
 
@@ -114,11 +117,22 @@ async function postStage(
     return { status: response.status, data };
 }
 
-function describeActionError(status: number, data: Record<string, unknown>): ActionError {
+function fill(template: string, values: Record<string, string | number>): string {
+    return Object.entries(values).reduce(
+        (result, [key, value]) => result.replaceAll(`{${key}}`, String(value)),
+        template,
+    );
+}
+
+function describeActionError(
+    status: number,
+    data: Record<string, unknown>,
+    copy: Messages['ops']['spotlight'],
+): ActionError {
     const code = typeof data.error === 'string' ? data.error : 'request_failed';
     const message = typeof data.message === 'string'
         ? data.message
-        : `Request failed (HTTP ${status})`;
+        : fill(copy.requestFailed, { status });
     return {
         code,
         message,
@@ -137,23 +151,35 @@ function formatQueueAge(raisedAt: string, nowMs: number): string {
         : `${seconds}s`;
 }
 
-function connectionBadge(participant: ConsoleParticipant): string {
+function connectionBadge(
+    participant: ConsoleParticipant,
+    copy: Messages['ops']['spotlight'],
+): string {
     if (participant.connected === null) {
-        return 'live state unknown';
+        return copy.liveUnknown;
     }
-    return participant.connected ? 'connected' : 'left';
+    return participant.connected ? copy.connected : copy.disconnected;
 }
 
-function mediaSummary(participant: ConsoleParticipant): string {
+function mediaSummary(
+    participant: ConsoleParticipant,
+    copy: Messages['ops']['spotlight'],
+): string {
     if (participant.connected !== true) {
         return '—';
     }
     if (participant.media.length === 0) {
-        return 'no tracks published';
+        return copy.noTracks;
     }
     return participant.media
-        .map((track) => `${track.source.toLowerCase()} ${track.muted ? 'muted' : 'live'}`)
+        .map((track) => `${track.source.toLowerCase()} ${track.muted ? copy.muted : copy.trackLive}`)
         .join(' · ');
+}
+
+function roleLabel(role: string | null, labels: Messages['staffRoles']): string | null {
+    return role && role in labels
+        ? labels[role as keyof Messages['staffRoles']]
+        : role;
 }
 
 function participantLabel(participant: ConsoleParticipant): string {
@@ -167,10 +193,12 @@ function HandThumbnail({
     displayName,
     src,
     freshForSeconds,
+    copy,
 }: {
     displayName: string;
     src: string | null;
     freshForSeconds: number;
+    copy: Messages['ops']['spotlight'];
 }) {
     const [failedSrc, setFailedSrc] = useState<string | null>(null);
     const showImage = Boolean(src) && failedSrc !== src;
@@ -183,7 +211,7 @@ function HandThumbnail({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                     src={src!}
-                    alt={`Recent tapestry snapshot of ${displayName}`}
+                    alt={fill(copy.recentSnapshotAlt, { name: displayName })}
                     width={48}
                     height={48}
                     loading="lazy"
@@ -194,20 +222,20 @@ function HandThumbnail({
             ) : (
                 <span
                     role="img"
-                    aria-label={`${displayName}: no current tapestry snapshot`}
+                    aria-label={fill(copy.noSnapshotAlt, { name: displayName })}
                     className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-alt)] text-lg text-[var(--text-muted)]"
                 >
                     ◌
                 </span>
             )}
             <span className="text-center text-[9px] leading-tight text-[var(--text-muted)]" aria-hidden="true">
-                {showImage ? `≤${freshForSeconds}s` : 'no image'}
+                {showImage ? `≤${freshForSeconds}s` : copy.noImage}
             </span>
         </div>
     );
 }
 
-export default function SpotlightConsole({ sessionId, role, onSummary }: Props) {
+export default function SpotlightConsole({ sessionId, role, copy, staffRoles, onSummary }: Props) {
     const [snapshot, setSnapshot] = useState<ParticipantsSnapshot | null>(null);
     const [pollError, setPollError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<ActionError | null>(null);
@@ -250,11 +278,11 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         } catch (error) {
             if (mounted.current) {
                 setPollError(
-                    error instanceof Error ? error.message : 'Polling failed',
+                    error instanceof Error ? error.message : copy.requestFailed,
                 );
             }
         }
-    }, [sessionId, onSummary]);
+    }, [sessionId, onSummary, copy.requestFailed]);
 
     useEffect(() => {
         mounted.current = true;
@@ -277,7 +305,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         try {
             const { status, data } = await postStage(sessionId, body);
             if (status >= 400) {
-                setActionError(describeActionError(status, data));
+                setActionError(describeActionError(status, data, copy));
                 return false;
             }
             setNotice(okMessage);
@@ -285,7 +313,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         } catch {
             setActionError({
                 code: 'request_failed',
-                message: 'The stage endpoint could not be reached',
+                message: copy.endpointUnavailable,
             });
             return false;
         } finally {
@@ -298,7 +326,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         if (participant.connected !== true) {
             setActionError({
                 code: 'participant_not_connected',
-                message: 'This participant is not connected. Wait for them to rejoin or remove the stale hand.',
+                message: copy.participantDisconnected,
             });
             return;
         }
@@ -306,7 +334,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         const promoted = await runAction(
             `promote:${participant.id}`,
             { action: 'promote', participantId: participant.id, reason: 'Hand queue' },
-            `${label} has the floor`,
+            fill(copy.hasFloor, { name: label }),
         );
         if (!promoted) {
             return;
@@ -314,7 +342,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         await runAction(
             `lower:${participant.id}`,
             { action: 'lower_hand', participantId: participant.id, reason: 'Promoted to stage' },
-            `${label} has the floor`,
+            fill(copy.hasFloor, { name: label }),
         );
     }
 
@@ -322,21 +350,21 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         runAction(
             `promote:${participant.id}`,
             { action: 'promote', participantId: participant.id, reason: 'Invited from audience' },
-            `${participantLabel(participant)} was invited to the stage`,
+            fill(copy.invitedNotice, { name: participantLabel(participant) }),
         );
 
     const takeFloor = (participant: ConsoleParticipant) =>
         runAction(
             `demote:${participant.id}`,
             { action: 'demote', participantId: participant.id, reason: 'Operator took the floor' },
-            `${participantLabel(participant)} was taken off the stage`,
+            fill(copy.removedNotice, { name: participantLabel(participant) }),
         );
 
     const removeHand = (participant: ConsoleParticipant) =>
         runAction(
             `lower:${participant.id}`,
             { action: 'lower_hand', participantId: participant.id, reason: 'Removed from hand queue' },
-            `${participantLabel(participant)}'s hand was lowered`,
+            fill(copy.handLoweredNotice, { name: participantLabel(participant) }),
         );
 
     const muteTrack = (participant: ConsoleParticipant, track: LiveTrack) =>
@@ -348,14 +376,14 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                 trackSid: track.trackSid,
                 muted: true,
             },
-            `${track.source.toLowerCase()} muted; the participant can re-enable it`,
+            fill(copy.trackMutedNotice, { track: track.source.toLowerCase() }),
         );
 
     const reconcile = () =>
         runAction(
             'reconcile',
             { action: 'reconcile' },
-            'Reconciliation finished',
+            copy.reconciliationFinished,
         );
 
     const all = snapshot?.participants ?? [];
@@ -377,27 +405,32 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
             {/* Status banners */}
             {pollError ? (
                 <div role="alert" className="rounded border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-2 text-sm text-[var(--danger)]">
-                    Polling failed ({pollError}) — showing the last known state. Retrying every {POLL_INTERVAL_MS / 1000}s.
+                    {fill(copy.pollingFailed, {
+                        error: pollError,
+                        seconds: POLL_INTERVAL_MS / 1000,
+                    })}
                 </div>
             ) : null}
             {snapshot && !snapshot.liveStateAvailable ? (
                 <div role="alert" className="rounded border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-2 text-sm text-[var(--warning)]">
-                    LiveKit live state unavailable — connection and media are unknown. Durable grants and the hand queue are still current.
+                    {copy.liveStateUnavailable}
                 </div>
             ) : null}
             {reconcilePending.length > 0 ? (
                 <div role="alert" className="rounded border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-2 text-sm text-[var(--warning)]">
-                    {reconcilePending.length} participant{reconcilePending.length !== 1 ? 's' : ''} need{reconcilePending.length === 1 ? 's' : ''} reconciliation — the durable grant and LiveKit disagree.
+                    {reconcilePending.length === 1
+                        ? copy.reconciliationOne
+                        : fill(copy.reconciliationMany, { count: reconcilePending.length })}
                 </div>
             ) : null}
             {actionError ? (
                 <div role="alert" className="rounded border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-2 text-sm text-[var(--danger)]">
                     {actionError.code === 'stage_full'
-                        ? `Stage is full — this hand stays #${actionError.queuePosition ?? '?'} in the queue. Take a floor first.`
+                        ? fill(copy.stageFull, { position: actionError.queuePosition ?? '?' })
                         : actionError.code === 'participant_not_connected'
                           ? actionError.message
                         : actionError.code === 'livekit_failed' && actionError.reconcileNeeded
-                          ? `${actionError.message}. The durable grant was revoked; press Reconcile to retry the LiveKit update.`
+                          ? fill(copy.livekitFailure, { message: actionError.message })
                           : `${actionError.message} (${actionError.code})`}
                 </div>
             ) : null}
@@ -409,11 +442,17 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
 
             <div className="flex items-center justify-between text-sm">
                 <span className="text-[var(--text-secondary)]">
-                    Stage: {snapshot ? `${snapshot.activePublishers}/${snapshot.maxPublishers}` : '…'} publishing
+                    {fill(copy.stageSummary, {
+                        active: snapshot?.activePublishers ?? '…',
+                        max: snapshot?.maxPublishers ?? '…',
+                    })}
                     {snapshot?.grantedPublishers !== undefined
-                        ? ` · ${snapshot.grantedPublishers}/${snapshot.maxPublishers} slots reserved`
+                        ? ` · ${fill(copy.slotsReserved, {
+                            granted: snapshot.grantedPublishers,
+                            max: snapshot.maxPublishers,
+                        })}`
                         : ''} ·{' '}
-                    {queue.length} hand{queue.length !== 1 ? 's' : ''} raised
+                    {fill(copy.handsRaised, { count: queue.length })}
                 </span>
                 <button
                     type="button"
@@ -421,19 +460,18 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                     disabled={busyKey === 'reconcile'}
                     className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
                 >
-                    Reconcile grants
+                    {copy.reconcile}
                 </button>
             </div>
 
             {/* Hand queue comes first so a facilitator never has to hunt below the stage. */}
             <div>
-                <h2 className="mb-1 text-lg font-semibold text-[var(--cream)]">Hand queue</h2>
+                <h2 className="mb-1 text-lg font-semibold text-[var(--cream)]">{copy.handQueue}</h2>
                 <p className="mb-2 text-xs text-[var(--text-muted)]">
-                    Raised hands appear here automatically. Give floor moves a connected person to the stage; Remove hand clears the request.
-                    {' '}Snapshots are private, refresh together and disappear after {thumbnailFreshForSeconds}s without a new consented frame.
+                    {fill(copy.handQueueHelp, { seconds: thumbnailFreshForSeconds })}
                 </p>
                 {queue.length === 0 ? (
-                    <p className="text-sm text-[var(--text-secondary)]">No hands raised.</p>
+                    <p className="text-sm text-[var(--text-secondary)]">{copy.noHands}</p>
                 ) : (
                     <ul className="space-y-2">
                         {queue.map((participant) => (
@@ -443,14 +481,15 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                         displayName={participant.displayName}
                                         src={participant.thumbnailUrl ?? null}
                                         freshForSeconds={thumbnailFreshForSeconds}
+                                        copy={copy}
                                     />
                                     <div className="min-w-0">
                                         <span className="font-medium text-[var(--cream)]">#{participant.queuePosition} — {participantLabel(participant)}</span>
                                         <div className="text-xs text-[var(--text-secondary)]">
-                                            waiting {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
-                                            {' · '}{connectionBadge(participant)}
-                                            {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()} quality` : ''}
-                                            {participant.reconcileNeeded ? ' · reconcile needed' : ''}
+                                            {copy.waiting} {participant.raisedAt ? formatQueueAge(participant.raisedAt, nowMs) : '…'}
+                                            {' · '}{connectionBadge(participant, copy)}
+                                            {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()} ${copy.quality}` : ''}
+                                            {participant.reconcileNeeded ? ` · ${copy.reconcileNeeded}` : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -459,10 +498,10 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                         type="button"
                                         disabled={busyKey !== null || participant.connected !== true}
                                         onClick={() => void giveFloor(participant)}
-                                        title={participant.connected === true ? undefined : 'Participant must be connected before joining the stage'}
+                                        title={participant.connected === true ? undefined : copy.mustReconnect}
                                     className="min-h-11 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
                                     >
-                                        {participant.connected === true ? 'Give floor' : 'Waiting for reconnect'}
+                                        {participant.connected === true ? copy.giveFloor : copy.waitingForReconnect}
                                     </button>
                                     <button
                                         type="button"
@@ -470,7 +509,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                         onClick={() => void removeHand(participant)}
                                         className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
                                     >
-                                        Remove hand
+                                        {copy.removeHand}
                                     </button>
                                 </div>
                             </li>
@@ -480,9 +519,9 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
             </div>
 
             <div>
-                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">Invited / reconnecting</h2>
+                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">{copy.invitedHeading}</h2>
                 {invited.length === 0 ? (
-                    <p className="text-sm text-[var(--text-secondary)]">No pending stage invitations.</p>
+                    <p className="text-sm text-[var(--text-secondary)]">{copy.noInvitations}</p>
                 ) : (
                     <ul className="space-y-2">
                         {invited.map((participant) => (
@@ -491,18 +530,18 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                     <span className="font-medium text-[var(--cream)]">{participantLabel(participant)}</span>
                                     <div className="text-xs text-[var(--text-secondary)]">
                                         {participant.stageState === 'RECONNECTING'
-                                            ? 'Disconnected — invitation will be shown again after re-entry'
+                                            ? copy.inviteAfterReentry
                                             : participant.stageState === 'UNKNOWN'
-                                              ? 'Live state unknown — grant retained'
-                                              : 'Connected — waiting for acceptance and media'}
+                                              ? copy.unknownGrant
+                                              : copy.awaitingAcceptance}
                                     </div>
                                 </div>
                                 {!participant.isAssignedFacilitator ? (
                                     <button type="button" disabled={busyKey !== null} onClick={() => void takeFloor(participant)} className="min-h-11 rounded border border-[var(--danger)] px-3 py-2 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/10 disabled:opacity-50">
-                                        Cancel invitation
+                                        {copy.cancelInvitation}
                                     </button>
                                 ) : (
-                                    <span className="text-xs font-medium text-[var(--text-muted)]">Reserved facilitator slot</span>
+                                    <span className="text-xs font-medium text-[var(--text-muted)]">{copy.reservedFacilitator}</span>
                                 )}
                             </li>
                         ))}
@@ -512,9 +551,9 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
 
             {/* Stage */}
             <div>
-                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">On stage</h2>
+                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">{copy.onStage}</h2>
                 {onStage.length === 0 ? (
-                    <p className="text-sm text-[var(--text-secondary)]">Nobody has the floor yet.</p>
+                    <p className="text-sm text-[var(--text-secondary)]">{copy.nobodyOnStage}</p>
                 ) : (
                     <ul className="space-y-2">
                         {onStage.map((participant) => (
@@ -523,19 +562,21 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                     <div className="min-w-0">
                                         <span className="font-medium text-[var(--cream)]">{participantLabel(participant)}</span>
                                         {participant.staffRole ? (
-                                            <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{participant.staffRole}</span>
+                                            <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
                                         ) : null}
                                         <div className="text-xs text-[var(--text-secondary)]">
-                                            {connectionBadge(participant)}
-                                            {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()} quality` : ''}
-                                            {' · '}{mediaSummary(participant)}
-                                            {participant.reconcileNeeded ? ' · reconcile needed' : ''}
+                                            {connectionBadge(participant, copy)}
+                                            {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()} ${copy.quality}` : ''}
+                                            {' · '}{mediaSummary(participant, copy)}
+                                            {participant.reconcileNeeded ? ` · ${copy.reconcileNeeded}` : ''}
                                         </div>
                                     </div>
                                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                                         {participant.media.map((track) => track.muted ? (
                                             <span key={track.trackSid} className="text-xs text-[var(--text-muted)]">
-                                                Participant must re-enable {track.source.toLowerCase()}
+                                                {fill(copy.participantMustEnable, {
+                                                    track: track.source.toLowerCase(),
+                                                })}
                                             </span>
                                         ) : (
                                             <button
@@ -545,7 +586,9 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                                 onClick={() => void muteTrack(participant, track)}
                                                 className="min-h-11 rounded border border-[var(--border-subtle)] px-3 py-2 text-xs hover:bg-white/5 disabled:opacity-50"
                                             >
-                                                Mute {track.source.toLowerCase()}
+                                                {fill(copy.muteTrack, {
+                                                    track: track.source.toLowerCase(),
+                                                })}
                                             </button>
                                         ))}
                                         {!participant.isAssignedFacilitator ? (
@@ -555,11 +598,11 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                                 onClick={() => void takeFloor(participant)}
                                                 className="min-h-11 rounded border border-[var(--danger)] px-3 py-2 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/10 disabled:opacity-50"
                                             >
-                                                Take floor
+                                                {copy.takeFloor}
                                             </button>
                                         ) : (
                                             <span className="text-xs font-medium text-[var(--text-muted)]">
-                                                Reserved facilitator slot
+                                                {copy.reservedFacilitator}
                                             </span>
                                         )}
                                     </div>
@@ -572,9 +615,11 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
 
             {/* Audience */}
             <div>
-                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">Audience ({audience.length})</h2>
+                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">
+                    {fill(copy.audience, { count: audience.length })}
+                </h2>
                 {audience.length === 0 ? (
-                    <p className="text-sm text-[var(--text-secondary)]">No other participants.</p>
+                    <p className="text-sm text-[var(--text-secondary)]">{copy.noAudience}</p>
                 ) : (
                     <ul className="space-y-1 text-sm">
                         {audience.map((participant) => (
@@ -582,12 +627,12 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                 <span className="text-[var(--cream)]">
                                     {participantLabel(participant)}
                                     {participant.staffRole ? (
-                                        <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{participant.staffRole}</span>
+                                        <span className="ml-2 text-[10px] uppercase text-[var(--text-muted)]">{roleLabel(participant.staffRole, staffRoles)}</span>
                                     ) : null}
                                 </span>
                                 <span className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
                                     <span>
-                                        {connectionBadge(participant)}
+                                        {connectionBadge(participant, copy)}
                                         {participant.connectionQuality ? ` · ${participant.connectionQuality.toLowerCase()}` : ''}
                                     </span>
                                     {participant.connected === true ? (
@@ -597,7 +642,7 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                             onClick={() => void inviteToStage(participant)}
                                             className="min-h-11 rounded border border-[var(--lime)] px-3 py-2 text-xs text-[var(--lime)] hover:bg-[var(--lime)]/10 disabled:opacity-50"
                                         >
-                                            Invite to stage
+                                            {copy.inviteToStage}
                                         </button>
                                     ) : null}
                                 </span>
@@ -608,7 +653,10 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
             </div>
 
             <p className="text-xs text-[var(--text-muted)]">
-                Signed in as {role}. Queue refreshes every {POLL_INTERVAL_MS / 1000}s; durable grants are the authority.
+                {fill(copy.footer, {
+                    role: staffRoles[role],
+                    seconds: POLL_INTERVAL_MS / 1000,
+                })}
             </p>
         </section>
     );

@@ -90,6 +90,7 @@ export default async function EventPage({
                     scheduledAt: scheduledSession.scheduledAt.toISOString(),
                 }}
                 role={staff.role}
+                locale={locale}
                 admissionEvents={[{
                     id: scheduledSession.id,
                     title: scheduledSession.title,
@@ -98,6 +99,9 @@ export default async function EventPage({
                     attendeeCap: scheduledSession.attendeeCap,
                 }]}
                 copy={copy.cockpit}
+                lifecycleCopy={copy.lifecycle}
+                spotlightCopy={copy.spotlight}
+                staffRoleLabels={messages[locale].staffRoles}
             />
         </section>
     );

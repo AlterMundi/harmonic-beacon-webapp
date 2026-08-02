@@ -46,16 +46,16 @@ stackTest('ending an event immediately disconnects every selected-session client
             );
 
             await operator.locator('[data-signal="door"]').click();
-            await operator.getByRole('button', { name: 'Close event' }).click();
+            await operator.getByRole('button', { name: /Close event|Cerrar evento/i }).click();
             await expect(operator.getByRole('alertdialog')).toContainText(
-                'Other events and the Beacon source stay online',
+                /Other events and the Beacon source stay online|Los demás eventos y la fuente del Beacon siguen en línea/i,
             );
             await operator.getByRole('button', {
-                name: 'End & disconnect everyone',
+                name: /End & disconnect everyone|Finalizar y desconectar/i,
             }).click();
 
             await expect(operator.getByRole('status')).toContainText(
-                /Disconnected [1-9]\d* Stage and [1-9]\d* Beacon connections/,
+                /Disconnected [1-9]\d* Stage and [1-9]\d* Beacon connections|Se desconectaron [1-9]\d* conexiones de Escena y [1-9]\d* del Beacon/i,
             );
             await expect(attendee.getByRole('heading', {
                 name: /Session ended|La sesión terminó/i,

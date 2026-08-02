@@ -46,10 +46,10 @@ stackTest('a fresh connection stays invited until the attendee accepts the stage
             const raiseHand = attendee.getByRole('button', { name: /Raise hand|Levantar la mano/i });
             await raiseHand.click();
             const queueRow = drawer.locator('li').filter({ hasText: 'Journey Attendee' });
-            await expect(queueRow.getByRole('button', { name: 'Give floor' })).toBeEnabled({
+            await expect(queueRow.getByRole('button', { name: /Give floor|Dar la palabra/i })).toBeEnabled({
                 timeout: 10_000,
             });
-            await queueRow.getByRole('button', { name: 'Give floor' }).click();
+            await queueRow.getByRole('button', { name: /Give floor|Dar la palabra/i }).click();
 
             const invitation = attendee.getByRole('dialog', {
                 name: /invited into the scene|invitan a entrar en escena/i,
@@ -62,17 +62,17 @@ stackTest('a fresh connection stays invited until the attendee accepts the stage
             await expect(raiseHand).toBeVisible({ timeout: 10_000 });
 
             await raiseHand.click();
-            await expect(queueRow.getByRole('button', { name: 'Give floor' })).toBeEnabled({
+            await expect(queueRow.getByRole('button', { name: /Give floor|Dar la palabra/i })).toBeEnabled({
                 timeout: 10_000,
             });
-            await queueRow.getByRole('button', { name: 'Give floor' }).click();
+            await queueRow.getByRole('button', { name: /Give floor|Dar la palabra/i }).click();
             await expect(invitation).toBeVisible({ timeout: 10_000 });
 
             const pendingRow = drawer.locator('li').filter({ hasText: 'Journey Attendee' });
-            await expect(pendingRow.getByRole('button', { name: 'Cancel invitation' })).toBeVisible({
+            await expect(pendingRow.getByRole('button', { name: /Cancel invitation|Cancelar invitación/i })).toBeVisible({
                 timeout: 10_000,
             });
-            await expect(pendingRow.getByRole('button', { name: 'Take floor' })).toHaveCount(0);
+            await expect(pendingRow.getByRole('button', { name: /Take floor|Quitar la palabra/i })).toHaveCount(0);
 
             await attendee.reload();
             await expect(attendee.getByTestId('connection-state')).toHaveAttribute(
@@ -81,10 +81,10 @@ stackTest('a fresh connection stays invited until the attendee accepts the stage
                 { timeout: 20_000 },
             );
             await expect(invitation).toBeVisible({ timeout: 10_000 });
-            await expect(pendingRow.getByRole('button', { name: 'Cancel invitation' })).toBeVisible({
+            await expect(pendingRow.getByRole('button', { name: /Cancel invitation|Cancelar invitación/i })).toBeVisible({
                 timeout: 10_000,
             });
-            await expect(pendingRow.getByRole('button', { name: 'Take floor' })).toHaveCount(0);
+            await expect(pendingRow.getByRole('button', { name: /Take floor|Quitar la palabra/i })).toHaveCount(0);
 
             await invitation.getByRole('button', { name: /Accept and join|Aceptar y entrar/i }).click();
 
@@ -113,10 +113,10 @@ stackTest('a fresh connection stays invited until the attendee accepts the stage
             );
 
             const stageRow = drawer.locator('li').filter({ hasText: 'Journey Attendee' });
-            await expect(stageRow.getByRole('button', { name: 'Take floor' })).toBeVisible({
+            await expect(stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i })).toBeVisible({
                 timeout: 10_000,
             });
-            await stageRow.getByRole('button', { name: 'Take floor' }).click();
+            await stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i }).click();
             await expect(
                 attendee.getByRole('button', { name: /Turn camera off|Apagar (?:la )?cámara/i }),
             ).toHaveCount(0, { timeout: 10_000 });

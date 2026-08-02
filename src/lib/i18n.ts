@@ -218,6 +218,86 @@ export type Messages = {
         unavailableTitle: string;
         unavailableBody: string;
         recover: string;
+        lifecycle: {
+            heading: string;
+            status: string;
+            scheduled: string;
+            statuses: Record<'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED', string>;
+            opening: string;
+            openDoors: string;
+            closeEvent: string;
+            disconnectRemaining: string;
+            outsideWindowOverride: string;
+            outsideWindowRestricted: string;
+            reasonLabel: string;
+            confirmHeading: string;
+            confirmBody: string;
+            disconnecting: string;
+            endAndDisconnect: string;
+            keepOpen: string;
+            doorsAlreadyOpen: string;
+            doorsOpened: string;
+            eventEnded: string;
+            eventCancelled: string;
+            disconnectIncomplete: string;
+            statusChangeFailed: string;
+        };
+        spotlight: {
+            pollingFailed: string;
+            liveStateUnavailable: string;
+            reconciliationOne: string;
+            reconciliationMany: string;
+            requestFailed: string;
+            endpointUnavailable: string;
+            participantDisconnected: string;
+            hasFloor: string;
+            invitedNotice: string;
+            removedNotice: string;
+            handLoweredNotice: string;
+            trackMutedNotice: string;
+            reconciliationFinished: string;
+            stageFull: string;
+            livekitFailure: string;
+            stageSummary: string;
+            slotsReserved: string;
+            handsRaised: string;
+            reconcile: string;
+            handQueue: string;
+            handQueueHelp: string;
+            noHands: string;
+            waiting: string;
+            connected: string;
+            disconnected: string;
+            liveUnknown: string;
+            quality: string;
+            reconcileNeeded: string;
+            giveFloor: string;
+            waitingForReconnect: string;
+            removeHand: string;
+            mustReconnect: string;
+            invitedHeading: string;
+            noInvitations: string;
+            inviteAfterReentry: string;
+            unknownGrant: string;
+            awaitingAcceptance: string;
+            cancelInvitation: string;
+            reservedFacilitator: string;
+            onStage: string;
+            nobodyOnStage: string;
+            noTracks: string;
+            muted: string;
+            trackLive: string;
+            participantMustEnable: string;
+            muteTrack: string;
+            takeFloor: string;
+            audience: string;
+            noAudience: string;
+            inviteToStage: string;
+            recentSnapshotAlt: string;
+            noSnapshotAlt: string;
+            noImage: string;
+            footer: string;
+        };
         cockpit: {
             roomTitle: string;
             roomHint: string;
@@ -444,6 +524,91 @@ export const messages: Record<UiLocale, Messages> = {
             unavailableTitle: 'Este evento no está disponible',
             unavailableBody: 'El enlace puede estar vencido o pertenecer a otro equipo. No se mostraron datos del evento.',
             recover: 'Volver a tus eventos',
+            lifecycle: {
+                heading: 'Puertas del evento',
+                status: 'Estado',
+                scheduled: 'programado para',
+                statuses: {
+                    SCHEDULED: 'Próximo',
+                    LIVE: 'En vivo',
+                    ENDED: 'Finalizado',
+                    CANCELLED: 'Cancelado',
+                },
+                opening: 'Abriendo…',
+                openDoors: 'Abrir puertas',
+                closeEvent: 'Cerrar evento',
+                disconnectRemaining: 'Desconectar conexiones restantes',
+                outsideWindowOverride: 'Estás fuera del horario normal de apertura. Hace falta dejar un motivo de auditoría.',
+                outsideWindowRestricted: 'Las puertas se pueden abrir desde 10 minutos antes hasta 60 minutos después del horario programado.',
+                reasonLabel: 'Motivo operativo (sin datos de participantes)',
+                confirmHeading: '¿Finalizar esta experiencia para todas las personas?',
+                confirmBody: 'Primero se detienen los nuevos ingresos. Luego se desconectan de inmediato la Escena y quienes escuchan el Beacon de este evento. Los demás eventos y la fuente del Beacon siguen en línea.',
+                disconnecting: 'Desconectando…',
+                endAndDisconnect: 'Finalizar y desconectar a todas las personas',
+                keepOpen: 'Mantener abierto',
+                doorsAlreadyOpen: 'Las puertas ya estaban abiertas.',
+                doorsOpened: 'Las puertas están abiertas. Las personas ya pueden entrar.',
+                eventEnded: 'Evento finalizado. Se desconectaron {stage} conexiones de Escena y {beacon} del Beacon.',
+                eventCancelled: 'Evento cancelado. Se desconectaron {stage} conexiones de Escena y {beacon} del Beacon.',
+                disconnectIncomplete: 'El evento se cerró, pero quedaron conexiones activas. Usá “Desconectar conexiones restantes” para volver a intentarlo.',
+                statusChangeFailed: 'No se pudo cambiar el estado del evento',
+            },
+            spotlight: {
+                pollingFailed: 'No se pudo actualizar ({error}). Se muestra el último estado conocido y se vuelve a intentar cada {seconds}s.',
+                liveStateUnavailable: 'LiveKit no está respondiendo: no se puede confirmar presencia ni medios. Las invitaciones y la fila de manos guardadas siguen vigentes.',
+                reconciliationOne: '1 persona necesita reconciliación: el permiso guardado y LiveKit no coinciden.',
+                reconciliationMany: '{count} personas necesitan reconciliación: los permisos guardados y LiveKit no coinciden.',
+                requestFailed: 'La acción no se pudo completar (HTTP {status})',
+                endpointUnavailable: 'No se pudo contactar el control de escena',
+                participantDisconnected: 'Esta persona no está conectada. Esperá su regreso o quitá la mano de la fila.',
+                hasFloor: '{name} tiene la palabra',
+                invitedNotice: '{name} recibió una invitación a la escena',
+                removedNotice: '{name} volvió al público',
+                handLoweredNotice: 'Se bajó la mano de {name}',
+                trackMutedNotice: 'Se silenció {track}; la persona puede volver a activarlo',
+                reconciliationFinished: 'Reconciliación terminada',
+                stageFull: 'La escena está completa. Esta mano conserva el puesto #{position}; liberá un lugar primero.',
+                livekitFailure: '{message}. Se revocó el permiso guardado; usá Reconciliar para volver a intentar en LiveKit.',
+                stageSummary: 'Escena: {active}/{max} publicando',
+                slotsReserved: '{granted}/{max} lugares reservados',
+                handsRaised: '{count} manos levantadas',
+                reconcile: 'Reconciliar permisos',
+                handQueue: 'Fila de manos',
+                handQueueHelp: 'Las manos aparecen automáticamente. Dar la palabra invita a una persona conectada; Quitar mano limpia la solicitud. Las miniaturas son privadas, se actualizan juntas y desaparecen después de {seconds}s sin una nueva imagen consentida.',
+                noHands: 'No hay manos levantadas.',
+                waiting: 'espera',
+                connected: 'conectada',
+                disconnected: 'salió',
+                liveUnknown: 'presencia desconocida',
+                quality: 'calidad',
+                reconcileNeeded: 'requiere reconciliación',
+                giveFloor: 'Dar la palabra',
+                waitingForReconnect: 'Esperando reconexión',
+                removeHand: 'Quitar mano',
+                mustReconnect: 'La persona debe estar conectada antes de entrar en escena',
+                invitedHeading: 'Invitadas / reconectando',
+                noInvitations: 'No hay invitaciones pendientes.',
+                inviteAfterReentry: 'Desconectada: la invitación volverá a mostrarse cuando regrese',
+                unknownGrant: 'Estado en vivo desconocido: la invitación sigue vigente',
+                awaitingAcceptance: 'Conectada: esperando aceptación y medios',
+                cancelInvitation: 'Cancelar invitación',
+                reservedFacilitator: 'Lugar reservado para facilitación',
+                onStage: 'En escena',
+                nobodyOnStage: 'Todavía nadie tiene la palabra.',
+                noTracks: 'sin medios publicados',
+                muted: 'silenciado',
+                trackLive: 'activo',
+                participantMustEnable: 'La persona debe volver a activar {track}',
+                muteTrack: 'Silenciar {track}',
+                takeFloor: 'Quitar la palabra',
+                audience: 'Público ({count})',
+                noAudience: 'No hay otras personas.',
+                inviteToStage: 'Invitar a la escena',
+                recentSnapshotAlt: 'Imagen reciente del tapiz de {name}',
+                noSnapshotAlt: '{name}: sin imagen actual del tapiz',
+                noImage: 'sin imagen',
+                footer: 'Sesión de {role}. La fila se actualiza cada {seconds}s; los permisos guardados son la referencia.',
+            },
             cockpit: {
                 roomTitle: 'Sala en vivo',
                 roomHint: 'La escena permanece conectada mientras abrís las herramientas.',
@@ -668,6 +833,91 @@ export const messages: Record<UiLocale, Messages> = {
             unavailableTitle: 'This event is unavailable',
             unavailableBody: 'The link may be stale or belong to another team. No event details were disclosed.',
             recover: 'Return to your events',
+            lifecycle: {
+                heading: 'Event doors',
+                status: 'Status',
+                scheduled: 'scheduled',
+                statuses: {
+                    SCHEDULED: 'Upcoming',
+                    LIVE: 'Live',
+                    ENDED: 'Ended',
+                    CANCELLED: 'Cancelled',
+                },
+                opening: 'Opening…',
+                openDoors: 'Open doors',
+                closeEvent: 'Close event',
+                disconnectRemaining: 'Disconnect remaining clients',
+                outsideWindowOverride: 'This is outside the normal opening window. An audit reason is required.',
+                outsideWindowRestricted: 'Doors can open from 10 minutes before until 60 minutes after the scheduled start.',
+                reasonLabel: 'Operational reason (do not include attendee details)',
+                confirmHeading: 'End this experience for everyone?',
+                confirmBody: 'New entries stop first. Then every Stage connection and this event’s Beacon listeners are disconnected immediately. Other events and the Beacon source stay online.',
+                disconnecting: 'Disconnecting…',
+                endAndDisconnect: 'End & disconnect everyone',
+                keepOpen: 'Keep open',
+                doorsAlreadyOpen: 'Doors were already open.',
+                doorsOpened: 'Doors are open. Attendees are entering now.',
+                eventEnded: 'Event ended now. Disconnected {stage} Stage and {beacon} Beacon connections.',
+                eventCancelled: 'Event cancelled now. Disconnected {stage} Stage and {beacon} Beacon connections.',
+                disconnectIncomplete: 'Event closed, but an immediate media disconnect was incomplete. Use “Disconnect remaining clients” to retry.',
+                statusChangeFailed: 'Status change failed',
+            },
+            spotlight: {
+                pollingFailed: 'Update failed ({error}). Showing the last known state and retrying every {seconds}s.',
+                liveStateUnavailable: 'LiveKit live state unavailable — connection and media are unknown. Durable grants and the hand queue are still current.',
+                reconciliationOne: '1 participant needs reconciliation: the saved grant and LiveKit disagree.',
+                reconciliationMany: '{count} participants need reconciliation: the saved grants and LiveKit disagree.',
+                requestFailed: 'The action could not be completed (HTTP {status})',
+                endpointUnavailable: 'The stage control could not be reached',
+                participantDisconnected: 'This participant is not connected. Wait for them to rejoin or remove the stale hand.',
+                hasFloor: '{name} has the floor',
+                invitedNotice: '{name} was invited to the stage',
+                removedNotice: '{name} returned to the audience',
+                handLoweredNotice: '{name}’s hand was lowered',
+                trackMutedNotice: '{track} muted; the participant can re-enable it',
+                reconciliationFinished: 'Reconciliation finished',
+                stageFull: 'Stage is full — this hand stays #{position} in the queue. Take a floor first.',
+                livekitFailure: '{message}. The durable grant was revoked; press Reconcile to retry the LiveKit update.',
+                stageSummary: 'Stage: {active}/{max} publishing',
+                slotsReserved: '{granted}/{max} slots reserved',
+                handsRaised: '{count} hands raised',
+                reconcile: 'Reconcile grants',
+                handQueue: 'Hand queue',
+                handQueueHelp: 'Raised hands appear automatically. Give floor invites a connected person; Remove hand clears the request. Snapshots are private, refresh together and disappear after {seconds}s without a new consented frame.',
+                noHands: 'No hands raised.',
+                waiting: 'waiting',
+                connected: 'connected',
+                disconnected: 'left',
+                liveUnknown: 'live state unknown',
+                quality: 'quality',
+                reconcileNeeded: 'reconcile needed',
+                giveFloor: 'Give floor',
+                waitingForReconnect: 'Waiting for reconnect',
+                removeHand: 'Remove hand',
+                mustReconnect: 'Participant must be connected before joining the stage',
+                invitedHeading: 'Invited / reconnecting',
+                noInvitations: 'No pending stage invitations.',
+                inviteAfterReentry: 'Disconnected — invitation will be shown again',
+                unknownGrant: 'Live state unknown: the invitation remains active',
+                awaitingAcceptance: 'Connected: waiting for acceptance and media',
+                cancelInvitation: 'Cancel invitation',
+                reservedFacilitator: 'Reserved facilitator slot',
+                onStage: 'On stage',
+                nobodyOnStage: 'Nobody has the floor yet.',
+                noTracks: 'no tracks published',
+                muted: 'muted',
+                trackLive: 'live',
+                participantMustEnable: 'Participant must re-enable {track}',
+                muteTrack: 'Mute {track}',
+                takeFloor: 'Take floor',
+                audience: 'Audience ({count})',
+                noAudience: 'No other participants.',
+                inviteToStage: 'Invite to stage',
+                recentSnapshotAlt: 'Recent tapestry snapshot of {name}',
+                noSnapshotAlt: '{name}: no current tapestry snapshot',
+                noImage: 'no image',
+                footer: 'Signed in as {role}. Queue refreshes every {seconds}s; saved grants are authoritative.',
+            },
             cockpit: {
                 roomTitle: 'Live room',
                 roomHint: 'The scene stays connected while you open tools.',
