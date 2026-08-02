@@ -5,10 +5,12 @@ import { ROUTES, SESSION_ES } from '../fixtures/test-data';
 
 /**
  * Complete consent journey with two real browser identities and real LiveKit:
- * hand → staff invitation → decline, then hand → invite → accept → return.
+ * hand → staff invitation → decline, then hand → invite → reload → accept →
+ * return. The reload reproduces a fresh LiveKit connection holding a durable
+ * grant: it must remain pending rather than becoming a phantom stage member.
  * Device access is only expected after the attendee's explicit accept click.
  */
-stackTest('attendee can decline or accept a stage invitation without either room remounting', async ({
+stackTest('a fresh connection stays invited until the attendee accepts the stage invitation', async ({
     browser,
 }, testInfo) => {
     stackTest.slow();
@@ -65,6 +67,25 @@ stackTest('attendee can decline or accept a stage invitation without either room
             });
             await queueRow.getByRole('button', { name: 'Give floor' }).click();
             await expect(invitation).toBeVisible({ timeout: 10_000 });
+
+            const pendingRow = drawer.locator('li').filter({ hasText: 'Journey Attendee' });
+            await expect(pendingRow.getByRole('button', { name: 'Cancel invitation' })).toBeVisible({
+                timeout: 10_000,
+            });
+            await expect(pendingRow.getByRole('button', { name: 'Take floor' })).toHaveCount(0);
+
+            await attendee.reload();
+            await expect(attendee.getByTestId('connection-state')).toHaveAttribute(
+                'data-state',
+                'connected',
+                { timeout: 20_000 },
+            );
+            await expect(invitation).toBeVisible({ timeout: 10_000 });
+            await expect(pendingRow.getByRole('button', { name: 'Cancel invitation' })).toBeVisible({
+                timeout: 10_000,
+            });
+            await expect(pendingRow.getByRole('button', { name: 'Take floor' })).toHaveCount(0);
+
             await invitation.getByRole('button', { name: /Accept and join|Aceptar y entrar/i }).click();
 
             await expect(

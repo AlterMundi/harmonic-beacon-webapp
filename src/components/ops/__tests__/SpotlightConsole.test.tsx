@@ -78,6 +78,7 @@ describe('SpotlightConsole', () => {
         vi.stubGlobal('fetch', mockFetch(snapshot([
             attendee('on-stage', {
                 canPublish: true,
+                stageState: 'ON_STAGE',
                 connectionQuality: 'GOOD',
                 media: [{ trackSid: 'TR_audio', source: 'MICROPHONE', muted: true }],
             }),
@@ -107,6 +108,22 @@ describe('SpotlightConsole', () => {
         expect(screen.getByText(/left/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Take floor' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: 'Give floor' })).toHaveLength(2);
+    });
+
+    it('does not render a disconnected durable grant as on stage after re-entry', async () => {
+        vi.stubGlobal('fetch', mockFetch(snapshot([
+            attendee('stale-grant', {
+                canPublish: true,
+                stageState: 'RECONNECTING',
+                connected: false,
+                media: [],
+            }),
+        ], { activePublishers: 0, grantedPublishers: 2 })));
+        render(<SpotlightConsole sessionId="event-1" role="FACILITATOR" />);
+
+        expect(await screen.findByText(/Disconnected — invitation will be shown again/)).toBeInTheDocument();
+        expect(screen.getByText('Nobody has the floor yet.')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Cancel invitation' })).toBeInTheDocument();
     });
 
     it('does not offer the floor to a stale disconnected hand', async () => {

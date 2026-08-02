@@ -4,6 +4,7 @@ import { TrackSource } from 'livekit-server-sdk';
 import { requireStaff } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getRoomService } from '@/lib/livekit-server';
+import { effectiveStageState } from '@/lib/stage-presence';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
@@ -104,6 +105,12 @@ export async function GET(
             queuePosition += 1;
         }
         const live = liveParticipants.get(participant.participantIdentity);
+        const connected = liveStateAvailable ? Boolean(live) : null;
+        const stageState = effectiveStageState({
+            hasActiveGrant: canPublish,
+            connected,
+            publishedTrackCount: live?.media.length ?? 0,
+        });
         const isAssignedFacilitator = participant.staffUser
             ? eventStaffPolicy(
                 participant.staffUser.role,
@@ -122,9 +129,10 @@ export async function GET(
             raisedAt: participant.raisedAt?.toISOString() ?? null,
             queuePosition: isWaiting ? queuePosition : null,
             canPublish,
+            stageState,
             grantVersion: participant.grantVersion,
             reconcileNeeded: participant.grantReconcileNeeded,
-            connected: liveStateAvailable ? Boolean(live) : null,
+            connected,
             media: live?.media ?? [],
             // RoomService's ParticipantInfo does not expose connection quality.
             // Keep the field explicit so the UI never invents a value.
@@ -136,10 +144,13 @@ export async function GET(
         sessionId: scheduledSession.id,
         sessionStatus: scheduledSession.status,
         maxPublishers: scheduledSession.maxPublishers,
+        activePublishers: participants.filter(
+            (participant) => participant.stageState === 'ON_STAGE',
+        ).length,
         // Julián's facilitator slot is reserved even before preflight creates
         // his participant row. Exclude an active facilitator row to avoid
         // double-counting that reservation.
-        activePublishers: 1 + participants.filter(
+        grantedPublishers: 1 + participants.filter(
             (participant) =>
                 participant.canPublish &&
                 !participant.isAssignedFacilitator,

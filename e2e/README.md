@@ -13,7 +13,7 @@ deterministic fixtures, no production credentials or participant data.
 | `tests/responsive.spec.ts` | nothing | layout geometry at 1440/1024/390/320 px |
 | `tests/visual.spec.ts` | stack | screenshot baselines at the same four widths |
 | `tests/media-continuity.spec.ts` | stack + LiveKit | the four media invariants in desktop Chromium, Android/Chrome emulation and iPhone/WebKit emulation |
-| `tests/stage-invitation.spec.ts` | stack + LiveKit | two-browser hand → decline/accept → return journey |
+| `tests/stage-invitation.spec.ts` | stack + LiveKit | two-browser hand → decline/invite → fresh connection stays pending → accept → return journey |
 | `src/app/session/[id]/__tests__/media-continuity.test.tsx` | nothing | same invariants in Vitest/jsdom (`npm test`) |
 
 Suites that need the stack skip with a precise reason when it is missing —

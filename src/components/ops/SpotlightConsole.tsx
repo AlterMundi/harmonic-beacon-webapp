@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StaffRole } from '@prisma/client';
+import { effectiveStageState, type EffectiveStageState } from '@/lib/stage-presence';
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -35,6 +36,7 @@ type ConsoleParticipant = {
     raisedAt: string | null;
     queuePosition: number | null;
     canPublish: boolean;
+    stageState?: EffectiveStageState;
     grantVersion: number;
     reconcileNeeded: boolean;
     connected: boolean | null;
@@ -44,10 +46,19 @@ type ConsoleParticipant = {
 
 /** Normalize a participant from the API: fill optional live-state fields. */
 function normalizeParticipant(p: ConsoleParticipant): ConsoleParticipant {
+    const connected = p.connected ?? null;
+    const media = p.media ?? [];
     return {
         ...p,
-        connected: p.connected ?? null,
-        media: p.media ?? [],
+        connected,
+        media,
+        stageState: p.stageState ?? effectiveStageState({
+            hasActiveGrant: p.canPublish,
+            connected,
+            // A current publication is LiveKit's observable evidence that the
+            // attendee accepted this connection's invitation.
+            publishedTrackCount: media.length,
+        }),
         connectionQuality: p.connectionQuality ?? null,
         isAssignedFacilitator: p.isAssignedFacilitator ?? false,
     };
@@ -58,6 +69,7 @@ type ParticipantsSnapshot = {
     sessionStatus?: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
     maxPublishers: number;
     activePublishers: number;
+    grantedPublishers?: number;
     liveStateAvailable: boolean;
     participants: ConsoleParticipant[];
 };
@@ -299,7 +311,10 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
         );
 
     const all = snapshot?.participants ?? [];
-    const onStage = all.filter((participant) => participant.canPublish);
+    const onStage = all.filter((participant) => participant.stageState === 'ON_STAGE');
+    const invited = all.filter(
+        (participant) => participant.canPublish && participant.stageState !== 'ON_STAGE',
+    );
     const queue = all
         .filter((participant) => participant.queuePosition !== null)
         .sort((left, right) => (left.queuePosition ?? 0) - (right.queuePosition ?? 0));
@@ -345,7 +360,10 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
 
             <div className="flex items-center justify-between text-sm">
                 <span className="text-[var(--text-secondary)]">
-                    Stage: {snapshot ? `${snapshot.activePublishers}/${snapshot.maxPublishers}` : '…'} publishers ·{' '}
+                    Stage: {snapshot ? `${snapshot.activePublishers}/${snapshot.maxPublishers}` : '…'} publishing
+                    {snapshot?.grantedPublishers !== undefined
+                        ? ` · ${snapshot.grantedPublishers}/${snapshot.maxPublishers} slots reserved`
+                        : ''} ·{' '}
                     {queue.length} hand{queue.length !== 1 ? 's' : ''} raised
                 </span>
                 <button
@@ -398,6 +416,37 @@ export default function SpotlightConsole({ sessionId, role, onSummary }: Props) 
                                         Remove hand
                                     </button>
                                 </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
+            <div>
+                <h2 className="mb-2 text-lg font-semibold text-[var(--cream)]">Invited / reconnecting</h2>
+                {invited.length === 0 ? (
+                    <p className="text-sm text-[var(--text-secondary)]">No pending stage invitations.</p>
+                ) : (
+                    <ul className="space-y-2">
+                        {invited.map((participant) => (
+                            <li key={participant.id} className="operational-panel flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <span className="font-medium text-[var(--cream)]">{participantLabel(participant)}</span>
+                                    <div className="text-xs text-[var(--text-secondary)]">
+                                        {participant.stageState === 'RECONNECTING'
+                                            ? 'Disconnected — invitation will be shown again after re-entry'
+                                            : participant.stageState === 'UNKNOWN'
+                                              ? 'Live state unknown — grant retained'
+                                              : 'Connected — waiting for acceptance and media'}
+                                    </div>
+                                </div>
+                                {!participant.isAssignedFacilitator ? (
+                                    <button type="button" disabled={busyKey !== null} onClick={() => void takeFloor(participant)} className="min-h-11 rounded border border-[var(--danger)] px-3 py-2 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/10 disabled:opacity-50">
+                                        Cancel invitation
+                                    </button>
+                                ) : (
+                                    <span className="text-xs font-medium text-[var(--text-muted)]">Reserved facilitator slot</span>
+                                )}
                             </li>
                         ))}
                     </ul>
