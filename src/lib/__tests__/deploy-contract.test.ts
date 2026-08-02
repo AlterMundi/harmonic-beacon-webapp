@@ -28,6 +28,12 @@ describe('production deploy contract', () => {
     expect(workflow).toContain('[ "$tapestry_health" = healthy ]');
   });
 
+  it('can only schedule production deploys on the verified mona runner', () => {
+    expect(workflow).toContain('runs-on: [self-hosted, mona]');
+    expect(workflow).toContain('test "$(hostname -s)" = mona');
+    expect(workflow).not.toMatch(/runs-on:\s+self-hosted\s*$/m);
+  });
+
   it('preserves and restores app and tapestry independently', () => {
     expect(workflow).toContain(
       'harmonic-beacon/app:rollback-${GITHUB_RUN_ID}',

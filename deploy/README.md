@@ -41,6 +41,22 @@ On failure it restores the preserved app and tapestry images independently. It
 never uses `compose down`, deletes data or pretends that rebuilding the same tag
 is a rollback.
 
+### Runner isolation
+
+The deploy job requires both the standard `self-hosted` label and the dedicated
+`mona` label, then verifies that `hostname -s` is exactly `mona` before checkout
+or any privileged command. Never register mona as an unrestricted generic
+self-hosted runner: pull-request workflows also use self-hosted capacity, and
+unreviewed PR code must not execute on the production host.
+
+An organization administrator must place the mona runner in a runner group that
+is restricted to this repository and the `Deploy` workflow. Keep it offline
+until that restriction exists. The sudoers policy must allow only the explicit
+Docker, stat and file-read commands used by the workflow, without a general root
+shell. If the dedicated runner is unavailable, use the manual deploy below over
+the separately controlled SSH path; a generic runner is never an acceptable
+fallback.
+
 ## Manual deploy on mona
 
 From `/opt/beacon/app`, preserve the untracked production compose override and
