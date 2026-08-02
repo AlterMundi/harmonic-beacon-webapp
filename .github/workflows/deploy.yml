@@ -22,8 +22,13 @@ jobs:
       - name: Verify code and shared contract
         run: |
           npm ci
+          npm ci --prefix services/tapestry
           npm run contract:commerce:verify
           npm test
+          npm test --prefix services/tapestry
+          npm audit --omit=dev --audit-level=high
+          npm audit --omit=dev --prefix services/tapestry --audit-level=high
+          npm audit --omit=dev --prefix services/playlist-bot --audit-level=high
           npx tsc --noEmit
           npm run lint -- --quiet
 
@@ -46,12 +51,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          previous="$(sudo -n docker inspect beacon-app --format '{{.Image}}' 2>/dev/null || true)"
-          if [ -n "$previous" ]; then
-            sudo -n docker tag "$previous" "harmonic-beacon/app:rollback-${GITHUB_RUN_ID}"
-            echo 'available=true' >> "$GITHUB_OUTPUT"
+          previous_app="$(sudo -n docker inspect beacon-app --format '{{.Image}}' 2>/dev/null || true)"
+          if [ -n "$previous_app" ]; then
+            sudo -n docker tag "$previous_app" "harmonic-beacon/app:rollback-${GITHUB_RUN_ID}"
+            echo 'app_available=true' >> "$GITHUB_OUTPUT"
           else
-            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'app_available=false' >> "$GITHUB_OUTPUT"
+          fi
+          previous_tapestry="$(sudo -n docker inspect beacon-tapestry --format '{{.Image}}' 2>/dev/null || true)"
+          if [ -n "$previous_tapestry" ]; then
+            sudo -n docker tag "$previous_tapestry" "harmonic-beacon/tapestry:rollback-${GITHUB_RUN_ID}"
+            echo 'tapestry_available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'tapestry_available=false' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build commit image
@@ -59,7 +71,7 @@ jobs:
         run: |
           sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
             --project-name app --env-file /etc/harmonic-beacon/production.env \
-            build app
+            build app tapestry
 
       - name: Apply additive migrations
         shell: bash
@@ -71,21 +83,23 @@ jobs:
             --project-name app --env-file /etc/harmonic-beacon/production.env \
             run --rm --no-deps app npx prisma migrate status
 
-      - name: Replace app and reconciler
+      - name: Replace app, reconciler and tapestry
         shell: bash
         run: |
           sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
             --project-name app --env-file /etc/harmonic-beacon/production.env \
-            up -d --no-deps --force-recreate app commerce-reconciler
+            up -d --no-deps --force-recreate app commerce-reconciler tapestry
 
       - name: Wait for readiness
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 60); do
+          for _attempt in $(seq 1 60); do
             app_health="$(sudo -n docker inspect beacon-app --format '{{.State.Health.Status}}' 2>/dev/null || true)"
             worker_health="$(sudo -n docker inspect beacon-commerce-reconciler --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            tapestry_health="$(sudo -n docker inspect beacon-tapestry --format '{{.State.Health.Status}}' 2>/dev/null || true)"
             if [ "$app_health" = healthy ] && [ "$worker_health" = healthy ] && \
+              [ "$tapestry_health" = healthy ] && \
               curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
               exit 0
             fi
@@ -139,21 +153,53 @@ jobs:
             }
           done
 
-      - name: Roll back immutable app image on failure
-        if: failure() && steps.rollback.outputs.available == 'true'
+      - name: Roll back immutable service images on failure
+        if: ${{ failure() && (steps.rollback.outputs.app_available == 'true' || steps.rollback.outputs.tapestry_available == 'true') }}
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
-            --project-name app --env-file /etc/harmonic-beacon/production.env \
-            up -d --no-deps --force-recreate app
-          if sudo -n docker run --rm --entrypoint test \
-            "harmonic-beacon/app:rollback-${GITHUB_RUN_ID}" \
-            -f /app/scripts/commerce-media-worker.ts; then
+          worker_expected=false
+          if [ "${{ steps.rollback.outputs.app_available }}" = true ]; then
             sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
               --project-name app --env-file /etc/harmonic-beacon/production.env \
-              up -d --no-deps --force-recreate commerce-reconciler
-          else
-            sudo -n docker stop beacon-commerce-reconciler 2>/dev/null || true
+              up -d --no-deps --force-recreate app
+            if sudo -n docker run --rm --entrypoint test \
+              "harmonic-beacon/app:rollback-${GITHUB_RUN_ID}" \
+              -f /app/scripts/commerce-media-worker.ts; then
+              sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
+                --project-name app --env-file /etc/harmonic-beacon/production.env \
+                up -d --no-deps --force-recreate commerce-reconciler
+              worker_expected=true
+            else
+              sudo -n docker stop beacon-commerce-reconciler 2>/dev/null || true
+            fi
           fi
-          curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null
+          if [ "${{ steps.rollback.outputs.tapestry_available }}" = true ]; then
+            sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
+              --project-name app --env-file /etc/harmonic-beacon/production.env \
+              up -d --no-deps --force-recreate tapestry
+          fi
+          for _attempt in $(seq 1 60); do
+            app_ready=true
+            worker_ready=true
+            tapestry_ready=true
+            if [ "${{ steps.rollback.outputs.app_available }}" = true ]; then
+              if [ "$(sudo -n docker inspect beacon-app --format '{{.State.Health.Status}}' 2>/dev/null || true)" != healthy ] || \
+                ! curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
+                app_ready=false
+              fi
+            fi
+            if [ "$worker_expected" = true ]; then
+              [ "$(sudo -n docker inspect beacon-commerce-reconciler --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ] || worker_ready=false
+            fi
+            if [ "${{ steps.rollback.outputs.tapestry_available }}" = true ]; then
+              [ "$(sudo -n docker inspect beacon-tapestry --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ] || tapestry_ready=false
+            fi
+            if [ "$app_ready" = true ] && [ "$worker_ready" = true ] && [ "$tapestry_ready" = true ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          sudo -n docker compose --project-name app \
+            --env-file /etc/harmonic-beacon/production.env ps
+          exit 1

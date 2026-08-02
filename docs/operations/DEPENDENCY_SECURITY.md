@@ -23,7 +23,13 @@ baseline it reports one low-severity esbuild issue limited to the Windows
 development server; production runs Linux standalone output and does not expose
 the esbuild development server. Review or remove that exception by 2026-09-01.
 
-Rollback is one commit plus image rebuild: restore `package.json` and
-`package-lock.json`, run `npm ci`, rebuild the standalone image, and redeploy.
-There are no schema, migration, session-cookie or environment changes in this
-dependency update.
+Every independently deployed Node package is audited, not only the repository
+root. The tapestry service is pinned to Sharp 0.35.3 after its prior 0.34 line
+reported a high-severity inherited libvips advisory. CI and release now run
+separate production audits for the root, `services/tapestry` and
+`services/playlist-bot` lockfiles; both services currently report zero findings.
+
+Rollback is one commit plus image rebuild: restore the root and tapestry
+`package.json`/`package-lock.json` pairs, run both clean installs, rebuild the
+standalone and tapestry images, and redeploy. There are no schema, migration,
+session-cookie or environment changes in this dependency update.

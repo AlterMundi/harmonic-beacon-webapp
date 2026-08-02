@@ -12,7 +12,7 @@
     "test": "MALLOC_ARENA_MAX=2 tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "sharp": "^0.34.3"
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
