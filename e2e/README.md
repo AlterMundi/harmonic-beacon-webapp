@@ -14,7 +14,7 @@ deterministic fixtures, no production credentials or participant data.
 | `tests/visual.spec.ts` | stack | screenshot baselines at the same four widths |
 | `tests/media-continuity.spec.ts` | stack + LiveKit | the four media invariants in desktop Chromium, Android/Chrome emulation and iPhone/WebKit emulation |
 | `tests/stage-invitation.spec.ts` | stack + LiveKit | two-browser hand → decline/invite → fresh connection stays pending → accept → return journey |
-| `tests/whole-system.spec.ts` | stack + LiveKit | two consecutive waiting → doors → hand → invite → decline/accept → return → terminate lifecycles, plus one-identity `FACILITATOR_OP` admission/health/reconciliation |
+| `tests/whole-system.spec.ts` | stack + LiveKit | two consecutive ES → EN waiting → doors → hand → invite → decline/accept → return → terminate lifecycles, selected-event health, plus one-identity `FACILITATOR_OP` admission/reconciliation |
 | `src/app/session/[id]/__tests__/media-continuity.test.tsx` | nothing | same invariants in Vitest/jsdom (`npm test`) |
 
 Suites that need the stack skip with a precise reason when it is missing —

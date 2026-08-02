@@ -1,13 +1,13 @@
 import type { Page } from '@playwright/test';
 
-import { loginViaDashboard } from '../fixtures/auth';
+import { loginAttendeeWithTicket, loginViaDashboard } from '../fixtures/auth';
 import {
     requireDirectDb,
     withPreservedFixtureStaff,
     withResetSessionLifecycle,
 } from '../fixtures/db';
 import { expect, stackTest } from '../fixtures/stack';
-import { ROUTES, SESSION_ES, STAFF } from '../fixtures/test-data';
+import { ROUTES, SESSION_EN, SESSION_ES, STAFF, TICKETS } from '../fixtures/test-data';
 
 async function closeCockpitDrawer(staff: Page): Promise<void> {
     const drawer = staff.getByRole('dialog');
@@ -36,21 +36,27 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
 
     try {
         await withPreservedFixtureStaff(db, STAFF.facilitator.email, async () => {
-            for (const [index, invitationDecision] of ['decline', 'accept'].entries()) {
-                await withResetSessionLifecycle(db, SESSION_ES.id, async () => {
+            const rehearsals = [
+                { session: SESSION_ES, invitationDecision: 'decline' },
+                { session: SESSION_EN, invitationDecision: 'accept' },
+            ] as const;
+
+            for (const [index, { session, invitationDecision }] of rehearsals.entries()) {
+                await withResetSessionLifecycle(db, session.id, async () => {
                     if (!staffLoggedIn) {
                         await loginViaDashboard(
                             staff,
                             'FACILITATOR_OP',
                             'Lifecycle Conductor',
-                            ROUTES.opsSession(SESSION_ES.id),
+                            ROUTES.opsSession(session.id),
                         );
                         staffLoggedIn = true;
                     } else {
-                        await staff.goto(ROUTES.opsSession(SESSION_ES.id));
+                        await staff.goto(ROUTES.opsSession(session.id));
                     }
 
                     await expect(staff.getByTestId('conductor-cockpit')).toBeVisible();
+                    await expect(staff.getByRole('heading', { name: session.title })).toBeVisible();
                     await expect(staff.getByText('Lifecycle Conductor').first()).toBeVisible();
                     await expect(staff.getByText(
                         /Facilitación y operaciones|Facilitator and operations/i,
@@ -62,14 +68,23 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                     const attendeeName = `Lifecycle Attendee ${index + 1}`;
 
                     try {
-                        await loginViaDashboard(
-                            attendee,
-                            'ATTENDEE',
-                            attendeeName,
-                            ROUTES.session(SESSION_ES.id),
-                        );
+                        if (session.id === SESSION_ES.id) {
+                            await loginViaDashboard(
+                                attendee,
+                                'ATTENDEE',
+                                attendeeName,
+                                ROUTES.session(session.id),
+                            );
+                        } else {
+                            await loginAttendeeWithTicket(attendee, {
+                                name: attendeeName,
+                                email: 'lifecycle-attendee-2@e2e.altermundi.net',
+                                code: TICKETS.enIssuedB,
+                            });
+                            await attendee.waitForURL(`**${ROUTES.session(session.id)}`);
+                        }
                         await expect(attendee.getByText(
-                            /doors are still closed|puertas todavía están cerradas/i,
+                            /doors are (?:still closed|not open yet)|puertas todavía están cerradas/i,
                         )).toBeVisible({ timeout: 10_000 });
 
                         await staff.locator('[data-signal="door"]').click();
@@ -95,18 +110,23 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         const admission = staff.getByRole('dialog');
                         await admission.getByPlaceholder(
                             'Attendee email, code last four, or entitlement ID',
-                        ).fill('TESD');
+                        ).fill(session.id === SESSION_ES.id ? 'TESD' : 'TEND');
                         await admission.getByRole('button', { name: 'Look up' }).click();
                         await expect(admission.getByText('Last four:')).toBeVisible();
-                        await expect(admission.getByText('TESD', { exact: true })).toBeVisible();
+                        await expect(admission.getByText(
+                            session.id === SESSION_ES.id ? 'TESD' : 'TEND',
+                            { exact: true },
+                        )).toBeVisible();
                         await closeCockpitDrawer(staff);
 
                         await staff.locator('[data-signal="health"]').click();
                         const health = staff.getByRole('dialog');
                         await health.getByRole('button', { name: 'Refresh now' }).click();
-                        await expect(health.locator('p').filter({
+                        const healthSummary = health.locator('p').filter({
                             hasText: /Watching session.*signed in as FACILITATOR_OP/i,
-                        })).toBeVisible({ timeout: 15_000 });
+                        });
+                        await expect(healthSummary).toBeVisible({ timeout: 15_000 });
+                        await expect(healthSummary).toContainText(session.title);
                         await closeCockpitDrawer(staff);
 
                         await staff.locator('[data-signal="hands"]').click();
