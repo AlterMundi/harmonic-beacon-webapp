@@ -12,6 +12,7 @@
 import { useState, type FormEvent } from 'react';
 import type { StaffRole } from '@prisma/client';
 
+import type { Messages, UiLocale } from '@/lib/i18n';
 import { hasStaffCapability } from '@/lib/staff-capabilities';
 
 type EventOption = {
@@ -61,6 +62,8 @@ type PromoCampaign = {
 type Props = {
     role: StaffRole;
     events: EventOption[];
+    locale: UiLocale;
+    copy: Messages['ops']['admissionPanel'];
 };
 
 async function postJson(url: string, body: unknown): Promise<{ status: number; data: Record<string, unknown> }> {
@@ -73,12 +76,23 @@ async function postJson(url: string, body: unknown): Promise<{ status: number; d
     return { status: response.status, data };
 }
 
-function errorMessage(status: number, data: Record<string, unknown>): string {
-    const detail = typeof data.message === 'string' ? data.message : 'Unexpected error';
+function fill(template: string, values: Record<string, string | number>): string {
+    return Object.entries(values).reduce(
+        (result, [key, value]) => result.replaceAll(`{${key}}`, String(value)),
+        template,
+    );
+}
+
+function errorMessage(
+    status: number,
+    data: Record<string, unknown>,
+    copy: Messages['ops']['admissionPanel'],
+): string {
+    const detail = typeof data.message === 'string' ? data.message : copy.unexpectedError;
     return `${detail} (HTTP ${status})`;
 }
 
-export default function AdmissionConsole({ role, events }: Props) {
+export default function AdmissionConsole({ role, events, locale, copy }: Props) {
     const canMutate = hasStaffCapability(role, 'mutate_entitlement');
     const canBatch = hasStaffCapability(role, 'manage_ticket_batches');
     const canIssueComp = hasStaffCapability(role, 'issue_comp');
@@ -123,12 +137,12 @@ export default function AdmissionConsole({ role, events }: Props) {
             const response = await fetch(`/api/ops/admission?q=${encodeURIComponent(query)}`);
             const data = await response.json();
             if (!response.ok) {
-                flash(null, errorMessage(response.status, data));
+                flash(null, errorMessage(response.status, data, copy));
                 setResults(null);
             } else {
                 setResults(data.results as Entitlement[]);
                 if ((data.results as Entitlement[]).length === 0) {
-                    flash('No matching entitlements.', null);
+                    flash(copy.notices.noMatches, null);
                 }
             }
         } finally {
@@ -146,14 +160,14 @@ export default function AdmissionConsole({ role, events }: Props) {
                 ...(email !== undefined ? { email } : {}),
             });
             if (status >= 400) {
-                flash(null, errorMessage(status, data));
+                flash(null, errorMessage(status, data, copy));
             } else {
                 flash(
                     action === 'revoke'
-                        ? 'Access suspended or revoked.'
+                        ? copy.notices.accessRevoked
                         : action === 'resume'
-                            ? 'Administrative suspension cleared.'
-                            : 'Binding updated.',
+                            ? copy.notices.suspensionCleared
+                            : copy.notices.bindingUpdated,
                     null,
                 );
                 setResults((current) =>
@@ -193,12 +207,15 @@ export default function AdmissionConsole({ role, events }: Props) {
                 : { action, sessionId: batchEvent, tier: batchTier, csv: importCsv };
             const { status, data } = await postJson('/api/ops/admission', body);
             if (status >= 400) {
-                flash(null, errorMessage(status, data));
+                flash(null, errorMessage(status, data, copy));
             } else if (action === 'generate') {
                 setOneTimeCsv(data.csv as string);
-                flash('Batch generated. Copy or download the CSV now — it is shown only once.', null);
+                flash(copy.notices.batchGenerated, null);
             } else {
-                flash(`Import complete: ${data.created} created, ${data.skipped} skipped (already existed).`, null);
+                flash(fill(copy.notices.importComplete, {
+                    created: String(data.created),
+                    skipped: String(data.skipped),
+                }), null);
             }
         } finally {
             setBusy(false);
@@ -217,11 +234,11 @@ export default function AdmissionConsole({ role, events }: Props) {
                 reason: compReason,
             });
             if (status >= 400) {
-                flash(null, errorMessage(status, data));
+                flash(null, errorMessage(status, data, copy));
             } else {
                 setOneTimeCsv(data.csv as string);
                 setCompReason('');
-                flash('Comp/override issued. Copy or download the CSV now — it is shown only once.', null);
+                flash(copy.notices.compIssued, null);
             }
         } finally {
             setBusy(false);
@@ -235,7 +252,7 @@ export default function AdmissionConsole({ role, events }: Props) {
             const response = await fetch('/api/ops/invitations');
             const data = await response.json() as Record<string, unknown>;
             if (!response.ok) {
-                flash(null, errorMessage(response.status, data));
+                flash(null, errorMessage(response.status, data, copy));
                 return;
             }
             setPromoCampaigns(data.campaigns as PromoCampaign[]);
@@ -257,7 +274,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                 maxRedemptions: Number(promoCapacity),
             });
             if (status >= 400) {
-                flash(null, errorMessage(status, data));
+                flash(null, errorMessage(status, data, copy));
                 return;
             }
             const campaign = data.campaign as PromoCampaign;
@@ -267,8 +284,8 @@ export default function AdmissionConsole({ role, events }: Props) {
             setPromoLabel('');
             flash(
                 data.redemptionEnabled
-                    ? 'Invitation created and ready to redeem.'
-                    : 'Invitation created, but the global redemption switch remains OFF.',
+                    ? copy.notices.invitationReady
+                    : copy.notices.invitationSwitchOff,
                 null,
             );
         } finally {
@@ -286,7 +303,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                 revokeDerived: promoRevokeDerived[id] ?? false,
             });
             if (status >= 400) {
-                flash(null, errorMessage(status, data));
+                flash(null, errorMessage(status, data, copy));
                 return;
             }
             setPromoCampaigns((current) => current?.map((campaign) =>
@@ -296,8 +313,10 @@ export default function AdmissionConsole({ role, events }: Props) {
             ) ?? null);
             flash(
                 data.mediaCleanupFailed
-                    ? 'Invitation disabled and access revoked; some live connections need a retry.'
-                    : `Invitation disabled. ${data.revokedEntitlements} derived access grant(s) revoked.`,
+                    ? copy.notices.invitationCleanupFailed
+                    : fill(copy.notices.invitationDisabled, {
+                        count: String(data.revokedEntitlements),
+                    }),
                 null,
             );
         } finally {
@@ -319,11 +338,11 @@ export default function AdmissionConsole({ role, events }: Props) {
     return (
         <div className="space-y-10">
             <section>
-                <h2 className="mb-2 text-lg font-medium text-[var(--cream)]">Ticket lookup</h2>
+                <h2 className="mb-2 text-lg font-medium text-[var(--cream)]">{copy.lookup.heading}</h2>
                 <form onSubmit={runLookup} className="flex gap-2">
                     <input
                         className="event-field flex-1"
-                        placeholder="Attendee email, code last four, or entitlement ID"
+                        placeholder={copy.lookup.placeholder}
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                     />
@@ -332,7 +351,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                         disabled={busy || !query.trim()}
                         className="event-button event-button--primary"
                     >
-                        Look up
+                        {copy.lookup.action}
                     </button>
                 </form>
 
@@ -341,30 +360,30 @@ export default function AdmissionConsole({ role, events }: Props) {
                         {results.map((item) => (
                             <div key={item.id} className="operational-panel text-sm">
                                 <div className="flex flex-wrap gap-x-6 gap-y-1">
-                                    <span><strong className="text-[var(--cream)]">State:</strong> {item.state}</span>
-                                    <span><strong className="text-[var(--cream)]">Tier:</strong> {item.tier}</span>
-                                    <span><strong className="text-[var(--cream)]">Last four:</strong> <span className="font-mono">{item.codeLastFour}</span></span>
-                                    <span><strong className="text-[var(--cream)]">Bound email:</strong> {item.boundEmail ?? '—'}</span>
-                                    <span><strong className="text-[var(--cream)]">Event:</strong> {item.event.title}</span>
-                                    <span><strong className="text-[var(--cream)]">Expires:</strong> {new Date(item.expiresAt).toLocaleString()}</span>
+                                    <span><strong className="text-[var(--cream)]">{copy.labels.state}</strong> {copy.values[item.state as keyof typeof copy.values] ?? item.state}</span>
+                                    <span><strong className="text-[var(--cream)]">{copy.labels.tier}</strong> {copy.tiers[item.tier as keyof typeof copy.tiers] ?? item.tier}</span>
+                                    <span><strong className="text-[var(--cream)]">{copy.labels.lastFour}</strong> <span className="font-mono">{item.codeLastFour}</span></span>
+                                    <span><strong className="text-[var(--cream)]">{copy.labels.boundEmail}</strong> {item.boundEmail ?? '—'}</span>
+                                    <span><strong className="text-[var(--cream)]">{copy.labels.event}</strong> {item.event.title}</span>
+                                    <span><strong className="text-[var(--cream)]">{copy.labels.expires}</strong> {new Date(item.expiresAt).toLocaleString(locale === 'es' ? 'es-AR' : 'en-GB')}</span>
                                     {item.commerce && (
                                         <span>
-                                            <strong className="text-[var(--cream)]">Commerce:</strong>{' '}
-                                            {item.commerce.providerState} · admin {item.commerce.administrativeState} · media {item.commerce.mediaStatus}
+                                            <strong className="text-[var(--cream)]">{copy.labels.commerce}</strong>{' '}
+                                            {copy.values[item.commerce.providerState]} · {copy.labels.admin} {copy.values[item.commerce.administrativeState]} · {copy.labels.media} {copy.values[item.commerce.mediaStatus as keyof typeof copy.values] ?? item.commerce.mediaStatus}
                                         </span>
                                     )}
                                     {item.promotion && (
                                         <span>
-                                            <strong className="text-[var(--cream)]">Invitation:</strong>{' '}
-                                            {item.promotion.label} · campaign {item.promotion.status} · redeemed{' '}
-                                            {new Date(item.promotion.redeemedAt).toLocaleString()}
+                                            <strong className="text-[var(--cream)]">{copy.labels.invitation}</strong>{' '}
+                                            {item.promotion.label} · {copy.labels.campaign} {copy.values[item.promotion.status]} · {copy.labels.redeemed}{' '}
+                                            {new Date(item.promotion.redeemedAt).toLocaleString(locale === 'es' ? 'es-AR' : 'en-GB')}
                                         </span>
                                     )}
                                 </div>
                                 <div className="mt-1 font-mono text-[10px] text-[var(--text-muted)]">ID: {item.id}</div>
                                 {item.revokedAt && (
                                     <div className="mt-1 text-xs text-[var(--danger)]">
-                                        Revoked {new Date(item.revokedAt).toLocaleString()} — {item.revocationReason}
+                                        {copy.labels.revoked} {new Date(item.revokedAt).toLocaleString(locale === 'es' ? 'es-AR' : 'en-GB')} — {item.revocationReason}
                                     </div>
                                 )}
 
@@ -372,7 +391,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-3">
                                         <input
                                             className="event-field min-w-56 flex-1"
-                                            placeholder="Reason (required, no PII)"
+                                            placeholder={copy.actions.reason}
                                             value={reasons[item.id] ?? ''}
                                             onChange={(event) =>
                                                 setReasons((current) => ({ ...current, [item.id]: event.target.value }))
@@ -382,7 +401,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                             <>
                                                 <input
                                                     className="event-field min-w-56 flex-1"
-                                                    placeholder="New email (optional rebind)"
+                                                    placeholder={copy.actions.newEmail}
                                                     value={emails[item.id] ?? ''}
                                                     onChange={(event) =>
                                                         setEmails((current) => ({ ...current, [item.id]: event.target.value }))
@@ -394,7 +413,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                                     onClick={() => runEntitlementAction(item.id, 'rebind', emails[item.id] ?? '')}
                                                     className="event-button event-button--secondary disabled:opacity-50"
                                                 >
-                                                    {(emails[item.id] ?? '').trim() ? 'Rebind to email' : 'Clear binding'}
+                                                    {(emails[item.id] ?? '').trim() ? copy.actions.rebind : copy.actions.clearBinding}
                                                 </button>
                                             </>
                                         )}
@@ -405,7 +424,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                                 onClick={() => runEntitlementAction(item.id, 'resume')}
                                                 className="event-button event-button--primary disabled:opacity-50"
                                             >
-                                                Resume access
+                                                {copy.actions.resume}
                                             </button>
                                         ) : (
                                             <button
@@ -414,7 +433,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                                 onClick={() => runEntitlementAction(item.id, 'revoke')}
                                                 className="event-button bg-[var(--danger)] text-white hover:bg-[var(--danger)]/80 disabled:opacity-50"
                                             >
-                                                {item.commerce ? 'Suspend access' : 'Revoke'}
+                                                {item.commerce ? copy.actions.suspend : copy.actions.revoke}
                                             </button>
                                         )}
                                     </div>
@@ -427,17 +446,17 @@ export default function AdmissionConsole({ role, events }: Props) {
 
             {(canBatch || canMutate) && (
                 <section>
-                    <h2 className="mb-2 text-lg font-medium text-[var(--cream)]">Issue tickets</h2>
+                    <h2 className="mb-2 text-lg font-medium text-[var(--cream)]">{copy.tickets.heading}</h2>
                     <div className="mb-3 flex flex-wrap gap-2">
                         <select
                             className="event-field"
-                            aria-label="Event"
+                            aria-label={copy.tickets.eventLabel}
                             value={batchEvent}
                             onChange={(event) => setBatchEvent(event.target.value)}
                         >
                             {events.map((event) => (
                                 <option key={event.id} value={event.id}>
-                                    {event.title} ({event.language}, cap {event.attendeeCap})
+                                    {event.title} ({event.language === 'SPANISH' ? 'ES' : 'EN'}, {copy.labels.cap} {event.attendeeCap})
                                 </option>
                             ))}
                         </select>
@@ -445,16 +464,16 @@ export default function AdmissionConsole({ role, events }: Props) {
 
                     {canBatch && (
                         <div className="operational-panel mb-6 space-y-3">
-                            <h3 className="font-medium text-[var(--cream)]">Batch (ADMIN)</h3>
+                            <h3 className="font-medium text-[var(--cream)]">{copy.tickets.batchHeading}</h3>
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     className="event-field"
-                                    aria-label="Ticket tier"
+                                    aria-label={copy.tickets.tierLabel}
                                     value={batchTier}
                                     onChange={(event) => setBatchTier(event.target.value)}
                                 >
-                                    <option value="GLOBAL_NORTH">Global North ($50)</option>
-                                    <option value="GLOBAL_SOUTH">Global South ($20)</option>
+                                    <option value="GLOBAL_NORTH">{copy.tickets.globalNorth}</option>
+                                    <option value="GLOBAL_SOUTH">{copy.tickets.globalSouth}</option>
                                 </select>
                                 <input
                                     className="event-field w-24"
@@ -470,12 +489,12 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     onClick={() => runBatch('generate')}
                                     className="event-button event-button--primary disabled:opacity-50"
                                 >
-                                    Generate batch
+                                    {copy.tickets.generate}
                                 </button>
                             </div>
                             <textarea
                                 className="event-field h-24 font-mono text-xs"
-                                placeholder="Paste platform CSV to import (code column, header optional)"
+                                placeholder={copy.tickets.importPlaceholder}
                                 value={importCsv}
                                 onChange={(event) => setImportCsv(event.target.value)}
                             />
@@ -485,27 +504,27 @@ export default function AdmissionConsole({ role, events }: Props) {
                                 onClick={() => runBatch('import')}
                                 className="event-button event-button--secondary disabled:opacity-50"
                             >
-                                Import CSV (idempotent)
+                                {copy.tickets.importAction}
                             </button>
                         </div>
                     )}
 
                     {canMutate && (
                         <div className="operational-panel space-y-3">
-                            <h3 className="font-medium text-[var(--cream)]">Comp / support override</h3>
+                            <h3 className="font-medium text-[var(--cream)]">{copy.tickets.overrideHeading}</h3>
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     className="event-field"
-                                    aria-label="Override tier"
+                                    aria-label={copy.tickets.overrideTier}
                                     value={compTier}
                                     onChange={(event) => setCompTier(event.target.value)}
                                 >
-                                    {canIssueComp && <option value="COMP">Comp</option>}
-                                    <option value="SUPPORT_OVERRIDE">Support override</option>
+                                    {canIssueComp && <option value="COMP">{copy.tickets.comp}</option>}
+                                    <option value="SUPPORT_OVERRIDE">{copy.tickets.supportOverride}</option>
                                 </select>
                                 <input
                                     className="event-field min-w-56 flex-1"
-                                    placeholder="Reason (required, no PII — e.g. support case reference)"
+                                    placeholder={copy.tickets.overrideReason}
                                     value={compReason}
                                     onChange={(event) => setCompReason(event.target.value)}
                                 />
@@ -515,7 +534,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     onClick={runComp}
                                     className="event-button event-button--primary disabled:opacity-50"
                                 >
-                                    Issue
+                                    {copy.tickets.issue}
                                 </button>
                             </div>
                         </div>
@@ -528,11 +547,10 @@ export default function AdmissionConsole({ role, events }: Props) {
                     <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <h2 id="promo-invitations-heading" className="text-lg font-medium text-[var(--cream)]">
-                                Controlled invitations
+                                {copy.invitations.heading}
                             </h2>
                             <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--text-secondary)]">
-                                A short code creates the same session-scoped COMP entitlement as normal admission.
-                                Codes are stored only as digests; capacity, expiry and revocation remain enforced.
+                                {copy.invitations.help}
                             </p>
                         </div>
                         <button
@@ -541,7 +559,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                             disabled={busy}
                             className="event-button event-button--secondary disabled:opacity-50"
                         >
-                            {promoCampaigns === null ? 'Load invitations' : 'Refresh'}
+                            {promoCampaigns === null ? copy.invitations.load : copy.invitations.refresh}
                         </button>
                     </div>
 
@@ -552,26 +570,28 @@ export default function AdmissionConsole({ role, events }: Props) {
                                 ? 'border-[var(--lime)]/30 bg-[var(--lime)]/10 text-[var(--lime)]'
                                 : 'border-[var(--warning)]/30 bg-[var(--warning)]/10 text-[var(--warning)]'}`}
                         >
-                            Public redemption is {promoRedemptionEnabled ? 'ON' : 'OFF'}.
+                            {fill(copy.invitations.redemptionStatus, {
+                                status: promoRedemptionEnabled ? copy.invitations.on : copy.invitations.off,
+                            })}
                         </p>
                     )}
 
                     {canIssueComp && (
                         <div className="operational-panel mb-4 space-y-3">
-                            <h3 className="font-medium text-[var(--cream)]">Create bounded invitation</h3>
+                            <h3 className="font-medium text-[var(--cream)]">{copy.invitations.createHeading}</h3>
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <label className="text-xs text-[var(--text-secondary)]">
-                                    Internal label (never the code)
+                                    {copy.invitations.internalLabel}
                                     <input
                                         className="event-field mt-1"
                                         value={promoLabel}
                                         maxLength={80}
                                         onChange={(event) => setPromoLabel(event.target.value)}
-                                        placeholder="Guest list — morning ES"
+                                        placeholder={copy.invitations.internalPlaceholder}
                                     />
                                 </label>
                                 <label className="text-xs text-[var(--text-secondary)]">
-                                    Human code (6–15 characters)
+                                    {copy.invitations.humanCode}
                                     <input
                                         className="event-field mt-1 font-mono uppercase"
                                         value={promoCode}
@@ -583,7 +603,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     />
                                 </label>
                                 <label className="text-xs text-[var(--text-secondary)]">
-                                    Expires (within seven days)
+                                    {copy.invitations.expiresWithin}
                                     <input
                                         className="event-field mt-1"
                                         type="datetime-local"
@@ -592,7 +612,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                     />
                                 </label>
                                 <label className="text-xs text-[var(--text-secondary)]">
-                                    Redemption capacity
+                                    {copy.invitations.capacity}
                                     <input
                                         className="event-field mt-1"
                                         type="number"
@@ -609,7 +629,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                 onClick={createPromoCampaign}
                                 className="event-button event-button--primary disabled:opacity-50"
                             >
-                                Create invitation
+                                {copy.invitations.create}
                             </button>
                         </div>
                     )}
@@ -617,7 +637,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                     {promoCampaigns && (
                         <div className="space-y-3">
                             {promoCampaigns.length === 0 && (
-                                <p className="text-sm text-[var(--text-secondary)]">No invitations created.</p>
+                                <p className="text-sm text-[var(--text-secondary)]">{copy.invitations.none}</p>
                             )}
                             {promoCampaigns.map((campaign) => (
                                 <article key={campaign.id} className="operational-panel text-sm">
@@ -625,16 +645,19 @@ export default function AdmissionConsole({ role, events }: Props) {
                                         <div>
                                             <strong className="text-[var(--cream)]">{campaign.label}</strong>
                                             <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                                                {campaign.event.title} · {campaign.redemptionCount}/{campaign.maxRedemptions} redeemed · expires {new Date(campaign.expiresAt).toLocaleString()}
+                                                {campaign.event.title} · {fill(copy.invitations.redeemedCount, {
+                                                    count: campaign.redemptionCount,
+                                                    max: campaign.maxRedemptions,
+                                                })} · {copy.invitations.expires} {new Date(campaign.expiresAt).toLocaleString(locale === 'es' ? 'es-AR' : 'en-GB')}
                                             </p>
                                         </div>
-                                        <span className="font-mono text-xs text-[var(--gold)]">{campaign.status}</span>
+                                        <span className="font-mono text-xs text-[var(--gold)]">{copy.values[campaign.status]}</span>
                                     </div>
                                     {canMutate && (campaign.status === 'ACTIVE' || campaign.redemptionCount > 0) && (
                                         <div className="mt-3 space-y-2 border-t border-[var(--border-subtle)] pt-3">
                                             <input
                                                 className="event-field"
-                                                placeholder="Disable reason (required, no PII)"
+                                                placeholder={copy.invitations.disableReason}
                                                 value={promoReasons[campaign.id] ?? ''}
                                                 onChange={(event) => setPromoReasons((current) => ({
                                                     ...current,
@@ -650,7 +673,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                                                         [campaign.id]: event.target.checked,
                                                     }))}
                                                 />
-                                                Also revoke every entitlement already redeemed and disconnect its live media.
+                                                {copy.invitations.revokeDerived}
                                             </label>
                                             <button
                                                 type="button"
@@ -663,8 +686,8 @@ export default function AdmissionConsole({ role, events }: Props) {
                                                 className="event-button bg-[var(--danger)] text-white hover:bg-[var(--danger)]/80 disabled:opacity-50"
                                             >
                                                 {campaign.status === 'ACTIVE'
-                                                    ? 'Disable invitation'
-                                                    : 'Retry revoke / disconnect'}
+                                                    ? copy.invitations.disable
+                                                    : copy.invitations.retryDisconnect}
                                             </button>
                                         </div>
                                     )}
@@ -680,10 +703,9 @@ export default function AdmissionConsole({ role, events }: Props) {
 
             {oneTimeCsv && (
                 <section className="rounded border-2 border-[var(--warning)] p-3">
-                    <h3 className="mb-1 font-medium text-[var(--warning)]">One-time code export</h3>
+                    <h3 className="mb-1 font-medium text-[var(--warning)]">{copy.export.heading}</h3>
                     <p className="mb-2 text-sm text-[var(--warning)]">
-                        These plaintext codes are shown once and are never stored by the app. Save the CSV
-                        under ops control now; do not commit it or paste it into tickets/chat.
+                        {copy.export.warning}
                     </p>
                     <textarea
                         readOnly
@@ -696,7 +718,7 @@ export default function AdmissionConsole({ role, events }: Props) {
                         onClick={downloadCsv}
                         className="event-button mt-2 bg-[var(--warning)] text-[var(--ink)] hover:bg-[var(--warning)]/80"
                     >
-                        Download CSV
+                        {copy.export.download}
                     </button>
                 </section>
             )}

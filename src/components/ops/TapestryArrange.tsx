@@ -10,12 +10,20 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Messages } from '@/lib/i18n';
 
 const REFRESH_INTERVAL_MS = 5_000;
 
-type Props = { sessionId: string };
+type Props = {
+    sessionId: string;
+    copy: Messages['ops']['tapestryArrange'];
+};
 
-export default function TapestryArrange({ sessionId }: Props) {
+function fill(template: string, index: number): string {
+    return template.replace('{index}', String(index));
+}
+
+export default function TapestryArrange({ sessionId, copy }: Props) {
     const [order, setOrder] = useState<string[]>([]);
     const [dirty, setDirty] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -80,9 +88,9 @@ export default function TapestryArrange({ sessionId }: Props) {
                 throw new Error(`HTTP ${response.status}`);
             }
             setDirty(false);
-            setMessage('Arrangement saved');
+            setMessage(copy.saved);
         } catch {
-            setMessage('Could not save the arrangement — try again');
+            setMessage(copy.saveFailed);
         } finally {
             setSaving(false);
         }
@@ -92,7 +100,7 @@ export default function TapestryArrange({ sessionId }: Props) {
         <section className="mt-8 rounded-lg border border-[var(--border-subtle)] p-4" aria-live="polite">
             <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                    Tapestry arrangement
+                    {copy.heading}
                 </h2>
                 <button
                     type="button"
@@ -100,12 +108,12 @@ export default function TapestryArrange({ sessionId }: Props) {
                     disabled={!dirty || saving}
                     className="min-h-11 rounded border border-[var(--gold)] px-3 py-2 text-xs text-[var(--gold)] disabled:opacity-40"
                 >
-                    {saving ? 'Saving…' : dirty ? 'Save arrangement' : 'Saved'}
+                    {saving ? copy.saving : dirty ? copy.save : copy.saved}
                 </button>
             </div>
             {order.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)]">
-                    No attendee snapshots yet — tiles appear here as cameras join.
+                    {copy.empty}
                 </p>
             ) : (
                 <ol className="flex flex-wrap gap-3">
@@ -115,7 +123,7 @@ export default function TapestryArrange({ sessionId }: Props) {
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                                 src={`/api/ops/sessions/${sessionId}/tapestry/tiles/${encodeURIComponent(pid)}?t=${refreshTick}`}
-                                alt={`Tapestry tile ${index + 1}`}
+                                alt={fill(copy.tileAlt, index + 1)}
                                 width={72}
                                 height={72}
                                 className="rounded border border-[var(--border-subtle)]"
@@ -123,7 +131,7 @@ export default function TapestryArrange({ sessionId }: Props) {
                             <div className="flex gap-1">
                                 <button
                                     type="button"
-                                    aria-label={`Move tile ${index + 1} left`}
+                                    aria-label={fill(copy.moveLeft, index + 1)}
                                     onClick={() => move(index, -1)}
                                     disabled={index === 0}
                                     className="min-h-11 min-w-11 rounded border border-[var(--border-subtle)] px-2 text-xs disabled:opacity-30"
@@ -132,7 +140,7 @@ export default function TapestryArrange({ sessionId }: Props) {
                                 </button>
                                 <button
                                     type="button"
-                                    aria-label={`Move tile ${index + 1} right`}
+                                    aria-label={fill(copy.moveRight, index + 1)}
                                     onClick={() => move(index, 1)}
                                     disabled={index === order.length - 1}
                                     className="min-h-11 min-w-11 rounded border border-[var(--border-subtle)] px-2 text-xs disabled:opacity-30"

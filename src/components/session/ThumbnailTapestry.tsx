@@ -2,22 +2,24 @@
 
 import { useEffect, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
-import { messages, type Messages } from '@/lib/i18n';
+import type { Messages } from '@/lib/i18n';
 
-type Props = { sessionId: string; staffOnly?: boolean };
+type Props = {
+    sessionId: string;
+    staffOnly?: boolean;
+    labels?: Messages['tapestry'];
+};
 
-export default function ThumbnailTapestry({ sessionId, staffOnly = false }: Props) {
-    if (staffOnly) {
-        // The ops board is intentionally outside this attendee-localization
-        // slice. Preserve its existing English labels and standalone tests.
-        return <ThumbnailTapestryView sessionId={sessionId} staffOnly labels={messages.en.tapestry} />;
+export default function ThumbnailTapestry({ sessionId, staffOnly = false, labels }: Props) {
+    if (labels) {
+        return <ThumbnailTapestryView sessionId={sessionId} staffOnly={staffOnly} labels={labels} />;
     }
-    return <LocalizedThumbnailTapestry sessionId={sessionId} />;
+    return <LocalizedThumbnailTapestry sessionId={sessionId} staffOnly={staffOnly} />;
 }
 
-function LocalizedThumbnailTapestry({ sessionId }: { sessionId: string }) {
+function LocalizedThumbnailTapestry({ sessionId, staffOnly = false }: Props) {
     const { copy } = useLocale();
-    return <ThumbnailTapestryView sessionId={sessionId} staffOnly={false} labels={copy.tapestry} />;
+    return <ThumbnailTapestryView sessionId={sessionId} staffOnly={staffOnly} labels={copy.tapestry} />;
 }
 
 function ThumbnailTapestryView({

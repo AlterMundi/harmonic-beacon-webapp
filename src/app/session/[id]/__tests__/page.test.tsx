@@ -247,6 +247,20 @@ function renderPage(locale: UiLocale = 'en') {
 }
 
 describe('SessionRoomPage - event entry', () => {
+    it('keeps backend details private and explains an entry check failure in the selected language', async () => {
+        vi.mocked(global.fetch).mockResolvedValue({
+            ok: false,
+            status: 503,
+            json: async () => ({ error: 'database connection refused at internal-host:5432' }),
+        } as Response);
+
+        renderPage('es');
+
+        expect(await screen.findByText('No se pudo comprobar el ingreso')).toBeInTheDocument();
+        expect(screen.queryByText(/internal-host/)).toBeNull();
+        expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeInTheDocument();
+    });
+
     it('shows a truthful waiting room and mints no LiveKit token before doors open', async () => {
         vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
             if (String(url).includes('/entry')) {
@@ -995,7 +1009,8 @@ describe('SessionRoomPage - initial connection failure', () => {
         });
 
         renderPage();
-        expect(await screen.findByText('Room is temporarily unavailable')).toBeInTheDocument();
+        expect(await screen.findByText('We could not enter the room. Your access is still confirmed; try again.')).toBeInTheDocument();
+        expect(screen.queryByText('Room is temporarily unavailable')).toBeNull();
 
         fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
         expect(screen.getByText('Connecting')).toBeInTheDocument();

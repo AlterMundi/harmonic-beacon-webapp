@@ -179,7 +179,7 @@ function SessionRoom() {
     const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [connectionError, setConnectionError] = useState(false);
     const [canPublish, setCanPublish] = useState(false);
     const [principalKind, setPrincipalKind] = useState<"ticket" | "staff">("ticket");
     const [isMicOn, setIsMicOn] = useState(false);
@@ -354,7 +354,7 @@ function SessionRoom() {
         setDisconnectState(null);
         setIsConnected(false);
         setIsConnecting(true);
-        setError(null);
+        setConnectionError(false);
         setAudioActivationError(null);
         setRetryToken((t) => t + 1);
     }, []);
@@ -609,7 +609,7 @@ function SessionRoom() {
                 setIsConnected(true);
                 setIsConnecting(false);
                 setDisconnectState(null);
-                setError(null);
+                setConnectionError(false);
                 autoReconnectAttemptRef.current = 0;
                 if (autoReconnectTimerRef.current) {
                     clearTimeout(autoReconnectTimerRef.current);
@@ -643,7 +643,8 @@ function SessionRoom() {
                     if (autoReconnectAttemptRef.current > 0) {
                         scheduleAutoReconnect();
                     } else {
-                        setError(e instanceof Error ? e.message : "Failed to connect");
+                        console.error("Failed to connect to the stage room:", redactErrorDetail(e));
+                        setConnectionError(true);
                         setIsConnecting(false);
                     }
                 }
@@ -836,14 +837,14 @@ function SessionRoom() {
     }
 
     // Error state
-    if (error) {
+    if (connectionError) {
         return (
             <main className="event-shell">
                 <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
                     <div className="event-card w-full max-w-sm text-center">
                         <div className="terminal-state__icon text-[var(--danger)]">&#9888;</div>
                         <h2 className="terminal-state__title">{copy.session.connectionErrorHeading}</h2>
-                        <p className="terminal-state__body">{error}</p>
+                        <p className="terminal-state__body">{copy.session.connectionUnavailable}</p>
                         <div className="mt-4 flex flex-col gap-2">
                             <button onClick={rejoin} className="event-button event-button--primary w-full">
                                 {copy.session.tryAgain}
@@ -1293,7 +1294,8 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                 }
             } catch (failure) {
                 if (!cancelled) {
-                    setEntryError(failure instanceof Error ? failure.message : copy.session.entryUnavailable);
+                    console.error('Failed to confirm event entry:', redactErrorDetail(failure));
+                    setEntryError(copy.session.entryUnavailable);
                 }
             } finally {
                 inFlight = false;

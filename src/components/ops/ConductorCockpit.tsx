@@ -37,6 +37,9 @@ type Props = {
     copy: Messages['ops']['cockpit'];
     lifecycleCopy: Messages['ops']['lifecycle'];
     spotlightCopy: Messages['ops']['spotlight'];
+    healthCopy: Messages['ops']['healthPanel'];
+    admissionCopy: Messages['ops']['admissionPanel'];
+    tapestryCopy: Messages['ops']['tapestryArrange'];
     staffRoleLabels: Messages['staffRoles'];
 };
 
@@ -63,6 +66,9 @@ export default function ConductorCockpit({
     copy,
     lifecycleCopy,
     spotlightCopy,
+    healthCopy,
+    admissionCopy,
+    tapestryCopy,
     staffRoleLabels,
 }: Props) {
     const [drawer, setDrawer] = useState<Drawer | null>(null);
@@ -310,15 +316,23 @@ export default function ConductorCockpit({
                         />
                     </div>
                     <div hidden={drawer !== 'tapestry'}>
-                        <TapestryArrange sessionId={session.id} />
+                        <TapestryArrange sessionId={session.id} copy={tapestryCopy} />
                     </div>
                     <div hidden={drawer !== 'admission'}>
-                        <AdmissionConsole role={role} events={admissionEvents} />
+                        <AdmissionConsole
+                            role={role}
+                            events={admissionEvents}
+                            locale={locale}
+                            copy={admissionCopy}
+                        />
                     </div>
                     <div hidden={drawer !== 'health'}>
                         <OpsHealthClient
                             role={role}
                             sessionId={session.id}
+                            locale={locale}
+                            copy={healthCopy}
+                            staffRoles={staffRoleLabels}
                             onLevelChange={onHealthChange}
                         />
                     </div>
