@@ -89,6 +89,7 @@ interface ViewerInfo {
 }
 
 type DisconnectKind = "ended" | "transport" | "duplicate" | "unknown";
+type CameraFacingMode = "user" | "environment";
 
 const AUTO_RECONNECT_DELAYS_MS = [500, 1_500, 3_000] as const;
 
@@ -183,6 +184,9 @@ function SessionRoom() {
     const [principalKind, setPrincipalKind] = useState<"ticket" | "staff">("ticket");
     const [isMicOn, setIsMicOn] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(false);
+    const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>("user");
+    const [cameraSwitchBusy, setCameraSwitchBusy] = useState(false);
+    const [cameraSwitchError, setCameraSwitchError] = useState<string | null>(null);
     const [audioOnly, setAudioOnly] = useState(false);
     const [connectionState, setConnectionState] = useState<string>("connecting");
     const [stagePublishers, setStagePublishers] = useState<StagePublisherView[]>([]);
@@ -757,6 +761,55 @@ function SessionRoom() {
         }
     }, [canPublish, isCameraOn, readStage]);
 
+    const switchCamera = useCallback(async () => {
+        const room = roomRef.current;
+        if (!room || !canPublish || !isCameraOn || cameraSwitchBusy) return;
+
+        const nextFacingMode: CameraFacingMode = cameraFacingMode === "user"
+            ? "environment"
+            : "user";
+        const previousOperation = deviceOperationRef.current;
+        setCameraSwitchBusy(true);
+        setCameraSwitchError(null);
+        const operation = (async () => {
+            if (previousOperation) {
+                try { await previousOperation; } catch { /* Continue with the requested device. */ }
+            }
+            const publication = room.localParticipant.getTrackPublication(Track.Source.Camera);
+            const videoTrack = publication?.videoTrack;
+            if (!videoTrack) throw new Error("No active local camera track");
+
+            // LiveKit replaces the camera sender's MediaStreamTrack in place.
+            // The Room, microphone publication and both audio paths remain intact.
+            await videoTrack.restartTrack({ facingMode: nextFacingMode });
+            const observedFacingMode = videoTrack.mediaStreamTrack.getSettings().facingMode;
+            setCameraFacingMode(
+                observedFacingMode === "user" || observedFacingMode === "environment"
+                    ? observedFacingMode
+                    : nextFacingMode,
+            );
+            desiredCameraRef.current = true;
+            readStage();
+        })();
+        deviceOperationRef.current = operation;
+        try {
+            await operation;
+        } catch (failure) {
+            console.error("Failed to switch camera:", redactErrorDetail(failure));
+            setCameraSwitchError(copy.session.cameraSwitchError);
+        } finally {
+            if (deviceOperationRef.current === operation) deviceOperationRef.current = null;
+            setCameraSwitchBusy(false);
+        }
+    }, [
+        cameraFacingMode,
+        cameraSwitchBusy,
+        canPublish,
+        copy.session.cameraSwitchError,
+        isCameraOn,
+        readStage,
+    ]);
+
     const formatTime = (seconds: number): string => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
@@ -1067,7 +1120,7 @@ function SessionRoom() {
                             />
                         </div>
                     )}
-                    <div className="flex items-start justify-center gap-4">
+                    <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-3">
                         {canControlStageDevices && (
                             <div className="flex flex-col items-center gap-1">
                                 <button
@@ -1092,6 +1145,31 @@ function SessionRoom() {
                                     )}
                                 </button>
                                 <span className="text-xs text-[var(--text-secondary)]">{copy.session.mic}</span>
+                            </div>
+                        )}
+
+                        {canControlStageDevices && isCameraOn && (
+                            <div className="flex flex-col items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => void switchCamera()}
+                                    disabled={cameraSwitchBusy}
+                                    className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-[var(--cream)] transition-all hover:bg-white/20 disabled:cursor-wait disabled:opacity-60"
+                                    aria-label={cameraFacingMode === "user"
+                                        ? copy.session.switchToRearCamera
+                                        : copy.session.switchToFrontCamera}
+                                >
+                                    <svg className={`h-6 w-6 ${cameraSwitchBusy ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20 7h-4V3M4 17h4v4m11.5-9a7.5 7.5 0 00-12.8-5.3L4 9m16 6-2.7 2.3A7.5 7.5 0 014.5 12" />
+                                    </svg>
+                                </button>
+                                <span className="text-xs text-[var(--text-secondary)]">
+                                    {cameraSwitchBusy
+                                        ? copy.session.switchingCamera
+                                        : cameraFacingMode === "user"
+                                            ? copy.session.frontCamera
+                                            : copy.session.rearCamera}
+                                </span>
                             </div>
                         )}
 
@@ -1147,6 +1225,11 @@ function SessionRoom() {
                             <span className="text-xs text-[var(--text-secondary)]">{copy.session.leave}</span>
                         </div>
                     </div>
+                    {cameraSwitchError && (
+                        <p className="mx-auto mt-3 max-w-md text-center text-sm text-[var(--danger)]" role="alert">
+                            {cameraSwitchError}
+                        </p>
+                    )}
                 </div>
             </div>
         </main>
