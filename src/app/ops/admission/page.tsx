@@ -12,6 +12,8 @@ import { redirect } from 'next/navigation';
 
 import AdmissionConsole from '@/components/ops/AdmissionConsole';
 import { prisma } from '@/lib/db';
+import { messages } from '@/lib/i18n';
+import { requestLocale } from '@/lib/i18n-server';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
@@ -28,15 +30,22 @@ export default async function AdmissionPage() {
         orderBy: { scheduledAt: 'asc' },
         select: { id: true, title: true, language: true, scheduledAt: true, attendeeCap: true },
     });
+    const locale = await requestLocale();
+    const copy = messages[locale].ops.admissionPanel;
+    const pageIntro = copy.pageIntro
+        .replace('{name}', staff.name)
+        .replace('{role}', messages[locale].staffRoles[staff.role]);
 
     return (
         <main className="mx-auto max-w-4xl px-4 py-8">
-            <h1 className="mb-1 text-2xl font-semibold">Admission support</h1>
+            <h1 className="mb-1 text-2xl font-semibold">{copy.pageTitle}</h1>
             <p className="mb-6 text-sm text-[var(--text-secondary)]">
-                Signed in as {staff.name} ({staff.role}). Every mutation requires a non-PII reason and is audited.
+                {pageIntro}
             </p>
             <AdmissionConsole
                 role={staff.role}
+                locale={locale}
+                copy={copy}
                 events={events.map((event) => ({
                     id: event.id,
                     title: event.title,

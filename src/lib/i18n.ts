@@ -318,6 +318,101 @@ export type Messages = {
             waitingFirstReport: string;
             refreshNow: string;
         };
+        admissionPanel: {
+            pageTitle: string;
+            pageIntro: string;
+            unexpectedError: string;
+            notices: {
+                noMatches: string;
+                accessRevoked: string;
+                suspensionCleared: string;
+                bindingUpdated: string;
+                batchGenerated: string;
+                importComplete: string;
+                compIssued: string;
+                invitationReady: string;
+                invitationSwitchOff: string;
+                invitationCleanupFailed: string;
+                invitationDisabled: string;
+            };
+            lookup: {
+                heading: string;
+                placeholder: string;
+                action: string;
+            };
+            labels: {
+                state: string;
+                tier: string;
+                lastFour: string;
+                boundEmail: string;
+                event: string;
+                expires: string;
+                commerce: string;
+                admin: string;
+                media: string;
+                invitation: string;
+                campaign: string;
+                redeemed: string;
+                revoked: string;
+                cap: string;
+            };
+            actions: {
+                reason: string;
+                newEmail: string;
+                rebind: string;
+                clearBinding: string;
+                resume: string;
+                suspend: string;
+                revoke: string;
+            };
+            tickets: {
+                heading: string;
+                eventLabel: string;
+                batchHeading: string;
+                tierLabel: string;
+                globalNorth: string;
+                globalSouth: string;
+                generate: string;
+                importPlaceholder: string;
+                importAction: string;
+                overrideHeading: string;
+                overrideTier: string;
+                comp: string;
+                supportOverride: string;
+                overrideReason: string;
+                issue: string;
+            };
+            invitations: {
+                heading: string;
+                help: string;
+                load: string;
+                refresh: string;
+                redemptionStatus: string;
+                on: string;
+                off: string;
+                createHeading: string;
+                internalLabel: string;
+                internalPlaceholder: string;
+                humanCode: string;
+                expiresWithin: string;
+                capacity: string;
+                create: string;
+                none: string;
+                redeemedCount: string;
+                expires: string;
+                disableReason: string;
+                revokeDerived: string;
+                disable: string;
+                retryDisconnect: string;
+            };
+            export: {
+                heading: string;
+                warning: string;
+                download: string;
+            };
+            values: Record<'ISSUED' | 'BOUND' | 'REVOKED' | 'EXPIRED' | 'ACTIVE' | 'DISABLED' | 'CLEAR' | 'SUSPENDED' | 'NOT_REQUIRED' | 'RECONCILIATION_REQUIRED' | 'DISCONNECTED', string>;
+            tiers: Record<'GLOBAL_NORTH' | 'GLOBAL_SOUTH' | 'COMP' | 'SUPPORT_OVERRIDE', string>;
+        };
         cockpit: {
             roomTitle: string;
             roomHint: string;
@@ -665,6 +760,118 @@ export const messages: Record<UiLocale, Messages> = {
                 waitingFirstReport: 'Esperando el primer informe…',
                 refreshNow: 'Actualizar ahora',
             },
+            admissionPanel: {
+                pageTitle: 'Soporte de entradas',
+                pageIntro: 'Sesión de {name} ({role}). Toda modificación exige un motivo sin datos personales y queda auditada.',
+                unexpectedError: 'Error inesperado',
+                notices: {
+                    noMatches: 'No se encontraron accesos.',
+                    accessRevoked: 'El acceso fue suspendido o revocado.',
+                    suspensionCleared: 'Se levantó la suspensión administrativa.',
+                    bindingUpdated: 'Se actualizó la vinculación.',
+                    batchGenerated: 'Lote generado. Copiá o descargá el CSV ahora: se muestra una sola vez.',
+                    importComplete: 'Importación terminada: {created} creados, {skipped} omitidos porque ya existían.',
+                    compIssued: 'Cortesía o excepción emitida. Copiá o descargá el CSV ahora: se muestra una sola vez.',
+                    invitationReady: 'Invitación creada y lista para usar.',
+                    invitationSwitchOff: 'Invitación creada, pero el canje público global sigue DESACTIVADO.',
+                    invitationCleanupFailed: 'Invitación desactivada y accesos revocados; algunas conexiones en vivo requieren otro intento.',
+                    invitationDisabled: 'Invitación desactivada. Se revocaron {count} accesos derivados.',
+                },
+                lookup: {
+                    heading: 'Buscar entrada',
+                    placeholder: 'Email, últimos cuatro caracteres del código o ID de acceso',
+                    action: 'Buscar',
+                },
+                labels: {
+                    state: 'Estado:',
+                    tier: 'Tipo:',
+                    lastFour: 'Últimos cuatro:',
+                    boundEmail: 'Email vinculado:',
+                    event: 'Evento:',
+                    expires: 'Vence:',
+                    commerce: 'Comercio:',
+                    admin: 'administración',
+                    media: 'medios',
+                    invitation: 'Invitación:',
+                    campaign: 'campaña',
+                    redeemed: 'canjeada',
+                    revoked: 'Revocada',
+                    cap: 'cupo',
+                },
+                actions: {
+                    reason: 'Motivo (obligatorio, sin datos personales)',
+                    newEmail: 'Nuevo email (opcional)',
+                    rebind: 'Vincular al email',
+                    clearBinding: 'Quitar vinculación',
+                    resume: 'Reactivar acceso',
+                    suspend: 'Suspender acceso',
+                    revoke: 'Revocar',
+                },
+                tickets: {
+                    heading: 'Emitir entradas',
+                    eventLabel: 'Evento',
+                    batchHeading: 'Lote (ADMIN)',
+                    tierLabel: 'Tipo de entrada',
+                    globalNorth: 'Norte Global (USD 50)',
+                    globalSouth: 'Sur Global (USD 20)',
+                    generate: 'Generar lote',
+                    importPlaceholder: 'Pegá el CSV de la plataforma (columna code; encabezado opcional)',
+                    importAction: 'Importar CSV (idempotente)',
+                    overrideHeading: 'Cortesía / excepción de soporte',
+                    overrideTier: 'Tipo de excepción',
+                    comp: 'Cortesía',
+                    supportOverride: 'Excepción de soporte',
+                    overrideReason: 'Motivo (obligatorio, sin datos personales; por ejemplo, referencia del caso)',
+                    issue: 'Emitir',
+                },
+                invitations: {
+                    heading: 'Invitaciones controladas',
+                    help: 'Un código breve genera el mismo acceso de cortesía, limitado a esta sesión, que una entrada normal. Sólo se guarda su huella; se controlan cupo, vencimiento y revocación.',
+                    load: 'Cargar invitaciones',
+                    refresh: 'Actualizar',
+                    redemptionStatus: 'El canje público está {status}.',
+                    on: 'ACTIVADO',
+                    off: 'DESACTIVADO',
+                    createHeading: 'Crear invitación limitada',
+                    internalLabel: 'Etiqueta interna (nunca el código)',
+                    internalPlaceholder: 'Lista de invitados — mañana ES',
+                    humanCode: 'Código para personas (6–15 caracteres)',
+                    expiresWithin: 'Vence (dentro de siete días)',
+                    capacity: 'Cupo de canjes',
+                    create: 'Crear invitación',
+                    none: 'No hay invitaciones creadas.',
+                    redeemedCount: '{count}/{max} canjeadas',
+                    expires: 'vence',
+                    disableReason: 'Motivo de desactivación (obligatorio, sin datos personales)',
+                    revokeDerived: 'Revocar también todos los accesos ya canjeados y desconectar sus medios en vivo.',
+                    disable: 'Desactivar invitación',
+                    retryDisconnect: 'Reintentar revocación / desconexión',
+                },
+                export: {
+                    heading: 'Exportación única de códigos',
+                    warning: 'Estos códigos se muestran una sola vez y la aplicación nunca los guarda en texto plano. Guardá ahora el CSV bajo control operativo; no lo subas al repositorio ni lo pegues en issues o chats.',
+                    download: 'Descargar CSV',
+                },
+                values: {
+                    ISSUED: 'Emitida',
+                    BOUND: 'Vinculada',
+                    REVOKED: 'Revocada',
+                    EXPIRED: 'Vencida',
+                    ACTIVE: 'Activa',
+                    DISABLED: 'Desactivada',
+                    CLEAR: 'Sin suspensión',
+                    SUSPENDED: 'Suspendida',
+                    NOT_REQUIRED: 'No requerido',
+                    RECONCILIATION_REQUIRED: 'Requiere reconciliación',
+                    DISCONNECTED: 'Desconectado',
+                },
+                tiers: {
+                    GLOBAL_NORTH: 'Norte Global',
+                    GLOBAL_SOUTH: 'Sur Global',
+                    COMP: 'Cortesía',
+                    SUPPORT_OVERRIDE: 'Excepción de soporte',
+                },
+            },
             cockpit: {
                 roomTitle: 'Sala en vivo',
                 roomHint: 'La escena permanece conectada mientras abrís las herramientas.',
@@ -1009,6 +1216,118 @@ export const messages: Record<UiLocale, Messages> = {
                 refreshesEvery: 'refreshes every {seconds}s',
                 waitingFirstReport: 'Waiting for the first report…',
                 refreshNow: 'Refresh now',
+            },
+            admissionPanel: {
+                pageTitle: 'Admission support',
+                pageIntro: 'Signed in as {name} ({role}). Every mutation requires a non-PII reason and is audited.',
+                unexpectedError: 'Unexpected error',
+                notices: {
+                    noMatches: 'No matching entitlements.',
+                    accessRevoked: 'Access suspended or revoked.',
+                    suspensionCleared: 'Administrative suspension cleared.',
+                    bindingUpdated: 'Binding updated.',
+                    batchGenerated: 'Batch generated. Copy or download the CSV now — it is shown only once.',
+                    importComplete: 'Import complete: {created} created, {skipped} skipped (already existed).',
+                    compIssued: 'Comp/override issued. Copy or download the CSV now — it is shown only once.',
+                    invitationReady: 'Invitation created and ready to redeem.',
+                    invitationSwitchOff: 'Invitation created, but the global redemption switch remains OFF.',
+                    invitationCleanupFailed: 'Invitation disabled and access revoked; some live connections need a retry.',
+                    invitationDisabled: 'Invitation disabled. {count} derived access grant(s) revoked.',
+                },
+                lookup: {
+                    heading: 'Ticket lookup',
+                    placeholder: 'Attendee email, code last four, or entitlement ID',
+                    action: 'Look up',
+                },
+                labels: {
+                    state: 'State:',
+                    tier: 'Tier:',
+                    lastFour: 'Last four:',
+                    boundEmail: 'Bound email:',
+                    event: 'Event:',
+                    expires: 'Expires:',
+                    commerce: 'Commerce:',
+                    admin: 'admin',
+                    media: 'media',
+                    invitation: 'Invitation:',
+                    campaign: 'campaign',
+                    redeemed: 'redeemed',
+                    revoked: 'Revoked',
+                    cap: 'cap',
+                },
+                actions: {
+                    reason: 'Reason (required, no PII)',
+                    newEmail: 'New email (optional rebind)',
+                    rebind: 'Rebind to email',
+                    clearBinding: 'Clear binding',
+                    resume: 'Resume access',
+                    suspend: 'Suspend access',
+                    revoke: 'Revoke',
+                },
+                tickets: {
+                    heading: 'Issue tickets',
+                    eventLabel: 'Event',
+                    batchHeading: 'Batch (ADMIN)',
+                    tierLabel: 'Ticket tier',
+                    globalNorth: 'Global North ($50)',
+                    globalSouth: 'Global South ($20)',
+                    generate: 'Generate batch',
+                    importPlaceholder: 'Paste platform CSV to import (code column, header optional)',
+                    importAction: 'Import CSV (idempotent)',
+                    overrideHeading: 'Comp / support override',
+                    overrideTier: 'Override tier',
+                    comp: 'Comp',
+                    supportOverride: 'Support override',
+                    overrideReason: 'Reason (required, no PII — e.g. support case reference)',
+                    issue: 'Issue',
+                },
+                invitations: {
+                    heading: 'Controlled invitations',
+                    help: 'A short code creates the same session-scoped COMP entitlement as normal admission. Codes are stored only as digests; capacity, expiry and revocation remain enforced.',
+                    load: 'Load invitations',
+                    refresh: 'Refresh',
+                    redemptionStatus: 'Public redemption is {status}.',
+                    on: 'ON',
+                    off: 'OFF',
+                    createHeading: 'Create bounded invitation',
+                    internalLabel: 'Internal label (never the code)',
+                    internalPlaceholder: 'Guest list — morning ES',
+                    humanCode: 'Human code (6–15 characters)',
+                    expiresWithin: 'Expires (within seven days)',
+                    capacity: 'Redemption capacity',
+                    create: 'Create invitation',
+                    none: 'No invitations created.',
+                    redeemedCount: '{count}/{max} redeemed',
+                    expires: 'expires',
+                    disableReason: 'Disable reason (required, no PII)',
+                    revokeDerived: 'Also revoke every entitlement already redeemed and disconnect its live media.',
+                    disable: 'Disable invitation',
+                    retryDisconnect: 'Retry revoke / disconnect',
+                },
+                export: {
+                    heading: 'One-time code export',
+                    warning: 'These plaintext codes are shown once and are never stored by the app. Save the CSV under ops control now; do not commit it or paste it into tickets/chat.',
+                    download: 'Download CSV',
+                },
+                values: {
+                    ISSUED: 'Issued',
+                    BOUND: 'Bound',
+                    REVOKED: 'Revoked',
+                    EXPIRED: 'Expired',
+                    ACTIVE: 'Active',
+                    DISABLED: 'Disabled',
+                    CLEAR: 'Clear',
+                    SUSPENDED: 'Suspended',
+                    NOT_REQUIRED: 'Not required',
+                    RECONCILIATION_REQUIRED: 'Reconciliation required',
+                    DISCONNECTED: 'Disconnected',
+                },
+                tiers: {
+                    GLOBAL_NORTH: 'Global North',
+                    GLOBAL_SOUTH: 'Global South',
+                    COMP: 'Comp',
+                    SUPPORT_OVERRIDE: 'Support override',
+                },
             },
             cockpit: {
                 roomTitle: 'Live room',

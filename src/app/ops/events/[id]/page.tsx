@@ -102,6 +102,7 @@ export default async function EventPage({
                 lifecycleCopy={copy.lifecycle}
                 spotlightCopy={copy.spotlight}
                 healthCopy={copy.healthPanel}
+                admissionCopy={copy.admissionPanel}
                 staffRoleLabels={messages[locale].staffRoles}
             />
         </section>

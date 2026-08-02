@@ -3,7 +3,15 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import AdmissionConsole from '../AdmissionConsole';
+import type { ComponentProps } from 'react';
+import { messages } from '@/lib/i18n';
+import AdmissionConsoleImpl from '../AdmissionConsole';
+
+type AdmissionProps = Omit<ComponentProps<typeof AdmissionConsoleImpl>, 'locale' | 'copy'>;
+
+function AdmissionConsole(props: AdmissionProps) {
+    return <AdmissionConsoleImpl {...props} locale="en" copy={messages.en.ops.admissionPanel} />;
+}
 
 const EVENT = {
     id: '10000000-0000-4000-8000-000000000001',
@@ -30,6 +38,23 @@ afterEach(() => {
 });
 
 describe('AdmissionConsole promotion invitations', () => {
+    it('renders admission, ticket and invitation controls in Spanish', () => {
+        render(
+            <AdmissionConsoleImpl
+                role="FACILITATOR_OP"
+                events={[EVENT]}
+                locale="es"
+                copy={messages.es.ops.admissionPanel}
+            />,
+        );
+
+        expect(screen.getByRole('heading', { name: 'Buscar entrada' })).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/Email, últimos cuatro/)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Emitir entradas' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Invitaciones controladas' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Cargar invitaciones' })).toBeInTheDocument();
+    });
+
     it('shows promotional provenance in the ordinary entitlement lookup', async () => {
         const fetchMock = vi.fn().mockResolvedValue({
             ok: true,
@@ -66,7 +91,7 @@ describe('AdmissionConsole promotion invitations', () => {
         await userEvent.click(screen.getByRole('button', { name: 'Look up' }));
 
         expect(await screen.findByText(/Invitation:/)).toBeInTheDocument();
-        expect(screen.getByText(/Guest list · campaign ACTIVE/)).toBeInTheDocument();
+        expect(screen.getByText(/Guest list · campaign Active/)).toBeInTheDocument();
     });
 
     it('shows the global kill switch and clears the raw code after bounded creation', async () => {
@@ -128,7 +153,7 @@ describe('AdmissionConsole promotion invitations', () => {
         await userEvent.click(screen.getByRole('checkbox', { name: /Also revoke every entitlement/ }));
         await userEvent.click(screen.getByRole('button', { name: 'Disable invitation' }));
 
-        await waitFor(() => expect(screen.getByText('DISABLED')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Disabled')).toBeInTheDocument());
         expect(screen.getByRole('button', { name: 'Retry revoke / disconnect' })).toBeEnabled();
         const disableCall = fetchMock.mock.calls.find(([url, init]) =>
             String(url).includes(`/api/ops/invitations/${CAMPAIGN.id}`) && init?.method === 'POST',

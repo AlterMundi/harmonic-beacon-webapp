@@ -38,6 +38,7 @@ type Props = {
     lifecycleCopy: Messages['ops']['lifecycle'];
     spotlightCopy: Messages['ops']['spotlight'];
     healthCopy: Messages['ops']['healthPanel'];
+    admissionCopy: Messages['ops']['admissionPanel'];
     staffRoleLabels: Messages['staffRoles'];
 };
 
@@ -65,6 +66,7 @@ export default function ConductorCockpit({
     lifecycleCopy,
     spotlightCopy,
     healthCopy,
+    admissionCopy,
     staffRoleLabels,
 }: Props) {
     const [drawer, setDrawer] = useState<Drawer | null>(null);
@@ -315,7 +317,12 @@ export default function ConductorCockpit({
                         <TapestryArrange sessionId={session.id} />
                     </div>
                     <div hidden={drawer !== 'admission'}>
-                        <AdmissionConsole role={role} events={admissionEvents} />
+                        <AdmissionConsole
+                            role={role}
+                            events={admissionEvents}
+                            locale={locale}
+                            copy={admissionCopy}
+                        />
                     </div>
                     <div hidden={drawer !== 'health'}>
                         <OpsHealthClient

@@ -109,10 +109,10 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         await staff.locator('[data-tool="admission"]').click();
                         const admission = staff.getByRole('dialog');
                         await admission.getByPlaceholder(
-                            'Attendee email, code last four, or entitlement ID',
+                            /Attendee email, code last four, or entitlement ID|Email, últimos cuatro caracteres del código o ID de acceso/i,
                         ).fill(session.id === SESSION_ES.id ? 'TESD' : 'TEND');
-                        await admission.getByRole('button', { name: 'Look up' }).click();
-                        await expect(admission.getByText('Last four:')).toBeVisible();
+                        await admission.getByRole('button', { name: /Look up|Buscar/i }).click();
+                        await expect(admission.getByText(/Last four:|Últimos cuatro:/i)).toBeVisible();
                         await expect(admission.getByText(
                             session.id === SESSION_ES.id ? 'TESD' : 'TEND',
                             { exact: true },
