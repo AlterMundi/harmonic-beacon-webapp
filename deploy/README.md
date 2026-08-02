@@ -21,7 +21,8 @@ only the public application and LiveKit signaling ports.
   sudo -n docker network create --driver bridge --internal pmp_beacon_internal
   ```
 
-  Its only permitted members are `beacon-app` and the PMP Myth worker.
+  Its only permitted members are `beacon-app`, `pmp-myth-worker`, and
+  `pmp-myth-worker-secondary`.
 
 ## Automated release deploy
 

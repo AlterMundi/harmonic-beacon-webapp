@@ -13,6 +13,7 @@ import {
     assertStabilizationWindow,
     desiredSessionState,
     EVENT_CONTRACTS,
+    EVENT_STABILIZATION_DEADLINE,
     stabilizationSnapshotDigest,
     type StabilizationSessionSnapshot,
     type StabilizationSnapshot,
@@ -165,7 +166,7 @@ function printDryRun(snapshot: StabilizationSnapshot, digest: string): void {
     const output = {
         mode: 'dry-run',
         digest,
-        deadline: '2026-08-01T14:20:00.000Z',
+        deadline: EVENT_STABILIZATION_DEADLINE.toISOString(),
         changes: EVENT_CONTRACTS.map((contract) => ({
             event: contract.key,
             id: contract.id,
@@ -313,7 +314,7 @@ async function applyStabilization(
                 data: {
                     action: 'event.preflight_stabilization',
                     targetType: 'EVENT_WEEKEND',
-                    targetId: '2026-08-01',
+                    targetId: '2026-08-08',
                     reason: 'Correct production schedule and retire test fixtures before event',
                     metadata: { beforeDigest: actualDigest, ...summary },
                 },

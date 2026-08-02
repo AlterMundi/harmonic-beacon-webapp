@@ -140,8 +140,8 @@ export function loadSeedContract(
     return {
         staff,
         events: [
-            parseEvent(env, 'WEEKEND_SESSION_1_EVENT_JSON', '2026-08-01', 'SPANISH'),
-            parseEvent(env, 'WEEKEND_SESSION_2_EVENT_JSON', '2026-08-01', 'ENGLISH'),
+            parseEvent(env, 'WEEKEND_SESSION_1_EVENT_JSON', '2026-08-08', 'SPANISH'),
+            parseEvent(env, 'WEEKEND_SESSION_2_EVENT_JSON', '2026-08-08', 'ENGLISH'),
         ],
     };
 }

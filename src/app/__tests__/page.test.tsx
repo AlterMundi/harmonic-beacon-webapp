@@ -28,12 +28,12 @@ vi.mock('@/app/login/LoginClient', () => ({
 const SATURDAY = {
     id: 'session-1',
     language: 'SPANISH' as const,
-    scheduledAt: new Date('2026-08-01T14:30:00.000Z'),
+    scheduledAt: new Date('2026-08-08T14:30:00.000Z'),
 };
 const SESSION_2 = {
     id: 'session-2',
     language: 'ENGLISH' as const,
-    scheduledAt: new Date('2026-08-01T20:00:00.000Z'),
+    scheduledAt: new Date('2026-08-08T20:00:00.000Z'),
 };
 
 function mountDb(findMany: ReturnType<typeof vi.fn>) {
@@ -72,8 +72,8 @@ describe('landing page', () => {
         // The event's advertised Costa Rica time comes first, with operator and
         // universal references explicitly labelled below it.
         expect(screen.getAllByText(/Costa Rica:/)).toHaveLength(2);
-        expect(screen.getByText(/sábado, 1 de agosto.*08:30.*GMT-6/)).toBeInTheDocument();
-        expect(screen.getByText(/sábado, 1 de agosto.*02:00 p\. m\..*GMT-6/)).toBeInTheDocument();
+        expect(screen.getByText(/sábado, 8 de agosto.*08:30.*GMT-6/)).toBeInTheDocument();
+        expect(screen.getByText(/sábado, 8 de agosto.*02:00 p\. m\..*GMT-6/)).toBeInTheDocument();
         expect(screen.getAllByText(/Argentina:/)).toHaveLength(2);
         expect(screen.getAllByText(/UTC:/)).toHaveLength(2);
     });
@@ -178,7 +178,7 @@ describe('landing page', () => {
         expect(screen.getByText('is alive.')).toBeInTheDocument();
         expect(screen.getByText('English')).toBeInTheDocument();
         expect(screen.getByText('Spanish')).toBeInTheDocument();
-        expect(screen.getByText(/Saturday, August 1 at 0?8:30 AM CST/)).toBeInTheDocument();
+        expect(screen.getByText(/Saturday, August 8 at 0?8:30 AM CST/)).toBeInTheDocument();
         expect(screen.queryByText(/El mito/)).toBeNull();
     });
 });
