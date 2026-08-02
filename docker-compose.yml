@@ -205,6 +205,7 @@ services:
 
   # ── Tapestry (audience presence grid) ────────────────────────────
   tapestry:
+    image: harmonic-beacon/tapestry:${BEACON_IMAGE_TAG:-latest}
     build:
       context: ./services/tapestry
       dockerfile: Dockerfile

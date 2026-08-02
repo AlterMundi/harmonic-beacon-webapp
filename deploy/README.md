@@ -30,14 +30,16 @@ A push to `release` runs `.github/workflows/deploy.yml` on the managed host. It:
 
 1. runs contract, unit, type and lint gates;
 2. verifies both root-owned env files and the private network membership;
-3. preserves the currently running app image under an immutable rollback tag;
-4. builds a commit-tagged image;
+3. preserves the currently running app and tapestry images under independent
+   immutable rollback tags;
+4. builds commit-tagged app and tapestry images;
 5. applies additive Prisma migrations and verifies migration status;
-6. replaces only app and commerce reconciler; and
-7. waits for app readiness and reconciler health.
+6. replaces only app, commerce reconciler and tapestry; and
+7. waits for app readiness plus reconciler and tapestry health.
 
-On failure it restores the preserved app image. It never uses `compose down`,
-deletes data or pretends that rebuilding the same tag is a rollback.
+On failure it restores the preserved app and tapestry images independently. It
+never uses `compose down`, deletes data or pretends that rebuilding the same tag
+is a rollback.
 
 ## Manual deploy on mona
 
@@ -48,20 +50,21 @@ use the canonical project name and environment file:
 export BEACON_IMAGE_TAG=<exact-commit-sha>
 sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
   --project-name app --env-file /etc/harmonic-beacon/production.env \
-  build app
+  build app tapestry
 sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
   --project-name app --env-file /etc/harmonic-beacon/production.env \
   run --rm --no-deps app npx prisma migrate deploy
 sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
   --project-name app --env-file /etc/harmonic-beacon/production.env \
-  up -d --no-deps --force-recreate app commerce-reconciler
+  up -d --no-deps --force-recreate app commerce-reconciler tapestry
 ```
 
-Wait for both health checks; do not use a fixed sleep as proof:
+Wait for all three health checks; do not use a fixed sleep as proof:
 
 ```bash
 sudo -n docker inspect beacon-app --format '{{.State.Health.Status}}'
 sudo -n docker inspect beacon-commerce-reconciler --format '{{.State.Health.Status}}'
+sudo -n docker inspect beacon-tapestry --format '{{.State.Health.Status}}'
 curl --fail http://127.0.0.1:3000/api/health/ready
 curl --fail https://live.harmonicbeacon.com/api/health/ready
 ```
