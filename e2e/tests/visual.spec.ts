@@ -1,4 +1,5 @@
 import { expect, stackTest } from '../fixtures/stack';
+import { RoomServiceClient } from 'livekit-server-sdk';
 import { loginViaDashboard } from '../fixtures/auth';
 import { requireDirectDb, withSessionStatus } from '../fixtures/db';
 import { ROUTES, SESSION_ES } from '../fixtures/test-data';
@@ -17,6 +18,21 @@ const NOMINAL_HEALTH = {
         tapestry: NOMINAL_CHECK,
     },
 };
+
+async function resetStageRoom(): Promise<void> {
+    const livekitUrl = (process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880')
+        .replace(/^ws:/, 'http:')
+        .replace(/^wss:/, 'https:');
+    const roomService = new RoomServiceClient(
+        livekitUrl,
+        process.env.E2E_LIVEKIT_API_KEY ?? 'devkey',
+        process.env.E2E_LIVEKIT_API_SECRET ?? 'secret',
+    );
+    const rooms = await roomService.listRooms([SESSION_ES.roomName]);
+    if (rooms.some((room) => room.name === SESSION_ES.roomName)) {
+        await roomService.deleteRoom(SESSION_ES.roomName);
+    }
+}
 
 /**
  * Visual regression gate — intentional screenshot baselines at 1440 / 1024 /
@@ -48,6 +64,10 @@ stackTest.describe('visual baselines', () => {
     stackTest('attendee audio prompt', async ({ page }, testInfo) => {
         const db = requireDirectDb(testInfo);
         await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+            // Earlier media/load scenarios can leave a LiveKit participant
+            // visible for a short grace period. Start this visual contract
+            // from a genuinely empty room instead of blessing that race.
+            await resetStageRoom();
             await loginViaDashboard(
                 page,
                 'ATTENDEE',
