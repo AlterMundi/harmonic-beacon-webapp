@@ -136,6 +136,12 @@ export type Messages = {
         camera: string;
         turnCameraOff: string;
         turnCameraOn: string;
+        frontCamera: string;
+        rearCamera: string;
+        switchToFrontCamera: string;
+        switchToRearCamera: string;
+        switchingCamera: string;
+        cameraSwitchError: string;
         audioOnly: string;
         turnVideoOn: string;
         switchToAudioOnly: string;
@@ -351,6 +357,12 @@ export const messages: Record<UiLocale, Messages> = {
             camera: 'Cámara',
             turnCameraOff: 'Apagar cámara',
             turnCameraOn: 'Encender cámara',
+            frontCamera: 'Cámara frontal',
+            rearCamera: 'Cámara trasera',
+            switchToFrontCamera: 'Cambiar a cámara frontal',
+            switchToRearCamera: 'Cambiar a cámara trasera',
+            switchingCamera: 'Cambiando cámara…',
+            cameraSwitchError: 'No pudimos cambiar de cámara. La sesión y el audio siguen conectados; intentá de nuevo.',
             audioOnly: 'Solo audio',
             turnVideoOn: 'Volver a encender el video',
             switchToAudioOnly: 'Cambiar a solo audio',
@@ -569,6 +581,12 @@ export const messages: Record<UiLocale, Messages> = {
             camera: 'Camera',
             turnCameraOff: 'Turn camera off',
             turnCameraOn: 'Turn camera on',
+            frontCamera: 'Front camera',
+            rearCamera: 'Rear camera',
+            switchToFrontCamera: 'Switch to front camera',
+            switchToRearCamera: 'Switch to rear camera',
+            switchingCamera: 'Switching camera…',
+            cameraSwitchError: 'We could not switch cameras. Your session and audio are still connected; try again.',
             audioOnly: 'Audio only',
             turnVideoOn: 'Turn video back on',
             switchToAudioOnly: 'Switch to audio only',

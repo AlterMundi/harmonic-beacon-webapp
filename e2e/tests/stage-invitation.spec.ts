@@ -95,6 +95,23 @@ stackTest('a fresh connection stays invited until the attendee accepts the stage
                 attendee.getByRole('button', { name: /Mute microphone|Silenciar micrófono/i }),
             ).toBeVisible();
 
+            // The published camera track must be replaceable in place. This
+            // exercises the real LiveKit SDK and fake capture device: the
+            // attendee remains in the same room and the microphone stays on.
+            await attendee.getByRole('button', {
+                name: /Switch to rear camera|Cambiar a cámara trasera/i,
+            }).click();
+            await expect(attendee.getByRole('button', {
+                name: /Switch to front camera|Cambiar a cámara frontal/i,
+            })).toBeVisible({ timeout: 15_000 });
+            await expect(
+                attendee.getByRole('button', { name: /Mute microphone|Silenciar micrófono/i }),
+            ).toBeVisible();
+            await expect(attendee.getByTestId('connection-state')).toHaveAttribute(
+                'data-state',
+                'connected',
+            );
+
             const stageRow = drawer.locator('li').filter({ hasText: 'Journey Attendee' });
             await expect(stageRow.getByRole('button', { name: 'Take floor' })).toBeVisible({
                 timeout: 10_000,

@@ -47,9 +47,18 @@ vi.mock('@/lib/redact', () => ({
 vi.mock('livekit-client', () => {
     class FakeRoom {
         private listeners: Record<string, Array<(...args: unknown[]) => void>> = {};
+        private cameraFacingMode: 'user' | 'environment' = 'user';
         remoteParticipants = new Map<string, unknown>();
         activeSpeakers: unknown[] = [];
         state = 'connected';
+        cameraTrack = {
+            restartTrack: vi.fn().mockImplementation(async (options?: { facingMode?: 'user' | 'environment' }) => {
+                if (options?.facingMode) this.cameraFacingMode = options.facingMode;
+            }),
+            mediaStreamTrack: {
+                getSettings: () => ({ facingMode: this.cameraFacingMode }),
+            },
+        };
         localParticipant = {
             identity: 'local-participant',
             name: 'Participant',
@@ -63,6 +72,11 @@ vi.mock('livekit-client', () => {
             unpublishTrack: vi.fn(),
             setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
             setCameraEnabled: vi.fn().mockResolvedValue(undefined),
+            getTrackPublication: vi.fn(() => (
+                this.localParticipant.isCameraEnabled
+                    ? { videoTrack: this.cameraTrack }
+                    : undefined
+            )),
             enableCameraAndMicrophone: vi.fn().mockImplementation(async () => {
                 this.localParticipant.isCameraEnabled = true;
                 this.localParticipant.isMicrophoneEnabled = true;
@@ -108,7 +122,7 @@ vi.mock('livekit-client', () => {
             ParticipantPermissionsChanged: 'participantPermissionsChanged',
             Disconnected: 'disconnected',
         },
-        Track: { Kind: { Audio: 'audio', Video: 'video' } },
+        Track: { Kind: { Audio: 'audio', Video: 'video' }, Source: { Camera: 'camera' } },
         VideoPresets: {
             h720: { resolution: { width: 1280, height: 720 }, encoding: {} },
             h360: { resolution: { width: 640, height: 360 }, encoding: {} },
@@ -142,12 +156,17 @@ interface EmittableRoom {
     emit: (event: string, ...args: unknown[]) => void;
     disconnect: ReturnType<typeof vi.fn>;
     startAudio: ReturnType<typeof vi.fn>;
+    cameraTrack: {
+        restartTrack: ReturnType<typeof vi.fn>;
+        mediaStreamTrack: { getSettings: () => { facingMode: string } };
+    };
     localParticipant: {
         permissions: { canPublish: boolean };
         isCameraEnabled: boolean;
         isMicrophoneEnabled: boolean;
         setMicrophoneEnabled: ReturnType<typeof vi.fn>;
         setCameraEnabled: ReturnType<typeof vi.fn>;
+        getTrackPublication: ReturnType<typeof vi.fn>;
         enableCameraAndMicrophone: ReturnType<typeof vi.fn>;
     };
 }
@@ -535,6 +554,43 @@ describe('SessionRoomPage - stage invitation consent', () => {
         expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeInTheDocument();
         expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
         expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('switches front and rear cameras in place without touching microphone, Beacon, or Room lifecycle', async () => {
+        const { room } = await receiveInvitation();
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+        await screen.findByRole('button', { name: 'Switch to rear camera' });
+
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+        const microphoneCalls = room.localParticipant.setMicrophoneEnabled.mock.calls.length;
+        const combinedDeviceCalls = room.localParticipant.enableCameraAndMicrophone.mock.calls.length;
+        const beaconStartCalls = audioMocks.startBeaconAudio.mock.calls.length;
+        const beaconVolumeCalls = audioMocks.setBeaconVolume.mock.calls.length;
+        const stageAudioStartCalls = room.startAudio.mock.calls.length;
+        const cameraToggleCalls = room.localParticipant.setCameraEnabled.mock.calls.length;
+
+        fireEvent.click(screen.getByRole('button', { name: 'Switch to rear camera' }));
+
+        await waitFor(() => expect(room.cameraTrack.restartTrack).toHaveBeenCalledWith({
+            facingMode: 'environment',
+        }));
+        expect(await screen.findByText('Rear camera')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Switch to front camera' })).toBeInTheDocument();
+        expect(room.localParticipant.isMicrophoneEnabled).toBe(true);
+        expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenCalledTimes(microphoneCalls);
+        expect(room.localParticipant.enableCameraAndMicrophone).toHaveBeenCalledTimes(combinedDeviceCalls);
+        expect(audioMocks.startBeaconAudio).toHaveBeenCalledTimes(beaconStartCalls);
+        expect(audioMocks.setBeaconVolume).toHaveBeenCalledTimes(beaconVolumeCalls);
+        expect(room.startAudio).toHaveBeenCalledTimes(stageAudioStartCalls);
+        expect(room.localParticipant.setCameraEnabled).toHaveBeenCalledTimes(cameraToggleCalls);
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
+        expect(room.disconnect).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Switch to front camera' }));
+        await waitFor(() => expect(room.cameraTrack.restartTrack).toHaveBeenLastCalledWith({
+            facingMode: 'user',
+        }));
+        expect(await screen.findByText('Front camera')).toBeInTheDocument();
     });
 
     it('keeps the attendee on stage and explains when only the camera fails', async () => {
