@@ -138,6 +138,9 @@ export default defineConfig({
               env: {
                   DATABASE_URL,
                   TICKET_CODE_PEPPER: 'test-fixture-pepper-not-for-production',
+                  // Explicitly enabled only inside the throwaway E2E stack;
+                  // production templates and runtime default remain OFF.
+                  PROMO_INVITATIONS_ENABLED: 'true',
                   E2E_DASHBOARD_ENABLED: '1',
                   SESSION_COOKIE_TTL_SECONDS: '604800',
                   NEXT_PUBLIC_LIVEKIT_URL: process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
