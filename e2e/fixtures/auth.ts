@@ -25,6 +25,24 @@ export async function loginViaDashboard(
         response.ok(),
         `test-dashboard login as ${role} failed with ${response.status()} — is E2E_DASHBOARD_ENABLED=1 and the fixture loaded?`,
     ).toBe(true);
+
+    // The production cookie is correctly Secure. Chromium accepts it from
+    // Playwright's HTTP request context for localhost, while Linux WebKit does
+    // not transfer it to an HTTP page context. Mirror only this E2E-gated,
+    // synthetic cookie as non-Secure so the same browser suite can exercise
+    // WebKit without weakening production cookie attributes.
+    const setCookie = response.headers()['set-cookie'] ?? '';
+    const session = /(?:^|,\s*)hb_session=([^;]+)/.exec(setCookie)?.[1];
+    if (session && page.context().browser()?.browserType().name() === 'webkit') {
+        await page.context().addCookies([{
+            name: 'hb_session',
+            value: session,
+            url: new URL(response.url()).origin,
+            httpOnly: true,
+            secure: false,
+            sameSite: 'Lax',
+        }]);
+    }
     await page.goto(landing);
 }
 

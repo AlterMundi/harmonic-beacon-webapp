@@ -31,6 +31,8 @@ if (!process.env.E2E_BASE_URL) {
 
 /** Functional suites run once; responsive/visual suites run per width. */
 const PER_WIDTH = /(responsive|visual)\.spec\.ts/;
+const MEDIA_CONTINUITY = /media-continuity\.spec\.ts/;
+const WEBKIT_ATTENDEE_CONTINUITY = /attendee controls without capture/;
 
 export default defineConfig({
     testDir: './e2e/tests',
@@ -64,6 +66,30 @@ export default defineConfig({
             name: 'chromium',
             use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
             testIgnore: PER_WIDTH,
+            grepInvert: WEBKIT_ATTENDEE_CONTINUITY,
+        },
+        {
+            // Browser/device emulation is an early regression signal. It does
+            // not replace the physical Android check in the rehearsal sheet.
+            name: 'android-chrome',
+            use: { ...devices['Pixel 7'] },
+            testMatch: MEDIA_CONTINUITY,
+            grepInvert: WEBKIT_ATTENDEE_CONTINUITY,
+        },
+        {
+            // Playwright WebKit catches engine-specific autoplay and media
+            // lifecycle failures. A real iPhone Safari remains the launch gate.
+            name: 'iphone-webkit',
+            use: {
+                ...devices['iPhone 13'],
+                // Chromium's fake-device CLI flags are not valid WebKit
+                // options. Physical camera/microphone validation remains in
+                // the rehearsal because Linux WebKit cannot grant those
+                // browser permissions through Playwright.
+                launchOptions: { args: [] },
+            },
+            testMatch: MEDIA_CONTINUITY,
+            grep: WEBKIT_ATTENDEE_CONTINUITY,
         },
         {
             name: 'w1440',

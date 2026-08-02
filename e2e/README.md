@@ -12,7 +12,7 @@ deterministic fixtures, no production credentials or participant data.
 | `tests/accessibility.spec.ts` | stack for role surfaces | axe WCAG 2.0/2.1 A+AA, critical/serious fail |
 | `tests/responsive.spec.ts` | nothing | layout geometry at 1440/1024/390/320 px |
 | `tests/visual.spec.ts` | stack | screenshot baselines at the same four widths |
-| `tests/media-continuity.spec.ts` | stack + LiveKit | the four media invariants, real browser + server |
+| `tests/media-continuity.spec.ts` | stack + LiveKit | the four media invariants in desktop Chromium, Android/Chrome emulation and iPhone/WebKit emulation |
 | `tests/stage-invitation.spec.ts` | stack + LiveKit | two-browser hand → decline/accept → return journey |
 | `src/app/session/[id]/__tests__/media-continuity.test.tsx` | nothing | same invariants in Vitest/jsdom (`npm test`) |
 
@@ -49,8 +49,16 @@ they never weaken their assertions to pass.
    ```
 
    Playwright builds the app (`npm run build`) and serves the production
-   output itself. First time only: `npm run test:e2e:install` (Chromium;
-   pinned to the revision cached on the runner).
+   output itself. First time only, install the pinned browsers used by CI:
+
+   ```bash
+   npx playwright install chromium webkit
+   ```
+
+   CI runs Chromium screenshots before installing WebKit's OS dependencies;
+   the extra WebKit font packages otherwise change Chromium rasterization on a
+   fresh hosted runner. WebKit then runs as a separate command against the same
+   fixture stack.
 
 Environment overrides: `E2E_BASE_URL` (already-running stack; the server
 step is skipped), `E2E_DATABASE_URL`, `E2E_LIVEKIT_URL`,
@@ -91,8 +99,11 @@ there — never bump the tolerance to absorb a different platform.
 
 - Axe runs the WCAG AA `color-contrast` rule against rendered surfaces; no
   accessibility rule is disabled.
-- Real-device Safari/iOS and Firefox/Chrome evidence remains a human
-  supplement (issue #69 Phase B), not automation.
+- Android/Chrome and iPhone/WebKit projects emulate the browser/device profile
+  and exercise a real local LiveKit server. They do not measure the speaker,
+  microphone, radio path or native audio stack of physical devices. The dated
+  rehearsal under `docs/ops/rehearsals/` remains the launch evidence for real
+  iPhone Safari, Android Chrome and desktop hardware.
 - The `audio-touching` label check for frozen audio paths lives in
   `.github/workflows/audio-boundary.yml`; review routing lives in
   `.github/CODEOWNERS`.
