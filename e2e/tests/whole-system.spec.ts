@@ -89,12 +89,12 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
 
                         await staff.locator('[data-signal="door"]').click();
                         const doors = staff.getByRole('dialog');
-                        const reason = doors.getByLabel(/Operational reason/i);
+                        const reason = doors.getByLabel(/Operational reason|Motivo operativo/i);
                         if (await reason.isVisible()) {
                             await reason.fill(`E2E lifecycle ${index + 1}`);
                         }
-                        await doors.getByRole('button', { name: 'Open doors' }).click();
-                        await expect(doors.getByRole('status')).toContainText('Doors are open');
+                        await doors.getByRole('button', { name: /Open doors|Abrir puertas/i }).click();
+                        await expect(doors.getByRole('status')).toContainText(/Doors are open|Las puertas están abiertas/i);
                         await closeCockpitDrawer(staff);
 
                         await expect(attendee.getByTestId('connection-state')).toHaveAttribute(
@@ -131,17 +131,19 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
 
                         await staff.locator('[data-signal="hands"]').click();
                         const scene = staff.getByRole('dialog');
-                        await scene.getByRole('button', { name: 'Reconcile grants' }).click();
-                        await expect(scene.getByRole('status')).toContainText('Reconciliation finished');
+                        await scene.getByRole('button', { name: /Reconcile grants|Reconciliar permisos/i }).click();
+                        await expect(scene.getByRole('status')).toContainText(
+                            /Reconciliation finished|Reconciliación terminada/i,
+                        );
 
                         await attendee.getByRole('button', {
                             name: /Raise hand|Levantar la mano/i,
                         }).click();
                         const queueRow = scene.locator('li').filter({ hasText: attendeeName });
-                        await expect(queueRow.getByRole('button', { name: 'Give floor' })).toBeEnabled({
+                        await expect(queueRow.getByRole('button', { name: /Give floor|Dar la palabra/i })).toBeEnabled({
                             timeout: 10_000,
                         });
-                        await queueRow.getByRole('button', { name: 'Give floor' }).click();
+                        await queueRow.getByRole('button', { name: /Give floor|Dar la palabra/i }).click();
 
                         const invitation = attendee.getByRole('dialog', {
                             name: /invited into the scene|invitan a entrar en escena/i,
@@ -161,10 +163,10 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                                 name: /Turn camera off|Apagar (?:la )?cámara/i,
                             })).toBeVisible({ timeout: 15_000 });
                             const stageRow = scene.locator('li').filter({ hasText: attendeeName });
-                            await expect(stageRow.getByRole('button', { name: 'Take floor' })).toBeVisible({
+                            await expect(stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i })).toBeVisible({
                                 timeout: 10_000,
                             });
-                            await stageRow.getByRole('button', { name: 'Take floor' }).click();
+                            await stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i }).click();
                             await expect(attendee.getByRole('button', {
                                 name: /Turn camera off|Apagar (?:la )?cámara/i,
                             })).toHaveCount(0, { timeout: 10_000 });
@@ -173,11 +175,11 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
                         await closeCockpitDrawer(staff);
                         await staff.locator('[data-signal="door"]').click();
                         const closePanel = staff.getByRole('dialog');
-                        await closePanel.getByRole('button', { name: 'Close event' }).click();
+                        await closePanel.getByRole('button', { name: /Close event|Cerrar evento/i }).click();
                         await closePanel.getByRole('button', {
-                            name: 'End & disconnect everyone',
+                            name: /End & disconnect everyone|Finalizar y desconectar/i,
                         }).click();
-                        await expect(closePanel.getByRole('status')).toContainText('Event ended now');
+                        await expect(closePanel.getByRole('status')).toContainText(/Event ended now|Evento finalizado/i);
                         await expect(attendee.getByRole('heading', {
                             name: /Session ended|La sesión terminó/i,
                         })).toBeVisible({ timeout: 15_000 });
