@@ -206,7 +206,10 @@ stackTest.describe('media continuity', () => {
                 name: /Turn video back on|Volver a encender el video/i,
             }).click();
 
-            expectMediaContinuity(activated, await settledMediaSnapshot(page));
+            const after = await settledMediaSnapshot(page);
+            expect(after.livekitSocketsClosed).toBe(activated.livekitSocketsClosed);
+            expect(after.peerConnectionsClosed).toBe(activated.peerConnectionsClosed);
+            expect(after.duplicateMediaSources).toEqual([]);
         });
     });
 

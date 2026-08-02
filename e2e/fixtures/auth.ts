@@ -33,7 +33,7 @@ export async function loginViaDashboard(
     // WebKit without weakening production cookie attributes.
     const setCookie = response.headers()['set-cookie'] ?? '';
     const session = /(?:^|,\s*)hb_session=([^;]+)/.exec(setCookie)?.[1];
-    if (session) {
+    if (session && page.context().browser()?.browserType().name() === 'webkit') {
         await page.context().addCookies([{
             name: 'hb_session',
             value: session,
