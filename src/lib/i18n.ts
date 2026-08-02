@@ -413,6 +413,17 @@ export type Messages = {
             values: Record<'ISSUED' | 'BOUND' | 'REVOKED' | 'EXPIRED' | 'ACTIVE' | 'DISABLED' | 'CLEAR' | 'SUSPENDED' | 'NOT_REQUIRED' | 'RECONCILIATION_REQUIRED' | 'DISCONNECTED', string>;
             tiers: Record<'GLOBAL_NORTH' | 'GLOBAL_SOUTH' | 'COMP' | 'SUPPORT_OVERRIDE', string>;
         };
+        tapestryArrange: {
+            heading: string;
+            saving: string;
+            save: string;
+            saved: string;
+            saveFailed: string;
+            empty: string;
+            tileAlt: string;
+            moveLeft: string;
+            moveRight: string;
+        };
         cockpit: {
             roomTitle: string;
             roomHint: string;
@@ -872,6 +883,17 @@ export const messages: Record<UiLocale, Messages> = {
                     SUPPORT_OVERRIDE: 'Excepción de soporte',
                 },
             },
+            tapestryArrange: {
+                heading: 'Orden del tapiz',
+                saving: 'Guardando…',
+                save: 'Guardar orden',
+                saved: 'Guardado',
+                saveFailed: 'No se pudo guardar el orden. Volvé a intentarlo.',
+                empty: 'Todavía no hay imágenes: las teselas aparecen cuando se suman cámaras.',
+                tileAlt: 'Tesela {index} del tapiz',
+                moveLeft: 'Mover tesela {index} a la izquierda',
+                moveRight: 'Mover tesela {index} a la derecha',
+            },
             cockpit: {
                 roomTitle: 'Sala en vivo',
                 roomHint: 'La escena permanece conectada mientras abrís las herramientas.',
@@ -1328,6 +1350,17 @@ export const messages: Record<UiLocale, Messages> = {
                     COMP: 'Comp',
                     SUPPORT_OVERRIDE: 'Support override',
                 },
+            },
+            tapestryArrange: {
+                heading: 'Tapestry arrangement',
+                saving: 'Saving…',
+                save: 'Save arrangement',
+                saved: 'Saved',
+                saveFailed: 'Could not save the arrangement — try again',
+                empty: 'No attendee snapshots yet — tiles appear here as cameras join.',
+                tileAlt: 'Tapestry tile {index}',
+                moveLeft: 'Move tile {index} left',
+                moveRight: 'Move tile {index} right',
             },
             cockpit: {
                 roomTitle: 'Live room',
