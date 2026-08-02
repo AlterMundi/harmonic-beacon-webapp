@@ -276,7 +276,7 @@ export const messages: Record<UiLocale, Messages> = {
         ticketLogin: {
             displayName: 'Nombre visible en la sala',
             ticketCode: 'Código de entrada',
-            ticketCodeHint: 'Exactamente como aparece en el correo de tu entrada',
+            ticketCodeHint: 'Exactamente como aparece en tu entrada o invitación',
             email: 'Correo con el que compraste la entrada',
             rejected: 'Ese código y ese correo no coinciden con una entrada activa. Revisá ambos tal como aparecen en el correo de tu entrada.',
             rateLimited: 'Hubo demasiados intentos. Esperá unos minutos y volvé a intentar.',
@@ -500,7 +500,7 @@ export const messages: Record<UiLocale, Messages> = {
         ticketLogin: {
             displayName: 'Name shown in the room',
             ticketCode: 'Ticket code',
-            ticketCodeHint: 'Exactly as it appears in your ticket email',
+            ticketCodeHint: 'Exactly as it appears on your ticket or invitation',
             email: 'Email used to buy the ticket',
             rejected: 'That code and email do not match an active ticket. Check both exactly as they appear in your ticket email.',
             rateLimited: 'Too many attempts. Wait a few minutes and try again.',
