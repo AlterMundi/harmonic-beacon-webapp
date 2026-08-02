@@ -1,6 +1,6 @@
 /**
  * Public landing page and ticket login.
- * Phase 5: Wider layout, portal motif, bilingual control.
+ * Phase 5: Wider layout and bilingual control.
  *
  * Server component: fetches events from database.
  * Client components: LanguageControl, LoginClient.
@@ -13,7 +13,6 @@ import { redactError } from "@/lib/redact";
 
 import LoginClient from "./login/LoginClient";
 import BrandLockup from "@/components/brand/BrandLockup";
-import PortalOrbit from "@/components/brand/PortalOrbit";
 import LanguageControl from "@/components/brand/LanguageControl";
 import { messages } from "@/lib/i18n";
 import { requestLocale } from "@/lib/i18n-server";
@@ -92,9 +91,9 @@ export default async function LandingPage({
                     <LanguageControl />
                 </header>
 
-                {/* Hero + Portal */}
-                <section className="grid gap-8 lg:grid-cols-[1fr_0.72fr] lg:gap-12 items-center">
-                    <div className="space-y-5">
+                {/* Hero */}
+                <section className="py-2 lg:py-6">
+                    <div className="max-w-2xl space-y-5">
                         <p className="flex items-center gap-2.5 text-[10px] font-mono uppercase tracking-[0.18em] text-[var(--gold)]">
                             <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--pink)] shadow-[0_0_10px_var(--pink)]" />
                             {copy.eyebrow}
@@ -108,16 +107,6 @@ export default async function LandingPage({
                         <p className="max-w-md text-[15px] leading-[1.75] text-[var(--text-secondary)]">
                             {copy.lead}
                         </p>
-                    </div>
-                    <div className="flex justify-center lg:justify-end">
-                        <PortalOrbit size="lg">
-                            <div className="text-center">
-                                <span className="block font-serif text-lg text-[var(--gold)]">{copy.portalLabel}</span>
-                                <small className="mt-1 block font-mono text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
-                                    {copy.portalSub}
-                                </small>
-                            </div>
-                        </PortalOrbit>
                     </div>
                 </section>
 

@@ -64,15 +64,7 @@ test.describe('public surfaces', () => {
             window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         );
         expect(prefersReduced).toBe(true);
-        const motion = await page.locator('.animate-portal-orbit').first().evaluate((element) => {
-            const style = getComputedStyle(element);
-            return { animationName: style.animationName, transitionDuration: style.transitionDuration };
-        });
-        expect(motion.animationName).toBe('none');
-        const transitionMs = motion.transitionDuration.endsWith('ms')
-            ? Number.parseFloat(motion.transitionDuration)
-            : Number.parseFloat(motion.transitionDuration) * 1_000;
-        expect(transitionMs).toBeLessThanOrEqual(0.01);
+        await expect(page.locator('.animate-portal-orbit')).toHaveCount(0);
         await assertAccessible(page, 'landing-reduced-motion', testInfo);
         await context.close();
     });

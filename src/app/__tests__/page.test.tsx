@@ -78,12 +78,12 @@ describe('landing page', () => {
         expect(screen.getAllByText(/UTC:/)).toHaveLength(2);
     });
 
-    it('frames the portal as entry rather than payment for complimentary invitations', async () => {
+    it('does not place an animated purchase metaphor before complimentary access', async () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        expect(screen.getByText('el umbral')).toBeInTheDocument();
-        expect(screen.getByText('ENTRADA → PRESENCIA')).toBeInTheDocument();
+        expect(document.querySelector('.portal-orbit')).toBeNull();
+        expect(screen.queryByText('el regreso')).toBeNull();
         expect(screen.queryByText('PAGO → PRESENCIA')).toBeNull();
     });
 
@@ -185,8 +185,6 @@ describe('landing page', () => {
 
         expect(screen.getByText('The myth', { exact: false })).toBeInTheDocument();
         expect(screen.getByText('is alive.')).toBeInTheDocument();
-        expect(screen.getByText('the threshold')).toBeInTheDocument();
-        expect(screen.getByText('ENTRY → PRESENCE')).toBeInTheDocument();
         expect(screen.getByText('English')).toBeInTheDocument();
         expect(screen.getByText('Spanish')).toBeInTheDocument();
         expect(screen.getByText(/Saturday, August 8 at 0?8:30 AM CST/)).toBeInTheDocument();
