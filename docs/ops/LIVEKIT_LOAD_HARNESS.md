@@ -59,6 +59,12 @@ and the operator must monitor LiveKit, CPU, memory, and network on the target.
 - `rehearsal-es` and `rehearsal-en`: 150 dual-room attendees, six simulcast
   stage publishers, one Beacon audio publisher, 20-minute soak, and two
   staggered reconnect waves.
+- Every profile declares the Stage codec and layout explicitly. The production
+  rehearsal profiles use VP8 with the speaker layout: one 720p spotlight and
+  five 180p auxiliary layers per subscriber. This matches the most demanding
+  web Stage path without silently mixing VP8 and H264 inside one result.
+- H264 remains a separate diagnostic and physical Safari gate. A passing H264
+  probe never overrides a failing VP8 rehearsal manifest.
 
 Reconnect waves deliberately reuse the same synthetic identity prefixes after
 the previous wave has converged to zero. This measures disconnect/rejoin churn;
