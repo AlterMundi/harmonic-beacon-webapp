@@ -27,28 +27,10 @@ SELECT
     true,
     150,
     6,
-    COALESCE(
-        (
-            SELECT "facilitator_id"
-            FROM "scheduled_sessions"
-            WHERE "id" = '10000000-0000-4000-8000-000000000001'::uuid
-        ),
-        (
-            SELECT "facilitator_id"
-            FROM "scheduled_sessions"
-            WHERE "language" = 'SPANISH'::"SessionLanguage"
-            ORDER BY "is_test" ASC, "scheduled_at" DESC
-            LIMIT 1
-        ),
-        (
-            SELECT "id"
-            FROM "users"
-            WHERE "role" = 'FACILITATOR'::"StaffRole" AND "disabled_at" IS NULL
-            ORDER BY "created_at" ASC
-            LIMIT 1
-        )
-    ),
-    CURRENT_TIMESTAMP;
+    "facilitator_id",
+    CURRENT_TIMESTAMP
+FROM "scheduled_sessions"
+WHERE "id" = '10000000-0000-4000-8000-000000000001'::uuid;
 
 INSERT INTO "scheduled_sessions" (
     "id",
@@ -77,39 +59,34 @@ SELECT
     true,
     150,
     6,
-    COALESCE(
-        (
-            SELECT "facilitator_id"
-            FROM "scheduled_sessions"
-            WHERE "id" = '10000000-0000-4000-8000-000000000002'::uuid
-        ),
-        (
-            SELECT "facilitator_id"
-            FROM "scheduled_sessions"
-            WHERE "language" = 'ENGLISH'::"SessionLanguage"
-            ORDER BY "is_test" ASC, "scheduled_at" DESC
-            LIMIT 1
-        ),
-        (
-            SELECT "id"
-            FROM "users"
-            WHERE "role" = 'FACILITATOR'::"StaffRole" AND "disabled_at" IS NULL
-            ORDER BY "created_at" ASC
-            LIMIT 1
-        )
-    ),
-    CURRENT_TIMESTAMP;
+    "facilitator_id",
+    CURRENT_TIMESTAMP
+FROM "scheduled_sessions"
+WHERE "id" = '10000000-0000-4000-8000-000000000002'::uuid;
 
 DO $$
+DECLARE
+    historical_source_count integer;
+    target_count integer;
 BEGIN
-    IF (
-        SELECT count(*)
-        FROM "scheduled_sessions"
-        WHERE "id" IN (
+    SELECT count(*) INTO historical_source_count
+    FROM "scheduled_sessions"
+    WHERE "id" IN (
+        '10000000-0000-4000-8000-000000000001'::uuid,
+        '10000000-0000-4000-8000-000000000002'::uuid
+    );
+
+    SELECT count(*) INTO target_count
+    FROM "scheduled_sessions"
+    WHERE "id" IN (
             '20000000-0000-4000-8000-202608080001'::uuid,
             '20000000-0000-4000-8000-202608080002'::uuid
-        )
-    ) <> 2 THEN
+    );
+
+    IF historical_source_count NOT IN (0, 2) THEN
+        RAISE EXCEPTION 'August 8 historical session source is incomplete';
+    END IF;
+    IF target_count <> historical_source_count THEN
         RAISE EXCEPTION 'August 8 production sessions could not be created';
     END IF;
 END $$;
