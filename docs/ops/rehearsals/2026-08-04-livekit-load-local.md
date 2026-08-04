@@ -61,6 +61,55 @@ H264 result must not mask it because Chrome/Firefox-class participants can use
 VP8. The original profile was ambiguous because omitting `--video-codec` made
 the official CLI mix codecs. Profiles now declare codec and layout explicitly.
 
+## Explicit VP8 full-profile reproductions
+
+### English profile
+
+After PR #143, the complete `rehearsal-en` profile ran from clean harness SHA
+`4de2d5da2da34c81af536a8e2b035b6464e34baf` with `vp8` and `speaker`
+present in every recorded Stage command. The local manifest is mode 0600 with
+SHA-256 `6c54b064dd528cdd65d9a5fd738dad8feac2beddd2d233aa59713d33b3c9b12f`.
+
+| Phase | Stage tracks | Stage loss | Stage join p95 | Beacon tracks | Beacon loss | Beacon join p95 | Cleanup |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Ramp | 900/900 | 10.387% | 14.875 s | 150/150 | 0% | 14.333 s | 0 in 2 ms |
+| Soak 20 min | 900/900 | 11.366% | 14.790 s | 150/150 | 0% | 14.529 s | 0 in 1 ms |
+| Reconnect 1 | 900/900 | 12.132% | 15.023 s | 150/150 | 0% | 14.489 s | 0 in 2 ms |
+| Reconnect 2 | 900/900 | 12.341% | 14.771 s | 150/150 | 0% | 14.506 s | 0 in 5 ms |
+
+Every phase again reached exactly 156 Stage and 151 Beacon connections, with
+six and one publishers respectively. All CLI processes exited zero, all
+expected tracks arrived, the room API recorded no error, and cleanup converged
+to zero. The harness correctly returned `FAIL` solely because Stage exceeded
+the 0.1% loss threshold; Beacon remained lossless in all four phases.
+
+### Spanish profile
+
+The complete `rehearsal-es` profile then ran sequentially from the same clean
+harness SHA and generator host. Its mode-0600 local manifest has SHA-256
+`914275a3d8b099612b82a0d80039891d7185105543ba1bea778fb37b0cb77498`.
+
+| Phase | Stage tracks | Stage loss | Stage join p95 | Beacon tracks | Beacon loss | Beacon join p95 | Cleanup |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Ramp | 900/900 | 11.758% | 14.980 s | 150/150 | 0% | 14.443 s | 0 in 2 ms |
+| Soak 20 min | 900/900 | 14.928% | 14.798 s | 150/150 | 0% | 14.536 s | 0 in 2 ms |
+| Reconnect 1 | 900/900 | 11.994% | 15.009 s | 150/150 | 0% | 14.474 s | 0 in 2 ms |
+| Reconnect 2 | 900/900 | 15.249% | 15.012 s | 150/150 | 0% | 14.469 s | 0 in 3 ms |
+
+The second run also reached every requested connection, publisher and track,
+with zero API or CLI errors and complete room cleanup. The join percentiles in
+both tables are observations from phase start and include the configured
+10-clients-per-second ramp; they are not application login or media-latency
+measurements.
+
+These two manifests are directly comparable: same harness SHA, generator-host
+hash, LiveKit server/CLI, topology, codec, layout, durations and threshold; the
+only profile difference is the synthetic event language and room name. Stage
+loss reproduced in all eight phases (10.387–15.249%), while Beacon audio was 0%
+in all eight. This establishes repeatability on the local same-host topology,
+but does not distinguish SFU capacity from generator contention or certify
+mona/external network capacity.
+
 ## Decision
 
 - Do not close #99 or use this run as GO evidence for #24.
