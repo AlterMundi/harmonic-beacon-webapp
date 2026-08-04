@@ -28,6 +28,18 @@ describe('production deploy contract', () => {
     expect(workflow).toContain('[ "$tapestry_health" = healthy ]');
   });
 
+  it('embeds and verifies the exact release provenance before success', () => {
+    expect(compose).toContain('BEACON_GIT_SHA=${BEACON_GIT_SHA:-unknown}');
+    expect(compose).toContain('BEACON_BUILD_TIME=${BEACON_BUILD_TIME:-unknown}');
+    expect(compose).toContain(
+      'BEACON_DATABASE_SCHEMA_VERSION=${BEACON_DATABASE_SCHEMA_VERSION:-unknown}',
+    );
+    expect(workflow).toContain('BEACON_GIT_SHA="$GITHUB_SHA"');
+    expect(workflow).toContain('EXPECTED_GIT_SHA="$GITHUB_SHA"');
+    expect(workflow).toContain('health?.gitSha !== process.env.EXPECTED_GIT_SHA');
+    expect(workflow).toContain('https://live.harmonicbeacon.com/api/health');
+  });
+
   it('can only schedule production deploys on the verified mona runner', () => {
     expect(workflow).toContain('runs-on: [self-hosted, mona]');
     expect(workflow).toContain('test "$(hostname -s)" = mona');

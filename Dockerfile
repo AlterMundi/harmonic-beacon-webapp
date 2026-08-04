@@ -23,6 +23,14 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+ARG BEACON_GIT_SHA=unknown
+ARG BEACON_BUILD_TIME=unknown
+ARG BEACON_DATABASE_SCHEMA_VERSION=unknown
+
+ENV BEACON_GIT_SHA=$BEACON_GIT_SHA \
+    BEACON_BUILD_TIME=$BEACON_BUILD_TIME \
+    BEACON_DATABASE_SCHEMA_VERSION=$BEACON_DATABASE_SCHEMA_VERSION
+
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs && \
     apk add --no-cache curl ffmpeg
