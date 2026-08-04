@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireStaffCapability } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { collectOperatorHealth, productionDeps } from '@/lib/ops-health';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,10 @@ export async function GET(request: NextRequest) {
         if (!session) {
             return NextResponse.json({ error: 'Session not found' }, { status: 404 });
         }
-        if (staff.role === 'FACILITATOR' && session.facilitatorId !== staff.userId) {
+        if (!eventStaffPolicy(
+            staff.role,
+            session.facilitatorId === staff.userId,
+        ).canOperateEvent) {
             return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
         }
         if (session.status !== 'SCHEDULED' && session.status !== 'LIVE') {

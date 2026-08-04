@@ -176,3 +176,41 @@ export async function withPreservedFixtureStaff<T>(
         await client.end();
     }
 }
+
+/**
+ * Temporarily change one synthetic staff identity's role, preserving the row.
+ *
+ * This lets the browser matrix exercise an unassigned facilitator and an
+ * unassigned FACILITATOR_OP without adding production-only impersonation
+ * behavior to the E2E dashboard route.
+ */
+export async function withFixtureStaffRole<T>(
+    databaseUrl: string,
+    email: string,
+    role: FixtureStaffSnapshot['role'],
+    run: () => Promise<T>,
+): Promise<T> {
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+        const { rows } = await client.query<FixtureStaffSnapshot>(
+            'select name, role, disabled_at from users where email = $1',
+            [email],
+        );
+        const original = rows[0];
+        if (!original) {
+            throw new Error(`fixture staff ${email} not found`);
+        }
+        await client.query('update users set role = $1 where email = $2', [role, email]);
+        try {
+            return await run();
+        } finally {
+            await client.query(
+                'update users set name = $1, role = $2, disabled_at = $3 where email = $4',
+                [original.name, original.role, original.disabled_at, email],
+            );
+        }
+    } finally {
+        await client.end();
+    }
+}
