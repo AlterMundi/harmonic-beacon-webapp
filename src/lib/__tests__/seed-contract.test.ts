@@ -140,4 +140,21 @@ describe('weekend seed contract', () => {
         expect(migration).toContain('10000000-0000-4000-8000-000000000102');
         expect(migration).not.toMatch(/(?:lower\s*\()?"?title"?\)?\s+(?:like|ilike)/i);
     });
+
+    it('creates fresh paid sessions for August 8 without repurposing historical rows', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260804100000_hmp_august_8_paid_sessions/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain('20000000-0000-4000-8000-202608080001');
+        expect(migration).toContain('20000000-0000-4000-8000-202608080002');
+        expect(migration).toContain("'2026-08-08 14:30:00'::timestamp");
+        expect(migration).toContain("'2026-08-08 20:00:00'::timestamp");
+        expect(migration).toContain("'SCHEDULED'::\"ScheduledSessionStatus\"");
+        expect(migration).not.toMatch(/UPDATE\s+"scheduled_sessions"/i);
+    });
 });
