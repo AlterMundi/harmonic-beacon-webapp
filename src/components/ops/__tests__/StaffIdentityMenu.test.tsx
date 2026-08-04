@@ -19,12 +19,14 @@ describe('StaffIdentityMenu', () => {
             <StaffIdentityMenu
                 name="Julián"
                 roleLabel="Facilitación y operaciones"
+                roleDescription="Opera todos los eventos. Sólo publica como facilitación en el evento asignado."
                 signedInAs="Sesión de equipo"
                 signOut="Cerrar sesión"
             />,
         );
         expect(screen.getAllByText('Julián')).toHaveLength(2);
         expect(screen.getAllByText('Facilitación y operaciones')).toHaveLength(2);
+        expect(screen.getByText(/Sólo publica como facilitación/)).toBeInTheDocument();
 
         fireEvent.click(document.querySelector('summary')!);
         fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));

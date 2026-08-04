@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { StaffRole } from '@prisma/client';
 import type { Messages, UiLocale } from '@/lib/i18n';
+import { hasStaffCapability } from '@/lib/staff-capabilities';
 
 type Props = {
     sessionId: string;
@@ -53,7 +54,7 @@ export default function SessionLifecycleControl({
         const start = new Date(scheduledAt).getTime();
         return nowMs < start - EARLY_MS || nowMs > start + LATE_MS;
     }, [scheduledAt, nowMs]);
-    const canOverrideWindow = role === 'ADMIN' || role === 'FACILITATOR_OP';
+    const canOverrideWindow = hasStaffCapability(role, 'administer_system');
 
     function connectionOutcome(template: string, stage: number, beacon: number): string {
         return template

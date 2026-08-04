@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    STAFF_ROLE_KEYS,
     localeForEventLanguage,
     messages,
     parseUiLocale,
     resolveUiLocale,
+    staffRolePresentation,
 } from '@/lib/i18n';
 
 describe('UI locale policy', () => {
@@ -31,6 +33,15 @@ describe('UI locale policy', () => {
         expect(Object.keys(messages.es)).toEqual(Object.keys(messages.en));
         for (const section of Object.keys(messages.es) as Array<keyof typeof messages.es>) {
             expect(Object.keys(messages.es[section])).toEqual(Object.keys(messages.en[section]));
+        }
+    });
+
+    it.each(STAFF_ROLE_KEYS)('provides bilingual capability guidance for %s', (role) => {
+        for (const locale of ['es', 'en'] as const) {
+            const presentation = staffRolePresentation(messages[locale], role);
+            expect(presentation.label.length).toBeGreaterThan(3);
+            expect(presentation.description.length).toBeGreaterThan(30);
+            expect(presentation.description).not.toContain(role);
         }
     });
 });

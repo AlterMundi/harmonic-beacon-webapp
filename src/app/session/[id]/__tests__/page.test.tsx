@@ -398,6 +398,9 @@ describe('SessionRoomPage - participant identity', () => {
             'Signed in as: Nico',
         );
         expect(screen.getByTestId('viewer-identity')).not.toHaveTextContent(/ATTENDEE|12345678|ID/);
+        expect(screen.getByTestId('viewer-role-guidance')).toHaveTextContent(
+            /your camera and microphone stay under your control/i,
+        );
         expect(screen.queryByText(/Beacon room:/)).not.toBeInTheDocument();
         expect(screen.queryByText('Audio A/B check')).not.toBeInTheDocument();
         expect(document.querySelector('audio[src*="/api/audio-diagnostic"]')).toBeNull();
@@ -422,7 +425,7 @@ describe('SessionRoomPage - participant identity', () => {
 });
 
 describe('SessionRoomPage - staff cockpit handoff', () => {
-    function installStaffToken() {
+    function installStaffToken(isAssignedFacilitator = true) {
         vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
             if (String(url).includes('/entry')) {
                 return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
@@ -432,15 +435,38 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
                     ok: true,
                     json: async () => ({
                         ...TOKEN_RESPONSE,
-                        canPublish: true,
+                        canPublish: isAssignedFacilitator,
                         principalKind: 'staff',
                         role: 'FACILITATOR_OP',
+                        isAssignedFacilitator,
                     }),
                 } as Response);
             }
             return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
         });
     }
+
+    it('localizes the composite role and explains its event-scoped facilitator authority', async () => {
+        installStaffToken(true);
+        await renderConnected();
+
+        expect(screen.getByTestId('viewer-identity')).toHaveTextContent(
+            'Nico · Facilitator and operations',
+        );
+        expect(screen.getByTestId('viewer-identity')).not.toHaveTextContent('FACILITATOR_OP');
+        expect(screen.getByTestId('viewer-role-guidance')).toHaveTextContent(
+            /Assigned facilitator.*camera and microphone remain under your control/i,
+        );
+    });
+
+    it('explains that unassigned composite staff has operational access without publication', async () => {
+        installStaffToken(false);
+        await renderConnected();
+
+        expect(screen.getByTestId('viewer-role-guidance')).toHaveTextContent(
+            /Operational access.*do not publish as its assigned facilitator/i,
+        );
+    });
 
     it('disconnects the standalone room and preserves device intent before opening the cockpit', async () => {
         installStaffToken();

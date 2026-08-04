@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation';
 export default function StaffIdentityMenu({
     name,
     roleLabel,
+    roleDescription,
     signedInAs,
     signOut,
 }: {
     name: string;
     roleLabel: string;
+    roleDescription: string;
     signedInAs: string;
     signOut: string;
 }) {
@@ -38,6 +40,7 @@ export default function StaffIdentityMenu({
                 <p className="text-xs uppercase tracking-wider text-[var(--text-muted)]">{signedInAs}</p>
                 <p className="mt-1 text-sm text-[var(--paper)]">{name}</p>
                 <p className="text-xs text-[var(--text-secondary)]">{roleLabel}</p>
+                <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">{roleDescription}</p>
                 <button
                     type="button"
                     disabled={busy}

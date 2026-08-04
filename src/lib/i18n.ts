@@ -103,6 +103,9 @@ export type Messages = {
         participantPlural: string;
         peopleInRoom: string;
         signedIn: string;
+        attendeeCapability: string;
+        assignedFacilitatorCapability: string;
+        operationalStaffCapability: string;
         staffConsole: string;
         audioActivationLabel: string;
         audioPrompt: string;
@@ -194,6 +197,7 @@ export type Messages = {
         permissionDenied: string;
     };
     staffRoles: Record<LocalizedStaffRole, string>;
+    staffRoleDescriptions: Record<LocalizedStaffRole, string>;
     ops: {
         brand: string;
         events: string;
@@ -529,6 +533,9 @@ export const messages: Record<UiLocale, Messages> = {
             participantPlural: 'participantes',
             peopleInRoom: 'Personas en la sala (incluyéndote)',
             signedIn: 'Ingresaste como',
+            attendeeCapability: 'Participante · tu cámara y micrófono quedan bajo tu control; sólo entrás en escena después de aceptar una invitación.',
+            assignedFacilitatorCapability: 'Facilitación asignada · podés conducir y publicar en este evento; tu cámara y micrófono siguen bajo tu control.',
+            operationalStaffCapability: 'Acceso operativo · podés acompañar este evento, pero no publicar como facilitación asignada.',
             staffConsole: 'Escena y manos',
             audioActivationLabel: 'Activación de audio',
             audioPrompt: 'Presioná una vez para escuchar la sesión y el Beacon.',
@@ -624,6 +631,12 @@ export const messages: Record<UiLocale, Messages> = {
             FACILITATOR_OP: 'Facilitación y operaciones',
             OPERATOR: 'Operaciones',
             ADMIN: 'Administración',
+        },
+        staffRoleDescriptions: {
+            FACILITATOR: 'Conduce y publica únicamente en los eventos que tiene asignados. Puede consultar entradas y estado técnico, pero no administrar accesos.',
+            FACILITATOR_OP: 'Opera todos los eventos. Sólo en su evento asignado actúa como facilitación y puede publicar; fuera de él conserva acceso operativo sin publicación.',
+            OPERATOR: 'Opera todos los eventos y resuelve admisión y accesos. No publica cámara o micrófono como facilitación.',
+            ADMIN: 'Administra el sistema, los eventos y los accesos globalmente. No publica cámara o micrófono como facilitación.',
         },
         ops: {
             brand: 'Beacon · Equipo',
@@ -996,6 +1009,9 @@ export const messages: Record<UiLocale, Messages> = {
             participantPlural: 'participants',
             peopleInRoom: 'People in the room (including you)',
             signedIn: 'Signed in as',
+            attendeeCapability: 'Participant · your camera and microphone stay under your control; you enter the stage only after accepting an invitation.',
+            assignedFacilitatorCapability: 'Assigned facilitator · you can conduct and publish in this event; your camera and microphone remain under your control.',
+            operationalStaffCapability: 'Operational access · you can support this event, but you do not publish as its assigned facilitator.',
             staffConsole: 'Stage and hands',
             audioActivationLabel: 'Audio activation',
             audioPrompt: 'Press once to hear the session and Beacon.',
@@ -1091,6 +1107,12 @@ export const messages: Record<UiLocale, Messages> = {
             FACILITATOR_OP: 'Facilitator and operations',
             OPERATOR: 'Operations',
             ADMIN: 'Administration',
+        },
+        staffRoleDescriptions: {
+            FACILITATOR: 'Conducts and publishes only in assigned events. Can inspect admission and system health, but cannot administer access.',
+            FACILITATOR_OP: 'Operates every event. Acts as facilitator and may publish only in the assigned event; elsewhere retains operational access without publication.',
+            OPERATOR: 'Operates every event and supports admission and access. Does not publish camera or microphone as facilitator.',
+            ADMIN: 'Administers the system, events, and access globally. Does not publish camera or microphone as facilitator.',
         },
         ops: {
             brand: 'Beacon · Staff',
@@ -1392,4 +1414,18 @@ export const messages: Record<UiLocale, Messages> = {
 
 export function staffRoleLabel(copy: Messages, role: LocalizedStaffRole): string {
     return copy.staffRoles[role];
+}
+
+export function isLocalizedStaffRole(value: unknown): value is LocalizedStaffRole {
+    return typeof value === 'string' && STAFF_ROLE_KEYS.includes(value as LocalizedStaffRole);
+}
+
+export function staffRolePresentation(
+    copy: Messages,
+    role: LocalizedStaffRole,
+): { label: string; description: string } {
+    return {
+        label: copy.staffRoles[role],
+        description: copy.staffRoleDescriptions[role],
+    };
 }
