@@ -87,6 +87,9 @@ services:
       context: .
       args:
         - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL:-wss://live.harmonicbeacon.com}
+        - BEACON_GIT_SHA=${BEACON_GIT_SHA:-unknown}
+        - BEACON_BUILD_TIME=${BEACON_BUILD_TIME:-unknown}
+        - BEACON_DATABASE_SCHEMA_VERSION=${BEACON_DATABASE_SCHEMA_VERSION:-unknown}
     container_name: beacon-app
     restart: unless-stopped
     env_file:
