@@ -3,8 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getRoomService } from '@/lib/livekit-server';
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import { tapestryInternalUrl, tapestryParticipantId } from '@/lib/tapestry';
 
 export const dynamic = 'force-dynamic';
+
+const LAYOUT_LOOKUP_TIMEOUT_MS = 750;
 
 /**
  * Public raised-hand names for the attendee tapestry (TAP-02, issue #129).
@@ -12,9 +15,16 @@ export const dynamic = 'force-dynamic';
  * The collective tapestry stays a single JPEG without identity metadata;
  * this sidecar only names the people who chose to raise their hand — an
  * explicit request for the floor — and only while they remain connected.
- * It is deliberately not a directory: no tile position, no camera state,
- * no presence of anyone else, no thumbnails, and a hand that lowers or
- * disconnects disappears on the next poll.
+ * It is deliberately not a directory: no camera state, no presence of
+ * anyone else, no thumbnails, and a hand that lowers or disconnects
+ * disappears on the next poll.
+ *
+ * Each hand optionally carries its cell in the composite grid so the room
+ * can draw the name over the person's own tile (the Zoom/Meet reading of
+ * #129). Cells come from the internal layout endpoint, which is captured
+ * by the same build as the served composite; the client only draws the
+ * overlay when this layout's `revision` matches the composite's
+ * `x-tapestry-revision`, so a name can never land on the wrong person.
  *
  * The gate is the same `resolveRoomPrincipal` entitlement check the room
  * token route uses, so only this event's attendees (and its operators) can
@@ -22,7 +32,53 @@ export const dynamic = 'force-dynamic';
  * than listing people whose presence it cannot confirm.
  */
 
-type PublicHand = { name: string };
+type PublicHand = {
+    name: string;
+    column: number | null;
+    row: number | null;
+};
+
+type CompositeLayout = {
+    revision: number;
+    columns: number;
+    rows: number;
+    tileSizePx: number;
+    cells: Array<{ id: string; column: number; row: number }>;
+};
+
+async function fetchCompositeLayout(sessionId: string): Promise<CompositeLayout | null> {
+    const internalUrl = tapestryInternalUrl();
+    if (!internalUrl || !process.env.TAPESTRY_INTERNAL_SECRET) {
+        return null;
+    }
+    try {
+        const response = await fetch(
+            `${internalUrl}/tapestry/sessions/${encodeURIComponent(sessionId)}/layout`,
+            {
+                headers: {
+                    'x-tapestry-internal-secret': process.env.TAPESTRY_INTERNAL_SECRET,
+                },
+                cache: 'no-store',
+                signal: AbortSignal.timeout(LAYOUT_LOOKUP_TIMEOUT_MS),
+            },
+        );
+        if (!response.ok) return null;
+        const body = await response.json() as Partial<CompositeLayout>;
+        if (
+            typeof body.revision !== 'number' ||
+            typeof body.columns !== 'number' ||
+            typeof body.rows !== 'number' ||
+            typeof body.tileSizePx !== 'number' ||
+            !Array.isArray(body.cells) ||
+            body.cells.length > 150
+        ) {
+            return null;
+        }
+        return body as CompositeLayout;
+    } catch {
+        return null;
+    }
+}
 
 export async function GET(
     request: NextRequest,
@@ -37,7 +93,7 @@ export async function GET(
         );
     }
 
-    const [participants, liveIdentities] = await Promise.all([
+    const [participants, liveIdentities, layout] = await Promise.all([
         prisma.sessionParticipant.findMany({
             where: {
                 scheduledSessionId: id,
@@ -57,15 +113,19 @@ export async function GET(
                 (live) => new Map(live.map((p) => [p.identity, p.name.trim()] as const)),
                 () => null,
             ),
+        fetchCompositeLayout(id),
     ]);
 
     if (!liveIdentities) {
         return NextResponse.json(
-            { hands: [] as PublicHand[], liveStateAvailable: false },
+            { hands: [] as PublicHand[], liveStateAvailable: false, layout: null },
             { headers: { 'cache-control': 'private, no-store' } },
         );
     }
 
+    const cellByTileId = new Map(
+        (layout?.cells ?? []).map((cell) => [cell.id, cell] as const),
+    );
     const hands: PublicHand[] = participants
         // Waiting hands only: no active publish grant, past or present.
         .filter((participant) =>
@@ -73,13 +133,37 @@ export async function GET(
             participant.publishRevokedAt !== null,
         )
         .filter((participant) => liveIdentities.has(participant.participantIdentity))
-        .map((participant) => ({
-            name: participant.staffUser?.name ??
-                (liveIdentities.get(participant.participantIdentity) || 'Attendee'),
-        }));
+        .map((participant) => {
+            let cell: { column: number; row: number } | null = null;
+            try {
+                cell = cellByTileId.get(
+                    tapestryParticipantId(participant.participantIdentity),
+                ) ?? null;
+            } catch {
+                // A missing/invalid internal secret means no overlay, never
+                // a configuration detail.
+            }
+            return {
+                name: participant.staffUser?.name ??
+                    (liveIdentities.get(participant.participantIdentity) || 'Attendee'),
+                column: cell?.column ?? null,
+                row: cell?.row ?? null,
+            };
+        });
 
     return NextResponse.json(
-        { hands, liveStateAvailable: true },
+        {
+            hands,
+            liveStateAvailable: true,
+            layout: layout
+                ? {
+                    revision: layout.revision,
+                    columns: layout.columns,
+                    rows: layout.rows,
+                    tileSizePx: layout.tileSizePx,
+                }
+                : null,
+        },
         { headers: { 'cache-control': 'private, no-store' } },
     );
 }

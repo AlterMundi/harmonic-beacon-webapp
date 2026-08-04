@@ -4,9 +4,13 @@
  *   POST /tapestry/sessions/:sessionId/participants/:participantId/frame
  *        Authenticated JPEG ingest (raw image/jpeg body, size-capped).
  *   GET  /tapestry/sessions/:sessionId/composite.jpg
- *        Authenticated composite JPEG.
+ *        Authenticated composite JPEG, with the build revision in
+ *        `x-tapestry-revision` so overlays can match their layout to it.
  *   GET  /tapestry/sessions/:sessionId/participants
  *        Authenticated list of active participant ids in display order.
+ *   GET  /tapestry/sessions/:sessionId/layout
+ *        Authenticated grid layout (revision, columns, rows, tile size and
+ *        per-tile cells) captured by the same build as the served composite.
  *   PUT  /tapestry/sessions/:sessionId/order
  *        Authenticated staff arrangement: JSON {"order": string[]}.
  *   GET  /tapestry/sessions/:sessionId/participants/:participantId/frame.jpg
@@ -31,6 +35,7 @@ const FRAME_ROUTE =
   /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/participants\/([A-Za-z0-9_-]{1,128})\/frame$/;
 const COMPOSITE_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/composite\.jpg$/;
 const PARTICIPANTS_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/participants$/;
+const LAYOUT_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/layout$/;
 const ORDER_ROUTE = /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/order$/;
 const TILE_ROUTE =
   /^\/tapestry\/sessions\/([A-Za-z0-9_-]{1,128})\/participants\/([A-Za-z0-9_-]{1,128})\/frame\.jpg$/;
@@ -174,14 +179,41 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
       sendJson(res, 404, { error: "unknown_session" });
       return;
     }
+    const revision = compositor.builtRevisionOf(sessionId);
     res.writeHead(200, {
       "content-type": "image/jpeg",
       "content-length": jpeg.length,
       // Downstream caching policy (2s shared TTL, staff-only variant) is set
       // by the Next.js proxy; the internal service itself asks not to be cached.
       "cache-control": "no-store",
+      // Names the exact build these bytes came from; overlay consumers must
+      // only draw over a composite whose revision matches their layout.
+      ...(revision === null ? {} : { "x-tapestry-revision": String(revision) }),
     });
     res.end(jpeg);
+  }
+
+  async function handleLayout(
+    req: IncomingMessage,
+    res: ServerResponse,
+    sessionId: string,
+  ): Promise<void> {
+    if (!secretMatches(req.headers[INTERNAL_SECRET_HEADER] as string | undefined, config.internalSecret)) {
+      sendJson(res, 401, { error: "unauthorized" });
+      return;
+    }
+    if (!store.hasSession(sessionId)) {
+      sendJson(res, 404, { error: "unknown_session" });
+      return;
+    }
+    const layout = compositor.builtCompositeLayout(sessionId);
+    const revision = compositor.builtRevisionOf(sessionId);
+    if (!layout || revision === null) {
+      // No composite has been built yet: there is truthfully nothing to overlay.
+      sendJson(res, 404, { error: "layout_unavailable" });
+      return;
+    }
+    sendJson(res, 200, { revision, ...layout });
   }
 
   function handleHealth(res: ServerResponse): void {
@@ -315,6 +347,11 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
       }
       if (req.method === "GET" && participantsMatch) {
         await handleParticipants(req, res, participantsMatch[1]);
+        return;
+      }
+      const layoutMatch = url.pathname.match(LAYOUT_ROUTE);
+      if (req.method === "GET" && layoutMatch) {
+        await handleLayout(req, res, layoutMatch[1]);
         return;
       }
       if (req.method === "PUT" && orderMatch) {

@@ -44,8 +44,9 @@ describe('ThumbnailTapestry', () => {
             const url = String(input);
             if (url.includes('/tapestry/hands')) {
                 return new Response(JSON.stringify({
-                    hands: [{ name: 'Ana' }, { name: 'Beto' }],
+                    hands: [{ name: 'Ana', column: null, row: null }, { name: 'Beto', column: null, row: null }],
                     liveStateAvailable: true,
+                    layout: null,
                 }), { status: 200 });
             }
             return new Response(new Blob(['jpeg']), { status: 200 });
@@ -59,6 +60,59 @@ describe('ThumbnailTapestry', () => {
         );
         // The sidecar is cookie-authorized even on the public surface.
         expect(handsCall?.[1]?.credentials).toBe('same-origin');
+    });
+
+    it('draws each name over its own tile when composite and layout revisions match', async () => {
+        URL.createObjectURL = vi.fn(() => 'blob:tapestry');
+        URL.revokeObjectURL = vi.fn();
+        global.fetch = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/hands')) {
+                return new Response(JSON.stringify({
+                    hands: [{ name: 'Ana', column: 1, row: 0 }],
+                    liveStateAvailable: true,
+                    layout: { revision: 7, columns: 2, rows: 1, tileSizePx: 100 },
+                }), { status: 200 });
+            }
+            return new Response(new Blob(['jpeg']), {
+                status: 200,
+                headers: { 'x-tapestry-revision': '7' },
+            });
+        });
+
+        const view = render(<ThumbnailTapestry sessionId="session-1" />);
+
+        const tag = await view.findByText('Ana', { selector: 'span' });
+        expect(tag).toHaveStyle({ left: '50%', top: '100%' });
+        // The visual overlay never double-announces: the names line carries
+        // the accessible form.
+        expect(tag.closest('[aria-hidden="true"]')).not.toBeNull();
+    });
+
+    it('omits the overlay when the revisions disagree rather than misplacing a name', async () => {
+        URL.createObjectURL = vi.fn(() => 'blob:tapestry');
+        URL.revokeObjectURL = vi.fn();
+        global.fetch = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/hands')) {
+                return new Response(JSON.stringify({
+                    hands: [{ name: 'Ana', column: 1, row: 0 }],
+                    liveStateAvailable: true,
+                    layout: { revision: 8, columns: 2, rows: 1, tileSizePx: 100 },
+                }), { status: 200 });
+            }
+            return new Response(new Blob(['jpeg']), {
+                status: 200,
+                headers: { 'x-tapestry-revision': '7' },
+            });
+        });
+
+        const view = render(<ThumbnailTapestry sessionId="session-1" />);
+
+        // The accessible line still names the hand…
+        expect(await view.findByText('Raised hands: Ana')).toBeInTheDocument();
+        // …but no tag is drawn over a possibly-shifted grid.
+        expect(view.container.querySelector('[aria-hidden="true"]')).toBeNull();
     });
 
     it('stays silent when the hand list is rejected or empty', async () => {

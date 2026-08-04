@@ -332,10 +332,21 @@ composite, the capture lifecycle, or any media path.
 - On the public room surface, connected raised hands are named in plain text
   near the tapestry via `GET /api/scheduled-sessions/[id]/tapestry/hands`,
   gated by the room entitlement check. The sidecar names only waiting hands
-  that remain connected — no tile positions, camera state, presence or
+  that remain connected — no camera state, presence of anyone else, or
   thumbnails — so the collective JPEG stays anonymous and the sidecar cannot
   become a participant directory. A LiveKit outage names nobody rather than
   guessing presence.
+- Each named hand also carries its cell in the composite grid, so the room
+  draws the name over the person's own tile (the Zoom/Meet reading of the
+  issue). The internal service captures the grid layout synchronously with
+  every composite build and exposes it at `GET
+  /tapestry/sessions/:id/layout` alongside the `x-tapestry-revision` header
+  on `composite.jpg` — building on the monotonic build revision introduced
+  for #40 in PR #108. The room only draws the overlay when the sidecar's
+  layout revision equals the composite's revision; a disagreement omits the
+  overlay rather than placing a name over the wrong person. The overlay is
+  `aria-hidden` and pointer-free: the plain names line remains the
+  accessible and touch/keyboard equivalent.
 
 ## 7. Motion and interaction
 

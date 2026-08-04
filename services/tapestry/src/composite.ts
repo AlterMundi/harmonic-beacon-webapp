@@ -31,6 +31,28 @@ interface CompositeCacheEntry {
   builtRevision: number;
   /** A staff change newer than builtRevision bypasses the ingest rate limit. */
   urgentRevision: number;
+  /** Grid layout captured by the same build as `jpeg`; they always agree. */
+  builtLayout: BuiltCompositeLayout | null;
+}
+
+/** Grid position of one tile in the built composite. */
+export interface BuiltCompositeCell {
+  id: string;
+  column: number;
+  row: number;
+}
+
+/**
+ * Layout of the last built composite, captured synchronously with the same
+ * participant snapshot as the JPEG itself. Consumers overlay names or markers
+ * only when this layout's revision matches the served composite's revision,
+ * so a name can never land on the wrong person.
+ */
+export interface BuiltCompositeLayout {
+  columns: number;
+  rows: number;
+  tileSizePx: number;
+  cells: BuiltCompositeCell[];
 }
 
 export class TapestryCompositor {
@@ -55,6 +77,7 @@ export class TapestryCompositor {
         revision: 1,
         builtRevision: 0,
         urgentRevision: 0,
+        builtLayout: null,
       });
     }
   }
@@ -110,10 +133,11 @@ export class TapestryCompositor {
     // a later ingest must remain pending when this promise settles.
     const buildRevision = entry.revision;
     entry.inFlight = this.build(sessionId)
-      .then((jpeg) => {
+      .then(({ jpeg, layout }) => {
         entry.jpeg = jpeg;
         entry.builtAtMs = this.nowMs();
         entry.builtRevision = buildRevision;
+        entry.builtLayout = layout;
         if (entry.urgentRevision <= buildRevision) {
           entry.urgentRevision = 0;
         }
@@ -126,7 +150,30 @@ export class TapestryCompositor {
     return entry.inFlight;
   }
 
-  private async build(sessionId: string): Promise<Buffer> {
+  /**
+   * Revision of the composite bytes a `composite()` call last resolved to,
+   * or null when the session is unknown or never built. Read after awaiting
+   * `composite()` — together they identify exactly the served image.
+   */
+  builtRevisionOf(sessionId: string): number | null {
+    const entry = this.cache.get(sessionId);
+    if (!entry || entry.builtLayout === null) {
+      return null;
+    }
+    return entry.builtRevision;
+  }
+
+  /**
+   * Grid layout captured by the same build as the currently served
+   * composite, or null when the session is unknown or never built. Pair it
+   * with `builtRevisionOf`: an overlay is only truthful when the layout and
+   * the served JPEG carry the same revision.
+   */
+  builtCompositeLayout(sessionId: string): BuiltCompositeLayout | null {
+    return this.cache.get(sessionId)?.builtLayout ?? null;
+  }
+
+  private async build(sessionId: string): Promise<{ jpeg: Buffer; layout: BuiltCompositeLayout }> {
     // Display order = staff arrangement first, then first-seen (store.orderedActive).
     const participants = this.store.orderedActive(
       sessionId,
@@ -137,13 +184,23 @@ export class TapestryCompositor {
     // Dynamic grid: never larger than the active set needs (1x1 when empty).
     const columns = Math.max(1, Math.min(this.config.gridColumns, participants.length));
     const rows = Math.max(1, Math.ceil(participants.length / columns));
+    const layout: BuiltCompositeLayout = {
+      columns,
+      rows,
+      tileSizePx: tile,
+      cells: participants.map(({ id }, index) => ({
+        id,
+        column: index % columns,
+        row: Math.floor(index / columns),
+      })),
+    };
     const inputs = participants.map(({ participant }, index) => ({
       input: participant.tile,
       left: (index % columns) * tile,
       top: Math.floor(index / columns) * tile,
     }));
 
-    return sharp({
+    const jpeg = await sharp({
       create: {
         width: columns * tile,
         height: rows * tile,
@@ -154,6 +211,7 @@ export class TapestryCompositor {
       .composite(inputs)
       .jpeg({ quality: this.config.compositeJpegQuality })
       .toBuffer();
+    return { jpeg, layout };
   }
 }
 
