@@ -6,7 +6,7 @@ import type {
     TicketEntitlementState,
 } from '@prisma/client';
 
-export const EVENT_STABILIZATION_DEADLINE = new Date('2026-08-08T14:20:00.000Z');
+export const EVENT_STABILIZATION_DEADLINE = new Date('2026-08-02T16:50:00.000Z');
 
 export type EventContract = {
     id: string;
@@ -15,6 +15,8 @@ export type EventContract = {
     roomName: string;
     language: SessionLanguage;
     isTest: boolean;
+    paidMode: boolean;
+    desiredStatus: Extract<ScheduledSessionStatus, 'SCHEDULED' | 'CANCELLED'>;
     scheduledAt: string;
     acceptedScheduledAt: readonly string[];
     acceptedStatuses: readonly ScheduledSessionStatus[];
@@ -24,16 +26,21 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
     {
         id: '10000000-0000-4000-8000-000000000001',
         key: 'real-es',
-        title: 'Sesión Harmonic Beacon — Español',
+        title: 'Harmonic Beacon — Encuentro abierto ES/EN',
         roomName: 'weekend-session-1',
         language: 'SPANISH',
         isTest: false,
-        scheduledAt: '2026-08-08T14:30:00.000Z',
+        scheduledAt: '2026-08-02T17:00:00.000Z',
         acceptedScheduledAt: [
             '2026-08-01T14:30:00.000Z',
+            '2026-08-02T17:00:00.000Z',
             '2026-08-08T14:30:00.000Z',
         ],
         acceptedStatuses: ['SCHEDULED', 'LIVE'],
+        // Historical weekend rows are constrained to paid_mode=true. Free
+        // admission is represented by the COMP promotion entitlement itself.
+        paidMode: true,
+        desiredStatus: 'SCHEDULED',
     },
     {
         id: '10000000-0000-4000-8000-000000000002',
@@ -48,7 +55,9 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
             '2026-08-01T20:00:00.000Z',
             '2026-08-08T20:00:00.000Z',
         ],
-        acceptedStatuses: ['SCHEDULED', 'LIVE'],
+        acceptedStatuses: ['CANCELLED'],
+        paidMode: true,
+        desiredStatus: 'CANCELLED',
     },
     {
         id: '10000000-0000-4000-8000-000000000101',
@@ -63,6 +72,8 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
             '2026-08-08T14:30:00.000Z',
         ],
         acceptedStatuses: ['SCHEDULED', 'LIVE', 'CANCELLED'],
+        paidMode: true,
+        desiredStatus: 'CANCELLED',
     },
     {
         id: '10000000-0000-4000-8000-000000000102',
@@ -78,6 +89,8 @@ export const EVENT_CONTRACTS: readonly EventContract[] = [
             '2026-08-08T20:00:00.000Z',
         ],
         acceptedStatuses: ['SCHEDULED', 'LIVE', 'CANCELLED'],
+        paidMode: true,
+        desiredStatus: 'CANCELLED',
     },
 ] as const;
 
@@ -125,7 +138,7 @@ export function validateStabilizationSnapshot(snapshot: StabilizationSnapshot): 
             ['roomName', session.roomName, contract.roomName],
             ['language', session.language, contract.language],
             ['isTest', session.isTest, contract.isTest],
-            ['paidMode', session.paidMode, true],
+            ['paidMode', session.paidMode, contract.paidMode],
             ['attendeeCap', session.attendeeCap, 150],
             ['maxPublishers', session.maxPublishers, 6],
         ];
@@ -173,15 +186,19 @@ export function assertStabilizationWindow(now: Date): void {
 }
 
 export function desiredSessionState(contract: EventContract, now: Date) {
-    return contract.isTest
+    return contract.desiredStatus === 'CANCELLED'
         ? {
             status: 'CANCELLED' as const,
             scheduledAt: new Date(contract.scheduledAt),
+            title: contract.title,
+            paidMode: contract.paidMode,
             endedAt: now,
         }
         : {
             status: 'SCHEDULED' as const,
             scheduledAt: new Date(contract.scheduledAt),
+            title: contract.title,
+            paidMode: contract.paidMode,
             startedAt: null,
             endedAt: null,
         };
