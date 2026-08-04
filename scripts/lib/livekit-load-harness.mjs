@@ -47,6 +47,12 @@ export function validateProfile(profile) {
     if (!['simultaneous', 'staggered'].includes(profile.reconnectMode)) {
         throw new Error('reconnectMode must be simultaneous or staggered');
     }
+    if (!['vp8', 'h264'].includes(profile.stageVideoCodec)) {
+        throw new Error('stageVideoCodec must be vp8 or h264');
+    }
+    if (!['speaker', '3x3', '4x4', '5x5'].includes(profile.stageLayout)) {
+        throw new Error('stageLayout must be speaker, 3x3, 4x4, or 5x5');
+    }
     if (typeof profile.maxDroppedPercent !== 'number' ||
         profile.maxDroppedPercent < 0 || profile.maxDroppedPercent > 100) {
         throw new Error('maxDroppedPercent must be between zero and 100');
@@ -86,7 +92,17 @@ export function assertSafeTarget({ url, rooms, allowRemote, confirmation }) {
     return { target: 'remote-explicit', host: parsed.hostname };
 }
 
-function commandFor({ room, identityPrefix, durationSeconds, publishers, publisherKind, attendees, rampPerSecond }) {
+function commandFor({
+    room,
+    identityPrefix,
+    durationSeconds,
+    publishers,
+    publisherKind,
+    attendees,
+    rampPerSecond,
+    videoCodec,
+    layout,
+}) {
     const args = [
         'load-test',
         '--room', room,
@@ -100,7 +116,11 @@ function commandFor({ room, identityPrefix, durationSeconds, publishers, publish
         String(publishers),
     );
     if (publisherKind === 'video') {
-        args.push('--video-resolution', 'high');
+        args.push(
+            '--video-resolution', 'high',
+            '--video-codec', videoCodec,
+            '--layout', layout,
+        );
     }
     return args;
 }
@@ -143,6 +163,8 @@ export function buildPlan({ profileName, profile, runId, url, allowRemote = fals
                     publisherKind: 'video',
                     attendees: profile.attendees,
                     rampPerSecond: phase.rampPerSecond,
+                    videoCodec: profile.stageVideoCodec,
+                    layout: profile.stageLayout,
                 }),
             },
             beacon: {

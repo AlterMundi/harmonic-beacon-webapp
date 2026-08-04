@@ -15,6 +15,8 @@ const profile = {
     attendees: 150,
     stagePublishers: 6,
     beaconPublishers: 1,
+    stageVideoCodec: 'vp8',
+    stageLayout: 'speaker',
     rampPerSecond: 10,
     rampDurationSeconds: 60,
     soakDurationSeconds: 1200,
@@ -45,12 +47,21 @@ describe('LiveKit load harness safety', () => {
         expect(plan.phases[0].stage.args).toContain('6');
         expect(plan.phases[0].beacon.args).toContain('1');
         expect(plan.phases[0].stage.args).toContain('hbload-event-weekend-stage');
+        expect(plan.phases[0].stage.args).toContain('vp8');
+        expect(plan.phases[0].stage.args).toContain('speaker');
         expect(plan.phases[2].stage.args).toContain('hbload-event-weekend-stage');
     });
 
     it('rejects a seventh stage publisher before starting traffic', () => {
         expect(() => validateProfile({ ...profile, stagePublishers: 7 }))
             .toThrow(/cap of six/);
+    });
+
+    it('requires an explicit supported stage codec and layout', () => {
+        expect(() => validateProfile({ ...profile, stageVideoCodec: 'mixed' }))
+            .toThrow(/stageVideoCodec/);
+        expect(() => validateProfile({ ...profile, stageLayout: 'gallery' }))
+            .toThrow(/stageLayout/);
     });
 
     it('refuses remote targets unless the operator confirms both generated test rooms exactly', () => {
