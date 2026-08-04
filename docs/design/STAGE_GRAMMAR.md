@@ -304,6 +304,39 @@ snapshot. It adds no capture, camera, LiveKit publication, or image stream.
 - Public-disabled mode renders no broken collective image and makes no claim
   that audience presence is visible.
 
+### 6.4 Operational tapestry layer (TAP-02, issue #129)
+
+Shipped separately from the public grammar above. The operational layer is a
+staff-only reading of the tapestry; it changes nothing about the public
+composite, the capture lifecycle, or any media path.
+
+- `GET /api/ops/sessions/[id]/tapestry/manifest` returns one bounded document
+  per poll: tile id (opaque), display position, authorized name, hand and
+  queue position, presence (`connected` / `reconnecting` / `left` /
+  `unknown`), camera (`on` / `off` / `unknown`) and an epoch-versioned
+  thumbnail proxy URL per tile, plus the waiting-hand summary including hands
+  with no tile. Three lookups total (database, LiveKit list, internal
+  tapestry list); there is no per-tile request and no N+1 at 150
+  participants. The response is `private, no-store`; names and identities
+  never appear in logs.
+- Authorization matches the other ops tapestry routes: a staff session plus
+  the event-scoped `canOperateEvent` policy. Attendees, staff of other
+  events, and anonymous callers receive the same refusals as the sibling
+  routes.
+- The conductor cockpit tapestry drawer renders the manifest as the
+  operational view above the existing arrangement tool. Every tile carries
+  its full state in an accessible name; the hand badge is labelled text, not
+  color alone; hover, touch, keyboard and screen readers all reach the same
+  detail. A tile without a current consented frame falls back to a quiet
+  deterministic color field that never discloses why the image is absent.
+- On the public room surface, connected raised hands are named in plain text
+  near the tapestry via `GET /api/scheduled-sessions/[id]/tapestry/hands`,
+  gated by the room entitlement check. The sidecar names only waiting hands
+  that remain connected — no tile positions, camera state, presence or
+  thumbnails — so the collective JPEG stays anonymous and the sidecar cannot
+  become a participant directory. A LiveKit outage names nobody rather than
+  guessing presence.
+
 ## 7. Motion and interaction
 
 Motion is an orientation aid, never ambience.
