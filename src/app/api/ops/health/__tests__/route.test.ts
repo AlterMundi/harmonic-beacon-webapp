@@ -125,4 +125,19 @@ describe('GET /api/ops/health', () => {
         expect(status).toBe(403);
         expect(collectOperatorHealth).not.toHaveBeenCalled();
     });
+
+    it('lets FACILITATOR_OP inspect an unassigned event through the central event policy', async () => {
+        requireStaffCapability.mockResolvedValue([
+            { kind: 'staff', webSessionId: 'ws-1', userId: 'facilitator-op-2', role: 'FACILITATOR_OP' },
+            null,
+        ]);
+
+        const { GET } = await import('../route');
+        const { status } = await parseResponse(await GET(
+            createRequest('/api/ops/health?sessionId=session-1'),
+        ));
+
+        expect(status).toBe(200);
+        expect(collectOperatorHealth).toHaveBeenCalledWith({ selected: true });
+    });
 });
