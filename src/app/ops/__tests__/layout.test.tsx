@@ -27,8 +27,8 @@ vi.mock('@/components/ops/OpsNavLinks', () => ({
     ),
 }));
 vi.mock('@/components/ops/StaffIdentityMenu', () => ({
-    default: ({ name, roleLabel }: { name: string; roleLabel: string }) => (
-        <div data-testid="identity">{name} · {roleLabel}</div>
+    default: ({ name, roleLabel, roleDescription }: { name: string; roleLabel: string; roleDescription: string }) => (
+        <div data-testid="identity">{name} · {roleLabel} · {roleDescription}</div>
     ),
 }));
 
@@ -46,6 +46,9 @@ describe('staff layout', () => {
         expect(screen.queryByRole('link', { name: /Room|Spotlight/ })).toBeNull();
         expect(screen.getByTestId('identity')).toHaveTextContent(
             'Julián · Facilitación y operaciones',
+        );
+        expect(screen.getByTestId('identity')).toHaveTextContent(
+            /Sólo en su evento asignado actúa como facilitación/,
         );
     });
 });

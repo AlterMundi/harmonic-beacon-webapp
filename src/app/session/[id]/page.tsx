@@ -22,7 +22,7 @@ import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
 import type { StageVideoPublication } from "@/components/session/StageTile";
 import type { StageConnectionQuality } from "@/lib/stage-layout";
 import { redactErrorDetail } from "@/lib/redact";
-import { localeForEventLanguage } from "@/lib/i18n";
+import { isLocalizedStaffRole, localeForEventLanguage, staffRolePresentation } from "@/lib/i18n";
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
 
@@ -921,6 +921,9 @@ function SessionRoom() {
     const hasPendingStageInvitation = principalKind === 'ticket' &&
         canPublish && !stageInvitationAccepted;
     const needsDeviceGesture = canControlStageDevices && !isMicOn && !isCameraOn;
+    const viewerStaffRole = principalKind === 'staff' && isLocalizedStaffRole(viewerInfo?.role)
+        ? staffRolePresentation(copy, viewerInfo.role)
+        : null;
 
     return (
         <main className="event-shell">
@@ -945,9 +948,18 @@ function SessionRoom() {
                         {viewerInfo && (
                             <p className="mt-1 break-words text-xs leading-5 text-[var(--gold)]" data-testid="viewer-identity">
                                 {copy.session.signedIn}: <strong>{viewerInfo.name}</strong>
-                                {principalKind === 'staff' ? <>{' · '}{viewerInfo.role}</> : null}
+                                {viewerStaffRole ? <>{' · '}{viewerStaffRole.label}</> : null}
                             </p>
                         )}
+                        {viewerInfo ? (
+                            <p className="mt-0.5 max-w-2xl break-words text-xs leading-5 text-[var(--text-muted)]" data-testid="viewer-role-guidance">
+                                {principalKind === 'ticket'
+                                    ? copy.session.attendeeCapability
+                                    : viewerInfo.isAssignedFacilitator
+                                        ? copy.session.assignedFacilitatorCapability
+                                        : copy.session.operationalStaffCapability}
+                            </p>
+                        ) : null}
                     </div>
                     <div className="ml-3 flex shrink-0 items-center gap-3">
                         {principalKind === "staff" && !embeddedInCockpit && (
