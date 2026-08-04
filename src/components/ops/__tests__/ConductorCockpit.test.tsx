@@ -60,6 +60,7 @@ const props = {
     healthCopy: messages.en.ops.healthPanel,
     admissionCopy: messages.en.ops.admissionPanel,
     tapestryCopy: messages.en.ops.tapestryArrange,
+    opsTapestryCopy: messages.en.ops.opsTapestry,
     staffRoleLabels: messages.en.staffRoles,
 };
 

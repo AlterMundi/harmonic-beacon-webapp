@@ -195,6 +195,7 @@ export type Messages = {
         stopCamera: string;
         shareSnapshot: string;
         permissionDenied: string;
+        raisedHands: string;
     };
     staffRoles: Record<LocalizedStaffRole, string>;
     staffRoleDescriptions: Record<LocalizedStaffRole, string>;
@@ -427,6 +428,22 @@ export type Messages = {
             moveLeft: string;
             moveRight: string;
         };
+        opsTapestry: {
+            heading: string;
+            loading: string;
+            unavailable: string;
+            empty: string;
+            tileSnapshotAlt: string;
+            tileNoSnapshotAlt: string;
+            handRaised: string;
+            waitingWithoutTile: string;
+            handSummaryOne: string;
+            handsSummaryMany: string;
+            freshnessNote: string;
+            liveStateUnknown: string;
+            presence: Record<'connected' | 'reconnecting' | 'left' | 'unknown', string>;
+            camera: Record<'on' | 'off' | 'unknown', string>;
+        };
         cockpit: {
             roomTitle: string;
             roomHint: string;
@@ -625,6 +642,7 @@ export const messages: Record<UiLocale, Messages> = {
             stopCamera: 'Dejar de compartir la cámara con el tapiz',
             shareSnapshot: 'Compartir una imagen de cámara',
             permissionDenied: 'No se otorgó permiso para usar la cámara. Igual podés participar de la sesión.',
+            raisedHands: 'Manos levantadas: {names}',
         },
         staffRoles: {
             FACILITATOR: 'Facilitador/a',
@@ -905,6 +923,31 @@ export const messages: Record<UiLocale, Messages> = {
                 moveLeft: 'Mover tesela {index} a la izquierda',
                 moveRight: 'Mover tesela {index} a la derecha',
             },
+            opsTapestry: {
+                heading: 'Tapiz operativo',
+                loading: 'Leyendo la sala…',
+                unavailable: 'El tapiz no está disponible. La cola de manos sigue operativa desde el panel de escena.',
+                empty: 'Todavía no hay teselas: aparecen cuando las personas comparten imagen.',
+                tileSnapshotAlt: 'Miniatura reciente de {name}',
+                tileNoSnapshotAlt: '{name}: sin miniatura actual',
+                handRaised: 'Mano {position}',
+                waitingWithoutTile: 'Esperan sin imagen: {names}',
+                handSummaryOne: '1 mano levantada',
+                handsSummaryMany: '{count} manos levantadas',
+                freshnessNote: 'Las miniaturas se renuevan cada {seconds} s aproximadamente.',
+                liveStateUnknown: 'Presencia y cámara sin confirmar: la conexión en vivo está caída.',
+                presence: {
+                    connected: 'presente',
+                    reconnecting: 'reconectando',
+                    left: 'salió',
+                    unknown: 'presencia sin confirmar',
+                },
+                camera: {
+                    on: 'cámara encendida',
+                    off: 'cámara apagada',
+                    unknown: 'cámara sin confirmar',
+                },
+            },
             cockpit: {
                 roomTitle: 'Sala en vivo',
                 roomHint: 'La escena permanece conectada mientras abrís las herramientas.',
@@ -1101,6 +1144,7 @@ export const messages: Record<UiLocale, Messages> = {
             stopCamera: 'Stop sharing your camera with the tapestry',
             shareSnapshot: 'Share a camera snapshot',
             permissionDenied: 'Camera permission was not granted. You can still take part in the session.',
+            raisedHands: 'Raised hands: {names}',
         },
         staffRoles: {
             FACILITATOR: 'Facilitator',
@@ -1380,6 +1424,31 @@ export const messages: Record<UiLocale, Messages> = {
                 tileAlt: 'Tapestry tile {index}',
                 moveLeft: 'Move tile {index} left',
                 moveRight: 'Move tile {index} right',
+            },
+            opsTapestry: {
+                heading: 'Operational tapestry',
+                loading: 'Reading the room…',
+                unavailable: 'The tapestry is unavailable. The hand queue stays operational from the scene panel.',
+                empty: 'No tiles yet — they appear as people share a snapshot.',
+                tileSnapshotAlt: 'Recent tapestry snapshot of {name}',
+                tileNoSnapshotAlt: '{name}: no current tapestry snapshot',
+                handRaised: 'Hand {position}',
+                waitingWithoutTile: 'Waiting without a snapshot: {names}',
+                handSummaryOne: '1 hand raised',
+                handsSummaryMany: '{count} hands raised',
+                freshnessNote: 'Snapshots refresh about every {seconds}s.',
+                liveStateUnknown: 'Presence and camera unconfirmed: the live connection is down.',
+                presence: {
+                    connected: 'present',
+                    reconnecting: 'reconnecting',
+                    left: 'left',
+                    unknown: 'presence unconfirmed',
+                },
+                camera: {
+                    on: 'camera on',
+                    off: 'camera off',
+                    unknown: 'camera unconfirmed',
+                },
             },
             cockpit: {
                 roomTitle: 'Live room',

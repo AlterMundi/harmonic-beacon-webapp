@@ -9,6 +9,7 @@ import type { UiLocale } from '@/lib/i18n';
 import type { HealthLevel } from '@/lib/ops-health';
 
 import AdmissionConsole from './AdmissionConsole';
+import OpsTapestry from './OpsTapestry';
 import SessionLifecycleControl from './SessionLifecycleControl';
 import SpotlightConsole, { type SpotlightSummary } from './SpotlightConsole';
 import TapestryArrange from './TapestryArrange';
@@ -40,6 +41,7 @@ type Props = {
     healthCopy: Messages['ops']['healthPanel'];
     admissionCopy: Messages['ops']['admissionPanel'];
     tapestryCopy: Messages['ops']['tapestryArrange'];
+    opsTapestryCopy: Messages['ops']['opsTapestry'];
     staffRoleLabels: Messages['staffRoles'];
 };
 
@@ -69,6 +71,7 @@ export default function ConductorCockpit({
     healthCopy,
     admissionCopy,
     tapestryCopy,
+    opsTapestryCopy,
     staffRoleLabels,
 }: Props) {
     const [drawer, setDrawer] = useState<Drawer | null>(null);
@@ -316,7 +319,10 @@ export default function ConductorCockpit({
                         />
                     </div>
                     <div hidden={drawer !== 'tapestry'}>
-                        <TapestryArrange sessionId={session.id} copy={tapestryCopy} />
+                        <div className="space-y-6">
+                            <OpsTapestry sessionId={session.id} copy={opsTapestryCopy} />
+                            <TapestryArrange sessionId={session.id} copy={tapestryCopy} />
+                        </div>
                     </div>
                     <div hidden={drawer !== 'admission'}>
                         <AdmissionConsole
