@@ -80,5 +80,7 @@ by Playwright; Chromium 149 (Playwright 1.61.0).
   complete event lifecycles and real-device Safari/iOS + Firefox/Chrome
   rehearsal remain tracked by #24. The automated suite now covers the full
   hand/invitation consent journey and the muted subscribe-only cockpit.
-- **The #64 0–3 rubric is not yet scored per surface**; these gates supply
-  the Continuity and Reach evidence for that scoring.
+- **The #64 0–3 rubric now has a dated provisional scorecard** in
+  [`2026-08-04-quality-rubric.md`](./2026-08-04-quality-rubric.md). It uses
+  these gates as evidence and keeps human/physical-device sign-off explicit;
+  it does not close #64 or #69 by itself.
