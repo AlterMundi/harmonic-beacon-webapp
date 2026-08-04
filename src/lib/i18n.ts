@@ -35,8 +35,6 @@ export type Messages = {
         heroLead: string;
         heroAccent: string;
         lead: string;
-        portalLabel: string;
-        portalSub: string;
         sessionsHeading: string;
         loginHeading: string;
         terms: string;
@@ -463,8 +461,6 @@ export const messages: Record<UiLocale, Messages> = {
             heroLead: 'El mito',
             heroAccent: 'está vivo.',
             lead: 'Una experiencia online en vivo para entrar en tu paisaje interior a través del cuerpo, el sonido y las imágenes que ya viven dentro tuyo.',
-            portalLabel: 'el regreso',
-            portalSub: 'PAGO → PRESENCIA',
             sessionsHeading: 'ELEGÍ TU PORTAL',
             loginHeading: '¿YA TENÉS TU ENTRADA?',
             terms: 'Términos y privacidad',
@@ -932,8 +928,6 @@ export const messages: Record<UiLocale, Messages> = {
             heroLead: 'The myth',
             heroAccent: 'is alive.',
             lead: 'A live online experience to enter your inner landscape through body, sound, and the images already living inside you.',
-            portalLabel: 'the return',
-            portalSub: 'PAYMENT → PRESENCE',
             sessionsHeading: 'CHOOSE YOUR PORTAL',
             loginHeading: 'ALREADY HAVE A TICKET?',
             terms: 'Terms & privacy',

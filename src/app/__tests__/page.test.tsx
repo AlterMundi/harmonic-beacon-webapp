@@ -78,6 +78,15 @@ describe('landing page', () => {
         expect(screen.getAllByText(/UTC:/)).toHaveLength(2);
     });
 
+    it('does not place an animated purchase metaphor before complimentary access', async () => {
+        mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
+        await renderPage();
+
+        expect(document.querySelector('.portal-orbit')).toBeNull();
+        expect(screen.queryByText('el regreso')).toBeNull();
+        expect(screen.queryByText('PAGO → PRESENCIA')).toBeNull();
+    });
+
     it('asks only for sessions an attendee could still join', async () => {
         const findMany = mountDb(vi.fn().mockResolvedValue([]));
         await renderPage();
