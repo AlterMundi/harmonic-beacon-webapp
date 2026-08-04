@@ -27,10 +27,28 @@ SELECT
     true,
     150,
     6,
-    "facilitator_id",
-    CURRENT_TIMESTAMP
-FROM "scheduled_sessions"
-WHERE "id" = '10000000-0000-4000-8000-000000000001'::uuid;
+    COALESCE(
+        (
+            SELECT "facilitator_id"
+            FROM "scheduled_sessions"
+            WHERE "id" = '10000000-0000-4000-8000-000000000001'::uuid
+        ),
+        (
+            SELECT "facilitator_id"
+            FROM "scheduled_sessions"
+            WHERE "language" = 'SPANISH'::"SessionLanguage"
+            ORDER BY "is_test" ASC, "scheduled_at" DESC
+            LIMIT 1
+        ),
+        (
+            SELECT "id"
+            FROM "users"
+            WHERE "role" = 'FACILITATOR'::"StaffRole" AND "disabled_at" IS NULL
+            ORDER BY "created_at" ASC
+            LIMIT 1
+        )
+    ),
+    CURRENT_TIMESTAMP;
 
 INSERT INTO "scheduled_sessions" (
     "id",
@@ -59,10 +77,28 @@ SELECT
     true,
     150,
     6,
-    "facilitator_id",
-    CURRENT_TIMESTAMP
-FROM "scheduled_sessions"
-WHERE "id" = '10000000-0000-4000-8000-000000000002'::uuid;
+    COALESCE(
+        (
+            SELECT "facilitator_id"
+            FROM "scheduled_sessions"
+            WHERE "id" = '10000000-0000-4000-8000-000000000002'::uuid
+        ),
+        (
+            SELECT "facilitator_id"
+            FROM "scheduled_sessions"
+            WHERE "language" = 'ENGLISH'::"SessionLanguage"
+            ORDER BY "is_test" ASC, "scheduled_at" DESC
+            LIMIT 1
+        ),
+        (
+            SELECT "id"
+            FROM "users"
+            WHERE "role" = 'FACILITATOR'::"StaffRole" AND "disabled_at" IS NULL
+            ORDER BY "created_at" ASC
+            LIMIT 1
+        )
+    ),
+    CURRENT_TIMESTAMP;
 
 DO $$
 BEGIN

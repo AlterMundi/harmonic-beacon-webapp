@@ -155,6 +155,8 @@ describe('weekend seed contract', () => {
         expect(migration).toContain("'2026-08-08 14:30:00'::timestamp");
         expect(migration).toContain("'2026-08-08 20:00:00'::timestamp");
         expect(migration).toContain("'SCHEDULED'::\"ScheduledSessionStatus\"");
+        expect(migration).toContain("'FACILITATOR'::\"StaffRole\"");
+        expect(migration).toContain('ORDER BY "is_test" ASC, "scheduled_at" DESC');
         expect(migration).not.toMatch(/UPDATE\s+"scheduled_sessions"/i);
     });
 });
