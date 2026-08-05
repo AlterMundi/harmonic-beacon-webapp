@@ -36,7 +36,9 @@ function manifestFor(count: number) {
     }));
     return {
         sessionId: SESSION_ES.id,
-        revision: 'measurement-rev',
+        // The revision must change with the payload, like the real builder:
+        // the cockpit re-renders annotations only on revision change.
+        revision: `measurement-rev-${count}`,
         liveStateAvailable: true,
         layout: { revision: 7, columns, rows, tileSizePx: 100 },
         tileFreshForSeconds: 10,
@@ -74,6 +76,12 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
     });
     await page.route(`**/api/ops/sessions/${SESSION_ES.id}/tapestry/tiles/**`, async (route) => {
         await route.fulfill({ status: 404 });
+    });
+    // The measurement is the cockpit's OpsTapestry; the room iframe has its
+    // own optional composite poll (covered by its own contract) and would
+    // only add noise here, so its document is stubbed out.
+    await page.route(`**/session/${SESSION_ES.id}?surface=cockpit`, async (route) => {
+        await route.fulfill({ contentType: 'text/html', body: '<html><body>room stub</body></html>' });
     });
 
     await loginViaDashboard(page, 'OPERATOR', 'Tapestry Measure Op', ROUTES.opsSession(SESSION_ES.id));
