@@ -179,7 +179,7 @@ async function attendeeRow(entitlement: Record<string, unknown> = {}) {
             tier: 'GLOBAL_SOUTH',
             codeLastFour: '4XZP',
             state: 'BOUND',
-            expiresAt: new Date('2026-08-05T00:00:00.000Z'),
+            expiresAt: new Date('2027-08-05T00:00:00.000Z'),
             revokedAt: null,
             ...entitlement,
         },
