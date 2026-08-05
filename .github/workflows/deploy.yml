@@ -9,7 +9,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The reusable workflow checks the exact release commit in a throwaway
+  # Postgres + LiveKit + browser stack before mona can run any release step.
+  release-e2e:
+    uses: ./.github/workflows/e2e.yml
+
   deploy:
+    needs: release-e2e
     runs-on: [self-hosted, mona]
     steps:
       - name: Verify deploy runner identity

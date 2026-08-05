@@ -11,6 +11,7 @@ describe('production deploy contract', () => {
   const audioBoundaryWorkflow = readRepositoryFile(
     '.github/workflows/audio-boundary.yml',
   );
+  const e2eWorkflow = readRepositoryFile('.github/workflows/e2e.yml');
   const workflow = readRepositoryFile('.github/workflows/deploy.yml');
   const rootHelper = readRepositoryFile('deploy/hb-deploy-root');
   const runnerSudoers = readRepositoryFile('deploy/beacon-runner.sudoers');
@@ -55,6 +56,13 @@ describe('production deploy contract', () => {
       'cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy',
     );
     expect(workflow).not.toMatch(/runs-on:\s+self-hosted\s*$/m);
+  });
+
+  it('runs the exact release SHA through the reusable synthetic browser gate before mona', () => {
+    expect(e2eWorkflow).toContain('workflow_call:');
+    expect(workflow).toContain('release-e2e:');
+    expect(workflow).toContain('uses: ./.github/workflows/e2e.yml');
+    expect(workflow).toMatch(/deploy:\n\s+needs: release-e2e\n\s+runs-on: \[self-hosted, mona\]/);
   });
 
   it('keeps pull-request code off every self-hosted production runner', () => {

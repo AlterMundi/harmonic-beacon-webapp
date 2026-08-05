@@ -28,14 +28,16 @@ only the public application and LiveKit signaling ports.
 
 A push to `release` runs `.github/workflows/deploy.yml` on the managed host. It:
 
-1. runs contract, unit, type and lint gates;
-2. verifies both root-owned env files and the private network membership;
-3. preserves the currently running app and tapestry images under independent
+1. runs the exact release commit through the reusable browser E2E workflow on
+   a throwaway Postgres + LiveKit stack, including synthetic attendee access;
+2. runs contract, unit, type and lint gates;
+3. verifies both root-owned env files and the private network membership;
+4. preserves the currently running app and tapestry images under independent
    immutable rollback tags;
-4. builds commit-tagged app and tapestry images;
-5. applies additive Prisma migrations and verifies migration status;
-6. replaces only app, commerce reconciler and tapestry; and
-7. waits for app readiness plus reconciler and tapestry health.
+5. builds commit-tagged app and tapestry images;
+6. applies additive Prisma migrations and verifies migration status;
+7. replaces only app, commerce reconciler and tapestry; and
+8. waits for app readiness plus reconciler and tapestry health.
 
 On failure it restores the preserved app and tapestry images independently. It
 never uses `compose down`, deletes data or pretends that rebuilding the same tag
