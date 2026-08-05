@@ -135,41 +135,93 @@ Responses:
 The bounded public feed for any authorized viewer of the session (attendee or
 staff). Only `VISIBLE` rows, ascending `(createdAt, id)` order. `limit`
 defaults to 50, max 100 (`invalid_limit` 400 otherwise); `cursor` is the
-opaque `nextCursor` from the previous page (`invalid_cursor` 400).
-Response: `{ "contributions": PublicContribution[], "nextCursor": string | null }`.
+opaque cursor from a previous page (`invalid_cursor` 400).
+
+Response:
+
+```json
+{ "contributions": PublicContribution[], "hasMore": false,
+  "nextPageCursor": null, "resumeCursor": "..." }
+```
+
+The envelope deliberately separates **draining a backlog** from **polling for
+new messages**:
+
+- `hasMore` — the page was truncated; more rows exist right now.
+- `nextPageCursor` — where to continue draining; set only when `hasMore`.
+- `resumeCursor` — cursor of the **last delivered item**, usable for
+  incremental polling even at the tail (`hasMore=false`,
+  `nextPageCursor=null`). On a truncated page `nextPageCursor` equals
+  `resumeCursor`.
+- An empty page (a poll that finds nothing after the client's cursor) returns
+  zero items with `hasMore=false` and **both cursors null** — the client keeps
+  polling with the cursor it already had, which stays valid.
+
 Suggested client poll: 5 seconds.
 
 ### `GET /api/ops/sessions/[id]/contributions?cursor&limit`
 
 The staff reading: `VISIBLE` + `HIDDEN` rows (there is no withdrawal path yet),
-same ordering and pagination, for staff whose `eventStaffPolicy` grants
-`canOperateEvent` — the assigned facilitator, facilitator-operators, operators
-and admins. An unassigned facilitator receives 403. Response:
-`{ "contributions": StaffContribution[], "nextCursor": string | null }`.
+same ordering and **the exact same page envelope** as the public feed, for
+staff whose `eventStaffPolicy` grants `canOperateEvent` — the assigned
+facilitator, facilitator-operators, operators and admins. An unassigned
+facilitator receives 403. Response items are `StaffContribution[]`.
 
 ## 7. Idempotency
 
-The retry of a successful submission can never duplicate a message:
+The retry of a successful submission can never duplicate a message. The
+creation order is part of the contract:
+
+1. validate and normalize the payload;
+2. resolve the participant;
+3. look up `(session, participant, idempotencyKey)`;
+4. an existing row decides **replay (200)** or **conflict (409)** immediately —
+   neither touches the rate-limit budget and neither is ever hidden behind a
+   429, even when the participant's window is exhausted;
+5. only a genuinely new key enters the per-participant serialized section
+   (see §8), where idempotency is **re-checked** (a twin request may have
+   created the row while this one queued), the budget is consulted, and a
+   slot is reserved before the INSERT;
+6. the reservation is kept when a row is created, and released when the
+   INSERT fails or a P2002 resolves to replay/conflict.
+
+Guarantees:
 
 - Unique key `(session, participant, idempotencyKey)`; a replay with the same
   `requestDigest` returns the canonical row with 200 and performs no write.
 - A key reused with a different payload is rejected 409.
-- Concurrent first submissions race on the unique index; the loser re-reads
-  the winner and replays (or conflicts) canonically — proven against real
+- Concurrent first submissions are decided by the per-participant lock
+  in-process and by the unique index across processes; the loser re-reads the
+  winner and replays (or conflicts) canonically — proven against real
   PostgreSQL in `session-contributions.integration.test.ts`
-  (`CONTRIBUTIONS_INTEGRATION_TEST=1`).
+  (`CONTRIBUTIONS_INTEGRATION_TEST=1`, run in CI on every PR).
 - The client generates one key per composer draft, so double clicks, timeout
   retries, refreshes and reconnects all resolve to one row.
 
 ## 8. Rate limiting
 
 Per participant and session (never per IP — attendees can share one network),
-a process-local sliding window of **5 submissions per 60 seconds**
-(`SubmissionLimiter`, same mechanics and single-instance caveat as the
-failed-login limiter). Only accepted submissions spend budget; validation
-failures and idempotent replays are free. The 429 carries `Retry-After` and a
+a process-local sliding window of **5 submissions per 60 seconds**. Only
+accepted submissions spend budget; validation failures, idempotent replays
+and conflicts are free. The 429 carries `Retry-After` and a
 `retryAfterSeconds` field so the client can back off precisely. The limiter's
 log lines carry no body and no PII.
+
+**Atomicity.** Checking the budget and recording the consumption as separate
+steps races: N concurrent requests would all see budget before any of them
+records. `SubmissionLimiter.withSlot()` therefore serializes the whole
+critical section per limiter key — re-check idempotency, prune the window,
+decide, **reserve a slot before the INSERT**, then keep the reservation
+(created row) or release it (failed INSERT, P2002 replay/conflict). Different
+participants never block each other, and idle locks are dropped so the lock
+map cannot leak. Six concurrent submissions by one participant create exactly
+five rows and one 429 — proven in unit tests and against real PostgreSQL in
+CI.
+
+**Limitation (unchanged).** The limiter is process-local and the launch uses
+a single app instance. It is **not** safe across multiple replicas: a second
+instance would silently multiply the budget. The only inter-process guarantee
+is the database's unique idempotency index.
 
 ## 9. Authorization matrix (tested)
 
