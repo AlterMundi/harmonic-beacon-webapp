@@ -77,6 +77,25 @@ export default defineConfig({
             grepInvert: WEBKIT_ATTENDEE_CONTINUITY,
         },
         {
+            // A second desktop engine catches focus, form, cookie and
+            // navigation regressions that Chromium alone cannot expose. The
+            // dedicated media-continuity matrix remains on Chromium/WebKit;
+            // Firefox runs every other functional/accessibility suite.
+            name: 'firefox',
+            use: {
+                ...devices['Desktop Firefox'],
+                viewport: { width: 1440, height: 900 },
+                launchOptions: {
+                    args: [],
+                    firefoxUserPrefs: {
+                        'media.navigator.streams.fake': true,
+                        'media.navigator.permission.disabled': true,
+                    },
+                },
+            },
+            testIgnore: [PER_WIDTH, MEDIA_CONTINUITY],
+        },
+        {
             // Playwright WebKit catches engine-specific autoplay and media
             // lifecycle failures. A real iPhone Safari remains the launch gate.
             name: 'iphone-webkit',
