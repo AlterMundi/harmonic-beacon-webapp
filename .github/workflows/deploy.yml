@@ -135,6 +135,17 @@ jobs:
           set -euo pipefail
           sudo -n /usr/local/sbin/hb-deploy boundary
 
+          for method in GET POST; do
+            code="$(curl --silent --show-error --output /dev/null \
+              --request "$method" --header 'Content-Type: application/json' \
+              --data '{}' --write-out '%{http_code}' \
+              https://live.harmonicbeacon.com/api/test-login)"
+            test "$code" = 404 || {
+              echo "Production test-login $method returned $code instead of 404" >&2
+              exit 1
+            }
+          done
+
           for method in GET PUT; do
             code="$(curl --silent --show-error --output /dev/null \
               --request "$method" --header 'Content-Type: application/json' \

@@ -67,6 +67,12 @@ describe('production deploy contract', () => {
     expect(rootHelper).toContain(
       "die 'production E2E dashboard must be disabled before deploy'",
     );
+    expect(workflow).toContain(
+      'https://live.harmonicbeacon.com/api/test-login',
+    );
+    expect(workflow).toContain(
+      'Production test-login $method returned $code instead of 404',
+    );
   });
 
   it('preserves and restores app and tapestry independently', () => {
