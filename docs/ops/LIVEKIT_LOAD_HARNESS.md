@@ -85,6 +85,44 @@ the signal and timestamp plus the partial redacted phase metrics. It never
 promotes partial results to FAIL/PASS or continues into another phase.
 Run the full ES and EN profiles twice and attach all four manifests to #24.
 
+## Target-local telemetry
+
+The generator's own network path is not a reliable control plane under a large
+subscriber test. Start `scripts/livekit-target-monitor.py` **on the isolated SFU
+host** before traffic. It uses only Python's standard library plus the host's
+Docker CLI, reads no environment credential, probes only a loopback health URL,
+and writes JSONL evidence mode `0600`.
+
+Use a unique synthetic run ID and output path. The monitor refuses to overwrite
+evidence, refuses remote or credential-bearing health URLs, and records no
+response body, Docker ID, environment, command output, token, room identity,
+audio, or video. A typical isolated mona rehearsal monitors both the temporary
+target and the production containers so shared-host impact is visible:
+
+```bash
+python3 scripts/livekit-target-monitor.py \
+  --run-id rehearsal-en-20260805-a \
+  --duration-seconds 1500 \
+  --interval-seconds 1 \
+  --output /tmp/rehearsal-en-20260805-a-target.jsonl \
+  --health-url http://127.0.0.1:3000/api/health/ready \
+  --container hb-load-livekit-isolated \
+  --container beacon-app \
+  --container beacon-livekit
+```
+
+For a remote generator, launch the monitor under a target-local supervisor or
+`nohup` so losing SSH does not lose samples. Send `SIGINT` or `SIGTERM` for a
+cooperative stop; the process writes a final summary and exits non-zero. A
+usable artifact must end with `recordType=summary`. The summary includes health
+failures/latency, peak host and container CPU, minimum available memory,
+physical-interface byte deltas, restart deltas, OOM observation and whether an
+operator interrupted it. Each sample also records its collection duration so a
+slow Docker daemon is visible instead of being mistaken for a one-second cadence.
+Hash the file before copying it to the rehearsal
+record; never weaken a failed load manifest because target telemetry looks
+healthy.
+
 ## Tooling
 
 Install the official `lk` CLI (the CI workflow pins v2.16.3). LiveKit recommends
