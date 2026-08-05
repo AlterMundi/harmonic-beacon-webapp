@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     assertSafeTarget,
     buildPlan,
+    createAbortCoordinator,
     manifestContainsSecret,
     parseLoadTestOutput,
     remoteConfirmation,
@@ -127,5 +128,33 @@ describe('LiveKit load harness evidence', () => {
             .toBe(true);
         expect(manifestContainsSecret({ nested: ['safe'] }, ['key', 'secret-value']))
             .toBe(false);
+    });
+
+    it('coordinates the first operator abort across current and late child processes', () => {
+        const terminated: string[] = [];
+        const abort = createAbortCoordinator({
+            terminate: (child: { name: string }) => terminated.push(child.name),
+        });
+        const untrackStage = abort.track({ name: 'stage', killed: false });
+        abort.track({ name: 'beacon', killed: false });
+
+        expect(abort.request('SIGINT')).toBe(true);
+        expect(abort.request('SIGTERM')).toBe(false);
+        abort.track({ name: 'late', killed: false });
+        untrackStage();
+
+        expect(terminated).toEqual(['stage', 'beacon', 'late']);
+        expect(abort.requested).toBe(true);
+        expect(abort.snapshot()).toMatchObject({ signal: 'SIGINT' });
+        expect(abort.exitCode()).toBe(130);
+    });
+
+    it('maps SIGTERM to a non-zero result without inventing an abort beforehand', () => {
+        const abort = createAbortCoordinator();
+        expect(abort.requested).toBe(false);
+        expect(abort.snapshot()).toBeNull();
+        expect(abort.exitCode()).toBe(1);
+        expect(abort.request('SIGTERM')).toBe(true);
+        expect(abort.exitCode()).toBe(143);
     });
 });

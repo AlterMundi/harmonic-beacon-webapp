@@ -11,6 +11,7 @@ import { RoomServiceClient } from 'livekit-server-sdk';
 import {
     buildPlan,
     commandFingerprint,
+    createAbortCoordinator,
     manifestContainsSecret,
     parseLoadTestOutput,
     remoteConfirmation,
@@ -87,6 +88,35 @@ function generatedRunId() {
     return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'z').toLowerCase();
 }
 
+function installAbortHandlers(abort) {
+    const onSigint = () => {
+        if (abort.request('SIGINT')) {
+            process.stderr.write('\nSIGINT received; stopping load and preserving an ABORTED manifest.\n');
+        }
+    };
+    const onSigterm = () => {
+        if (abort.request('SIGTERM')) {
+            process.stderr.write('\nSIGTERM received; stopping load and preserving an ABORTED manifest.\n');
+        }
+    };
+    process.on('SIGINT', onSigint);
+    process.on('SIGTERM', onSigterm);
+    return () => {
+        process.off('SIGINT', onSigint);
+        process.off('SIGTERM', onSigterm);
+    };
+}
+
+async function waitBetweenPhases(seconds, abort) {
+    const deadline = Date.now() + seconds * 1000;
+    while (!abort.requested && Date.now() < deadline) {
+        await new Promise((resolvePromise) => setTimeout(
+            resolvePromise,
+            Math.min(250, deadline - Date.now()),
+        ));
+    }
+}
+
 function printHelp() {
     process.stdout.write(`Usage: npm run load:livekit -- [options]\n\n` +
         `  --profile NAME             ci, rehearsal-es, or rehearsal-en\n` +
@@ -110,8 +140,19 @@ async function commandOutput(command, args) {
     });
 }
 
-async function runLoad(lkBinary, args, credentials) {
+async function runLoad(lkBinary, args, credentials, abort) {
     const startedAt = new Date();
+    if (abort.requested) {
+        return {
+            exitCode: abort.exitCode(),
+            operatorAborted: true,
+            terminationSignal: abort.snapshot()?.signal ?? null,
+            startedAt: startedAt.toISOString(),
+            endedAt: startedAt.toISOString(),
+            durationMs: 0,
+            summary: parseLoadTestOutput(''),
+        };
+    }
     return new Promise((resolvePromise) => {
         const child = spawn(lkBinary, args, {
             cwd: repositoryRoot,
@@ -123,7 +164,15 @@ async function runLoad(lkBinary, args, credentials) {
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
+        const untrack = abort.track(child);
         let output = '';
+        let settled = false;
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            untrack();
+            resolvePromise(result);
+        };
         child.stdout.on('data', (chunk) => {
             output = appendOutputTail(output, chunk);
             process.stdout.write(chunk);
@@ -133,18 +182,22 @@ async function runLoad(lkBinary, args, credentials) {
             process.stderr.write(chunk);
         });
         child.on('error', (error) => {
-            resolvePromise({
+            finish({
                 exitCode: 127,
                 error: error.message,
+                operatorAborted: abort.requested,
+                terminationSignal: abort.snapshot()?.signal ?? null,
                 startedAt: startedAt.toISOString(),
                 endedAt: new Date().toISOString(),
                 durationMs: Date.now() - startedAt.getTime(),
                 summary: parseLoadTestOutput(output),
             });
         });
-        child.on('close', (exitCode) => {
-            resolvePromise({
-                exitCode: exitCode ?? 1,
+        child.on('close', (exitCode, terminationSignal) => {
+            finish({
+                exitCode: exitCode ?? (abort.requested ? abort.exitCode() : 1),
+                operatorAborted: abort.requested,
+                terminationSignal: terminationSignal ?? null,
                 startedAt: startedAt.toISOString(),
                 endedAt: new Date().toISOString(),
                 durationMs: Date.now() - startedAt.getTime(),
@@ -312,6 +365,7 @@ async function main() {
         ],
         phases: [],
     };
+    let abort = null;
 
     if (!dryRun) {
         const credentials = {
@@ -323,12 +377,15 @@ async function main() {
             throw new Error('LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required');
         }
         if (lk.exitCode !== 0) throw new Error(`LiveKit CLI unavailable: ${lk.output.trim()}`);
+        abort = createAbortCoordinator();
+        const removeAbortHandlers = installAbortHandlers(abort);
         const roomService = new RoomServiceClient(
             url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:'),
             credentials.apiKey,
             credentials.apiSecret,
         );
         for (const [index, phase] of plan.phases.entries()) {
+            if (abort.requested) break;
             process.stdout.write(`\n[${phase.name}] starting stage and Beacon load\n`);
             const resourceBefore = await readGeneratorResources();
             const eventLoop = monitorEventLoopDelay({ resolution: 20 });
@@ -340,8 +397,8 @@ async function main() {
                 profileBeaconPublishers: profile.beaconPublishers,
             }, stopped);
             const [stage, beacon] = await Promise.all([
-                runLoad(lkBinary, phase.stage.args, credentials),
-                runLoad(lkBinary, phase.beacon.args, credentials),
+                runLoad(lkBinary, phase.stage.args, credentials, abort),
+                runLoad(lkBinary, phase.beacon.args, credentials, abort),
             ]);
             stopped.value = true;
             const observed = await monitor;
@@ -357,7 +414,7 @@ async function main() {
                     max: nanosecondsToMilliseconds(eventLoop.max),
                 },
             };
-            const passed = [stage, beacon].every((result) =>
+            const passed = !abort.requested && [stage, beacon].every((result) =>
                 result.exitCode === 0 &&
                 result.summary.parsed &&
                 result.summary.tracksReceived === result.summary.tracksExpected &&
@@ -373,18 +430,26 @@ async function main() {
             manifest.phases.push({
                 name: phase.name,
                 passed,
+                operatorAborted: abort.requested,
                 stage,
                 beacon,
                 observed,
                 cleanup,
                 generatorResources,
             });
+            if (abort.requested) break;
             if (!passed) manifest.status = 'FAIL';
             if (index < plan.phases.length - 1 && profile.interWaveSeconds > 0) {
-                await new Promise((resolvePromise) => setTimeout(resolvePromise, profile.interWaveSeconds * 1000));
+                await waitBetweenPhases(profile.interWaveSeconds, abort);
             }
         }
-        if (manifest.status !== 'FAIL') manifest.status = 'PASS';
+        removeAbortHandlers();
+        if (abort.requested) {
+            manifest.status = 'ABORTED';
+            manifest.abort = abort.snapshot();
+        } else if (manifest.status !== 'FAIL') {
+            manifest.status = 'PASS';
+        }
         if (manifestContainsSecret(manifest, [credentials.apiKey, credentials.apiSecret])) {
             throw new Error('refusing to write a manifest containing a credential');
         }
@@ -397,6 +462,7 @@ async function main() {
         process.stdout.write(`Remote confirmation used: ${remoteConfirmation(plan.rooms)}\n`);
     }
     if (manifest.status === 'FAIL') process.exitCode = 1;
+    if (manifest.status === 'ABORTED') process.exitCode = abort.exitCode();
 }
 
 main().catch((error) => {

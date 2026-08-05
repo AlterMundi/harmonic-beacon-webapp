@@ -222,3 +222,44 @@ export function manifestContainsSecret(value, secrets) {
     const serialized = JSON.stringify(value);
     return secrets.filter(Boolean).some((secret) => serialized.includes(secret));
 }
+
+export function createAbortCoordinator({ terminate = (child) => child.kill('SIGTERM') } = {}) {
+    const children = new Set();
+    let signal = null;
+    let requestedAt = null;
+
+    const terminateChild = (child) => {
+        try {
+            if (!child.killed) terminate(child);
+        } catch {
+            // A child can converge between the signal and this loop. Its close
+            // event still supplies the bounded completion path to the caller.
+        }
+    };
+
+    return {
+        get requested() {
+            return signal !== null;
+        },
+        request(nextSignal) {
+            if (signal !== null) return false;
+            signal = nextSignal;
+            requestedAt = new Date().toISOString();
+            for (const child of children) terminateChild(child);
+            return true;
+        },
+        track(child) {
+            children.add(child);
+            if (signal !== null) terminateChild(child);
+            return () => children.delete(child);
+        },
+        snapshot() {
+            return signal === null ? null : { signal, requestedAt };
+        },
+        exitCode() {
+            if (signal === 'SIGINT') return 130;
+            if (signal === 'SIGTERM') return 143;
+            return 1;
+        },
+    };
+}
