@@ -8,6 +8,9 @@ const readRepositoryFile = (path: string) =>
 describe('production deploy contract', () => {
   const compose = readRepositoryFile('docker-compose.yml');
   const ciWorkflow = readRepositoryFile('.github/workflows/ci.yml');
+  const audioBoundaryWorkflow = readRepositoryFile(
+    '.github/workflows/audio-boundary.yml',
+  );
   const workflow = readRepositoryFile('.github/workflows/deploy.yml');
   const rootHelper = readRepositoryFile('deploy/hb-deploy-root');
   const runnerSudoers = readRepositoryFile('deploy/beacon-runner.sudoers');
@@ -52,6 +55,14 @@ describe('production deploy contract', () => {
       'cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy',
     );
     expect(workflow).not.toMatch(/runs-on:\s+self-hosted\s*$/m);
+  });
+
+  it('keeps pull-request code off every self-hosted production runner', () => {
+    for (const pullRequestWorkflow of [ciWorkflow, audioBoundaryWorkflow]) {
+      expect(pullRequestWorkflow).toContain('runs-on: ubuntu-latest');
+      expect(pullRequestWorkflow).not.toMatch(/runs-on:.*self-hosted/);
+    }
+    expect(workflow).toContain('runs-on: [self-hosted, mona]');
   });
 
   it('normalizes Docker network templates before the centralized exact membership check', () => {
