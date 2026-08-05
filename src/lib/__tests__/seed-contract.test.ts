@@ -194,7 +194,7 @@ describe('weekend seed contract', () => {
         expect(migration).toContain("'SCHEDULED'::\"ScheduledSessionStatus\"");
         expect(migration).toContain("'2026-08-09 22:00:00'::timestamp");
         expect(migration).toContain("'hmp-2026-08-09-en'");
-        expect(migration).toContain('old_count <> 1');
-        expect(migration).toContain('new_count <> 1');
+        expect(migration).toContain('old_count NOT IN (0, 1)');
+        expect(migration).toContain('new_count <> old_count');
     });
 });

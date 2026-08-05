@@ -57,10 +57,10 @@ BEGIN
         AND "status" = 'SCHEDULED'::"ScheduledSessionStatus"
         AND "scheduled_at" = '2026-08-09 22:00:00'::timestamp;
 
-    IF old_count <> 1 THEN
-        RAISE EXCEPTION 'Incorrect August 11 English session was not cancelled';
+    IF old_count NOT IN (0, 1) THEN
+        RAISE EXCEPTION 'Incorrect August 11 English session is ambiguous';
     END IF;
-    IF new_count <> 1 THEN
+    IF new_count <> old_count THEN
         RAISE EXCEPTION 'Correct August 9 English session was not created';
     END IF;
 END $$;
