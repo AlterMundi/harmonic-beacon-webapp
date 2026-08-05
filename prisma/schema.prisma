@@ -72,6 +72,17 @@ enum CommerceOutboxStatus {
   COMPLETED
 }
 
+enum ContributionVisibility {
+  NAMED
+  ANONYMOUS
+}
+
+enum ContributionState {
+  VISIBLE
+  HIDDEN
+  WITHDRAWN
+}
+
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String    @unique
@@ -119,6 +130,7 @@ model ScheduledSession {
   participants         SessionParticipant[]
   commerceEntitlements CommerceEntitlement[]
   promoInvitations     PromoInvitation[]
+  contributions        SessionContribution[]
 
   @@index([status, scheduledAt])
   @@map("scheduled_sessions")
@@ -335,6 +347,8 @@ model SessionParticipant {
   createdAt            DateTime           @default(now()) @map("created_at")
   updatedAt            DateTime           @updatedAt @map("updated_at")
 
+  contributions SessionContribution[]
+
   @@unique([scheduledSessionId, participantIdentity])
   @@index([scheduledSessionId, raisedAt])
   @@index([scheduledSessionId, publishGrantedAt])
@@ -356,4 +370,30 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// CHAT-01 (#137): a session-scoped question + emotion published by one
+// attendee. The author link is internal correlation for the future personal
+// follow-up; `Restrict` keeps a participant with contributions from being
+// deleted underneath them (retention/withdrawal transitions are CHAT-02's).
+// HIDDEN and WITHDRAWN exist from this migration so moderation never needs a
+// destructive second one, but no transition endpoints ship in #137.
+model SessionContribution {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  scheduledSessionId  String                 @map("scheduled_session_id") @db.Uuid
+  scheduledSession    ScheduledSession       @relation(fields: [scheduledSessionId], references: [id], onDelete: Cascade)
+  authorParticipantId String                 @map("author_participant_id") @db.Uuid
+  authorParticipant   SessionParticipant     @relation(fields: [authorParticipantId], references: [id], onDelete: Restrict)
+  authorDisplayName   String                 @map("author_display_name")
+  body                String
+  visibility          ContributionVisibility
+  state               ContributionState      @default(VISIBLE)
+  idempotencyKey      String                 @map("idempotency_key")
+  requestDigest       String                 @map("request_digest") @db.Char(64)
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  @@unique([scheduledSessionId, authorParticipantId, idempotencyKey])
+  @@index([scheduledSessionId, state, createdAt, id])
+  @@map("session_contributions")
 }
