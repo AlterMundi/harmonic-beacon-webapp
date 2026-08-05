@@ -54,6 +54,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
         );
 
         expect((await parseResponse(response)).status).toBe(status);
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
         expect(createSessionToken).not.toHaveBeenCalled();
     });
 
@@ -61,12 +62,14 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
         resolveRoomPrincipal.mockResolvedValue({ ok: true, principal });
 
         const { GET } = await import('../route');
-        const { status, body } = await parseResponse(await GET(
+        const response = await GET(
             createRequest('/api/scheduled-sessions/event-1/token'),
             mockParams({ id: 'event-1' }),
-        ));
+        );
+        const { status, body } = await parseResponse(response);
 
         expect(status).toBe(200);
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
         expect(createSessionToken).toHaveBeenCalledWith(
             'weekend-stage',
             'event-stable-opaque',
