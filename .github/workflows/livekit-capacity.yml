@@ -63,6 +63,11 @@ jobs:
         with:
           node-version: '22.22'
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.8'
+          cache: false
+
       - name: Validate isolated target and derive the synchronized plan
         id: plan
         env:
@@ -82,6 +87,17 @@ jobs:
             --run-id "$LOAD_RUN_ID" \
             --start-delay-seconds "$LOAD_START_DELAY_SECONDS" \
             --shard-count "$LOAD_SHARD_COUNT"
+
+      - name: Build verified LiveKit load tester once
+        run: scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/livekit-load-cli/lk"
+
+      - name: Share the verified load tester with every shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: livekit-load-cli-${{ github.run_id }}
+          path: ${{ runner.temp }}/livekit-load-cli/lk
+          if-no-files-found: error
+          retention-days: 1
 
   generator:
     needs: prepare
@@ -106,14 +122,18 @@ jobs:
 
       - run: npm ci
 
-      - name: Install pinned LiveKit load tester
+      - name: Install the verified load tester built by prepare
+        uses: actions/download-artifact@v4
+        with:
+          name: livekit-load-cli-${{ github.run_id }}
+          path: ${{ runner.temp }}/livekit-load-cli
+
+      - name: Expose the verified load tester
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/lk.tar.gz" \
-            https://github.com/livekit/livekit-cli/releases/download/v2.16.3/lk_2.16.3_linux_amd64.tar.gz
-          echo "57935ce348a634a1e12769b9eaf7e684cf46920ad65e4b6d88f87a9cd01de2d6  $RUNNER_TEMP/lk.tar.gz" \
-            | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/lk.tar.gz" -C "$RUNNER_TEMP" lk
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          chmod 0755 "$RUNNER_TEMP/livekit-load-cli/lk"
+          test "$("$RUNNER_TEMP/livekit-load-cli/lk" --version)" = \
+            'lk version 2.16.3-hb-vp8.1'
+          echo "$RUNNER_TEMP/livekit-load-cli" >> "$GITHUB_PATH"
 
       - name: Run shard ${{ matrix.shard_index }} of ${{ needs.prepare.outputs.shard_count }}
         env:

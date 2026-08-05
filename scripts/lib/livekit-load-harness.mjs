@@ -8,7 +8,9 @@ export const PRODUCTION_READINESS_URL =
 // No released CLI version has yet been verified against the VP8 depacketizer
 // invariant. Add a version only after its source selects codecs.VP8Packet for
 // VP8 tracks and the focused loss-control test has passed.
-const VERIFIED_VP8_MEASUREMENT_CLI_VERSIONS = new Set();
+const VERIFIED_VP8_MEASUREMENT_CLI_VERSIONS = new Set([
+    '2.16.3-hb-vp8.1',
+]);
 
 export function assertLiveKitCliMeasurementCompatibility({
     stageVideoCodec,

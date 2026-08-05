@@ -155,6 +155,13 @@ describe('LiveKit load harness safety', () => {
         })).toEqual({ codec: 'h264', version: null, verified: true });
     });
 
+    it('admits only the provenance-marked VP8 load tester', () => {
+        expect(assertLiveKitCliMeasurementCompatibility({
+            stageVideoCodec: 'vp8',
+            livekitCliVersion: 'lk version 2.16.3-hb-vp8.1',
+        })).toEqual({ codec: 'vp8', version: '2.16.3-hb-vp8.1', verified: true });
+    });
+
     it('probes only the fixed public production readiness boundary', async () => {
         const calls: Array<{ url: string; init: RequestInit }> = [];
         const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {

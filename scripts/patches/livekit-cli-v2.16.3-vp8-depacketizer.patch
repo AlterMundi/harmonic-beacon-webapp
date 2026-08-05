@@ -1,0 +1,39 @@
+diff --git a/pkg/loadtester/loadtester.go b/pkg/loadtester/loadtester.go
+index f10177d..31f995f 100644
+--- a/pkg/loadtester/loadtester.go
++++ b/pkg/loadtester/loadtester.go
+@@ -17,5 +17,6 @@ package loadtester
+ import (
+ 	"fmt"
++	"strings"
+ 	"sync"
+ 	"time"
+ 
+@@ -386,7 +387,15 @@ func (t *LoadTester) consumeTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteT
+ 	var dpkt rtp.Depacketizer
+ 	isVideo := false
+ 	if pub.Kind() == lksdk.TrackKindVideo {
+-		dpkt = &codecs.H264Packet{}
++		switch {
++		case strings.EqualFold(track.Codec().MimeType, webrtc.MimeTypeVP8):
++			dpkt = &codecs.VP8Packet{}
++		case strings.EqualFold(track.Codec().MimeType, webrtc.MimeTypeH264):
++			dpkt = &codecs.H264Packet{}
++		default:
++			fmt.Println("unsupported video codec in load tester", track.Codec().MimeType)
++			return
++		}
+ 		isVideo = true
+ 	} else {
+ 		dpkt = &codecs.OpusPacket{}
+diff --git a/version.go b/version.go
+index bb27038..0671ee0 100644
+--- a/version.go
++++ b/version.go
+@@ -15,5 +15,5 @@
+ package livekitcli
+ 
+ const (
+-	Version = "2.16.3"
++	Version = "2.16.3-hb-vp8.1"
+ )

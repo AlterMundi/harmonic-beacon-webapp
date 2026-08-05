@@ -11,6 +11,18 @@ const workflow = readFileSync(
     resolve(process.cwd(), '.github/workflows/livekit-capacity.yml'),
     'utf8',
 );
+const e2eWorkflow = readFileSync(
+    resolve(process.cwd(), '.github/workflows/e2e.yml'),
+    'utf8',
+);
+const installer = readFileSync(
+    resolve(process.cwd(), 'scripts/install-livekit-load-cli.sh'),
+    'utf8',
+);
+const livekitPatch = readFileSync(
+    resolve(process.cwd(), 'scripts/patches/livekit-cli-v2.16.3-vp8-depacketizer.patch'),
+    'utf8',
+);
 const profiles = JSON.parse(readFileSync(
     resolve(process.cwd(), 'config/livekit-load-profiles.json'),
     'utf8',
@@ -85,17 +97,22 @@ describe('distributed LiveKit capacity workflow contract', () => {
         }
     });
 
-    it('pins and verifies the official LiveKit CLI artifact whose VP8 metrics fail closed', () => {
-        const pinnedVersion = workflow.match(/releases\/download\/v([^/]+)\//)?.[1];
-        expect(pinnedVersion).toBe('2.16.3');
-        expect(workflow).toContain(
-            '57935ce348a634a1e12769b9eaf7e684cf46920ad65e4b6d88f87a9cd01de2d6',
-        );
-        expect(workflow).toContain('sha256sum -c -');
-        expect(() => assertLiveKitCliMeasurementCompatibility({
+    it('builds one provenance-marked VP8 tester and shares it with every shard', () => {
+        expect(installer).toContain('e90c82ab4467cafd4fabe3affd348f474c312280');
+        expect(installer).toContain('git -C "$SOURCE_ROOT" lfs fsck');
+        expect(installer).toContain('git -C "$SOURCE_ROOT" apply --check "$PATCH_FILE"');
+        expect(livekitPatch).toContain('dpkt = &codecs.VP8Packet{}');
+        expect(livekitPatch).toContain('Version = "2.16.3-hb-vp8.1"');
+        expect(workflow.match(/install-livekit-load-cli\.sh/g)).toHaveLength(1);
+        expect(workflow).toContain('actions/upload-artifact@v4');
+        expect(workflow).toContain('actions/download-artifact@v4');
+        expect(workflow).toContain('livekit-load-cli-${{ github.run_id }}');
+        expect(e2eWorkflow).toContain('install-livekit-load-cli.sh "$RUNNER_TEMP/lk"');
+        expect(workflow).not.toContain('releases/download/v2.16.3/');
+        expect(assertLiveKitCliMeasurementCompatibility({
             stageVideoCodec: 'vp8',
-            livekitCliVersion: `lk version ${pinnedVersion}`,
-        })).toThrow(/not verified for VP8 packet-loss evidence/);
+            livekitCliVersion: 'lk version 2.16.3-hb-vp8.1',
+        })).toMatchObject({ verified: true });
     });
 
     it('offers a bounded full-topology VP8 diagnostic without weakening rehearsal profiles', () => {

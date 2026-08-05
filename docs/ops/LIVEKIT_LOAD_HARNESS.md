@@ -258,8 +258,11 @@ healthy.
 
 ## Tooling
 
-The CI workflow still pins the checksum-verified official `lk` v2.16.3 binary,
-but the harness now refuses to classify VP8 packet-loss evidence from it. The
+The CI and distributed workflows build their load tester once from exact
+official source commit `e90c82ab4467cafd4fabe3affd348f474c312280`, verify its
+Git LFS objects, apply the repository-owned codec-selection patch, and require
+the provenance version `2.16.3-hb-vp8.1`. The harness refuses to classify VP8
+packet-loss evidence from any other build. The unpatched
 [pinned v2.16.3 source](https://github.com/livekit/livekit-cli/blob/e90c82ab4467cafd4fabe3affd348f474c312280/pkg/loadtester/loadtester.go#L377-L399)
 constructs an H264 depacketizer for every video track, including VP8; under an
 identical synthetic VP8 sequence gap this counted 18 dropped frames versus 8
