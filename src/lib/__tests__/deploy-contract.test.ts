@@ -46,6 +46,15 @@ describe('production deploy contract', () => {
     expect(workflow).not.toMatch(/runs-on:\s+self-hosted\s*$/m);
   });
 
+  it('normalizes Docker network templates before exact membership checks', () => {
+    expect(
+      workflow.match(/sed '\/\^\[\[:space:\]\]\*\$\/d'/g),
+    ).toHaveLength(2);
+    expect(
+      workflow.match(/Unexpected pmp_beacon_internal members:/g),
+    ).toHaveLength(2);
+  });
+
   it('preserves and restores app and tapestry independently', () => {
     expect(workflow).toContain(
       'harmonic-beacon/app:rollback-${GITHUB_RUN_ID}',
