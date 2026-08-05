@@ -35,6 +35,9 @@ vi.mock('../TapestryArrange', () => ({
 vi.mock('../AdmissionConsole', () => ({
     default: () => <div data-testid="admission-panel">Admission</div>,
 }));
+vi.mock('../SessionContributionsStaff', () => ({
+    default: () => <div data-testid="contributions-panel">Contributions</div>,
+}));
 vi.mock('@/app/ops/health/OpsHealthClient', () => ({
     default: ({
         onLevelChange,
@@ -67,6 +70,7 @@ const props = {
     spotlightCopy: messages.en.ops.spotlight,
     healthCopy: messages.en.ops.healthPanel,
     admissionCopy: messages.en.ops.admissionPanel,
+    contributionsCopy: messages.en.ops.contributionsPanel,
     tapestryCopy: messages.en.ops.tapestryArrange,
     opsTapestryCopy: messages.en.ops.opsTapestry,
     staffRoleLabels: messages.en.staffRoles,
@@ -85,9 +89,9 @@ describe('ConductorCockpit', () => {
         render(<ConductorCockpit {...props} />);
         const room = screen.getByTestId('persistent-room');
         expect(room).toHaveAttribute('src', '/session/event-1?surface=cockpit');
-        expect(document.querySelectorAll('[data-signal]')).toHaveLength(5);
+        expect(document.querySelectorAll('[data-signal]')).toHaveLength(6);
 
-        for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
+        for (const signal of ['door', 'hands', 'stage', 'primary', 'contributions', 'health']) {
             const trigger = document.querySelector<HTMLButtonElement>(`[data-signal="${signal}"]`);
             expect(trigger).not.toBeNull();
             if (!trigger) throw new Error(`Missing ${signal} signal`);

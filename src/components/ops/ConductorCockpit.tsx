@@ -10,12 +10,13 @@ import type { HealthLevel } from '@/lib/ops-health';
 
 import AdmissionConsole from './AdmissionConsole';
 import OpsTapestry from './OpsTapestry';
+import SessionContributionsStaff from './SessionContributionsStaff';
 import SessionLifecycleControl from './SessionLifecycleControl';
 import SpotlightConsole, { type SpotlightSummary } from './SpotlightConsole';
 import TapestryArrange from './TapestryArrange';
 
 type EventStatus = 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
-type Drawer = 'doors' | 'scene' | 'tapestry' | 'admission' | 'health';
+type Drawer = 'doors' | 'scene' | 'tapestry' | 'admission' | 'health' | 'contributions';
 
 type AdmissionEvent = {
     id: string;
@@ -40,6 +41,7 @@ type Props = {
     spotlightCopy: Messages['ops']['spotlight'];
     healthCopy: Messages['ops']['healthPanel'];
     admissionCopy: Messages['ops']['admissionPanel'];
+    contributionsCopy: Messages['ops']['contributionsPanel'];
     tapestryCopy: Messages['ops']['tapestryArrange'];
     opsTapestryCopy: Messages['ops']['opsTapestry'];
     staffRoleLabels: Messages['staffRoles'];
@@ -70,6 +72,7 @@ export default function ConductorCockpit({
     spotlightCopy,
     healthCopy,
     admissionCopy,
+    contributionsCopy,
     tapestryCopy,
     opsTapestryCopy,
     staffRoleLabels,
@@ -156,13 +159,15 @@ export default function ConductorCockpit({
             ? copy.tapestryPanel
             : drawer === 'admission'
               ? copy.admissionPanel
-              : copy.healthPanel;
+              : drawer === 'contributions'
+                ? copy.contributionsPanel
+                : copy.healthPanel;
 
     return (
         <div className="space-y-4" data-testid="conductor-cockpit">
             <nav
                 aria-label={copy.tools}
-                className="sticky top-0 z-30 grid grid-cols-3 gap-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--forest)]/95 p-1 shadow-xl backdrop-blur sm:gap-2 sm:p-2 md:grid-cols-5"
+                className="sticky top-0 z-30 grid grid-cols-3 gap-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--forest)]/95 p-1 shadow-xl backdrop-blur sm:gap-2 sm:p-2 md:grid-cols-6"
             >
                 <button
                     type="button"
@@ -219,6 +224,14 @@ export default function ConductorCockpit({
                     <strong className="text-sm text-[var(--paper)]">
                         {primaryAction}
                     </strong>
+                </button>
+                <button
+                    type="button"
+                    className="operational-panel min-h-16 text-left"
+                    onClick={(event) => openDrawer('contributions', event.currentTarget)}
+                    data-signal="contributions"
+                >
+                    <span className="block text-xs text-[var(--text-secondary)]">{copy.contributionsPanel}</span>
                 </button>
                 <button
                     type="button"
@@ -334,6 +347,14 @@ export default function ConductorCockpit({
                             events={admissionEvents}
                             locale={locale}
                             copy={admissionCopy}
+                        />
+                    </div>
+                    <div hidden={drawer !== 'contributions'}>
+                        <SessionContributionsStaff
+                            sessionId={session.id}
+                            copy={contributionsCopy}
+                            active={drawer === 'contributions'}
+                            locale={locale}
                         />
                     </div>
                     <div hidden={drawer !== 'health'}>
