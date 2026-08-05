@@ -118,14 +118,6 @@ jobs:
           CLEAN_URL="${E2E_DATABASE_URL/beacon_test/beacon_migration_check}"
           DATABASE_URL="$CLEAN_URL" npx prisma migrate deploy
 
-      # TEMPORARY for PR #187: regenerate the attendee visual baselines on the
-      # reference environment (the contributions panel legitimately changed
-      # the room layout) BEFORE the gates, so this same run validates against
-      # the new baselines. Reverted before merge once the PNGs are committed.
-      - name: TEMP regenerate visual baselines (#187)
-        if: github.head_ref == 'feat/chat-ui-01-session-contributions'
-        run: npx playwright test e2e/tests/visual.spec.ts --update-snapshots
-
       - name: Run Chromium and Android gates
         run: >-
           npx playwright test
@@ -135,13 +127,6 @@ jobs:
           --project=w390
           --project=w320
           --project=android-chrome
-
-      - name: TEMP upload regenerated baselines (#187)
-        if: always() && github.head_ref == 'feat/chat-ui-01-session-contributions'
-        uses: actions/upload-artifact@v4
-        with:
-          name: regenerated-visual-baselines
-          path: e2e/tests/visual.spec.ts-snapshots/
 
       - name: Install Firefox after Chromium screenshot gates
         run: npx playwright install --with-deps firefox

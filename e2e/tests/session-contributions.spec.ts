@@ -1,7 +1,7 @@
 import { expect, stackTest } from '../fixtures/stack';
 import { loginAttendeeWithTicket } from '../fixtures/auth';
 import { SESSION_ES, TICKETS } from '../fixtures/test-data';
-import { requireDirectDb, withSessionStatus } from '../fixtures/db';
+import { requireDirectDb, withoutContributions, withSessionStatus } from '../fixtures/db';
 import {
     expectMediaContinuity,
     installMediaProbe,
@@ -74,7 +74,8 @@ stackTest.describe('session contributions chat (#141)', () => {
     }, testInfo) => {
         stackTest.slow();
         const db = requireDirectDb(testInfo);
-        await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+        await withoutContributions(db, SESSION_ES.id, () =>
+            withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
             const a = await joinAttendee(browser, ATTENDEE_A);
             const b = await joinAttendee(browser, ATTENDEE_B);
             try {
@@ -102,14 +103,16 @@ stackTest.describe('session contributions chat (#141)', () => {
                 await a.context.close();
                 await b.context.close();
             }
-        });
+            }),
+        );
     });
 
     stackTest('a failed send keeps the draft and the retry never duplicates the message', async ({
         browser,
     }, testInfo) => {
         const db = requireDirectDb(testInfo);
-        await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+        await withoutContributions(db, SESSION_ES.id, () =>
+            withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
             const a = await joinAttendee(browser, ATTENDEE_A);
             try {
                 // The first POST fails at the network edge; everything else flows.
@@ -139,7 +142,8 @@ stackTest.describe('session contributions chat (#141)', () => {
             } finally {
                 await a.context.close();
             }
-        });
+            }),
+        );
     });
 
     stackTest('using the chat panel never disturbs the audio/scene pipeline', async ({
@@ -151,7 +155,8 @@ stackTest.describe('session contributions chat (#141)', () => {
         );
         stackTest.slow();
         const db = requireDirectDb(testInfo);
-        await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+        await withoutContributions(db, SESSION_ES.id, () =>
+            withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
             const context = await browser.newContext();
             const page = await context.newPage();
             try {
@@ -197,6 +202,7 @@ stackTest.describe('session contributions chat (#141)', () => {
             } finally {
                 await context.close();
             }
-        });
+            }),
+        );
     });
 });
