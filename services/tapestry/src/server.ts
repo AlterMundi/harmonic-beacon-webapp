@@ -174,23 +174,25 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
       sendJson(res, 401, { error: "unauthorized" });
       return;
     }
-    const jpeg = await compositor.composite(sessionId);
-    if (!jpeg) {
+    // One immutable snapshot per response: bytes, revision and layout all
+    // belong to the same completed build, even if a newer build finishes
+    // while this response is in flight.
+    const snapshot = await compositor.composite(sessionId);
+    if (!snapshot) {
       sendJson(res, 404, { error: "unknown_session" });
       return;
     }
-    const revision = compositor.builtRevisionOf(sessionId);
     res.writeHead(200, {
       "content-type": "image/jpeg",
-      "content-length": jpeg.length,
+      "content-length": snapshot.bytes.length,
       // Downstream caching policy (2s shared TTL, staff-only variant) is set
       // by the Next.js proxy; the internal service itself asks not to be cached.
       "cache-control": "no-store",
       // Names the exact build these bytes came from; overlay consumers must
       // only draw over a composite whose revision matches their layout.
-      ...(revision === null ? {} : { "x-tapestry-revision": String(revision) }),
+      "x-tapestry-revision": String(snapshot.revision),
     });
-    res.end(jpeg);
+    res.end(snapshot.bytes);
   }
 
   async function handleLayout(

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRequest, mockParams } from '@/__tests__/helpers';
 
 const mocks = vi.hoisted(() => ({
-    resolveRoomPrincipal: vi.fn(),
+    resolveRoomViewer: vi.fn(),
     findMany: vi.fn(),
     listParticipants: vi.fn(),
     tapestryInternalUrl: vi.fn(),
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/room-entitlement', () => ({
-    resolveRoomPrincipal: mocks.resolveRoomPrincipal,
+    resolveRoomViewer: mocks.resolveRoomViewer,
 }));
 vi.mock('@/lib/db', () => ({
     prisma: {
@@ -43,7 +43,7 @@ const LAYOUT = {
 };
 
 function entitled() {
-    mocks.resolveRoomPrincipal.mockResolvedValue({
+    mocks.resolveRoomViewer.mockResolvedValue({
         ok: true,
         principal: {
             session: { id: SESSION_ID, roomName: 'event-stage' },
@@ -118,7 +118,7 @@ describe('GET /api/scheduled-sessions/[id]/tapestry/hands', () => {
     });
 
     it('propagates the entitlement rejection for outsiders', async () => {
-        mocks.resolveRoomPrincipal.mockResolvedValue({
+        mocks.resolveRoomViewer.mockResolvedValue({
             ok: false,
             status: 403,
             error: 'Not authorized',

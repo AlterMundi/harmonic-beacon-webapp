@@ -8,6 +8,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { TapestryCompositor } from "../src/composite.js";
+import { TapestryStore } from "../src/store.js";
+
 import {
   SESSION_A,
   authHeaders,
@@ -17,6 +20,7 @@ import {
   sleep,
   startService,
   testConfig,
+  tileColor,
 } from "./helpers.js";
 
 interface LayoutBody {
@@ -134,4 +138,37 @@ test("an empty build still publishes a truthful 1x1 layout with no cells", async
   } finally {
     await service.close();
   }
+});
+
+test("an earlier snapshot keeps its own bytes, revision and layout across a later build", async () => {
+  let now = 1_000;
+  const config = testConfig({ compositeMinIntervalMs: 1_000 });
+  const store = new TapestryStore(config.sessionIds, config.maxParticipantsPerSession);
+  const compositor = new TapestryCompositor(config, store, () => now);
+
+  store.ingest(SESSION_A, "p1", await makeJpeg(255, 0, 0, config.tileSizePx), now);
+  compositor.markDirty(SESSION_A);
+  const snapshotA = await compositor.composite(SESSION_A);
+  assert.ok(snapshotA);
+  const revisionA = snapshotA.revision;
+  const cellsA = snapshotA.layout.cells.map((cell) => cell.id);
+
+  // Content arrives and build B completes while A's response is conceptually
+  // still being written. Snapshot A must stay wholly A.
+  now += config.compositeMinIntervalMs;
+  store.ingest(SESSION_A, "p2", await makeJpeg(0, 0, 255, config.tileSizePx), now);
+  compositor.markDirty(SESSION_A);
+  const snapshotB = await compositor.composite(SESSION_A);
+  assert.ok(snapshotB);
+  assert.notEqual(snapshotB.revision, revisionA);
+
+  assert.equal(snapshotA.revision, revisionA, "A keeps its own revision");
+  assert.deepEqual(snapshotA.layout.cells.map((cell) => cell.id), cellsA, "A keeps its own layout");
+  const colorA = await tileColor(snapshotA.bytes, 0, 0);
+  assert.ok(colorA.r > 150 && colorA.b < 80, "A keeps its own bytes (red tile only)");
+  assert.equal(snapshotA.layout.cells.length, 1, "A predates the second participant");
+
+  const colorB = await tileColor(snapshotB.bytes, 100, 0);
+  assert.ok(colorB.b > 150 && colorB.r < 80, "B carries the new content");
+  assert.equal(snapshotB.layout.cells.length, 2);
 });

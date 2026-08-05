@@ -129,9 +129,9 @@ test("a frame ingested during an in-flight build remains dirty for the next boun
 
   const [first, concurrent] = await Promise.all([firstBuild, concurrentCaller]);
   assert.ok(first);
-  assert.strictEqual(concurrent, first, "concurrent callers share one completed buffer");
+  assert.strictEqual(concurrent, first, "concurrent callers share one completed snapshot");
   assert.equal(compositor.compositesBuiltCount(), 1);
-  const firstColor = await tileColor(first, 0, 0);
+  const firstColor = await tileColor(first.bytes, 0, 0);
   assert.ok(firstColor.r > 150 && firstColor.b < 80, "the in-flight snapshot stays coherent");
 
   const rateLimited = await compositor.composite(SESSION_A);
@@ -142,7 +142,7 @@ test("a frame ingested during an in-flight build remains dirty for the next boun
   const rebuilt = await compositor.composite(SESSION_A);
   assert.ok(rebuilt);
   assert.equal(compositor.compositesBuiltCount(), 2, "the intervening ingest triggers a later build");
-  const rebuiltColor = await tileColor(rebuilt, 0, 0);
+  const rebuiltColor = await tileColor(rebuilt.bytes, 0, 0);
   assert.ok(rebuiltColor.b > 150 && rebuiltColor.r < 80, "the newest frame becomes visible");
 });
 

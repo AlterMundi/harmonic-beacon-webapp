@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
 import { getRoomService } from '@/lib/livekit-server';
-import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import { resolveRoomViewer } from '@/lib/room-entitlement';
 import { tapestryInternalUrl, tapestryParticipantId } from '@/lib/tapestry';
 
 export const dynamic = 'force-dynamic';
 
 const LAYOUT_LOOKUP_TIMEOUT_MS = 750;
+/** Hard bound on the historical hand query; the live filter narrows it further. */
+const MAX_HAND_CANDIDATES = 150;
 
 /**
  * Public raised-hand names for the attendee tapestry (TAP-02, issue #129).
@@ -26,10 +28,12 @@ const LAYOUT_LOOKUP_TIMEOUT_MS = 750;
  * overlay when this layout's `revision` matches the composite's
  * `x-tapestry-revision`, so a name can never land on the wrong person.
  *
- * The gate is the same `resolveRoomPrincipal` entitlement check the room
- * token route uses, so only this event's attendees (and its operators) can
- * read the list. When LiveKit is unreachable the route names nobody rather
- * than listing people whose presence it cannot confirm.
+ * The gate is a read-only room viewer: it validates the web session,
+ * entitlement and event correspondence exactly like the token route, but
+ * performs zero writes — no participant upsert, no `leftAt` clearing, no
+ * presence revival. A polling GET must never mutate state. When LiveKit is
+ * unreachable the route names nobody rather than listing people whose
+ * presence it cannot confirm.
  */
 
 type PublicHand = {
@@ -85,7 +89,7 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> },
 ) {
     const { id } = await params;
-    const entitlement = await resolveRoomPrincipal(request, id);
+    const entitlement = await resolveRoomViewer(request, id);
     if (!entitlement.ok) {
         return NextResponse.json(
             { error: entitlement.error },
@@ -100,6 +104,7 @@ export async function GET(
                 raisedAt: { not: null },
             },
             orderBy: { raisedAt: 'asc' },
+            take: MAX_HAND_CANDIDATES,
             select: {
                 participantIdentity: true,
                 publishGrantedAt: true,
