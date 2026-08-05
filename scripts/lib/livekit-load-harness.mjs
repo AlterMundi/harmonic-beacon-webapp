@@ -60,6 +60,43 @@ export function validateProfile(profile) {
     return profile;
 }
 
+export function validateShard({ shardIndex, shardCount }, profile) {
+    if (!Number.isInteger(shardCount) || shardCount < 1) {
+        throw new Error('shardCount must be a positive integer');
+    }
+    if (!Number.isInteger(shardIndex) || shardIndex < 0 || shardIndex >= shardCount) {
+        throw new Error('shardIndex must be an integer between zero and shardCount - 1');
+    }
+    if (shardCount > profile.attendees) {
+        throw new Error('shardCount cannot exceed attendee count');
+    }
+    if (shardCount > profile.rampPerSecond) {
+        throw new Error('shardCount cannot exceed the global ramp rate');
+    }
+    return { shardIndex, shardCount };
+}
+
+export function partitionCount(total, shardIndex, shardCount) {
+    const base = Math.floor(total / shardCount);
+    return base + (shardIndex < total % shardCount ? 1 : 0);
+}
+
+export function connectionRampSeconds(connections, rampPerSecond) {
+    if (connections <= 1) return 0;
+    return Math.ceil((connections - 1) / Math.min(rampPerSecond, 10));
+}
+
+export function normalizeScheduledStart(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const text = String(value);
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(text)) {
+        throw new Error('startAt must be an explicit UTC timestamp ending in Z');
+    }
+    const milliseconds = Date.parse(text);
+    if (!Number.isFinite(milliseconds)) throw new Error('startAt is not a valid timestamp');
+    return new Date(milliseconds).toISOString();
+}
+
 export function roomNames(runId) {
     const safeRunId = sanitizeRunId(runId);
     return {
@@ -125,23 +162,88 @@ function commandFor({
     return args;
 }
 
-export function buildPlan({ profileName, profile, runId, url, allowRemote = false, confirmation = '' }) {
+export function buildPlan({
+    profileName,
+    profile,
+    runId,
+    url,
+    allowRemote = false,
+    confirmation = '',
+    shardIndex = 0,
+    shardCount = 1,
+    startAt = /** @type {string | null | undefined} */ (undefined),
+}) {
     validateProfile(profile);
+    validateShard({ shardIndex, shardCount }, profile);
+    const scheduledStartAt = normalizeScheduledStart(startAt);
+    if (shardCount > 1 && scheduledStartAt === null) {
+        throw new Error('sharded runs require a shared startAt timestamp');
+    }
     const rooms = roomNames(`${sanitizeRunId(runId)}-${profile.eventLanguage}`);
     const safety = assertSafeTarget({ url, rooms, allowRemote, confirmation });
+    const localAttendees = partitionCount(profile.attendees, shardIndex, shardCount);
+    const localStagePublishers = partitionCount(
+        profile.stagePublishers,
+        shardIndex,
+        shardCount,
+    );
+    const localBeaconPublishers = partitionCount(
+        profile.beaconPublishers,
+        shardIndex,
+        shardCount,
+    );
+    const localRampPerSecond = partitionCount(
+        profile.rampPerSecond,
+        shardIndex,
+        shardCount,
+    );
+    const shardIdentity = shardCount === 1 ? '' : `-s${shardIndex}`;
+    const phaseGapSeconds = shardCount === 1
+        ? profile.interWaveSeconds
+        : Math.max(profile.interWaveSeconds, 15);
     const phases = [
-        { name: 'ramp', durationSeconds: profile.rampDurationSeconds, rampPerSecond: profile.rampPerSecond },
-        { name: 'soak', durationSeconds: profile.soakDurationSeconds, rampPerSecond: profile.rampPerSecond },
+        {
+            name: 'ramp',
+            durationSeconds: profile.rampDurationSeconds,
+            stageRampPerSecond: localRampPerSecond,
+            beaconRampPerSecond: localRampPerSecond,
+        },
+        {
+            name: 'soak',
+            durationSeconds: profile.soakDurationSeconds,
+            stageRampPerSecond: localRampPerSecond,
+            beaconRampPerSecond: localRampPerSecond,
+        },
     ];
     for (let wave = 1; wave <= profile.reconnectWaves; wave += 1) {
         phases.push({
             name: `reconnect-${wave}`,
             durationSeconds: profile.reconnectDurationSeconds,
-            rampPerSecond: profile.reconnectMode === 'simultaneous'
-                ? profile.attendees + profile.stagePublishers
-                : profile.rampPerSecond,
+            stageRampPerSecond: profile.reconnectMode === 'simultaneous'
+                ? localAttendees + localStagePublishers
+                : localRampPerSecond,
+            beaconRampPerSecond: profile.reconnectMode === 'simultaneous'
+                ? localAttendees + localBeaconPublishers
+                : localRampPerSecond,
         });
     }
+    let scheduledOffsetSeconds = 0;
+    const scheduledPhases = phases.map((phase, index) => {
+        const expectedConnectSeconds = Math.max(
+            connectionRampSeconds(
+                localAttendees + localStagePublishers,
+                phase.stageRampPerSecond,
+            ),
+            connectionRampSeconds(
+                localAttendees + localBeaconPublishers,
+                phase.beaconRampPerSecond,
+            ),
+        );
+        const scheduled = { ...phase, scheduledOffsetSeconds, expectedConnectSeconds };
+        scheduledOffsetSeconds += expectedConnectSeconds + phase.durationSeconds;
+        if (index < phases.length - 1) scheduledOffsetSeconds += phaseGapSeconds;
+        return scheduled;
+    });
     return {
         schemaVersion: 1,
         profileName,
@@ -150,34 +252,52 @@ export function buildPlan({ profileName, profile, runId, url, allowRemote = fals
         urlHost: safety.host,
         target: safety.target,
         rooms,
-        phases: phases.map((phase) => ({
+        scheduledStartAt,
+        shard: {
+            index: shardIndex,
+            count: shardCount,
+            localAttendees,
+            localStagePublishers,
+            localBeaconPublishers,
+            localRampPerSecond,
+            phaseGapSeconds,
+        },
+        phases: scheduledPhases.map((phase) => ({
             ...phase,
             stage: {
                 roomName: rooms.stage,
-                requestedConnections: profile.attendees + profile.stagePublishers,
+                requestedConnections: localAttendees + localStagePublishers,
+                expectedGlobalConnections: profile.attendees + profile.stagePublishers,
+                localPublishers: localStagePublishers,
+                expectedGlobalPublishers: profile.stagePublishers,
+                expectedSubscriberTracks: localAttendees * profile.stagePublishers,
                 args: commandFor({
                     room: rooms.stage,
-                    identityPrefix: `hbload-${sanitizeRunId(runId)}-stage`,
+                    identityPrefix: `hbload-${sanitizeRunId(runId)}${shardIdentity}-stage`,
                     durationSeconds: phase.durationSeconds,
-                    publishers: profile.stagePublishers,
+                    publishers: localStagePublishers,
                     publisherKind: 'video',
-                    attendees: profile.attendees,
-                    rampPerSecond: phase.rampPerSecond,
+                    attendees: localAttendees,
+                    rampPerSecond: phase.stageRampPerSecond,
                     videoCodec: profile.stageVideoCodec,
                     layout: profile.stageLayout,
                 }),
             },
             beacon: {
                 roomName: rooms.beacon,
-                requestedConnections: profile.attendees + profile.beaconPublishers,
+                requestedConnections: localAttendees + localBeaconPublishers,
+                expectedGlobalConnections: profile.attendees + profile.beaconPublishers,
+                localPublishers: localBeaconPublishers,
+                expectedGlobalPublishers: profile.beaconPublishers,
+                expectedSubscriberTracks: localAttendees * profile.beaconPublishers,
                 args: commandFor({
                     room: rooms.beacon,
-                    identityPrefix: `hbload-${sanitizeRunId(runId)}-beacon`,
+                    identityPrefix: `hbload-${sanitizeRunId(runId)}${shardIdentity}-beacon`,
                     durationSeconds: phase.durationSeconds,
-                    publishers: profile.beaconPublishers,
+                    publishers: localBeaconPublishers,
                     publisherKind: 'audio',
-                    attendees: profile.attendees,
-                    rampPerSecond: phase.rampPerSecond,
+                    attendees: localAttendees,
+                    rampPerSecond: phase.beaconRampPerSecond,
                 }),
             },
         })),
@@ -221,6 +341,274 @@ export function commandFingerprint(args) {
 export function manifestContainsSecret(value, secrets) {
     const serialized = JSON.stringify(value);
     return secrets.filter(Boolean).some((secret) => serialized.includes(secret));
+}
+
+function sameJson(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function assertAggregate(condition, message) {
+    if (!condition) throw new Error(`shard aggregate refused: ${message}`);
+}
+
+function phasePassedIndependently(phase, plannedPhase, profile) {
+    const streams = ['stage', 'beacon'];
+    if (
+        !phase.passed ||
+        phase.operatorAborted ||
+        !phase.synchronization?.passed ||
+        !phase.cleanup?.passed
+    ) return false;
+    if (phase.observed?.apiErrors !== 0 || phase.observed?.successfulSamples < 1) return false;
+    const scheduledFor = phase.synchronization.scheduledFor;
+    for (const stream of streams) {
+        const result = phase[stream];
+        const observed = phase.observed?.[stream];
+        const planned = plannedPhase[stream];
+        if (
+            result?.exitCode !== 0 ||
+            (scheduledFor !== null && (
+                !Number.isFinite(Date.parse(result?.startedAt)) ||
+                Math.abs(Date.parse(result.startedAt) - Date.parse(scheduledFor)) > 5_000
+            )) ||
+            !result.summary?.parsed ||
+            result.summary.tracksReceived !== planned.expectedSubscriberTracks ||
+            result.summary.droppedPercent > profile.maxDroppedPercent ||
+            (result.summary.errorCount !== null && result.summary.errorCount !== 0) ||
+            observed?.expectedConnections !== planned.expectedGlobalConnections ||
+            observed?.peakConnections !== planned.expectedGlobalConnections ||
+            observed?.joinObserved !== planned.expectedGlobalConnections ||
+            observed?.expectedPublishers !== planned.expectedGlobalPublishers ||
+            observed?.peakPublishers !== planned.expectedGlobalPublishers
+        ) return false;
+    }
+    return true;
+}
+
+function shardPlanIsDeterministic(plan, index, shardCount) {
+    const profile = plan.profile;
+    const localAttendees = partitionCount(profile.attendees, index, shardCount);
+    const localStagePublishers = partitionCount(profile.stagePublishers, index, shardCount);
+    const localBeaconPublishers = partitionCount(profile.beaconPublishers, index, shardCount);
+    const localRampPerSecond = partitionCount(profile.rampPerSecond, index, shardCount);
+    const expectedGap = Math.max(profile.interWaveSeconds, 15);
+    if (
+        plan.shard.localAttendees !== localAttendees ||
+        plan.shard.localStagePublishers !== localStagePublishers ||
+        plan.shard.localBeaconPublishers !== localBeaconPublishers ||
+        plan.shard.localRampPerSecond !== localRampPerSecond ||
+        plan.shard.phaseGapSeconds !== expectedGap
+    ) return false;
+
+    let offset = 0;
+    return plan.phases.every((phase, phaseIndex) => {
+        const stageRamp = phaseIndex >= 2 && profile.reconnectMode === 'simultaneous'
+            ? localAttendees + localStagePublishers
+            : localRampPerSecond;
+        const beaconRamp = phaseIndex >= 2 && profile.reconnectMode === 'simultaneous'
+            ? localAttendees + localBeaconPublishers
+            : localRampPerSecond;
+        const expectedConnectSeconds = Math.max(
+            connectionRampSeconds(localAttendees + localStagePublishers, stageRamp),
+            connectionRampSeconds(localAttendees + localBeaconPublishers, beaconRamp),
+        );
+        const valid =
+            phase.scheduledOffsetSeconds === offset &&
+            phase.expectedConnectSeconds === expectedConnectSeconds &&
+            phase.stageRampPerSecond === stageRamp &&
+            phase.beaconRampPerSecond === beaconRamp &&
+            phase.stage.requestedConnections === localAttendees + localStagePublishers &&
+            phase.stage.expectedGlobalConnections === profile.attendees + profile.stagePublishers &&
+            phase.stage.localPublishers === localStagePublishers &&
+            phase.stage.expectedGlobalPublishers === profile.stagePublishers &&
+            phase.stage.expectedSubscriberTracks === localAttendees * profile.stagePublishers &&
+            phase.beacon.requestedConnections === localAttendees + localBeaconPublishers &&
+            phase.beacon.expectedGlobalConnections === profile.attendees + profile.beaconPublishers &&
+            phase.beacon.localPublishers === localBeaconPublishers &&
+            phase.beacon.expectedGlobalPublishers === profile.beaconPublishers &&
+            phase.beacon.expectedSubscriberTracks === localAttendees * profile.beaconPublishers;
+        offset += expectedConnectSeconds + phase.durationSeconds;
+        if (phaseIndex < plan.phases.length - 1) offset += expectedGap;
+        return valid;
+    });
+}
+
+export function aggregateShardManifests(entries) {
+    assertAggregate(Array.isArray(entries) && entries.length >= 2, 'at least two shards are required');
+    const first = entries[0]?.manifest;
+    const shardCount = first?.plan?.shard?.count;
+    assertAggregate(Number.isInteger(shardCount) && shardCount >= 2, 'invalid shard count');
+    assertAggregate(entries.length === shardCount, 'manifest count does not match shard count');
+
+    const expectedCore = {
+        schemaVersion: first.schemaVersion,
+        kind: first.kind,
+        harnessSha: first.harnessSha,
+        livekitCliVersion: first.livekitCliVersion,
+        profileName: first.plan.profileName,
+        profile: first.plan.profile,
+        runId: first.plan.runId,
+        rooms: first.plan.rooms,
+        scheduledStartAt: first.plan.scheduledStartAt,
+        target: first.plan.target,
+        urlHost: first.plan.urlHost,
+        phaseNames: first.plan.phases.map((phase) => phase.name),
+        phaseOffsets: first.plan.phases.map((phase) => phase.scheduledOffsetSeconds),
+    };
+    assertAggregate(first.schemaVersion === 1, 'unexpected manifest schema');
+    assertAggregate(first.kind === 'harmonic-beacon-livekit-load', 'unexpected manifest kind');
+    assertAggregate(/^[a-f0-9]{40}$/.test(first.harnessSha), 'invalid harness SHA');
+    assertAggregate(first.plan.scheduledStartAt !== null, 'shared start timestamp is missing');
+    try {
+        validateProfile(first.plan.profile);
+        validateShard({ shardIndex: first.plan.shard.index, shardCount }, first.plan.profile);
+    } catch {
+        assertAggregate(false, 'invalid profile or shard contract');
+    }
+
+    const indices = new Set();
+    const hosts = new Set();
+    const sourceHashes = new Set();
+    let attendeeTotal = 0;
+    let stagePublisherTotal = 0;
+    let beaconPublisherTotal = 0;
+    const sources = [];
+
+    for (const entry of entries) {
+        const manifest = entry.manifest;
+        const core = {
+            schemaVersion: manifest.schemaVersion,
+            kind: manifest.kind,
+            harnessSha: manifest.harnessSha,
+            livekitCliVersion: manifest.livekitCliVersion,
+            profileName: manifest.plan?.profileName,
+            profile: manifest.plan?.profile,
+            runId: manifest.plan?.runId,
+            rooms: manifest.plan?.rooms,
+            scheduledStartAt: manifest.plan?.scheduledStartAt,
+            target: manifest.plan?.target,
+            urlHost: manifest.plan?.urlHost,
+            phaseNames: manifest.plan?.phases?.map((phase) => phase.name),
+            phaseOffsets: manifest.plan?.phases?.map((phase) => phase.scheduledOffsetSeconds),
+        };
+        assertAggregate(sameJson(core, expectedCore), 'shards do not describe the same run');
+        assertAggregate(manifest.status === 'PASS', 'every shard must have status PASS');
+        assertAggregate(manifest.harnessDirty === false, 'dirty harness evidence is not admissible');
+        assertAggregate(manifest.plan.shard.count === shardCount, 'inconsistent shard count');
+        const index = manifest.plan.shard.index;
+        assertAggregate(Number.isInteger(index) && index >= 0 && index < shardCount, 'invalid shard index');
+        assertAggregate(!indices.has(index), 'duplicate shard index');
+        indices.add(index);
+        assertAggregate(
+            typeof entry.sha256 === 'string' && /^[a-f0-9]{64}$/.test(entry.sha256),
+            'invalid source manifest hash',
+        );
+        assertAggregate(!sourceHashes.has(entry.sha256), 'duplicate source manifest');
+        sourceHashes.add(entry.sha256);
+        assertAggregate(
+            typeof manifest.generatorHostHash === 'string' &&
+            /^[a-f0-9]{12}$/.test(manifest.generatorHostHash),
+            'invalid generator host hash',
+        );
+        assertAggregate(!hosts.has(manifest.generatorHostHash), 'shards must run on distinct hosts');
+        hosts.add(manifest.generatorHostHash);
+        assertAggregate(
+            shardPlanIsDeterministic(manifest.plan, index, shardCount),
+            `shard ${index} is not the deterministic partition`,
+        );
+        assertAggregate(
+            manifest.phases.length === manifest.plan.phases.length &&
+            manifest.phases.every((phase, phaseIndex) => phasePassedIndependently(
+                phase,
+                manifest.plan.phases[phaseIndex],
+                manifest.plan.profile,
+            )),
+            `shard ${index} contains an unproven phase`,
+        );
+        attendeeTotal += manifest.plan.shard.localAttendees;
+        stagePublisherTotal += manifest.plan.shard.localStagePublishers;
+        beaconPublisherTotal += manifest.plan.shard.localBeaconPublishers;
+        sources.push({
+            index,
+            sha256: entry.sha256,
+            generatorHostHash: manifest.generatorHostHash,
+            status: manifest.status,
+        });
+    }
+
+    assertAggregate(indices.size === shardCount, 'not every shard index is present');
+    assertAggregate(attendeeTotal === first.plan.profile.attendees, 'attendee partition is incomplete');
+    assertAggregate(
+        stagePublisherTotal === first.plan.profile.stagePublishers,
+        'stage publisher partition is incomplete',
+    );
+    assertAggregate(
+        beaconPublisherTotal === first.plan.profile.beaconPublishers,
+        'Beacon publisher partition is incomplete',
+    );
+
+    const phaseEvidence = first.plan.phases.map((plannedPhase, phaseIndex) => {
+        const phases = entries.map((entry) => entry.manifest.phases[phaseIndex]);
+        const startTimes = phases.flatMap((phase) => [
+            Date.parse(phase.stage.startedAt),
+            Date.parse(phase.beacon.startedAt),
+        ]);
+        const streamEvidence = (stream) => ({
+            expectedConnections: plannedPhase[stream].expectedGlobalConnections,
+            peakConnections: Math.max(...phases.map(
+                (phase) => phase.observed[stream].peakConnections,
+            )),
+            expectedPublishers: plannedPhase[stream].expectedGlobalPublishers,
+            peakPublishers: Math.max(...phases.map(
+                (phase) => phase.observed[stream].peakPublishers,
+            )),
+            subscriberTracksExpected: entries.reduce(
+                (total, entry) => total +
+                    entry.manifest.plan.phases[phaseIndex][stream].expectedSubscriberTracks,
+                0,
+            ),
+            subscriberTracksReceived: phases.reduce(
+                (total, phase) => total + phase[stream].summary.tracksReceived,
+                0,
+            ),
+            maxDroppedPercent: Math.max(...phases.map(
+                (phase) => phase[stream].summary.droppedPercent,
+            )),
+        });
+        const cleanupTimes = phases
+            .map((phase) => phase.cleanup.convergenceMs)
+            .filter(Number.isFinite);
+        return {
+            name: plannedPhase.name,
+            shardsPassed: shardCount,
+            startSkewMs: Math.max(...startTimes) - Math.min(...startTimes),
+            apiErrors: phases.reduce((total, phase) => total + phase.observed.apiErrors, 0),
+            cleanupMaxConvergenceMs: cleanupTimes.length > 0 ? Math.max(...cleanupTimes) : null,
+            stage: streamEvidence('stage'),
+            beacon: streamEvidence('beacon'),
+        };
+    });
+
+    return {
+        schemaVersion: 1,
+        kind: 'harmonic-beacon-livekit-load-aggregate',
+        status: 'PASS',
+        generatedAt: new Date().toISOString(),
+        harnessSha: first.harnessSha,
+        livekitCliVersion: first.livekitCliVersion,
+        runId: first.plan.runId,
+        profileName: first.plan.profileName,
+        rooms: first.plan.rooms,
+        scheduledStartAt: first.plan.scheduledStartAt,
+        shardCount,
+        totals: {
+            attendees: attendeeTotal,
+            stagePublishers: stagePublisherTotal,
+            beaconPublishers: beaconPublisherTotal,
+        },
+        phases: phaseEvidence,
+        sources: sources.sort((left, right) => left.index - right.index),
+    };
 }
 
 export function createAbortCoordinator({ terminate = (child) => child.kill('SIGTERM') } = {}) {
