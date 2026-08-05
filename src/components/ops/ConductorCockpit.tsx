@@ -167,7 +167,7 @@ export default function ConductorCockpit({
         <div className="space-y-4" data-testid="conductor-cockpit">
             <nav
                 aria-label={copy.tools}
-                className="sticky top-0 z-30 grid grid-cols-3 gap-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--forest)]/95 p-1 shadow-xl backdrop-blur sm:gap-2 sm:p-2 md:grid-cols-6"
+                className="sticky top-0 z-30 grid grid-cols-3 gap-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--forest)]/95 p-1 shadow-xl backdrop-blur sm:gap-2 sm:p-2 md:grid-cols-5"
             >
                 <button
                     type="button"
@@ -228,14 +228,6 @@ export default function ConductorCockpit({
                 <button
                     type="button"
                     className="operational-panel min-h-16 text-left"
-                    onClick={(event) => openDrawer('contributions', event.currentTarget)}
-                    data-signal="contributions"
-                >
-                    <span className="block text-xs text-[var(--text-secondary)]">{copy.contributionsPanel}</span>
-                </button>
-                <button
-                    type="button"
-                    className="operational-panel min-h-16 text-left"
                     onClick={(event) => openDrawer('health', event.currentTarget)}
                     data-signal="health"
                 >
@@ -268,6 +260,14 @@ export default function ConductorCockpit({
                         onClick={(event) => openDrawer('admission', event.currentTarget)}
                     >
                         {copy.admissionPanel}
+                    </button>
+                    <button
+                        type="button"
+                        className="event-button event-button--secondary"
+                        data-tool="contributions"
+                        onClick={(event) => openDrawer('contributions', event.currentTarget)}
+                    >
+                        {copy.contributionsPanel}
                     </button>
                 </div>
             </header>

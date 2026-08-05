@@ -89,9 +89,9 @@ describe('ConductorCockpit', () => {
         render(<ConductorCockpit {...props} />);
         const room = screen.getByTestId('persistent-room');
         expect(room).toHaveAttribute('src', '/session/event-1?surface=cockpit');
-        expect(document.querySelectorAll('[data-signal]')).toHaveLength(6);
+        expect(document.querySelectorAll('[data-signal]')).toHaveLength(5);
 
-        for (const signal of ['door', 'hands', 'stage', 'primary', 'contributions', 'health']) {
+        for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
             const trigger = document.querySelector<HTMLButtonElement>(`[data-signal="${signal}"]`);
             expect(trigger).not.toBeNull();
             if (!trigger) throw new Error(`Missing ${signal} signal`);
@@ -102,6 +102,17 @@ describe('ConductorCockpit', () => {
             expect(screen.queryByRole('dialog')).toBeNull();
             expect(screen.getByTestId('persistent-room')).toBe(room);
         }
+
+        // The contributions tool lives with the header tools (no live signal);
+        // its drawer opens and closes without replacing the room as well.
+        const contributionsTool = document.querySelector<HTMLButtonElement>('[data-tool="contributions"]');
+        expect(contributionsTool).not.toBeNull();
+        if (!contributionsTool) throw new Error('Missing contributions tool');
+        fireEvent.click(contributionsTool);
+        expect(screen.getByTestId('contributions-panel')).toBeVisible();
+        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Return to the live room/ }));
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(screen.getByTestId('persistent-room')).toBe(room);
     });
 
     it('turns live queue and health data into glanceable signals', async () => {
