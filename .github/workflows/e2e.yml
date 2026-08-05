@@ -17,6 +17,12 @@ name: E2E quality gates
 on:
   pull_request:
     branches: [main, release]
+    # Documentation-only PRs cannot affect the browser/runtime contract. Keep
+    # this filter scoped to pull_request: release deploys invoke workflow_call
+    # and must always run the complete gate.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_call:
 
 concurrency:
