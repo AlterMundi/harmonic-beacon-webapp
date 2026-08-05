@@ -89,4 +89,36 @@ describe('distributed LiveKit capacity workflow contract', () => {
         );
         expect(workflow).toContain('sha256sum -c -');
     });
+
+    it('offers a bounded full-topology VP8 diagnostic without weakening rehearsal profiles', () => {
+        expect(workflow).toContain('- diagnostic-en-vp8');
+        expect(profiles['diagnostic-en-vp8']).toMatchObject({
+            attendees: 150,
+            stagePublishers: 6,
+            beaconPublishers: 1,
+            stageVideoCodec: 'vp8',
+            stageLayout: 'speaker',
+            rampDurationSeconds: 60,
+            soakDurationSeconds: 60,
+            reconnectWaves: 0,
+            maxDroppedPercent: 0.1,
+        });
+        expect(profiles['rehearsal-en']).toMatchObject({
+            soakDurationSeconds: 1200,
+            reconnectWaves: 2,
+            maxDroppedPercent: 0.1,
+        });
+
+        const plan = buildDistributedDispatchPlan({
+            profileName: 'diagnostic-en-vp8',
+            profile: profiles['diagnostic-en-vp8'],
+            runId: 'server-version-control',
+            targetUrl: 'ws://example.test:7890',
+            startDelaySeconds: 900,
+            shardCount: 6,
+            nowMs: Date.parse('2026-08-05T00:00:00.000Z'),
+        });
+        expect(plan.shardCount).toBe(6);
+        expect(plan.expectedEndAt).toBe('2026-08-05T00:19:05.000Z');
+    });
 });
