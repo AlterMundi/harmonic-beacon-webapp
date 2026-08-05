@@ -99,9 +99,11 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
         count = n;
         const before = { ...counters };
         if (n > 0) {
-            await expect(section.getByText(`Tapestry Person ${n}`, { exact: true })).toBeVisible({
-                timeout: 10_000,
-            });
+            // The name appears in the aria-hidden overlay AND the accessible
+            // list; assert on the list, the semantic surface.
+            await expect(
+                section.getByRole('listitem').getByText(`Tapestry Person ${n}`, { exact: true }),
+            ).toBeVisible({ timeout: 10_000 });
         } else {
             await expect(section.getByText(/No tiles yet|Todavía no hay teselas/i)).toBeVisible({
                 timeout: 10_000,
