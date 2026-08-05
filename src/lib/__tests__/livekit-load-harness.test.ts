@@ -1,13 +1,37 @@
-import { describe, expect, it } from 'vitest';
+import {
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+    aggregateShardManifests,
     assertSafeTarget,
+    buildDistributedDispatchPlan,
     buildPlan,
+    connectionRampSeconds,
+    createAbortCoordinator,
+    createConsecutiveFailureGuard,
+    generatorHostFingerprint,
     manifestContainsSecret,
+    normalizeScheduledStart,
+    partitionCount,
     parseLoadTestOutput,
+    probeProductionReadiness,
+    PRODUCTION_READINESS_URL,
+    publicLoadPlan,
     remoteConfirmation,
     roomNames,
+    scheduledCompletionDelayMs,
     validateProfile,
+    validateShard,
+    validateDistributedTargetUrl,
 } from '../../../scripts/lib/livekit-load-harness.mjs';
 
 const profile = {
@@ -24,10 +48,278 @@ const profile = {
     reconnectWaves: 2,
     reconnectMode: 'staggered',
     interWaveSeconds: 10,
+    phaseCompletionBufferSeconds: 300,
     maxDroppedPercent: 0.1,
 };
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+    for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+function passingShardManifest(plan: ReturnType<typeof buildPlan>, hostIndex: number) {
+    const manifestPlan = publicLoadPlan(plan);
+    return {
+        schemaVersion: 1,
+        kind: 'harmonic-beacon-livekit-load',
+        status: 'PASS',
+        harnessSha: '0123456789abcdef0123456789abcdef01234567',
+        livekitCliVersion: 'lk 2.16.3',
+        harnessDirty: false,
+        generatorHostHash: String(hostIndex).padStart(12, '0'),
+        plan: manifestPlan,
+        phases: plan.phases.map((plannedPhase) => ({
+            name: plannedPhase.name,
+            passed: true,
+            operatorAborted: false,
+            synchronization: {
+                passed: true,
+                scheduledFor: new Date(
+                    Date.parse(plan.scheduledStartAt ?? '') +
+                    plannedPhase.scheduledOffsetSeconds * 1000,
+                ).toISOString(),
+                observedAt: new Date(
+                    Date.parse(plan.scheduledStartAt ?? '') +
+                    plannedPhase.scheduledOffsetSeconds * 1000,
+                ).toISOString(),
+                lateByMs: 0,
+            },
+            stage: {
+                exitCode: 0,
+                startedAt: new Date(
+                    Date.parse(plan.scheduledStartAt ?? '') +
+                    plannedPhase.scheduledOffsetSeconds * 1000,
+                ).toISOString(),
+                summary: {
+                    parsed: true,
+                    tracksReceived: plannedPhase.stage.expectedSubscriberTracks,
+                    tracksExpected: plan.shard.localAttendees * plan.shard.localStagePublishers,
+                    droppedPercent: 0,
+                    errorCount: 0,
+                },
+            },
+            beacon: {
+                exitCode: 0,
+                startedAt: new Date(
+                    Date.parse(plan.scheduledStartAt ?? '') +
+                    plannedPhase.scheduledOffsetSeconds * 1000,
+                ).toISOString(),
+                summary: {
+                    parsed: true,
+                    tracksReceived: plannedPhase.beacon.expectedSubscriberTracks,
+                    tracksExpected: plan.shard.localAttendees * plan.shard.localBeaconPublishers,
+                    droppedPercent: 0,
+                    errorCount: 0,
+                },
+            },
+            observed: {
+                apiErrors: 0,
+                successfulSamples: 2,
+                stage: {
+                    expectedConnections: plannedPhase.stage.expectedGlobalConnections,
+                    peakConnections: plannedPhase.stage.expectedGlobalConnections,
+                    joinObserved: plannedPhase.stage.expectedGlobalConnections,
+                    expectedPublishers: plannedPhase.stage.expectedGlobalPublishers,
+                    peakPublishers: plannedPhase.stage.expectedGlobalPublishers,
+                },
+                beacon: {
+                    expectedConnections: plannedPhase.beacon.expectedGlobalConnections,
+                    peakConnections: plannedPhase.beacon.expectedGlobalConnections,
+                    joinObserved: plannedPhase.beacon.expectedGlobalConnections,
+                    expectedPublishers: plannedPhase.beacon.expectedGlobalPublishers,
+                    peakPublishers: plannedPhase.beacon.expectedGlobalPublishers,
+                },
+            },
+            cleanup: { passed: true },
+        })),
+    };
+}
 
 describe('LiveKit load harness safety', () => {
+    it('probes only the fixed public production readiness boundary', async () => {
+        const calls: Array<{ url: string; init: RequestInit }> = [];
+        const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
+            calls.push({ url: String(url), init: init ?? {} });
+            return { status: 200 } as Response;
+        };
+
+        await expect(probeProductionReadiness({ fetchImpl })).resolves.toBe(true);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toMatchObject({
+            url: PRODUCTION_READINESS_URL,
+            init: { method: 'GET', cache: 'no-store', redirect: 'manual' },
+        });
+        expect(calls[0].init.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('fails closed on non-200 responses and probe errors', async () => {
+        await expect(probeProductionReadiness({
+            fetchImpl: async () => ({ status: 503 }) as Response,
+        })).resolves.toBe(false);
+        await expect(probeProductionReadiness({
+            fetchImpl: async () => { throw new Error('network unavailable'); },
+        })).resolves.toBe(false);
+    });
+
+    it('trips after two consecutive failures but resets after a success', () => {
+        let trips = 0;
+        const guard = createConsecutiveFailureGuard({
+            maxFailures: 2,
+            onTrip: () => { trips += 1; },
+        });
+
+        expect(guard.record(false)).toBe(false);
+        expect(guard.failures).toBe(1);
+        expect(guard.record(true)).toBe(false);
+        expect(guard.failures).toBe(0);
+        expect(guard.record(false)).toBe(false);
+        expect(guard.record(false)).toBe(true);
+        expect(guard.record(true)).toBe(true);
+        expect(trips).toBe(1);
+    });
+
+    it('builds a bounded two-host dispatch without exposing target credentials', () => {
+        const dispatch = buildDistributedDispatchPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'github-run-a',
+            targetUrl: 'ws://144.217.90.60:7890',
+            startDelaySeconds: 1200,
+            nowMs: Date.parse('2026-08-05T12:00:00Z'),
+        });
+        expect(dispatch).toMatchObject({
+            runId: 'github-run-a',
+            shardCount: 2,
+            startAt: '2026-08-05T12:20:00.000Z',
+            targetHost: '144.217.90.60',
+            rooms: {
+                stage: 'hb-load-github-run-a-es-stage',
+                beacon: 'hb-load-github-run-a-es-beacon',
+            },
+        });
+        expect(dispatch.expectedEndAt).toBe('2026-08-05T12:59:49.000Z');
+        expect(JSON.stringify(dispatch)).not.toContain('secret');
+        expect(dispatch.confirmation).toBe(
+            'LOADTEST:hb-load-github-run-a-es-stage:hb-load-github-run-a-es-beacon',
+        );
+    });
+
+    it('supports the bounded six-host diagnostic without changing global load', () => {
+        const dispatch = buildDistributedDispatchPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'github-run-six',
+            targetUrl: 'ws://144.217.90.60:7890',
+            startDelaySeconds: 1200,
+            shardCount: 6,
+            nowMs: Date.parse('2026-08-05T12:00:00Z'),
+        });
+
+        expect(dispatch).toMatchObject({
+            runId: 'github-run-six',
+            shardCount: 6,
+            startAt: '2026-08-05T12:20:00.000Z',
+            expectedEndAt: '2026-08-05T13:00:25.000Z',
+        });
+
+        const plans = Array.from({ length: 6 }, (_, shardIndex) => buildPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'github-run-six',
+            url: 'ws://144.217.90.60:7890',
+            allowRemote: true,
+            confirmation: dispatch.confirmation,
+            shardIndex,
+            shardCount: 6,
+            startAt: dispatch.startAt,
+        }));
+        expect(plans.map((plan) => plan.shard.localAttendees))
+            .toEqual([25, 25, 25, 25, 25, 25]);
+        expect(plans.reduce((total, plan) => total + plan.shard.localStagePublishers, 0))
+            .toBe(6);
+        expect(plans.reduce((total, plan) => total + plan.shard.localBeaconPublishers, 0))
+            .toBe(1);
+        expect(plans.map((plan) => plan.shard.localRampPerSecond))
+            .toEqual([2, 2, 2, 2, 1, 1]);
+        expect(plans.map((plan) => plan.phases.map((phase) => phase.scheduledOffsetSeconds)))
+            .toEqual(Array(6).fill([0, 400, 1940, 2340]));
+        expect(plans.map((plan) => plan.phases[0].expectedConnectSeconds))
+            .toEqual([25, 25, 25, 25, 25, 25]);
+        expect(plans.map((plan) => plan.phases[0].stage.localExpectedConnectSeconds))
+            .toEqual([13, 13, 13, 13, 25, 25]);
+        expect(plans.map((plan) => plan.phases[0].stage.commandDurationSeconds))
+            .toEqual([72, 72, 72, 72, 60, 60]);
+        expect(plans.map((plan) => plan.phases[0].beacon.localExpectedConnectSeconds))
+            .toEqual([13, 12, 12, 12, 24, 24]);
+        expect(plans.map((plan) => plan.phases[0].beacon.commandDurationSeconds))
+            .toEqual([72, 73, 73, 73, 61, 61]);
+        for (const plan of plans) {
+            const phase = plan.phases[0];
+            expect(phase.stage.localExpectedConnectSeconds + phase.stage.commandDurationSeconds)
+                .toBe(phase.expectedConnectSeconds + phase.durationSeconds);
+            expect(phase.beacon.localExpectedConnectSeconds + phase.beacon.commandDurationSeconds)
+                .toBe(phase.expectedConnectSeconds + phase.durationSeconds);
+            expect(phase.stage.args[phase.stage.args.indexOf('--duration') + 1])
+                .toBe(`${phase.stage.commandDurationSeconds}s`);
+            expect(phase.beacon.args[phase.beacon.args.indexOf('--duration') + 1])
+                .toBe(`${phase.beacon.commandDurationSeconds}s`);
+        }
+
+        const aggregate = aggregateShardManifests(plans.map((plan, shardIndex) => ({
+            sha256: String(shardIndex).padStart(64, 'b'),
+            manifest: passingShardManifest(plan, shardIndex),
+        })));
+        expect(aggregate).toMatchObject({
+            status: 'PASS',
+            shardCount: 6,
+            totals: { attendees: 150, stagePublishers: 6, beaconPublishers: 1 },
+        });
+        expect(aggregate.sources).toHaveLength(6);
+    });
+
+    it('holds cleanup until the shared planned completion barrier', () => {
+        const phase = {
+            scheduledOffsetSeconds: 400,
+            expectedConnectSeconds: 25,
+            durationSeconds: 1200,
+        };
+        const startAt = '2026-08-05T18:00:00.000Z';
+        expect(scheduledCompletionDelayMs(
+            startAt,
+            phase,
+            Date.parse('2026-08-05T18:26:40.000Z'),
+        )).toBe(25_000);
+        expect(scheduledCompletionDelayMs(
+            startAt,
+            phase,
+            Date.parse('2026-08-05T18:27:06.000Z'),
+        )).toBe(0);
+        expect(scheduledCompletionDelayMs(null, phase, 0)).toBe(0);
+    });
+
+    it('refuses unsafe distributed targets, timing and topology', () => {
+        for (const unsafe of [
+            'https://example.test',
+            'ws://localhost:7890',
+            'ws://key:secret@example.test:7890',
+            'ws://example.test:7890/path',
+            'ws://example.test:7890?token=secret',
+            'ws://example.test:7890#fragment',
+        ]) {
+            expect(() => validateDistributedTargetUrl(unsafe)).toThrow();
+        }
+        expect(validateDistributedTargetUrl('wss://load.example.test'))
+            .toBe('wss://load.example.test');
+        expect(() => buildDistributedDispatchPlan({
+            profileName: 'rehearsal-es', profile, runId: 'github-run-a',
+            targetUrl: 'ws://example.test:7890', startDelaySeconds: 599,
+        })).toThrow(/start delay/);
+        expect(() => buildDistributedDispatchPlan({
+            profileName: 'rehearsal-es', profile, runId: 'github-run-a',
+            targetUrl: 'ws://example.test:7890', startDelaySeconds: 1200, shardCount: 3,
+        })).toThrow(/two or six shards/);
+    });
+
     it('builds two synthetic connections per attendee and caps the stage at six publishers', () => {
         const plan = buildPlan({
             profileName: 'rehearsal-es',
@@ -50,6 +342,101 @@ describe('LiveKit load harness safety', () => {
         expect(plan.phases[0].stage.args).toContain('vp8');
         expect(plan.phases[0].stage.args).toContain('speaker');
         expect(plan.phases[2].stage.args).toContain('hbload-event-weekend-stage');
+    });
+
+    it('partitions attendees, publishers and ramp exactly across synchronized shards', () => {
+        const startAt = '2026-08-06T12:00:00.000Z';
+        const shards = [0, 1].map((shardIndex) => buildPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'event-weekend',
+            url: 'ws://localhost:7880',
+            shardIndex,
+            shardCount: 2,
+            startAt,
+        }));
+
+        expect(shards[0].rooms).toEqual(shards[1].rooms);
+        expect(shards.map((plan) => plan.scheduledStartAt)).toEqual([startAt, startAt]);
+        expect(shards.map((plan) => plan.shard.localAttendees)).toEqual([75, 75]);
+        expect(shards.map((plan) => plan.shard.localStagePublishers)).toEqual([3, 3]);
+        expect(shards.map((plan) => plan.shard.localBeaconPublishers)).toEqual([1, 0]);
+        expect(shards.map((plan) => plan.shard.localRampPerSecond)).toEqual([5, 5]);
+        expect(shards.map((plan) => plan.shard.phaseCompletionBufferSeconds)).toEqual([300, 300]);
+        expect(shards.map((plan) => plan.phases[0].stage.requestedConnections)).toEqual([78, 78]);
+        expect(shards.map((plan) => plan.phases[0].beacon.requestedConnections)).toEqual([76, 75]);
+        expect(shards[0].phases[0].stage.expectedGlobalConnections).toBe(156);
+        expect(shards[1].phases[0].beacon.expectedGlobalConnections).toBe(151);
+        expect(shards[0].phases[0].stage.expectedSubscriberTracks).toBe(450);
+        expect(shards[1].phases[0].beacon.expectedSubscriberTracks).toBe(75);
+        expect(shards[0].phases[0].stage.args).toContain('hbload-event-weekend-s0-stage');
+        expect(shards[1].phases[0].stage.args).toContain('hbload-event-weekend-s1-stage');
+        expect(shards[0].phases.map((phase) => phase.scheduledOffsetSeconds)).toEqual([
+            0, 391, 1922, 2313,
+        ]);
+    });
+
+    it('partitions uneven totals deterministically without dropping work', () => {
+        expect([0, 1, 2].map((index) => partitionCount(10, index, 3))).toEqual([4, 3, 3]);
+        expect([0, 1, 2].map((index) => partitionCount(2, index, 3))).toEqual([1, 1, 0]);
+    });
+
+    it('accounts for the LiveKit CLI connection ramp before its duration timer', () => {
+        expect(connectionRampSeconds(78, 5)).toBe(16);
+        expect(connectionRampSeconds(6, 6)).toBe(1);
+        expect(connectionRampSeconds(151, 100)).toBe(15);
+    });
+
+    it('reserves an explicit completion tail before every later synchronized phase', () => {
+        const withoutBuffer = buildPlan({
+            profileName: 'rehearsal-es',
+            profile: { ...profile, phaseCompletionBufferSeconds: 0 },
+            runId: 'schedule-without-buffer',
+            url: 'ws://localhost:7880',
+            shardIndex: 0,
+            shardCount: 2,
+            startAt: '2026-08-06T12:00:00.000Z',
+        });
+        const withBuffer = buildPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'schedule-with-buffer',
+            url: 'ws://localhost:7880',
+            shardIndex: 0,
+            shardCount: 2,
+            startAt: '2026-08-06T12:00:00.000Z',
+        });
+
+        expect(withBuffer.phases.map((phase, index) =>
+            phase.scheduledOffsetSeconds - withoutBuffer.phases[index].scheduledOffsetSeconds,
+        )).toEqual([0, 300, 600, 900]);
+        expect(() => validateProfile({
+            ...profile,
+            phaseCompletionBufferSeconds: -1,
+        })).toThrow(/phaseCompletionBufferSeconds/);
+    });
+
+    it('fails closed on incomplete or unsynchronized shard coordinates', () => {
+        expect(() => validateShard({ shardIndex: 2, shardCount: 2 }, profile))
+            .toThrow(/shardIndex/);
+        expect(() => validateShard({ shardIndex: 0, shardCount: 11 }, profile))
+            .toThrow(/ramp rate/);
+        expect(() => buildPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'event-weekend',
+            url: 'ws://localhost:7880',
+            shardIndex: 0,
+            shardCount: 2,
+        })).toThrow(/shared startAt/);
+    });
+
+    it('accepts only explicit UTC scheduled starts', () => {
+        expect(normalizeScheduledStart('2026-08-06T12:00:00Z'))
+            .toBe('2026-08-06T12:00:00.000Z');
+        expect(() => normalizeScheduledStart('2026-08-06T12:00:00-03:00'))
+            .toThrow(/UTC/);
+        expect(() => normalizeScheduledStart('not-a-date')).toThrow(/UTC/);
     });
 
     it('rejects a seventh stage publisher before starting traffic', () => {
@@ -91,6 +478,152 @@ describe('LiveKit load harness safety', () => {
 });
 
 describe('LiveKit load harness evidence', () => {
+    it('distinguishes separate VM boots while keeping same-kernel processes identical', () => {
+        const first = generatorHostFingerprint({
+            hostName: 'runner',
+            machineId: 'cloned-image',
+            bootId: 'boot-a',
+        });
+        expect(generatorHostFingerprint({
+            hostName: 'runner',
+            machineId: 'cloned-image',
+            bootId: 'boot-a',
+        })).toBe(first);
+        expect(generatorHostFingerprint({
+            hostName: 'runner',
+            machineId: 'cloned-image',
+            bootId: 'boot-b',
+        })).not.toBe(first);
+        expect(first).toMatch(/^[a-f0-9]{12}$/);
+    });
+
+    it('aggregates only exact, clean shard coverage from distinct generator hosts', () => {
+        const startAt = '2026-08-06T12:00:00.000Z';
+        const entries = [0, 1].map((shardIndex) => ({
+            sha256: String(shardIndex).padStart(64, 'a'),
+            manifest: passingShardManifest(buildPlan({
+                profileName: 'rehearsal-es',
+                profile,
+                runId: 'aggregate-test',
+                url: 'ws://localhost:7880',
+                shardIndex,
+                shardCount: 2,
+                startAt,
+            }), shardIndex),
+        }));
+
+        const aggregate = aggregateShardManifests(entries);
+        expect(aggregate).toMatchObject({
+            kind: 'harmonic-beacon-livekit-load-aggregate',
+            status: 'PASS',
+            runId: 'aggregate-test',
+            shardCount: 2,
+            totals: { attendees: 150, stagePublishers: 6, beaconPublishers: 1 },
+            sources: [
+                { index: 0, generatorHostHash: '000000000000' },
+                { index: 1, generatorHostHash: '000000000001' },
+            ],
+        });
+        expect(aggregate.phases[0]).toMatchObject({
+            name: 'ramp',
+            shardsPassed: 2,
+            startSkewMs: 0,
+            apiErrors: 0,
+            stage: {
+                expectedConnections: 156,
+                subscriberTracksExpected: 900,
+                subscriberTracksReceived: 900,
+            },
+            beacon: {
+                expectedConnections: 151,
+                subscriberTracksExpected: 150,
+                subscriberTracksReceived: 150,
+            },
+        });
+    });
+
+    it('refuses duplicate hosts, dirty evidence and unproven global observations', () => {
+        const startAt = '2026-08-06T12:00:00.000Z';
+        const entries = [0, 1].map((shardIndex) => ({
+            sha256: String(shardIndex).padStart(64, 'a'),
+            manifest: passingShardManifest(buildPlan({
+                profileName: 'rehearsal-es',
+                profile,
+                runId: 'aggregate-refusal',
+                url: 'ws://localhost:7880',
+                shardIndex,
+                shardCount: 2,
+                startAt,
+            }), shardIndex),
+        }));
+
+        entries[1].manifest.generatorHostHash = entries[0].manifest.generatorHostHash;
+        expect(() => aggregateShardManifests(entries)).toThrow(/distinct hosts/);
+        entries[1].manifest.generatorHostHash = '000000000001';
+        entries[1].manifest.harnessDirty = true;
+        expect(() => aggregateShardManifests(entries)).toThrow(/dirty harness/);
+        entries[1].manifest.harnessDirty = false;
+        entries[1].manifest.phases[0].observed.stage.peakConnections -= 1;
+        expect(() => aggregateShardManifests(entries)).toThrow(/unproven phase/);
+    });
+
+    it('refuses a shard plan that can disconnect before the shared completion barrier', () => {
+        const startAt = '2026-08-06T12:00:00.000Z';
+        const entries = [0, 1].map((shardIndex) => ({
+            sha256: String(shardIndex).padStart(64, 'c'),
+            manifest: passingShardManifest(buildPlan({
+                profileName: 'rehearsal-es',
+                profile,
+                runId: 'aggregate-early-cleanup',
+                url: 'ws://localhost:7880',
+                shardIndex,
+                shardCount: 2,
+                startAt,
+            }), shardIndex),
+        }));
+
+        entries[0].manifest.plan.phases[0].stage.commandDurationSeconds -= 1;
+        expect(() => aggregateShardManifests(entries)).toThrow(/deterministic partition/);
+    });
+
+    it('writes a 0600 aggregate once and refuses to overwrite it', () => {
+        const root = mkdtempSync(join(tmpdir(), 'hb-load-aggregate-'));
+        temporaryRoots.push(root);
+        const startAt = '2026-08-06T12:00:00.000Z';
+        const manifestPaths = [0, 1].map((shardIndex) => {
+            const path = join(root, `shard-${shardIndex}.json`);
+            writeFileSync(path, JSON.stringify(passingShardManifest(buildPlan({
+                profileName: 'rehearsal-es',
+                profile,
+                runId: 'aggregate-cli',
+                url: 'ws://localhost:7880',
+                shardIndex,
+                shardCount: 2,
+                startAt,
+            }), shardIndex)));
+            return path;
+        });
+        const output = join(root, 'aggregate.json');
+        const args = [
+            'scripts/livekit-load-aggregate.mjs',
+            '--output', output,
+            ...manifestPaths,
+        ];
+
+        const first = spawnSync('node', args, { encoding: 'utf8', timeout: 5_000 });
+        expect(first.status, first.stderr).toBe(0);
+        expect(statSync(output).mode & 0o777).toBe(0o600);
+        expect(JSON.parse(readFileSync(output, 'utf8'))).toMatchObject({
+            status: 'PASS',
+            shardCount: 2,
+        });
+        const before = readFileSync(output, 'utf8');
+        const second = spawnSync('node', args, { encoding: 'utf8', timeout: 5_000 });
+        expect(second.status).toBe(1);
+        expect(second.stderr).toMatch(/refusing to overwrite/);
+        expect(readFileSync(output, 'utf8')).toBe(before);
+    });
+
     it('parses the official CLI total summary without retaining participant rows', () => {
         const output = 'Summary | Tester | Tracks | Bitrate | Latency | Total Dropped\n' +
             '        | Total | 5000/5000 | 678.7mbps | 79.923769ms | 0 (0%)\n';
@@ -127,5 +660,33 @@ describe('LiveKit load harness evidence', () => {
             .toBe(true);
         expect(manifestContainsSecret({ nested: ['safe'] }, ['key', 'secret-value']))
             .toBe(false);
+    });
+
+    it('coordinates the first operator abort across current and late child processes', () => {
+        const terminated: string[] = [];
+        const abort = createAbortCoordinator({
+            terminate: (child: { name: string }) => terminated.push(child.name),
+        });
+        const untrackStage = abort.track({ name: 'stage', killed: false });
+        abort.track({ name: 'beacon', killed: false });
+
+        expect(abort.request('SIGINT')).toBe(true);
+        expect(abort.request('SIGTERM')).toBe(false);
+        abort.track({ name: 'late', killed: false });
+        untrackStage();
+
+        expect(terminated).toEqual(['stage', 'beacon', 'late']);
+        expect(abort.requested).toBe(true);
+        expect(abort.snapshot()).toMatchObject({ signal: 'SIGINT' });
+        expect(abort.exitCode()).toBe(130);
+    });
+
+    it('maps SIGTERM to a non-zero result without inventing an abort beforehand', () => {
+        const abort = createAbortCoordinator();
+        expect(abort.requested).toBe(false);
+        expect(abort.snapshot()).toBeNull();
+        expect(abort.exitCode()).toBe(1);
+        expect(abort.request('SIGTERM')).toBe(true);
+        expect(abort.exitCode()).toBe(143);
     });
 });

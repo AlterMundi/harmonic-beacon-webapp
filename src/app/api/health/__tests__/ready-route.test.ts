@@ -16,6 +16,7 @@ describe('GET /api/health/ready', () => {
 
         expect(status).toBe(200);
         expect(body).toEqual({ status: 'ok', checks: { database: 'ok' } });
+        expect(response.headers.get('cache-control')).toBe('no-store');
     });
 
     it('returns 503 when the database query rejects', async () => {
@@ -32,6 +33,7 @@ describe('GET /api/health/ready', () => {
 
         expect(status).toBe(503);
         expect(body).toEqual({ status: 'error', checks: { database: 'unreachable' } });
+        expect(response.headers.get('cache-control')).toBe('no-store');
     });
 
     it('returns 503 marked as timeout when the database hangs instead of failing', async () => {

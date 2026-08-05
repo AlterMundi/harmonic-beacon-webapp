@@ -54,4 +54,22 @@ describe('GET /api/tapestry/[sessionId]', () => {
         expect(response.headers.get('cdn-cache-control')).toBe('public, max-age=2');
         expect(requireStaff).not.toHaveBeenCalled();
     });
+
+    it('passes the build revision through so overlays can match their layout', async () => {
+        global.fetch = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2]), {
+            status: 200,
+            headers: { 'x-tapestry-revision': '42' },
+        }));
+        const { GET } = await import('../route');
+        const response = await GET(new NextRequest('http://localhost/api/tapestry/session-1'), context);
+        expect(response.status).toBe(200);
+        expect(response.headers.get('x-tapestry-revision')).toBe('42');
+    });
+
+    it('omits the revision header when the internal service predates it', async () => {
+        const { GET } = await import('../route');
+        const response = await GET(new NextRequest('http://localhost/api/tapestry/session-1'), context);
+        expect(response.status).toBe(200);
+        expect(response.headers.get('x-tapestry-revision')).toBeNull();
+    });
 });

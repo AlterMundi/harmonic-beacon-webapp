@@ -28,14 +28,16 @@ only the public application and LiveKit signaling ports.
 
 A push to `release` runs `.github/workflows/deploy.yml` on the managed host. It:
 
-1. runs contract, unit, type and lint gates;
-2. verifies both root-owned env files and the private network membership;
-3. preserves the currently running app and tapestry images under independent
+1. runs the exact release commit through the reusable browser E2E workflow on
+   a throwaway Postgres + LiveKit stack, including synthetic attendee access;
+2. runs contract, unit, type and lint gates;
+3. verifies both root-owned env files and the private network membership;
+4. preserves the currently running app and tapestry images under independent
    immutable rollback tags;
-4. builds commit-tagged app and tapestry images;
-5. applies additive Prisma migrations and verifies migration status;
-6. replaces only app, commerce reconciler and tapestry; and
-7. waits for app readiness plus reconciler and tapestry health.
+5. builds commit-tagged app and tapestry images;
+6. applies additive Prisma migrations and verifies migration status;
+7. replaces only app, commerce reconciler and tapestry; and
+8. waits for app readiness plus reconciler and tapestry health.
 
 On failure it restores the preserved app and tapestry images independently. It
 never uses `compose down`, deletes data or pretends that rebuilding the same tag
@@ -51,10 +53,54 @@ unreviewed PR code must not execute on the production host.
 
 An organization administrator must place the mona runner in a runner group that
 is restricted to this repository and the `Deploy` workflow. Keep it offline
-until that restriction exists. The sudoers policy must allow only the explicit
-Docker, stat and file-read commands used by the workflow, without a general root
-shell. If the dedicated runner is unavailable, use the manual deploy below over
-the separately controlled SSH path; a generic runner is never an acceptable
+until that restriction exists. Run the service as the dedicated
+`beacon-runner` system identity: it must not belong to `docker`, `sudo`, or an
+interactive-login group. The only sudo command available to that identity is
+the root-owned `/usr/local/sbin/hb-deploy` entrypoint. That entrypoint validates
+the exact Actions workspace, commit SHA, run id, service allowlists and every
+other argument before performing the fixed release operations. It never accepts
+an arbitrary command, path, container or environment value, and it pins Compose
+to the tracked `docker-compose.yml` so an untracked override cannot broaden the
+deployment.
+
+Install the reviewed helper and sudo policy from an exact release checkout:
+
+```bash
+sudo install -o root -g root -m 0755 \
+  deploy/hb-deploy-root /usr/local/sbin/hb-deploy
+sudo install -o root -g root -m 0440 \
+  deploy/beacon-runner.sudoers /etc/sudoers.d/harmonic-beacon-runner
+sudo visudo -cf /etc/sudoers.d/harmonic-beacon-runner
+```
+
+When migrating an already registered runner, stop its generated service before
+changing ownership, create the non-login identity, reinstall the service for
+that identity, and then start it again:
+
+```bash
+cd /opt/actions-runner
+sudo ./svc.sh stop
+sudo ./svc.sh uninstall
+sudo useradd --system --home-dir /opt/actions-runner \
+  --shell /usr/sbin/nologin beacon-runner
+sudo chown -R beacon-runner:beacon-runner /opt/actions-runner
+sudo ./svc.sh install beacon-runner
+sudo ./svc.sh start
+```
+
+Confirm both sides of the boundary: the helper preflight succeeds, while a root
+shell and direct Docker access are denied.
+
+```bash
+sudo -u beacon-runner sudo -n /usr/local/sbin/hb-deploy preflight \
+  /opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp \
+  <exact-commit-sha>
+! sudo -u beacon-runner sudo -n /usr/bin/id
+! sudo -u beacon-runner sudo -n /usr/bin/docker ps
+```
+
+If the dedicated runner is unavailable, use the manual deploy below over the
+separately controlled SSH path; a generic runner is never an acceptable
 fallback.
 
 ## Manual deploy on mona

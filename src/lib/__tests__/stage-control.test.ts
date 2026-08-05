@@ -238,14 +238,14 @@ describe('stage control', () => {
         expect(mocks.updateParticipant).not.toHaveBeenCalled();
     });
 
-    it('serializes two promotions for the last slot so only one wins', async () => {
+    it('serializes concurrent promotions across slots five, six, and seven', async () => {
         participants = [
             attendee('active-1', true),
             attendee('active-2', true),
             attendee('active-3', true),
-            attendee('active-4', true),
             attendee('first', false, new Date('2026-08-01T15:10:00Z')),
             attendee('second', false, new Date('2026-08-01T15:11:00Z')),
+            attendee('third', false, new Date('2026-08-01T15:12:00Z')),
         ];
         const { promoteParticipant, StageControlError } =
             await import('../stage-control');
@@ -261,11 +261,17 @@ describe('stage control', () => {
                 participantId: 'second',
                 actorUserId: 'operator-1',
             }),
+            promoteParticipant({
+                scheduledSessionId: event.id,
+                participantId: 'third',
+                actorUserId: 'operator-1',
+            }),
         ]);
 
         expect(results[0].status).toBe('fulfilled');
-        expect(results[1].status).toBe('rejected');
-        const rejection = (results[1] as PromiseRejectedResult).reason;
+        expect(results[1].status).toBe('fulfilled');
+        expect(results[2].status).toBe('rejected');
+        const rejection = (results[2] as PromiseRejectedResult).reason;
         expect(rejection).toBeInstanceOf(StageControlError);
         expect(rejection).toMatchObject({
             code: 'stage_full',
@@ -277,7 +283,7 @@ describe('stage control', () => {
                 participant.publishGrantedAt && !participant.publishRevokedAt)
                 .length,
         ).toBe(5);
-        expect(mocks.updateParticipant).toHaveBeenCalledTimes(1);
+        expect(mocks.updateParticipant).toHaveBeenCalledTimes(2);
     });
 
     it('revokes the durable grant and compensates after LiveKit promotion fails', async () => {

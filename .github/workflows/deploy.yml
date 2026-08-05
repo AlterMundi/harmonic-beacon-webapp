@@ -9,7 +9,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The reusable workflow checks the exact release commit in a throwaway
+  # Postgres + LiveKit + browser stack before mona can run any release step.
+  release-e2e:
+    uses: ./.github/workflows/e2e.yml
+
   deploy:
+    needs: release-e2e
     runs-on: [self-hosted, mona]
     steps:
       - name: Verify deploy runner identity
@@ -17,8 +23,16 @@ jobs:
         run: |
           set -euo pipefail
           test "$(hostname -s)" = mona
+          test "$(id -un)" = beacon-runner
+          test -x /usr/local/sbin/hb-deploy
 
       - uses: actions/checkout@v4
+
+      - name: Verify privileged helper provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy
 
       - uses: actions/setup-node@v4
         with:
@@ -42,35 +56,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n test -r /etc/harmonic-beacon/production.env
-          sudo -n test -r /etc/harmonic-beacon/commerce.env
-          test "$(sudo -n stat -c '%a:%U:%G' /etc/harmonic-beacon/commerce.env)" = "600:root:root"
-          test "$(sudo -n docker network inspect pmp_beacon_internal --format '{{.Internal}}')" = true
-          members="$(sudo -n docker network inspect pmp_beacon_internal \
-            --format '{{range .Containers}}{{println .Name}}{{end}}' | sort)"
-          test "$members" = $'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
-          sudo -n docker compose --project-name app \
-            --env-file /etc/harmonic-beacon/production.env config --quiet
+          sudo -n /usr/local/sbin/hb-deploy preflight \
+            "$GITHUB_WORKSPACE" "$GITHUB_SHA"
 
       - name: Preserve immutable rollback image
         id: rollback
         shell: bash
         run: |
           set -euo pipefail
-          previous_app="$(sudo -n docker inspect beacon-app --format '{{.Image}}' 2>/dev/null || true)"
-          if [ -n "$previous_app" ]; then
-            sudo -n docker tag "$previous_app" "harmonic-beacon/app:rollback-${GITHUB_RUN_ID}"
-            echo 'app_available=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'app_available=false' >> "$GITHUB_OUTPUT"
-          fi
-          previous_tapestry="$(sudo -n docker inspect beacon-tapestry --format '{{.Image}}' 2>/dev/null || true)"
-          if [ -n "$previous_tapestry" ]; then
-            sudo -n docker tag "$previous_tapestry" "harmonic-beacon/tapestry:rollback-${GITHUB_RUN_ID}"
-            echo 'tapestry_available=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'tapestry_available=false' >> "$GITHUB_OUTPUT"
-          fi
+          sudo -n /usr/local/sbin/hb-deploy preserve "$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Build commit image
         shell: bash
@@ -79,39 +73,29 @@ jobs:
           database_schema_version="$(find prisma/migrations -mindepth 1 -maxdepth 1 \
             -type d -printf '%f\n' | sort | tail -1)"
           test -n "$database_schema_version"
-          sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" \
-            BEACON_GIT_SHA="$GITHUB_SHA" \
-            BEACON_BUILD_TIME="$build_time" \
-            BEACON_DATABASE_SCHEMA_VERSION="$database_schema_version" \
-            docker compose \
-            --project-name app --env-file /etc/harmonic-beacon/production.env \
-            build app tapestry
+          sudo -n /usr/local/sbin/hb-deploy build \
+            "$GITHUB_WORKSPACE" "$GITHUB_SHA" "$build_time" "$database_schema_version"
 
       - name: Apply additive migrations
         shell: bash
         run: |
-          sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
-            --project-name app --env-file /etc/harmonic-beacon/production.env \
-            run --rm --no-deps app npx prisma migrate deploy
-          sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
-            --project-name app --env-file /etc/harmonic-beacon/production.env \
-            run --rm --no-deps app npx prisma migrate status
+          sudo -n /usr/local/sbin/hb-deploy migrate \
+            "$GITHUB_WORKSPACE" "$GITHUB_SHA"
 
       - name: Replace app, reconciler and tapestry
         shell: bash
         run: |
-          sudo -n env BEACON_IMAGE_TAG="$GITHUB_SHA" docker compose \
-            --project-name app --env-file /etc/harmonic-beacon/production.env \
-            up -d --no-deps --force-recreate app commerce-reconciler tapestry
+          sudo -n /usr/local/sbin/hb-deploy replace \
+            "$GITHUB_WORKSPACE" "$GITHUB_SHA"
 
       - name: Wait for readiness
         shell: bash
         run: |
           set -euo pipefail
           for _attempt in $(seq 1 60); do
-            app_health="$(sudo -n docker inspect beacon-app --format '{{.State.Health.Status}}' 2>/dev/null || true)"
-            worker_health="$(sudo -n docker inspect beacon-commerce-reconciler --format '{{.State.Health.Status}}' 2>/dev/null || true)"
-            tapestry_health="$(sudo -n docker inspect beacon-tapestry --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            app_health="$(sudo -n /usr/local/sbin/hb-deploy health beacon-app 2>/dev/null || true)"
+            worker_health="$(sudo -n /usr/local/sbin/hb-deploy health beacon-commerce-reconciler 2>/dev/null || true)"
+            tapestry_health="$(sudo -n /usr/local/sbin/hb-deploy health beacon-tapestry 2>/dev/null || true)"
             if [ "$app_health" = healthy ] && [ "$worker_health" = healthy ] && \
               [ "$tapestry_health" = healthy ] && \
               curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
@@ -119,10 +103,8 @@ jobs:
             fi
             sleep 2
           done
-          sudo -n docker compose --project-name app \
-            --env-file /etc/harmonic-beacon/production.env ps
-          sudo -n docker logs --tail 100 beacon-app || true
-          sudo -n docker logs --tail 100 beacon-commerce-reconciler || true
+          sudo -n /usr/local/sbin/hb-deploy status \
+            "$GITHUB_WORKSPACE" "$GITHUB_SHA"
           exit 1
 
       - name: Verify deployed revision publicly
@@ -157,31 +139,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          members="$(sudo -n docker network inspect pmp_beacon_internal \
-            --format '{{range .Containers}}{{println .Name}}{{end}}' | sort)"
-          test "$members" = $'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
+          sudo -n /usr/local/sbin/hb-deploy boundary
 
-          container_has_env_name() {
-            sudo -n docker inspect "$1" \
-              --format '{{range .Config.Env}}{{println .}}{{end}}' | \
-              cut -d= -f1 | grep -Fxq "$2"
-          }
-          container_has_commerce_key() {
-            sudo -n docker inspect "$1" \
-              --format '{{range .Config.Env}}{{println .}}{{end}}' | \
-              cut -d= -f1 | grep -Eq '^BEACON_COMMERCE_SERVICE_KEY_'
-          }
-          container_has_env_name beacon-app BEACON_COMMERCE_SERVICE_KEY_CURRENT_ID
-          container_has_env_name beacon-app BEACON_COMMERCE_SERVICE_KEY_CURRENT
-          for container in beacon-postgres beacon-livekit beacon-playlist-bot \
-            beacon-tapestry beacon-commerce-reconciler pmp-myth-api \
-            pmp-myth-worker pmp-myth-worker-secondary \
-            pmp-myth-postgres pmp-myth-waha pmp-myth-rag pmp-myth-gateway; do
-            if sudo -n docker inspect "$container" >/dev/null 2>&1 && \
-              container_has_commerce_key "$container"; then
-              echo "Commerce bearer reached unexpected container: $container" >&2
+          for method in GET POST; do
+            code="$(curl --silent --show-error --output /dev/null \
+              --request "$method" --header 'Content-Type: application/json' \
+              --data '{}' --write-out '%{http_code}' \
+              https://live.harmonicbeacon.com/api/test-login)"
+            test "$code" = 404 || {
+              echo "Production test-login $method returned $code instead of 404" >&2
               exit 1
-            fi
+            }
           done
 
           for method in GET PUT; do
@@ -200,48 +168,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          worker_expected=false
-          if [ "${{ steps.rollback.outputs.app_available }}" = true ]; then
-            sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
-              --project-name app --env-file /etc/harmonic-beacon/production.env \
-              up -d --no-deps --force-recreate app
-            if sudo -n docker run --rm --entrypoint test \
-              "harmonic-beacon/app:rollback-${GITHUB_RUN_ID}" \
-              -f /app/scripts/commerce-media-worker.ts; then
-              sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
-                --project-name app --env-file /etc/harmonic-beacon/production.env \
-                up -d --no-deps --force-recreate commerce-reconciler
-              worker_expected=true
-            else
-              sudo -n docker stop beacon-commerce-reconciler 2>/dev/null || true
-            fi
-          fi
-          if [ "${{ steps.rollback.outputs.tapestry_available }}" = true ]; then
-            sudo -n env BEACON_IMAGE_TAG="rollback-${GITHUB_RUN_ID}" docker compose \
-              --project-name app --env-file /etc/harmonic-beacon/production.env \
-              up -d --no-deps --force-recreate tapestry
-          fi
-          for _attempt in $(seq 1 60); do
-            app_ready=true
-            worker_ready=true
-            tapestry_ready=true
-            if [ "${{ steps.rollback.outputs.app_available }}" = true ]; then
-              if [ "$(sudo -n docker inspect beacon-app --format '{{.State.Health.Status}}' 2>/dev/null || true)" != healthy ] || \
-                ! curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
-                app_ready=false
-              fi
-            fi
-            if [ "$worker_expected" = true ]; then
-              [ "$(sudo -n docker inspect beacon-commerce-reconciler --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ] || worker_ready=false
-            fi
-            if [ "${{ steps.rollback.outputs.tapestry_available }}" = true ]; then
-              [ "$(sudo -n docker inspect beacon-tapestry --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ] || tapestry_ready=false
-            fi
-            if [ "$app_ready" = true ] && [ "$worker_ready" = true ] && [ "$tapestry_ready" = true ]; then
-              exit 0
-            fi
-            sleep 2
-          done
-          sudo -n docker compose --project-name app \
-            --env-file /etc/harmonic-beacon/production.env ps
-          exit 1
+          sudo -n /usr/local/sbin/hb-deploy rollback \
+            "$GITHUB_WORKSPACE" "$GITHUB_RUN_ID" \
+            "${{ steps.rollback.outputs.app_available }}" \
+            "${{ steps.rollback.outputs.tapestry_available }}"

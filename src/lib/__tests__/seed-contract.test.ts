@@ -159,4 +159,23 @@ describe('weekend seed contract', () => {
         expect(migration).toContain('target_count <> historical_source_count');
         expect(migration).not.toMatch(/UPDATE\s+"scheduled_sessions"/i);
     });
+
+    it('creates the August 11 English session from the reviewed English facilitator', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260805180000_hmp_august_11_english_session/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain('20000000-0000-4000-8000-202608110001');
+        expect(migration).toContain('20000000-0000-4000-8000-202608080002');
+        expect(migration).toContain("'2026-08-11 22:00:00'::timestamp");
+        expect(migration).toContain("'ENGLISH'::\"SessionLanguage\"");
+        expect(migration).toContain("'SCHEDULED'::\"ScheduledSessionStatus\"");
+        expect(migration).toContain('source_count NOT IN (0, 1)');
+        expect(migration).toContain('target_count <> source_count');
+        expect(migration).not.toMatch(/UPDATE\s+"scheduled_sessions"/i);
+    });
 });

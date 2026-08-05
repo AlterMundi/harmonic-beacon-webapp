@@ -35,6 +35,7 @@ const SESSION_2 = {
     language: 'ENGLISH' as const,
     scheduledAt: new Date('2026-08-08T20:00:00.000Z'),
 };
+const NOW = new Date('2026-08-05T12:00:00.000Z');
 
 function mountDb(findMany: ReturnType<typeof vi.fn>) {
     const prisma = { scheduledSession: { findMany } };
@@ -49,6 +50,8 @@ async function renderPage(searchParams: Record<string, string | string[] | undef
 
 describe('landing page', () => {
     beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(NOW);
         vi.resetModules();
         loginFormProps.mockClear();
         requestLocaleMock.mockReset();
@@ -60,6 +63,7 @@ describe('landing page', () => {
         vi.unstubAllEnvs();
         vi.doUnmock('@/lib/db');
         vi.restoreAllMocks();
+        vi.useRealTimers();
     });
 
     it('shows both sessions with their language and time', async () => {
@@ -94,14 +98,44 @@ describe('landing page', () => {
         expect(findMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: {
-                    status: { in: ['SCHEDULED', 'LIVE'] },
                     isTest: false,
+                    endedAt: null,
+                    OR: [
+                        { status: 'SCHEDULED', scheduledAt: { gte: NOW } },
+                        {
+                            status: 'LIVE',
+                            startedAt: { gte: new Date('2026-08-04T12:00:00.000Z') },
+                        },
+                    ],
                 },
             }),
         );
         // No paid-mode or attendee-cap columns leak into the public page.
         const select = findMany.mock.calls[0][0].select;
         expect(Object.keys(select).sort()).toEqual(['id', 'language', 'scheduledAt']);
+    });
+
+    it('fails closed when a missed lifecycle transition leaves an old session LIVE', async () => {
+        const findMany = mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
+        vi.stubEnv('TICKET_PURCHASE_URL', 'https://tickets.example.invalid/harmonic-beacon');
+
+        await renderPage();
+
+        const where = findMany.mock.calls[0][0].where;
+        expect(where).toEqual(expect.objectContaining({
+            isTest: false,
+            endedAt: null,
+            OR: expect.arrayContaining([
+                {
+                    status: 'LIVE',
+                    startedAt: { gte: new Date('2026-08-04T12:00:00.000Z') },
+                },
+            ]),
+        }));
+        expect(where.OR[1].startedAt.gte.getTime()).toBeGreaterThan(
+            new Date('2026-08-02T16:48:28.622Z').getTime(),
+        );
+        expect(screen.getAllByRole('link', { name: /Comprar entrada/ })).toHaveLength(2);
     });
 
     it('excludes test fixtures from public discovery and purchase links by durable data', async () => {

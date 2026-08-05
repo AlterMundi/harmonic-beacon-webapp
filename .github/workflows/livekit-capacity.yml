@@ -1,0 +1,188 @@
+name: Distributed LiveKit capacity rehearsal
+
+# Manual only. The capacity-rehearsal environment must be restricted to main
+# and provisioned with credentials for an isolated, disposable LiveKit target.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Synthetic load profile
+        required: true
+        type: choice
+        options:
+          - ci
+          - rehearsal-es
+          - rehearsal-en
+          - diagnostic-en-vp8
+      run_id:
+        description: Unique synthetic run identifier (no event-room name)
+        required: true
+        type: string
+      start_delay_seconds:
+        description: Delay before synchronized traffic begins
+        required: true
+        default: '1200'
+        type: choice
+        options:
+          - '900'
+          - '1200'
+          - '1800'
+      shard_count:
+        description: Independent generator hosts (2 baseline, 6 fan-in diagnostic)
+        required: true
+        default: '2'
+        type: choice
+        options:
+          - '2'
+          - '6'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: livekit-capacity-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    environment: capacity-rehearsal
+    outputs:
+      run_id: ${{ steps.plan.outputs.run_id }}
+      start_at: ${{ steps.plan.outputs.start_at }}
+      expected_end_at: ${{ steps.plan.outputs.expected_end_at }}
+      confirmation: ${{ steps.plan.outputs.confirmation }}
+      shard_count: ${{ steps.plan.outputs.shard_count }}
+      shard_indices: ${{ steps.plan.outputs.shard_indices }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+
+      - name: Validate isolated target and derive the synchronized plan
+        id: plan
+        env:
+          LOAD_TEST_URL: ${{ secrets.LOAD_TEST_URL }}
+          LOAD_TEST_API_KEY: ${{ secrets.LOAD_TEST_API_KEY }}
+          LOAD_TEST_API_SECRET: ${{ secrets.LOAD_TEST_API_SECRET }}
+          LOAD_PROFILE: ${{ inputs.profile }}
+          LOAD_RUN_ID: ${{ inputs.run_id }}
+          LOAD_START_DELAY_SECONDS: ${{ inputs.start_delay_seconds }}
+          LOAD_SHARD_COUNT: ${{ inputs.shard_count }}
+        run: |
+          test -n "$LOAD_TEST_URL"
+          test -n "$LOAD_TEST_API_KEY"
+          test -n "$LOAD_TEST_API_SECRET"
+          node scripts/livekit-load-dispatch-plan.mjs \
+            --profile "$LOAD_PROFILE" \
+            --run-id "$LOAD_RUN_ID" \
+            --start-delay-seconds "$LOAD_START_DELAY_SECONDS" \
+            --shard-count "$LOAD_SHARD_COUNT"
+
+  generator:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: capacity-rehearsal
+    # Includes the longest selectable synchronization delay, every absolute
+    # phase barrier/completion tail, and a bounded setup/evidence margin.
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: ${{ fromJSON(needs.prepare.outputs.shard_indices) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install pinned LiveKit load tester
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/lk.tar.gz" \
+            https://github.com/livekit/livekit-cli/releases/download/v2.16.3/lk_2.16.3_linux_amd64.tar.gz
+          echo "57935ce348a634a1e12769b9eaf7e684cf46920ad65e4b6d88f87a9cd01de2d6  $RUNNER_TEMP/lk.tar.gz" \
+            | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/lk.tar.gz" -C "$RUNNER_TEMP" lk
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Run shard ${{ matrix.shard_index }} of ${{ needs.prepare.outputs.shard_count }}
+        env:
+          LIVEKIT_URL: ${{ secrets.LOAD_TEST_URL }}
+          LIVEKIT_API_KEY: ${{ secrets.LOAD_TEST_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LOAD_TEST_API_SECRET }}
+          LOAD_PROFILE: ${{ inputs.profile }}
+          LOAD_RUN_ID: ${{ needs.prepare.outputs.run_id }}
+          LOAD_SHARD_COUNT: ${{ needs.prepare.outputs.shard_count }}
+          LOAD_SHARD_INDEX: ${{ matrix.shard_index }}
+          LOAD_START_AT: ${{ needs.prepare.outputs.start_at }}
+          LOAD_CONFIRMATION: ${{ needs.prepare.outputs.confirmation }}
+        run: |
+          npm run load:livekit -- \
+            --profile "$LOAD_PROFILE" \
+            --run-id "$LOAD_RUN_ID" \
+            --shard-count "$LOAD_SHARD_COUNT" \
+            --shard-index "$LOAD_SHARD_INDEX" \
+            --start-at "$LOAD_START_AT" \
+            --allow-remote \
+            --guard-production-ready \
+            --confirm-test-rooms "$LOAD_CONFIRMATION" \
+            --manifest "artifacts/load-test/shard-${LOAD_SHARD_INDEX}.json"
+
+      - name: Upload redacted shard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: livekit-capacity-${{ needs.prepare.outputs.run_id }}-shard-${{ matrix.shard_index }}
+          path: artifacts/load-test/shard-${{ matrix.shard_index }}.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    if: always()
+    needs: [prepare, generator]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download all shard evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: livekit-capacity-${{ needs.prepare.outputs.run_id }}-shard-*
+          path: artifacts/load-test/shards
+          merge-multiple: true
+
+      - name: Aggregate only complete, distinct-host PASS evidence
+        env:
+          LOAD_SHARD_COUNT: ${{ needs.prepare.outputs.shard_count }}
+        run: |
+          set -euo pipefail
+          shard_paths=()
+          for ((shard_index = 0; shard_index < LOAD_SHARD_COUNT; shard_index++)); do
+            shard_path="artifacts/load-test/shards/shard-${shard_index}.json"
+            test -f "$shard_path"
+            shard_paths+=("$shard_path")
+          done
+          node scripts/livekit-load-aggregate.mjs \
+            --output 'artifacts/load-test/${{ needs.prepare.outputs.run_id }}-aggregate.json' \
+            "${shard_paths[@]}"
+
+      - name: Upload aggregate and source manifests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: livekit-capacity-${{ needs.prepare.outputs.run_id }}-aggregate
+          path: artifacts/load-test/
+          if-no-files-found: error
+          retention-days: 30

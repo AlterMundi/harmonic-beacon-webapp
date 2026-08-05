@@ -10,10 +10,15 @@ import { RoomServiceClient } from 'livekit-server-sdk';
 
 import {
     buildPlan,
-    commandFingerprint,
+    createAbortCoordinator,
+    createConsecutiveFailureGuard,
+    generatorHostFingerprint,
     manifestContainsSecret,
     parseLoadTestOutput,
+    probeProductionReadiness,
+    publicLoadPlan,
     remoteConfirmation,
+    scheduledCompletionDelayMs,
 } from './lib/livekit-load-harness.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -87,15 +92,115 @@ function generatedRunId() {
     return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'z').toLowerCase();
 }
 
+async function readGeneratorHostFingerprint() {
+    const readOpaqueHostPart = async (path) => {
+        try {
+            return (await readFile(path, 'utf8')).trim();
+        } catch {
+            return '';
+        }
+    };
+    const [machineId, bootId] = await Promise.all([
+        readOpaqueHostPart('/etc/machine-id'),
+        readOpaqueHostPart('/proc/sys/kernel/random/boot_id'),
+    ]);
+    // boot_id is stable for processes sharing one running kernel, but differs
+    // across separately booted VMs even when a runner image clones hostname
+    // and machine-id. Only the truncated hash enters the manifest.
+    return generatorHostFingerprint({ hostName: hostname(), machineId, bootId });
+}
+
+function installAbortHandlers(abort) {
+    const onSigint = () => {
+        if (abort.request('SIGINT')) {
+            process.stderr.write('\nSIGINT received; stopping load and preserving an ABORTED manifest.\n');
+        }
+    };
+    const onSigterm = () => {
+        if (abort.request('SIGTERM')) {
+            process.stderr.write('\nSIGTERM received; stopping load and preserving an ABORTED manifest.\n');
+        }
+    };
+    process.on('SIGINT', onSigint);
+    process.on('SIGTERM', onSigterm);
+    return () => {
+        process.off('SIGINT', onSigint);
+        process.off('SIGTERM', onSigterm);
+    };
+}
+
+function startProductionReadinessGuard(abort) {
+    let stopped = false;
+    const failures = createConsecutiveFailureGuard({
+        maxFailures: 2,
+        onTrip: () => {
+            if (abort.request('PRODUCTION_READINESS_GUARD')) {
+                process.stderr.write(
+                    '\nPublic production readiness failed twice; stopping load and preserving an ABORTED manifest.\n',
+                );
+            }
+        },
+    });
+    const completion = (async () => {
+        while (!stopped && !abort.requested) {
+            const healthy = await probeProductionReadiness();
+            if (failures.record(healthy)) break;
+            await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_000));
+        }
+    })();
+    return async () => {
+        stopped = true;
+        await completion;
+    };
+}
+
+async function waitBetweenPhases(seconds, abort) {
+    const deadline = Date.now() + seconds * 1000;
+    while (!abort.requested && Date.now() < deadline) {
+        await new Promise((resolvePromise) => setTimeout(
+            resolvePromise,
+            Math.min(250, deadline - Date.now()),
+        ));
+    }
+}
+
+async function waitForScheduledPhase(startAt, offsetSeconds, abort) {
+    if (startAt === null) {
+        return { passed: true, scheduledFor: null, observedAt: null, lateByMs: null };
+    }
+    const target = Date.parse(startAt) + offsetSeconds * 1000;
+    while (!abort.requested && Date.now() < target) {
+        await new Promise((resolvePromise) => setTimeout(
+            resolvePromise,
+            Math.min(250, target - Date.now()),
+        ));
+    }
+    const lateByMs = Date.now() - target;
+    return {
+        passed: abort.requested || lateByMs <= 5_000,
+        scheduledFor: new Date(target).toISOString(),
+        observedAt: new Date().toISOString(),
+        lateByMs,
+    };
+}
+
+async function waitForScheduledCompletion(startAt, phase, abort) {
+    await waitBetweenPhases(scheduledCompletionDelayMs(startAt, phase) / 1000, abort);
+}
+
 function printHelp() {
     process.stdout.write(`Usage: npm run load:livekit -- [options]\n\n` +
-        `  --profile NAME             ci, rehearsal-es, or rehearsal-en\n` +
+        `  --profile NAME             ci, rehearsal-es, rehearsal-en, or diagnostic-en-vp8\n` +
         `  --run-id ID                synthetic namespace recorded in the manifest\n` +
         `  --url URL                  LiveKit URL (default LIVEKIT_URL or localhost)\n` +
         `  --lk-bin PATH              pinned LiveKit CLI executable (default lk)\n` +
         `  --manifest PATH            output JSON path\n` +
+        `  --shard-index NUMBER       zero-based generator shard (default 0)\n` +
+        `  --shard-count NUMBER       total generator shards (default 1)\n` +
+        `  --start-at UTC             shared future UTC start required for sharding\n` +
         `  --dry-run                  validate and write a PLANNED manifest only\n` +
         `  --allow-remote             acknowledge a non-local target\n` +
+        `  --guard-production-ready   abort after two failed public readiness probes\n` +
         `  --confirm-test-rooms VALUE exact room confirmation required remotely\n`);
 }
 
@@ -110,8 +215,19 @@ async function commandOutput(command, args) {
     });
 }
 
-async function runLoad(lkBinary, args, credentials) {
+async function runLoad(lkBinary, args, credentials, abort) {
     const startedAt = new Date();
+    if (abort.requested) {
+        return {
+            exitCode: abort.exitCode(),
+            operatorAborted: true,
+            terminationSignal: abort.snapshot()?.signal ?? null,
+            startedAt: startedAt.toISOString(),
+            endedAt: startedAt.toISOString(),
+            durationMs: 0,
+            summary: parseLoadTestOutput(''),
+        };
+    }
     return new Promise((resolvePromise) => {
         const child = spawn(lkBinary, args, {
             cwd: repositoryRoot,
@@ -123,7 +239,15 @@ async function runLoad(lkBinary, args, credentials) {
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
+        const untrack = abort.track(child);
         let output = '';
+        let settled = false;
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            untrack();
+            resolvePromise(result);
+        };
         child.stdout.on('data', (chunk) => {
             output = appendOutputTail(output, chunk);
             process.stdout.write(chunk);
@@ -133,18 +257,22 @@ async function runLoad(lkBinary, args, credentials) {
             process.stderr.write(chunk);
         });
         child.on('error', (error) => {
-            resolvePromise({
+            finish({
                 exitCode: 127,
                 error: error.message,
+                operatorAborted: abort.requested,
+                terminationSignal: abort.snapshot()?.signal ?? null,
                 startedAt: startedAt.toISOString(),
                 endedAt: new Date().toISOString(),
                 durationMs: Date.now() - startedAt.getTime(),
                 summary: parseLoadTestOutput(output),
             });
         });
-        child.on('close', (exitCode) => {
-            resolvePromise({
-                exitCode: exitCode ?? 1,
+        child.on('close', (exitCode, terminationSignal) => {
+            finish({
+                exitCode: exitCode ?? (abort.requested ? abort.exitCode() : 1),
+                operatorAborted: abort.requested,
+                terminationSignal: terminationSignal ?? null,
                 startedAt: startedAt.toISOString(),
                 endedAt: new Date().toISOString(),
                 durationMs: Date.now() - startedAt.getTime(),
@@ -174,6 +302,14 @@ function summarizeObservedRoom(observed, expectedConnections, expectedPublishers
             p99: percentile(observed.joinOffsetsMs, 0.99),
         },
     };
+}
+
+function loadResultPassed(result, expectedSubscriberTracks, profile) {
+    return result.exitCode === 0 &&
+        result.summary.parsed &&
+        result.summary.tracksReceived === expectedSubscriberTracks &&
+        result.summary.droppedPercent <= profile.maxDroppedPercent &&
+        (result.summary.errorCount === null || result.summary.errorCount === 0);
 }
 
 async function monitorRooms(roomService, phase, stopped) {
@@ -217,8 +353,16 @@ async function monitorRooms(roomService, phase, stopped) {
     return {
         apiErrors,
         successfulSamples,
-        stage: summarizeObservedRoom(rooms.stage, phase.stage.requestedConnections, phase.profileStagePublishers),
-        beacon: summarizeObservedRoom(rooms.beacon, phase.beacon.requestedConnections, phase.profileBeaconPublishers),
+        stage: summarizeObservedRoom(
+            rooms.stage,
+            phase.stage.expectedGlobalConnections,
+            phase.profileStagePublishers,
+        ),
+        beacon: summarizeObservedRoom(
+            rooms.beacon,
+            phase.beacon.expectedGlobalConnections,
+            phase.profileBeaconPublishers,
+        ),
     };
 }
 
@@ -244,26 +388,6 @@ async function waitForCleanup(roomService, roomNames, timeoutMs = 10_000) {
     return { passed: false, convergenceMs: Date.now() - startedAt, remaining };
 }
 
-function publicPlan(plan, lkBinary) {
-    const executable = basename(lkBinary);
-    return {
-        ...plan,
-        phases: plan.phases.map((phase) => ({
-            ...phase,
-            stage: {
-                requestedConnections: phase.stage.requestedConnections,
-                command: `${executable} ${phase.stage.args.join(' ')}`,
-                fingerprint: commandFingerprint(phase.stage.args),
-            },
-            beacon: {
-                requestedConnections: phase.beacon.requestedConnections,
-                command: `${executable} ${phase.beacon.args.join(' ')}`,
-                fingerprint: commandFingerprint(phase.beacon.args),
-            },
-        })),
-    };
-}
-
 async function main() {
     if (hasFlag('--help') || hasFlag('-h')) {
         printHelp();
@@ -274,6 +398,10 @@ async function main() {
     const url = option('--url', process.env.LIVEKIT_URL ?? 'ws://localhost:7880');
     const lkBinary = option('--lk-bin', process.env.LK_BIN ?? 'lk');
     const dryRun = hasFlag('--dry-run');
+    const guardProductionReadiness = hasFlag('--guard-production-ready');
+    const shardIndex = Number(option('--shard-index', '0'));
+    const shardCount = Number(option('--shard-count', '1'));
+    const startAt = option('--start-at', '');
     const profilesPath = resolve(repositoryRoot, 'config/livekit-load-profiles.json');
     const profilesDocument = JSON.parse(await readFile(profilesPath, 'utf8'));
     const profile = profilesDocument.profiles?.[profileName];
@@ -285,10 +413,19 @@ async function main() {
         url,
         allowRemote: hasFlag('--allow-remote'),
         confirmation: option('--confirm-test-rooms', ''),
+        shardIndex,
+        shardCount,
+        startAt,
     });
+    if (!dryRun && plan.scheduledStartAt !== null && Date.parse(plan.scheduledStartAt) - Date.now() < 30_000) {
+        throw new Error('startAt must be at least 30 seconds in the future');
+    }
+    const shardFileSuffix = plan.shard.count === 1
+        ? ''
+        : `-shard-${plan.shard.index}-of-${plan.shard.count}`;
     const manifestPath = resolve(
         repositoryRoot,
-        option('--manifest', `artifacts/load-test/${plan.runId}-${profileName}.json`),
+        option('--manifest', `artifacts/load-test/${plan.runId}-${profileName}${shardFileSuffix}.json`),
     );
     const [git, gitStatus, lk] = await Promise.all([
         commandOutput('git', ['rev-parse', 'HEAD']),
@@ -303,15 +440,19 @@ async function main() {
         harnessSha: git.output.trim() || 'unknown',
         livekitCliVersion: lk.output.trim() || 'unknown',
         harnessDirty: gitStatus.output.trim().length > 0,
-        generatorHostHash: commandFingerprint([hostname()]).slice(0, 12),
-        plan: publicPlan(plan, lkBinary),
+        generatorHostHash: await readGeneratorHostFingerprint(),
+        plan: publicLoadPlan(plan, basename(lkBinary)),
         limitations: [
             'Protocol clients measure SFU capacity; they do not certify browser DOM, decode, physical speaker routing, or perceived audio quality.',
             'Load-test summary latency is media latency, not per-user application login latency.',
             'Physical iOS, Android, Bluetooth, TURN, and six-camera evidence remains in issue #24.',
         ],
+        safety: {
+            productionReadinessGuard: guardProductionReadiness,
+        },
         phases: [],
     };
+    let abort = null;
 
     if (!dryRun) {
         const credentials = {
@@ -323,12 +464,34 @@ async function main() {
             throw new Error('LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required');
         }
         if (lk.exitCode !== 0) throw new Error(`LiveKit CLI unavailable: ${lk.output.trim()}`);
+        abort = createAbortCoordinator();
+        const removeAbortHandlers = installAbortHandlers(abort);
+        const stopProductionReadinessGuard = guardProductionReadiness
+            ? startProductionReadinessGuard(abort)
+            : async () => {};
         const roomService = new RoomServiceClient(
             url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:'),
             credentials.apiKey,
             credentials.apiSecret,
         );
         for (const [index, phase] of plan.phases.entries()) {
+            if (abort.requested) break;
+            const synchronization = await waitForScheduledPhase(
+                plan.scheduledStartAt,
+                phase.scheduledOffsetSeconds,
+                abort,
+            );
+            if (abort.requested) break;
+            if (!synchronization.passed) {
+                manifest.status = 'FAIL';
+                manifest.phases.push({
+                    name: phase.name,
+                    passed: false,
+                    reason: 'missed-synchronized-start',
+                    synchronization,
+                });
+                break;
+            }
             process.stdout.write(`\n[${phase.name}] starting stage and Beacon load\n`);
             const resourceBefore = await readGeneratorResources();
             const eventLoop = monitorEventLoopDelay({ resolution: 20 });
@@ -340,9 +503,10 @@ async function main() {
                 profileBeaconPublishers: profile.beaconPublishers,
             }, stopped);
             const [stage, beacon] = await Promise.all([
-                runLoad(lkBinary, phase.stage.args, credentials),
-                runLoad(lkBinary, phase.beacon.args, credentials),
+                runLoad(lkBinary, phase.stage.args, credentials, abort),
+                runLoad(lkBinary, phase.beacon.args, credentials, abort),
             ]);
+            await waitForScheduledCompletion(plan.scheduledStartAt, phase, abort);
             stopped.value = true;
             const observed = await monitor;
             const cleanup = await waitForCleanup(roomService, plan.rooms);
@@ -357,34 +521,43 @@ async function main() {
                     max: nanosecondsToMilliseconds(eventLoop.max),
                 },
             };
-            const passed = [stage, beacon].every((result) =>
-                result.exitCode === 0 &&
-                result.summary.parsed &&
-                result.summary.tracksReceived === result.summary.tracksExpected &&
-                result.summary.droppedPercent <= profile.maxDroppedPercent &&
-                (result.summary.errorCount === null || result.summary.errorCount === 0),
-            ) &&
+            const passed = !abort.requested &&
+                loadResultPassed(stage, phase.stage.expectedSubscriberTracks, profile) &&
+                loadResultPassed(beacon, phase.beacon.expectedSubscriberTracks, profile) &&
+                observed.apiErrors === 0 &&
                 observed.successfulSamples > 0 &&
-                observed.stage.peakConnections === phase.stage.requestedConnections &&
+                observed.stage.peakConnections === phase.stage.expectedGlobalConnections &&
+                observed.stage.joinObserved === phase.stage.expectedGlobalConnections &&
                 observed.stage.peakPublishers === profile.stagePublishers &&
-                observed.beacon.peakConnections === phase.beacon.requestedConnections &&
+                observed.beacon.peakConnections === phase.beacon.expectedGlobalConnections &&
+                observed.beacon.joinObserved === phase.beacon.expectedGlobalConnections &&
                 observed.beacon.peakPublishers === profile.beaconPublishers &&
                 cleanup.passed;
             manifest.phases.push({
                 name: phase.name,
                 passed,
+                operatorAborted: abort.requested,
+                synchronization,
                 stage,
                 beacon,
                 observed,
                 cleanup,
                 generatorResources,
             });
+            if (abort.requested) break;
             if (!passed) manifest.status = 'FAIL';
-            if (index < plan.phases.length - 1 && profile.interWaveSeconds > 0) {
-                await new Promise((resolvePromise) => setTimeout(resolvePromise, profile.interWaveSeconds * 1000));
+            if (index < plan.phases.length - 1 && plan.scheduledStartAt === null && profile.interWaveSeconds > 0) {
+                await waitBetweenPhases(profile.interWaveSeconds, abort);
             }
         }
-        if (manifest.status !== 'FAIL') manifest.status = 'PASS';
+        await stopProductionReadinessGuard();
+        removeAbortHandlers();
+        if (abort.requested) {
+            manifest.status = 'ABORTED';
+            manifest.abort = abort.snapshot();
+        } else if (manifest.status !== 'FAIL') {
+            manifest.status = 'PASS';
+        }
         if (manifestContainsSecret(manifest, [credentials.apiKey, credentials.apiSecret])) {
             throw new Error('refusing to write a manifest containing a credential');
         }
@@ -397,6 +570,7 @@ async function main() {
         process.stdout.write(`Remote confirmation used: ${remoteConfirmation(plan.rooms)}\n`);
     }
     if (manifest.status === 'FAIL') process.exitCode = 1;
+    if (manifest.status === 'ABORTED') process.exitCode = abort.exitCode();
 }
 
 main().catch((error) => {

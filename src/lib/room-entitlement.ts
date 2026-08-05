@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server';
 
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '@/lib/db';
 import { stableRoomIdentity } from '@/lib/livekit-server';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
@@ -33,19 +35,85 @@ export type RoomEntitlementResult =
         error: 'Authentication required' | 'Not authorized' | 'Session not found';
     };
 
+type RoomAccessBase = {
+    session: RoomPrincipal['session'];
+    identity: string;
+    displayName: string;
+    role: RoomPrincipal['role'];
+    isAssignedFacilitator: boolean;
+    canPublishInitially: boolean;
+    ticketEntitlementId: string | null;
+    staffUserId: string | null;
+    existingParticipant: {
+        id: string;
+        publishGrantedAt: Date | null;
+        publishRevokedAt: Date | null;
+    } | null;
+};
+
+type RoomAccessResult =
+    | { ok: true; access: RoomAccessBase }
+    | {
+        ok: false;
+        status: 401 | 403 | 404;
+        error: 'Authentication required' | 'Not authorized' | 'Session not found';
+    };
+
+type ParticipantGrantState = {
+    publishGrantedAt: Date | null;
+    publishRevokedAt: Date | null;
+};
+
+async function recoverConcurrentParticipant(
+    access: RoomAccessBase,
+    error: unknown,
+): Promise<ParticipantGrantState> {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+        throw error;
+    }
+
+    // The identity upsert has one arbiter, while the event-scoped ticket and
+    // staff links are protected by separate partial unique indexes. Under a
+    // fresh Stage+Beacon join PostgreSQL may report one of those independent
+    // conflicts even though the other request already created the exact same
+    // principal. Recover only that exact canonical winner: an unrelated
+    // P2002, stale identity or mismatched principal must remain an error.
+    const winner = await prisma.sessionParticipant.findFirst({
+        where: {
+            scheduledSessionId: access.session.id,
+            participantIdentity: access.identity,
+            ...(access.ticketEntitlementId
+                ? { ticketEntitlementId: access.ticketEntitlementId }
+                : { staffUserId: access.staffUserId! }),
+        },
+        select: { id: true },
+    });
+    if (!winner) {
+        throw error;
+    }
+
+    return prisma.sessionParticipant.update({
+        where: { id: winner.id },
+        data: { leftAt: null },
+        select: {
+            publishGrantedAt: true,
+            publishRevokedAt: true,
+        },
+    });
+}
+
 /**
- * Resolve the opaque weekend web session against current database state.
- *
- * This is intentionally called for every token request: a revoked cookie or
- * ticket stops working immediately. Ticket sessions are event-scoped. Global
- * operators/admins may observe any active event, while a facilitator is scoped
- * to the event they facilitate.
+ * Read-only half of room access resolution: cookie, entitlement, event
+ * correspondence and policy — validated against current database state on
+ * every call. It never writes: no participant upsert, no `leftAt` clearing,
+ * no preflight grant. Polling GETs must use this instead of
+ * `resolveRoomPrincipal`, which reconciles durable presence by design.
  */
-export async function resolveRoomPrincipal(
+async function resolveRoomAccess(
     request: NextRequest,
     scheduledSessionId: string,
     now = new Date(),
-): Promise<RoomEntitlementResult> {
+): Promise<RoomAccessResult> {
     const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
     if (!cookieValue) {
         return { ok: false, status: 401, error: 'Authentication required' };
@@ -180,11 +248,8 @@ export async function resolveRoomPrincipal(
         principalKind,
         principalId,
     );
-    // The seed reserves Julián's slot before a LiveKit identity exists, so that
-    // row initially carries a random placeholder identity. Resolve by the
-    // event-scoped principal first and migrate that row to the stable identity.
-    // Otherwise an upsert keyed only by identity attempts to insert a second
-    // `(session, staff)` row and hits the migration's partial unique index.
+    // Read-only lookup: the existing row, when there is one, informs
+    // canPublish for viewers without materializing presence.
     const existingParticipant = await prisma.sessionParticipant.findFirst({
         where: {
             scheduledSessionId: scheduledSession.id,
@@ -192,50 +257,12 @@ export async function resolveRoomPrincipal(
                 ? { ticketEntitlementId }
                 : { staffUserId: staffUserId! }),
         },
-        select: { id: true },
+        select: { id: true, publishGrantedAt: true, publishRevokedAt: true },
     });
-    const participant = existingParticipant
-        ? await prisma.sessionParticipant.update({
-            where: { id: existingParticipant.id },
-            data: {
-                participantIdentity: identity,
-                leftAt: null,
-            },
-            select: {
-                publishGrantedAt: true,
-                publishRevokedAt: true,
-            },
-        })
-        : await prisma.sessionParticipant.upsert({
-            where: {
-                scheduledSessionId_participantIdentity: {
-                    scheduledSessionId: scheduledSession.id,
-                    participantIdentity: identity,
-                },
-            },
-            create: {
-                scheduledSessionId: scheduledSession.id,
-                participantIdentity: identity,
-                ticketEntitlementId,
-                staffUserId,
-                publishGrantedAt: canPublishInitially ? now : null,
-                grantVersion: canPublishInitially ? 1 : 0,
-                grantReason: canPublishInitially
-                    ? 'Facilitator preflight grant'
-                    : null,
-            },
-            update: {
-                leftAt: null,
-            },
-            select: {
-                publishGrantedAt: true,
-                publishRevokedAt: true,
-            },
-        });
 
     return {
         ok: true,
-        principal: {
+        access: {
             session: {
                 id: scheduledSession.id,
                 title: scheduledSession.title,
@@ -247,11 +274,134 @@ export async function resolveRoomPrincipal(
             displayName,
             role,
             isAssignedFacilitator,
+            canPublishInitially,
+            ticketEntitlementId,
+            staffUserId,
+            existingParticipant,
+        },
+    };
+}
+
+/**
+ * Read-only room viewer for polling GETs (TAP-02 review): validates the web
+ * session, entitlement and event correspondence exactly like the token
+ * route, but performs zero writes and zero presence changes. `canPublish`
+ * reflects the existing participant row only — a viewer who never joined
+ * truthfully has no grant.
+ */
+export async function resolveRoomViewer(
+    request: NextRequest,
+    scheduledSessionId: string,
+    now = new Date(),
+): Promise<RoomEntitlementResult> {
+    const result = await resolveRoomAccess(request, scheduledSessionId, now);
+    if (!result.ok) {
+        return result;
+    }
+    const { access } = result;
+    return {
+        ok: true,
+        principal: {
+            session: access.session,
+            identity: access.identity,
+            displayName: access.displayName,
+            role: access.role,
+            isAssignedFacilitator: access.isAssignedFacilitator,
+            canPublish:
+                access.existingParticipant !== null &&
+                access.existingParticipant.publishGrantedAt !== null &&
+                access.existingParticipant.publishRevokedAt === null,
+            ticketEntitlementId: access.ticketEntitlementId,
+            staffUserId: access.staffUserId,
+        },
+    };
+}
+
+/**
+ * Resolve the opaque weekend web session against current database state.
+ *
+ * This is intentionally called for every token request: a revoked cookie or
+ * ticket stops working immediately. Ticket sessions are event-scoped. Global
+ * operators/admins may observe any active event, while a facilitator is scoped
+ * to the event they facilitate.
+ *
+ * Joining is a write: this resolver reconciles the durable participant row
+ * (stable identity, cleared `leftAt`, facilitator preflight grant). Read-only
+ * polling surfaces must use {@link resolveRoomViewer} instead.
+ */
+export async function resolveRoomPrincipal(
+    request: NextRequest,
+    scheduledSessionId: string,
+    now = new Date(),
+): Promise<RoomEntitlementResult> {
+    const result = await resolveRoomAccess(request, scheduledSessionId, now);
+    if (!result.ok) {
+        return result;
+    }
+    const { access } = result;
+    const existingParticipant = access.existingParticipant;
+    // The seed reserves Julián's slot before a LiveKit identity exists, so that
+    // row initially carries a random placeholder identity. Resolve by the
+    // event-scoped principal first and migrate that row to the stable identity.
+    // Otherwise an upsert keyed only by identity attempts to insert a second
+    // `(session, staff)` row and hits the migration's partial unique index.
+    let participant: ParticipantGrantState;
+    try {
+        participant = existingParticipant
+            ? await prisma.sessionParticipant.update({
+                where: { id: existingParticipant.id },
+                data: {
+                    participantIdentity: access.identity,
+                    leftAt: null,
+                },
+                select: {
+                    publishGrantedAt: true,
+                    publishRevokedAt: true,
+                },
+            })
+            : await prisma.sessionParticipant.upsert({
+                where: {
+                    scheduledSessionId_participantIdentity: {
+                        scheduledSessionId: scheduledSessionId,
+                        participantIdentity: access.identity,
+                    },
+                },
+                create: {
+                    scheduledSessionId: scheduledSessionId,
+                    participantIdentity: access.identity,
+                    ticketEntitlementId: access.ticketEntitlementId,
+                    staffUserId: access.staffUserId,
+                    publishGrantedAt: access.canPublishInitially ? now : null,
+                    grantVersion: access.canPublishInitially ? 1 : 0,
+                    grantReason: access.canPublishInitially
+                        ? 'Facilitator preflight grant'
+                        : null,
+                },
+                update: {
+                    leftAt: null,
+                },
+                select: {
+                    publishGrantedAt: true,
+                    publishRevokedAt: true,
+                },
+            });
+    } catch (error) {
+        participant = await recoverConcurrentParticipant(access, error);
+    }
+
+    return {
+        ok: true,
+        principal: {
+            session: access.session,
+            identity: access.identity,
+            displayName: access.displayName,
+            role: access.role,
+            isAssignedFacilitator: access.isAssignedFacilitator,
             canPublish:
                 participant.publishGrantedAt !== null &&
                 participant.publishRevokedAt === null,
-            ticketEntitlementId,
-            staffUserId,
+            ticketEntitlementId: access.ticketEntitlementId,
+            staffUserId: access.staffUserId,
         },
     };
 }
