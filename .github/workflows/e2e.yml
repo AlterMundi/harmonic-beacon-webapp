@@ -103,6 +103,12 @@ jobs:
           --project=w320
           --project=android-chrome
 
+      - name: Install Firefox after Chromium screenshot gates
+        run: npx playwright install --with-deps firefox
+
+      - name: Run Firefox functional and accessibility gates
+        run: npx playwright test --project=firefox
+
       - name: Install WebKit after Chromium screenshot gates
         run: npx playwright install --with-deps webkit
 
