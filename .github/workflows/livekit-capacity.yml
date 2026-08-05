@@ -88,7 +88,7 @@ jobs:
     environment: capacity-rehearsal
     # Includes the longest selectable synchronization delay, every absolute
     # phase barrier/completion tail, and a bounded setup/evidence margin.
-    timeout-minutes: 75
+    timeout-minutes: 80
     strategy:
       fail-fast: false
       matrix:

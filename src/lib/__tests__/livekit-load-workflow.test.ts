@@ -45,23 +45,40 @@ describe('distributed LiveKit capacity workflow contract', () => {
         const timeoutMinutes = Number(workflow.match(/timeout-minutes:\s*(\d+)/)?.[1]);
         const startDelayChoices = [...workflow.matchAll(/^\s+- '(\d+)'$/gm)]
             .map((match) => Number(match[1]));
+        const shardCountOptions = workflow.match(
+            /shard_count:[\s\S]*?options:\n((?:\s+- '\d+'\n)+)/,
+        )?.[1] ?? '';
+        const shardCountChoices = [...shardCountOptions.matchAll(/- '(\d+)'/g)]
+            .map((match) => Number(match[1]));
         const maxStartDelaySeconds = Math.max(...startDelayChoices);
         const nowMs = Date.parse('2026-08-05T00:00:00.000Z');
         const setupAndEvidenceMarginSeconds = 300;
 
+        expect(shardCountChoices).toEqual([2, 6]);
         for (const [profileName, profile] of Object.entries(profiles)) {
-            const plan = buildDistributedDispatchPlan({
-                profileName,
-                profile,
-                runId: `timeout-${profileName}`,
-                targetUrl: 'ws://example.test:7890',
-                startDelaySeconds: maxStartDelaySeconds,
-                nowMs,
-            });
-            const requiredSeconds =
-                (Date.parse(plan.expectedEndAt) - nowMs) / 1000 +
-                setupAndEvidenceMarginSeconds;
-            expect(timeoutMinutes * 60, profileName).toBeGreaterThanOrEqual(requiredSeconds);
+            const { attendees, rampPerSecond } = profile as {
+                attendees: number;
+                rampPerSecond: number;
+            };
+            for (const shardCount of shardCountChoices) {
+                if (shardCount > attendees || shardCount > rampPerSecond) continue;
+                const plan = buildDistributedDispatchPlan({
+                    profileName,
+                    profile,
+                    runId: `timeout-${profileName}-${shardCount}`,
+                    targetUrl: 'ws://example.test:7890',
+                    startDelaySeconds: maxStartDelaySeconds,
+                    shardCount,
+                    nowMs,
+                });
+                const requiredSeconds =
+                    (Date.parse(plan.expectedEndAt) - nowMs) / 1000 +
+                    setupAndEvidenceMarginSeconds;
+                expect(
+                    timeoutMinutes * 60,
+                    `${profileName}/${shardCount} shards`,
+                ).toBeGreaterThanOrEqual(requiredSeconds);
+            }
         }
     });
 
