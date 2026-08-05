@@ -178,4 +178,23 @@ describe('weekend seed contract', () => {
         expect(migration).toContain('target_count <> source_count');
         expect(migration).not.toMatch(/UPDATE\s+"scheduled_sessions"/i);
     });
+
+    it('cancels the mistaken August 11 row and creates a fresh August 9 session', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260805230000_move_english_session_to_august_9/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain('20000000-0000-4000-8000-202608110001');
+        expect(migration).toContain('20000000-0000-4000-8000-202608090001');
+        expect(migration).toContain("'CANCELLED'::\"ScheduledSessionStatus\"");
+        expect(migration).toContain("'SCHEDULED'::\"ScheduledSessionStatus\"");
+        expect(migration).toContain("'2026-08-09 22:00:00'::timestamp");
+        expect(migration).toContain("'hmp-2026-08-09-en'");
+        expect(migration).toContain('old_count <> 1');
+        expect(migration).toContain('new_count <> 1');
+    });
 });
