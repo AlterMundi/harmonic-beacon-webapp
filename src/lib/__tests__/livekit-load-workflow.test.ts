@@ -2,10 +2,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { buildDistributedDispatchPlan } from '../../../scripts/lib/livekit-load-harness.mjs';
+
 const workflow = readFileSync(
     resolve(process.cwd(), '.github/workflows/livekit-capacity.yml'),
     'utf8',
 );
+const profiles = JSON.parse(readFileSync(
+    resolve(process.cwd(), 'config/livekit-load-profiles.json'),
+    'utf8',
+)).profiles;
 
 describe('distributed LiveKit capacity workflow contract', () => {
     it('is manual, least-privilege and cannot receive an arbitrary target input', () => {
@@ -29,6 +35,30 @@ describe('distributed LiveKit capacity workflow contract', () => {
         expect(workflow).toContain('if: always()');
         expect(workflow).toContain('livekit-load-aggregate.mjs');
         expect(workflow).toContain('ref: ${{ github.sha }}');
+    });
+
+    it('budgets the longest dispatch plan plus bounded runner overhead', () => {
+        const timeoutMinutes = Number(workflow.match(/timeout-minutes:\s*(\d+)/)?.[1]);
+        const startDelayChoices = [...workflow.matchAll(/^\s+- '(\d+)'$/gm)]
+            .map((match) => Number(match[1]));
+        const maxStartDelaySeconds = Math.max(...startDelayChoices);
+        const nowMs = Date.parse('2026-08-05T00:00:00.000Z');
+        const setupAndEvidenceMarginSeconds = 300;
+
+        for (const [profileName, profile] of Object.entries(profiles)) {
+            const plan = buildDistributedDispatchPlan({
+                profileName,
+                profile,
+                runId: `timeout-${profileName}`,
+                targetUrl: 'ws://example.test:7890',
+                startDelaySeconds: maxStartDelaySeconds,
+                nowMs,
+            });
+            const requiredSeconds =
+                (Date.parse(plan.expectedEndAt) - nowMs) / 1000 +
+                setupAndEvidenceMarginSeconds;
+            expect(timeoutMinutes * 60, profileName).toBeGreaterThanOrEqual(requiredSeconds);
+        }
     });
 
     it('pins and verifies the official LiveKit CLI artifact', () => {

@@ -131,6 +131,12 @@ consecutive failures abort its current Stage and Beacon processes, preserve an
 `ABORTED` source manifest and prevent a global PASS. The probe never reads a
 response body and cannot be redirected to an operator-supplied URL.
 
+The generator job has a 75-minute hard timeout. A workflow contract test proves
+that this covers the longest selectable synchronization delay, the complete
+rehearsal schedule (including delayed CLI completion tails), and a five-minute
+setup/evidence margin. Do not shorten it independently of the committed profile
+timings: a job timeout cannot emit an admissible manifest.
+
 The workflow uses the `capacity-rehearsal` environment. Restrict that
 environment to the `main` branch and provision these environment secrets only
 for the lifetime of one isolated target:
