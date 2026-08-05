@@ -15,6 +15,7 @@
       "reconnectWaves": 1,
       "reconnectMode": "simultaneous",
       "interWaveSeconds": 1,
+      "phaseCompletionBufferSeconds": 15,
       "maxDroppedPercent": 0
     },
     "rehearsal-es": {
@@ -31,6 +32,7 @@
       "reconnectWaves": 2,
       "reconnectMode": "staggered",
       "interWaveSeconds": 10,
+      "phaseCompletionBufferSeconds": 300,
       "maxDroppedPercent": 0.1
     },
     "rehearsal-en": {
@@ -47,6 +49,7 @@
       "reconnectWaves": 2,
       "reconnectMode": "staggered",
       "interWaveSeconds": 10,
+      "phaseCompletionBufferSeconds": 300,
       "maxDroppedPercent": 0.1
     }
   }

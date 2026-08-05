@@ -46,6 +46,7 @@ const profile = {
     reconnectWaves: 2,
     reconnectMode: 'staggered',
     interWaveSeconds: 10,
+    phaseCompletionBufferSeconds: 300,
     maxDroppedPercent: 0.1,
 };
 const temporaryRoots: string[] = [];
@@ -193,7 +194,7 @@ describe('LiveKit load harness safety', () => {
                 beacon: 'hb-load-github-run-a-es-beacon',
             },
         });
-        expect(dispatch.expectedEndAt).toBe('2026-08-05T12:44:49.000Z');
+        expect(dispatch.expectedEndAt).toBe('2026-08-05T12:59:49.000Z');
         expect(JSON.stringify(dispatch)).not.toContain('secret');
         expect(dispatch.confirmation).toBe(
             'LOADTEST:hb-load-github-run-a-es-stage:hb-load-github-run-a-es-beacon',
@@ -265,6 +266,7 @@ describe('LiveKit load harness safety', () => {
         expect(shards.map((plan) => plan.shard.localStagePublishers)).toEqual([3, 3]);
         expect(shards.map((plan) => plan.shard.localBeaconPublishers)).toEqual([1, 0]);
         expect(shards.map((plan) => plan.shard.localRampPerSecond)).toEqual([5, 5]);
+        expect(shards.map((plan) => plan.shard.phaseCompletionBufferSeconds)).toEqual([300, 300]);
         expect(shards.map((plan) => plan.phases[0].stage.requestedConnections)).toEqual([78, 78]);
         expect(shards.map((plan) => plan.phases[0].beacon.requestedConnections)).toEqual([76, 75]);
         expect(shards[0].phases[0].stage.expectedGlobalConnections).toBe(156);
@@ -274,7 +276,7 @@ describe('LiveKit load harness safety', () => {
         expect(shards[0].phases[0].stage.args).toContain('hbload-event-weekend-s0-stage');
         expect(shards[1].phases[0].stage.args).toContain('hbload-event-weekend-s1-stage');
         expect(shards[0].phases.map((phase) => phase.scheduledOffsetSeconds)).toEqual([
-            0, 91, 1322, 1413,
+            0, 391, 1922, 2313,
         ]);
     });
 
@@ -287,6 +289,35 @@ describe('LiveKit load harness safety', () => {
         expect(connectionRampSeconds(78, 5)).toBe(16);
         expect(connectionRampSeconds(6, 6)).toBe(1);
         expect(connectionRampSeconds(151, 100)).toBe(15);
+    });
+
+    it('reserves an explicit completion tail before every later synchronized phase', () => {
+        const withoutBuffer = buildPlan({
+            profileName: 'rehearsal-es',
+            profile: { ...profile, phaseCompletionBufferSeconds: 0 },
+            runId: 'schedule-without-buffer',
+            url: 'ws://localhost:7880',
+            shardIndex: 0,
+            shardCount: 2,
+            startAt: '2026-08-06T12:00:00.000Z',
+        });
+        const withBuffer = buildPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'schedule-with-buffer',
+            url: 'ws://localhost:7880',
+            shardIndex: 0,
+            shardCount: 2,
+            startAt: '2026-08-06T12:00:00.000Z',
+        });
+
+        expect(withBuffer.phases.map((phase, index) =>
+            phase.scheduledOffsetSeconds - withoutBuffer.phases[index].scheduledOffsetSeconds,
+        )).toEqual([0, 300, 600, 900]);
+        expect(() => validateProfile({
+            ...profile,
+            phaseCompletionBufferSeconds: -1,
+        })).toThrow(/phaseCompletionBufferSeconds/);
     });
 
     it('fails closed on incomplete or unsynchronized shard coordinates', () => {

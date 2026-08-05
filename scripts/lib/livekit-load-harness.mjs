@@ -73,6 +73,7 @@ export function validateProfile(profile) {
         'reconnectDurationSeconds',
         'reconnectWaves',
         'interWaveSeconds',
+        'phaseCompletionBufferSeconds',
     ];
     for (const field of integerFields) {
         if (!Number.isInteger(profile[field]) || profile[field] < 0) {
@@ -309,7 +310,9 @@ export function buildPlan({
         );
         const scheduled = { ...phase, scheduledOffsetSeconds, expectedConnectSeconds };
         scheduledOffsetSeconds += expectedConnectSeconds + phase.durationSeconds;
-        if (index < phases.length - 1) scheduledOffsetSeconds += phaseGapSeconds;
+        if (index < phases.length - 1) {
+            scheduledOffsetSeconds += profile.phaseCompletionBufferSeconds + phaseGapSeconds;
+        }
         return scheduled;
     });
     return {
@@ -329,6 +332,7 @@ export function buildPlan({
             localBeaconPublishers,
             localRampPerSecond,
             phaseGapSeconds,
+            phaseCompletionBufferSeconds: profile.phaseCompletionBufferSeconds,
         },
         phases: scheduledPhases.map((phase) => ({
             ...phase,
@@ -520,7 +524,8 @@ function shardPlanIsDeterministic(plan, index, shardCount) {
         plan.shard.localStagePublishers !== localStagePublishers ||
         plan.shard.localBeaconPublishers !== localBeaconPublishers ||
         plan.shard.localRampPerSecond !== localRampPerSecond ||
-        plan.shard.phaseGapSeconds !== expectedGap
+        plan.shard.phaseGapSeconds !== expectedGap ||
+        plan.shard.phaseCompletionBufferSeconds !== profile.phaseCompletionBufferSeconds
     ) return false;
 
     let offset = 0;
@@ -551,7 +556,9 @@ function shardPlanIsDeterministic(plan, index, shardCount) {
             phase.beacon.expectedGlobalPublishers === profile.beaconPublishers &&
             phase.beacon.expectedSubscriberTracks === localAttendees * profile.beaconPublishers;
         offset += expectedConnectSeconds + phase.durationSeconds;
-        if (phaseIndex < plan.phases.length - 1) offset += expectedGap;
+        if (phaseIndex < plan.phases.length - 1) {
+            offset += profile.phaseCompletionBufferSeconds + expectedGap;
+        }
         return valid;
     });
 }
