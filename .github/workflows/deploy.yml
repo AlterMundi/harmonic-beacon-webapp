@@ -47,8 +47,13 @@ jobs:
           test "$(sudo -n stat -c '%a:%U:%G' /etc/harmonic-beacon/commerce.env)" = "600:root:root"
           test "$(sudo -n docker network inspect pmp_beacon_internal --format '{{.Internal}}')" = true
           members="$(sudo -n docker network inspect pmp_beacon_internal \
-            --format '{{range .Containers}}{{println .Name}}{{end}}' | sort)"
-          test "$members" = $'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
+            --format '{{range .Containers}}{{println .Name}}{{end}}' | \
+            sed '/^[[:space:]]*$/d' | sort)"
+          expected_members=$'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
+          if [ "$members" != "$expected_members" ]; then
+            printf 'Unexpected pmp_beacon_internal members:\n%s\n' "$members" >&2
+            exit 1
+          fi
           sudo -n docker compose --project-name app \
             --env-file /etc/harmonic-beacon/production.env config --quiet
 
@@ -158,8 +163,13 @@ jobs:
         run: |
           set -euo pipefail
           members="$(sudo -n docker network inspect pmp_beacon_internal \
-            --format '{{range .Containers}}{{println .Name}}{{end}}' | sort)"
-          test "$members" = $'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
+            --format '{{range .Containers}}{{println .Name}}{{end}}' | \
+            sed '/^[[:space:]]*$/d' | sort)"
+          expected_members=$'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
+          if [ "$members" != "$expected_members" ]; then
+            printf 'Unexpected pmp_beacon_internal members:\n%s\n' "$members" >&2
+            exit 1
+          fi
 
           container_has_env_name() {
             sudo -n docker inspect "$1" \
