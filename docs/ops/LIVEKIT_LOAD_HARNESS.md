@@ -137,6 +137,13 @@ consecutive failures abort its current Stage and Beacon processes, preserve an
 `ABORTED` source manifest and prevent a global PASS. The probe never reads a
 response body and cannot be redirected to an operator-supplied URL.
 
+Every shard pads its local CLI duration by the difference between its own
+connection ramp and the slowest planned ramp. Stage and Beacon therefore remain
+connected through one shared completion barrier even when attendee, publisher,
+or global ramp partitions are uneven. Cleanup is checked only after that
+barrier; an aggregate refuses a shard whose recorded command could disconnect
+early.
+
 The generator job has an 80-minute hard timeout. A workflow contract test proves
 that this covers the longest selectable synchronization delay, the complete
 rehearsal schedule (including delayed CLI completion tails), every selectable

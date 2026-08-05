@@ -10,14 +10,15 @@ import { RoomServiceClient } from 'livekit-server-sdk';
 
 import {
     buildPlan,
-    commandFingerprint,
     createAbortCoordinator,
     createConsecutiveFailureGuard,
     generatorHostFingerprint,
     manifestContainsSecret,
     parseLoadTestOutput,
     probeProductionReadiness,
+    publicLoadPlan,
     remoteConfirmation,
+    scheduledCompletionDelayMs,
 } from './lib/livekit-load-harness.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -181,6 +182,10 @@ async function waitForScheduledPhase(startAt, offsetSeconds, abort) {
         observedAt: new Date().toISOString(),
         lateByMs,
     };
+}
+
+async function waitForScheduledCompletion(startAt, phase, abort) {
+    await waitBetweenPhases(scheduledCompletionDelayMs(startAt, phase) / 1000, abort);
 }
 
 function printHelp() {
@@ -383,34 +388,6 @@ async function waitForCleanup(roomService, roomNames, timeoutMs = 10_000) {
     return { passed: false, convergenceMs: Date.now() - startedAt, remaining };
 }
 
-function publicPlan(plan, lkBinary) {
-    const executable = basename(lkBinary);
-    return {
-        ...plan,
-        phases: plan.phases.map((phase) => ({
-            ...phase,
-            stage: {
-                requestedConnections: phase.stage.requestedConnections,
-                expectedGlobalConnections: phase.stage.expectedGlobalConnections,
-                localPublishers: phase.stage.localPublishers,
-                expectedGlobalPublishers: phase.stage.expectedGlobalPublishers,
-                expectedSubscriberTracks: phase.stage.expectedSubscriberTracks,
-                command: `${executable} ${phase.stage.args.join(' ')}`,
-                fingerprint: commandFingerprint(phase.stage.args),
-            },
-            beacon: {
-                requestedConnections: phase.beacon.requestedConnections,
-                expectedGlobalConnections: phase.beacon.expectedGlobalConnections,
-                localPublishers: phase.beacon.localPublishers,
-                expectedGlobalPublishers: phase.beacon.expectedGlobalPublishers,
-                expectedSubscriberTracks: phase.beacon.expectedSubscriberTracks,
-                command: `${executable} ${phase.beacon.args.join(' ')}`,
-                fingerprint: commandFingerprint(phase.beacon.args),
-            },
-        })),
-    };
-}
-
 async function main() {
     if (hasFlag('--help') || hasFlag('-h')) {
         printHelp();
@@ -464,7 +441,7 @@ async function main() {
         livekitCliVersion: lk.output.trim() || 'unknown',
         harnessDirty: gitStatus.output.trim().length > 0,
         generatorHostHash: await readGeneratorHostFingerprint(),
-        plan: publicPlan(plan, lkBinary),
+        plan: publicLoadPlan(plan, basename(lkBinary)),
         limitations: [
             'Protocol clients measure SFU capacity; they do not certify browser DOM, decode, physical speaker routing, or perceived audio quality.',
             'Load-test summary latency is media latency, not per-user application login latency.',
@@ -529,6 +506,7 @@ async function main() {
                 runLoad(lkBinary, phase.stage.args, credentials, abort),
                 runLoad(lkBinary, phase.beacon.args, credentials, abort),
             ]);
+            await waitForScheduledCompletion(plan.scheduledStartAt, phase, abort);
             stopped.value = true;
             const observed = await monitor;
             const cleanup = await waitForCleanup(roomService, plan.rooms);
