@@ -108,7 +108,11 @@ stackTest.describe('role surfaces', () => {
             'E2E Facilitator',
             ROUTES.opsSession(SESSION_ES.id),
         );
-        await expect(page.getByText(SESSION_ES.title)).toBeVisible();
+        await expect(page.getByRole('heading', {
+            level: 1,
+            name: `Harmonic Projection — ${SESSION_ES.title}`,
+            exact: true,
+        })).toBeVisible();
         await assertAccessible(page, 'ops-session-console', testInfo);
 
         for (const [name, selector] of [
