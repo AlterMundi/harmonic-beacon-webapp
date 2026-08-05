@@ -128,6 +128,20 @@ jobs:
           --project=w320
           --project=android-chrome
 
+      # TEMPORARY for PR #187: regenerate the attendee visual baselines on the
+      # reference environment (the contributions panel legitimately changed
+      # the room layout). Reverted before merge once the PNGs are committed.
+      - name: TEMP regenerate visual baselines (#187)
+        if: github.head_ref == 'feat/chat-ui-01-session-contributions'
+        run: npx playwright test e2e/tests/visual.spec.ts --update-snapshots
+
+      - name: TEMP upload regenerated baselines (#187)
+        if: github.head_ref == 'feat/chat-ui-01-session-contributions'
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-visual-baselines
+          path: e2e/tests/visual.spec.ts-snapshots/
+
       - name: Install Firefox after Chromium screenshot gates
         run: npx playwright install --with-deps firefox
 

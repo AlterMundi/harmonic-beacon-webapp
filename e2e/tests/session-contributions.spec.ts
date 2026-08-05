@@ -188,9 +188,9 @@ stackTest.describe('session contributions chat (#141)', () => {
                 await panel.getByRole('textbox').fill(`chat durante audio e2e ${Date.now()}`);
                 await panel.getByRole('button', { name: 'Compartir', exact: true }).click();
                 await expect(panel.getByRole('textbox')).toHaveValue('', { timeout: 10_000 });
-                await panel.getByRole('button', { name: /Contraer|Collapse/i }).click();
+                await panel.getByRole('button', { expanded: true }).click();
                 await page.waitForTimeout(500);
-                await panel.getByRole('button', { name: /Expandir|Expand/i }).click();
+                await panel.getByRole('button', { expanded: false }).click();
                 await page.waitForTimeout(2_500);
 
                 expectMediaContinuity(baseline, await mediaProbeSnapshot(page));
