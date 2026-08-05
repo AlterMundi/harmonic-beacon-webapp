@@ -26,6 +26,11 @@ type WeekendEvent = {
 };
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
+// A missed lifecycle transition must not leave an old LIVE row advertising the
+// current checkout indefinitely. Weekend sessions last hours, not days; 24
+// hours keeps a delayed/extended live room discoverable while failing closed
+// before a stale row can be presented as the next paid event.
+const PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function safeNext(raw: string | string[] | undefined): string | undefined {
     const value = Array.isArray(raw) ? raw[0] : raw;
@@ -34,10 +39,17 @@ function safeNext(raw: string | string[] | undefined): string | undefined {
 
 async function weekendEvents(): Promise<WeekendEvent[] | null> {
     try {
+        const now = new Date();
+        const liveStartedAfter = new Date(now.getTime() - PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS);
+
         return await prisma.scheduledSession.findMany({
             where: {
-                status: { in: ["SCHEDULED", "LIVE"] },
                 isTest: false,
+                endedAt: null,
+                OR: [
+                    { status: "SCHEDULED", scheduledAt: { gte: now } },
+                    { status: "LIVE", startedAt: { gte: liveStartedAfter } },
+                ],
             },
             orderBy: { scheduledAt: "asc" },
             select: { id: true, language: true, scheduledAt: true },
