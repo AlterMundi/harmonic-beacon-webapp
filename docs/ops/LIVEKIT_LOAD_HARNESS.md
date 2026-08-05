@@ -123,6 +123,12 @@ target-local telemetry or physical browser evidence.
 
 `.github/workflows/livekit-capacity.yml` is a manual-only two-generator
 orchestrator for the case where no two trusted standalone hosts are available.
+The default remains two hosts so consecutive baselines stay comparable. A
+bounded six-host option partitions the same 150 attendees, six Stage publishers,
+one Beacon publisher and global ramp across six independent runners. Use it to
+diagnose generator fan-in after a two-host failure; it does not increase the
+declared load or relax any acceptance threshold. The aggregate still requires
+every planned shard, distinct boot provenance and byte-equivalent plans.
 It runs each shard on a different ephemeral GitHub-hosted runner, pins and
 verifies `lk` v2.16.3, schedules both against the same future UTC boundary, and
 uploads the redacted source manifests before aggregating them fail-closed.
@@ -156,6 +162,11 @@ gh workflow run livekit-capacity.yml --ref main \
   -f run_id=capacity-en-20260805-a \
   -f start_delay_seconds=1200
 ```
+
+Keep the default two-host baseline for comparisons. After a failed baseline
+whose generator fan-in remains a plausible cause, repeat with the same profile,
+target and thresholds plus `-f shard_count=6`; use a new run ID and preserve
+both manifests as separate evidence.
 
 The target must stay isolated from event rooms and the production LiveKit
 process. After downloading and hashing the aggregate plus target telemetry,

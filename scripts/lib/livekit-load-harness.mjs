@@ -128,6 +128,37 @@ export function partitionCount(total, shardIndex, shardCount) {
     return base + (shardIndex < total % shardCount ? 1 : 0);
 }
 
+function shardExpectedConnectSeconds(profile, shardIndex, shardCount, phaseName) {
+    const attendees = partitionCount(profile.attendees, shardIndex, shardCount);
+    const stagePublishers = partitionCount(profile.stagePublishers, shardIndex, shardCount);
+    const beaconPublishers = partitionCount(profile.beaconPublishers, shardIndex, shardCount);
+    const rampPerSecond = partitionCount(profile.rampPerSecond, shardIndex, shardCount);
+    const simultaneousReconnect = phaseName.startsWith('reconnect-') &&
+        profile.reconnectMode === 'simultaneous';
+    const stageRampPerSecond = simultaneousReconnect
+        ? attendees + stagePublishers
+        : rampPerSecond;
+    const beaconRampPerSecond = simultaneousReconnect
+        ? attendees + beaconPublishers
+        : rampPerSecond;
+    return Math.max(
+        connectionRampSeconds(attendees + stagePublishers, stageRampPerSecond),
+        connectionRampSeconds(attendees + beaconPublishers, beaconRampPerSecond),
+    );
+}
+
+function distributedExpectedConnectSeconds(profile, shardCount, phaseName) {
+    return Math.max(...Array.from(
+        { length: shardCount },
+        (_, shardIndex) => shardExpectedConnectSeconds(
+            profile,
+            shardIndex,
+            shardCount,
+            phaseName,
+        ),
+    ));
+}
+
 export function connectionRampSeconds(connections, rampPerSecond) {
     if (connections <= 1) return 0;
     return Math.ceil((connections - 1) / Math.min(rampPerSecond, 10));
@@ -298,16 +329,9 @@ export function buildPlan({
     }
     let scheduledOffsetSeconds = 0;
     const scheduledPhases = phases.map((phase, index) => {
-        const expectedConnectSeconds = Math.max(
-            connectionRampSeconds(
-                localAttendees + localStagePublishers,
-                phase.stageRampPerSecond,
-            ),
-            connectionRampSeconds(
-                localAttendees + localBeaconPublishers,
-                phase.beaconRampPerSecond,
-            ),
-        );
+        const expectedConnectSeconds = shardCount === 1
+            ? shardExpectedConnectSeconds(profile, shardIndex, shardCount, phase.name)
+            : distributedExpectedConnectSeconds(profile, shardCount, phase.name);
         const scheduled = { ...phase, scheduledOffsetSeconds, expectedConnectSeconds };
         scheduledOffsetSeconds += expectedConnectSeconds + phase.durationSeconds;
         if (index < phases.length - 1) {
@@ -390,8 +414,8 @@ export function buildDistributedDispatchPlan({
         startDelaySeconds < 600 || startDelaySeconds > 3600) {
         throw new Error('start delay must be an integer between 600 and 3600 seconds');
     }
-    if (shardCount !== 2) {
-        throw new Error('the GitHub-hosted rehearsal requires exactly two shards');
+    if (![2, 6].includes(shardCount)) {
+        throw new Error('the GitHub-hosted rehearsal requires two or six shards');
     }
     const safeRunId = sanitizeRunId(runId);
     const startAt = new Date(nowMs + startDelaySeconds * 1000).toISOString();
@@ -536,9 +560,10 @@ function shardPlanIsDeterministic(plan, index, shardCount) {
         const beaconRamp = phaseIndex >= 2 && profile.reconnectMode === 'simultaneous'
             ? localAttendees + localBeaconPublishers
             : localRampPerSecond;
-        const expectedConnectSeconds = Math.max(
-            connectionRampSeconds(localAttendees + localStagePublishers, stageRamp),
-            connectionRampSeconds(localAttendees + localBeaconPublishers, beaconRamp),
+        const expectedConnectSeconds = distributedExpectedConnectSeconds(
+            profile,
+            shardCount,
+            phase.name,
         );
         const valid =
             phase.scheduledOffsetSeconds === offset &&

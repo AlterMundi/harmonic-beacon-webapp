@@ -201,6 +201,60 @@ describe('LiveKit load harness safety', () => {
         );
     });
 
+    it('supports the bounded six-host diagnostic without changing global load', () => {
+        const dispatch = buildDistributedDispatchPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'github-run-six',
+            targetUrl: 'ws://144.217.90.60:7890',
+            startDelaySeconds: 1200,
+            shardCount: 6,
+            nowMs: Date.parse('2026-08-05T12:00:00Z'),
+        });
+
+        expect(dispatch).toMatchObject({
+            runId: 'github-run-six',
+            shardCount: 6,
+            startAt: '2026-08-05T12:20:00.000Z',
+            expectedEndAt: '2026-08-05T13:00:25.000Z',
+        });
+
+        const plans = Array.from({ length: 6 }, (_, shardIndex) => buildPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'github-run-six',
+            url: 'ws://144.217.90.60:7890',
+            allowRemote: true,
+            confirmation: dispatch.confirmation,
+            shardIndex,
+            shardCount: 6,
+            startAt: dispatch.startAt,
+        }));
+        expect(plans.map((plan) => plan.shard.localAttendees))
+            .toEqual([25, 25, 25, 25, 25, 25]);
+        expect(plans.reduce((total, plan) => total + plan.shard.localStagePublishers, 0))
+            .toBe(6);
+        expect(plans.reduce((total, plan) => total + plan.shard.localBeaconPublishers, 0))
+            .toBe(1);
+        expect(plans.map((plan) => plan.shard.localRampPerSecond))
+            .toEqual([2, 2, 2, 2, 1, 1]);
+        expect(plans.map((plan) => plan.phases.map((phase) => phase.scheduledOffsetSeconds)))
+            .toEqual(Array(6).fill([0, 400, 1940, 2340]));
+        expect(plans.map((plan) => plan.phases[0].expectedConnectSeconds))
+            .toEqual([25, 25, 25, 25, 25, 25]);
+
+        const aggregate = aggregateShardManifests(plans.map((plan, shardIndex) => ({
+            sha256: String(shardIndex).padStart(64, 'b'),
+            manifest: passingShardManifest(plan, shardIndex),
+        })));
+        expect(aggregate).toMatchObject({
+            status: 'PASS',
+            shardCount: 6,
+            totals: { attendees: 150, stagePublishers: 6, beaconPublishers: 1 },
+        });
+        expect(aggregate.sources).toHaveLength(6);
+    });
+
     it('refuses unsafe distributed targets, timing and topology', () => {
         for (const unsafe of [
             'https://example.test',
@@ -221,7 +275,7 @@ describe('LiveKit load harness safety', () => {
         expect(() => buildDistributedDispatchPlan({
             profileName: 'rehearsal-es', profile, runId: 'github-run-a',
             targetUrl: 'ws://example.test:7890', startDelaySeconds: 1200, shardCount: 3,
-        })).toThrow(/exactly two shards/);
+        })).toThrow(/two or six shards/);
     });
 
     it('builds two synthetic connections per attendee and caps the stage at six publishers', () => {
