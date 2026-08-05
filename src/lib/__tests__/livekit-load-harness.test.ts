@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
     aggregateShardManifests,
     assertSafeTarget,
+    buildDistributedDispatchPlan,
     buildPlan,
     connectionRampSeconds,
     createAbortCoordinator,
@@ -24,6 +25,7 @@ import {
     roomNames,
     validateProfile,
     validateShard,
+    validateDistributedTargetUrl,
 } from '../../../scripts/lib/livekit-load-harness.mjs';
 
 const profile = {
@@ -126,6 +128,55 @@ function passingShardManifest(plan: ReturnType<typeof buildPlan>, hostIndex: num
 }
 
 describe('LiveKit load harness safety', () => {
+    it('builds a bounded two-host dispatch without exposing target credentials', () => {
+        const dispatch = buildDistributedDispatchPlan({
+            profileName: 'rehearsal-es',
+            profile,
+            runId: 'github-run-a',
+            targetUrl: 'ws://144.217.90.60:7890',
+            startDelaySeconds: 1200,
+            nowMs: Date.parse('2026-08-05T12:00:00Z'),
+        });
+        expect(dispatch).toMatchObject({
+            runId: 'github-run-a',
+            shardCount: 2,
+            startAt: '2026-08-05T12:20:00.000Z',
+            targetHost: '144.217.90.60',
+            rooms: {
+                stage: 'hb-load-github-run-a-es-stage',
+                beacon: 'hb-load-github-run-a-es-beacon',
+            },
+        });
+        expect(dispatch.expectedEndAt).toBe('2026-08-05T12:44:49.000Z');
+        expect(JSON.stringify(dispatch)).not.toContain('secret');
+        expect(dispatch.confirmation).toBe(
+            'LOADTEST:hb-load-github-run-a-es-stage:hb-load-github-run-a-es-beacon',
+        );
+    });
+
+    it('refuses unsafe distributed targets, timing and topology', () => {
+        for (const unsafe of [
+            'https://example.test',
+            'ws://localhost:7890',
+            'ws://key:secret@example.test:7890',
+            'ws://example.test:7890/path',
+            'ws://example.test:7890?token=secret',
+            'ws://example.test:7890#fragment',
+        ]) {
+            expect(() => validateDistributedTargetUrl(unsafe)).toThrow();
+        }
+        expect(validateDistributedTargetUrl('wss://load.example.test'))
+            .toBe('wss://load.example.test');
+        expect(() => buildDistributedDispatchPlan({
+            profileName: 'rehearsal-es', profile, runId: 'github-run-a',
+            targetUrl: 'ws://example.test:7890', startDelaySeconds: 599,
+        })).toThrow(/start delay/);
+        expect(() => buildDistributedDispatchPlan({
+            profileName: 'rehearsal-es', profile, runId: 'github-run-a',
+            targetUrl: 'ws://example.test:7890', startDelaySeconds: 1200, shardCount: 3,
+        })).toThrow(/exactly two shards/);
+    });
+
     it('builds two synthetic connections per attendee and caps the stage at six publishers', () => {
         const plan = buildPlan({
             profileName: 'rehearsal-es',
