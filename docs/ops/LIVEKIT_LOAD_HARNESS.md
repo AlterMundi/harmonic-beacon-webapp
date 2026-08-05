@@ -129,8 +129,9 @@ one Beacon publisher and global ramp across six independent runners. Use it to
 diagnose generator fan-in after a two-host failure; it does not increase the
 declared load or relax any acceptance threshold. The aggregate still requires
 every planned shard, distinct boot provenance and byte-equivalent plans.
-It runs each shard on a different ephemeral GitHub-hosted runner, pins and
-verifies `lk` v2.16.3, schedules both against the same future UTC boundary, and
+It runs each shard on a different ephemeral GitHub-hosted runner, builds one
+codec-aware `lk 2.16.3-hb-vp8.1` artifact from the exact source and committed
+patch, schedules all shards against the same future UTC boundary, and
 uploads the redacted source manifests before aggregating them fail-closed.
 Each generator also probes the fixed public production readiness endpoint. Two
 consecutive failures abort its current Stage and Beacon processes, preserve an

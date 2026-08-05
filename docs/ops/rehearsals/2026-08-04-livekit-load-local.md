@@ -167,6 +167,21 @@ subsequent upstream `v1.13.5` release includes a
 that its maintainer explicitly describes as affecting special clients and
 bandwidth estimation.
 
+### Measurement correction — 2026-08-05
+
+Source review and a controlled loss sequence later proved that official `lk`
+v2.16.3 constructs an H264 depacketizer for every video subscription, including
+VP8. The same synthetic VP8 gap produced 18 drop callbacks with that mismatched
+parser versus 8 with `VP8Packet`; each callback also requested a PLI. Therefore
+all VP8 loss percentages below and above are preserved as historical raw output
+but are **not admissible capacity magnitudes**. The runs still prove topology,
+track/count convergence, cleanup, host bounds and production non-impact.
+
+Main `a0e4c2e` now builds provenance version `2.16.3-hb-vp8.1` from exact
+upstream source plus a codec-aware patch and rejects every other build for VP8.
+Only a corrected rerun may establish a new loss baseline; it does not alter the
+0.1% threshold or replace physical browser, camera, TURN and listening gates.
+
 ### Isolated `v1.13.4` versus `v1.13.5` control
 
 Three non-debug 60-second controls then used the same mona host, pinned CLI
@@ -267,9 +282,11 @@ zero with no OOM.
 - Keep the 0.1% loss threshold; do not normalize the failure away.
 - Do not upgrade production to LiveKit `v1.13.5`; its separate-host comparison
   also failed and remained phase-dependent.
-- Any next server experiment needs a concrete packet-retention, simulcast-layer
-  or BWE hypothesis and the same isolated, digest-pinned comparison. Do not
-  spend another run merely repeating this topology without a changed variable.
+- First repeat the bounded six-host topology with the corrected, provenance-
+  marked VP8 measurement build; that changed measurement variable establishes
+  the new baseline. Any later server experiment needs a concrete packet-
+  retention, simulcast-layer or BWE hypothesis and the same isolated,
+  digest-pinned comparison.
 - Run the explicit H264 path as supporting Safari evidence, never as a
   substitute for VP8.
 - Physical browser, TURN, mobile routing, six-camera, and listening gates remain
