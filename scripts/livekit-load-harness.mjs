@@ -190,7 +190,7 @@ async function waitForScheduledCompletion(startAt, phase, abort) {
 
 function printHelp() {
     process.stdout.write(`Usage: npm run load:livekit -- [options]\n\n` +
-        `  --profile NAME             ci, rehearsal-es, or rehearsal-en\n` +
+        `  --profile NAME             ci, rehearsal-es, rehearsal-en, or diagnostic-en-vp8\n` +
         `  --run-id ID                synthetic namespace recorded in the manifest\n` +
         `  --url URL                  LiveKit URL (default LIVEKIT_URL or localhost)\n` +
         `  --lk-bin PATH              pinned LiveKit CLI executable (default lk)\n` +

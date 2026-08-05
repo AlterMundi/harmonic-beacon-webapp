@@ -51,6 +51,23 @@
       "interWaveSeconds": 10,
       "phaseCompletionBufferSeconds": 300,
       "maxDroppedPercent": 0.1
+    },
+    "diagnostic-en-vp8": {
+      "eventLanguage": "en",
+      "attendees": 150,
+      "stagePublishers": 6,
+      "beaconPublishers": 1,
+      "stageVideoCodec": "vp8",
+      "stageLayout": "speaker",
+      "rampPerSecond": 10,
+      "rampDurationSeconds": 60,
+      "soakDurationSeconds": 60,
+      "reconnectDurationSeconds": 0,
+      "reconnectWaves": 0,
+      "reconnectMode": "staggered",
+      "interWaveSeconds": 10,
+      "phaseCompletionBufferSeconds": 60,
+      "maxDroppedPercent": 0.1
     }
   }
 }

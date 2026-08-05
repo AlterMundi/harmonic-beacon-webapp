@@ -188,6 +188,10 @@ separate gates.
 
 - `ci`: four attendees, two stage publishers, one Beacon publisher, short
   ramp/soak/reconnect.
+- `diagnostic-en-vp8`: the full 150-attendee, six-publisher VP8/speaker
+  topology with two 60-second phases and no reconnect wave. It exists only for
+  bounded server/generator comparisons; it cannot satisfy the 20-minute soak,
+  reconnect, repeated-run, browser or listening gates.
 - `rehearsal-es` and `rehearsal-en`: 150 dual-room attendees, six simulcast
   stage publishers, one Beacon audio publisher, 20-minute soak, and two
   staggered reconnect waves.
