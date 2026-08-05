@@ -104,6 +104,7 @@ export default async function EventPage({
                 healthCopy={copy.healthPanel}
                 admissionCopy={copy.admissionPanel}
                 tapestryCopy={copy.tapestryArrange}
+                opsTapestryCopy={copy.opsTapestry}
                 staffRoleLabels={messages[locale].staffRoles}
             />
         </section>

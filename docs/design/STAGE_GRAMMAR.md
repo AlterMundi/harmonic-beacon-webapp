@@ -304,6 +304,78 @@ snapshot. It adds no capture, camera, LiveKit publication, or image stream.
 - Public-disabled mode renders no broken collective image and makes no claim
   that audience presence is visible.
 
+### 6.4 Operational tapestry layer (TAP-02, issue #129)
+
+Shipped separately from the public grammar above. The operational layer is a
+staff-only reading of the tapestry; it changes nothing about the public
+composite, the capture lifecycle, or any media path.
+
+- `GET /api/ops/sessions/[id]/tapestry/manifest` returns one bounded document
+  per poll: tile id (opaque), grid cell (column/row), authorized name, hand
+  and queue position, presence (`connected` / `reconnecting` / `left` /
+  `unknown`), camera (`on` / `off` / `unknown`) and the build-time layout
+  metadata, plus the waiting-hand summary including hands with no tile.
+  Three lookups total (database, LiveKit list, internal layout read); there
+  is no per-tile request and no N+1 at 150 participants. The response is
+  `private, no-store`; names and identities never appear in logs.
+- Authorization matches the other ops tapestry routes: a staff session plus
+  the event-scoped `canOperateEvent` policy. Attendees, staff of other
+  events, and anonymous callers receive the same refusals as the sibling
+  routes.
+- The conductor cockpit tapestry drawer renders the operational view above
+  the existing arrangement tool with O(1) visual transport: ONE shared
+  composite image per poll — the same JPEG the service already builds —
+  annotated by semantic overlays (name tag, hand badge, camera-off marker,
+  presence dimming) positioned from the build-time layout, never per-tile
+  image requests. An accessible plain-text list carries the complete state
+  of every person, so mouse, touch, keyboard and screen readers all reach
+  the same facts. The composite bytes refresh every poll while the semantic
+  layer re-renders only when its content revision OR its layout revision
+  changes, and each poll aborts and supersedes the previous one so a slow
+  earlier response can never overwrite fresher state.
+- Composite and layout are snapshots correlated by build revision: the
+  client reads the composite first and the manifest immediately after, and
+  publishes image + annotations only as one accepted cycle's state. A frame
+  landing between the two reads produces a revision mismatch, which is never
+  rendered as an overlay — the pair is retried immediately, strictly bounded
+  (at most 3 attempts per cycle, independent of participant count), and if
+  the mismatch persists the safe fallback shows image and list without
+  overlays until the next cycle reconverges. Hiding temporarily is safe;
+  converging is mandatory, and the accessible list always keeps the freshest
+  accepted semantics.
+- Naming consent (product canon, confirmed by Annie on 2026-08-04): raising
+  a hand IS the consent to be named publicly, with exactly this scope — the
+  name shows only inside the same session, only while the hand stays raised
+  and the person connected, only over that person's tapestry cell; lowering
+  the hand or disconnecting removes the public name; it never authorizes
+  publishing email, internal id, LiveKit identity, camera, presence,
+  individual thumbnail or history, and it never turns the tapestry into a
+  permanent directory; staff keep their authorized operational view. The
+  hand control explains this scope next to the raise/lower button in ES/EN.
+- On the public room surface, connected raised hands are named in plain text
+  near the tapestry via `GET /api/scheduled-sessions/[id]/tapestry/hands`,
+  gated by the room entitlement check. The sidecar names only waiting hands
+  that remain connected — no camera state, presence of anyone else, or
+  thumbnails — so the collective JPEG stays anonymous and the sidecar cannot
+  become a participant directory. A LiveKit outage names nobody rather than
+  guessing presence.
+- Each named hand also carries its cell in the composite grid, so the room
+  draws the name over the person's own tile (the Zoom/Meet reading of the
+  issue). The internal service captures the grid layout synchronously with
+  every composite build and exposes it at `GET
+  /tapestry/sessions/:id/layout` alongside the `x-tapestry-revision` header
+  on `composite.jpg` — building on the monotonic build revision introduced
+  for #40 in PR #108. A single polling coordinator reads the composite and
+  the sidecar as one correlated unit and publishes image, names and layout
+  only from the same accepted cycle: the room only draws the overlay when
+  the sidecar's layout revision equals the composite's revision, a mismatch
+  is retried immediately with a strict bound and otherwise omits the
+  overlay, and the accessible names line always reflects the freshest
+  accepted sidecar state — lowering a hand or leaving retires the name with
+  priority, without waiting for any correlation. The overlay is
+  `aria-hidden` and pointer-free: the plain names line remains the
+  accessible and touch/keyboard equivalent.
+
 ## 7. Motion and interaction
 
 Motion is an orientation aid, never ambience.
