@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { RoomServiceClient } from 'livekit-server-sdk';
 
 import {
+    assertLiveKitCliMeasurementCompatibility,
     buildPlan,
     createAbortCoordinator,
     createConsecutiveFailureGuard,
@@ -455,6 +456,11 @@ async function main() {
     let abort = null;
 
     if (!dryRun) {
+        if (lk.exitCode !== 0) throw new Error(`LiveKit CLI unavailable: ${lk.output.trim()}`);
+        assertLiveKitCliMeasurementCompatibility({
+            stageVideoCodec: profile.stageVideoCodec,
+            livekitCliVersion: lk.output,
+        });
         const credentials = {
             url,
             apiKey: process.env.LIVEKIT_API_KEY ?? '',
@@ -463,7 +469,6 @@ async function main() {
         if (!credentials.apiKey || !credentials.apiSecret) {
             throw new Error('LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required');
         }
-        if (lk.exitCode !== 0) throw new Error(`LiveKit CLI unavailable: ${lk.output.trim()}`);
         abort = createAbortCoordinator();
         const removeAbortHandlers = installAbortHandlers(abort);
         const stopProductionReadinessGuard = guardProductionReadiness

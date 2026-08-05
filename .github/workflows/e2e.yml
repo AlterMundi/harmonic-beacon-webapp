@@ -63,6 +63,11 @@ jobs:
           node-version: '22.22'
           cache: 'npm'
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.8'
+          cache: false
+
       - run: npm ci
 
       - run: npx playwright install --with-deps chromium
@@ -78,13 +83,9 @@ jobs:
           echo "LiveKit did not become ready" >&2
           exit 1
 
-      - name: Install pinned LiveKit load tester
+      - name: Build verified LiveKit load tester
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/lk.tar.gz" \
-            https://github.com/livekit/livekit-cli/releases/download/v2.16.3/lk_2.16.3_linux_amd64.tar.gz
-          echo "57935ce348a634a1e12769b9eaf7e684cf46920ad65e4b6d88f87a9cd01de2d6  $RUNNER_TEMP/lk.tar.gz" \
-            | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/lk.tar.gz" -C "$RUNNER_TEMP" lk
+          scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/lk"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Run small dual-LiveKit load profile
