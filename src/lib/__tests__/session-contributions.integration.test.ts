@@ -5,7 +5,9 @@ import { prisma } from '@/lib/db';
 import {
     ContributionError,
     createContribution,
+    decodeContributionCursor,
     listPublicContributions,
+    listStaffContributions,
 } from '@/lib/session-contributions';
 
 /**
@@ -25,6 +27,10 @@ const TICKET_A_ID = '93000000-0000-4000-8000-000000000157';
 const TICKET_B_ID = '94000000-0000-4000-8000-000000000157';
 const PARTICIPANT_A_ID = '95000000-0000-4000-8000-000000000157';
 const PARTICIPANT_B_ID = '96000000-0000-4000-8000-000000000157';
+// Second session: pagination, cursor isolation and same-timestamp ordering.
+const SESSION2_ID = '91000000-0000-4000-8000-000000000158';
+const TICKET_C_ID = '93000000-0000-4000-8000-000000000158';
+const PARTICIPANT_C_ID = '95000000-0000-4000-8000-000000000158';
 
 const base = {
     scheduledSessionId: SESSION_ID,
@@ -101,13 +107,57 @@ integration('session contributions PostgreSQL guarantees', () => {
                 update: {},
             });
         }
+        await prisma.scheduledSession.upsert({
+            where: { id: SESSION2_ID },
+            create: {
+                id: SESSION2_ID,
+                title: 'Contributions integration — pagination',
+                roomName: 'contributions-integration-room-2',
+                language: 'SPANISH',
+                scheduledAt: new Date('2026-08-08T21:00:00Z'),
+                startedAt: new Date('2026-08-08T21:00:00Z'),
+                status: 'LIVE',
+                facilitatorId: FACILITATOR_ID,
+            },
+            update: {},
+        });
+        await prisma.ticketEntitlement.upsert({
+            where: { id: TICKET_C_ID },
+            create: {
+                id: TICKET_C_ID,
+                scheduledSessionId: SESSION2_ID,
+                codeDigest: 'digest-lk-ticket-c',
+                codeLastFour: '0000',
+                tier: 'GLOBAL_SOUTH',
+                state: 'BOUND',
+                boundEmail: 'lk-ticket-c@example.test',
+                expiresAt: new Date('2027-01-01T00:00:00Z'),
+            },
+            update: {},
+        });
+        await prisma.sessionParticipant.upsert({
+            where: { id: PARTICIPANT_C_ID },
+            create: {
+                id: PARTICIPANT_C_ID,
+                scheduledSessionId: SESSION2_ID,
+                participantIdentity: 'lk-ticket-c',
+                ticketEntitlementId: TICKET_C_ID,
+            },
+            update: {},
+        });
     });
 
     afterAll(async () => {
-        await prisma.sessionContribution.deleteMany({ where: { scheduledSessionId: SESSION_ID } });
-        await prisma.sessionParticipant.deleteMany({ where: { scheduledSessionId: SESSION_ID } });
-        await prisma.ticketEntitlement.deleteMany({ where: { scheduledSessionId: SESSION_ID } });
-        await prisma.scheduledSession.deleteMany({ where: { id: SESSION_ID } });
+        await prisma.sessionContribution.deleteMany({
+            where: { scheduledSessionId: { in: [SESSION_ID, SESSION2_ID] } },
+        });
+        await prisma.sessionParticipant.deleteMany({
+            where: { scheduledSessionId: { in: [SESSION_ID, SESSION2_ID] } },
+        });
+        await prisma.ticketEntitlement.deleteMany({
+            where: { scheduledSessionId: { in: [SESSION_ID, SESSION2_ID] } },
+        });
+        await prisma.scheduledSession.deleteMany({ where: { id: { in: [SESSION_ID, SESSION2_ID] } } });
         await prisma.user.deleteMany({ where: { id: FACILITATOR_ID } });
         contributionSubmissionLimiter.reset();
     });
@@ -188,5 +238,215 @@ integration('session contributions PostgreSQL guarantees', () => {
         })).rejects.toSatisfy(
             (error) => error instanceof ContributionError && error.code === 'participant_not_joined',
         );
+    });
+
+    it('a replay survives budget exhaustion; a sixth new key gets 429', async () => {
+        contributionSubmissionLimiter.reset();
+        for (let i = 0; i < 5; i += 1) {
+            const result = await createContribution({
+                ...base,
+                ticketEntitlementId: TICKET_B_ID,
+                idempotencyKey: `ex-${i}`,
+                body: `mensaje de presupuesto ${i}`,
+            });
+            expect(result.created).toBe(true);
+        }
+
+        // Replay of the fifth: canonical, not a 429.
+        const replay = await createContribution({
+            ...base,
+            ticketEntitlementId: TICKET_B_ID,
+            idempotencyKey: 'ex-4',
+            body: 'mensaje de presupuesto 4',
+        });
+        expect(replay.created).toBe(false);
+
+        // Same key, different payload: 409.
+        await expect(createContribution({
+            ...base,
+            ticketEntitlementId: TICKET_B_ID,
+            idempotencyKey: 'ex-4',
+            body: 'otro contenido',
+        })).rejects.toMatchObject({ code: 'idempotency_key_conflict', status: 409 });
+
+        // Sixth new key: 429.
+        await expect(createContribution({
+            ...base,
+            ticketEntitlementId: TICKET_B_ID,
+            idempotencyKey: 'ex-5',
+            body: 'mensaje de presupuesto 5',
+        })).rejects.toMatchObject({ code: 'rate_limited', status: 429 });
+
+        const stored = await prisma.sessionContribution.count({
+            where: { scheduledSessionId: SESSION_ID, idempotencyKey: { startsWith: 'ex-' } },
+        });
+        expect(stored).toBe(5);
+    });
+
+    it('six concurrent new keys for one participant persist exactly five', async () => {
+        contributionSubmissionLimiter.reset();
+        const attempts = await Promise.allSettled(
+            Array.from({ length: 6 }, (_, i) =>
+                createContribution({
+                    ...base,
+                    ticketEntitlementId: TICKET_A_ID,
+                    idempotencyKey: `burst-${i}`,
+                    body: `mensaje concurrente ${i}`,
+                })),
+        );
+
+        const created = attempts.filter((a) => a.status === 'fulfilled' && a.value.created);
+        const limited = attempts.filter(
+            (a) => a.status === 'rejected'
+                && (a.reason as ContributionError).code === 'rate_limited',
+        );
+        expect(created.length).toBe(5);
+        expect(limited.length).toBe(1);
+
+        const stored = await prisma.sessionContribution.count({
+            where: { scheduledSessionId: SESSION_ID, idempotencyKey: { startsWith: 'burst-' } },
+        });
+        expect(stored).toBe(5);
+    });
+
+    it('paginates multiple pages without skips or duplicates', async () => {
+        // Five rows with deterministic timestamps, written directly: the
+        // pagination contract is a read-side guarantee.
+        for (let i = 0; i < 5; i += 1) {
+            await prisma.sessionContribution.create({
+                data: {
+                    scheduledSessionId: SESSION2_ID,
+                    authorParticipantId: PARTICIPANT_C_ID,
+                    authorDisplayName: 'Cora',
+                    body: `mensaje paginado ${i}`,
+                    visibility: 'NAMED',
+                    idempotencyKey: `page-${i}`,
+                    requestDigest: `digest-page-${i}`.padEnd(64, '0'),
+                    createdAt: new Date(Date.parse('2026-01-01T00:00:00.000Z') + i * 1000),
+                },
+            });
+        }
+
+        const seen: string[] = [];
+        let cursor: string | null = null;
+        let pages = 0;
+        do {
+            const page = await listPublicContributions({
+                scheduledSessionId: SESSION2_ID,
+                cursor: cursor ? decodeContributionCursor(cursor) : null,
+                limit: 2,
+            });
+            seen.push(...page.contributions.map((c) => c.body));
+            cursor = page.hasMore ? page.nextPageCursor : null;
+            pages += 1;
+            expect(pages).toBeLessThanOrEqual(4); // no infinite loop
+        } while (cursor !== null);
+
+        expect(seen).toEqual([
+            'mensaje paginado 0', 'mensaje paginado 1',
+            'mensaje paginado 2', 'mensaje paginado 3',
+            'mensaje paginado 4',
+        ]);
+        expect(pages).toBe(3);
+    });
+
+    it('orders two rows with the same createdAt by id', async () => {
+        const sameInstant = new Date('2026-01-01T00:05:00.000Z');
+        const firstId = '97000000-0000-4000-8000-000000000001';
+        const secondId = '97000000-0000-4000-8000-000000000002';
+        // Insert in reverse id order: only the (createdAt, id) key may decide.
+        for (const [id, key] of [[secondId, 'tie-2'], [firstId, 'tie-1']] as const) {
+            await prisma.sessionContribution.create({
+                data: {
+                    id,
+                    scheduledSessionId: SESSION2_ID,
+                    authorParticipantId: PARTICIPANT_C_ID,
+                    authorDisplayName: 'Cora',
+                    body: `empate ${key}`,
+                    visibility: 'NAMED',
+                    idempotencyKey: key,
+                    requestDigest: `digest-${key}`.padEnd(64, '0'),
+                    createdAt: sameInstant,
+                },
+            });
+        }
+
+        const page = await listPublicContributions({
+            scheduledSessionId: SESSION2_ID,
+            cursor: { createdAt: '2026-01-01T00:04:59.000Z', id: '00000000-0000-0000-0000-000000000000' },
+            limit: 50,
+        });
+        const tied = page.contributions.filter((c) => c.body.startsWith('empate'));
+        expect(tied.map((c) => c.id)).toEqual([firstId, secondId]);
+    });
+
+    it('a tail resumeCursor polls exactly the rows created after it, in both feeds', async () => {
+        // Read the tail of session 2: every row so far, then keep the cursor.
+        const tail = await listPublicContributions({
+            scheduledSessionId: SESSION2_ID,
+            cursor: null,
+            limit: 50,
+        });
+        expect(tail.hasMore).toBe(false);
+        expect(tail.nextPageCursor).toBeNull();
+        expect(tail.resumeCursor).not.toBeNull();
+        const resume = decodeContributionCursor(tail.resumeCursor);
+
+        // A poll right now finds nothing: empty page, both cursors null.
+        const empty = await listPublicContributions({
+            scheduledSessionId: SESSION2_ID,
+            cursor: resume,
+            limit: 50,
+        });
+        expect(empty.contributions).toEqual([]);
+        expect(empty.hasMore).toBe(false);
+        expect(empty.resumeCursor).toBeNull();
+
+        // A new contribution appears; the same cursor surfaces exactly it.
+        contributionSubmissionLimiter.reset();
+        await createContribution({
+            ...base,
+            scheduledSessionId: SESSION2_ID,
+            ticketEntitlementId: TICKET_C_ID,
+            displayName: 'Cora',
+            idempotencyKey: 'tail-1',
+            body: 'mensaje después del tail',
+        });
+
+        const publicPoll = await listPublicContributions({
+            scheduledSessionId: SESSION2_ID,
+            cursor: resume,
+            limit: 50,
+        });
+        expect(publicPoll.contributions.map((c) => c.body)).toEqual(['mensaje después del tail']);
+        expect(publicPoll.resumeCursor).not.toBeNull();
+
+        const staffPoll = await listStaffContributions({
+            scheduledSessionId: SESSION2_ID,
+            cursor: resume,
+            limit: 50,
+        });
+        expect(staffPoll.contributions.map((c) => c.body)).toEqual(['mensaje después del tail']);
+        expect(staffPoll.contributions[0].authorDisplayName).toBe('Cora');
+    });
+
+    it('a cursor minted in one session never unlocks another session feed', async () => {
+        const foreign = await listPublicContributions({
+            scheduledSessionId: SESSION_ID,
+            cursor: null,
+            limit: 50,
+        });
+        expect(foreign.resumeCursor).not.toBeNull();
+
+        const otherFeed = await listPublicContributions({
+            scheduledSessionId: SESSION2_ID,
+            cursor: decodeContributionCursor(foreign.resumeCursor),
+            limit: 50,
+        });
+        // Anything returned belongs to session 2 only; session 1 ids are absent.
+        const session1Ids = new Set(foreign.contributions.map((c) => c.id));
+        for (const contribution of otherFeed.contributions) {
+            expect(session1Ids.has(contribution.id)).toBe(false);
+        }
     });
 });

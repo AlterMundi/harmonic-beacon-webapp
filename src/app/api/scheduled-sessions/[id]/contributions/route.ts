@@ -59,9 +59,16 @@ function contributionErrorResponse(error: unknown): NextResponse {
 }
 
 /**
- * Bounded public feed, newest page forward in stable (createdAt, id) order.
- * Only VISIBLE contributions; HIDDEN/WITHDRAWN transitions belong to CHAT-02
- * and never revive here. Suggested client poll: 5 seconds.
+ * Bounded public feed in stable (createdAt, id) order. Only VISIBLE
+ * contributions; HIDDEN/WITHDRAWN transitions belong to CHAT-02 and never
+ * revive here.
+ *
+ * Pagination separates backlog draining from polling: `hasMore` +
+ * `nextPageCursor` empty the backlog, while `resumeCursor` always marks the
+ * last delivered item so a client at the tail can poll for messages created
+ * after it. An empty page (nothing new after the client's cursor) returns
+ * zero items with both cursors null; the client keeps polling with the
+ * cursor it already had. Suggested client poll: 5 seconds.
  */
 export async function GET(
     request: NextRequest,

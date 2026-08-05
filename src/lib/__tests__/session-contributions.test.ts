@@ -275,12 +275,13 @@ describe('createContribution', () => {
         expect(mocks.contributionCreate).not.toHaveBeenCalled();
     });
 
-    it('resolves a concurrent first submission through the unique-key race', async () => {
+    it('resolves a cross-process P2002 race by re-reading the canonical row', async () => {
         const winner = row({
             requestDigest: contributionRequestDigest('NAMED', '¿Cómo respiramos? Siento calma'),
         });
         mocks.contributionFindUnique
-            .mockResolvedValueOnce(null) // fast-path pre-check
+            .mockResolvedValueOnce(null) // fast path, outside the lock
+            .mockResolvedValueOnce(null) // re-check inside the lock
             .mockResolvedValueOnce(winner); // re-read after the race
         const { Prisma } = await import('@prisma/client');
         mocks.contributionCreate.mockRejectedValue(
@@ -293,6 +294,8 @@ describe('createContribution', () => {
         const result = await createContribution(base);
         expect(result.created).toBe(false);
         expect(result.contribution.id).toBe('contrib-1');
+        // The P2002 replay released the reservation: budget untouched.
+        expect(contributionSubmissionLimiter.submissionCount('session-1:participant-1')).toBe(0);
     });
 
     it('rejects when the attendee has not joined the session', async () => {
@@ -305,7 +308,7 @@ describe('createContribution', () => {
         expect(mocks.contributionCreate).not.toHaveBeenCalled();
     });
 
-    it('rate limits after the window budget and reports retryAfterSeconds', async () => {
+    it('lets replays and conflicts through after the budget is exhausted, but not a sixth new key', async () => {
         mocks.contributionCreate.mockImplementation(async ({ data }) => row({
             id: `contrib-${data.idempotencyKey}`,
             idempotencyKey: data.idempotencyKey,
@@ -313,9 +316,33 @@ describe('createContribution', () => {
             requestDigest: data.requestDigest,
         }));
 
+        // Five genuinely new keys: the whole window budget.
         for (let i = 0; i < 5; i += 1) {
-            await createContribution({ ...base, idempotencyKey: `key-${i}`, body: `mensaje ${i}` });
+            const result = await createContribution({
+                ...base, idempotencyKey: `key-${i}`, body: `mensaje ${i}`,
+            });
+            expect(result.created).toBe(true);
         }
+        expect(contributionSubmissionLimiter.submissionCount('session-1:participant-1')).toBe(5);
+
+        // Replay of the fifth submission: canonical 200 semantics, not a 429.
+        mocks.contributionFindUnique.mockResolvedValue(row({
+            id: 'contrib-key-4',
+            idempotencyKey: 'key-4',
+            body: 'mensaje 4',
+            requestDigest: contributionRequestDigest('NAMED', 'mensaje 4'),
+        }));
+        const replay = await createContribution({ ...base, idempotencyKey: 'key-4', body: 'mensaje 4' });
+        expect(replay.created).toBe(false);
+        expect(replay.contribution.id).toBe('contrib-key-4');
+
+        // Same key with a different payload: 409, still not hidden behind a 429.
+        await expect(
+            createContribution({ ...base, idempotencyKey: 'key-4', body: 'otro mensaje' }),
+        ).rejects.toMatchObject({ code: 'idempotency_key_conflict', status: 409 });
+
+        // A sixth genuinely new key is the one that hits the limit.
+        mocks.contributionFindUnique.mockResolvedValue(null);
         await expect(
             createContribution({ ...base, idempotencyKey: 'key-6', body: 'mensaje 6' }),
         ).rejects.toMatchObject({
@@ -323,7 +350,10 @@ describe('createContribution', () => {
             status: 429,
             details: { retryAfterSeconds: expect.any(Number) },
         });
-        // The limited attempt never reached the database.
+
+        // Exactly five slots were ever consumed; the limited attempt never
+        // reached the database.
+        expect(contributionSubmissionLimiter.submissionCount('session-1:participant-1')).toBe(5);
         expect(mocks.contributionCreate).toHaveBeenCalledTimes(5);
     });
 
@@ -343,6 +373,106 @@ describe('createContribution', () => {
         const fresh = await createContribution({ ...base, idempotencyKey: 'key-fresh' });
         expect(fresh.created).toBe(true);
     });
+
+    describe('concurrency — serialized per participant', () => {
+        let store: Map<string, SessionContribution>;
+
+        beforeEach(() => {
+            // A minimal in-memory stand-in for the unique index: enough to
+            // exercise fast path, in-lock re-check, and the P2002 fallback.
+            store = new Map();
+            mocks.contributionFindUnique.mockImplementation(async ({ where }) => {
+                const key = where.scheduledSessionId_authorParticipantId_idempotencyKey;
+                return store.get(
+                    `${key.scheduledSessionId}:${key.authorParticipantId}:${key.idempotencyKey}`,
+                ) ?? null;
+            });
+            mocks.contributionCreate.mockImplementation(async ({ data }) => {
+                const storeKey = `${data.scheduledSessionId}:${data.authorParticipantId}:${data.idempotencyKey}`;
+                if (store.has(storeKey)) {
+                    const { Prisma } = await import('@prisma/client');
+                    throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+                        code: 'P2002',
+                        clientVersion: 'test',
+                    });
+                }
+                const created = row({
+                    id: `contrib-${data.idempotencyKey}`,
+                    authorParticipantId: data.authorParticipantId,
+                    body: data.body,
+                    idempotencyKey: data.idempotencyKey,
+                    requestDigest: data.requestDigest,
+                });
+                store.set(storeKey, created);
+                return created;
+            });
+        });
+
+        it('six concurrent new keys for one participant: exactly five created, one 429', async () => {
+            const results = await Promise.allSettled(
+                Array.from({ length: 6 }, (_, i) =>
+                    createContribution({ ...base, idempotencyKey: `burst-${i}`, body: `mensaje ${i}` })),
+            );
+
+            const created = results.filter(
+                (r) => r.status === 'fulfilled' && r.value.created,
+            );
+            const limited = results.filter(
+                (r) => r.status === 'rejected' && (r.reason as ContributionError).code === 'rate_limited',
+            );
+            expect(created).toHaveLength(5);
+            expect(limited).toHaveLength(1);
+            const reason = (limited[0] as PromiseRejectedResult).reason as ContributionError;
+            expect(reason.status).toBe(429);
+            expect(reason.details?.retryAfterSeconds).toBeGreaterThan(0);
+            expect(reason.details?.retryAfterSeconds).toBeLessThanOrEqual(60);
+            expect(store.size).toBe(5);
+            expect(contributionSubmissionLimiter.submissionCount('session-1:participant-1')).toBe(5);
+        });
+
+        it('six different participants never block each other or share budget', async () => {
+            mocks.participantFindFirst.mockImplementation(async ({ where }) => ({
+                id: `participant-${where.ticketEntitlementId}`,
+            }));
+
+            const results = await Promise.all(
+                Array.from({ length: 6 }, (_, i) =>
+                    createContribution({
+                        ...base,
+                        ticketEntitlementId: `ticket-${i}`,
+                        idempotencyKey: `solo-${i}`,
+                        body: `mensaje ${i}`,
+                    })),
+            );
+
+            expect(results.every((r) => r.created)).toBe(true);
+            expect(store.size).toBe(6);
+        });
+
+        it('concurrent submissions with the same key: one creation, the rest replay, one slot', async () => {
+            const results = await Promise.all(
+                Array.from({ length: 4 }, () => createContribution(base)),
+            );
+
+            expect(results.filter((r) => r.created)).toHaveLength(1);
+            expect(new Set(results.map((r) => r.contribution.id)).size).toBe(1);
+            expect(store.size).toBe(1);
+            // Exactly one budget slot consumed across the whole burst.
+            expect(contributionSubmissionLimiter.submissionCount('session-1:participant-1')).toBe(1);
+        });
+
+        it('a failed INSERT releases the reservation', async () => {
+            mocks.contributionCreate.mockRejectedValueOnce(new Error('connection reset'));
+
+            await expect(createContribution(base)).rejects.toThrowError('connection reset');
+            expect(contributionSubmissionLimiter.submissionCount('session-1:participant-1')).toBe(0);
+
+            // Budget intact: the retry goes through and consumes one slot.
+            const retry = await createContribution(base);
+            expect(retry.created).toBe(true);
+            expect(contributionSubmissionLimiter.submissionCount('session-1:participant-1')).toBe(1);
+        });
+    });
 });
 
 describe('listPublicContributions', () => {
@@ -361,10 +491,31 @@ describe('listPublicContributions', () => {
             take: 51,
         });
         expect(page.contributions).toHaveLength(1);
-        expect(page.nextCursor).toBeNull();
+        expect(page.hasMore).toBe(false);
     });
 
-    it('emits an opaque nextCursor only when more rows exist', async () => {
+    it('at the tail, resumeCursor marks the last item so polling can resume', async () => {
+        mocks.contributionFindMany.mockResolvedValue([
+            row({ id: 'c1', createdAt: new Date('2026-08-08T20:00:00.000Z') }),
+            row({ id: 'c2', createdAt: new Date('2026-08-08T20:01:00.000Z') }),
+        ]);
+
+        const page = await listPublicContributions({
+            scheduledSessionId: 'session-1',
+            cursor: null,
+            limit: 50,
+        });
+
+        expect(page.hasMore).toBe(false);
+        expect(page.nextPageCursor).toBeNull();
+        expect(page.resumeCursor).not.toBeNull();
+        expect(decodeContributionCursor(page.resumeCursor)).toEqual({
+            createdAt: '2026-08-08T20:01:00.000Z',
+            id: 'c2',
+        });
+    });
+
+    it('a truncated page exposes hasMore and nextPageCursor equal to resumeCursor', async () => {
         const rows = [
             row({ id: 'c1', createdAt: new Date('2026-08-08T20:00:00.000Z') }),
             row({ id: 'c2', createdAt: new Date('2026-08-08T20:01:00.000Z') }),
@@ -379,11 +530,27 @@ describe('listPublicContributions', () => {
         });
 
         expect(page.contributions.map((c) => c.id)).toEqual(['c1', 'c2']);
-        expect(page.nextCursor).not.toBeNull();
-        expect(decodeContributionCursor(page.nextCursor)).toEqual({
+        expect(page.hasMore).toBe(true);
+        expect(page.nextPageCursor).toBe(page.resumeCursor);
+        expect(decodeContributionCursor(page.nextPageCursor)).toEqual({
             createdAt: '2026-08-08T20:01:00.000Z',
             id: 'c2',
         });
+    });
+
+    it('an empty page (poll with nothing new) returns both cursors null', async () => {
+        mocks.contributionFindMany.mockResolvedValue([]);
+
+        const page = await listPublicContributions({
+            scheduledSessionId: 'session-1',
+            cursor: { createdAt: '2026-08-08T20:01:00.000Z', id: 'c2' },
+            limit: 50,
+        });
+
+        expect(page.contributions).toEqual([]);
+        expect(page.hasMore).toBe(false);
+        expect(page.nextPageCursor).toBeNull();
+        expect(page.resumeCursor).toBeNull();
     });
 
     it('applies the cursor as a strict (createdAt, id) upper bound', async () => {
@@ -403,6 +570,24 @@ describe('listPublicContributions', () => {
                         { createdAt: new Date('2026-08-08T20:01:00.000Z'), id: { gt: 'c2' } },
                     ],
                 }),
+            }),
+        );
+    });
+
+    it('scopes every read to the requested session even with a foreign cursor', async () => {
+        mocks.contributionFindMany.mockResolvedValue([]);
+
+        // A cursor minted from session A's rows must never unlock session B's
+        // feed: the session filter is always part of the where clause.
+        await listPublicContributions({
+            scheduledSessionId: 'session-b',
+            cursor: { createdAt: '2026-08-08T20:01:00.000Z', id: 'a-row-id' },
+            limit: 50,
+        });
+
+        expect(mocks.contributionFindMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({ scheduledSessionId: 'session-b' }),
             }),
         );
     });
@@ -431,5 +616,24 @@ describe('listStaffContributions', () => {
         });
         expect(page.contributions[0].authorDisplayName).toBe('Ana');
         expect(page.contributions[0].participantIdentity).toBe('lk-ticket-t1');
+    });
+
+    it('shares the public feed pagination contract (tail resumeCursor)', async () => {
+        mocks.contributionFindMany.mockResolvedValue([
+            { ...row({ id: 's1' }), authorParticipant: { participantIdentity: 'lk-1' } },
+        ]);
+
+        const page = await listStaffContributions({
+            scheduledSessionId: 'session-1',
+            cursor: null,
+            limit: 50,
+        });
+
+        expect(page.hasMore).toBe(false);
+        expect(page.nextPageCursor).toBeNull();
+        expect(decodeContributionCursor(page.resumeCursor)).toEqual({
+            createdAt: '2026-08-08T20:00:00.000Z',
+            id: 's1',
+        });
     });
 });

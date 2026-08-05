@@ -18,6 +18,11 @@ export const dynamic = 'force-dynamic';
  * flag for how the audience sees it — an ANONYMOUS message is anonymous to
  * the audience only, never to event staff. Moderation transitions (hide,
  * restore, withdraw) are CHAT-02; this route is read-only.
+ *
+ * Same pagination contract as the public feed: `hasMore` + `nextPageCursor`
+ * drain the backlog, `resumeCursor` marks the last delivered item for
+ * incremental polling at the tail, and an empty page returns both cursors
+ * null (the client keeps polling with the cursor it already had).
  */
 export async function GET(
     request: NextRequest,

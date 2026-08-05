@@ -206,10 +206,47 @@ function cursorWhere(cursor: ContributionCursor | null) {
     };
 }
 
+/**
+ * Page envelope for both feeds. The contract deliberately separates emptying
+ * a backlog from polling for new messages:
+ *
+ * - `hasMore`: the current page was truncated — more rows exist right now.
+ * - `nextPageCursor`: where to continue draining the backlog; set only when
+ *   `hasMore` is true.
+ * - `resumeCursor`: cursor of the last delivered item, usable for incremental
+ *   polling even at the tail (`hasMore=false`, `nextPageCursor=null`).
+ *
+ * An empty page (a poll that finds nothing after the client's cursor)
+ * returns zero items with `hasMore=false`, both cursors null — the client
+ * keeps polling with the cursor it already had, which stays valid.
+ */
 export type ContributionsPage<T> = {
     contributions: T[];
-    nextCursor: string | null;
+    hasMore: boolean;
+    nextPageCursor: string | null;
+    resumeCursor: string | null;
 };
+
+function toPage<TRow extends { createdAt: Date; id: string }, TDto>(
+    rows: TRow[],
+    limit: number,
+    map: (row: TRow) => TDto,
+): ContributionsPage<TDto> {
+    const page = rows.slice(0, limit);
+    const hasMore = rows.length > limit;
+    const resumeCursor = page.length > 0
+        ? encodeContributionCursor({
+            createdAt: page[page.length - 1].createdAt.toISOString(),
+            id: page[page.length - 1].id,
+        })
+        : null;
+    return {
+        contributions: page.map(map),
+        hasMore,
+        nextPageCursor: hasMore ? resumeCursor : null,
+        resumeCursor,
+    };
+}
 
 export async function listPublicContributions(params: {
     scheduledSessionId: string;
@@ -225,16 +262,7 @@ export async function listPublicContributions(params: {
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         take: params.limit + 1,
     });
-    const page = rows.slice(0, params.limit);
-    return {
-        contributions: page.map(toPublicContribution),
-        nextCursor: rows.length > params.limit && page.length > 0
-            ? encodeContributionCursor({
-                createdAt: page[page.length - 1].createdAt.toISOString(),
-                id: page[page.length - 1].id,
-            })
-            : null,
-    };
+    return toPage(rows, params.limit, toPublicContribution);
 }
 
 export async function listStaffContributions(params: {
@@ -254,16 +282,7 @@ export async function listStaffContributions(params: {
             authorParticipant: { select: { participantIdentity: true } },
         },
     });
-    const page = rows.slice(0, params.limit);
-    return {
-        contributions: page.map(toStaffContribution),
-        nextCursor: rows.length > params.limit && page.length > 0
-            ? encodeContributionCursor({
-                createdAt: page[page.length - 1].createdAt.toISOString(),
-                id: page[page.length - 1].id,
-            })
-            : null,
-    };
+    return toPage(rows, params.limit, toStaffContribution);
 }
 
 // --- Creation ---------------------------------------------------------------
@@ -297,6 +316,21 @@ function replayOrConflict(
  * participant row (everyone in the room does — joining materializes it);
  * posting before joining is rejected rather than silently materializing
  * presence, because a write here must not masquerade as a room join.
+ *
+ * Ordering is part of the contract:
+ *
+ *   1. validate and normalize the payload;
+ *   2. resolve the participant;
+ *   3. look up (session, participant, idempotencyKey);
+ *   4. an existing row decides replay (200) or conflict (409) immediately —
+ *      neither touches the rate-limit budget, and neither is ever hidden
+ *      behind a 429;
+ *   5. only a genuinely new key enters the per-participant serialized
+ *      section, where idempotency is re-checked (a twin may have created the
+ *      row while this request queued), the budget is consulted, and a slot is
+ *      reserved before the INSERT;
+ *   6. the reservation is kept when a row is created and released when the
+ *      INSERT fails or a P2002 turns out to be a replay/conflict.
  */
 export async function createContribution(params: {
     scheduledSessionId: string;
@@ -327,60 +361,73 @@ export async function createContribution(params: {
         );
     }
 
-    const limiterKey = `${params.scheduledSessionId}:${participant.id}`;
-    if (contributionSubmissionLimiter.isLimited(limiterKey)) {
-        throw new ContributionError(
-            'rate_limited',
-            429,
-            'Too many contributions; wait before sharing again',
-            { retryAfterSeconds: contributionSubmissionLimiter.retryAfterSeconds(limiterKey) },
-        );
-    }
-
-    const replay = await prisma.sessionContribution.findUnique({
-        where: {
-            scheduledSessionId_authorParticipantId_idempotencyKey: {
-                scheduledSessionId: params.scheduledSessionId,
-                authorParticipantId: participant.id,
-                idempotencyKey,
-            },
+    const uniqueKey = {
+        scheduledSessionId_authorParticipantId_idempotencyKey: {
+            scheduledSessionId: params.scheduledSessionId,
+            authorParticipantId: participant.id,
+            idempotencyKey,
         },
-    });
-    if (replay) {
-        return replayOrConflict(replay, requestDigest);
+    };
+
+    // Fast path, outside any lock: replay and conflict never queue for a
+    // rate-limit slot and never see a 429.
+    const existing = await prisma.sessionContribution.findUnique({ where: uniqueKey });
+    if (existing) {
+        return replayOrConflict(existing, requestDigest);
     }
 
-    try {
-        const created = await prisma.sessionContribution.create({
-            data: {
-                scheduledSessionId: params.scheduledSessionId,
-                authorParticipantId: participant.id,
-                authorDisplayName: params.displayName,
-                body,
-                visibility,
-                idempotencyKey,
-                requestDigest,
-            },
-        });
-        contributionSubmissionLimiter.recordSubmission(limiterKey);
-        return { contribution: toPublicContribution(created), created: true };
-    } catch (error) {
-        // Two concurrent first submissions race on the unique key: exactly one
-        // inserts, the loser re-reads and replays (or conflicts) canonically.
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-            const winner = await prisma.sessionContribution.findUnique({
-                where: {
-                    scheduledSessionId_authorParticipantId_idempotencyKey: {
-                        scheduledSessionId: params.scheduledSessionId,
-                        authorParticipantId: participant.id,
-                        idempotencyKey,
-                    },
-                },
-            });
+    const limiterKey = `${params.scheduledSessionId}:${participant.id}`;
+    return contributionSubmissionLimiter.withSlot(
+        limiterKey,
+        async (slot) => {
+            // Re-check inside the lock: a concurrent request with the same
+            // key may have created the row while this one queued. Replay and
+            // conflict still spend no budget.
+            const winner = await prisma.sessionContribution.findUnique({ where: uniqueKey });
             if (winner) {
                 return replayOrConflict(winner, requestDigest);
             }
-        }
-        throw error;
-    }
+
+            if (!slot.isAvailable()) {
+                throw new ContributionError(
+                    'rate_limited',
+                    429,
+                    'Too many contributions; wait before sharing again',
+                    { retryAfterSeconds: slot.retryAfterSeconds() },
+                );
+            }
+
+            slot.reserve();
+            try {
+                const created = await prisma.sessionContribution.create({
+                    data: {
+                        scheduledSessionId: params.scheduledSessionId,
+                        authorParticipantId: participant.id,
+                        authorDisplayName: params.displayName,
+                        body,
+                        visibility,
+                        idempotencyKey,
+                        requestDigest,
+                    },
+                });
+                return { contribution: toPublicContribution(created), created: true };
+            } catch (error) {
+                // A failed INSERT frees the budget slot; so does a P2002 that
+                // resolves to replay/conflict. Only a created row keeps it.
+                slot.release();
+                // The per-process lock serializes same-process writers, so a
+                // P2002 here means a cross-process race: the unique index is
+                // the only inter-process guarantee. The loser re-reads and
+                // replays (or conflicts) canonically.
+                if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+                    const raced = await prisma.sessionContribution.findUnique({ where: uniqueKey });
+                    if (raced) {
+                        return replayOrConflict(raced, requestDigest);
+                    }
+                }
+                throw error;
+            }
+        },
+        params.now?.getTime(),
+    );
 }

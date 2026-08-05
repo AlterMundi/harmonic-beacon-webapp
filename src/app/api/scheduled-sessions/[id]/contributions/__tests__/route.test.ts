@@ -173,7 +173,17 @@ describe('GET public feed — authorization and bounded reads', () => {
         expect(mocks.contributionFindMany).toHaveBeenCalledWith(
             expect.objectContaining({ take: 51 }),
         );
-        const page = body as { contributions: Array<Record<string, unknown>>; nextCursor: string | null };
+        const page = body as {
+            contributions: Array<Record<string, unknown>>;
+            hasMore: boolean;
+            nextPageCursor: string | null;
+            resumeCursor: string | null;
+        };
+        expect(page.hasMore).toBe(false);
+        expect(page.nextPageCursor).toBeNull();
+        // Tail page: resumeCursor still marks the last delivered item so the
+        // client can poll for anything created after it.
+        expect(page.resumeCursor).toBeTypeOf('string');
         expect(page.contributions[0]).toEqual({
             id: 'contrib-1',
             body: '¿Cómo respiramos? Siento calma',
