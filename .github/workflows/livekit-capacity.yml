@@ -75,7 +75,9 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     environment: capacity-rehearsal
-    timeout-minutes: 55
+    # Includes the longest selectable synchronization delay, every absolute
+    # phase barrier/completion tail, and a bounded setup/evidence margin.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
