@@ -159,6 +159,10 @@ function distributedExpectedConnectSeconds(profile, shardCount, phaseName) {
     ));
 }
 
+function streamExpectedConnectSeconds(connections, rampPerSecond) {
+    return connectionRampSeconds(connections, rampPerSecond);
+}
+
 export function connectionRampSeconds(connections, rampPerSecond) {
     if (connections <= 1) return 0;
     return Math.ceil((connections - 1) / Math.min(rampPerSecond, 10));
@@ -173,6 +177,15 @@ export function normalizeScheduledStart(value) {
     const milliseconds = Date.parse(text);
     if (!Number.isFinite(milliseconds)) throw new Error('startAt is not a valid timestamp');
     return new Date(milliseconds).toISOString();
+}
+
+export function scheduledCompletionDelayMs(startAt, phase, nowMs = Date.now()) {
+    if (startAt === null) return 0;
+    return Math.max(0,
+        Date.parse(startAt) +
+        (phase.scheduledOffsetSeconds + phase.expectedConnectSeconds + phase.durationSeconds) * 1000 -
+        nowMs,
+    );
 }
 
 export function roomNames(runId) {
@@ -332,7 +345,21 @@ export function buildPlan({
         const expectedConnectSeconds = shardCount === 1
             ? shardExpectedConnectSeconds(profile, shardIndex, shardCount, phase.name)
             : distributedExpectedConnectSeconds(profile, shardCount, phase.name);
-        const scheduled = { ...phase, scheduledOffsetSeconds, expectedConnectSeconds };
+        const stageExpectedConnectSeconds = streamExpectedConnectSeconds(
+            localAttendees + localStagePublishers,
+            phase.stageRampPerSecond,
+        );
+        const beaconExpectedConnectSeconds = streamExpectedConnectSeconds(
+            localAttendees + localBeaconPublishers,
+            phase.beaconRampPerSecond,
+        );
+        const scheduled = {
+            ...phase,
+            scheduledOffsetSeconds,
+            expectedConnectSeconds,
+            stageExpectedConnectSeconds,
+            beaconExpectedConnectSeconds,
+        };
         scheduledOffsetSeconds += expectedConnectSeconds + phase.durationSeconds;
         if (index < phases.length - 1) {
             scheduledOffsetSeconds += profile.phaseCompletionBufferSeconds + phaseGapSeconds;
@@ -367,10 +394,14 @@ export function buildPlan({
                 localPublishers: localStagePublishers,
                 expectedGlobalPublishers: profile.stagePublishers,
                 expectedSubscriberTracks: localAttendees * profile.stagePublishers,
+                localExpectedConnectSeconds: phase.stageExpectedConnectSeconds,
+                commandDurationSeconds: phase.durationSeconds +
+                    phase.expectedConnectSeconds - phase.stageExpectedConnectSeconds,
                 args: commandFor({
                     room: rooms.stage,
                     identityPrefix: `hbload-${sanitizeRunId(runId)}${shardIdentity}-stage`,
-                    durationSeconds: phase.durationSeconds,
+                    durationSeconds: phase.durationSeconds +
+                        phase.expectedConnectSeconds - phase.stageExpectedConnectSeconds,
                     publishers: localStagePublishers,
                     publisherKind: 'video',
                     attendees: localAttendees,
@@ -386,10 +417,14 @@ export function buildPlan({
                 localPublishers: localBeaconPublishers,
                 expectedGlobalPublishers: profile.beaconPublishers,
                 expectedSubscriberTracks: localAttendees * profile.beaconPublishers,
+                localExpectedConnectSeconds: phase.beaconExpectedConnectSeconds,
+                commandDurationSeconds: phase.durationSeconds +
+                    phase.expectedConnectSeconds - phase.beaconExpectedConnectSeconds,
                 args: commandFor({
                     room: rooms.beacon,
                     identityPrefix: `hbload-${sanitizeRunId(runId)}${shardIdentity}-beacon`,
-                    durationSeconds: phase.durationSeconds,
+                    durationSeconds: phase.durationSeconds +
+                        phase.expectedConnectSeconds - phase.beaconExpectedConnectSeconds,
                     publishers: localBeaconPublishers,
                     publisherKind: 'audio',
                     attendees: localAttendees,
@@ -485,6 +520,39 @@ export function commandFingerprint(args) {
     return createHash('sha256').update(JSON.stringify(args)).digest('hex');
 }
 
+export function publicLoadPlan(plan, executable = 'lk') {
+    return {
+        ...plan,
+        phases: plan.phases.map((phase) => ({
+            ...phase,
+            stage: {
+                roomName: phase.stage.roomName,
+                requestedConnections: phase.stage.requestedConnections,
+                expectedGlobalConnections: phase.stage.expectedGlobalConnections,
+                localPublishers: phase.stage.localPublishers,
+                expectedGlobalPublishers: phase.stage.expectedGlobalPublishers,
+                expectedSubscriberTracks: phase.stage.expectedSubscriberTracks,
+                localExpectedConnectSeconds: phase.stage.localExpectedConnectSeconds,
+                commandDurationSeconds: phase.stage.commandDurationSeconds,
+                command: `${executable} ${phase.stage.args.join(' ')}`,
+                fingerprint: commandFingerprint(phase.stage.args),
+            },
+            beacon: {
+                roomName: phase.beacon.roomName,
+                requestedConnections: phase.beacon.requestedConnections,
+                expectedGlobalConnections: phase.beacon.expectedGlobalConnections,
+                localPublishers: phase.beacon.localPublishers,
+                expectedGlobalPublishers: phase.beacon.expectedGlobalPublishers,
+                expectedSubscriberTracks: phase.beacon.expectedSubscriberTracks,
+                localExpectedConnectSeconds: phase.beacon.localExpectedConnectSeconds,
+                commandDurationSeconds: phase.beacon.commandDurationSeconds,
+                command: `${executable} ${phase.beacon.args.join(' ')}`,
+                fingerprint: commandFingerprint(phase.beacon.args),
+            },
+        })),
+    };
+}
+
 export function generatorHostFingerprint({ hostName, machineId = '', bootId = '' }) {
     return commandFingerprint([hostName, machineId, bootId]).slice(0, 12);
 }
@@ -565,21 +633,61 @@ function shardPlanIsDeterministic(plan, index, shardCount) {
             shardCount,
             phase.name,
         );
+        const stageExpectedConnectSeconds = streamExpectedConnectSeconds(
+            localAttendees + localStagePublishers,
+            stageRamp,
+        );
+        const beaconExpectedConnectSeconds = streamExpectedConnectSeconds(
+            localAttendees + localBeaconPublishers,
+            beaconRamp,
+        );
+        const stageCommandDurationSeconds = phase.durationSeconds +
+            expectedConnectSeconds - stageExpectedConnectSeconds;
+        const beaconCommandDurationSeconds = phase.durationSeconds +
+            expectedConnectSeconds - beaconExpectedConnectSeconds;
         const valid =
             phase.scheduledOffsetSeconds === offset &&
             phase.expectedConnectSeconds === expectedConnectSeconds &&
+            phase.stageExpectedConnectSeconds === stageExpectedConnectSeconds &&
+            phase.beaconExpectedConnectSeconds === beaconExpectedConnectSeconds &&
             phase.stageRampPerSecond === stageRamp &&
             phase.beaconRampPerSecond === beaconRamp &&
+            phase.stage.roomName === plan.rooms.stage &&
             phase.stage.requestedConnections === localAttendees + localStagePublishers &&
             phase.stage.expectedGlobalConnections === profile.attendees + profile.stagePublishers &&
             phase.stage.localPublishers === localStagePublishers &&
             phase.stage.expectedGlobalPublishers === profile.stagePublishers &&
             phase.stage.expectedSubscriberTracks === localAttendees * profile.stagePublishers &&
+            phase.stage.localExpectedConnectSeconds === stageExpectedConnectSeconds &&
+            phase.stage.commandDurationSeconds === stageCommandDurationSeconds &&
+            phase.stage.fingerprint === commandFingerprint(commandFor({
+                room: plan.rooms.stage,
+                identityPrefix: `hbload-${sanitizeRunId(plan.runId)}-s${index}-stage`,
+                durationSeconds: stageCommandDurationSeconds,
+                publishers: localStagePublishers,
+                publisherKind: 'video',
+                attendees: localAttendees,
+                rampPerSecond: stageRamp,
+                videoCodec: profile.stageVideoCodec,
+                layout: profile.stageLayout,
+            })) &&
+            phase.beacon.roomName === plan.rooms.beacon &&
             phase.beacon.requestedConnections === localAttendees + localBeaconPublishers &&
             phase.beacon.expectedGlobalConnections === profile.attendees + profile.beaconPublishers &&
             phase.beacon.localPublishers === localBeaconPublishers &&
             phase.beacon.expectedGlobalPublishers === profile.beaconPublishers &&
-            phase.beacon.expectedSubscriberTracks === localAttendees * profile.beaconPublishers;
+            phase.beacon.expectedSubscriberTracks === localAttendees * profile.beaconPublishers &&
+            phase.beacon.localExpectedConnectSeconds === beaconExpectedConnectSeconds &&
+            phase.beacon.commandDurationSeconds === beaconCommandDurationSeconds &&
+            phase.beacon.fingerprint === commandFingerprint(commandFor({
+                room: plan.rooms.beacon,
+                identityPrefix: `hbload-${sanitizeRunId(plan.runId)}-s${index}-beacon`,
+                durationSeconds: beaconCommandDurationSeconds,
+                publishers: localBeaconPublishers,
+                publisherKind: 'audio',
+                attendees: localAttendees,
+                rampPerSecond: beaconRamp,
+            }));
         offset += expectedConnectSeconds + phase.durationSeconds;
         if (phaseIndex < plan.phases.length - 1) {
             offset += profile.phaseCompletionBufferSeconds + expectedGap;

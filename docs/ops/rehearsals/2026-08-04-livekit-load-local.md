@@ -110,12 +110,70 @@ in all eight. This establishes repeatability on the local same-host topology,
 but does not distinguish SFU capacity from generator contention or certify
 mona/external network capacity.
 
+## Six-generator production-like diagnostic
+
+Run `capacity-en-20260805d` completed all four phases against an isolated
+LiveKit `v1.13.4` target on mona from six distinct GitHub-hosted generators and
+exact `main@505cc9506bd734d89914635d71c028b6009bbb37`. Actions run:
+`31032518240`.
+
+Every phase reached the exact global topology: 156 Stage connections with six
+publishers and 151 Beacon connections with one publisher. Each shard received
+150 Stage subscriber tracks and 25 Beacon subscriber tracks, every API poll
+succeeded, phase synchronization was 0--1 ms, and all containers remained at
+restart delta zero with no OOM. The source manifest hashes are:
+
+- shard 0: `ed535bec5a1d416f8e17a4da46d12a1c033a5a9b6dd01ec51193fa8f62a72994`;
+- shard 1: `de4c737dba64c10743456d2e73b49b0e9d4a41a5a8b3c7cc3923006350d7deb4`;
+- shard 2: `8084edd4532d61319af4e28c79015bd2d2a1c115c47601bf423ba5478a084d99`;
+- shard 3: `93f8c283b95220012a97832fcc5fc2593e217473b69ec82dd9ddf50fb199ffb9`;
+- shard 4: `3fe8f31e54e87ec00ab77d12af49ada8cfffc0532cc05f39de3ebe7d13b68af2`;
+- shard 5: `2ba8d47e62a193dc1cfe952cb3cae7224cdb6f408f0a73991d1b874ba1cbfeb3`.
+
+The result remained a real packet-loss failure:
+
+| Shard | Stage ramp | Stage soak | Stage reconnect 1 | Stage reconnect 2 | Beacon max |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 15.841% | 34.396% | 26.931% | 16.921% | 6.435% |
+| 1 | 16.542% | 34.837% | 27.900% | 19.221% | 6.294% |
+| 2 | 15.724% | 33.840% | 29.198% | 18.310% | 6.333% |
+| 3 | 15.735% | 33.832% | 26.903% | 16.997% | 6.257% |
+| 4 | 8.742% | 21.370% | 15.757% | 8.523% | 4.006% |
+| 5 | 8.706% | 22.138% | 15.213% | 8.850% | 4.003% |
+
+Splitting subscriber fan-in over six machines did not remove the failure, so
+the earlier two-host result must not be classified as generator contention
+alone. Target telemetry also rules out simple host or NIC saturation: 1,936
+samples completed normally, public readiness failures were zero, host CPU
+peaked at 60.67%, available memory stayed above 15,340,625,920 bytes, and soak
+traffic averaged 310.19 Mbps outbound with a 355.72 Mbps maximum interval. The
+telemetry SHA-256 is
+`311e9c73cfdce640ac35fd34f0c4fc3b24b282226bfdd2ffba25cb31c482465f`.
+
+The run also exposed a harness defect independent of packet loss. Shards 0--3
+had a faster local ramp and disconnected before shards 4--5; their ten-second
+cleanup polls therefore ended with 52 Stage and 50 Beacon participants still
+present. The two slowest shards subsequently observed exact zero. The harness
+now pads each local command to one shared completion barrier and validates that
+contract before aggregation.
+
+The pinned CLI `v2.16.3` computes `Pkt. Loss` from the Pion sample builder's
+dropped-packet callback with a 100-packet late window. It is a receiver-visible
+RTP sequence-gap metric, not an acoustic or browser decode test, and it cannot
+by itself distinguish network loss from an SFU forwarding defect. During the
+failure, LiveKit `v1.13.4` logged packet-bucket overflow/eviction warnings. The
+subsequent upstream `v1.13.5` release includes a
+[forwarded-padding fix](https://github.com/livekit/livekit/commit/366cadcd96b8b09c7212e27693a25f3a88e6c8be)
+that its maintainer explicitly describes as affecting special clients and
+bandwidth estimation. A controlled isolated comparison on `v1.13.5` is
+therefore the next diagnostic; changing the 0.1% threshold is not.
+
 ## Decision
 
 - Do not close #99 or use this run as GO evidence for #24.
 - Keep the 0.1% loss threshold; do not normalize the failure away.
-- Repeat the explicit VP8 profile on a separately provisioned generator or
-  mona-safe production-like target before classifying server versus generator.
+- Compare the explicit VP8 topology on an isolated LiveKit `v1.13.5` target
+  before changing production or classifying the remaining loss.
 - Run the explicit H264 path as supporting Safari evidence, never as a
   substitute for VP8.
 - Physical browser, TURN, mobile routing, six-camera, and listening gates remain

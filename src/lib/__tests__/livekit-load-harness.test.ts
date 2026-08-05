@@ -25,8 +25,10 @@ import {
     parseLoadTestOutput,
     probeProductionReadiness,
     PRODUCTION_READINESS_URL,
+    publicLoadPlan,
     remoteConfirmation,
     roomNames,
+    scheduledCompletionDelayMs,
     validateProfile,
     validateShard,
     validateDistributedTargetUrl,
@@ -56,6 +58,7 @@ afterEach(() => {
 });
 
 function passingShardManifest(plan: ReturnType<typeof buildPlan>, hostIndex: number) {
+    const manifestPlan = publicLoadPlan(plan);
     return {
         schemaVersion: 1,
         kind: 'harmonic-beacon-livekit-load',
@@ -64,7 +67,7 @@ function passingShardManifest(plan: ReturnType<typeof buildPlan>, hostIndex: num
         livekitCliVersion: 'lk 2.16.3',
         harnessDirty: false,
         generatorHostHash: String(hostIndex).padStart(12, '0'),
-        plan,
+        plan: manifestPlan,
         phases: plan.phases.map((plannedPhase) => ({
             name: plannedPhase.name,
             passed: true,
@@ -242,6 +245,25 @@ describe('LiveKit load harness safety', () => {
             .toEqual(Array(6).fill([0, 400, 1940, 2340]));
         expect(plans.map((plan) => plan.phases[0].expectedConnectSeconds))
             .toEqual([25, 25, 25, 25, 25, 25]);
+        expect(plans.map((plan) => plan.phases[0].stage.localExpectedConnectSeconds))
+            .toEqual([13, 13, 13, 13, 25, 25]);
+        expect(plans.map((plan) => plan.phases[0].stage.commandDurationSeconds))
+            .toEqual([72, 72, 72, 72, 60, 60]);
+        expect(plans.map((plan) => plan.phases[0].beacon.localExpectedConnectSeconds))
+            .toEqual([13, 12, 12, 12, 24, 24]);
+        expect(plans.map((plan) => plan.phases[0].beacon.commandDurationSeconds))
+            .toEqual([72, 73, 73, 73, 61, 61]);
+        for (const plan of plans) {
+            const phase = plan.phases[0];
+            expect(phase.stage.localExpectedConnectSeconds + phase.stage.commandDurationSeconds)
+                .toBe(phase.expectedConnectSeconds + phase.durationSeconds);
+            expect(phase.beacon.localExpectedConnectSeconds + phase.beacon.commandDurationSeconds)
+                .toBe(phase.expectedConnectSeconds + phase.durationSeconds);
+            expect(phase.stage.args[phase.stage.args.indexOf('--duration') + 1])
+                .toBe(`${phase.stage.commandDurationSeconds}s`);
+            expect(phase.beacon.args[phase.beacon.args.indexOf('--duration') + 1])
+                .toBe(`${phase.beacon.commandDurationSeconds}s`);
+        }
 
         const aggregate = aggregateShardManifests(plans.map((plan, shardIndex) => ({
             sha256: String(shardIndex).padStart(64, 'b'),
@@ -253,6 +275,26 @@ describe('LiveKit load harness safety', () => {
             totals: { attendees: 150, stagePublishers: 6, beaconPublishers: 1 },
         });
         expect(aggregate.sources).toHaveLength(6);
+    });
+
+    it('holds cleanup until the shared planned completion barrier', () => {
+        const phase = {
+            scheduledOffsetSeconds: 400,
+            expectedConnectSeconds: 25,
+            durationSeconds: 1200,
+        };
+        const startAt = '2026-08-05T18:00:00.000Z';
+        expect(scheduledCompletionDelayMs(
+            startAt,
+            phase,
+            Date.parse('2026-08-05T18:26:40.000Z'),
+        )).toBe(25_000);
+        expect(scheduledCompletionDelayMs(
+            startAt,
+            phase,
+            Date.parse('2026-08-05T18:27:06.000Z'),
+        )).toBe(0);
+        expect(scheduledCompletionDelayMs(null, phase, 0)).toBe(0);
     });
 
     it('refuses unsafe distributed targets, timing and topology', () => {
@@ -523,6 +565,25 @@ describe('LiveKit load harness evidence', () => {
         entries[1].manifest.harnessDirty = false;
         entries[1].manifest.phases[0].observed.stage.peakConnections -= 1;
         expect(() => aggregateShardManifests(entries)).toThrow(/unproven phase/);
+    });
+
+    it('refuses a shard plan that can disconnect before the shared completion barrier', () => {
+        const startAt = '2026-08-06T12:00:00.000Z';
+        const entries = [0, 1].map((shardIndex) => ({
+            sha256: String(shardIndex).padStart(64, 'c'),
+            manifest: passingShardManifest(buildPlan({
+                profileName: 'rehearsal-es',
+                profile,
+                runId: 'aggregate-early-cleanup',
+                url: 'ws://localhost:7880',
+                shardIndex,
+                shardCount: 2,
+                startAt,
+            }), shardIndex),
+        }));
+
+        entries[0].manifest.plan.phases[0].stage.commandDurationSeconds -= 1;
+        expect(() => aggregateShardManifests(entries)).toThrow(/deterministic partition/);
     });
 
     it('writes a 0600 aggregate once and refuses to overwrite it', () => {
