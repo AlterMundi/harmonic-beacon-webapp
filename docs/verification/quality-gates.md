@@ -20,6 +20,7 @@ this file is the evidence register, not the how-to.
 | Responsive geometry (1440/1024/390/320 px) | `e2e/tests/responsive.spec.ts` | same |
 | Visual baselines (same four widths) | `e2e/tests/visual.spec.ts` + snapshots | same |
 | Media continuity, real browser + LiveKit | `e2e/tests/media-continuity.spec.ts` + `e2e/helpers/media-probe.ts` | same |
+| Sanitized RTC audio diagnostics | `e2e/tests/rtc-audio-stats.spec.ts` + `docs/verification/rtc-audio-diagnostics.md` | same |
 | Stage invitation consent, two browsers + LiveKit | `e2e/tests/stage-invitation.spec.ts` | same |
 | Media continuity, integration level | `src/app/session/[id]/__tests__/media-continuity.test.tsx` | existing `test` job (Vitest) |
 | Frozen audio boundaries | `.github/CODEOWNERS` | `.github/workflows/audio-boundary.yml` (`audio-touching` label) |
@@ -55,6 +56,11 @@ by Playwright; Chromium 149 (Playwright 1.61.0).
   subscribe-only preview room in its persistent same-origin frame; opening
   all five conductor signals produces the same zero-close, zero-detach,
   zero-reactivation result.
+- **RTC audio diagnostics are measurement, not an acoustic fix.** The probe
+  can attach loss, jitter, RTT, concealment, level, codec and whitelisted
+  track settings from real local LiveKit while excluding identities,
+  candidates, device ids and signaling data. Physical routing and listening
+  remain explicit gaps under #93/#94.
 - **Stage invitation: 1/1 passed.** Two independent browser identities
   completed hand raise → invite → decline and hand raise → invite → accept
   with fake camera+microphone → staff return. The test waits on durable
