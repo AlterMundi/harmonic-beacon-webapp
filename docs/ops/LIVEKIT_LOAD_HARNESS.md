@@ -21,6 +21,9 @@ and human gates in #24.
   `LIVEKIT_API_SECRET`. They are never arguments or manifest fields.
 - Manifests are mode `0600` and contain no identities, tokens, audio, video,
   email, or raw CLI output.
+- `SIGINT` and `SIGTERM` stop both room generators cooperatively, run the same
+  bounded cleanup check, write an `ABORTED` manifest, and exit non-zero. An
+  interrupted run is evidence of an attempted run, never a PASS.
 
 Preview a run without credentials or LiveKit:
 
@@ -77,6 +80,9 @@ poll-observed join p50/p95/p99, cleanup convergence, packet loss, generator
 CPU/memory/network deltas, and event-loop delay. Each phase fails unless both
 CLI processes exit zero, report every expected track, reach exact room counts,
 clean up to zero, and remain below the configured dropped-packet threshold.
+If an operator or external watchdog aborts a phase, the manifest records only
+the signal and timestamp plus the partial redacted phase metrics. It never
+promotes partial results to FAIL/PASS or continues into another phase.
 Run the full ES and EN profiles twice and attach all four manifests to #24.
 
 ## Tooling
