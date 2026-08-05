@@ -1,14 +1,19 @@
 # Weekend Event Runbook
 
-Harmonic Beacon live event — Saturday 2026-08-08 — Session 1: Spanish 8:30 AM Costa Rica (14:30 UTC), Session 2: English 2:00 PM Costa Rica (20:00 UTC).
-This is the operator's playbook: who owns each failure, how it is detected, the
-first action, when to suspend or issue rainchecks, what attendees are told, and who
-decides rainchecks. It assumes the architecture in
+This is the recurring operator playbook for Harmonic Beacon live sessions: who
+owns each failure, how it is detected, the first action, when to suspend or
+issue rainchecks, what attendees are told, and who decides rainchecks. It never
+defines the current schedule. Before every event, the Incident Commander must
+match the selected Spotlight console against the enabled session returned by
+`GET https://bot.harmonicbeacon.com/v1/commerce/catalog`; a session that is
+missing or not open in that catalog is not advertised or treated as sellable.
+
+This runbook assumes the architecture in
 `docs/plans/WEEKEND_MVP_ROADMAP.md` and the deploy in `docker-compose.yml`
 (postgres, livekit, app, playlist-bot, tapestry on one host, "mona", behind
 nginx).
 
-Print this or keep it open next to `/ops/health` during both sessions.
+Print this or keep it open next to `/ops/health` during the active session.
 
 ## Event doors and lifecycle
 
@@ -85,57 +90,39 @@ docker compose logs --tail=100 app livekit playlist-bot tapestry postgres
 
 **T-2h** (IC + Stream/Support Operator):
 
+- Record the canonical event code, session code, language, opening time and
+  Stage room from the public catalog and the matching Spotlight console. Stop
+  if they disagree; never substitute a date or room from this document.
 - `/ops/health` fully green on production.
 - `docker compose ps` shows all five services healthy; bot heartbeat fresh.
 - Backups taken (Postgres dump) per deploy README.
 - TURN path re-verified from a restrictive network (join with UDP blocked).
 - Raincheck link confirmed live (§5.12) — click it, do not just read it.
-- Staff logins work for all four accounts; ticket-support channel open.
+- Every person in the approved staff roster completes a login check with their
+  own identity; ticket-support channel open. Shared staff credentials do not
+  count.
 - Bed audio audible in a test attendee browser; crossfader moves both ways.
 
-**T-45m**: Julián + both operators join the stage room. Julián publishes at
-720p; verify he counts as 1/6 grants on the board. Bot fades out when Julián
-publishes, fades in when he stops.
+**T-45m**: the assigned facilitator and the rostered operators join the selected
+Stage room. The facilitator publishes at 720p; verify they count as 1/6 grants
+on the board. Bot fades out when the facilitator publishes and fades in when
+they stop.
 
 **T-10m**: doors open. Stream/Support Operator watches admission; Spotlight
 Operator watches the grants counter; IC watches the whole board.
 
-### One-time event-data stabilization
+### Archived launch stabilization — do not rerun
 
-Before the first event, the IC runs the guarded stabilization command from the
-exact release checkout. It corrects the two production schedules and retires
-the two rehearsal fixtures without deleting history.
+`npm run event:stabilize` was a one-time, date-bounded migration for the
+2026-08-08 launch. Its deadline has passed and its expected rows are historical.
+It is not part of recurring event setup and must never be reused for a new
+weekend, even as a dry run. Git history and the
+`event.preflight_stabilization` audit entry preserve the original procedure.
 
-1. Stop all rehearsal activity and verify all four stage rooms are empty.
-2. Take and verify a PostgreSQL backup.
-3. On `mona`, from the deployment directory, run
-   `docker compose exec app npm run event:stabilize` and review every
-   current/desired row and count.
-4. Run the printed apply command inside the app container (prefix it with
-   `docker compose exec app`). It includes the dry-run SHA-256 digest,
-   `--apply`, and `--backup-confirmed`.
-5. Run the dry-run command again. Confirm production ES is scheduled for
-   2026-08-08 14:30 UTC, production EN for 2026-08-08 20:00 UTC, and both test
-   events are cancelled.
-
-The command refuses to apply at or after 2026-08-08 14:20 UTC, if a LiveKit
-room contains any participant, if the database changed after the dry-run, or if
-event IDs, titles, room names, languages, test flags, caps, or expected statuses differ.
-It never deletes data or disconnects participants. Never bypass these checks
-with ad-hoc SQL; if one fails, investigate the changed state and take a new
-backup/dry-run.
-
-Because all four rooms must be empty, apply also clears stale reconciliation
-flags on disconnected production participants. It does not revoke their
-durable grants or alter their hand state.
-
-Rollback: if verification immediately after apply fails, freeze admission and
-restore the just-verified pre-apply PostgreSQL backup before admitting anyone.
-The mutation is a single serializable transaction, so there is no partial
-database state to unwind. Re-deploying the previous app image alone does not
-reverse schedule or entitlement data. Keep the failed command output and the
-`event.preflight_stabilization` audit entry for diagnosis; neither contains
-attendee identity data.
+Create or change a future session only through the reviewed catalog, migration
+and cross-repository contract for that event. Verify the resulting session in
+the public catalog and its exact Spotlight console. Never compensate for a
+mismatch with ad-hoc SQL.
 
 ---
 
