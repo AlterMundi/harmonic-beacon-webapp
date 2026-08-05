@@ -570,7 +570,9 @@ describe('SessionRoomPage - stage invitation consent', () => {
         const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
         const { room, dialog } = await receiveInvitation();
 
-        expect(dialog).toHaveFocus();
+        await waitFor(() => {
+            expect(dialog).toHaveFocus();
+        });
         expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
         expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
         expect(screen.queryByRole('button', { name: 'Turn camera on' })).not.toBeInTheDocument();
