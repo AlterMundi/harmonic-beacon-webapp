@@ -60,6 +60,15 @@ describe('production deploy contract', () => {
     expect(rootHelper).toContain("die 'commerce network is not internal'");
   });
 
+  it('refuses a production deploy while the passwordless E2E dashboard is enabled', () => {
+    expect(rootHelper).toContain(
+      "grep -Fxq 'E2E_DASHBOARD_ENABLED=1' \"$PRODUCTION_ENV\"",
+    );
+    expect(rootHelper).toContain(
+      "die 'production E2E dashboard must be disabled before deploy'",
+    );
+  });
+
   it('preserves and restores app and tapestry independently', () => {
     expect(rootHelper).toContain(
       'harmonic-beacon/app:rollback-${run_id}',
