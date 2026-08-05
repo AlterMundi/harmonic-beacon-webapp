@@ -17,11 +17,14 @@ import {
     buildPlan,
     connectionRampSeconds,
     createAbortCoordinator,
+    createConsecutiveFailureGuard,
     generatorHostFingerprint,
     manifestContainsSecret,
     normalizeScheduledStart,
     partitionCount,
     parseLoadTestOutput,
+    probeProductionReadiness,
+    PRODUCTION_READINESS_URL,
     remoteConfirmation,
     roomNames,
     validateProfile,
@@ -129,6 +132,48 @@ function passingShardManifest(plan: ReturnType<typeof buildPlan>, hostIndex: num
 }
 
 describe('LiveKit load harness safety', () => {
+    it('probes only the fixed public production readiness boundary', async () => {
+        const calls: Array<{ url: string; init: RequestInit }> = [];
+        const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
+            calls.push({ url: String(url), init: init ?? {} });
+            return { status: 200 } as Response;
+        };
+
+        await expect(probeProductionReadiness({ fetchImpl })).resolves.toBe(true);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toMatchObject({
+            url: PRODUCTION_READINESS_URL,
+            init: { method: 'GET', cache: 'no-store', redirect: 'manual' },
+        });
+        expect(calls[0].init.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('fails closed on non-200 responses and probe errors', async () => {
+        await expect(probeProductionReadiness({
+            fetchImpl: async () => ({ status: 503 }) as Response,
+        })).resolves.toBe(false);
+        await expect(probeProductionReadiness({
+            fetchImpl: async () => { throw new Error('network unavailable'); },
+        })).resolves.toBe(false);
+    });
+
+    it('trips after two consecutive failures but resets after a success', () => {
+        let trips = 0;
+        const guard = createConsecutiveFailureGuard({
+            maxFailures: 2,
+            onTrip: () => { trips += 1; },
+        });
+
+        expect(guard.record(false)).toBe(false);
+        expect(guard.failures).toBe(1);
+        expect(guard.record(true)).toBe(false);
+        expect(guard.failures).toBe(0);
+        expect(guard.record(false)).toBe(false);
+        expect(guard.record(false)).toBe(true);
+        expect(guard.record(true)).toBe(true);
+        expect(trips).toBe(1);
+    });
+
     it('builds a bounded two-host dispatch without exposing target credentials', () => {
         const dispatch = buildDistributedDispatchPlan({
             profileName: 'rehearsal-es',

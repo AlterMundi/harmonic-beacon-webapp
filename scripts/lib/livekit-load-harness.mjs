@@ -2,6 +2,52 @@ import { createHash } from 'node:crypto';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const ROOM_PATTERN = /^hb-load-[a-z0-9][a-z0-9-]{2,47}-(stage|beacon)$/;
+export const PRODUCTION_READINESS_URL =
+    'https://live.harmonicbeacon.com/api/health/ready';
+
+export async function probeProductionReadiness({
+    fetchImpl = fetch,
+    timeoutMs = 2_500,
+} = {}) {
+    try {
+        const response = await fetchImpl(PRODUCTION_READINESS_URL, {
+            method: 'GET',
+            cache: 'no-store',
+            redirect: 'manual',
+            signal: AbortSignal.timeout(timeoutMs),
+        });
+        const healthy = response.status === 200;
+        await response.body?.cancel();
+        return healthy;
+    } catch {
+        return false;
+    }
+}
+
+export function createConsecutiveFailureGuard({ maxFailures = 2, onTrip }) {
+    if (!Number.isInteger(maxFailures) || maxFailures < 1) {
+        throw new Error('maxFailures must be a positive integer');
+    }
+    let failures = 0;
+    let tripped = false;
+    return {
+        record(healthy) {
+            if (tripped) return true;
+            failures = healthy ? 0 : failures + 1;
+            if (failures >= maxFailures) {
+                tripped = true;
+                onTrip();
+            }
+            return tripped;
+        },
+        get failures() {
+            return failures;
+        },
+        get tripped() {
+            return tripped;
+        },
+    };
+}
 
 export function sanitizeRunId(value) {
     const runId = String(value ?? '')
