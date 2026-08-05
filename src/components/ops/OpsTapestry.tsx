@@ -70,7 +70,10 @@ export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
         let controller: AbortController | null = null;
         let previousUrl: string | null = null;
         const manifestUrl = `/api/ops/sessions/${encodeURIComponent(sessionId)}/tapestry/manifest`;
-        const compositeUrl = `/api/tapestry/${encodeURIComponent(sessionId)}`;
+        // The consumer marker lets observability and tests tell this poll
+        // apart from other composite consumers (health panel, room surface);
+        // the route ignores unknown query params.
+        const compositeUrl = `/api/tapestry/${encodeURIComponent(sessionId)}?view=ops-tapestry`;
 
         const cycle = async () => {
             if (!live) return;

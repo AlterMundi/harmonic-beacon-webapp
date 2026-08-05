@@ -61,13 +61,13 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
         const url = request.url();
         if (url.includes(`/api/ops/sessions/${SESSION_ES.id}/tapestry/manifest`)) counters.manifest += 1;
         else if (url.includes(`/api/ops/sessions/${SESSION_ES.id}/tapestry/tiles/`)) counters.tiles += 1;
-        else if (url.includes(`/api/tapestry/${SESSION_ES.id}`)) counters.composite += 1;
+        else if (url.includes(`/api/tapestry/${SESSION_ES.id}?view=ops-tapestry`)) counters.composite += 1;
     });
 
     await page.route(`**/api/ops/sessions/${SESSION_ES.id}/tapestry/manifest`, async (route) => {
         await route.fulfill({ json: manifestFor(count) });
     });
-    await page.route(`**/api/tapestry/${SESSION_ES.id}`, async (route) => {
+    await page.route(`**/api/tapestry/${SESSION_ES.id}**`, async (route) => {
         await route.fulfill({
             body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64'),
             contentType: 'image/gif',
