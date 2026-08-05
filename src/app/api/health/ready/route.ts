@@ -6,6 +6,7 @@ import { OperationTimeoutError, withTimeout } from '@/lib/with-timeout';
 export const dynamic = 'force-dynamic';
 
 const DB_CHECK_TIMEOUT_MS = 3000;
+const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
 
 /**
  * GET /api/health/ready
@@ -18,7 +19,10 @@ const DB_CHECK_TIMEOUT_MS = 3000;
 export async function GET() {
     try {
         await withTimeout(prisma.$queryRaw`SELECT 1`, DB_CHECK_TIMEOUT_MS, 'Database check');
-        return NextResponse.json({ status: 'ok', checks: { database: 'ok' } });
+        return NextResponse.json(
+            { status: 'ok', checks: { database: 'ok' } },
+            { headers: NO_STORE_HEADERS },
+        );
     } catch (error) {
         // Redacted: a pg auth failure carries the full connection string,
         // password included, in error.message — and stdout is shipped to a
@@ -32,7 +36,7 @@ export async function GET() {
                         error instanceof OperationTimeoutError ? 'timeout' : 'unreachable',
                 },
             },
-            { status: 503 },
+            { status: 503, headers: NO_STORE_HEADERS },
         );
     }
 }
