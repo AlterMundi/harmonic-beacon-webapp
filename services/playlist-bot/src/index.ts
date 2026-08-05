@@ -248,7 +248,9 @@ class PlaylistBot {
     this.room.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
       log('INFO', `Participant left: ${p.identity}`);
       if (p.identity === BEACON_IDENTITY) {
-        this.setBeaconAudioAvailable(false);
+        // Rebuild from LiveKit's current snapshot: a stale disconnect from a
+        // replaced beacon01 must not fade the playlist in over its successor.
+        this.refreshBeaconAudioAvailability();
       }
     });
 

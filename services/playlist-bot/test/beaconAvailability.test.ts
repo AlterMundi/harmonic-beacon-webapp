@@ -99,6 +99,20 @@ describe('Beacon audio availability', () => {
     );
   });
 
+  it('does not fade in for a stale disconnect after beacon01 was replaced', () => {
+    const replacement = participant('beacon01', [
+      { kind: AUDIO_TRACK_KIND, muted: false },
+    ]);
+
+    // ParticipantDisconnected for the prior identity can arrive after the
+    // room snapshot already contains the replacement. Reconciliation must
+    // trust that snapshot, not the stale event payload.
+    assert.deepEqual(
+      reconcileBeaconAudioAvailability(true, [replacement]),
+      { available: true, transition: null },
+    );
+  });
+
   it('reconstructs both sides of the decision from the current snapshot after reconnect', () => {
     const liveBeacon = participant('beacon01', [
       { kind: AUDIO_TRACK_KIND, muted: false },
