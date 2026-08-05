@@ -25,12 +25,12 @@ describe('GET /api/livekit/token', () => {
 
     it('requires an event scope before resolving authorization', async () => {
         const { GET } = await import('../route');
-        const { status, body } = await parseResponse(
-            await GET(createRequest('/api/livekit/token')),
-        );
+        const response = await GET(createRequest('/api/livekit/token'));
+        const { status, body } = await parseResponse(response);
 
         expect(status).toBe(400);
         expect(body).toEqual({ error: 'sessionId is required' });
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
         expect(resolveRoomPrincipal).not.toHaveBeenCalled();
     });
 
@@ -49,6 +49,7 @@ describe('GET /api/livekit/token', () => {
         );
 
         expect((await parseResponse(response)).status).toBe(status);
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
         expect(createBedToken).not.toHaveBeenCalled();
     });
 
@@ -59,13 +60,15 @@ describe('GET /api/livekit/token', () => {
         });
 
         const { GET } = await import('../route');
-        const { status, body } = await parseResponse(await GET(
+        const response = await GET(
             createRequest('/api/livekit/token', {
                 searchParams: { sessionId: 'event-1' },
             }),
-        ));
+        );
+        const { status, body } = await parseResponse(response);
 
         expect(status).toBe(200);
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
         expect(resolveRoomPrincipal).toHaveBeenCalledWith(
             expect.anything(),
             'event-1',

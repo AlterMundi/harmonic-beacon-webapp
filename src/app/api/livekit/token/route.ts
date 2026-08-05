@@ -14,6 +14,11 @@ import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 export const dynamic = 'force-dynamic';
 
 const BED_ROOM_NAME = process.env.LIVEKIT_ROOM_NAME || 'beacon';
+const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' };
+
+function tokenResponse(body: unknown, status = 200) {
+    return NextResponse.json(body, { status, headers: PRIVATE_NO_STORE });
+}
 
 /**
  * Issue an audio-only, subscribe-only connection to the configured Beacon bed.
@@ -23,18 +28,12 @@ const BED_ROOM_NAME = process.env.LIVEKIT_ROOM_NAME || 'beacon';
 export async function GET(request: NextRequest) {
     const sessionId = request.nextUrl.searchParams.get('sessionId')?.trim();
     if (!sessionId) {
-        return NextResponse.json(
-            { error: 'sessionId is required' },
-            { status: 400 },
-        );
+        return tokenResponse({ error: 'sessionId is required' }, 400);
     }
 
     const entitlement = await resolveRoomPrincipal(request, sessionId);
     if (!entitlement.ok) {
-        return NextResponse.json(
-            { error: entitlement.error },
-            { status: entitlement.status },
-        );
+        return tokenResponse({ error: entitlement.error }, entitlement.status);
     }
 
     try {
@@ -51,19 +50,16 @@ export async function GET(request: NextRequest) {
             const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
             const tokenExpiresAt = new Date(Date.now() + TICKET_LIVEKIT_TOKEN_TTL_SECONDS * 1000);
             if (!cookieValue || !await finalizeTicketTokenIssue(cookieValue, ticketId, tokenExpiresAt)) {
-                return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+                return tokenResponse({ error: 'Not authorized' }, 403);
             }
         }
-        return NextResponse.json({
+        return tokenResponse({
             token,
             identity,
             room: BED_ROOM_NAME,
             canPublish: false,
         });
     } catch {
-        return NextResponse.json(
-            { error: 'LiveKit API credentials not configured' },
-            { status: 500 },
-        );
+        return tokenResponse({ error: 'LiveKit API credentials not configured' }, 500);
     }
 }

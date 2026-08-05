@@ -10,6 +10,12 @@ import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
 
+const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' };
+
+function tokenResponse(body: unknown, status = 200) {
+    return NextResponse.json(body, { status, headers: PRIVATE_NO_STORE });
+}
+
 /**
  * Issue the event stage token from the current weekend WebSession entitlement.
  * The stable identity deliberately makes a new connection replace an older
@@ -22,10 +28,7 @@ export async function GET(
     const { id } = await params;
     const entitlement = await resolveRoomPrincipal(request, id);
     if (!entitlement.ok) {
-        return NextResponse.json(
-            { error: entitlement.error },
-            { status: entitlement.status },
-        );
+        return tokenResponse({ error: entitlement.error }, entitlement.status);
     }
 
     const { principal } = entitlement;
@@ -60,11 +63,11 @@ export async function GET(
                 principal.ticketEntitlementId,
                 tokenExpiresAt,
             )) {
-                return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+                return tokenResponse({ error: 'Not authorized' }, 403);
             }
         }
 
-        return NextResponse.json({
+        return tokenResponse({
             token,
             identity: principal.identity,
             room: principal.session.roomName,
@@ -83,9 +86,6 @@ export async function GET(
             },
         });
     } catch {
-        return NextResponse.json(
-            { error: 'LiveKit API credentials not configured' },
-            { status: 500 },
-        );
+        return tokenResponse({ error: 'LiveKit API credentials not configured' }, 500);
     }
 }
