@@ -55,6 +55,62 @@ npm run load:livekit -- \
 Never point this command at an active event. The remote rooms must be synthetic
 and the operator must monitor LiveKit, CPU, memory, and network on the target.
 
+## Distributed generators
+
+A single generator receiving six simulcast publishers can saturate its own
+network path before the SFU reaches capacity. Split a rehearsal across two or
+more **distinct generator hosts** with the same committed harness, LiveKit CLI,
+profile, run ID, confirmation and UTC start. Choose a start at least 30 seconds
+in the future; two minutes gives operators time to launch every shard. Verify
+NTP/chrony on every generator first and keep reported clock offset below one
+second; synchronized manifest timestamps cannot correct a drifting host clock.
+
+Example for two hosts (run shard 0 on the first and shard 1 on the second):
+
+```bash
+npm run load:livekit -- \
+  --profile rehearsal-en \
+  --run-id rehearsal-en-20260805-a \
+  --shard-count 2 \
+  --shard-index 0 \
+  --start-at 2026-08-05T18:00:00Z \
+  --url wss://test-live.example.invalid \
+  --allow-remote \
+  --confirm-test-rooms 'LOADTEST:hb-load-rehearsal-en-20260805-a-en-stage:hb-load-rehearsal-en-20260805-a-en-beacon'
+```
+
+Sharding partitions attendees, publishers and the declared global ramp rate
+without rounding anything away. Every identity prefix includes its shard, all
+shards join the same two synthetic rooms, and every shard independently observes
+the exact **global** participant/publisher counts. Synchronized phases use a
+minimum 15-second gap so cleanup can converge before the next absolute start.
+The schedule includes the CLI connection ramp because LiveKit starts its
+`--duration` timer only after those connections finish.
+Missing coordinates, duplicate identities, a late phase, API sampling errors,
+extra/missing joins or incomplete cleanup fail closed.
+
+LiveKit CLI reports its track denominator from publishers created by that one
+process, so that denominator is incomplete in a shared room. The harness keeps
+the raw parsed value for diagnosis but gates each shard against the independently
+calculated `local subscribers × global publishers` count. A shard with zero
+local Beacon publishers must still receive the one global Beacon track.
+
+Copy the redacted manifests to one trusted operator machine and aggregate them:
+
+```bash
+node scripts/livekit-load-aggregate.mjs \
+  --output artifacts/load-test/rehearsal-en-20260805-a-aggregate.json \
+  artifacts/load-test/rehearsal-en-20260805-a-rehearsal-en-shard-0-of-2.json \
+  artifacts/load-test/rehearsal-en-20260805-a-rehearsal-en-shard-1-of-2.json
+```
+
+The aggregator writes mode `0600` and refuses overwrite. It emits PASS only
+when every index is present, the partitions sum to the profile exactly, every
+phase proves the global counts and clean teardown, the harness/CLI/run contract
+is byte-equivalent, worktrees are clean and generator host hashes are distinct.
+Keep every source manifest and its aggregate; the aggregate does not replace
+target-local telemetry or physical browser evidence.
+
 ## Profiles and evidence
 
 - `ci`: four attendees, two stage publishers, one Beacon publisher, short

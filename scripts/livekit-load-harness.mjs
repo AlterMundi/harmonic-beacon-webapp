@@ -88,6 +88,17 @@ function generatedRunId() {
     return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'z').toLowerCase();
 }
 
+async function generatorHostFingerprint() {
+    let machineId = '';
+    try {
+        machineId = (await readFile('/etc/machine-id', 'utf8')).trim();
+    } catch {
+        // Hostname-only fallback remains opaque; the aggregate still refuses
+        // duplicate hashes rather than claiming independent generators.
+    }
+    return commandFingerprint([hostname(), machineId]).slice(0, 12);
+}
+
 function installAbortHandlers(abort) {
     const onSigint = () => {
         if (abort.request('SIGINT')) {
@@ -117,6 +128,26 @@ async function waitBetweenPhases(seconds, abort) {
     }
 }
 
+async function waitForScheduledPhase(startAt, offsetSeconds, abort) {
+    if (startAt === null) {
+        return { passed: true, scheduledFor: null, observedAt: null, lateByMs: null };
+    }
+    const target = Date.parse(startAt) + offsetSeconds * 1000;
+    while (!abort.requested && Date.now() < target) {
+        await new Promise((resolvePromise) => setTimeout(
+            resolvePromise,
+            Math.min(250, target - Date.now()),
+        ));
+    }
+    const lateByMs = Date.now() - target;
+    return {
+        passed: abort.requested || lateByMs <= 5_000,
+        scheduledFor: new Date(target).toISOString(),
+        observedAt: new Date().toISOString(),
+        lateByMs,
+    };
+}
+
 function printHelp() {
     process.stdout.write(`Usage: npm run load:livekit -- [options]\n\n` +
         `  --profile NAME             ci, rehearsal-es, or rehearsal-en\n` +
@@ -124,6 +155,9 @@ function printHelp() {
         `  --url URL                  LiveKit URL (default LIVEKIT_URL or localhost)\n` +
         `  --lk-bin PATH              pinned LiveKit CLI executable (default lk)\n` +
         `  --manifest PATH            output JSON path\n` +
+        `  --shard-index NUMBER       zero-based generator shard (default 0)\n` +
+        `  --shard-count NUMBER       total generator shards (default 1)\n` +
+        `  --start-at UTC             shared future UTC start required for sharding\n` +
         `  --dry-run                  validate and write a PLANNED manifest only\n` +
         `  --allow-remote             acknowledge a non-local target\n` +
         `  --confirm-test-rooms VALUE exact room confirmation required remotely\n`);
@@ -229,6 +263,14 @@ function summarizeObservedRoom(observed, expectedConnections, expectedPublishers
     };
 }
 
+function loadResultPassed(result, expectedSubscriberTracks, profile) {
+    return result.exitCode === 0 &&
+        result.summary.parsed &&
+        result.summary.tracksReceived === expectedSubscriberTracks &&
+        result.summary.droppedPercent <= profile.maxDroppedPercent &&
+        (result.summary.errorCount === null || result.summary.errorCount === 0);
+}
+
 async function monitorRooms(roomService, phase, stopped) {
     const startedAt = Date.now();
     const rooms = {
@@ -270,8 +312,16 @@ async function monitorRooms(roomService, phase, stopped) {
     return {
         apiErrors,
         successfulSamples,
-        stage: summarizeObservedRoom(rooms.stage, phase.stage.requestedConnections, phase.profileStagePublishers),
-        beacon: summarizeObservedRoom(rooms.beacon, phase.beacon.requestedConnections, phase.profileBeaconPublishers),
+        stage: summarizeObservedRoom(
+            rooms.stage,
+            phase.stage.expectedGlobalConnections,
+            phase.profileStagePublishers,
+        ),
+        beacon: summarizeObservedRoom(
+            rooms.beacon,
+            phase.beacon.expectedGlobalConnections,
+            phase.profileBeaconPublishers,
+        ),
     };
 }
 
@@ -305,11 +355,19 @@ function publicPlan(plan, lkBinary) {
             ...phase,
             stage: {
                 requestedConnections: phase.stage.requestedConnections,
+                expectedGlobalConnections: phase.stage.expectedGlobalConnections,
+                localPublishers: phase.stage.localPublishers,
+                expectedGlobalPublishers: phase.stage.expectedGlobalPublishers,
+                expectedSubscriberTracks: phase.stage.expectedSubscriberTracks,
                 command: `${executable} ${phase.stage.args.join(' ')}`,
                 fingerprint: commandFingerprint(phase.stage.args),
             },
             beacon: {
                 requestedConnections: phase.beacon.requestedConnections,
+                expectedGlobalConnections: phase.beacon.expectedGlobalConnections,
+                localPublishers: phase.beacon.localPublishers,
+                expectedGlobalPublishers: phase.beacon.expectedGlobalPublishers,
+                expectedSubscriberTracks: phase.beacon.expectedSubscriberTracks,
                 command: `${executable} ${phase.beacon.args.join(' ')}`,
                 fingerprint: commandFingerprint(phase.beacon.args),
             },
@@ -327,6 +385,9 @@ async function main() {
     const url = option('--url', process.env.LIVEKIT_URL ?? 'ws://localhost:7880');
     const lkBinary = option('--lk-bin', process.env.LK_BIN ?? 'lk');
     const dryRun = hasFlag('--dry-run');
+    const shardIndex = Number(option('--shard-index', '0'));
+    const shardCount = Number(option('--shard-count', '1'));
+    const startAt = option('--start-at', '');
     const profilesPath = resolve(repositoryRoot, 'config/livekit-load-profiles.json');
     const profilesDocument = JSON.parse(await readFile(profilesPath, 'utf8'));
     const profile = profilesDocument.profiles?.[profileName];
@@ -338,10 +399,19 @@ async function main() {
         url,
         allowRemote: hasFlag('--allow-remote'),
         confirmation: option('--confirm-test-rooms', ''),
+        shardIndex,
+        shardCount,
+        startAt,
     });
+    if (!dryRun && plan.scheduledStartAt !== null && Date.parse(plan.scheduledStartAt) - Date.now() < 30_000) {
+        throw new Error('startAt must be at least 30 seconds in the future');
+    }
+    const shardFileSuffix = plan.shard.count === 1
+        ? ''
+        : `-shard-${plan.shard.index}-of-${plan.shard.count}`;
     const manifestPath = resolve(
         repositoryRoot,
-        option('--manifest', `artifacts/load-test/${plan.runId}-${profileName}.json`),
+        option('--manifest', `artifacts/load-test/${plan.runId}-${profileName}${shardFileSuffix}.json`),
     );
     const [git, gitStatus, lk] = await Promise.all([
         commandOutput('git', ['rev-parse', 'HEAD']),
@@ -356,7 +426,7 @@ async function main() {
         harnessSha: git.output.trim() || 'unknown',
         livekitCliVersion: lk.output.trim() || 'unknown',
         harnessDirty: gitStatus.output.trim().length > 0,
-        generatorHostHash: commandFingerprint([hostname()]).slice(0, 12),
+        generatorHostHash: await generatorHostFingerprint(),
         plan: publicPlan(plan, lkBinary),
         limitations: [
             'Protocol clients measure SFU capacity; they do not certify browser DOM, decode, physical speaker routing, or perceived audio quality.',
@@ -386,6 +456,22 @@ async function main() {
         );
         for (const [index, phase] of plan.phases.entries()) {
             if (abort.requested) break;
+            const synchronization = await waitForScheduledPhase(
+                plan.scheduledStartAt,
+                phase.scheduledOffsetSeconds,
+                abort,
+            );
+            if (abort.requested) break;
+            if (!synchronization.passed) {
+                manifest.status = 'FAIL';
+                manifest.phases.push({
+                    name: phase.name,
+                    passed: false,
+                    reason: 'missed-synchronized-start',
+                    synchronization,
+                });
+                break;
+            }
             process.stdout.write(`\n[${phase.name}] starting stage and Beacon load\n`);
             const resourceBefore = await readGeneratorResources();
             const eventLoop = monitorEventLoopDelay({ resolution: 20 });
@@ -414,23 +500,23 @@ async function main() {
                     max: nanosecondsToMilliseconds(eventLoop.max),
                 },
             };
-            const passed = !abort.requested && [stage, beacon].every((result) =>
-                result.exitCode === 0 &&
-                result.summary.parsed &&
-                result.summary.tracksReceived === result.summary.tracksExpected &&
-                result.summary.droppedPercent <= profile.maxDroppedPercent &&
-                (result.summary.errorCount === null || result.summary.errorCount === 0),
-            ) &&
+            const passed = !abort.requested &&
+                loadResultPassed(stage, phase.stage.expectedSubscriberTracks, profile) &&
+                loadResultPassed(beacon, phase.beacon.expectedSubscriberTracks, profile) &&
+                observed.apiErrors === 0 &&
                 observed.successfulSamples > 0 &&
-                observed.stage.peakConnections === phase.stage.requestedConnections &&
+                observed.stage.peakConnections === phase.stage.expectedGlobalConnections &&
+                observed.stage.joinObserved === phase.stage.expectedGlobalConnections &&
                 observed.stage.peakPublishers === profile.stagePublishers &&
-                observed.beacon.peakConnections === phase.beacon.requestedConnections &&
+                observed.beacon.peakConnections === phase.beacon.expectedGlobalConnections &&
+                observed.beacon.joinObserved === phase.beacon.expectedGlobalConnections &&
                 observed.beacon.peakPublishers === profile.beaconPublishers &&
                 cleanup.passed;
             manifest.phases.push({
                 name: phase.name,
                 passed,
                 operatorAborted: abort.requested,
+                synchronization,
                 stage,
                 beacon,
                 observed,
@@ -439,7 +525,7 @@ async function main() {
             });
             if (abort.requested) break;
             if (!passed) manifest.status = 'FAIL';
-            if (index < plan.phases.length - 1 && profile.interWaveSeconds > 0) {
+            if (index < plan.phases.length - 1 && plan.scheduledStartAt === null && profile.interWaveSeconds > 0) {
                 await waitBetweenPhases(profile.interWaveSeconds, abort);
             }
         }
