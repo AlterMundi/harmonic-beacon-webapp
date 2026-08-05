@@ -52,6 +52,7 @@ function manifestFor(count: number) {
 stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({ page }) => {
     stackTest.slow();
     let count = 0;
+    let mismatched = false;
     const counters = { manifest: 0, composite: 0, tiles: 0 };
 
     page.on('request', (request) => {
@@ -68,10 +69,12 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
         await route.fulfill({ json: manifestFor(count) });
     });
     await page.route(`**/api/tapestry/${SESSION_ES.id}**`, async (route) => {
+        // Simulated continuous ingest: the composite reports a build newer
+        // than the manifest's layout, forcing bounded correlation retries.
         await route.fulfill({
             body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64'),
             contentType: 'image/gif',
-            headers: { 'x-tapestry-revision': '7' },
+            headers: { 'x-tapestry-revision': mismatched ? '8' : '7' },
         });
     });
     await page.route(`**/api/ops/sessions/${SESSION_ES.id}/tapestry/tiles/**`, async (route) => {
@@ -125,5 +128,33 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
         if (n > 0) {
             await expect(section.getByRole('listitem')).toHaveCount(n);
         }
+        if (n === 1) {
+            // Correlated pair: the semantic overlay draws over the cell.
+            await expect(section.locator('[aria-hidden="true"]')).toBeVisible();
+        }
     }
+
+    // Continuous-ingest mismatch: the composite reports a build the manifest
+    // layout has not caught up with. Retries stay strictly bounded per cycle,
+    // overlays hide, the accessible list keeps telling the truth.
+    count = 1;
+    mismatched = true;
+    await expect(section.getByRole('listitem')).toHaveCount(1);
+    await expect(section.locator('[aria-hidden="true"]')).toHaveCount(0, { timeout: 10_000 });
+    const beforeMismatch = { ...counters };
+    await page.waitForTimeout(7_000);
+    const mismatchSpent = {
+        manifest: counters.manifest - beforeMismatch.manifest,
+        composite: counters.composite - beforeMismatch.composite,
+        tiles: counters.tiles - beforeMismatch.tiles,
+    };
+    // ~3 cycles × at most 3 attempts: an explicit ceiling, no storm, and
+    // still completely independent of the participant count.
+    expect(mismatchSpent.manifest, 'manifest requests under mismatch').toBeLessThanOrEqual(12);
+    expect(mismatchSpent.composite, 'composite requests under mismatch').toBeLessThanOrEqual(12);
+    expect(mismatchSpent.tiles, 'per-tile requests under mismatch').toBe(0);
+
+    // Correlation returns: the overlay reconverges over the right cell.
+    mismatched = false;
+    await expect(section.locator('[aria-hidden="true"]')).toBeVisible({ timeout: 10_000 });
 });

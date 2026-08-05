@@ -149,12 +149,13 @@ describe('OpsTapestry', () => {
         expect(view.container.querySelectorAll('li')).toHaveLength(150);
     });
 
-    it('shows the unavailable state without fetching the composite', async () => {
+    it('shows the unavailable state when both reads fail', async () => {
         global.fetch = stubFetch(() => new Response('down', { status: 503 }));
         const view = render(<OpsTapestry sessionId="session-1" copy={copyEs} />);
 
         expect(await view.findByText(copyEs.unavailable)).toBeInTheDocument();
-        expect(fetch).toHaveBeenCalledTimes(1);
+        // One composite attempt + one semantic attempt, then it stops.
+        expect(fetch).toHaveBeenCalledTimes(2);
         expect(view.container.querySelectorAll('img')).toHaveLength(0);
     });
 
@@ -210,30 +211,31 @@ describe('OpsTapestry', () => {
         });
         const view = render(<OpsTapestry sessionId="session-1" copy={copy} />);
 
-        // Cycle A starts (manifest pending). Cycle B starts after the interval.
+        // Cycle A starts (composite pending). Cycle B starts after the interval.
         await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
-        expect(deferred).toHaveLength(2); // A manifest + B manifest
+        expect(deferred).toHaveLength(2); // A composite + B composite
 
         // B completes first: its state must win.
         const manifestB = manifest({ revision: 'rev-b' });
         await act(async () => {
-            deferred[1].resolve(manifestResponse(manifestB));
+            deferred[1].resolve(compositeResponse('7', 'jpeg-b'));
             await vi.advanceTimersByTimeAsync(0);
         });
-        expect(deferred).toHaveLength(3); // B composite
+        expect(deferred).toHaveLength(3); // B manifest
         await act(async () => {
-            deferred[2].resolve(compositeResponse('7', 'jpeg-b'));
+            deferred[2].resolve(manifestResponse(manifestB));
             await vi.advanceTimersByTimeAsync(0);
         });
         expect(view.getByRole('img', { name: copy.compositeAlt })).toHaveAttribute('src', 'blob:composite-1');
 
-        // A resolves late: its generation is stale, so it stops before its
-        // composite fetch, touches nothing, and the state stays B's.
+        // A resolves late: its generation is stale, so it stops right after
+        // the composite read — no manifest fetch, no blob, no state change.
         await act(async () => {
-            deferred[0].resolve(manifestResponse(manifest({ revision: 'rev-old' })));
+            deferred[0].resolve(compositeResponse('7', 'jpeg-a'));
             await vi.advanceTimersByTimeAsync(0);
         });
-        expect(deferred).toHaveLength(3); // A never spends its composite fetch
+        expect(deferred).toHaveLength(3);
+        expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
         expect(view.getByRole('img', { name: copy.compositeAlt })).toHaveAttribute('src', 'blob:composite-1');
         expect(screen.getByText('Ana', { selector: 'li span' })).toBeInTheDocument();
     });
@@ -245,12 +247,84 @@ describe('OpsTapestry', () => {
         const view = render(<OpsTapestry sessionId="session-1" copy={copy} />);
 
         view.unmount();
-        // A late manifest response must not even trigger the composite
-        // fetch: no state update, no blob, nothing to leak.
-        deferred[0](manifestResponse(manifest()));
+        // A late composite response must stop before the manifest fetch and
+        // before any object URL: no state update, nothing to leak.
+        deferred[0](compositeResponse());
         await act(async () => { await Promise.resolve(); });
 
         expect(deferred).toHaveLength(1);
         expect(URL.createObjectURL).not.toHaveBeenCalled();
+    });
+
+    it('reconverges R→R+1 within one cycle and stores layout R+1 despite an identical semantic hash', async () => {
+        vi.useFakeTimers();
+        let compositeCalls = 0;
+        let manifestCalls = 0;
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/manifest')) {
+                manifestCalls += 1;
+                // Cycle 2, attempt 1: a frame landed between the reads, the
+                // layout read is still R=7. Attempt 2 sees the build R+1=8.
+                // The semantic revision string NEVER changes.
+                const layoutRevision = manifestCalls >= 3 ? 8 : 7;
+                return Promise.resolve(manifestResponse(manifest({
+                    layout: { revision: layoutRevision, columns: 2, rows: 1, tileSizePx: 100 },
+                })));
+            }
+            compositeCalls += 1;
+            return Promise.resolve(compositeResponse(compositeCalls === 1 ? '7' : '8'));
+        });
+        const view = render(<OpsTapestry sessionId="session-1" copy={copy} />);
+
+        // Cycle 1: correlated at R=7, overlay draws.
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(view.container.querySelector('[aria-hidden="true"]')).not.toBeNull();
+
+        // Cycle 2: first pair mismatches (8 vs 7), the bounded retry pairs
+        // 8 with 8 and the overlay survives the build advance.
+        await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+        expect(manifestCalls).toBe(3); // 1 (cycle 1) + 2 (mismatch + retry)
+        expect(compositeCalls).toBe(3);
+        // The name still sits over Ana's cell: layout 8 was stored even
+        // though names, order, hands, camera and presence are identical.
+        const overlayTag = view.container.querySelector('[aria-hidden="true"] span.absolute.bottom-0');
+        expect(overlayTag).toHaveTextContent('Ana');
+        expect(view.getByRole('img', { name: copy.compositeAlt })).toBeInTheDocument();
+        vi.useRealTimers();
+    });
+
+    it('stays bounded under continuous ingest mismatch and converges when a pair aligns', async () => {
+        vi.useFakeTimers();
+        let aligned = false;
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/manifest')) {
+                return Promise.resolve(manifestResponse(manifest({
+                    layout: { revision: aligned ? 9 : 7, columns: 2, rows: 1, tileSizePx: 100 },
+                })));
+            }
+            return Promise.resolve(compositeResponse('9'));
+        });
+        const view = render(<OpsTapestry sessionId="session-1" copy={copy} />);
+
+        // Cycle 1 under permanent mismatch: exactly MAX attempts, overlay
+        // suppressed, the truthful list still renders.
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(fetch).toHaveBeenCalledTimes(6); // 3 attempts × 2 reads
+        expect(view.container.querySelector('[aria-hidden="true"]')).toBeNull();
+        expect(screen.getByText('Ana', { selector: 'li span' })).toBeInTheDocument();
+
+        // Cycle 2: same bounded cost — no storm, no growth, no overlay.
+        await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+        expect(fetch).toHaveBeenCalledTimes(12);
+        expect(view.container.querySelector('[aria-hidden="true"]')).toBeNull();
+
+        // When a correlated pair appears, the overlay reconverges.
+        aligned = true;
+        await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+        expect(view.container.querySelector('[aria-hidden="true"]')).not.toBeNull();
+        expect(fetch).toHaveBeenCalledTimes(14); // back to 2 reads per cycle
+        vi.useRealTimers();
     });
 });

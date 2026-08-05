@@ -330,10 +330,19 @@ composite, the capture lifecycle, or any media path.
   image requests. An accessible plain-text list carries the complete state
   of every person, so mouse, touch, keyboard and screen readers all reach
   the same facts. The composite bytes refresh every poll while the semantic
-  layer re-renders only when its content revision changes; overlays draw
-  only when the manifest's layout revision equals the composite's
-  `x-tapestry-revision`, and each poll aborts and supersedes the previous
-  one so a slow earlier response can never overwrite fresher state.
+  layer re-renders only when its content revision OR its layout revision
+  changes, and each poll aborts and supersedes the previous one so a slow
+  earlier response can never overwrite fresher state.
+- Composite and layout are snapshots correlated by build revision: the
+  client reads the composite first and the manifest immediately after, and
+  publishes image + annotations only as one accepted cycle's state. A frame
+  landing between the two reads produces a revision mismatch, which is never
+  rendered as an overlay — the pair is retried immediately, strictly bounded
+  (at most 3 attempts per cycle, independent of participant count), and if
+  the mismatch persists the safe fallback shows image and list without
+  overlays until the next cycle reconverges. Hiding temporarily is safe;
+  converging is mandatory, and the accessible list always keeps the freshest
+  accepted semantics.
 - Naming consent (product canon, confirmed by Annie on 2026-08-04): raising
   a hand IS the consent to be named publicly, with exactly this scope — the
   name shows only inside the same session, only while the hand stays raised
@@ -356,9 +365,14 @@ composite, the capture lifecycle, or any media path.
   every composite build and exposes it at `GET
   /tapestry/sessions/:id/layout` alongside the `x-tapestry-revision` header
   on `composite.jpg` — building on the monotonic build revision introduced
-  for #40 in PR #108. The room only draws the overlay when the sidecar's
-  layout revision equals the composite's revision; a disagreement omits the
-  overlay rather than placing a name over the wrong person. The overlay is
+  for #40 in PR #108. A single polling coordinator reads the composite and
+  the sidecar as one correlated unit and publishes image, names and layout
+  only from the same accepted cycle: the room only draws the overlay when
+  the sidecar's layout revision equals the composite's revision, a mismatch
+  is retried immediately with a strict bound and otherwise omits the
+  overlay, and the accessible names line always reflects the freshest
+  accepted sidecar state — lowering a hand or leaving retires the name with
+  priority, without waiting for any correlation. The overlay is
   `aria-hidden` and pointer-free: the plain names line remains the
   accessible and touch/keyboard equivalent.
 

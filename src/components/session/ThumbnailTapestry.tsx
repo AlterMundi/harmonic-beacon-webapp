@@ -72,105 +72,167 @@ function parseHands(body: unknown): HandsSnapshot {
     return { hands, layout };
 }
 
+const POLL_MS = 2_000;
+/**
+ * Bounded correlation attempts per cycle (TAP-02 re-review): the composite
+ * and the hands sidecar are one correlated visual unit, so a mismatched pair
+ * is retried immediately, never more than this per cycle, never
+ * proportionally to the participant count.
+ */
+const MAX_CORRELATION_ATTEMPTS = 3;
+
+/**
+ * One accepted cycle: image, build revision and hands snapshot are only ever
+ * published together. The overlay check at render suppresses name tags on
+ * any pair whose layout revision disagrees with the image, while the
+ * accessible names line always reflects the freshest accepted hands — so
+ * lowering a hand or leaving retires the name with priority, and a tag can
+ * never sit on the wrong person's cell.
+ */
+type TapestryView = {
+    compositeUrl: string | null;
+    buildRevision: string | null;
+    hands: HandsSnapshot;
+};
+
 function ThumbnailTapestryView({
     sessionId,
     staffOnly,
     labels,
 }: Props & { labels: Messages['tapestry'] }) {
-    const [src, setSrc] = useState<string | null>(null);
-    const [compositeRevision, setCompositeRevision] = useState<string | null>(null);
-    const [snapshot, setSnapshot] = useState<HandsSnapshot>(EMPTY_HANDS);
+    const [view, setView] = useState<TapestryView | null>(null);
+
     useEffect(() => {
         let active = true;
         let generation = 0;
         let controller: AbortController | null = null;
-        let previous: string | null = null;
-        const load = async () => {
+        let previousUrl: string | null = null;
+        const compositeUrl = `/api/tapestry/${encodeURIComponent(sessionId)}`;
+        // Raised-hand names ride a cookie-authorized sidecar: the collective
+        // JPEG stays anonymous, and only people who chose to request the
+        // floor are named, only while connected. Staff tools (staffOnly)
+        // keep their original composite-only fetch contract.
+        const handsUrl = `/api/scheduled-sessions/${encodeURIComponent(sessionId)}/tapestry/hands`;
+
+        const fetchHands = async (signal: AbortSignal): Promise<HandsSnapshot> => {
+            const response = await fetch(handsUrl, {
+                cache: 'no-store', credentials: 'same-origin', signal,
+            });
+            // A rejection (expired/left session) retires names with priority;
+            // only a network-level failure keeps the previous snapshot.
+            if (!response.ok) return EMPTY_HANDS;
+            return parseHands(await response.json());
+        };
+
+        // ONE coordinator for the whole visual unit: composite first, hands
+        // immediately after, published only as one accepted cycle's result.
+        const cycle = async () => {
             if (!active) return;
-            // A newer poll supersedes a slower earlier one; a late response
-            // can never overwrite fresher state (TAP-02 review).
             const myGeneration = ++generation;
             controller?.abort();
             controller = new AbortController();
-            let next: string | null = null;
-            try {
-                const response = await fetch(`/api/tapestry/${encodeURIComponent(sessionId)}`, {
-                    cache: 'no-store',
-                    credentials: staffOnly ? 'same-origin' : 'omit',
-                    signal: controller.signal,
-                });
-                if (!response.ok) return;
-                const revision = response.headers.get('x-tapestry-revision');
-                next = URL.createObjectURL(await response.blob());
-                if (!active || myGeneration !== generation) {
-                    URL.revokeObjectURL(next);
+            const signal = controller.signal;
+
+            let correlated: { url: string; revision: string | null; hands: HandsSnapshot } | null = null;
+            let fallback: { url: string; revision: string | null; hands: HandsSnapshot } | null = null;
+
+            for (let attempt = 0; attempt < MAX_CORRELATION_ATTEMPTS; attempt += 1) {
+                if (!active || myGeneration !== generation) break;
+                let url: string | null = null;
+                try {
+                    const compositeRes = await fetch(compositeUrl, {
+                        cache: 'no-store',
+                        credentials: staffOnly ? 'same-origin' : 'omit',
+                        signal,
+                    });
+                    if (!compositeRes.ok) break; // keep previous image; hands still refresh below
+                    const revision = compositeRes.headers.get('x-tapestry-revision');
+                    const blob = await compositeRes.blob();
+                    if (!active || myGeneration !== generation) {
+                        // Superseded or unmounted mid-read: stop before
+                        // spending the sidecar fetch or creating any blob.
+                        return;
+                    }
+                    url = URL.createObjectURL(blob);
+                    const hands = staffOnly ? EMPTY_HANDS : await fetchHands(signal);
+                    const pair = { url, revision, hands };
+                    const layoutRevision = hands.layout?.revision ?? null;
+                    if (staffOnly || layoutRevision === null || String(layoutRevision) === revision) {
+                        correlated = pair;
+                        break;
+                    }
+                    if (fallback) URL.revokeObjectURL(fallback.url);
+                    fallback = pair;
+                } catch {
+                    // Aborted by a newer cycle or unmount, or a transient
+                    // failure: the tapestry is optional and the next tick retries.
+                    if (url) URL.revokeObjectURL(url);
                     return;
                 }
-                setSrc(next);
-                setCompositeRevision(revision);
-                if (previous) URL.revokeObjectURL(previous);
-                previous = next;
-            } catch {
-                // Aborted by a newer poll or unmount, or a transient failure:
-                // the tapestry is optional and the next tick retries.
-                if (next) URL.revokeObjectURL(next);
             }
+
+            if (!active || myGeneration !== generation) {
+                const stale = correlated ?? fallback;
+                if (stale) URL.revokeObjectURL(stale.url);
+                return;
+            }
+
+            const chosen = correlated ?? fallback;
+            if (!chosen) {
+                // Composite unavailable: keep the previous image, still
+                // refresh names so departures retire them.
+                if (staffOnly) return;
+                try {
+                    const hands = await fetchHands(signal);
+                    if (!active || myGeneration !== generation) return;
+                    setView((prev) => ({
+                        compositeUrl: prev?.compositeUrl ?? null,
+                        buildRevision: prev?.buildRevision ?? null,
+                        hands,
+                    }));
+                } catch { /* transient: next tick retries */ }
+                return;
+            }
+
+            setView((prev) => {
+                const next: TapestryView = {
+                    compositeUrl: chosen.url,
+                    buildRevision: chosen.revision,
+                    hands: chosen.hands,
+                };
+                if (prev?.compositeUrl && prev.compositeUrl !== next.compositeUrl) {
+                    URL.revokeObjectURL(prev.compositeUrl);
+                }
+                previousUrl = next.compositeUrl;
+                return next;
+            });
         };
-        void load();
-        const timer = setInterval(() => void load(), 2_000);
+
+        void cycle();
+        const timer = setInterval(() => void cycle(), POLL_MS);
         return () => {
             active = false;
             clearInterval(timer);
             controller?.abort();
-            if (previous) URL.revokeObjectURL(previous);
+            if (previousUrl) URL.revokeObjectURL(previousUrl);
         };
-    }, [sessionId, staffOnly]);
-    useEffect(() => {
-        // Raised-hand names ride a separate, cookie-authorized sidecar on the
-        // public/room surface: the collective JPEG stays anonymous, and only
-        // people who chose to request the floor are named, only while
-        // connected. Staff tools (staffOnly) already have the operational
-        // manifest and keep their original fetch contract. The list is
-        // advisory — any rejection simply leaves it empty.
-        if (staffOnly) return;
-        let active = true;
-        let generation = 0;
-        let controller: AbortController | null = null;
-        const load = async () => {
-            if (!active) return;
-            const myGeneration = ++generation;
-            controller?.abort();
-            controller = new AbortController();
-            try {
-                const response = await fetch(
-                    `/api/scheduled-sessions/${encodeURIComponent(sessionId)}/tapestry/hands`,
-                    { cache: 'no-store', credentials: 'same-origin', signal: controller.signal },
-                );
-                if (!response.ok) return;
-                const next = parseHands(await response.json());
-                if (!active || myGeneration !== generation) return;
-                setSnapshot(next);
-            } catch { /* the hand list is advisory */ }
-        };
-        void load();
-        const timer = setInterval(() => void load(), 5_000);
-        return () => { active = false; clearInterval(timer); controller?.abort(); };
     }, [sessionId, staffOnly]);
 
-    const names = snapshot.hands.map((hand) => hand.name);
+    const names = (view?.hands ?? EMPTY_HANDS).hands.map((hand) => hand.name);
     // Zoom/Meet-style name tags over each raised hand's own tile. The layout
     // and the composite must name the same build — otherwise the grid may
     // have shifted and a tag could land on the wrong person, so we omit the
     // overlay (the accessible names line below remains either way).
-    const layout = compositeRevision !== null &&
-        snapshot.layout !== null &&
-        String(snapshot.layout.revision) === compositeRevision
-        ? snapshot.layout
+    const layout = view !== null &&
+        view.buildRevision !== null &&
+        view.hands.layout !== null &&
+        String(view.hands.layout.revision) === view.buildRevision
+        ? view.hands.layout
         : null;
-    const overlayHands = layout
-        ? snapshot.hands.filter((hand) => hand.column !== null && hand.row !== null)
+    const overlayHands = layout && view
+        ? view.hands.hands.filter((hand) => hand.column !== null && hand.row !== null)
         : [];
-
+    const src = view?.compositeUrl ?? null;
     return <section aria-label={labels.label} className="w-full">
         <h2 className="mb-2 text-sm font-medium text-[var(--cream)]">{labels.label}</h2>
         {src ? (

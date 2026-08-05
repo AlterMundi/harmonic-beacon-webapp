@@ -43,6 +43,25 @@ type Props = {
 };
 
 const POLL_MS = 3_000;
+/**
+ * Bounded correlation attempts per cycle (TAP-02 re-review): composite and
+ * manifest are one correlated unit — a frame can land between the two reads,
+ * so a mismatched pair is retried immediately, never more than this many
+ * times per cycle, and never proportionally to the participant count.
+ */
+const MAX_CORRELATION_ATTEMPTS = 3;
+
+/**
+ * One accepted cycle's state: image, build revision and manifest are only
+ * ever published together, as a single correlated unit. The overlay check at
+ * render (`layout.revision === buildRevision`) suppresses annotations on any
+ * fallback pair whose revisions disagree.
+ */
+type TapestryView = {
+    compositeUrl: string | null;
+    buildRevision: string | null;
+    manifest: TapestryManifest;
+};
 
 function stateLabel(entry: TapestryManifestEntry, copy: Copy): string {
     const parts = [
@@ -57,11 +76,11 @@ function stateLabel(entry: TapestryManifestEntry, copy: Copy): string {
 }
 
 export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
-    const [manifest, setManifest] = useState<TapestryManifest | null>(null);
-    const [compositeSrc, setCompositeSrc] = useState<string | null>(null);
-    const [compositeRevision, setCompositeRevision] = useState<string | null>(null);
+    const [view, setView] = useState<TapestryView | null>(null);
     const [unavailable, setUnavailable] = useState(false);
-    const lastRevisionRef = useRef<string | null>(null);
+    // Content key = semantic revision + layout revision: a layout advance is
+    // stored even when names, order, hands, camera and presence are identical.
+    const lastContentKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
         if (!active) return;
@@ -82,53 +101,103 @@ export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
             controller?.abort();
             controller = new AbortController();
             const signal = controller.signal;
-            let freshUrl: string | null = null;
-            try {
-                const manifestRes = await fetch(manifestUrl, {
-                    cache: 'no-store', credentials: 'same-origin', signal,
-                });
-                if (!manifestRes.ok) {
-                    if (live && myGeneration === generation) setUnavailable(true);
-                    return;
-                }
-                const next = await manifestRes.json() as TapestryManifest;
-                if (!live || myGeneration !== generation) {
-                    // Unmounted or superseded while parsing: stop before
-                    // spending the composite fetch.
-                    return;
-                }
 
-                // The composite is the only image fetched, once per cycle,
-                // and its bytes update even when nothing semantic changed.
-                let freshRevision: string | null = null;
-                const compositeRes = await fetch(compositeUrl, {
-                    cache: 'no-store', credentials: 'same-origin', signal,
-                });
-                if (compositeRes.ok) {
-                    freshRevision = compositeRes.headers.get('x-tapestry-revision');
-                    freshUrl = URL.createObjectURL(await compositeRes.blob());
-                }
+            let correlated: { url: string; revision: string | null; manifest: TapestryManifest } | null = null;
+            let fallback: { url: string; revision: string | null; manifest: TapestryManifest } | null = null;
 
-                if (!live || myGeneration !== generation) {
-                    // A stale cycle must not touch state or leak its blob.
-                    if (freshUrl) URL.revokeObjectURL(freshUrl);
+            for (let attempt = 0; attempt < MAX_CORRELATION_ATTEMPTS; attempt += 1) {
+                if (!live || myGeneration !== generation) break;
+                let url: string | null = null;
+                try {
+                    // 1. Composite first, 2. manifest immediately after: the
+                    // pair is accepted only when both describe the same build.
+                    const compositeRes = await fetch(compositeUrl, {
+                        cache: 'no-store', credentials: 'same-origin', signal,
+                    });
+                    if (!compositeRes.ok) break; // keep previous image; semantic refresh below
+                    const revision = compositeRes.headers.get('x-tapestry-revision');
+                    const blob = await compositeRes.blob();
+                    if (!live || myGeneration !== generation) {
+                        // Superseded or unmounted mid-read: stop before
+                        // spending the manifest fetch or creating any blob.
+                        return;
+                    }
+                    url = URL.createObjectURL(blob);
+
+                    const manifestRes = await fetch(manifestUrl, {
+                        cache: 'no-store', credentials: 'same-origin', signal,
+                    });
+                    if (!manifestRes.ok) {
+                        URL.revokeObjectURL(url);
+                        if (live && myGeneration === generation) setUnavailable(true);
+                        return;
+                    }
+                    const manifest = await manifestRes.json() as TapestryManifest;
+                    const pair = { url, revision, manifest };
+                    const layoutRevision = manifest.layout?.revision ?? null;
+                    // 3-4. Matching revisions (or no grid to correlate)
+                    // publish as one accepted state; a mismatch retries.
+                    if (layoutRevision === null || String(layoutRevision) === revision) {
+                        correlated = pair;
+                        break;
+                    }
+                    if (fallback) URL.revokeObjectURL(fallback.url);
+                    fallback = pair;
+                } catch {
+                    // Aborted by a newer cycle or unmount, or a transient
+                    // failure: leak nothing, the next tick retries.
+                    if (url) URL.revokeObjectURL(url);
                     return;
                 }
-                if (next.revision !== lastRevisionRef.current) {
-                    lastRevisionRef.current = next.revision;
-                    setManifest(next);
-                }
-                setUnavailable(false);
-                if (freshUrl) {
-                    setCompositeSrc(freshUrl);
-                    setCompositeRevision(freshRevision);
-                    if (previousUrl) URL.revokeObjectURL(previousUrl);
-                    previousUrl = freshUrl;
-                }
-            } catch {
-                // Aborted by a newer cycle or unmount, or a transient
-                // network failure: the next tick retries.
             }
+
+            const chosen = correlated ?? fallback;
+            let manifestOnly: TapestryManifest | null = null;
+            if (!chosen) {
+                // Composite unavailable from the start of the cycle: keep the
+                // previous image and still refresh the semantic list.
+                try {
+                    const manifestRes = await fetch(manifestUrl, {
+                        cache: 'no-store', credentials: 'same-origin', signal,
+                    });
+                    if (!manifestRes.ok) {
+                        if (live && myGeneration === generation) setUnavailable(true);
+                        return;
+                    }
+                    manifestOnly = await manifestRes.json() as TapestryManifest;
+                } catch {
+                    return;
+                }
+            }
+            if (!live || myGeneration !== generation) {
+                if (chosen) URL.revokeObjectURL(chosen.url);
+                return;
+            }
+
+            setUnavailable(false);
+            setView((prev) => {
+                const manifest = chosen?.manifest ?? manifestOnly ?? prev?.manifest;
+                if (!manifest) return prev;
+                // Semantic + layout gate: the manifest object (and with it
+                // the accessible list and overlays) is replaced only when
+                // content or grid changed; the image bytes always refresh.
+                const contentKey = `${manifest.revision}:${manifest.layout?.revision ?? 'none'}`;
+                const manifestChanged = contentKey !== lastContentKeyRef.current;
+                if (manifestChanged) lastContentKeyRef.current = contentKey;
+                const next: TapestryView = {
+                    compositeUrl: chosen ? chosen.url : prev?.compositeUrl ?? null,
+                    buildRevision: chosen ? chosen.revision : prev?.buildRevision ?? null,
+                    manifest: manifestChanged || !prev ? manifest : prev.manifest,
+                };
+                if (prev?.compositeUrl && prev.compositeUrl !== next.compositeUrl) {
+                    URL.revokeObjectURL(prev.compositeUrl);
+                }
+                if (previousUrl && previousUrl !== next.compositeUrl) {
+                    URL.revokeObjectURL(previousUrl);
+                }
+                previousUrl = next.compositeUrl;
+                return next;
+            });
         };
 
         void cycle();
@@ -141,20 +210,23 @@ export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
         };
     }, [sessionId, active]);
 
-    if (!manifest && !unavailable) {
+    if (!view && !unavailable) {
         return <p className="text-sm text-[var(--text-muted)]">{copy.loading}</p>;
     }
     if (unavailable) {
         return <p className="text-sm text-[var(--text-muted)]">{copy.unavailable}</p>;
     }
-    if (!manifest) {
+    if (!view) {
         return null;
     }
 
+    const { manifest, compositeUrl: compositeSrc, buildRevision } = view;
     const handCount = manifest.waitingHands.length;
+    // Annotations draw only on a correlated pair: a fallback whose layout
+    // revision disagrees with the image renders the list, never an overlay.
     const overlayLayout = manifest.layout !== null &&
-        compositeRevision !== null &&
-        String(manifest.layout.revision) === compositeRevision
+        buildRevision !== null &&
+        String(manifest.layout.revision) === buildRevision
         ? manifest.layout
         : null;
     const tilelessHands = manifest.waitingHands.filter((hand) => hand.tileId === null);
