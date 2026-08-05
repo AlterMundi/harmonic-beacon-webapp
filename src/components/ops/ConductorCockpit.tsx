@@ -344,6 +344,7 @@ export default function ConductorCockpit({
                             copy={healthCopy}
                             staffRoles={staffRoleLabels}
                             onLevelChange={onHealthChange}
+                            visualActive={drawer === 'health'}
                         />
                     </div>
                 </aside>
