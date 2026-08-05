@@ -78,7 +78,7 @@ compose() {
 
   (
     cd "$workspace"
-    BEACON_IMAGE_TAG="$image_tag" docker compose \
+    BEACON_IMAGE_TAG="$image_tag" docker compose --file "$workspace/docker-compose.yml" \
       --project-name app --env-file "$PRODUCTION_ENV" "$@"
   )
 }
@@ -169,7 +169,8 @@ build() {
       BEACON_GIT_SHA="$sha" \
       BEACON_BUILD_TIME="$build_time" \
       BEACON_DATABASE_SCHEMA_VERSION="$schema_version" \
-      docker compose --project-name app --env-file "$PRODUCTION_ENV" \
+      docker compose --file "$workspace/docker-compose.yml" \
+      --project-name app --env-file "$PRODUCTION_ENV" \
       build app tapestry
   )
 }

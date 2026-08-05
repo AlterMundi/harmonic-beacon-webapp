@@ -96,6 +96,11 @@ describe('production deploy contract', () => {
     expect(rootHelper).toContain("[[ \"$1\" =~ ^[0-9a-f]{40}$ ]]");
     expect(rootHelper).toContain("die 'workspace has tracked changes'");
     expect(rootHelper).toContain("die 'workspace index has tracked changes'");
+    expect(
+      rootHelper.match(
+        /docker compose --file "\$workspace\/docker-compose\.yml"/g,
+      ),
+    ).toHaveLength(2);
     expect(rootHelper).not.toMatch(/\beval\b|\bbash -c\b|\bsh -c\b/);
     expect(
       statSync(join(process.cwd(), 'deploy/hb-deploy-root')).mode & 0o111,

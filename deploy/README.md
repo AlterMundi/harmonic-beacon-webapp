@@ -57,7 +57,9 @@ interactive-login group. The only sudo command available to that identity is
 the root-owned `/usr/local/sbin/hb-deploy` entrypoint. That entrypoint validates
 the exact Actions workspace, commit SHA, run id, service allowlists and every
 other argument before performing the fixed release operations. It never accepts
-an arbitrary command, path, container or environment value.
+an arbitrary command, path, container or environment value, and it pins Compose
+to the tracked `docker-compose.yml` so an untracked override cannot broaden the
+deployment.
 
 Install the reviewed helper and sudo policy from an exact release checkout:
 
