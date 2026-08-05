@@ -17,6 +17,7 @@ import {
     buildPlan,
     connectionRampSeconds,
     createAbortCoordinator,
+    generatorHostFingerprint,
     manifestContainsSecret,
     normalizeScheduledStart,
     partitionCount,
@@ -305,6 +306,25 @@ describe('LiveKit load harness safety', () => {
 });
 
 describe('LiveKit load harness evidence', () => {
+    it('distinguishes separate VM boots while keeping same-kernel processes identical', () => {
+        const first = generatorHostFingerprint({
+            hostName: 'runner',
+            machineId: 'cloned-image',
+            bootId: 'boot-a',
+        });
+        expect(generatorHostFingerprint({
+            hostName: 'runner',
+            machineId: 'cloned-image',
+            bootId: 'boot-a',
+        })).toBe(first);
+        expect(generatorHostFingerprint({
+            hostName: 'runner',
+            machineId: 'cloned-image',
+            bootId: 'boot-b',
+        })).not.toBe(first);
+        expect(first).toMatch(/^[a-f0-9]{12}$/);
+    });
+
     it('aggregates only exact, clean shard coverage from distinct generator hosts', () => {
         const startAt = '2026-08-06T12:00:00.000Z';
         const entries = [0, 1].map((shardIndex) => ({

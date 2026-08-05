@@ -12,6 +12,7 @@ import {
     buildPlan,
     commandFingerprint,
     createAbortCoordinator,
+    generatorHostFingerprint,
     manifestContainsSecret,
     parseLoadTestOutput,
     remoteConfirmation,
@@ -88,15 +89,22 @@ function generatedRunId() {
     return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'z').toLowerCase();
 }
 
-async function generatorHostFingerprint() {
-    let machineId = '';
-    try {
-        machineId = (await readFile('/etc/machine-id', 'utf8')).trim();
-    } catch {
-        // Hostname-only fallback remains opaque; the aggregate still refuses
-        // duplicate hashes rather than claiming independent generators.
-    }
-    return commandFingerprint([hostname(), machineId]).slice(0, 12);
+async function readGeneratorHostFingerprint() {
+    const readOpaqueHostPart = async (path) => {
+        try {
+            return (await readFile(path, 'utf8')).trim();
+        } catch {
+            return '';
+        }
+    };
+    const [machineId, bootId] = await Promise.all([
+        readOpaqueHostPart('/etc/machine-id'),
+        readOpaqueHostPart('/proc/sys/kernel/random/boot_id'),
+    ]);
+    // boot_id is stable for processes sharing one running kernel, but differs
+    // across separately booted VMs even when a runner image clones hostname
+    // and machine-id. Only the truncated hash enters the manifest.
+    return generatorHostFingerprint({ hostName: hostname(), machineId, bootId });
 }
 
 function installAbortHandlers(abort) {
@@ -426,7 +434,7 @@ async function main() {
         harnessSha: git.output.trim() || 'unknown',
         livekitCliVersion: lk.output.trim() || 'unknown',
         harnessDirty: gitStatus.output.trim().length > 0,
-        generatorHostHash: await generatorHostFingerprint(),
+        generatorHostHash: await readGeneratorHostFingerprint(),
         plan: publicPlan(plan, lkBinary),
         limitations: [
             'Protocol clients measure SFU capacity; they do not certify browser DOM, decode, physical speaker routing, or perceived audio quality.',

@@ -108,6 +108,9 @@ The aggregator writes mode `0600` and refuses overwrite. It emits PASS only
 when every index is present, the partitions sum to the profile exactly, every
 phase proves the global counts and clean teardown, the harness/CLI/run contract
 is byte-equivalent, worktrees are clean and generator host hashes are distinct.
+The opaque host hash includes the kernel boot ID: processes on the same running
+host remain identical, while separately booted hosted-runner VMs remain
+distinct even when their image clones hostname and machine ID.
 Keep every source manifest and its aggregate; the aggregate does not replace
 target-local telemetry or physical browser evidence.
 
