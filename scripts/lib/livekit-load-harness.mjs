@@ -109,6 +109,28 @@ export function remoteConfirmation(rooms) {
     return `LOADTEST:${rooms.stage}:${rooms.beacon}`;
 }
 
+export function validateDistributedTargetUrl(value) {
+    let parsed;
+    try {
+        parsed = new URL(String(value ?? ''));
+    } catch {
+        throw new Error('distributed target URL must be a valid ws:// or wss:// URL');
+    }
+    if (!['ws:', 'wss:'].includes(parsed.protocol)) {
+        throw new Error('distributed target URL must use ws:// or wss://');
+    }
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+        throw new Error('distributed target URL must not contain credentials, query, or fragment');
+    }
+    if (LOCAL_HOSTS.has(parsed.hostname)) {
+        throw new Error('distributed target URL must be remote');
+    }
+    if (parsed.pathname !== '/' && parsed.pathname !== '') {
+        throw new Error('distributed target URL must not contain a path');
+    }
+    return parsed.toString().replace(/\/$/, '');
+}
+
 export function assertSafeTarget({ url, rooms, allowRemote, confirmation }) {
     const parsed = new URL(url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:'));
     for (const room of Object.values(rooms)) {
@@ -301,6 +323,57 @@ export function buildPlan({
                 }),
             },
         })),
+    };
+}
+
+export function buildDistributedDispatchPlan({
+    profileName,
+    profile,
+    runId,
+    targetUrl,
+    startDelaySeconds,
+    shardCount = 2,
+    nowMs = Date.now(),
+}) {
+    const url = validateDistributedTargetUrl(targetUrl);
+    if (!Number.isInteger(startDelaySeconds) ||
+        startDelaySeconds < 600 || startDelaySeconds > 3600) {
+        throw new Error('start delay must be an integer between 600 and 3600 seconds');
+    }
+    if (shardCount !== 2) {
+        throw new Error('the GitHub-hosted rehearsal requires exactly two shards');
+    }
+    const safeRunId = sanitizeRunId(runId);
+    const startAt = new Date(nowMs + startDelaySeconds * 1000).toISOString();
+    const rooms = roomNames(`${safeRunId}-${profile.eventLanguage}`);
+    const confirmation = remoteConfirmation(rooms);
+    const plans = Array.from({ length: shardCount }, (_, shardIndex) => buildPlan({
+        profileName,
+        profile,
+        runId: safeRunId,
+        url,
+        allowRemote: true,
+        confirmation,
+        shardIndex,
+        shardCount,
+        startAt,
+    }));
+    const finalPhase = plans[0].phases.at(-1);
+    const expectedEndAt = new Date(
+        Date.parse(startAt) +
+        (finalPhase.scheduledOffsetSeconds +
+            finalPhase.expectedConnectSeconds +
+            finalPhase.durationSeconds) * 1000,
+    ).toISOString();
+    return {
+        profileName,
+        runId: safeRunId,
+        shardCount,
+        startAt,
+        expectedEndAt,
+        confirmation,
+        rooms,
+        targetHost: plans[0].urlHost,
     };
 }
 

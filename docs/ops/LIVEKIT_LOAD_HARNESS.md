@@ -111,6 +111,42 @@ is byte-equivalent, worktrees are clean and generator host hashes are distinct.
 Keep every source manifest and its aggregate; the aggregate does not replace
 target-local telemetry or physical browser evidence.
 
+### GitHub-hosted generators
+
+`.github/workflows/livekit-capacity.yml` is a manual-only two-generator
+orchestrator for the case where no two trusted standalone hosts are available.
+It runs each shard on a different ephemeral GitHub-hosted runner, pins and
+verifies `lk` v2.16.3, schedules both against the same future UTC boundary, and
+uploads the redacted source manifests before aggregating them fail-closed.
+
+The workflow uses the `capacity-rehearsal` environment. Restrict that
+environment to the `main` branch and provision these environment secrets only
+for the lifetime of one isolated target:
+
+- `LOAD_TEST_URL`: credential-free `ws://` or `wss://` URL of the disposable
+  LiveKit node. Paths, query strings, fragments, localhost and embedded
+  credentials are rejected.
+- `LOAD_TEST_API_KEY` and `LOAD_TEST_API_SECRET`: credentials generated only
+  for that disposable node. Never copy production LiveKit credentials.
+
+Start the target-local monitor first, then dispatch with a unique synthetic run
+ID and at least a 15-minute setup delay:
+
+```bash
+gh workflow run livekit-capacity.yml --ref main \
+  -f profile=rehearsal-en \
+  -f run_id=capacity-en-20260805-a \
+  -f start_delay_seconds=1200
+```
+
+The target must stay isolated from event rooms and the production LiveKit
+process. After downloading and hashing the aggregate plus target telemetry,
+remove the disposable container, its exact firewall rules/config files, and
+all three environment secrets. Confirm production readiness and restart/OOM
+counters after cleanup. A GitHub PASS still does not close #24: physical
+browsers, mobile routing, TURN, acoustic quality and the human rehearsal remain
+separate gates.
+
 ## Profiles and evidence
 
 - `ci`: four attendees, two stage publishers, one Beacon publisher, short
