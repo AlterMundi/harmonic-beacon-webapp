@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server';
 
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '@/lib/db';
 import { stableRoomIdentity } from '@/lib/livekit-server';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
@@ -56,6 +58,49 @@ type RoomAccessResult =
         status: 401 | 403 | 404;
         error: 'Authentication required' | 'Not authorized' | 'Session not found';
     };
+
+type ParticipantGrantState = {
+    publishGrantedAt: Date | null;
+    publishRevokedAt: Date | null;
+};
+
+async function recoverConcurrentParticipant(
+    access: RoomAccessBase,
+    error: unknown,
+): Promise<ParticipantGrantState> {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+        throw error;
+    }
+
+    // The identity upsert has one arbiter, while the event-scoped ticket and
+    // staff links are protected by separate partial unique indexes. Under a
+    // fresh Stage+Beacon join PostgreSQL may report one of those independent
+    // conflicts even though the other request already created the exact same
+    // principal. Recover only that exact canonical winner: an unrelated
+    // P2002, stale identity or mismatched principal must remain an error.
+    const winner = await prisma.sessionParticipant.findFirst({
+        where: {
+            scheduledSessionId: access.session.id,
+            participantIdentity: access.identity,
+            ...(access.ticketEntitlementId
+                ? { ticketEntitlementId: access.ticketEntitlementId }
+                : { staffUserId: access.staffUserId! }),
+        },
+        select: { id: true },
+    });
+    if (!winner) {
+        throw error;
+    }
+
+    return prisma.sessionParticipant.update({
+        where: { id: winner.id },
+        data: { leftAt: null },
+        select: {
+            publishGrantedAt: true,
+            publishRevokedAt: true,
+        },
+    });
+}
 
 /**
  * Read-only half of room access resolution: cookie, entitlement, event
@@ -300,44 +345,49 @@ export async function resolveRoomPrincipal(
     // event-scoped principal first and migrate that row to the stable identity.
     // Otherwise an upsert keyed only by identity attempts to insert a second
     // `(session, staff)` row and hits the migration's partial unique index.
-    const participant = existingParticipant
-        ? await prisma.sessionParticipant.update({
-            where: { id: existingParticipant.id },
-            data: {
-                participantIdentity: access.identity,
-                leftAt: null,
-            },
-            select: {
-                publishGrantedAt: true,
-                publishRevokedAt: true,
-            },
-        })
-        : await prisma.sessionParticipant.upsert({
-            where: {
-                scheduledSessionId_participantIdentity: {
+    let participant: ParticipantGrantState;
+    try {
+        participant = existingParticipant
+            ? await prisma.sessionParticipant.update({
+                where: { id: existingParticipant.id },
+                data: {
+                    participantIdentity: access.identity,
+                    leftAt: null,
+                },
+                select: {
+                    publishGrantedAt: true,
+                    publishRevokedAt: true,
+                },
+            })
+            : await prisma.sessionParticipant.upsert({
+                where: {
+                    scheduledSessionId_participantIdentity: {
+                        scheduledSessionId: scheduledSessionId,
+                        participantIdentity: access.identity,
+                    },
+                },
+                create: {
                     scheduledSessionId: scheduledSessionId,
                     participantIdentity: access.identity,
+                    ticketEntitlementId: access.ticketEntitlementId,
+                    staffUserId: access.staffUserId,
+                    publishGrantedAt: access.canPublishInitially ? now : null,
+                    grantVersion: access.canPublishInitially ? 1 : 0,
+                    grantReason: access.canPublishInitially
+                        ? 'Facilitator preflight grant'
+                        : null,
                 },
-            },
-            create: {
-                scheduledSessionId: scheduledSessionId,
-                participantIdentity: access.identity,
-                ticketEntitlementId: access.ticketEntitlementId,
-                staffUserId: access.staffUserId,
-                publishGrantedAt: access.canPublishInitially ? now : null,
-                grantVersion: access.canPublishInitially ? 1 : 0,
-                grantReason: access.canPublishInitially
-                    ? 'Facilitator preflight grant'
-                    : null,
-            },
-            update: {
-                leftAt: null,
-            },
-            select: {
-                publishGrantedAt: true,
-                publishRevokedAt: true,
-            },
-        });
+                update: {
+                    leftAt: null,
+                },
+                select: {
+                    publishGrantedAt: true,
+                    publishRevokedAt: true,
+                },
+            });
+    } catch (error) {
+        participant = await recoverConcurrentParticipant(access, error);
+    }
 
     return {
         ok: true,
