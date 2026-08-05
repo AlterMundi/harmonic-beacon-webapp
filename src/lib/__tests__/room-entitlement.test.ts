@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Prisma } from '@prisma/client';
+
 import { createRequest } from '@/__tests__/helpers';
 
 const findWebSession = vi.fn();
@@ -53,6 +55,13 @@ const activeTicketSession = {
 function request(withCookie = true) {
     return createRequest('/api/scheduled-sessions/event-1/token', {
         headers: withCookie ? { cookie: 'hb_session=opaque-cookie' } : {},
+    });
+}
+
+function prismaError(code: string) {
+    return new Prisma.PrismaClientKnownRequestError('room participant write failed', {
+        code,
+        clientVersion: 'test',
     });
 }
 
@@ -151,6 +160,107 @@ describe('resolveRoomPrincipal', () => {
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
             update: { leftAt: null },
         }));
+    });
+
+    it('recovers a concurrent ticket insert only from the exact canonical winner', async () => {
+        findParticipant
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ id: 'ticket-race-winner' });
+        upsertParticipant.mockRejectedValue(prismaError('P2002'));
+        updateParticipant.mockResolvedValue({
+            publishGrantedAt: now,
+            publishRevokedAt: null,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: {
+                identity: 'opaque:event-1:ticket:ticket-1',
+                canPublish: true,
+            },
+        });
+        expect(findParticipant).toHaveBeenLastCalledWith({
+            where: {
+                scheduledSessionId: 'event-1',
+                participantIdentity: 'opaque:event-1:ticket:ticket-1',
+                ticketEntitlementId: 'ticket-1',
+            },
+            select: { id: true },
+        });
+        expect(updateParticipant).toHaveBeenCalledWith({
+            where: { id: 'ticket-race-winner' },
+            data: { leftAt: null },
+            select: {
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+            },
+        });
+    });
+
+    it('recovers the equivalent concurrent staff insert', async () => {
+        findWebSession.mockResolvedValue({
+            expiresAt: new Date('2026-08-03T00:00:00Z'),
+            revokedAt: null,
+            ticketEntitlement: null,
+            staffUser: {
+                id: 'facilitator-1',
+                name: 'Julián',
+                role: 'FACILITATOR',
+                disabledAt: null,
+            },
+        });
+        findParticipant
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ id: 'staff-race-winner' });
+        upsertParticipant.mockRejectedValue(prismaError('P2002'));
+        updateParticipant.mockResolvedValue({
+            publishGrantedAt: now,
+            publishRevokedAt: null,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: {
+                identity: 'opaque:event-1:staff:facilitator-1',
+                canPublish: true,
+            },
+        });
+        expect(findParticipant).toHaveBeenLastCalledWith({
+            where: {
+                scheduledSessionId: 'event-1',
+                participantIdentity: 'opaque:event-1:staff:facilitator-1',
+                staffUserId: 'facilitator-1',
+            },
+            select: { id: true },
+        });
+    });
+
+    it('does not hide a unique conflict without the exact canonical principal', async () => {
+        findParticipant
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(null);
+        const conflict = prismaError('P2002');
+        upsertParticipant.mockRejectedValue(conflict);
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        await expect(resolveRoomPrincipal(request(), 'event-1', now)).rejects.toBe(conflict);
+        expect(updateParticipant).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a non-unique participant write failure', async () => {
+        const failure = prismaError('P2025');
+        upsertParticipant.mockRejectedValue(failure);
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        await expect(resolveRoomPrincipal(request(), 'event-1', now)).rejects.toBe(failure);
+        expect(findParticipant).toHaveBeenCalledTimes(1);
+        expect(updateParticipant).not.toHaveBeenCalled();
     });
 
     it('versions commerce identities so old-token cleanup cannot kick restored access', async () => {

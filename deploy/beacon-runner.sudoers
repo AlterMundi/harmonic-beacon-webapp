@@ -1,0 +1,5 @@
+Defaults:beacon-runner env_reset
+Defaults:beacon-runner !setenv
+
+Cmnd_Alias HARMONIC_BEACON_DEPLOY = /usr/local/sbin/hb-deploy *
+beacon-runner ALL=(root) NOPASSWD: HARMONIC_BEACON_DEPLOY

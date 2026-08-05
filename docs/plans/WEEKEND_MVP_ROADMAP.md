@@ -1,5 +1,12 @@
 # Harmonic Beacon weekend MVP roadmap
 
+> **Archived execution plan.** This document records the 2026-08-08 launch and
+> must not be used as the current schedule, price list or event setup runbook.
+> Current sellable sessions come only from
+> `GET https://bot.harmonicbeacon.com/v1/commerce/catalog` and must match their
+> selected Spotlight console. Operational procedure lives in
+> [`WEEKEND_EVENT_RUNBOOK.md`](../ops/WEEKEND_EVENT_RUNBOOK.md).
+
 **Target:** first paid events on Saturday 2026-08-08 (two sessions)
 
 **Planning baseline:** `main` at `faf5f13d06aff9c47c133818095f32c8153e0086`

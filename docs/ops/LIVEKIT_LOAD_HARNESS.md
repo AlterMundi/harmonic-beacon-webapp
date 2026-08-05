@@ -21,6 +21,9 @@ and human gates in #24.
   `LIVEKIT_API_SECRET`. They are never arguments or manifest fields.
 - Manifests are mode `0600` and contain no identities, tokens, audio, video,
   email, or raw CLI output.
+- `SIGINT` and `SIGTERM` stop both room generators cooperatively, run the same
+  bounded cleanup check, write an `ABORTED` manifest, and exit non-zero. An
+  interrupted run is evidence of an attempted run, never a PASS.
 
 Preview a run without credentials or LiveKit:
 
@@ -52,10 +55,143 @@ npm run load:livekit -- \
 Never point this command at an active event. The remote rooms must be synthetic
 and the operator must monitor LiveKit, CPU, memory, and network on the target.
 
+## Distributed generators
+
+A single generator receiving six simulcast publishers can saturate its own
+network path before the SFU reaches capacity. Split a rehearsal across two or
+more **distinct generator hosts** with the same committed harness, LiveKit CLI,
+profile, run ID, confirmation and UTC start. Choose a start at least 30 seconds
+in the future; two minutes gives operators time to launch every shard. Verify
+NTP/chrony on every generator first and keep reported clock offset below one
+second; synchronized manifest timestamps cannot correct a drifting host clock.
+
+Example for two hosts (run shard 0 on the first and shard 1 on the second):
+
+```bash
+npm run load:livekit -- \
+  --profile rehearsal-en \
+  --run-id rehearsal-en-20260805-a \
+  --shard-count 2 \
+  --shard-index 0 \
+  --start-at 2026-08-05T18:00:00Z \
+  --url wss://test-live.example.invalid \
+  --allow-remote \
+  --confirm-test-rooms 'LOADTEST:hb-load-rehearsal-en-20260805-a-en-stage:hb-load-rehearsal-en-20260805-a-en-beacon'
+```
+
+Sharding partitions attendees, publishers and the declared global ramp rate
+without rounding anything away. Every identity prefix includes its shard, all
+shards join the same two synthetic rooms, and every shard independently observes
+the exact **global** participant/publisher counts. Synchronized phases use a
+minimum 15-second cleanup gap. Each profile also declares a
+`phaseCompletionBufferSeconds` tail before the next absolute start. This tail
+is not load duration and does not excuse a timeout: it keeps both hosts at the
+same later barrier when the CLI spends time reporting failed/late connection
+attempts after its nominal ramp. The rehearsal profiles reserve five minutes;
+the small CI profile reserves 15 seconds. The schedule separately includes the
+ideal CLI connection ramp because LiveKit starts its `--duration` timer only
+after those connections finish.
+Missing coordinates, duplicate identities, a late phase, API sampling errors,
+extra/missing joins or incomplete cleanup fail closed.
+
+LiveKit CLI reports its track denominator from publishers created by that one
+process, so that denominator is incomplete in a shared room. The harness keeps
+the raw parsed value for diagnosis but gates each shard against the independently
+calculated `local subscribers × global publishers` count. A shard with zero
+local Beacon publishers must still receive the one global Beacon track.
+
+Copy the redacted manifests to one trusted operator machine and aggregate them:
+
+```bash
+node scripts/livekit-load-aggregate.mjs \
+  --output artifacts/load-test/rehearsal-en-20260805-a-aggregate.json \
+  artifacts/load-test/rehearsal-en-20260805-a-rehearsal-en-shard-0-of-2.json \
+  artifacts/load-test/rehearsal-en-20260805-a-rehearsal-en-shard-1-of-2.json
+```
+
+The aggregator writes mode `0600` and refuses overwrite. It emits PASS only
+when every index is present, the partitions sum to the profile exactly, every
+phase proves the global counts and clean teardown, the harness/CLI/run contract
+is byte-equivalent, worktrees are clean and generator host hashes are distinct.
+The opaque host hash includes the kernel boot ID: processes on the same running
+host remain identical, while separately booted hosted-runner VMs remain
+distinct even when their image clones hostname and machine ID.
+Keep every source manifest and its aggregate; the aggregate does not replace
+target-local telemetry or physical browser evidence.
+
+### GitHub-hosted generators
+
+`.github/workflows/livekit-capacity.yml` is a manual-only two-generator
+orchestrator for the case where no two trusted standalone hosts are available.
+The default remains two hosts so consecutive baselines stay comparable. A
+bounded six-host option partitions the same 150 attendees, six Stage publishers,
+one Beacon publisher and global ramp across six independent runners. Use it to
+diagnose generator fan-in after a two-host failure; it does not increase the
+declared load or relax any acceptance threshold. The aggregate still requires
+every planned shard, distinct boot provenance and byte-equivalent plans.
+It runs each shard on a different ephemeral GitHub-hosted runner, pins and
+verifies `lk` v2.16.3, schedules both against the same future UTC boundary, and
+uploads the redacted source manifests before aggregating them fail-closed.
+Each generator also probes the fixed public production readiness endpoint. Two
+consecutive failures abort its current Stage and Beacon processes, preserve an
+`ABORTED` source manifest and prevent a global PASS. The probe never reads a
+response body and cannot be redirected to an operator-supplied URL.
+
+Every shard pads its local CLI duration by the difference between its own
+connection ramp and the slowest planned ramp. Stage and Beacon therefore remain
+connected through one shared completion barrier even when attendee, publisher,
+or global ramp partitions are uneven. Cleanup is checked only after that
+barrier; an aggregate refuses a shard whose recorded command could disconnect
+early.
+
+The generator job has an 80-minute hard timeout. A workflow contract test proves
+that this covers the longest selectable synchronization delay, the complete
+rehearsal schedule (including delayed CLI completion tails), every selectable
+valid shard count, and a five-minute setup/evidence margin. Do not shorten it
+independently of the committed profile timings: a job timeout cannot emit an
+admissible manifest.
+
+The workflow uses the `capacity-rehearsal` environment. Restrict that
+environment to the `main` branch and provision these environment secrets only
+for the lifetime of one isolated target:
+
+- `LOAD_TEST_URL`: credential-free `ws://` or `wss://` URL of the disposable
+  LiveKit node. Paths, query strings, fragments, localhost and embedded
+  credentials are rejected.
+- `LOAD_TEST_API_KEY` and `LOAD_TEST_API_SECRET`: credentials generated only
+  for that disposable node. Never copy production LiveKit credentials.
+
+Start the target-local monitor first, then dispatch with a unique synthetic run
+ID and at least a 15-minute setup delay:
+
+```bash
+gh workflow run livekit-capacity.yml --ref main \
+  -f profile=rehearsal-en \
+  -f run_id=capacity-en-20260805-a \
+  -f start_delay_seconds=1200
+```
+
+Keep the default two-host baseline for comparisons. After a failed baseline
+whose generator fan-in remains a plausible cause, repeat with the same profile,
+target and thresholds plus `-f shard_count=6`; use a new run ID and preserve
+both manifests as separate evidence.
+
+The target must stay isolated from event rooms and the production LiveKit
+process. After downloading and hashing the aggregate plus target telemetry,
+remove the disposable container, its exact firewall rules/config files, and
+all three environment secrets. Confirm production readiness and restart/OOM
+counters after cleanup. A GitHub PASS still does not close #24: physical
+browsers, mobile routing, TURN, acoustic quality and the human rehearsal remain
+separate gates.
+
 ## Profiles and evidence
 
 - `ci`: four attendees, two stage publishers, one Beacon publisher, short
   ramp/soak/reconnect.
+- `diagnostic-en-vp8`: the full 150-attendee, six-publisher VP8/speaker
+  topology with two 60-second phases and no reconnect wave. It exists only for
+  bounded server/generator comparisons; it cannot satisfy the 20-minute soak,
+  reconnect, repeated-run, browser or listening gates.
 - `rehearsal-es` and `rehearsal-en`: 150 dual-room attendees, six simulcast
   stage publishers, one Beacon audio publisher, 20-minute soak, and two
   staggered reconnect waves.
@@ -77,7 +213,48 @@ poll-observed join p50/p95/p99, cleanup convergence, packet loss, generator
 CPU/memory/network deltas, and event-loop delay. Each phase fails unless both
 CLI processes exit zero, report every expected track, reach exact room counts,
 clean up to zero, and remain below the configured dropped-packet threshold.
+If an operator or external watchdog aborts a phase, the manifest records only
+the signal and timestamp plus the partial redacted phase metrics. It never
+promotes partial results to FAIL/PASS or continues into another phase.
 Run the full ES and EN profiles twice and attach all four manifests to #24.
+
+## Target-local telemetry
+
+The generator's own network path is not a reliable control plane under a large
+subscriber test. Start `scripts/livekit-target-monitor.py` **on the isolated SFU
+host** before traffic. It uses only Python's standard library plus the host's
+Docker CLI, reads no environment credential, probes only a loopback health URL,
+and writes JSONL evidence mode `0600`.
+
+Use a unique synthetic run ID and output path. The monitor refuses to overwrite
+evidence, refuses remote or credential-bearing health URLs, and records no
+response body, Docker ID, environment, command output, token, room identity,
+audio, or video. A typical isolated mona rehearsal monitors both the temporary
+target and the production containers so shared-host impact is visible:
+
+```bash
+python3 scripts/livekit-target-monitor.py \
+  --run-id rehearsal-en-20260805-a \
+  --duration-seconds 1500 \
+  --interval-seconds 1 \
+  --output /tmp/rehearsal-en-20260805-a-target.jsonl \
+  --health-url http://127.0.0.1:3000/api/health/ready \
+  --container hb-load-livekit-isolated \
+  --container beacon-app \
+  --container beacon-livekit
+```
+
+For a remote generator, launch the monitor under a target-local supervisor or
+`nohup` so losing SSH does not lose samples. Send `SIGINT` or `SIGTERM` for a
+cooperative stop; the process writes a final summary and exits non-zero. A
+usable artifact must end with `recordType=summary`. The summary includes health
+failures/latency, peak host and container CPU, minimum available memory,
+physical-interface byte deltas, restart deltas, OOM observation and whether an
+operator interrupted it. Each sample also records its collection duration so a
+slow Docker daemon is visible instead of being mistaken for a one-second cadence.
+Hash the file before copying it to the rehearsal
+record; never weaken a failed load manifest because target telemetry looks
+healthy.
 
 ## Tooling
 

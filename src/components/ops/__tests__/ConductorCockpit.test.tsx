@@ -14,6 +14,7 @@ const callbacks = vi.hoisted(() => ({
         sessionStatus?: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
     }) => void),
     health: null as null | ((level: 'green' | 'yellow' | 'red') => void),
+    healthVisualActive: null as boolean | null,
 }));
 
 vi.mock('../SessionLifecycleControl', () => ({
@@ -35,8 +36,15 @@ vi.mock('../AdmissionConsole', () => ({
     default: () => <div data-testid="admission-panel">Admission</div>,
 }));
 vi.mock('@/app/ops/health/OpsHealthClient', () => ({
-    default: ({ onLevelChange }: { onLevelChange?: typeof callbacks.health }) => {
+    default: ({
+        onLevelChange,
+        visualActive,
+    }: {
+        onLevelChange?: typeof callbacks.health;
+        visualActive?: boolean;
+    }) => {
         callbacks.health = onLevelChange ?? null;
+        callbacks.healthVisualActive = visualActive ?? true;
         return <div data-testid="health-panel">Health</div>;
     },
 }));
@@ -60,6 +68,7 @@ const props = {
     healthCopy: messages.en.ops.healthPanel,
     admissionCopy: messages.en.ops.admissionPanel,
     tapestryCopy: messages.en.ops.tapestryArrange,
+    opsTapestryCopy: messages.en.ops.opsTapestry,
     staffRoleLabels: messages.en.staffRoles,
 };
 
@@ -68,6 +77,7 @@ afterEach(() => {
     callbacks.lifecycle = null;
     callbacks.summary = null;
     callbacks.health = null;
+    callbacks.healthVisualActive = null;
 });
 
 describe('ConductorCockpit', () => {
@@ -139,5 +149,21 @@ describe('ConductorCockpit', () => {
         fireEvent.keyDown(window, { key: 'Escape' });
         await waitFor(() => expect(trigger).toHaveFocus());
         expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('activates the health preview only while its drawer is visible', () => {
+        render(<ConductorCockpit {...props} />);
+        expect(callbacks.healthVisualActive).toBe(false);
+
+        fireEvent.click(screen.getByRole('button', { name: /Health.*yellow/i }));
+        expect(callbacks.healthVisualActive).toBe(true);
+
+        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {
+            name: /Return to the live room/,
+        }));
+        expect(callbacks.healthVisualActive).toBe(false);
+
+        fireEvent.click(screen.getByRole('button', { name: /Hands/i }));
+        expect(callbacks.healthVisualActive).toBe(false);
     });
 });

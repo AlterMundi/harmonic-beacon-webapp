@@ -54,6 +54,15 @@ describe('HandRaiseButton', () => {
         vi.unstubAllGlobals();
     });
 
+    it('informs the naming-consent scope before the first raise', async () => {
+        const { fetchMock } = mockFetchSequence([state()]);
+        vi.stubGlobal('fetch', fetchMock);
+        render(<HandRaiseButton sessionId="event-1" />);
+
+        await waitFor(() => screen.getByRole('button', { name: /Raise hand/i }));
+        expect(screen.getByText(/While your hand is raised, your name appears/)).toBeInTheDocument();
+    });
+
     it('raises the hand with POST and reports the queue position', async () => {
         const { fetchMock, calls } = mockFetchSequence([
             state(),

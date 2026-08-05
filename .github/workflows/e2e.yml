@@ -17,6 +17,13 @@ name: E2E quality gates
 on:
   pull_request:
     branches: [main, release]
+    # Documentation-only PRs cannot affect the browser/runtime contract. Keep
+    # this filter scoped to pull_request: release deploys invoke workflow_call
+    # and must always run the complete gate.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_call:
 
 concurrency:
   group: e2e-${{ github.head_ref || github.run_id }}
@@ -92,6 +99,30 @@ jobs:
         run: |
           npm run db:fixture:load
           DATABASE_URL="$E2E_DATABASE_URL" npx prisma migrate deploy
+
+      - name: Verify session contributions contract in PostgreSQL
+        # Real-database proof of the CHAT-01 guarantees: idempotency unique
+        # index, replay/conflict, concurrent-submission race, stable
+        # (createdAt, id) order, public anonymity, cross-session isolation,
+        # and the tail resumeCursor. Runs only that suite, against the same
+        # throwaway fixture database the E2E gates use — no real data, no
+        # production secrets.
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/session-contributions.integration.test.ts
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          CONTRIBUTIONS_INTEGRATION_TEST: '1'
+
+      - name: Verify every migration against a clean database
+        # The fixture proves migrations apply on an existing database; this
+        # proves the whole chain also builds from zero. The scratch database
+        # lives and dies inside the job's ephemeral Postgres service — the
+        # fixture database is never reused or replaced for this check.
+        run: |
+          psql "$E2E_DATABASE_URL" \
+            -c 'DROP DATABASE IF EXISTS beacon_migration_check' \
+            -c 'CREATE DATABASE beacon_migration_check'
+          CLEAN_URL="${E2E_DATABASE_URL/beacon_test/beacon_migration_check}"
+          DATABASE_URL="$CLEAN_URL" npx prisma migrate deploy
 
       - name: Run Chromium and Android gates
         run: >-

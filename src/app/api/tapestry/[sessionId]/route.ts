@@ -57,9 +57,16 @@ export async function GET(
         if (!response.ok) {
             return NextResponse.json({ error: 'Tapestry unavailable' }, { status: response.status === 404 ? 404 : 502 });
         }
+        // The revision header names the exact build these bytes came from;
+        // overlay consumers (raised-hand names) only draw when it matches
+        // the layout revision. It is an opaque build counter, not metadata.
+        const revision = response.headers.get('x-tapestry-revision');
         return new NextResponse(await response.arrayBuffer(), {
             status: 200,
-            headers: isPublic ? PUBLIC_CACHE_HEADERS : STAFF_CACHE_HEADERS,
+            headers: {
+                ...(isPublic ? PUBLIC_CACHE_HEADERS : STAFF_CACHE_HEADERS),
+                ...(revision ? { 'x-tapestry-revision': revision } : {}),
+            },
         });
     } catch {
         return NextResponse.json({ error: 'Tapestry unavailable' }, { status: 503 });

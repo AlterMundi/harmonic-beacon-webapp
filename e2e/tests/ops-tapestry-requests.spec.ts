@@ -1,0 +1,234 @@
+import { expect, stackTest } from '../fixtures/stack';
+import { loginViaDashboard } from '../fixtures/auth';
+import { ROUTES, SESSION_ES } from '../fixtures/test-data';
+
+/**
+ * TAP-02 request measurement (issue #129, PR #145): the operational tapestry
+ * must stay O(1) — one manifest JSON + one composite image per poll cycle —
+ * regardless of participant count. Measured in a real browser against the
+ * real cockpit, with 0, 1, 50 and 150 manifest entries. The hand-queue spec
+ * covers the same discipline for the spotlight drawer.
+ */
+
+type ManifestEntry = {
+    tileId: string;
+    displayName: string;
+    handRaised: boolean;
+    queuePosition: number | null;
+    presence: 'connected';
+    camera: 'on';
+    column: number;
+    row: number;
+};
+
+function manifestFor(count: number) {
+    const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
+    const rows = Math.max(1, Math.ceil(count / columns));
+    const entries: ManifestEntry[] = Array.from({ length: count }, (_, i) => ({
+        tileId: `tp-${i + 1}`,
+        displayName: `Tapestry Person ${i + 1}`,
+        handRaised: i === 0,
+        queuePosition: i === 0 ? 1 : null,
+        presence: 'connected',
+        camera: 'on',
+        column: i % columns,
+        row: Math.floor(i / columns),
+    }));
+    return {
+        sessionId: SESSION_ES.id,
+        // The revision must change with the payload, like the real builder:
+        // the cockpit re-renders annotations only on revision change.
+        revision: `measurement-rev-${count}`,
+        liveStateAvailable: true,
+        layout: { revision: 7, columns, rows, tileSizePx: 100 },
+        tileFreshForSeconds: 10,
+        entries,
+        waitingHands: count > 0
+            ? [{ displayName: 'Tapestry Person 1', queuePosition: 1, tileId: 'tp-1' }]
+            : [],
+    };
+}
+
+stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({ page }) => {
+    stackTest.slow();
+    let count = 0;
+    let mismatched = false;
+    const counters = { manifest: 0, composite: 0, tiles: 0 };
+
+    page.on('request', (request) => {
+        // Only the main frame's cockpit counts; the room iframe has its own
+        // optional composite poll covered by its own contract.
+        if (request.frame() !== page.mainFrame()) return;
+        const url = request.url();
+        if (url.includes(`/api/ops/sessions/${SESSION_ES.id}/tapestry/manifest`)) counters.manifest += 1;
+        else if (url.includes(`/api/ops/sessions/${SESSION_ES.id}/tapestry/tiles/`)) counters.tiles += 1;
+        else if (url.includes(`/api/tapestry/${SESSION_ES.id}?view=ops-tapestry`)) counters.composite += 1;
+    });
+
+    await page.route(`**/api/ops/sessions/${SESSION_ES.id}/tapestry/manifest`, async (route) => {
+        await route.fulfill({ json: manifestFor(count) });
+    });
+    await page.route(`**/api/tapestry/${SESSION_ES.id}**`, async (route) => {
+        // Simulated continuous ingest: the composite reports a build newer
+        // than the manifest's layout, forcing bounded correlation retries.
+        await route.fulfill({
+            body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64'),
+            contentType: 'image/gif',
+            headers: { 'x-tapestry-revision': mismatched ? '8' : '7' },
+        });
+    });
+    await page.route(`**/api/ops/sessions/${SESSION_ES.id}/tapestry/tiles/**`, async (route) => {
+        await route.fulfill({ status: 404 });
+    });
+    // The measurement is the cockpit's OpsTapestry; the room iframe has its
+    // own optional composite poll (covered by its own contract) and would
+    // only add noise here, so its document is stubbed out.
+    await page.route(`**/session/${SESSION_ES.id}?surface=cockpit`, async (route) => {
+        await route.fulfill({ contentType: 'text/html', body: '<html><body>room stub</body></html>' });
+    });
+
+    await loginViaDashboard(page, 'OPERATOR', 'Tapestry Measure Op', ROUTES.opsSession(SESSION_ES.id));
+
+    // Drawer closed: the operational tapestry spends nothing at all.
+    await page.waitForTimeout(7_000);
+    expect(counters).toEqual({ manifest: 0, composite: 0, tiles: 0 });
+
+    await page.locator('[data-tool="tapestry"]').click();
+    const drawer = page.getByRole('dialog');
+    const section = drawer.getByRole('region', { name: /Operational tapestry|Tapiz operativo/i });
+    await expect(section).toBeVisible();
+
+    for (const n of [0, 1, 50, 150]) {
+        count = n;
+        const before = { ...counters };
+        if (n > 0) {
+            // The name appears in the aria-hidden overlay AND the accessible
+            // list; assert on the list, the semantic surface.
+            await expect(
+                section.getByRole('listitem').getByText(`Tapestry Person ${n}`, { exact: true }),
+            ).toBeVisible({ timeout: 10_000 });
+        } else {
+            await expect(section.getByText(/No tiles yet|Todavía no hay teselas/i)).toBeVisible({
+                timeout: 10_000,
+            });
+        }
+        // Two more full poll cycles (3s each) beyond the first render.
+        await page.waitForTimeout(7_000);
+        const spent = {
+            manifest: counters.manifest - before.manifest,
+            composite: counters.composite - before.composite,
+            tiles: counters.tiles - before.tiles,
+        };
+        // ~3 cycles in the window: strictly bounded, independent of N.
+        expect(spent.manifest, `manifest requests at ${n} participants`).toBeLessThanOrEqual(4);
+        expect(spent.composite, `composite requests at ${n} participants`).toBeLessThanOrEqual(4);
+        expect(spent.tiles, `per-tile requests at ${n} participants`).toBe(0);
+        // Exactly one image carries the whole room.
+        await expect(section.getByRole('img')).toHaveCount(1);
+        if (n > 0) {
+            await expect(section.getByRole('listitem')).toHaveCount(n);
+        }
+        if (n === 1) {
+            // Correlated pair: the semantic overlay draws over the cell.
+            await expect(section.locator('[aria-hidden="true"]')).toBeVisible();
+        }
+    }
+
+    // Continuous-ingest mismatch: the composite reports a build the manifest
+    // layout has not caught up with. Retries stay strictly bounded per cycle,
+    // overlays hide, the accessible list keeps telling the truth.
+    count = 1;
+    mismatched = true;
+    await expect(section.getByRole('listitem')).toHaveCount(1);
+    await expect(section.locator('[aria-hidden="true"]')).toHaveCount(0, { timeout: 10_000 });
+    const beforeMismatch = { ...counters };
+    await page.waitForTimeout(7_000);
+    const mismatchSpent = {
+        manifest: counters.manifest - beforeMismatch.manifest,
+        composite: counters.composite - beforeMismatch.composite,
+        tiles: counters.tiles - beforeMismatch.tiles,
+    };
+    // ~3 cycles × at most 3 attempts: an explicit ceiling, no storm, and
+    // still completely independent of the participant count.
+    expect(mismatchSpent.manifest, 'manifest requests under mismatch').toBeLessThanOrEqual(12);
+    expect(mismatchSpent.composite, 'composite requests under mismatch').toBeLessThanOrEqual(12);
+    expect(mismatchSpent.tiles, 'per-tile requests under mismatch').toBe(0);
+
+    // Correlation returns: the overlay reconverges over the right cell.
+    mismatched = false;
+    await expect(section.locator('[aria-hidden="true"]')).toBeVisible({ timeout: 10_000 });
+});
+
+stackTest('hidden health preview spends 0/N/0 requests while the rail stays live', async ({ page }) => {
+    stackTest.slow();
+    const counters = { health: 0, composite: 0 };
+
+    page.on('request', (request) => {
+        if (request.frame() !== page.mainFrame()) return;
+        const url = request.url();
+        if (url.includes('/api/ops/health')) counters.health += 1;
+        if (
+            url.includes(`/api/tapestry/${SESSION_ES.id}`) &&
+            !url.includes('view=ops-tapestry')
+        ) {
+            counters.composite += 1;
+        }
+    });
+
+    await page.route('**/api/ops/health**', async (route) => {
+        const green = { status: 'green', detail: 'Synthetic healthy check', latencyMs: 1 };
+        await route.fulfill({
+            json: {
+                status: 'green',
+                checkedAt: new Date().toISOString(),
+                session: { id: SESSION_ES.id, title: SESSION_ES.title, status: 'LIVE' },
+                checks: {
+                    postgres: green,
+                    livekit: green,
+                    stageRoom: green,
+                    publisherGrants: green,
+                    bedPublisher: green,
+                    tapestry: green,
+                },
+            },
+        });
+    });
+    await page.route(`**/api/tapestry/${SESSION_ES.id}**`, async (route) => {
+        await route.fulfill({
+            body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64'),
+            contentType: 'image/gif',
+            headers: { 'x-tapestry-revision': '7' },
+        });
+    });
+    await page.route(`**/session/${SESSION_ES.id}?surface=cockpit`, async (route) => {
+        await route.fulfill({ contentType: 'text/html', body: '<html><body>room stub</body></html>' });
+    });
+
+    await loginViaDashboard(page, 'OPERATOR', 'Hidden Preview Op', ROUTES.opsSession(SESSION_ES.id));
+    await expect.poll(() => counters.health).toBeGreaterThanOrEqual(1);
+    await page.waitForTimeout(2_500);
+    expect(counters.composite, 'closed health drawer').toBe(0);
+
+    await page.locator('[data-signal="health"]').click();
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByRole('region', { name: /Tapestry|Tapiz/i })).toBeVisible();
+    await expect.poll(() => counters.composite).toBeGreaterThanOrEqual(1);
+    await page.waitForTimeout(2_500);
+    const openSpend = counters.composite;
+    expect(openSpend, 'open health drawer').toBeGreaterThanOrEqual(1);
+    expect(openSpend, 'one coordinator while open').toBeLessThanOrEqual(3);
+
+    await drawer.getByRole('button', { name: /Return to the live room|Volver a la sala/i }).click();
+    const compositeAtClose = counters.composite;
+    const healthAtClose = counters.health;
+    await expect.poll(() => counters.health, { timeout: 12_000 }).toBeGreaterThan(healthAtClose);
+    expect(counters.composite, 'closed preview remains paused while rail health refreshes')
+        .toBe(compositeAtClose);
+
+    await page.locator('[data-signal="health"]').click();
+    await expect.poll(() => counters.composite).toBeGreaterThan(compositeAtClose);
+    await drawer.getByRole('button', { name: /Return to the live room|Volver a la sala/i }).click();
+    const compositeAtSecondClose = counters.composite;
+    await page.waitForTimeout(2_500);
+    expect(counters.composite, 'second close leaves no accumulated timer').toBe(compositeAtSecondClose);
+});
