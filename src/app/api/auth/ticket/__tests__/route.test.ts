@@ -42,7 +42,7 @@ function ticketRow(overrides: Partial<EntitlementRow> = {}): EntitlementRow {
         state: 'ISSUED',
         boundEmail: null,
         boundAt: null,
-        expiresAt: new Date('2026-08-05T00:00:00.000Z'),
+        expiresAt: new Date('2027-08-05T00:00:00.000Z'),
         revokedAt: null,
         ...overrides,
     };
