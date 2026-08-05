@@ -79,19 +79,24 @@ stackTest.describe('session contributions chat (#141)', () => {
             const b = await joinAttendee(browser, ATTENDEE_B);
             try {
                 // A shares NAMED: B sees the body with A's display name.
+                // Author assertions are scoped to the feed list: the composer
+                // (button + anonymity note) and the room header also carry
+                // matching strings.
                 const namedBody = `pregunta pública e2e ${Date.now()}`;
                 await a.panel.getByRole('textbox').fill(namedBody);
                 await a.panel.getByRole('button', { name: 'Compartir', exact: true }).click();
-                await expect(b.panel.getByText(namedBody)).toBeVisible({ timeout: 15_000 });
-                await expect(b.panel.getByText(ATTENDEE_A.name)).toBeVisible();
+                const feedB = b.panel.getByTestId('contributions-feed');
+                await expect(feedB.getByText(namedBody)).toBeVisible({ timeout: 15_000 });
+                await expect(feedB.getByText(ATTENDEE_A.name)).toBeVisible();
 
                 // B shares ANONYMOUS: A sees the localized anonymous label and
                 // never B's real name inside the panel.
                 const anonBody = `emoción anónima e2e ${Date.now()}`;
                 await b.panel.getByRole('textbox').fill(anonBody);
                 await b.panel.getByRole('button', { name: 'Compartir anónimo' }).click();
-                await expect(a.panel.getByText(anonBody)).toBeVisible({ timeout: 15_000 });
-                await expect(a.panel.getByText('Anónimo')).toBeVisible();
+                const feedA = a.panel.getByTestId('contributions-feed');
+                await expect(feedA.getByText(anonBody)).toBeVisible({ timeout: 15_000 });
+                await expect(feedA.getByText('Anónimo', { exact: true })).toBeVisible();
                 await expect(a.panel.getByText(ATTENDEE_B.name)).toHaveCount(0);
             } finally {
                 await a.context.close();
@@ -160,12 +165,21 @@ stackTest.describe('session contributions chat (#141)', () => {
                 );
                 await page.getByRole('button', { name: /Start audio|Iniciar audio/i }).click();
 
-                // Baseline: let the media pipeline settle before touching the chat.
+                // Baseline: let the media pipeline settle before touching the
+                // chat (same stable-read discipline as the canonical
+                // continuity suite: counters frozen for 4 consecutive reads).
                 let baseline = await mediaProbeSnapshot(page);
-                for (let attempt = 0; attempt < 20; attempt += 1) {
+                let stableReads = 0;
+                for (let attempt = 0; attempt < 20 && stableReads < 4; attempt += 1) {
                     await page.waitForTimeout(250);
                     const current = await mediaProbeSnapshot(page);
-                    if (JSON.stringify(current) === JSON.stringify(baseline)) break;
+                    const unchanged =
+                        current.audioElements === baseline.audioElements &&
+                        current.videoElements === baseline.videoElements &&
+                        current.playCalls === baseline.playCalls &&
+                        current.mediaElementsAttached === baseline.mediaElementsAttached &&
+                        current.mediaElementsRemoved === baseline.mediaElementsRemoved;
+                    stableReads = unchanged ? stableReads + 1 : 0;
                     baseline = current;
                 }
 
