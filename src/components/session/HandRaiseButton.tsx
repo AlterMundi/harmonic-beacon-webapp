@@ -153,6 +153,11 @@ export default function HandRaiseButton({
                     {state?.raised ? copy.hand.lower : copy.hand.raise}
                 </button>
             ) : null}
+            {!state?.canPublish ? (
+                <p className="max-w-xs text-center text-xs leading-4 text-[var(--text-muted)]">
+                    {copy.hand.namingConsent}
+                </p>
+            ) : null}
             {state?.canPublish && stageInvitationAccepted ? (
                 <p role="status" className="text-xs text-[var(--lime)]">
                     {copy.hand.onStage}

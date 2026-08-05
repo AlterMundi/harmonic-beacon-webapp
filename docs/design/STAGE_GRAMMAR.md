@@ -311,24 +311,38 @@ staff-only reading of the tapestry; it changes nothing about the public
 composite, the capture lifecycle, or any media path.
 
 - `GET /api/ops/sessions/[id]/tapestry/manifest` returns one bounded document
-  per poll: tile id (opaque), display position, authorized name, hand and
-  queue position, presence (`connected` / `reconnecting` / `left` /
-  `unknown`), camera (`on` / `off` / `unknown`) and an epoch-versioned
-  thumbnail proxy URL per tile, plus the waiting-hand summary including hands
-  with no tile. Three lookups total (database, LiveKit list, internal
-  tapestry list); there is no per-tile request and no N+1 at 150
-  participants. The response is `private, no-store`; names and identities
-  never appear in logs.
+  per poll: tile id (opaque), grid cell (column/row), authorized name, hand
+  and queue position, presence (`connected` / `reconnecting` / `left` /
+  `unknown`), camera (`on` / `off` / `unknown`) and the build-time layout
+  metadata, plus the waiting-hand summary including hands with no tile.
+  Three lookups total (database, LiveKit list, internal layout read); there
+  is no per-tile request and no N+1 at 150 participants. The response is
+  `private, no-store`; names and identities never appear in logs.
 - Authorization matches the other ops tapestry routes: a staff session plus
   the event-scoped `canOperateEvent` policy. Attendees, staff of other
   events, and anonymous callers receive the same refusals as the sibling
   routes.
-- The conductor cockpit tapestry drawer renders the manifest as the
-  operational view above the existing arrangement tool. Every tile carries
-  its full state in an accessible name; the hand badge is labelled text, not
-  color alone; hover, touch, keyboard and screen readers all reach the same
-  detail. A tile without a current consented frame falls back to a quiet
-  deterministic color field that never discloses why the image is absent.
+- The conductor cockpit tapestry drawer renders the operational view above
+  the existing arrangement tool with O(1) visual transport: ONE shared
+  composite image per poll — the same JPEG the service already builds —
+  annotated by semantic overlays (name tag, hand badge, camera-off marker,
+  presence dimming) positioned from the build-time layout, never per-tile
+  image requests. An accessible plain-text list carries the complete state
+  of every person, so mouse, touch, keyboard and screen readers all reach
+  the same facts. The composite bytes refresh every poll while the semantic
+  layer re-renders only when its content revision changes; overlays draw
+  only when the manifest's layout revision equals the composite's
+  `x-tapestry-revision`, and each poll aborts and supersedes the previous
+  one so a slow earlier response can never overwrite fresher state.
+- Naming consent (product canon, confirmed by Annie on 2026-08-04): raising
+  a hand IS the consent to be named publicly, with exactly this scope — the
+  name shows only inside the same session, only while the hand stays raised
+  and the person connected, only over that person's tapestry cell; lowering
+  the hand or disconnecting removes the public name; it never authorizes
+  publishing email, internal id, LiveKit identity, camera, presence,
+  individual thumbnail or history, and it never turns the tapestry into a
+  permanent directory; staff keep their authorized operational view. The
+  hand control explains this scope next to the raise/lower button in ES/EN.
 - On the public room surface, connected raised hands are named in plain text
   near the tapestry via `GET /api/scheduled-sessions/[id]/tapestry/hands`,
   gated by the room entitlement check. The sidecar names only waiting hands

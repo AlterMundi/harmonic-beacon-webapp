@@ -215,7 +215,9 @@ export function createTapestryServer(config: TapestryConfig): TapestryServer {
       sendJson(res, 404, { error: "layout_unavailable" });
       return;
     }
-    sendJson(res, 200, { revision, ...layout });
+    // frameTtlMs rides along so consumers can state snapshot freshness
+    // without a second internal endpoint.
+    sendJson(res, 200, { revision, frameTtlMs: config.frameTtlMs, ...layout });
   }
 
   function handleHealth(res: ServerResponse): void {

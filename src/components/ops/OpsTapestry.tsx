@@ -1,22 +1,26 @@
 'use client';
 
 /**
- * Operational tapestry (TAP-02, issue #129): the staff-only view of the
- * tapestry with hands, names, presence and camera state per tile.
+ * Operational tapestry (TAP-02 review, issue #129): the staff-only view of
+ * the tapestry with hands, names, presence and camera state.
  *
- * One manifest request per poll — never a request per tile. Thumbnails are
- * the epoch-versioned proxy URLs the manifest carries, so the browser cache
- * deduplicates frames inside the refresh window. A missing or expired frame
- * falls back to a quiet deterministic color field with the person's name;
- * the fallback never says *why* the image is gone (consent, TTL, departure
- * and failure are intentionally indistinguishable).
+ * O(1) visual transport: ONE shared composite image per poll — the same
+ * JPEG the service already builds — plus ONE bounded manifest JSON. Names,
+ * hand badges and state markers are semantic overlays on that image, never
+ * per-tile <img> requests: 150 participants cost exactly the same as one.
+ * When the composite is unavailable the accessible list below still carries
+ * every state, without fetching any per-participant image.
  *
- * Every affordance has a hover, touch, keyboard and screen-reader
- * equivalent: tiles are buttons whose full state is always in the
- * accessible name, and activating one (pointer, Enter, Space) toggles a
- * textual detail line. The hand indicator is a labelled badge, never color
- * alone. Hand-count changes are announced once in a polite live region;
- * routine refreshes are silent.
+ * Freshness vs revision: the composite bytes refresh every accepted cycle
+ * (new object URL, previous revoked). The manifest's semantic revision only
+ * decides whether annotations re-render, and the layout revision only
+ * correlates overlays with the exact composite build they describe — an
+ * overlay draws solely when manifest.layout.revision matches the image's
+ * x-tapestry-revision, so a name can never land on the wrong person.
+ *
+ * Polling discipline: each new cycle aborts the previous one and carries a
+ * generation counter, so a slow earlier response can never overwrite a
+ * newer accepted state; unmounting aborts in-flight work and revokes URLs.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -26,191 +30,237 @@ import type {
     TapestryManifestEntry,
 } from '@/lib/tapestry-manifest';
 
-const POLL_INTERVAL_MS = 3_000;
-
-/** Four quiet fields, chosen deterministically by opaque tile id. */
-const FALLBACK_FIELDS = [
-    'bg-[var(--forest)]',
-    'bg-[var(--night)]',
-    'bg-[var(--border-subtle)]',
-    'bg-black/40',
-] as const;
-
-function fallbackField(tileId: string): string {
-    let hash = 0;
-    for (let index = 0; index < tileId.length; index += 1) {
-        hash = (hash * 31 + tileId.charCodeAt(index)) >>> 0;
-    }
-    return FALLBACK_FIELDS[hash % FALLBACK_FIELDS.length];
-}
-
 type Copy = Messages['ops']['opsTapestry'];
 
 type Props = {
     sessionId: string;
     copy: Copy;
+    /**
+     * Polling runs only while the view is actually shown (the cockpit mounts
+     * the drawer hidden): a hidden tapestry spends zero requests.
+     */
+    active?: boolean;
 };
 
-function fill(template: string, values: Record<string, string | number>): string {
-    return Object.entries(values).reduce(
-        (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-        template,
-    );
+const POLL_MS = 3_000;
+
+function stateLabel(entry: TapestryManifestEntry, copy: Copy): string {
+    const parts = [
+        entry.displayName,
+        entry.handRaised && entry.queuePosition !== null
+            ? copy.handRaised.replace('{position}', String(entry.queuePosition))
+            : null,
+        copy.presence[entry.presence],
+        copy.camera[entry.camera],
+    ];
+    return parts.filter(Boolean).join(' — ');
 }
 
-function tileAccessibleName(entry: TapestryManifestEntry, copy: Copy): string {
-    const parts = [entry.displayName];
-    if (entry.handRaised && entry.queuePosition !== null) {
-        parts.push(fill(copy.handRaised, { position: entry.queuePosition }));
-    }
-    parts.push(copy.presence[entry.presence]);
-    parts.push(copy.camera[entry.camera]);
-    return parts.join(', ');
-}
-
-function Tile({ entry, copy }: { entry: TapestryManifestEntry; copy: Copy }) {
-    const [expanded, setExpanded] = useState(false);
-    // Track the exact URL that failed: the next epoch's URL gets a fresh
-    // chance, so a transient proxy error cannot wedge the fallback on.
-    const [failedUrl, setFailedUrl] = useState<string | null>(null);
-    const detailId = `ops-tapestry-detail-${entry.position}`;
-    const showImage = entry.thumbnailUrl !== null && entry.thumbnailUrl !== failedUrl;
-    const accessibleName = tileAccessibleName(entry, copy);
-
-    return (
-        <li className="flex w-28 flex-col items-center gap-1">
-            <button
-                type="button"
-                aria-label={accessibleName}
-                aria-expanded={expanded}
-                aria-controls={detailId}
-                title={accessibleName}
-                onClick={() => setExpanded((current) => !current)}
-                className="relative block h-20 w-28 overflow-hidden rounded border border-[var(--border-subtle)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
-            >
-                {showImage ? (
-                    // Tiles are already sized by the staff proxy; render the
-                    // bounded frame without stretching.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                        src={entry.thumbnailUrl ?? undefined}
-                        alt={fill(copy.tileSnapshotAlt, { name: entry.displayName })}
-                        onError={() => setFailedUrl(entry.thumbnailUrl)}
-                        className="h-full w-full object-cover"
-                    />
-                ) : (
-                    <span
-                        role="img"
-                        aria-label={fill(copy.tileNoSnapshotAlt, { name: entry.displayName })}
-                        className={`block h-full w-full ${fallbackField(entry.tileId)}`}
-                    />
-                )}
-                {entry.handRaised && entry.queuePosition !== null ? (
-                    <span className="absolute left-1 top-1 rounded bg-[var(--pink)] px-1.5 py-0.5 text-xs font-semibold leading-4 text-[var(--night)]">
-                        {fill(copy.handRaised, { position: entry.queuePosition })}
-                    </span>
-                ) : null}
-            </button>
-            <span className="w-full break-words text-center text-xs leading-4 text-[var(--cream)]" title={entry.displayName}>
-                {entry.displayName}
-            </span>
-            <span
-                id={detailId}
-                hidden={!expanded}
-                className="w-full text-center text-xs leading-4 text-[var(--text-muted)]"
-            >
-                {copy.presence[entry.presence]} · {copy.camera[entry.camera]}
-            </span>
-        </li>
-    );
-}
-
-export default function OpsTapestry({ sessionId, copy }: Props) {
+export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
     const [manifest, setManifest] = useState<TapestryManifest | null>(null);
+    const [compositeSrc, setCompositeSrc] = useState<string | null>(null);
+    const [compositeRevision, setCompositeRevision] = useState<string | null>(null);
     const [unavailable, setUnavailable] = useState(false);
     const lastRevisionRef = useRef<string | null>(null);
 
     useEffect(() => {
-        let active = true;
-        const refresh = async () => {
+        if (!active) return;
+        let live = true;
+        let generation = 0;
+        let controller: AbortController | null = null;
+        let previousUrl: string | null = null;
+        const manifestUrl = `/api/ops/sessions/${encodeURIComponent(sessionId)}/tapestry/manifest`;
+        const compositeUrl = `/api/tapestry/${encodeURIComponent(sessionId)}`;
+
+        const cycle = async () => {
+            if (!live) return;
+            // A newer cycle supersedes any slower one still in flight.
+            const myGeneration = ++generation;
+            controller?.abort();
+            controller = new AbortController();
+            const signal = controller.signal;
+            let freshUrl: string | null = null;
             try {
-                const response = await fetch(
-                    `/api/ops/sessions/${encodeURIComponent(sessionId)}/tapestry/manifest`,
-                    { cache: 'no-store', credentials: 'same-origin' },
-                );
-                if (!response.ok) {
-                    if (active) setUnavailable(true);
+                const manifestRes = await fetch(manifestUrl, {
+                    cache: 'no-store', credentials: 'same-origin', signal,
+                });
+                if (!manifestRes.ok) {
+                    if (live && myGeneration === generation) setUnavailable(true);
                     return;
                 }
-                const next = await response.json() as TapestryManifest;
-                if (!active) return;
-                // Ignore stale renders: only repaint when the content revision
-                // actually moved, so a slow poll never reshuffles settled tiles.
+                const next = await manifestRes.json() as TapestryManifest;
+                if (!live || myGeneration !== generation) {
+                    // Unmounted or superseded while parsing: stop before
+                    // spending the composite fetch.
+                    return;
+                }
+
+                // The composite is the only image fetched, once per cycle,
+                // and its bytes update even when nothing semantic changed.
+                let freshRevision: string | null = null;
+                const compositeRes = await fetch(compositeUrl, {
+                    cache: 'no-store', credentials: 'same-origin', signal,
+                });
+                if (compositeRes.ok) {
+                    freshRevision = compositeRes.headers.get('x-tapestry-revision');
+                    freshUrl = URL.createObjectURL(await compositeRes.blob());
+                }
+
+                if (!live || myGeneration !== generation) {
+                    // A stale cycle must not touch state or leak its blob.
+                    if (freshUrl) URL.revokeObjectURL(freshUrl);
+                    return;
+                }
                 if (next.revision !== lastRevisionRef.current) {
                     lastRevisionRef.current = next.revision;
                     setManifest(next);
                 }
                 setUnavailable(false);
+                if (freshUrl) {
+                    setCompositeSrc(freshUrl);
+                    setCompositeRevision(freshRevision);
+                    if (previousUrl) URL.revokeObjectURL(previousUrl);
+                    previousUrl = freshUrl;
+                }
             } catch {
-                if (active) setUnavailable(true);
+                // Aborted by a newer cycle or unmount, or a transient
+                // network failure: the next tick retries.
             }
         };
-        void refresh();
-        const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
-        return () => { active = false; clearInterval(timer); };
-    }, [sessionId]);
 
-    const handCount = manifest?.waitingHands.length ?? 0;
-    const handsSummary = handCount === 1
-        ? copy.handSummaryOne
-        : fill(copy.handsSummaryMany, { count: handCount });
-    const handsWithoutTile = (manifest?.waitingHands ?? [])
-        .filter((hand) => hand.tileId === null)
-        .map((hand) => hand.displayName);
+        void cycle();
+        const timer = setInterval(() => void cycle(), POLL_MS);
+        return () => {
+            live = false;
+            clearInterval(timer);
+            controller?.abort();
+            if (previousUrl) URL.revokeObjectURL(previousUrl);
+        };
+    }, [sessionId, active]);
+
+    if (!manifest && !unavailable) {
+        return <p className="text-sm text-[var(--text-muted)]">{copy.loading}</p>;
+    }
+    if (unavailable) {
+        return <p className="text-sm text-[var(--text-muted)]">{copy.unavailable}</p>;
+    }
+    if (!manifest) {
+        return null;
+    }
+
+    const handCount = manifest.waitingHands.length;
+    const overlayLayout = manifest.layout !== null &&
+        compositeRevision !== null &&
+        String(manifest.layout.revision) === compositeRevision
+        ? manifest.layout
+        : null;
+    const tilelessHands = manifest.waitingHands.filter((hand) => hand.tileId === null);
 
     return (
-        <section
-            className="rounded-lg border border-[var(--border-subtle)] p-4"
-            aria-label={copy.heading}
-        >
-            <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                    {copy.heading}
-                </h2>
-                <span aria-live="polite" className="text-xs text-[var(--pink)]">
-                    {handCount > 0 ? handsSummary : ''}
-                </span>
-            </div>
-            {unavailable ? (
-                <p className="text-xs text-[var(--text-muted)]">{copy.unavailable}</p>
-            ) : manifest === null ? (
-                <p className="text-xs text-[var(--text-muted)]">{copy.loading}</p>
-            ) : (
-                <>
-                    {manifest.liveStateAvailable ? null : (
-                        <p className="mb-2 text-xs text-[var(--warning)]">
-                            {copy.liveStateUnknown}
-                        </p>
-                    )}
-                    {manifest.entries.length === 0 ? (
-                        <p className="text-xs text-[var(--text-muted)]">{copy.empty}</p>
-                    ) : (
-                        <ul className="flex flex-wrap gap-3">
+        <section aria-label={copy.heading} className="space-y-3">
+            <h3 className="text-sm font-medium text-[var(--cream)]">{copy.heading}</h3>
+            <span className="sr-only" aria-live="polite">
+                {handCount === 1
+                    ? copy.handSummaryOne
+                    : copy.handsSummaryMany.replace('{count}', String(handCount))}
+            </span>
+
+            {compositeSrc ? (
+                <div className="relative inline-block max-w-full">
+                    {/* The single image every visual state rides on. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                        src={compositeSrc}
+                        alt={copy.compositeAlt}
+                        className="block max-w-full rounded-lg border border-[var(--border-subtle)]"
+                    />
+                    {overlayLayout ? (
+                        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
                             {manifest.entries.map((entry) => (
-                                <Tile key={entry.tileId} entry={entry} copy={copy} />
+                                <CellOverlay key={entry.tileId} entry={entry} layout={overlayLayout} copy={copy} />
                             ))}
-                        </ul>
-                    )}
-                    {handsWithoutTile.length > 0 ? (
-                        <p className="mt-3 text-xs text-[var(--text-muted)]">
-                            {fill(copy.waitingWithoutTile, { names: handsWithoutTile.join(', ') })}
-                        </p>
+                        </div>
                     ) : null}
-                    <p className="mt-3 text-xs text-[var(--text-muted)]">
-                        {fill(copy.freshnessNote, { seconds: manifest.thumbnailFreshForSeconds })}
-                    </p>
-                </>
-            )}
+                </div>
+            ) : null}
+
+            {manifest.entries.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">{copy.empty}</p>
+            ) : null}
+
+            {tilelessHands.length > 0 ? (
+                <p className="text-xs text-[var(--gold)]">
+                    {copy.waitingWithoutTile.replace(
+                        '{names}',
+                        tilelessHands.map((hand) => `${hand.displayName} (#${hand.queuePosition})`).join(', '),
+                    )}
+                </p>
+            ) : null}
+
+            {/* The accessible state surface: every overlay fact as plain text.
+                Nothing hides behind hover, so mouse, touch, keyboard and
+                screen readers all get the same complete state. */}
+            {manifest.entries.length > 0 ? (
+                <ul className="space-y-1" aria-label={copy.heading}>
+                    {manifest.entries.map((entry) => (
+                        <li key={entry.tileId} className="text-xs text-[var(--text-muted)]">
+                            <span className="text-[var(--cream)]">{entry.displayName}</span>
+                            {entry.handRaised && entry.queuePosition !== null ? (
+                                <span className="ml-2 rounded bg-[var(--pink)] px-1.5 py-0.5 font-semibold text-[var(--night)]">
+                                    {copy.handRaised.replace('{position}', String(entry.queuePosition))}
+                                </span>
+                            ) : null}
+                            <span className="ml-2">{copy.presence[entry.presence]}</span>
+                            <span className="ml-2">{copy.camera[entry.camera]}</span>
+                            <span className="sr-only">{stateLabel(entry, copy)}</span>
+                        </li>
+                    ))}
+                </ul>
+            ) : null}
+
+            {manifest.tileFreshForSeconds !== null ? (
+                <p className="text-xs text-[var(--text-muted)]">
+                    {copy.freshnessNote.replace('{seconds}', String(manifest.tileFreshForSeconds))}
+                </p>
+            ) : null}
+            {!manifest.liveStateAvailable ? (
+                <p className="text-xs text-[var(--gold)]">{copy.liveStateUnknown}</p>
+            ) : null}
         </section>
+    );
+}
+
+function CellOverlay({
+    entry,
+    layout,
+    copy,
+}: {
+    entry: TapestryManifestEntry;
+    layout: { columns: number; rows: number };
+    copy: Copy;
+}) {
+    const left = `${(entry.column / layout.columns) * 100}%`;
+    const top = `${(entry.row / layout.rows) * 100}%`;
+    const width = `${100 / layout.columns}%`;
+    const height = `${100 / layout.rows}%`;
+    const dimmed = entry.presence === 'left' || entry.presence === 'reconnecting';
+    return (
+        <span className="absolute" style={{ left, top, width, height }}>
+            {dimmed ? <span className="absolute inset-0 bg-black/55" /> : null}
+            {entry.handRaised && entry.queuePosition !== null ? (
+                <span className="absolute left-0.5 top-0.5 rounded bg-[var(--pink)] px-1 py-0.5 text-xs font-semibold leading-4 text-[var(--night)]">
+                    {copy.handRaised.replace('{position}', String(entry.queuePosition))}
+                </span>
+            ) : null}
+            {entry.camera === 'off' ? (
+                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border border-[var(--cream)] bg-transparent" />
+            ) : null}
+            <span
+                className="absolute bottom-0 left-0 max-w-full rounded-tr bg-black/70 px-1 py-0.5 text-xs leading-4 text-[var(--cream)]"
+                style={{ overflowWrap: 'anywhere' }}
+            >
+                {entry.displayName}
+            </span>
+        </span>
     );
 }

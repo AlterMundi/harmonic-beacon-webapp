@@ -6,47 +6,41 @@ import { prisma } from '@/lib/db';
 import { getRoomService } from '@/lib/livekit-server';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
 import { tapestryInternalUrl, tapestryParticipantId } from '@/lib/tapestry';
+import { parseCompositeLayout, type CompositeLayout } from '@/lib/tapestry-layout';
 import {
     buildTapestryManifest,
-    MAX_TAPESTRY_MANIFEST_ENTRIES,
     type ManifestLiveParticipant,
     type ManifestParticipant,
 } from '@/lib/tapestry-manifest';
 
 export const dynamic = 'force-dynamic';
 
-const DEFAULT_TAPESTRY_FRAME_TTL_MS = 10_000;
-const THUMBNAIL_REFRESH_MS = 5_000;
 const TAPESTRY_LOOKUP_TIMEOUT_MS = 750;
 
 /**
  * Staff-only operational tapestry manifest (TAP-02, issue #129).
  *
- * One bounded response per poll: the tapestry tiles in display order joined
- * with the authorized name, hand queue, presence and camera state of each
- * person. Three lookups total — one database read, one LiveKit participant
- * list, one internal tapestry list — so 150 participants cost the same as
- * one. Thumbnails are referenced as epoch-versioned proxy URLs the browser
- * caches within the refresh window; the route itself never fetches frames.
+ * One bounded response per poll: the grid captured by the internal service's
+ * latest composite build, joined with the authorized name, hand queue,
+ * presence and camera state of each person. Three lookups total — one
+ * database read, one LiveKit participant list, one internal layout read — so
+ * 150 participants cost the same as one. No thumbnail URLs: the cockpit
+ * draws everything as semantic overlays over a single shared composite
+ * image fetched once per poll.
  *
  * Authorization matches the sibling tapestry routes: any staff session plus
  * the event-scoped `canOperateEvent` policy. The payload is `private,
  * no-store` and carries opaque tile ids only.
  */
 
-type TapestryListSnapshot = {
-    tileIds: string[];
-    frameTtlMs: number;
-};
-
-async function fetchTapestryTileList(sessionId: string): Promise<TapestryListSnapshot | null> {
+async function fetchTapestryLayout(sessionId: string): Promise<CompositeLayout | null> {
     const internalUrl = tapestryInternalUrl();
     if (!internalUrl || !process.env.TAPESTRY_INTERNAL_SECRET) {
         return null;
     }
     try {
         const response = await fetch(
-            `${internalUrl}/tapestry/sessions/${encodeURIComponent(sessionId)}/participants`,
+            `${internalUrl}/tapestry/sessions/${encodeURIComponent(sessionId)}/layout`,
             {
                 headers: {
                     'x-tapestry-internal-secret': process.env.TAPESTRY_INTERNAL_SECRET,
@@ -56,24 +50,9 @@ async function fetchTapestryTileList(sessionId: string): Promise<TapestryListSna
             },
         );
         if (!response.ok) return null;
-        const body = await response.json() as { participants?: unknown; frameTtlMs?: unknown };
-        if (
-            !Array.isArray(body.participants) ||
-            body.participants.length > MAX_TAPESTRY_MANIFEST_ENTRIES
-        ) {
-            return null;
-        }
-        const tileIds = body.participants.filter(
-            (value): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value),
-        );
-        if (tileIds.length !== body.participants.length) return null;
-        const frameTtlMs = typeof body.frameTtlMs === 'number' &&
-            Number.isFinite(body.frameTtlMs) &&
-            body.frameTtlMs >= 1_000 &&
-            body.frameTtlMs <= 60_000
-            ? body.frameTtlMs
-            : DEFAULT_TAPESTRY_FRAME_TTL_MS;
-        return { tileIds, frameTtlMs };
+        // Fail safe: a malformed or hostile layout is "no overlay", never a
+        // trusted grid. Nothing internal is logged.
+        return parseCompositeLayout(await response.json());
     } catch {
         return null;
     }
@@ -131,11 +110,11 @@ export async function GET(
         return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    // The tapestry list is required: without it there is no tapestry to
-    // annotate, and an empty manifest would lie about the room. Degrade to
-    // the same dignified 503 as the sibling routes instead.
-    const tapestrySnapshot = await fetchTapestryTileList(scheduledSession.id);
-    if (!tapestrySnapshot) {
+    // The layout is required: without it there is no composite to annotate,
+    // and an empty manifest would lie about the room. Degrade to the same
+    // dignified 503 as the sibling routes instead.
+    const layout = await fetchTapestryLayout(scheduledSession.id);
+    if (!layout) {
         return NextResponse.json({ error: 'Tapestry unavailable' }, { status: 503 });
     }
 
@@ -172,23 +151,13 @@ export async function GET(
         }),
     );
 
-    const thumbnailEpoch = Math.floor(Date.now() / THUMBNAIL_REFRESH_MS);
     const manifest = buildTapestryManifest({
         sessionId: scheduledSession.id,
-        tileIds: tapestrySnapshot.tileIds,
-        frameTtlMs: tapestrySnapshot.frameTtlMs,
+        layout,
         liveStateAvailable,
         participants,
         live,
-        tapestryIdFor: (identity) => {
-            try {
-                return tapestryParticipantId(identity);
-            } catch {
-                return null;
-            }
-        },
-        thumbnailUrlFor: (tileId) =>
-            `/api/ops/sessions/${encodeURIComponent(scheduledSession.id)}/tapestry/tiles/${encodeURIComponent(tileId)}?v=${thumbnailEpoch}`,
+        tapestryIdFor: (identity) => tapestryParticipantId(identity),
     });
 
     return NextResponse.json(manifest, {

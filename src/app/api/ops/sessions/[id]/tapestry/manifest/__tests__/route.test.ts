@@ -61,12 +61,21 @@ function sessionOk() {
     });
 }
 
+const LAYOUT = {
+    revision: 7,
+    frameTtlMs: 10_000,
+    columns: 2,
+    rows: 1,
+    tileSizePx: 100,
+    cells: [
+        { id: 'tp-ana', column: 0, row: 0 },
+        { id: 'tp-beto', column: 1, row: 0 },
+    ],
+};
+
 function tapestryOk() {
     mocks.tapestryInternalUrl.mockReturnValue('http://tapestry:3100');
-    mocks.fetch.mockResolvedValue(new Response(
-        JSON.stringify({ participants: ['tp-ana', 'tp-beto'], frameTtlMs: 10_000 }),
-        { status: 200 },
-    ));
+    mocks.fetch.mockResolvedValue(new Response(JSON.stringify(LAYOUT), { status: 200 }));
 }
 
 beforeEach(() => {
@@ -102,22 +111,25 @@ describe('GET /api/ops/sessions/[id]/tapestry/manifest', () => {
         const body = await response.json();
         expect(body.sessionId).toBe(SESSION_ID);
         expect(body.liveStateAvailable).toBe(true);
-        expect(body.thumbnailFreshForSeconds).toBe(10);
+        expect(body.layout).toEqual({ revision: 7, columns: 2, rows: 1, tileSizePx: 100 });
+        expect(body.tileFreshForSeconds).toBe(10);
         expect(body.entries).toHaveLength(2);
         expect(body.entries[0]).toMatchObject({
             tileId: 'tp-ana',
-            position: 0,
+            column: 0,
+            row: 0,
             displayName: 'Ana',
             handRaised: true,
             queuePosition: 1,
             presence: 'connected',
             camera: 'on',
         });
-        expect(body.entries[0].thumbnailUrl).toContain(
-            `/api/ops/sessions/${SESSION_ID}/tapestry/tiles/tp-ana?v=`,
-        );
+        // O(1) visual transport: entries never carry per-tile image URLs.
+        expect(body.entries[0]).not.toHaveProperty('thumbnailUrl');
         expect(body.entries[1]).toMatchObject({
             tileId: 'tp-beto',
+            column: 1,
+            row: 0,
             handRaised: false,
             queuePosition: null,
             camera: 'off',
@@ -125,11 +137,11 @@ describe('GET /api/ops/sessions/[id]/tapestry/manifest', () => {
         expect(body.waitingHands).toEqual([
             { displayName: 'Ana', queuePosition: 1, tileId: 'tp-ana' },
         ]);
-        // Exactly one internal tapestry call: the tile list. Frames are
-        // referenced by cacheable URL, never fetched per tile.
+        // Exactly one internal tapestry call: the build-time layout. No
+        // frames are fetched, per tile or otherwise.
         expect(mocks.fetch).toHaveBeenCalledTimes(1);
         expect(String(mocks.fetch.mock.calls[0][0])).toBe(
-            `http://tapestry:3100/tapestry/sessions/${SESSION_ID}/participants`,
+            `http://tapestry:3100/tapestry/sessions/${SESSION_ID}/layout`,
         );
     });
 
@@ -174,12 +186,25 @@ describe('GET /api/ops/sessions/[id]/tapestry/manifest', () => {
         expect(response.status).toBe(503);
     });
 
-    it('returns 503 when the tapestry service fails or answers an invalid list', async () => {
+    it('returns 503 when the tapestry service fails or answers an invalid layout', async () => {
         mocks.fetch.mockRejectedValue(new Error('connection refused'));
         expect((await GET(createRequest('http://x'), mockParams({ id: SESSION_ID }))).status).toBe(503);
 
         mocks.fetch.mockResolvedValue(new Response(
-            JSON.stringify({ participants: ['ok', 'has spaces'] }),
+            JSON.stringify({ ...LAYOUT, cells: [{ id: 'has spaces', column: 0, row: 0 }] }),
+            { status: 200 },
+        ));
+        expect((await GET(createRequest('http://x'), mockParams({ id: SESSION_ID }))).status).toBe(503);
+
+        // Duplicate tile ids make cell mapping ambiguous: fail safe.
+        mocks.fetch.mockResolvedValue(new Response(
+            JSON.stringify({
+                ...LAYOUT,
+                cells: [
+                    { id: 'tp-ana', column: 0, row: 0 },
+                    { id: 'tp-ana', column: 1, row: 0 },
+                ],
+            }),
             { status: 200 },
         ));
         expect((await GET(createRequest('http://x'), mockParams({ id: SESSION_ID }))).status).toBe(503);

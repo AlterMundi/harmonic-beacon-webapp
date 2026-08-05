@@ -1,70 +1,83 @@
 import { createHash } from 'node:crypto';
 
+import type { CompositeLayout } from '@/lib/tapestry-layout';
+
 /**
  * Canonical staff-only tapestry manifest (TAP-02, issue #129).
  *
- * The manifest annotates the tapestry tiles the internal service already
- * renders: who raised their hand, their authorized name, presence, camera
- * state and thumbnail freshness. It is the single bounded response the
- * operational surface polls — one database read, one LiveKit list and one
- * tapestry list per build, never a query per tile.
+ * The manifest annotates the composite the internal tapestry service already
+ * builds: who each tile is (authorized display name only), whether their
+ * hand is raised and where in the queue, their presence and camera state —
+ * plus the grid cell each tile occupies so the cockpit can draw everything
+ * as semantic overlays over ONE shared composite image (O(1) visual
+ * transport: no per-tile thumbnail URLs).
  *
- * Privacy invariants:
- * - `tileId` is the opaque HMAC id from `@/lib/tapestry`; LiveKit identities,
- *   names and emails never appear in keys, URLs or logs.
- * - Names come from the already-authorized sources the participants endpoint
- *   uses (staff account name, LiveKit display name, or the 'Attendee'
- *   fallback). Nothing new is collected.
- * - A tile only exists here while the internal service holds a current
- *   consented frame; consent withdrawal or TTL expiry removes the tile and
- *   the entry with it. The UI fallback never distinguishes *why*.
+ * Privacy contract: entries are keyed by the opaque tapestry tile id (HMAC),
+ * never by LiveKit identity or any internal id. Names come from the
+ * already-authorized room name / staff account name — the same source the
+ * room itself shows. Nothing here exposes emails, ticket ids, LiveKit
+ * identities or join history.
  *
- * This module is pure: no database, LiveKit, fetch, clock or localization,
- * so the contract is testable without mocks.
+ * Truthfulness contract: the manifest never invents state. Tiles come from
+ * the service's build-time layout; presence/camera fall back to 'unknown'
+ * when LiveKit is unreachable; `layout` is null when the service has not
+ * built a composite yet, and overlays only render when the manifest layout
+ * revision matches the composite's `x-tapestry-revision`.
  */
-
-export const MAX_TAPESTRY_MANIFEST_ENTRIES = 150;
 
 export type TapestryPresence = 'connected' | 'reconnecting' | 'left' | 'unknown';
 export type TapestryCamera = 'on' | 'off' | 'unknown';
 
 export type TapestryManifestEntry = {
-    /** Opaque tapestry participant id (`tp-…`), never a LiveKit identity. */
+    /** Opaque tile id (HMAC of the room identity) — safe to render, never reversible. */
     tileId: string;
-    /** Display order index, matching the arrangement the service composes. */
-    position: number;
+    /** Authorized display name (staff account name or room display name). */
     displayName: string;
     handRaised: boolean;
-    /** 1-based position among waiting hands; null when not waiting. */
+    /** 1-based position among waiting hands; null when no hand is raised. */
     queuePosition: number | null;
     presence: TapestryPresence;
     camera: TapestryCamera;
-    /** Staff tile proxy URL, or null when no current consented frame exists. */
-    thumbnailUrl: string | null;
+    /** Grid cell in the composite this manifest's `layout` describes. */
+    column: number;
+    row: number;
 };
 
 export type TapestryManifestWaitingHand = {
     displayName: string;
     queuePosition: number;
-    /** Null when the person has no tile in the tapestry (no consented frame). */
+    /** Null when the person has no tapestry tile (e.g. snapshot not shared). */
     tileId: string | null;
+};
+
+export type TapestryManifestLayout = {
+    /** Build revision of the composite this layout was captured with. */
+    revision: number;
+    columns: number;
+    rows: number;
+    tileSizePx: number;
 };
 
 export type TapestryManifest = {
     sessionId: string;
     /**
-     * Content hash of order + per-tile state. Clients compare revisions to
-     * detect change cheaply and never render stale state as current.
+     * Cheap change detector for the semantic state (order, hands, presence,
+     * camera, names). Clients re-render annotations only when it changes —
+     * visual freshness is the composite image's own concern, refreshed every
+     * poll regardless of this revision.
      */
     revision: string;
-    thumbnailFreshForSeconds: number;
+    /** False when LiveKit presence could not be read; presence entries are 'unknown'. */
     liveStateAvailable: boolean;
+    /** Grid + build revision from the internal service; null when never built. */
+    layout: TapestryManifestLayout | null;
+    /** How long a participant tile stays fresh without a new frame; null if unknown. */
+    tileFreshForSeconds: number | null;
     entries: TapestryManifestEntry[];
-    /** Every waiting hand, including those without a tile. */
+    /** Waiting hands without a tile, so staff still sees them truthfully. */
     waitingHands: TapestryManifestWaitingHand[];
 };
 
-/** Database participant row projected to what the manifest needs. */
 export type ManifestParticipant = {
     identity: string;
     leftAt: Date | null;
@@ -74,154 +87,156 @@ export type ManifestParticipant = {
     staffName: string | null;
 };
 
-/** LiveKit presence projected to what the manifest needs. */
 export type ManifestLiveParticipant = {
     name: string;
+    /** LiveKit track list; a CAMERA source track means video published. */
     media: Array<{ source: string; muted: boolean }>;
 };
 
 export type BuildTapestryManifestInput = {
     sessionId: string;
-    /** Tile ids in display order, as listed by the internal service. */
-    tileIds: string[];
-    frameTtlMs: number;
+    /** Validated internal layout (cells already bounded and deduplicated). */
+    layout: CompositeLayout | null;
     liveStateAvailable: boolean;
     participants: ManifestParticipant[];
     live: ReadonlyMap<string, ManifestLiveParticipant>;
-    /** Maps a LiveKit identity to its opaque tile id; null when unmappable. */
-    tapestryIdFor: (identity: string) => string | null;
-    /** Builds the staff thumbnail proxy URL for a tile. */
-    thumbnailUrlFor: (tileId: string) => string;
+    /** Maps a room identity to its opaque tapestry tile id. */
+    tapestryIdFor: (identity: string) => string;
 };
 
 function hasActiveGrant(participant: ManifestParticipant): boolean {
-    return participant.publishGrantedAt !== null &&
-        participant.publishRevokedAt === null;
+    return participant.publishGrantedAt !== null && participant.publishRevokedAt === null;
 }
 
-function isWaiting(participant: ManifestParticipant): boolean {
+function isWaitingHand(participant: ManifestParticipant): boolean {
     return participant.raisedAt !== null && !hasActiveGrant(participant);
 }
 
 function displayNameFor(
     participant: ManifestParticipant | null,
-    live: ManifestLiveParticipant | undefined,
+    live: ReadonlyMap<string, ManifestLiveParticipant>,
+    identity: string | null,
 ): string {
-    return participant?.staffName ?? (live?.name.trim() || 'Attendee');
+    return (
+        participant?.staffName ??
+        (identity ? live.get(identity)?.name.trim() : '') ??
+        'Attendee'
+    ) || 'Attendee';
 }
 
 function presenceFor(
     participant: ManifestParticipant | null,
-    live: ManifestLiveParticipant | undefined,
+    live: ReadonlyMap<string, ManifestLiveParticipant>,
     liveStateAvailable: boolean,
 ): TapestryPresence {
-    if (participant?.leftAt) return 'left';
-    if (!liveStateAvailable) return 'unknown';
-    if (live) return 'connected';
+    if (participant?.leftAt) {
+        return 'left';
+    }
+    if (!liveStateAvailable) {
+        return 'unknown';
+    }
+    if (participant && live.has(participant.identity)) {
+        return 'connected';
+    }
+    // No explicit leave and not in the room right now: they may return.
     return 'reconnecting';
 }
 
 function cameraFor(
-    live: ManifestLiveParticipant | undefined,
+    liveParticipant: ManifestLiveParticipant | undefined,
 ): TapestryCamera {
-    if (!live) return 'unknown';
-    const cameraTrack = live.media.find((track) => track.source === 'CAMERA');
-    return cameraTrack && !cameraTrack.muted ? 'on' : 'off';
+    if (!liveParticipant) {
+        return 'unknown';
+    }
+    return liveParticipant.media.some((track) => track.source === 'CAMERA' && !track.muted)
+        ? 'on'
+        : 'off';
 }
 
-function revisionFor(
-    tileIds: string[],
-    entries: TapestryManifestEntry[],
-    waitingHands: TapestryManifestWaitingHand[],
-): string {
-    const state = entries.map((entry) => [
-        entry.tileId,
-        entry.displayName,
-        entry.handRaised ? 1 : 0,
-        entry.queuePosition ?? 0,
-        entry.presence,
-        entry.camera,
-        entry.thumbnailUrl ? 1 : 0,
-    ]);
-    const waiting = waitingHands.map((hand) => [
-        hand.displayName,
-        hand.queuePosition,
-        hand.tileId ?? '',
-    ]);
-    return createHash('sha256')
-        .update(JSON.stringify([tileIds, state, waiting]))
-        .digest('hex')
-        .slice(0, 16);
-}
-
-export function buildTapestryManifest(
-    input: BuildTapestryManifestInput,
-): TapestryManifest {
-    const tileIds = input.tileIds.slice(0, MAX_TAPESTRY_MANIFEST_ENTRIES);
-    const tileSet = new Set(tileIds);
-
-    // Index database participants by their opaque tile id. Participants whose
-    // identity cannot be mapped (e.g. missing internal secret) are skipped
-    // rather than leaking configuration detail.
+/**
+ * Build the staff manifest from already-fetched state. Pure and total: no
+ * I/O, no clocks, no secrets — every rule is testable here.
+ */
+export function buildTapestryManifest(input: BuildTapestryManifestInput): TapestryManifest {
     const byTileId = new Map<string, ManifestParticipant>();
-    const liveByTileId = new Map<string, ManifestLiveParticipant>();
     for (const participant of input.participants) {
-        const tileId = input.tapestryIdFor(participant.identity);
-        if (!tileId) continue;
-        byTileId.set(tileId, participant);
-        const live = input.live.get(participant.identity);
-        if (live) liveByTileId.set(tileId, live);
+        byTileId.set(input.tapestryIdFor(participant.identity), participant);
     }
 
-    // Waiting hands in queue order, computed once so tiles and the summary
-    // agree. Ties fall back to identity for a stable order, matching the
-    // hand queue's tie-break rule.
-    const waiting = input.participants
-        .filter(isWaiting)
-        .sort((a, b) => {
-            const delta = a.raisedAt!.getTime() - b.raisedAt!.getTime();
-            return delta !== 0 ? delta : a.identity.localeCompare(b.identity);
-        });
-    const queuePositionByIdentity = new Map<string, number>();
-    const waitingHands: TapestryManifestWaitingHand[] = waiting.map(
-        (participant, index) => {
-            const tileId = input.tapestryIdFor(participant.identity);
-            const queuePosition = index + 1;
-            queuePositionByIdentity.set(participant.identity, queuePosition);
-            return {
-                displayName: displayNameFor(
-                    participant,
-                    input.live.get(participant.identity),
-                ),
-                queuePosition,
-                tileId: tileId && tileSet.has(tileId) ? tileId : null,
-            };
-        },
-    );
+    const liveByTileId = new Map<string, ManifestLiveParticipant>();
+    for (const participant of input.participants) {
+        const liveParticipant = input.live.get(participant.identity);
+        if (liveParticipant) {
+            liveByTileId.set(input.tapestryIdFor(participant.identity), liveParticipant);
+        }
+    }
 
-    const entries: TapestryManifestEntry[] = tileIds.map((tileId, position) => {
-        const participant = byTileId.get(tileId) ?? null;
-        const live = liveByTileId.get(tileId);
-        const queuePosition = participant
-            ? queuePositionByIdentity.get(participant.identity) ?? null
-            : null;
+    // Queue positions derive from raisedAt order across ALL waiting hands,
+    // not just tiled ones — the SpotlightConsole counts the same people.
+    const waiting = input.participants
+        .filter(isWaitingHand)
+        .sort((a, b) => (a.raisedAt?.getTime() ?? 0) - (b.raisedAt?.getTime() ?? 0));
+    const queuePositionByTileId = new Map<string, number>();
+    waiting.forEach((participant, index) => {
+        queuePositionByTileId.set(input.tapestryIdFor(participant.identity), index + 1);
+    });
+
+    const cells = input.layout?.cells ?? [];
+    const entries: TapestryManifestEntry[] = cells.map((cell) => {
+        const participant = byTileId.get(cell.id) ?? null;
         return {
-            tileId,
-            position,
-            displayName: displayNameFor(participant, live),
-            handRaised: queuePosition !== null,
-            queuePosition,
-            presence: presenceFor(participant, live, input.liveStateAvailable),
-            camera: cameraFor(live),
-            thumbnailUrl: input.thumbnailUrlFor(tileId),
+            tileId: cell.id,
+            displayName: displayNameFor(participant, input.live, participant?.identity ?? null),
+            handRaised: participant ? isWaitingHand(participant) : false,
+            queuePosition: queuePositionByTileId.get(cell.id) ?? null,
+            presence: presenceFor(participant, input.live, input.liveStateAvailable),
+            camera: cameraFor(liveByTileId.get(cell.id)),
+            column: cell.column,
+            row: cell.row,
         };
     });
 
+    const waitingHands: TapestryManifestWaitingHand[] = waiting.map((participant, index) => {
+        const tileId = input.tapestryIdFor(participant.identity);
+        return {
+            displayName: displayNameFor(participant, input.live, participant.identity),
+            queuePosition: index + 1,
+            tileId: byTileId.has(tileId) && cells.some((cell) => cell.id === tileId)
+                ? tileId
+                : null,
+        };
+    });
+
+    const revision = createHash('sha256')
+        .update(JSON.stringify(entries.map((entry) => [
+            entry.tileId,
+            entry.displayName,
+            entry.handRaised,
+            entry.queuePosition,
+            entry.presence,
+            entry.camera,
+            entry.column,
+            entry.row,
+        ])))
+        .update(JSON.stringify(waitingHands))
+        .digest('hex')
+        .slice(0, 16);
+
     return {
         sessionId: input.sessionId,
-        revision: revisionFor(tileIds, entries, waitingHands),
-        thumbnailFreshForSeconds: Math.max(1, Math.ceil(input.frameTtlMs / 1_000)),
+        revision,
         liveStateAvailable: input.liveStateAvailable,
+        layout: input.layout
+            ? {
+                revision: input.layout.revision,
+                columns: input.layout.columns,
+                rows: input.layout.rows,
+                tileSizePx: input.layout.tileSizePx,
+            }
+            : null,
+        tileFreshForSeconds: input.layout?.frameTtlMs
+            ? Math.max(1, Math.round(input.layout.frameTtlMs / 1000))
+            : null,
         entries,
         waitingHands,
     };

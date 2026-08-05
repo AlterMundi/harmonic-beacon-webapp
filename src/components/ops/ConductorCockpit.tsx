@@ -320,7 +320,11 @@ export default function ConductorCockpit({
                     </div>
                     <div hidden={drawer !== 'tapestry'}>
                         <div className="space-y-6">
-                            <OpsTapestry sessionId={session.id} copy={opsTapestryCopy} />
+                            <OpsTapestry
+                                sessionId={session.id}
+                                copy={opsTapestryCopy}
+                                active={drawer === 'tapestry'}
+                            />
                             <TapestryArrange sessionId={session.id} copy={tapestryCopy} />
                         </div>
                     </div>

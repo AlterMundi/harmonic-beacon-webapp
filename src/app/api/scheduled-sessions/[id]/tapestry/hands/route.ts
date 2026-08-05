@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getRoomService } from '@/lib/livekit-server';
 import { resolveRoomViewer } from '@/lib/room-entitlement';
 import { tapestryInternalUrl, tapestryParticipantId } from '@/lib/tapestry';
+import { parseCompositeLayout, type CompositeLayout } from '@/lib/tapestry-layout';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,14 +43,6 @@ type PublicHand = {
     row: number | null;
 };
 
-type CompositeLayout = {
-    revision: number;
-    columns: number;
-    rows: number;
-    tileSizePx: number;
-    cells: Array<{ id: string; column: number; row: number }>;
-};
-
 async function fetchCompositeLayout(sessionId: string): Promise<CompositeLayout | null> {
     const internalUrl = tapestryInternalUrl();
     if (!internalUrl || !process.env.TAPESTRY_INTERNAL_SECRET) {
@@ -67,18 +60,9 @@ async function fetchCompositeLayout(sessionId: string): Promise<CompositeLayout 
             },
         );
         if (!response.ok) return null;
-        const body = await response.json() as Partial<CompositeLayout>;
-        if (
-            typeof body.revision !== 'number' ||
-            typeof body.columns !== 'number' ||
-            typeof body.rows !== 'number' ||
-            typeof body.tileSizePx !== 'number' ||
-            !Array.isArray(body.cells) ||
-            body.cells.length > 150
-        ) {
-            return null;
-        }
-        return body as CompositeLayout;
+        // Fail safe: a malformed or duplicate-bearing layout is "no overlay",
+        // never a trusted grid. Nothing internal is logged.
+        return parseCompositeLayout(await response.json());
     } catch {
         return null;
     }

@@ -82,25 +82,48 @@ function ThumbnailTapestryView({
     const [snapshot, setSnapshot] = useState<HandsSnapshot>(EMPTY_HANDS);
     useEffect(() => {
         let active = true;
+        let generation = 0;
+        let controller: AbortController | null = null;
         let previous: string | null = null;
         const load = async () => {
+            if (!active) return;
+            // A newer poll supersedes a slower earlier one; a late response
+            // can never overwrite fresher state (TAP-02 review).
+            const myGeneration = ++generation;
+            controller?.abort();
+            controller = new AbortController();
+            let next: string | null = null;
             try {
                 const response = await fetch(`/api/tapestry/${encodeURIComponent(sessionId)}`, {
-                    cache: 'no-store', credentials: staffOnly ? 'same-origin' : 'omit',
+                    cache: 'no-store',
+                    credentials: staffOnly ? 'same-origin' : 'omit',
+                    signal: controller.signal,
                 });
                 if (!response.ok) return;
                 const revision = response.headers.get('x-tapestry-revision');
-                const next = URL.createObjectURL(await response.blob());
-                if (!active) { URL.revokeObjectURL(next); return; }
+                next = URL.createObjectURL(await response.blob());
+                if (!active || myGeneration !== generation) {
+                    URL.revokeObjectURL(next);
+                    return;
+                }
                 setSrc(next);
                 setCompositeRevision(revision);
                 if (previous) URL.revokeObjectURL(previous);
                 previous = next;
-            } catch { /* tapestry is optional */ }
+            } catch {
+                // Aborted by a newer poll or unmount, or a transient failure:
+                // the tapestry is optional and the next tick retries.
+                if (next) URL.revokeObjectURL(next);
+            }
         };
         void load();
         const timer = setInterval(() => void load(), 2_000);
-        return () => { active = false; clearInterval(timer); if (previous) URL.revokeObjectURL(previous); };
+        return () => {
+            active = false;
+            clearInterval(timer);
+            controller?.abort();
+            if (previous) URL.revokeObjectURL(previous);
+        };
     }, [sessionId, staffOnly]);
     useEffect(() => {
         // Raised-hand names ride a separate, cookie-authorized sidecar on the
@@ -111,21 +134,27 @@ function ThumbnailTapestryView({
         // advisory — any rejection simply leaves it empty.
         if (staffOnly) return;
         let active = true;
+        let generation = 0;
+        let controller: AbortController | null = null;
         const load = async () => {
+            if (!active) return;
+            const myGeneration = ++generation;
+            controller?.abort();
+            controller = new AbortController();
             try {
                 const response = await fetch(
                     `/api/scheduled-sessions/${encodeURIComponent(sessionId)}/tapestry/hands`,
-                    { cache: 'no-store', credentials: 'same-origin' },
+                    { cache: 'no-store', credentials: 'same-origin', signal: controller.signal },
                 );
                 if (!response.ok) return;
                 const next = parseHands(await response.json());
-                if (!active) return;
+                if (!active || myGeneration !== generation) return;
                 setSnapshot(next);
             } catch { /* the hand list is advisory */ }
         };
         void load();
         const timer = setInterval(() => void load(), 5_000);
-        return () => { active = false; clearInterval(timer); };
+        return () => { active = false; clearInterval(timer); controller?.abort(); };
     }, [sessionId, staffOnly]);
 
     const names = snapshot.hands.map((hand) => hand.name);

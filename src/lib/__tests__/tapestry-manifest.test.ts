@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
+import type { CompositeLayout } from '../tapestry-layout';
 import {
     buildTapestryManifest,
-    MAX_TAPESTRY_MANIFEST_ENTRIES,
     type ManifestLiveParticipant,
     type ManifestParticipant,
 } from '../tapestry-manifest';
 
-const NOW = new Date('2026-08-04T12:00:00Z');
-const EARLIER = new Date('2026-08-04T11:59:00Z');
+const SESSION_ID = 'session-1';
 
 function participant(overrides: Partial<ManifestParticipant> = {}): ManifestParticipant {
     return {
-        identity: 'lk-a',
+        identity: 'lk-ana',
         leftAt: null,
         raisedAt: null,
         publishGrantedAt: null,
@@ -22,167 +21,195 @@ function participant(overrides: Partial<ManifestParticipant> = {}): ManifestPart
     };
 }
 
-function live(overrides: Partial<ManifestLiveParticipant> = {}): ManifestLiveParticipant {
-    return { name: 'Ana', media: [], ...overrides };
-}
-
-function buildInput(overrides: Record<string, unknown> = {}) {
+function layout(cells: Array<{ id: string; column: number; row: number }>, overrides: Partial<CompositeLayout> = {}): CompositeLayout {
     return {
-        sessionId: 'session-1',
-        tileIds: ['tp-a', 'tp-b'],
+        revision: 7,
+        columns: 2,
+        rows: 1,
+        tileSizePx: 100,
         frameTtlMs: 10_000,
-        liveStateAvailable: true,
-        participants: [participant()],
-        live: new Map<string, ManifestLiveParticipant>(),
-        tapestryIdFor: (identity: string) => `tp-${identity.replace('lk-', '')}`,
-        thumbnailUrlFor: (tileId: string) => `/tiles/${tileId}`,
+        cells,
         ...overrides,
     };
 }
 
+function live(name: string, media: ManifestLiveParticipant['media'] = []): ManifestLiveParticipant {
+    return { name, media };
+}
+
+function build(overrides: Partial<Parameters<typeof buildTapestryManifest>[0]> = {}) {
+    return buildTapestryManifest({
+        sessionId: SESSION_ID,
+        layout: layout([{ id: 'tp-lk-ana', column: 0, row: 0 }]),
+        liveStateAvailable: true,
+        participants: [participant()],
+        live: new Map([['lk-ana', live('Ana', [{ source: 'CAMERA', muted: false }])]]),
+        tapestryIdFor: (identity: string) => `tp-${identity}`,
+        ...overrides,
+    });
+}
+
 describe('buildTapestryManifest', () => {
-    it('maps tiles in display order with names and defaults', () => {
-        const manifest = buildTapestryManifest(buildInput({
-            live: new Map([['lk-a', live()]]),
-        }));
-        expect(manifest.entries).toHaveLength(2);
-        expect(manifest.entries[0]).toMatchObject({
-            tileId: 'tp-a',
-            position: 0,
-            displayName: 'Ana',
-            handRaised: false,
-            queuePosition: null,
-            presence: 'connected',
-            camera: 'off',
-            thumbnailUrl: '/tiles/tp-a',
+    it('maps a tiled participant to name, cell, presence and camera', () => {
+        const manifest = build();
+        expect(manifest.entries).toEqual([
+            {
+                tileId: 'tp-lk-ana',
+                displayName: 'Ana',
+                handRaised: false,
+                queuePosition: null,
+                presence: 'connected',
+                camera: 'on',
+                column: 0,
+                row: 0,
+            },
+        ]);
+        expect(manifest.layout).toEqual({ revision: 7, columns: 2, rows: 1, tileSizePx: 100 });
+        expect(manifest.tileFreshForSeconds).toBe(10);
+        expect(manifest.waitingHands).toEqual([]);
+    });
+
+    it('marks a waiting hand with its queue position', () => {
+        const manifest = build({
+            participants: [participant({ raisedAt: new Date('2026-08-04T12:00:00Z') })],
         });
-        // A tile without a database row gets the dignified generic entry.
-        expect(manifest.entries[1]).toMatchObject({
-            tileId: 'tp-b',
-            position: 1,
+        expect(manifest.entries[0]).toMatchObject({ handRaised: true, queuePosition: 1 });
+        expect(manifest.waitingHands).toEqual([
+            { displayName: 'Ana', queuePosition: 1, tileId: 'tp-lk-ana' },
+        ]);
+    });
+
+    it('does not treat an on-stage publisher as a waiting hand', () => {
+        const manifest = build({
+            participants: [participant({
+                raisedAt: new Date('2026-08-04T12:00:00Z'),
+                publishGrantedAt: new Date('2026-08-04T12:01:00Z'),
+            })],
+        });
+        expect(manifest.entries[0]).toMatchObject({ handRaised: false, queuePosition: null });
+        expect(manifest.waitingHands).toEqual([]);
+    });
+
+    it('counts a re-raiser after a revoked grant as waiting again', () => {
+        const manifest = build({
+            participants: [participant({
+                raisedAt: new Date('2026-08-04T12:05:00Z'),
+                publishGrantedAt: new Date('2026-08-04T12:01:00Z'),
+                publishRevokedAt: new Date('2026-08-04T12:03:00Z'),
+            })],
+        });
+        expect(manifest.entries[0]).toMatchObject({ handRaised: true, queuePosition: 1 });
+    });
+
+    it('prefers the staff account name over the LiveKit name', () => {
+        const manifest = build({
+            participants: [participant({ staffName: 'Julián' })],
+        });
+        expect(manifest.entries[0].displayName).toBe('Julián');
+    });
+
+    it('reports presence states truthfully', () => {
+        const left = build({
+            participants: [participant({ leftAt: new Date() })],
+            live: new Map(),
+        });
+        expect(left.entries[0].presence).toBe('left');
+
+        const reconnecting = build({ live: new Map() });
+        expect(reconnecting.entries[0].presence).toBe('reconnecting');
+
+        const unknown = build({ liveStateAvailable: false });
+        expect(unknown.entries[0].presence).toBe('unknown');
+        expect(unknown.liveStateAvailable).toBe(false);
+    });
+
+    it('reports camera states truthfully', () => {
+        expect(build().entries[0].camera).toBe('on');
+        expect(build({
+            live: new Map([['lk-ana', live('Ana', [{ source: 'CAMERA', muted: true }])]]),
+        }).entries[0].camera).toBe('off');
+        expect(build({
+            live: new Map([['lk-ana', live('Ana')]]),
+        }).entries[0].camera).toBe('off');
+        expect(build({ live: new Map() }).entries[0].camera).toBe('unknown');
+    });
+
+    it('keeps a tile without a database row dignified and anonymous', () => {
+        const manifest = build({
+            layout: layout([{ id: 'tp-stranger', column: 0, row: 0 }]),
+            participants: [],
+            live: new Map(),
+        });
+        expect(manifest.entries[0]).toMatchObject({
+            tileId: 'tp-stranger',
             displayName: 'Attendee',
+            handRaised: false,
             presence: 'reconnecting',
             camera: 'unknown',
         });
     });
 
-    it('marks waiting hands with stable queue positions on tile and summary', () => {
-        const manifest = buildTapestryManifest(buildInput({
+    it('lists waiting hands without a tile separately, with tileId null', () => {
+        const manifest = build({
             participants: [
-                participant({ identity: 'lk-b', raisedAt: NOW }),
-                participant({ identity: 'lk-a', raisedAt: EARLIER }),
-            ],
-        }));
-        expect(manifest.entries[0]).toMatchObject({ tileId: 'tp-a', handRaised: true, queuePosition: 1 });
-        expect(manifest.entries[1]).toMatchObject({ tileId: 'tp-b', handRaised: true, queuePosition: 2 });
-        expect(manifest.waitingHands.map((hand) => hand.queuePosition)).toEqual([1, 2]);
-        expect(manifest.waitingHands[0].tileId).toBe('tp-a');
-    });
-
-    it('lists a waiting hand without a tile in the summary only', () => {
-        const manifest = buildTapestryManifest(buildInput({
-            participants: [participant({ identity: 'lk-z', raisedAt: NOW })],
-        }));
-        expect(manifest.entries.every((entry) => !entry.handRaised)).toBe(true);
-        expect(manifest.waitingHands).toEqual([
-            { displayName: 'Attendee', queuePosition: 1, tileId: null },
-        ]);
-    });
-
-    it('excludes publishers from the waiting queue', () => {
-        const manifest = buildTapestryManifest(buildInput({
-            participants: [participant({
-                raisedAt: EARLIER,
-                publishGrantedAt: NOW,
-            })],
-        }));
-        expect(manifest.entries[0].handRaised).toBe(false);
-        expect(manifest.waitingHands).toEqual([]);
-    });
-
-    it('derives presence: left, unknown, reconnecting, connected', () => {
-        const base = buildInput({
-            tileIds: ['tp-a', 'tp-b', 'tp-c', 'tp-d'],
-            participants: [
-                participant({ identity: 'lk-a', leftAt: NOW }),
-                participant({ identity: 'lk-b' }),
-                participant({ identity: 'lk-c' }),
-                participant({ identity: 'lk-d' }),
-            ],
-            live: new Map([['lk-d', live()]]),
-        });
-        const connected = buildTapestryManifest(base);
-        expect(connected.entries.map((entry) => entry.presence)).toEqual([
-            'left', 'reconnecting', 'reconnecting', 'connected',
-        ]);
-        const outage = buildTapestryManifest({ ...base, liveStateAvailable: false });
-        expect(outage.entries.map((entry) => entry.presence)).toEqual([
-            'left', 'unknown', 'unknown', 'unknown',
-        ]);
-    });
-
-    it('derives camera state from published tracks', () => {
-        const manifest = buildTapestryManifest(buildInput({
-            participants: [
-                participant({ identity: 'lk-a' }),
-                participant({ identity: 'lk-b' }),
+                participant({ raisedAt: new Date('2026-08-04T12:00:00Z') }),
+                participant({ identity: 'lk-beto', raisedAt: new Date('2026-08-04T12:01:00Z') }),
             ],
             live: new Map([
-                ['lk-a', live({ media: [{ source: 'CAMERA', muted: false }] })],
-                ['lk-b', live({ media: [{ source: 'CAMERA', muted: true }] })],
+                ['lk-ana', live('Ana')],
+                ['lk-beto', live('Beto')],
             ]),
-        }));
-        expect(manifest.entries[0].camera).toBe('on');
-        expect(manifest.entries[1].camera).toBe('off');
-    });
-
-    it('uses the staff account name when the participant is staff', () => {
-        const manifest = buildTapestryManifest(buildInput({
-            participants: [participant({ staffName: 'Julián' })],
-            live: new Map([['lk-a', live()]]),
-        }));
-        expect(manifest.entries[0].displayName).toBe('Julián');
-    });
-
-    it('bounds entries to the manifest cap', () => {
-        const tileIds = Array.from(
-            { length: MAX_TAPESTRY_MANIFEST_ENTRIES + 10 },
-            (_, index) => `tp-${index}`,
-        );
-        const manifest = buildTapestryManifest(buildInput({ tileIds, participants: [] }));
-        expect(manifest.entries).toHaveLength(MAX_TAPESTRY_MANIFEST_ENTRIES);
-    });
-
-    it('changes revision when state changes and keeps it when identical', () => {
-        const input = buildInput({ participants: [participant()] });
-        const first = buildTapestryManifest(input);
-        const same = buildTapestryManifest(input);
-        expect(first.revision).toBe(same.revision);
-        const raised = buildTapestryManifest({
-            ...input,
-            participants: [participant({ raisedAt: NOW })],
         });
-        expect(raised.revision).not.toBe(first.revision);
-        const reordered = buildTapestryManifest({
-            ...input,
-            tileIds: ['tp-b', 'tp-a'],
-        });
-        expect(reordered.revision).not.toBe(first.revision);
+        expect(manifest.waitingHands).toEqual([
+            { displayName: 'Ana', queuePosition: 1, tileId: 'tp-lk-ana' },
+            { displayName: 'Beto', queuePosition: 2, tileId: null },
+        ]);
     });
 
-    it('skips participants whose identity cannot be mapped to a tile id', () => {
-        const manifest = buildTapestryManifest(buildInput({
-            tapestryIdFor: () => null,
-        }));
-        expect(manifest.entries[0]).toMatchObject({
-            tileId: 'tp-a',
-            displayName: 'Attendee',
-            presence: 'reconnecting',
+    it('exposes an empty layout as no overlay surface, with generic freshness', () => {
+        const manifest = build({ layout: null });
+        expect(manifest.layout).toBeNull();
+        expect(manifest.tileFreshForSeconds).toBeNull();
+        expect(manifest.entries).toEqual([]);
+        // A waiting hand still surfaces textually without any grid.
+        const withHand = build({
+            layout: null,
+            participants: [participant({ raisedAt: new Date('2026-08-04T12:00:00Z') })],
         });
+        expect(withHand.waitingHands).toEqual([
+            { displayName: 'Ana', queuePosition: 1, tileId: null },
+        ]);
     });
 
-    it('rounds the freshness TTL up to whole seconds', () => {
-        const manifest = buildTapestryManifest(buildInput({ frameTtlMs: 10_500 }));
-        expect(manifest.thumbnailFreshForSeconds).toBe(11);
+    it('changes revision when semantic state changes, not otherwise', () => {
+        const a = build();
+        const same = build();
+        const handUp = build({
+            participants: [participant({ raisedAt: new Date('2026-08-04T12:00:00Z') })],
+        });
+        expect(a.revision).toBe(same.revision);
+        expect(a.revision).not.toBe(handUp.revision);
+    });
+
+    it('orders queue positions across tiled and tile-less hands together', () => {
+        const manifest = build({
+            layout: layout([
+                { id: 'tp-lk-ana', column: 0, row: 0 },
+                { id: 'tp-lk-cele', column: 1, row: 0 },
+            ]),
+            participants: [
+                participant({ identity: 'lk-cele', raisedAt: new Date('2026-08-04T12:02:00Z') }),
+                participant({ identity: 'lk-beto', raisedAt: new Date('2026-08-04T12:01:00Z') }),
+                participant({ identity: 'lk-ana', raisedAt: new Date('2026-08-04T12:00:00Z') }),
+            ],
+            live: new Map([
+                ['lk-ana', live('Ana')],
+                ['lk-beto', live('Beto')],
+                ['lk-cele', live('Cele')],
+            ]),
+        });
+        expect(manifest.entries[0]).toMatchObject({ tileId: 'tp-lk-ana', queuePosition: 1 });
+        expect(manifest.entries[1]).toMatchObject({ tileId: 'tp-lk-cele', queuePosition: 3 });
+        expect(manifest.waitingHands.map((hand) => hand.displayName)).toEqual(['Ana', 'Beto', 'Cele']);
     });
 });

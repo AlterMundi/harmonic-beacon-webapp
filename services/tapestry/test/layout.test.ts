@@ -25,6 +25,7 @@ import {
 
 interface LayoutBody {
   revision: number;
+  frameTtlMs: number;
   columns: number;
   rows: number;
   tileSizePx: number;
@@ -53,6 +54,7 @@ test("the composite names its build revision and the layout matches the same bui
     assert.equal(layoutRes.status, 200);
     const layout = (await layoutRes.json()) as LayoutBody;
     assert.equal(String(layout.revision), revision, "layout and composite describe one build");
+    assert.equal(layout.frameTtlMs, 10_000, "freshness rides with the layout");
     assert.equal(layout.columns, 3);
     assert.equal(layout.rows, 1);
     assert.equal(layout.tileSizePx, 100);

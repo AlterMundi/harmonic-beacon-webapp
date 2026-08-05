@@ -171,6 +171,7 @@ export type Messages = {
         onStage: string;
         queuedPrefix: string;
         queuedSuffix: string;
+        namingConsent: string;
     };
     stage: {
         label: string;
@@ -433,8 +434,7 @@ export type Messages = {
             loading: string;
             unavailable: string;
             empty: string;
-            tileSnapshotAlt: string;
-            tileNoSnapshotAlt: string;
+            compositeAlt: string;
             handRaised: string;
             waitingWithoutTile: string;
             handSummaryOne: string;
@@ -618,6 +618,7 @@ export const messages: Record<UiLocale, Messages> = {
             onStage: 'Estás en escena — activá el micrófono y la cámara abajo.',
             queuedPrefix: 'Mano levantada — sos la persona número',
             queuedSuffix: 'en la fila.',
+            namingConsent: 'Mientras tengas la mano levantada, tu nombre aparece sobre tu imagen en el tapiz de esta sesión. Al bajar la mano o salir, el nombre se retira; nada queda publicado fuera de la sesión.',
         },
         stage: {
             label: 'Escena',
@@ -928,8 +929,7 @@ export const messages: Record<UiLocale, Messages> = {
                 loading: 'Leyendo la sala…',
                 unavailable: 'El tapiz no está disponible. La cola de manos sigue operativa desde el panel de escena.',
                 empty: 'Todavía no hay teselas: aparecen cuando las personas comparten imagen.',
-                tileSnapshotAlt: 'Miniatura reciente de {name}',
-                tileNoSnapshotAlt: '{name}: sin miniatura actual',
+                compositeAlt: 'Vista actual del tapiz de la sesión',
                 handRaised: 'Mano {position}',
                 waitingWithoutTile: 'Esperan sin imagen: {names}',
                 handSummaryOne: '1 mano levantada',
@@ -1120,6 +1120,7 @@ export const messages: Record<UiLocale, Messages> = {
             onStage: 'You are on stage — enable microphone and camera below.',
             queuedPrefix: 'Hand raised — you are number',
             queuedSuffix: 'in the queue.',
+            namingConsent: 'While your hand is raised, your name appears over your image in this session’s tapestry. Lowering your hand or leaving removes it; nothing is published beyond the session.',
         },
         stage: {
             label: 'Stage',
@@ -1430,8 +1431,7 @@ export const messages: Record<UiLocale, Messages> = {
                 loading: 'Reading the room…',
                 unavailable: 'The tapestry is unavailable. The hand queue stays operational from the scene panel.',
                 empty: 'No tiles yet — they appear as people share a snapshot.',
-                tileSnapshotAlt: 'Recent tapestry snapshot of {name}',
-                tileNoSnapshotAlt: '{name}: no current tapestry snapshot',
+                compositeAlt: 'Current session tapestry view',
                 handRaised: 'Hand {position}',
                 waitingWithoutTile: 'Waiting without a snapshot: {names}',
                 handSummaryOne: '1 hand raised',

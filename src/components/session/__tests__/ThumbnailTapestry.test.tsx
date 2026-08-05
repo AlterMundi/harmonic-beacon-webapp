@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render as rtlRender, waitFor } from '@testing-library/react';
+import { act, cleanup, render as rtlRender, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -128,5 +128,72 @@ describe('ThumbnailTapestry', () => {
 
         await waitFor(() => expect(fetch).toHaveBeenCalled());
         expect(view.queryByText(/Raised hands:/)).not.toBeInTheDocument();
+    });
+
+    it('never lets a slower earlier composite poll overwrite a newer one', async () => {
+        vi.useFakeTimers();
+        let counter = 0;
+        URL.createObjectURL = vi.fn(() => `blob:frame-${++counter}`);
+        URL.revokeObjectURL = vi.fn();
+        const deferred: Array<{ url: string; resolve: (r: Response) => void }> = [];
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/hands')) {
+                return Promise.resolve(new Response(JSON.stringify({ hands: [] }), { status: 200 }));
+            }
+            return new Promise<Response>((resolve) => deferred.push({ url, resolve }));
+        });
+        const view = render(<ThumbnailTapestry sessionId="session-1" />);
+
+        // Poll A starts; poll B starts after the interval while A is pending.
+        await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+        expect(deferred).toHaveLength(2);
+
+        // B resolves first and wins.
+        await act(async () => {
+            deferred[1].resolve(new Response(new Blob(['jpeg-b']), {
+                status: 200,
+                headers: { 'x-tapestry-revision': '9' },
+            }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-1');
+
+        // A resolves late: ignored, its blob revoked, image stays B's.
+        await act(async () => {
+            deferred[0].resolve(new Response(new Blob(['jpeg-a']), {
+                status: 200,
+                headers: { 'x-tapestry-revision': '7' },
+            }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-1');
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-2');
+        vi.useRealTimers();
+    });
+
+    it('aborts and leaks nothing when unmounted with a poll in flight', async () => {
+        URL.createObjectURL = vi.fn(() => 'blob:frame-x');
+        URL.revokeObjectURL = vi.fn();
+        const deferred: Array<(r: Response) => void> = [];
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/hands')) {
+                return Promise.resolve(new Response(JSON.stringify({ hands: [] }), { status: 200 }));
+            }
+            return new Promise<Response>((resolve) => deferred.push(resolve));
+        });
+        const view = render(<ThumbnailTapestry sessionId="session-1" />);
+
+        view.unmount();
+        await act(async () => {
+            deferred[0](new Response(new Blob(['jpeg']), { status: 200 }));
+            await Promise.resolve();
+        });
+
+        // The late blob was created by the in-flight request but must be
+        // revoked immediately, never displayed.
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-x');
+        expect(view.container.querySelector('img')).toBeNull();
     });
 });
