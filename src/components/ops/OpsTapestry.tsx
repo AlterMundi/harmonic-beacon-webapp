@@ -87,7 +87,18 @@ export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
         let live = true;
         let generation = 0;
         let controller: AbortController | null = null;
-        let previousUrl: string | null = null;
+        // The ONE object URL the visible state currently owns. Any URL not
+        // transferred here is revoked by the cycle that created it.
+        let publishedUrl: string | null = null;
+
+        // Session-scoped reset: never carry manifest, names, overlays, the
+        // content cache or error state across a sessionId change. The next
+        // session starts from empty — if its first fetch fails, the UI shows
+        // ITS empty/error state, never the previous session's data.
+        lastContentKeyRef.current = null;
+        setView(null);
+        setUnavailable(false);
+
         const manifestUrl = `/api/ops/sessions/${encodeURIComponent(sessionId)}/tapestry/manifest`;
         // The consumer marker lets observability and tests tell this poll
         // apart from other composite consumers (health panel, room surface);
@@ -102,8 +113,11 @@ export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
             controller = new AbortController();
             const signal = controller.signal;
 
-            let correlated: { url: string; revision: string | null; manifest: TapestryManifest } | null = null;
-            let fallback: { url: string; revision: string | null; manifest: TapestryManifest } | null = null;
+            // Every object URL created this cycle is registered here.
+            // Exactly one may be chosen and transferred to the visible state;
+            // all others are revoked exactly once before the cycle returns.
+            const candidates: Array<{ url: string; revision: string | null; manifest: TapestryManifest }> = [];
+            let chosen: (typeof candidates)[number] | null = null;
 
             for (let attempt = 0; attempt < MAX_CORRELATION_ATTEMPTS; attempt += 1) {
                 if (!live || myGeneration !== generation) break;
@@ -128,30 +142,38 @@ export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
                         cache: 'no-store', credentials: 'same-origin', signal,
                     });
                     if (!manifestRes.ok) {
-                        URL.revokeObjectURL(url);
+                        URL.revokeObjectURL(url); // never became a candidate
+                        for (const c of candidates) URL.revokeObjectURL(c.url);
                         if (live && myGeneration === generation) setUnavailable(true);
                         return;
                     }
                     const manifest = await manifestRes.json() as TapestryManifest;
-                    const pair = { url, revision, manifest };
+                    candidates.push({ url, revision, manifest });
+                    url = null; // ownership moved into the candidates registry
                     const layoutRevision = manifest.layout?.revision ?? null;
                     // 3-4. Matching revisions (or no grid to correlate)
                     // publish as one accepted state; a mismatch retries.
                     if (layoutRevision === null || String(layoutRevision) === revision) {
-                        correlated = pair;
+                        chosen = candidates[candidates.length - 1];
                         break;
                     }
-                    if (fallback) URL.revokeObjectURL(fallback.url);
-                    fallback = pair;
                 } catch {
                     // Aborted by a newer cycle or unmount, or a transient
-                    // failure: leak nothing, the next tick retries.
-                    if (url) URL.revokeObjectURL(url);
-                    return;
+                    // failure. Stop attempting: the freshest candidate (if
+                    // any) still serves as the safe fallback below.
+                    if (url) URL.revokeObjectURL(url); // never became a candidate
+                    break;
                 }
             }
 
-            const chosen = correlated ?? fallback;
+            // Safe fallback: the freshest candidate; the render-time
+            // revision check keeps its overlays hidden while mismatched.
+            if (!chosen && candidates.length > 0) chosen = candidates[candidates.length - 1];
+            // Revoke every non-chosen candidate exactly once.
+            for (const c of candidates) {
+                if (c !== chosen) URL.revokeObjectURL(c.url);
+            }
+
             let manifestOnly: TapestryManifest | null = null;
             if (!chosen) {
                 // Composite unavailable from the start of the cycle: keep the
@@ -169,35 +191,34 @@ export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
                     return;
                 }
             }
+            // A stale generation discards its chosen URL before dying.
             if (!live || myGeneration !== generation) {
                 if (chosen) URL.revokeObjectURL(chosen.url);
                 return;
             }
 
+            const manifest = chosen?.manifest ?? manifestOnly;
+            if (!manifest) return;
             setUnavailable(false);
-            setView((prev) => {
-                const manifest = chosen?.manifest ?? manifestOnly ?? prev?.manifest;
-                if (!manifest) return prev;
-                // Semantic + layout gate: the manifest object (and with it
-                // the accessible list and overlays) is replaced only when
-                // content or grid changed; the image bytes always refresh.
-                const contentKey = `${manifest.revision}:${manifest.layout?.revision ?? 'none'}`;
-                const manifestChanged = contentKey !== lastContentKeyRef.current;
-                if (manifestChanged) lastContentKeyRef.current = contentKey;
-                const next: TapestryView = {
-                    compositeUrl: chosen ? chosen.url : prev?.compositeUrl ?? null,
-                    buildRevision: chosen ? chosen.revision : prev?.buildRevision ?? null,
-                    manifest: manifestChanged || !prev ? manifest : prev.manifest,
-                };
-                if (prev?.compositeUrl && prev.compositeUrl !== next.compositeUrl) {
-                    URL.revokeObjectURL(prev.compositeUrl);
-                }
-                if (previousUrl && previousUrl !== next.compositeUrl) {
-                    URL.revokeObjectURL(previousUrl);
-                }
-                previousUrl = next.compositeUrl;
-                return next;
-            });
+            // Session + semantic + layout key: content never crosses
+            // sessions, and a layout advance is stored even when names,
+            // order, hands, camera and presence are identical.
+            const contentKey = `${sessionId}:${manifest.revision}:${manifest.layout?.revision ?? 'none'}`;
+            const manifestChanged = contentKey !== lastContentKeyRef.current;
+            if (manifestChanged) lastContentKeyRef.current = contentKey;
+            setView((prev) => ({
+                compositeUrl: chosen ? chosen.url : prev?.compositeUrl ?? null,
+                buildRevision: chosen ? chosen.revision : prev?.buildRevision ?? null,
+                manifest: manifestChanged || !prev ? manifest : prev.manifest,
+            }));
+            // Ownership transfer, outside the state updater: the chosen URL
+            // now belongs to the visible state; the retired one is revoked
+            // exactly once, here or at cleanup.
+            if (chosen) {
+                const retired = publishedUrl;
+                publishedUrl = chosen.url;
+                if (retired && retired !== chosen.url) URL.revokeObjectURL(retired);
+            }
         };
 
         void cycle();
@@ -206,7 +227,10 @@ export default function OpsTapestry({ sessionId, copy, active = true }: Props) {
             live = false;
             clearInterval(timer);
             controller?.abort();
-            if (previousUrl) URL.revokeObjectURL(previousUrl);
+            if (publishedUrl) {
+                URL.revokeObjectURL(publishedUrl);
+                publishedUrl = null;
+            }
         };
     }, [sessionId, active]);
 

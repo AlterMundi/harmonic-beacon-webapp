@@ -327,4 +327,157 @@ describe('OpsTapestry', () => {
         expect(fetch).toHaveBeenCalledTimes(14); // back to 2 reads per cycle
         vi.useRealTimers();
     });
+
+    it('mismatch→match: revokes the fallback URL exactly once and keeps the chosen one until unmount', async () => {
+        let manifestCalls = 0;
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/manifest')) {
+                manifestCalls += 1;
+                // Attempt 1: layout still at R=7 while the composite built
+                // R=8 (mismatch, fallback candidate A). Attempt 2: R=8
+                // (correlated candidate B).
+                return Promise.resolve(manifestResponse(manifest({
+                    layout: { revision: manifestCalls === 1 ? 7 : 8, columns: 2, rows: 1, tileSizePx: 100 },
+                })));
+            }
+            return Promise.resolve(compositeResponse('8'));
+        });
+        const view = render(<OpsTapestry sessionId="session-1" copy={copy} />);
+
+        await act(async () => { await Promise.resolve(); });
+        // B (blob:composite-2) is the visible state; A was discarded.
+        expect(view.getByRole('img', { name: copy.compositeAlt })).toHaveAttribute('src', 'blob:composite-2');
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:composite-1');
+        expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:composite-2');
+
+        // B lives until unmount, then is revoked exactly once.
+        view.unmount();
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:composite-2');
+    });
+
+    it('mismatch→error: revokes the failed attempt and the published fallback at unmount — no orphan blobs', async () => {
+        let manifestCalls = 0;
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/manifest')) {
+                manifestCalls += 1;
+                if (manifestCalls === 2) return Promise.reject(new Error('network down'));
+                return Promise.resolve(manifestResponse(manifest({
+                    layout: { revision: 7, columns: 2, rows: 1, tileSizePx: 100 },
+                })));
+            }
+            return Promise.resolve(compositeResponse('8'));
+        });
+        const view = render(<OpsTapestry sessionId="session-1" copy={copy} />);
+
+        await act(async () => { await Promise.resolve(); });
+        // Attempt 2's blob (composite-2) failed before becoming a candidate:
+        // revoked immediately. Candidate A (composite-1) became the safe
+        // fallback and was published.
+        expect(view.getByRole('img', { name: copy.compositeAlt })).toHaveAttribute('src', 'blob:composite-1');
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:composite-2');
+        // The list is still truthful; overlays stay hidden (layout 7 ≠ build 8).
+        expect(screen.getByText('Ana', { selector: 'li span' })).toBeInTheDocument();
+        expect(view.container.querySelector('[aria-hidden="true"]')).toBeNull();
+
+        // The published fallback is revoked at unmount: nothing orphaned.
+        view.unmount();
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:composite-1');
+    });
+
+    it('session A→B with identical revisions shows only B and revokes A', async () => {
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/manifest')) {
+                // Both sessions report the SAME semantic revision and layout
+                // revision; only the session scopes the content.
+                if (url.includes('session-2')) {
+                    return Promise.resolve(manifestResponse(manifest({
+                        sessionId: 'session-2',
+                        entries: [{ ...manifest().entries[0], displayName: 'Caro' }],
+                    })));
+                }
+                return Promise.resolve(manifestResponse(manifest()));
+            }
+            return Promise.resolve(compositeResponse('7'));
+        });
+        const view = render(<OpsTapestry sessionId="session-1" copy={copy} />);
+        expect(await screen.findByText('Ana', { selector: 'li span' })).toBeInTheDocument();
+        expect(view.getByRole('img', { name: copy.compositeAlt })).toHaveAttribute('src', 'blob:composite-1');
+
+        view.rerender(<OpsTapestry sessionId="session-2" copy={copy} />);
+        // The reset is immediate: A's names, list and image are gone before
+        // B's first fetch even resolves.
+        expect(screen.queryByText('Ana', { selector: 'li span' })).not.toBeInTheDocument();
+        expect(view.container.querySelector('img')).toBeNull();
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:composite-1');
+
+        // B answers with identical revisions: the session-scoped cache lets
+        // B's manifest in, and only B's data shows.
+        expect(await screen.findByText('Caro', { selector: 'li span' })).toBeInTheDocument();
+        expect(screen.queryByText('Ana', { selector: 'li span' })).not.toBeInTheDocument();
+        expect(view.getByRole('img', { name: copy.compositeAlt })).toHaveAttribute('src', 'blob:composite-2');
+    });
+
+    it('session A→B with identical revisions and B failing never resurrects A', async () => {
+        vi.useFakeTimers();
+        const deferred: Array<{ url: string; resolve: (r: Response) => void }> = [];
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            return new Promise<Response>((resolve) => deferred.push({ url, resolve }));
+        });
+        const view = render(<OpsTapestry sessionId="session-1" copy={copy} />);
+
+        // A's first cycle completes: Ana published with blob:composite-1.
+        expect(deferred).toHaveLength(1); // A composite
+        await act(async () => {
+            deferred[0].resolve(compositeResponse('7'));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(deferred).toHaveLength(2); // A manifest
+        await act(async () => {
+            deferred[1].resolve(manifestResponse(manifest()));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(screen.getByText('Ana', { selector: 'li span' })).toBeInTheDocument();
+
+        // A's next cycle starts (composite in flight) when the switch happens.
+        await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+        expect(deferred).toHaveLength(3);
+        view.rerender(<OpsTapestry sessionId="session-2" copy={copy} />);
+        // Immediate reset: no A data, A's published URL revoked, loading state.
+        expect(screen.queryByText('Ana', { selector: 'li span' })).not.toBeInTheDocument();
+        expect(view.container.querySelector('img')).toBeNull();
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:composite-1');
+
+        // A's late response lands after the switch: ignored before creating
+        // any blob, cleaning up after itself.
+        await act(async () => {
+            deferred[2].resolve(compositeResponse('7', 'jpeg-a-late'));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(URL.createObjectURL).toHaveBeenCalledTimes(1); // still only A's first blob
+        expect(screen.queryByText('Ana', { selector: 'li span' })).not.toBeInTheDocument();
+
+        // B fails on both reads: B's unavailable state, never A's data.
+        expect(deferred).toHaveLength(4); // B composite
+        await act(async () => {
+            deferred[3].resolve(new Response('down', { status: 503 }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(deferred).toHaveLength(5); // B manifest (semantic path)
+        await act(async () => {
+            deferred[4].resolve(new Response('down', { status: 503 }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(screen.getByText(copy.unavailable)).toBeInTheDocument();
+        expect(screen.queryByText('Ana', { selector: 'li span' })).not.toBeInTheDocument();
+        vi.useRealTimers();
+    });
 });

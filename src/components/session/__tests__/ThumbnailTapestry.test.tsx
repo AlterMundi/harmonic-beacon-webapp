@@ -290,4 +290,181 @@ describe('ThumbnailTapestry', () => {
         expect(view.container.querySelector('[aria-hidden="true"]')).not.toBeNull();
         vi.useRealTimers();
     });
+
+    it('mismatch→match: revokes the fallback URL exactly once and keeps the chosen one until unmount', async () => {
+        let counter = 0;
+        URL.createObjectURL = vi.fn(() => `blob:frame-${++counter}`);
+        URL.revokeObjectURL = vi.fn();
+        let handsCalls = 0;
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/hands')) {
+                handsCalls += 1;
+                // Attempt 1: layout at R=7 vs composite R=8 (fallback A).
+                // Attempt 2: R=8 (correlated B).
+                return Promise.resolve(new Response(JSON.stringify({
+                    hands: [{ name: 'Ana', column: 1, row: 0 }],
+                    liveStateAvailable: true,
+                    layout: { revision: handsCalls === 1 ? 7 : 8, columns: 2, rows: 1, tileSizePx: 100 },
+                }), { status: 200 }));
+            }
+            return Promise.resolve(new Response(new Blob(['jpeg']), {
+                status: 200,
+                headers: { 'x-tapestry-revision': '8' },
+            }));
+        });
+        const view = render(<ThumbnailTapestry sessionId="session-1" />);
+
+        await waitFor(() => expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-2'));
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-1');
+        expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:frame-2');
+
+        view.unmount();
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-2');
+    });
+
+    it('mismatch→error: revokes the failed attempt and the published fallback at unmount — no orphan blobs', async () => {
+        let counter = 0;
+        URL.createObjectURL = vi.fn(() => `blob:frame-${++counter}`);
+        URL.revokeObjectURL = vi.fn();
+        let handsCalls = 0;
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/hands')) {
+                handsCalls += 1;
+                if (handsCalls === 2) return Promise.reject(new Error('network down'));
+                return Promise.resolve(new Response(JSON.stringify({
+                    hands: [{ name: 'Ana', column: 1, row: 0 }],
+                    liveStateAvailable: true,
+                    layout: { revision: 7, columns: 2, rows: 1, tileSizePx: 100 },
+                }), { status: 200 }));
+            }
+            return Promise.resolve(new Response(new Blob(['jpeg']), {
+                status: 200,
+                headers: { 'x-tapestry-revision': '8' },
+            }));
+        });
+        const view = render(<ThumbnailTapestry sessionId="session-1" />);
+
+        await waitFor(() => expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-1'));
+        // Attempt 2's blob failed before becoming a candidate: revoked.
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-2');
+        // Fallback published: names line truthful, tag hidden (7 ≠ 8).
+        expect(view.getByText('Raised hands: Ana')).toBeInTheDocument();
+        expect(view.container.querySelector('[aria-hidden="true"]')).toBeNull();
+
+        view.unmount();
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-1');
+    });
+
+    it('session A→B with identical revisions shows only B and revokes A', async () => {
+        let counter = 0;
+        URL.createObjectURL = vi.fn(() => `blob:frame-${++counter}`);
+        URL.revokeObjectURL = vi.fn();
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/tapestry/hands')) {
+                // Both sessions report the SAME layout revision; only the
+                // session scopes the names.
+                const name = url.includes('session-2') ? 'Caro' : 'Ana';
+                return Promise.resolve(new Response(JSON.stringify({
+                    hands: [{ name, column: 1, row: 0 }],
+                    liveStateAvailable: true,
+                    layout: { revision: 7, columns: 2, rows: 1, tileSizePx: 100 },
+                }), { status: 200 }));
+            }
+            return Promise.resolve(new Response(new Blob(['jpeg']), {
+                status: 200,
+                headers: { 'x-tapestry-revision': '7' },
+            }));
+        });
+        const view = render(<ThumbnailTapestry sessionId="session-1" />);
+        expect(await view.findByText('Raised hands: Ana')).toBeInTheDocument();
+        expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-1');
+
+        view.rerender(<ThumbnailTapestry sessionId="session-2" />);
+        // Immediate reset: A's image, names and tags are gone before B's
+        // first fetch resolves.
+        expect(view.queryByText(/Raised hands:/)).not.toBeInTheDocument();
+        expect(view.container.querySelector('img')).toBeNull();
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-1');
+
+        // B answers: only B's data shows, with its own URL.
+        expect(await view.findByText('Raised hands: Caro')).toBeInTheDocument();
+        expect(view.queryByText(/Ana/)).not.toBeInTheDocument();
+        expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-2');
+    });
+
+    it('session A→B with identical revisions and B failing never resurrects A', async () => {
+        vi.useFakeTimers();
+        let counter = 0;
+        URL.createObjectURL = vi.fn(() => `blob:frame-${++counter}`);
+        URL.revokeObjectURL = vi.fn();
+        const deferred: Array<{ url: string; resolve: (r: Response) => void; reject: (e: Error) => void }> = [];
+        global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+            const url = String(input);
+            return new Promise<Response>((resolve, reject) => deferred.push({ url, resolve, reject }));
+        });
+        const view = render(<ThumbnailTapestry sessionId="session-1" />);
+
+        // A's first cycle completes: Ana named, image blob:frame-1.
+        expect(deferred).toHaveLength(1); // A composite
+        await act(async () => {
+            deferred[0].resolve(new Response(new Blob(['jpeg']), {
+                status: 200, headers: { 'x-tapestry-revision': '7' },
+            }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(deferred).toHaveLength(2); // A hands
+        await act(async () => {
+            deferred[1].resolve(new Response(JSON.stringify({
+                hands: [{ name: 'Ana', column: 1, row: 0 }],
+                liveStateAvailable: true,
+                layout: { revision: 7, columns: 2, rows: 1, tileSizePx: 100 },
+            }), { status: 200 }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(view.getByText('Raised hands: Ana')).toBeInTheDocument();
+
+        // A's next cycle starts (composite in flight) when the switch happens.
+        await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+        expect(deferred).toHaveLength(3);
+        view.rerender(<ThumbnailTapestry sessionId="session-2" />);
+        // Immediate reset: no A data, A's published URL revoked.
+        expect(view.queryByText(/Raised hands:/)).not.toBeInTheDocument();
+        expect(view.container.querySelector('img')).toBeNull();
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-1');
+
+        // A's late response lands after the switch: ignored before creating
+        // any blob.
+        await act(async () => {
+            deferred[2].resolve(new Response(new Blob(['jpeg-a-late']), {
+                status: 200, headers: { 'x-tapestry-revision': '7' },
+            }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+        expect(view.queryByText(/Raised hands:/)).not.toBeInTheDocument();
+
+        // B fails on both reads: B's waiting state, never A's data.
+        expect(deferred).toHaveLength(4); // B composite
+        await act(async () => {
+            deferred[3].resolve(new Response('down', { status: 503 }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(deferred).toHaveLength(5); // B hands (name-retirement path)
+        await act(async () => {
+            deferred[4].resolve(new Response('down', { status: 503 }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(view.container.querySelector('img')).toBeNull();
+        expect(view.queryByText(/Raised hands:/)).not.toBeInTheDocument();
+        expect(view.queryByText(/Ana/)).not.toBeInTheDocument();
+        vi.useRealTimers();
+    });
 });

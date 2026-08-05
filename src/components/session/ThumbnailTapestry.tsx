@@ -106,7 +106,16 @@ function ThumbnailTapestryView({
         let active = true;
         let generation = 0;
         let controller: AbortController | null = null;
-        let previousUrl: string | null = null;
+        // The ONE object URL the visible state currently owns. Any URL not
+        // transferred here is revoked by the cycle that created it.
+        let publishedUrl: string | null = null;
+
+        // Session-scoped reset: never carry image, names or overlays across
+        // a sessionId change. The next session starts from empty — if its
+        // first fetch fails, the UI shows ITS waiting state, never the
+        // previous session's data.
+        setView(null);
+
         const compositeUrl = `/api/tapestry/${encodeURIComponent(sessionId)}`;
         // Raised-hand names ride a cookie-authorized sidecar: the collective
         // JPEG stays anonymous, and only people who chose to request the
@@ -133,8 +142,11 @@ function ThumbnailTapestryView({
             controller = new AbortController();
             const signal = controller.signal;
 
-            let correlated: { url: string; revision: string | null; hands: HandsSnapshot } | null = null;
-            let fallback: { url: string; revision: string | null; hands: HandsSnapshot } | null = null;
+            // Every object URL created this cycle is registered here.
+            // Exactly one may be chosen and transferred to the visible state;
+            // all others are revoked exactly once before the cycle returns.
+            const candidates: Array<{ url: string; revision: string | null; hands: HandsSnapshot }> = [];
+            let chosen: (typeof candidates)[number] | null = null;
 
             for (let attempt = 0; attempt < MAX_CORRELATION_ATTEMPTS; attempt += 1) {
                 if (!active || myGeneration !== generation) break;
@@ -155,29 +167,36 @@ function ThumbnailTapestryView({
                     }
                     url = URL.createObjectURL(blob);
                     const hands = staffOnly ? EMPTY_HANDS : await fetchHands(signal);
-                    const pair = { url, revision, hands };
+                    candidates.push({ url, revision, hands });
+                    url = null; // ownership moved into the candidates registry
                     const layoutRevision = hands.layout?.revision ?? null;
                     if (staffOnly || layoutRevision === null || String(layoutRevision) === revision) {
-                        correlated = pair;
+                        chosen = candidates[candidates.length - 1];
                         break;
                     }
-                    if (fallback) URL.revokeObjectURL(fallback.url);
-                    fallback = pair;
                 } catch {
                     // Aborted by a newer cycle or unmount, or a transient
-                    // failure: the tapestry is optional and the next tick retries.
-                    if (url) URL.revokeObjectURL(url);
-                    return;
+                    // failure. Stop attempting: the freshest candidate (if
+                    // any) still serves as the safe fallback below.
+                    if (url) URL.revokeObjectURL(url); // never became a candidate
+                    break;
                 }
             }
 
+            // Safe fallback: the freshest candidate; the render-time
+            // revision check keeps its tags hidden while mismatched.
+            if (!chosen && candidates.length > 0) chosen = candidates[candidates.length - 1];
+            // Revoke every non-chosen candidate exactly once.
+            for (const c of candidates) {
+                if (c !== chosen) URL.revokeObjectURL(c.url);
+            }
+
             if (!active || myGeneration !== generation) {
-                const stale = correlated ?? fallback;
-                if (stale) URL.revokeObjectURL(stale.url);
+                // A stale generation discards its chosen URL before dying.
+                if (chosen) URL.revokeObjectURL(chosen.url);
                 return;
             }
 
-            const chosen = correlated ?? fallback;
             if (!chosen) {
                 // Composite unavailable: keep the previous image, still
                 // refresh names so departures retire them.
@@ -194,18 +213,17 @@ function ThumbnailTapestryView({
                 return;
             }
 
-            setView((prev) => {
-                const next: TapestryView = {
-                    compositeUrl: chosen.url,
-                    buildRevision: chosen.revision,
-                    hands: chosen.hands,
-                };
-                if (prev?.compositeUrl && prev.compositeUrl !== next.compositeUrl) {
-                    URL.revokeObjectURL(prev.compositeUrl);
-                }
-                previousUrl = next.compositeUrl;
-                return next;
+            setView({
+                compositeUrl: chosen.url,
+                buildRevision: chosen.revision,
+                hands: chosen.hands,
             });
+            // Ownership transfer, outside the state updater: the chosen URL
+            // now belongs to the visible state; the retired one is revoked
+            // exactly once, here or at cleanup.
+            const retired = publishedUrl;
+            publishedUrl = chosen.url;
+            if (retired && retired !== chosen.url) URL.revokeObjectURL(retired);
         };
 
         void cycle();
@@ -214,7 +232,10 @@ function ThumbnailTapestryView({
             active = false;
             clearInterval(timer);
             controller?.abort();
-            if (previousUrl) URL.revokeObjectURL(previousUrl);
+            if (publishedUrl) {
+                URL.revokeObjectURL(publishedUrl);
+                publishedUrl = null;
+            }
         };
     }, [sessionId, staffOnly]);
 
