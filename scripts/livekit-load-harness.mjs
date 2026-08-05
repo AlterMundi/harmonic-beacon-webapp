@@ -12,9 +12,11 @@ import {
     buildPlan,
     commandFingerprint,
     createAbortCoordinator,
+    createConsecutiveFailureGuard,
     generatorHostFingerprint,
     manifestContainsSecret,
     parseLoadTestOutput,
+    probeProductionReadiness,
     remoteConfirmation,
 } from './lib/livekit-load-harness.mjs';
 
@@ -126,6 +128,31 @@ function installAbortHandlers(abort) {
     };
 }
 
+function startProductionReadinessGuard(abort) {
+    let stopped = false;
+    const failures = createConsecutiveFailureGuard({
+        maxFailures: 2,
+        onTrip: () => {
+            if (abort.request('PRODUCTION_READINESS_GUARD')) {
+                process.stderr.write(
+                    '\nPublic production readiness failed twice; stopping load and preserving an ABORTED manifest.\n',
+                );
+            }
+        },
+    });
+    const completion = (async () => {
+        while (!stopped && !abort.requested) {
+            const healthy = await probeProductionReadiness();
+            if (failures.record(healthy)) break;
+            await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_000));
+        }
+    })();
+    return async () => {
+        stopped = true;
+        await completion;
+    };
+}
+
 async function waitBetweenPhases(seconds, abort) {
     const deadline = Date.now() + seconds * 1000;
     while (!abort.requested && Date.now() < deadline) {
@@ -168,6 +195,7 @@ function printHelp() {
         `  --start-at UTC             shared future UTC start required for sharding\n` +
         `  --dry-run                  validate and write a PLANNED manifest only\n` +
         `  --allow-remote             acknowledge a non-local target\n` +
+        `  --guard-production-ready   abort after two failed public readiness probes\n` +
         `  --confirm-test-rooms VALUE exact room confirmation required remotely\n`);
 }
 
@@ -393,6 +421,7 @@ async function main() {
     const url = option('--url', process.env.LIVEKIT_URL ?? 'ws://localhost:7880');
     const lkBinary = option('--lk-bin', process.env.LK_BIN ?? 'lk');
     const dryRun = hasFlag('--dry-run');
+    const guardProductionReadiness = hasFlag('--guard-production-ready');
     const shardIndex = Number(option('--shard-index', '0'));
     const shardCount = Number(option('--shard-count', '1'));
     const startAt = option('--start-at', '');
@@ -441,6 +470,9 @@ async function main() {
             'Load-test summary latency is media latency, not per-user application login latency.',
             'Physical iOS, Android, Bluetooth, TURN, and six-camera evidence remains in issue #24.',
         ],
+        safety: {
+            productionReadinessGuard: guardProductionReadiness,
+        },
         phases: [],
     };
     let abort = null;
@@ -457,6 +489,9 @@ async function main() {
         if (lk.exitCode !== 0) throw new Error(`LiveKit CLI unavailable: ${lk.output.trim()}`);
         abort = createAbortCoordinator();
         const removeAbortHandlers = installAbortHandlers(abort);
+        const stopProductionReadinessGuard = guardProductionReadiness
+            ? startProductionReadinessGuard(abort)
+            : async () => {};
         const roomService = new RoomServiceClient(
             url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:'),
             credentials.apiKey,
@@ -537,6 +572,7 @@ async function main() {
                 await waitBetweenPhases(profile.interWaveSeconds, abort);
             }
         }
+        await stopProductionReadinessGuard();
         removeAbortHandlers();
         if (abort.requested) {
             manifest.status = 'ABORTED';

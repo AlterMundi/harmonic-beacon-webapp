@@ -120,6 +120,7 @@ jobs:
             --shard-index "$LOAD_SHARD_INDEX" \
             --start-at "$LOAD_START_AT" \
             --allow-remote \
+            --guard-production-ready \
             --confirm-test-rooms "$LOAD_CONFIRMATION" \
             --manifest "artifacts/load-test/shard-${LOAD_SHARD_INDEX}.json"
 

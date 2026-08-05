@@ -121,6 +121,10 @@ orchestrator for the case where no two trusted standalone hosts are available.
 It runs each shard on a different ephemeral GitHub-hosted runner, pins and
 verifies `lk` v2.16.3, schedules both against the same future UTC boundary, and
 uploads the redacted source manifests before aggregating them fail-closed.
+Each generator also probes the fixed public production readiness endpoint. Two
+consecutive failures abort its current Stage and Beacon processes, preserve an
+`ABORTED` source manifest and prevent a global PASS. The probe never reads a
+response body and cannot be redirected to an operator-supplied URL.
 
 The workflow uses the `capacity-rehearsal` environment. Restrict that
 environment to the `main` branch and provision these environment secrets only

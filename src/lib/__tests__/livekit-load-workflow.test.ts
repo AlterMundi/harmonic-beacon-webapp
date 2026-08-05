@@ -14,10 +14,12 @@ describe('distributed LiveKit capacity workflow contract', () => {
         expect(workflow).not.toMatch(/^\s+push:/m);
         expect(workflow).toContain('contents: read');
         expect(workflow).not.toContain('target_url:');
+        expect(workflow).not.toContain('readiness_url:');
         expect(workflow).toContain('secrets.LOAD_TEST_URL');
         expect(workflow).not.toContain('secrets.LIVEKIT_API_SECRET');
         expect(workflow).not.toMatch(/--(?:profile|run-id|start-at) '\$\{\{/);
         expect(workflow).toContain('--run-id "$LOAD_RUN_ID"');
+        expect(workflow.match(/--guard-production-ready/g)).toHaveLength(1);
     });
 
     it('uses two independent hosted runners and always preserves shard evidence', () => {
