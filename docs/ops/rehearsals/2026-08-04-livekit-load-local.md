@@ -198,12 +198,78 @@ Artifact SHA-256:
 - `v1.13.5` control B CLI: `52ac72bd4ad2b64f6c51f05d84d36b18110f796120f01e6c93cedaad0c33c047`;
 - `v1.13.5` control B server: `dd0d733f06dff685c5b96de371f0ab4dc309a0458ee0dd2b137fe493634e5b46`.
 
+### Six-generator `v1.13.5` comparison
+
+The required separate-host comparison ran as
+[`diagnostic-v135-en-20260805b`](https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/31041907334)
+on exact `main@d105e0780100819665fe19aec6f0c4e63c6d7192`. Six distinct
+GitHub-hosted generators targeted an isolated mona container pinned by digest
+to LiveKit `v1.13.5`
+(`sha256:3497163e15c48fef6e7830c78716f9e9d5edc28abf7aa90b61c86e93bbc306b1`).
+The bounded profile kept the real 150 dual-room attendees, six VP8 Stage
+publishers, one Beacon publisher, speaker layout and 0.1% loss gate, but ran
+only two 60-second phases. It is version-comparison evidence, not a full soak,
+reconnect, browser, TURN or listening rehearsal.
+
+Both phases reached exactly 156 Stage connections, six Stage publishers and
+six tracks plus 151 Beacon connections, one Beacon publisher and one track.
+Every shard received its required 150 Stage and 25 Beacon subscriber tracks,
+all API polls succeeded, synchronization was 0--1 ms, and the corrected shared
+completion barrier produced exact zero-room cleanup in all twelve shard-phase
+observations (maximum convergence 823 ms).
+
+| Shard | Stage ramp | Stage soak | Beacon maximum |
+|---:|---:|---:|---:|
+| 0 | 19.567% | 17.860% | 0% |
+| 1 | 20.317% | 17.100% | 0% |
+| 2 | 20.503% | 17.502% | 0% |
+| 3 | 23.696% | 17.681% | 0% |
+| 4 | 10.972% | 10.191% | 0% |
+| 5 | 11.026% | 9.571% | 0.028% |
+
+Compared with the matching `v1.13.4` ramp/soak phases above, `v1.13.5`
+increased average Stage ramp loss from 13.548% to 17.680% but reduced average
+Stage soak loss from 30.069% to 14.984%. That phase-dependent improvement is
+material, yet every Stage observation still missed the 0.1% gate by roughly
+two orders of magnitude. It corroborates the variable same-host controls and
+does not authorize a production upgrade.
+
+Target telemetry completed normally with 745 samples and no readiness failure:
+host CPU peaked at 50.99%, available memory stayed above 16,169,865,216 bytes,
+the isolated target peaked at 336.92% CPU, and production app/LiveKit peaked at
+26.63%/3.88%. All three containers had restart delta zero and no OOM. The
+telemetry SHA-256 is
+`ba1bac34aae22a75d377b2248b2e627b96c69121c2fbfae24622d68cffee39fd`.
+The isolated server log SHA-256 is
+`04d4f3498adfa4ae3fc1ae3e9f5a7052435b53f0edddc1d0b065aa220ef96de4`;
+it recorded 7,324 packet-bucket lookup warnings (7,179 on simulcast layer 2)
+and 1,466 extended-packet overflow warnings (1,436 on layer 2). This again
+correlates the CLI's receiver-visible RTP gaps with SFU packet retention rather
+than demonstrated host saturation.
+
+Source manifest SHA-256:
+
+- shard 0: `230204f314a97a57ef2effe0aba8682fbce1d78dbd8f9f7704eadff5c6221e3b`;
+- shard 1: `30fe35e2a2e240f0b2a9b269a2453bfdf73ee8ad80aecddc3d78c75cf6085dec`;
+- shard 2: `ab9a126b0c1e7a5ff3454ecdab41564a579ae87e4ffba5ae9fe1bfa48da475b8`;
+- shard 3: `e93b3851d533e3adabf05bf9ea261a0b323dde80a5d1e005b4e9bb32fcd89b2f`;
+- shard 4: `3d718f2dc01986f721606267d67a6d12ef85b4314fe3bc8314a01b733f8b256c`;
+- shard 5: `64112cbf78579cf617d09fce255f969fca0b3a3a4a3db661bebbc91ff12d2ee2`.
+
+After evidence capture, the isolated container, ports, firewall rules,
+transient services/files and all three environment secrets were removed.
+Public readiness remained green and production app/LiveKit remained at restart
+zero with no OOM.
+
 ## Decision
 
 - Do not close #99 or use this run as GO evidence for #24.
 - Keep the 0.1% loss threshold; do not normalize the failure away.
-- Repeat the explicit VP8 topology from separate generators against isolated
-  LiveKit `v1.13.5`; neither local result authorizes a production upgrade.
+- Do not upgrade production to LiveKit `v1.13.5`; its separate-host comparison
+  also failed and remained phase-dependent.
+- Any next server experiment needs a concrete packet-retention, simulcast-layer
+  or BWE hypothesis and the same isolated, digest-pinned comparison. Do not
+  spend another run merely repeating this topology without a changed variable.
 - Run the explicit H264 path as supporting Safari evidence, never as a
   substitute for VP8.
 - Physical browser, TURN, mobile routing, six-camera, and listening gates remain
