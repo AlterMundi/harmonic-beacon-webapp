@@ -98,6 +98,7 @@ export default function OpsHealthClient({
     copy,
     staffRoles,
     onLevelChange,
+    visualActive = true,
 }: {
     role: StaffRole;
     sessionId?: string;
@@ -105,6 +106,7 @@ export default function OpsHealthClient({
     copy: Messages['ops']['healthPanel'];
     staffRoles: Messages['staffRoles'];
     onLevelChange?: (level: HealthLevel) => void;
+    visualActive?: boolean;
 }) {
     const [report, setReport] = useState<OperatorHealthReport | null>(null);
     const [endpointError, setEndpointError] = useState<string | null>(null);
@@ -189,6 +191,7 @@ export default function OpsHealthClient({
                     sessionId={report.session.id}
                     staffOnly
                     labels={messages[locale].tapestry}
+                    active={visualActive}
                 />
             ) : null}
 

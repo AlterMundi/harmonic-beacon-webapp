@@ -16,7 +16,9 @@ describe('ThumbnailTapestry', () => {
     it('omits cookies when loading the public composite', async () => {
         URL.createObjectURL = vi.fn(() => 'blob:tapestry');
         URL.revokeObjectURL = vi.fn();
-        global.fetch = vi.fn().mockResolvedValue(new Response(new Blob(['jpeg']), { status: 200 }));
+        global.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(new Response(new Blob(['jpeg']), { status: 200 })),
+        );
         render(<ThumbnailTapestry sessionId="session-1" />);
         await waitFor(() => expect(fetch).toHaveBeenCalled());
         expect(vi.mocked(fetch).mock.calls[0][1]?.credentials).toBe('omit');
@@ -35,6 +37,95 @@ describe('ThumbnailTapestry', () => {
         expect(vi.mocked(fetch).mock.calls.some(([input]) =>
             String(input).includes('/tapestry/hands'),
         )).toBe(false);
+    });
+
+    it('pauses hidden polling, preserves the last frame, and refreshes immediately on resume', async () => {
+        vi.useFakeTimers();
+        let counter = 0;
+        URL.createObjectURL = vi.fn(() => `blob:frame-${++counter}`);
+        URL.revokeObjectURL = vi.fn();
+        const deferred: Array<(response: Response) => void> = [];
+        global.fetch = vi.fn().mockImplementation(() =>
+            new Promise<Response>((resolve) => deferred.push(resolve)),
+        );
+
+        const view = render(
+            <ThumbnailTapestry sessionId="session-1" staffOnly active={false} />,
+        );
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        expect(fetch).not.toHaveBeenCalled();
+
+        view.rerender(<ThumbnailTapestry sessionId="session-1" staffOnly active />);
+        expect(deferred).toHaveLength(1);
+        await act(async () => {
+            deferred[0](new Response(new Blob(['jpeg-1']), { status: 200 }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-1');
+
+        view.rerender(<ThumbnailTapestry sessionId="session-1" staffOnly active={false} />);
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-1');
+        expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+
+        view.rerender(<ThumbnailTapestry sessionId="session-1" staffOnly active />);
+        expect(deferred).toHaveLength(2);
+        await act(async () => {
+            deferred[1](new Response(new Blob(['jpeg-2']), { status: 200 }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(view.container.querySelector('img')).toHaveAttribute('src', 'blob:frame-2');
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-1');
+
+        view.unmount();
+        expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-2');
+        vi.useRealTimers();
+    });
+
+    it('aborts every stale cycle across ten rapid visibility changes without timer buildup', async () => {
+        vi.useFakeTimers();
+        URL.createObjectURL = vi.fn(() => 'blob:unexpected');
+        URL.revokeObjectURL = vi.fn();
+        const deferred: Array<{ signal?: AbortSignal; resolve: (response: Response) => void }> = [];
+        global.fetch = vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) =>
+            new Promise<Response>((resolve) => deferred.push({
+                signal: init?.signal ?? undefined,
+                resolve,
+            })),
+        );
+        const view = render(
+            <ThumbnailTapestry sessionId="session-1" staffOnly active={false} />,
+        );
+
+        for (let change = 0; change < 10; change += 1) {
+            view.rerender(
+                <ThumbnailTapestry
+                    sessionId="session-1"
+                    staffOnly
+                    active={change % 2 === 0}
+                />,
+            );
+        }
+        expect(deferred).toHaveLength(5);
+        expect(deferred.every(({ signal }) => signal?.aborted)).toBe(true);
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+        expect(fetch).toHaveBeenCalledTimes(5);
+
+        await act(async () => {
+            for (const request of deferred) {
+                request.resolve(new Response(new Blob(['late']), { status: 200 }));
+            }
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(URL.createObjectURL).not.toHaveBeenCalled();
+        expect(view.container.querySelector('img')).toBeNull();
+        vi.useRealTimers();
     });
 
     it('names raised hands from the authorized sidecar, never from the JPEG', async () => {

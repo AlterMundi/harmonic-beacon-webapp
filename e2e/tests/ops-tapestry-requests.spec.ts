@@ -158,3 +158,77 @@ stackTest('operational tapestry stays O(1) at 0/1/50/150 participants', async ({
     mismatched = false;
     await expect(section.locator('[aria-hidden="true"]')).toBeVisible({ timeout: 10_000 });
 });
+
+stackTest('hidden health preview spends 0/N/0 requests while the rail stays live', async ({ page }) => {
+    stackTest.slow();
+    const counters = { health: 0, composite: 0 };
+
+    page.on('request', (request) => {
+        if (request.frame() !== page.mainFrame()) return;
+        const url = request.url();
+        if (url.includes('/api/ops/health')) counters.health += 1;
+        if (
+            url.includes(`/api/tapestry/${SESSION_ES.id}`) &&
+            !url.includes('view=ops-tapestry')
+        ) {
+            counters.composite += 1;
+        }
+    });
+
+    await page.route('**/api/ops/health**', async (route) => {
+        const green = { status: 'green', detail: 'Synthetic healthy check', latencyMs: 1 };
+        await route.fulfill({
+            json: {
+                status: 'green',
+                checkedAt: new Date().toISOString(),
+                session: { id: SESSION_ES.id, title: SESSION_ES.title, status: 'LIVE' },
+                checks: {
+                    postgres: green,
+                    livekit: green,
+                    stageRoom: green,
+                    publisherGrants: green,
+                    bedPublisher: green,
+                    tapestry: green,
+                },
+            },
+        });
+    });
+    await page.route(`**/api/tapestry/${SESSION_ES.id}**`, async (route) => {
+        await route.fulfill({
+            body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64'),
+            contentType: 'image/gif',
+            headers: { 'x-tapestry-revision': '7' },
+        });
+    });
+    await page.route(`**/session/${SESSION_ES.id}?surface=cockpit`, async (route) => {
+        await route.fulfill({ contentType: 'text/html', body: '<html><body>room stub</body></html>' });
+    });
+
+    await loginViaDashboard(page, 'OPERATOR', 'Hidden Preview Op', ROUTES.opsSession(SESSION_ES.id));
+    await expect.poll(() => counters.health).toBeGreaterThanOrEqual(1);
+    await page.waitForTimeout(2_500);
+    expect(counters.composite, 'closed health drawer').toBe(0);
+
+    await page.locator('[data-signal="health"]').click();
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByRole('region', { name: /Tapestry|Tapiz/i })).toBeVisible();
+    await expect.poll(() => counters.composite).toBeGreaterThanOrEqual(1);
+    await page.waitForTimeout(2_500);
+    const openSpend = counters.composite;
+    expect(openSpend, 'open health drawer').toBeGreaterThanOrEqual(1);
+    expect(openSpend, 'one coordinator while open').toBeLessThanOrEqual(3);
+
+    await drawer.getByRole('button', { name: /Return to the live room|Volver a la sala/i }).click();
+    const compositeAtClose = counters.composite;
+    const healthAtClose = counters.health;
+    await expect.poll(() => counters.health, { timeout: 12_000 }).toBeGreaterThan(healthAtClose);
+    expect(counters.composite, 'closed preview remains paused while rail health refreshes')
+        .toBe(compositeAtClose);
+
+    await page.locator('[data-signal="health"]').click();
+    await expect.poll(() => counters.composite).toBeGreaterThan(compositeAtClose);
+    await drawer.getByRole('button', { name: /Return to the live room|Volver a la sala/i }).click();
+    const compositeAtSecondClose = counters.composite;
+    await page.waitForTimeout(2_500);
+    expect(counters.composite, 'second close leaves no accumulated timer').toBe(compositeAtSecondClose);
+});

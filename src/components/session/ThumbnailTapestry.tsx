@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
 import type { Messages } from '@/lib/i18n';
 
@@ -8,6 +8,7 @@ type Props = {
     sessionId: string;
     staffOnly?: boolean;
     labels?: Messages['tapestry'];
+    active?: boolean;
 };
 
 type PublicHand = {
@@ -30,16 +31,41 @@ type HandsSnapshot = {
 
 const EMPTY_HANDS: HandsSnapshot = { hands: [], layout: null };
 
-export default function ThumbnailTapestry({ sessionId, staffOnly = false, labels }: Props) {
+export default function ThumbnailTapestry({
+    sessionId,
+    staffOnly = false,
+    labels,
+    active = true,
+}: Props) {
     if (labels) {
-        return <ThumbnailTapestryView sessionId={sessionId} staffOnly={staffOnly} labels={labels} />;
+        return (
+            <ThumbnailTapestryView
+                sessionId={sessionId}
+                staffOnly={staffOnly}
+                labels={labels}
+                active={active}
+            />
+        );
     }
-    return <LocalizedThumbnailTapestry sessionId={sessionId} staffOnly={staffOnly} />;
+    return (
+        <LocalizedThumbnailTapestry
+            sessionId={sessionId}
+            staffOnly={staffOnly}
+            active={active}
+        />
+    );
 }
 
-function LocalizedThumbnailTapestry({ sessionId, staffOnly = false }: Props) {
+function LocalizedThumbnailTapestry({ sessionId, staffOnly = false, active = true }: Props) {
     const { copy } = useLocale();
-    return <ThumbnailTapestryView sessionId={sessionId} staffOnly={staffOnly} labels={copy.tapestry} />;
+    return (
+        <ThumbnailTapestryView
+            sessionId={sessionId}
+            staffOnly={staffOnly}
+            labels={copy.tapestry}
+            active={active}
+        />
+    );
 }
 
 function parseHands(body: unknown): HandsSnapshot {
@@ -99,13 +125,22 @@ function ThumbnailTapestryView({
     sessionId,
     staffOnly,
     labels,
+    active = true,
 }: Props & { labels: Messages['tapestry'] }) {
     const [view, setView] = useState<TapestryView | null>(null);
+    const pollingControl = useRef<(next: boolean) => void>(() => undefined);
+    const activeRef = useRef(active);
+    // The session lifecycle effect may restart in the same commit as a
+    // visibility change. Give it the current value immediately so a hidden
+    // next session never spends one stale eager request before effects flush.
+    activeRef.current = active;
 
     useEffect(() => {
-        let active = true;
+        let alive = true;
+        let polling = false;
         let generation = 0;
         let controller: AbortController | null = null;
+        let timer: ReturnType<typeof setInterval> | null = null;
         // The ONE object URL the visible state currently owns. Any URL not
         // transferred here is revoked by the cycle that created it.
         let publishedUrl: string | null = null;
@@ -136,7 +171,7 @@ function ThumbnailTapestryView({
         // ONE coordinator for the whole visual unit: composite first, hands
         // immediately after, published only as one accepted cycle's result.
         const cycle = async () => {
-            if (!active) return;
+            if (!alive || !polling) return;
             const myGeneration = ++generation;
             controller?.abort();
             controller = new AbortController();
@@ -149,7 +184,7 @@ function ThumbnailTapestryView({
             let chosen: (typeof candidates)[number] | null = null;
 
             for (let attempt = 0; attempt < MAX_CORRELATION_ATTEMPTS; attempt += 1) {
-                if (!active || myGeneration !== generation) break;
+                if (!alive || !polling || myGeneration !== generation) break;
                 let url: string | null = null;
                 try {
                     const compositeRes = await fetch(compositeUrl, {
@@ -160,7 +195,7 @@ function ThumbnailTapestryView({
                     if (!compositeRes.ok) break; // keep previous image; hands still refresh below
                     const revision = compositeRes.headers.get('x-tapestry-revision');
                     const blob = await compositeRes.blob();
-                    if (!active || myGeneration !== generation) {
+                    if (!alive || !polling || myGeneration !== generation) {
                         // Superseded or unmounted mid-read: stop before
                         // spending the sidecar fetch or creating any blob.
                         return;
@@ -191,7 +226,7 @@ function ThumbnailTapestryView({
                 if (c !== chosen) URL.revokeObjectURL(c.url);
             }
 
-            if (!active || myGeneration !== generation) {
+            if (!alive || !polling || myGeneration !== generation) {
                 // A stale generation discards its chosen URL before dying.
                 if (chosen) URL.revokeObjectURL(chosen.url);
                 return;
@@ -203,7 +238,7 @@ function ThumbnailTapestryView({
                 if (staffOnly) return;
                 try {
                     const hands = await fetchHands(signal);
-                    if (!active || myGeneration !== generation) return;
+                    if (!alive || !polling || myGeneration !== generation) return;
                     setView((prev) => ({
                         compositeUrl: prev?.compositeUrl ?? null,
                         buildRevision: prev?.buildRevision ?? null,
@@ -226,18 +261,44 @@ function ThumbnailTapestryView({
             if (retired && retired !== chosen.url) URL.revokeObjectURL(retired);
         };
 
-        void cycle();
-        const timer = setInterval(() => void cycle(), POLL_MS);
-        return () => {
-            active = false;
-            clearInterval(timer);
+        const stop = () => {
+            if (!polling) return;
+            polling = false;
+            generation += 1;
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
             controller?.abort();
+            controller = null;
+        };
+        const start = () => {
+            if (!alive || polling) return;
+            polling = true;
+            void cycle();
+            timer = setInterval(() => void cycle(), POLL_MS);
+        };
+        pollingControl.current = (next) => {
+            if (next) start();
+            else stop();
+        };
+        if (activeRef.current) start();
+
+        return () => {
+            alive = false;
+            stop();
+            pollingControl.current = () => undefined;
             if (publishedUrl) {
                 URL.revokeObjectURL(publishedUrl);
                 publishedUrl = null;
             }
         };
     }, [sessionId, staffOnly]);
+
+    useEffect(() => {
+        activeRef.current = active;
+        pollingControl.current(active);
+    }, [active]);
 
     const names = (view?.hands ?? EMPTY_HANDS).hands.map((hand) => hand.name);
     // Zoom/Meet-style name tags over each raised hand's own tile. The layout
