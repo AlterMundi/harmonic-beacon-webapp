@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
     aggregateShardManifests,
+    assertLiveKitCliMeasurementCompatibility,
     assertSafeTarget,
     buildDistributedDispatchPlan,
     buildPlan,
@@ -136,6 +137,24 @@ function passingShardManifest(plan: ReturnType<typeof buildPlan>, hostIndex: num
 }
 
 describe('LiveKit load harness safety', () => {
+    it('fails closed when VP8 packet-loss metrics come from an unverified CLI', () => {
+        expect(() => assertLiveKitCliMeasurementCompatibility({
+            stageVideoCodec: 'vp8',
+            livekitCliVersion: 'lk version 2.16.3',
+        })).toThrow(/not verified for VP8 packet-loss evidence/);
+        expect(() => assertLiveKitCliMeasurementCompatibility({
+            stageVideoCodec: 'vp8',
+            livekitCliVersion: 'unexpected output',
+        })).toThrow(/parseable and explicitly verified/);
+    });
+
+    it('does not apply the VP8 measurement guard to an H264 control', () => {
+        expect(assertLiveKitCliMeasurementCompatibility({
+            stageVideoCodec: 'h264',
+            livekitCliVersion: 'lk version 2.16.3',
+        })).toEqual({ codec: 'h264', version: null, verified: true });
+    });
+
     it('probes only the fixed public production readiness boundary', async () => {
         const calls: Array<{ url: string; init: RequestInit }> = [];
         const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {

@@ -5,6 +5,35 @@ const ROOM_PATTERN = /^hb-load-[a-z0-9][a-z0-9-]{2,47}-(stage|beacon)$/;
 export const PRODUCTION_READINESS_URL =
     'https://live.harmonicbeacon.com/api/health/ready';
 
+// No released CLI version has yet been verified against the VP8 depacketizer
+// invariant. Add a version only after its source selects codecs.VP8Packet for
+// VP8 tracks and the focused loss-control test has passed.
+const VERIFIED_VP8_MEASUREMENT_CLI_VERSIONS = new Set();
+
+export function assertLiveKitCliMeasurementCompatibility({
+    stageVideoCodec,
+    livekitCliVersion,
+}) {
+    if (stageVideoCodec !== 'vp8') {
+        return { codec: stageVideoCodec, version: null, verified: true };
+    }
+
+    const match = String(livekitCliVersion ?? '').match(/\bversion\s+(\d+\.\d+\.\d+(?:[-+][\w.-]+)?)\b/i);
+    const version = match?.[1] ?? null;
+    if (!version) {
+        throw new Error(
+            'VP8 capacity evidence requires a parseable and explicitly verified LiveKit CLI version',
+        );
+    }
+    if (!VERIFIED_VP8_MEASUREMENT_CLI_VERSIONS.has(version)) {
+        throw new Error(
+            `LiveKit CLI ${version} is not verified for VP8 packet-loss evidence; ` +
+            'v2.16.3 depacketizes every video track as H264 and can overcount VP8 drops',
+        );
+    }
+    return { codec: stageVideoCodec, version, verified: true };
+}
+
 export async function probeProductionReadiness({
     fetchImpl = fetch,
     timeoutMs = 2_500,

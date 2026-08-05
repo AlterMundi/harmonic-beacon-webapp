@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { buildDistributedDispatchPlan } from '../../../scripts/lib/livekit-load-harness.mjs';
+import {
+    assertLiveKitCliMeasurementCompatibility,
+    buildDistributedDispatchPlan,
+} from '../../../scripts/lib/livekit-load-harness.mjs';
 
 const workflow = readFileSync(
     resolve(process.cwd(), '.github/workflows/livekit-capacity.yml'),
@@ -82,12 +85,17 @@ describe('distributed LiveKit capacity workflow contract', () => {
         }
     });
 
-    it('pins and verifies the official LiveKit CLI artifact', () => {
-        expect(workflow).toContain('releases/download/v2.16.3/');
+    it('pins and verifies the official LiveKit CLI artifact whose VP8 metrics fail closed', () => {
+        const pinnedVersion = workflow.match(/releases\/download\/v([^/]+)\//)?.[1];
+        expect(pinnedVersion).toBe('2.16.3');
         expect(workflow).toContain(
             '57935ce348a634a1e12769b9eaf7e684cf46920ad65e4b6d88f87a9cd01de2d6',
         );
         expect(workflow).toContain('sha256sum -c -');
+        expect(() => assertLiveKitCliMeasurementCompatibility({
+            stageVideoCodec: 'vp8',
+            livekitCliVersion: `lk version ${pinnedVersion}`,
+        })).toThrow(/not verified for VP8 packet-loss evidence/);
     });
 
     it('offers a bounded full-topology VP8 diagnostic without weakening rehearsal profiles', () => {

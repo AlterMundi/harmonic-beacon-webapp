@@ -258,8 +258,22 @@ healthy.
 
 ## Tooling
 
-Install the official `lk` CLI (the CI workflow pins v2.16.3). LiveKit recommends
-running large tests from a well-provisioned host and raising file-descriptor and
+The CI workflow still pins the checksum-verified official `lk` v2.16.3 binary,
+but the harness now refuses to classify VP8 packet-loss evidence from it. The
+[pinned v2.16.3 source](https://github.com/livekit/livekit-cli/blob/e90c82ab4467cafd4fabe3affd348f474c312280/pkg/loadtester/loadtester.go#L377-L399)
+constructs an H264 depacketizer for every video track, including VP8; under an
+identical synthetic VP8 sequence gap this counted 18 dropped frames versus 8
+with the correct VP8 depacketizer and also requested a PLI for every count. The
+previous VP8 manifests therefore remain useful topology/cleanup evidence but
+their packet-loss magnitudes are not admissible capacity evidence. H264 controls
+remain runnable and cannot certify the production VP8 browser path.
+
+Do not bypass this fail-closed guard. Re-enable VP8 runs only after a pinned CLI
+source selects the depacketizer from the negotiated codec and a focused
+loss-control proves the reported drops match VP8 packet boundaries. Then add
+that exact CLI version to the verified allowlist with its test and provenance.
+
+LiveKit recommends running large tests from a well-provisioned host and raising file-descriptor and
 network limits; do that on the load-generator host before a 150-person run. See
 the official [LiveKit benchmarking guide](https://docs.livekit.io/transport/self-hosting/benchmark)
 and [LiveKit CLI repository](https://github.com/livekit/livekit-cli).
