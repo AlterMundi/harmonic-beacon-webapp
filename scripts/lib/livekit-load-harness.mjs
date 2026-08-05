@@ -411,6 +411,10 @@ export function commandFingerprint(args) {
     return createHash('sha256').update(JSON.stringify(args)).digest('hex');
 }
 
+export function generatorHostFingerprint({ hostName, machineId = '', bootId = '' }) {
+    return commandFingerprint([hostName, machineId, bootId]).slice(0, 12);
+}
+
 export function manifestContainsSecret(value, secrets) {
     const serialized = JSON.stringify(value);
     return secrets.filter(Boolean).some((secret) => serialized.includes(secret));
