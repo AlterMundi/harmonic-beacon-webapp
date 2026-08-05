@@ -83,9 +83,14 @@ Sharding partitions attendees, publishers and the declared global ramp rate
 without rounding anything away. Every identity prefix includes its shard, all
 shards join the same two synthetic rooms, and every shard independently observes
 the exact **global** participant/publisher counts. Synchronized phases use a
-minimum 15-second gap so cleanup can converge before the next absolute start.
-The schedule includes the CLI connection ramp because LiveKit starts its
-`--duration` timer only after those connections finish.
+minimum 15-second cleanup gap. Each profile also declares a
+`phaseCompletionBufferSeconds` tail before the next absolute start. This tail
+is not load duration and does not excuse a timeout: it keeps both hosts at the
+same later barrier when the CLI spends time reporting failed/late connection
+attempts after its nominal ramp. The rehearsal profiles reserve five minutes;
+the small CI profile reserves 15 seconds. The schedule separately includes the
+ideal CLI connection ramp because LiveKit starts its `--duration` timer only
+after those connections finish.
 Missing coordinates, duplicate identities, a late phase, API sampling errors,
 extra/missing joins or incomplete cleanup fail closed.
 
