@@ -165,15 +165,45 @@ failure, LiveKit `v1.13.4` logged packet-bucket overflow/eviction warnings. The
 subsequent upstream `v1.13.5` release includes a
 [forwarded-padding fix](https://github.com/livekit/livekit/commit/366cadcd96b8b09c7212e27693a25f3a88e6c8be)
 that its maintainer explicitly describes as affecting special clients and
-bandwidth estimation. A controlled isolated comparison on `v1.13.5` is
-therefore the next diagnostic; changing the 0.1% threshold is not.
+bandwidth estimation.
+
+### Isolated `v1.13.4` versus `v1.13.5` control
+
+Three non-debug 60-second controls then used the same mona host, pinned CLI
+`v2.16.3`, six VP8 simulcast publishers, 150 subscribers, speaker layout,
+synthetic rooms and loopback-only ports. All three received 900/900 tracks with
+zero CLI errors:
+
+| Server | Run | Loss | Packet-bucket lookup warnings | Extended-packet overflow warnings |
+|---|---|---:|---:|---:|
+| `v1.13.4` | control | 5.051% | 429 | 88 |
+| `v1.13.5` | control A | 0.274% | 24 | 6 |
+| `v1.13.5` | control B | 11.261% | 767 | 154 |
+
+The first `v1.13.5` run improved sharply but remained above the 0.1% gate; the
+immediate identical repetition regressed beyond `v1.13.4`. The padding fix is
+therefore relevant but not sufficient or deterministic evidence for a server
+upgrade. Loss continues to correlate with the SFU packet-bucket warnings.
+Production must not be upgraded on this result, and the threshold remains
+unchanged. The next comparison must keep target and generators on separate
+hosts, capture target resource/packet telemetry, and repeat `v1.13.5` before a
+release decision.
+
+Artifact SHA-256:
+
+- `v1.13.4` CLI: `97b090b50afcdc473890a93e0ce2d031c96dc929ae7c70ed46f7824f5371167f`;
+- `v1.13.4` server: `230bbc940781f79dd539893dcde796369292322580688fa82077e5551a2555e2`;
+- `v1.13.5` control A CLI: `a427685500fbb8e2ab403dfc43cc1005464e847c2a9e8e6a4458a645a835f49a`;
+- `v1.13.5` control A server: `75d9e3fef0fcd80b7e55957e9f36d0323ecf055b990135e2e614dc9c7f172b99`;
+- `v1.13.5` control B CLI: `52ac72bd4ad2b64f6c51f05d84d36b18110f796120f01e6c93cedaad0c33c047`;
+- `v1.13.5` control B server: `dd0d733f06dff685c5b96de371f0ab4dc309a0458ee0dd2b137fe493634e5b46`.
 
 ## Decision
 
 - Do not close #99 or use this run as GO evidence for #24.
 - Keep the 0.1% loss threshold; do not normalize the failure away.
-- Compare the explicit VP8 topology on an isolated LiveKit `v1.13.5` target
-  before changing production or classifying the remaining loss.
+- Repeat the explicit VP8 topology from separate generators against isolated
+  LiveKit `v1.13.5`; neither local result authorizes a production upgrade.
 - Run the explicit H264 path as supporting Safari evidence, never as a
   substitute for VP8.
 - Physical browser, TURN, mobile routing, six-camera, and listening gates remain
