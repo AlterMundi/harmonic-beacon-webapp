@@ -47,15 +47,22 @@ function fakeDocker(root: string) {
   return { bin, environmentCapture };
 }
 
-async function healthyServer(): Promise<{ server: Server; url: string }> {
-  const server = createServer((_request, response) => {
+async function healthyServer(): Promise<{ server: Server; url: string; requests: string[] }> {
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    requests.push(request.url ?? '');
+    if (request.url === '/redirect') {
+      response.writeHead(302, { location: '/redirect-target' });
+      response.end();
+      return;
+    }
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end('{"status":"ok"}');
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (address === null || typeof address === 'string') throw new Error('missing test server port');
-  return { server, url: `http://127.0.0.1:${address.port}/ready` };
+  return { server, url: `http://127.0.0.1:${address.port}/ready`, requests };
 }
 
 function records(path: string) {
@@ -202,6 +209,34 @@ describe('LiveKit target-side monitor', () => {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   }, 10_000);
+
+  it('records a loopback redirect as unhealthy without following it', async () => {
+    const root = temporaryRoot();
+    const { bin } = fakeDocker(root);
+    const output = join(root, 'redirect.jsonl');
+    const { server, url, requests } = await healthyServer();
+    try {
+      const result = await runPython([
+        script,
+        '--output', output,
+        '--run-id', 'target-monitor-redirect',
+        '--duration-seconds', '0.25',
+        '--interval-seconds', '0.2',
+        '--health-url', url.replace('/ready', '/redirect'),
+        '--network-interface', 'lo',
+        '--container', 'beacon-app',
+      ], { ...process.env, PATH: `${bin}:${process.env.PATH}` });
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(requests.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(requests)).toEqual(new Set(['/redirect']));
+      const evidence = records(output);
+      expect(evidence[1].health).toMatchObject({ ok: false, status: 302, error: 'http' });
+      expect(evidence.at(-1)).toMatchObject({ healthFailures: requests.length });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
 
   it.each([
     'https://user:password@example.com/ready',

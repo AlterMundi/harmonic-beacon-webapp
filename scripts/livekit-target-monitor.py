@@ -36,6 +36,14 @@ BYTE_UNITS = {
 }
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(NoRedirectHandler)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -260,7 +268,7 @@ def health_sample(url: str, timeout: float) -> dict[str, object]:
     started = time.monotonic()
     request = urllib.request.Request(url, headers={"User-Agent": "harmonic-beacon-load-monitor/1"})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
             response.read(1)
             return {
                 "ok": 200 <= response.status < 300,
