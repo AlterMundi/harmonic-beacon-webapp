@@ -30,6 +30,7 @@ async function main() {
         runId: option('--run-id'),
         targetUrl,
         startDelaySeconds: Number(option('--start-delay-seconds')),
+        shardCount: Number(option('--shard-count')),
     });
     const outputPath = process.env.GITHUB_OUTPUT;
     if (!outputPath) throw new Error('GITHUB_OUTPUT is required');
@@ -39,6 +40,10 @@ async function main() {
         expected_end_at: plan.expectedEndAt,
         confirmation: plan.confirmation,
         shard_count: String(plan.shardCount),
+        shard_indices: JSON.stringify(Array.from(
+            { length: plan.shardCount },
+            (_, shardIndex) => shardIndex,
+        )),
     };
     await appendFile(
         outputPath,

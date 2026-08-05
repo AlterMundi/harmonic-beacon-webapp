@@ -26,6 +26,14 @@ on:
           - '900'
           - '1200'
           - '1800'
+      shard_count:
+        description: Independent generator hosts (2 baseline, 6 fan-in diagnostic)
+        required: true
+        default: '2'
+        type: choice
+        options:
+          - '2'
+          - '6'
 
 permissions:
   contents: read
@@ -44,6 +52,7 @@ jobs:
       expected_end_at: ${{ steps.plan.outputs.expected_end_at }}
       confirmation: ${{ steps.plan.outputs.confirmation }}
       shard_count: ${{ steps.plan.outputs.shard_count }}
+      shard_indices: ${{ steps.plan.outputs.shard_indices }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,6 +71,7 @@ jobs:
           LOAD_PROFILE: ${{ inputs.profile }}
           LOAD_RUN_ID: ${{ inputs.run_id }}
           LOAD_START_DELAY_SECONDS: ${{ inputs.start_delay_seconds }}
+          LOAD_SHARD_COUNT: ${{ inputs.shard_count }}
         run: |
           test -n "$LOAD_TEST_URL"
           test -n "$LOAD_TEST_API_KEY"
@@ -69,7 +79,8 @@ jobs:
           node scripts/livekit-load-dispatch-plan.mjs \
             --profile "$LOAD_PROFILE" \
             --run-id "$LOAD_RUN_ID" \
-            --start-delay-seconds "$LOAD_START_DELAY_SECONDS"
+            --start-delay-seconds "$LOAD_START_DELAY_SECONDS" \
+            --shard-count "$LOAD_SHARD_COUNT"
 
   generator:
     needs: prepare
@@ -81,7 +92,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard_index: [0, 1]
+        shard_index: ${{ fromJSON(needs.prepare.outputs.shard_indices) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -152,11 +163,19 @@ jobs:
           merge-multiple: true
 
       - name: Aggregate only complete, distinct-host PASS evidence
+        env:
+          LOAD_SHARD_COUNT: ${{ needs.prepare.outputs.shard_count }}
         run: |
+          set -euo pipefail
+          shard_paths=()
+          for ((shard_index = 0; shard_index < LOAD_SHARD_COUNT; shard_index++)); do
+            shard_path="artifacts/load-test/shards/shard-${shard_index}.json"
+            test -f "$shard_path"
+            shard_paths+=("$shard_path")
+          done
           node scripts/livekit-load-aggregate.mjs \
             --output 'artifacts/load-test/${{ needs.prepare.outputs.run_id }}-aggregate.json' \
-            artifacts/load-test/shards/shard-0.json \
-            artifacts/load-test/shards/shard-1.json
+            "${shard_paths[@]}"
 
       - name: Upload aggregate and source manifests
         if: always()

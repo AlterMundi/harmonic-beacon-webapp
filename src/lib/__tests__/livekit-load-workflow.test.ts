@@ -28,8 +28,12 @@ describe('distributed LiveKit capacity workflow contract', () => {
         expect(workflow.match(/--guard-production-ready/g)).toHaveLength(1);
     });
 
-    it('uses two independent hosted runners and always preserves shard evidence', () => {
-        expect(workflow).toContain('shard_index: [0, 1]');
+    it('uses a bounded dynamic hosted-runner matrix and always preserves shard evidence', () => {
+        expect(workflow).toContain("default: '2'");
+        expect(workflow).toContain("- '6'");
+        expect(workflow).toContain('fromJSON(needs.prepare.outputs.shard_indices)');
+        expect(workflow).toContain('--shard-count "$LOAD_SHARD_COUNT"');
+        expect(workflow).toContain('shard_paths+=("$shard_path")');
         expect(workflow).toContain('fail-fast: false');
         expect(workflow.match(/environment: capacity-rehearsal/g)).toHaveLength(2);
         expect(workflow).toContain('if: always()');
