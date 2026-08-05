@@ -1,0 +1,314 @@
+#!/usr/bin/env bash
+
+# Root-owned deployment entrypoint for the dedicated mona Actions runner.
+# The runner may invoke this file through sudo, but cannot invoke Docker or an
+# arbitrary root shell directly. Keep every accepted argument fail-closed.
+
+set -euo pipefail
+
+readonly PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH
+
+readonly PRODUCTION_ENV='/etc/harmonic-beacon/production.env'
+readonly COMMERCE_ENV='/etc/harmonic-beacon/commerce.env'
+readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'
+readonly PRIVATE_NETWORK='pmp_beacon_internal'
+readonly EXPECTED_NETWORK_MEMBERS=$'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
+
+die() {
+  printf 'hb-deploy: %s\n' "$*" >&2
+  exit 1
+}
+
+require_root() {
+  [ "${EUID}" -eq 0 ] || die 'must run as root through the restricted sudo rule'
+}
+
+validate_sha() {
+  [[ "$1" =~ ^[0-9a-f]{40}$ ]] || die 'invalid commit SHA'
+}
+
+validate_run_id() {
+  [[ "$1" =~ ^[1-9][0-9]{0,19}$ ]] || die 'invalid Actions run id'
+}
+
+validate_build_time() {
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
+    die 'invalid UTC build time'
+}
+
+validate_schema_version() {
+  [[ "$1" =~ ^[0-9]{14}_[a-z0-9_]+$ ]] || die 'invalid database schema version'
+}
+
+validate_boolean() {
+  [ "$1" = true ] || [ "$1" = false ] || die 'invalid boolean'
+}
+
+validate_workspace() {
+  [ "$1" = "$WORKSPACE" ] || die 'unexpected Actions workspace'
+  [ "$(realpath -e -- "$1")" = "$WORKSPACE" ] || die 'workspace must not redirect elsewhere'
+  [ -f "$WORKSPACE/docker-compose.yml" ] || die 'compose manifest is missing'
+}
+
+validate_checkout() {
+  local expected_sha="$1"
+  local actual_sha
+
+  validate_sha "$expected_sha"
+  actual_sha="$(git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" rev-parse HEAD)"
+  [ "$actual_sha" = "$expected_sha" ] || die 'workspace revision does not match requested release'
+  git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" diff --quiet -- ||
+    die 'workspace has tracked changes'
+  git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" diff --cached --quiet -- ||
+    die 'workspace index has tracked changes'
+}
+
+validate_container() {
+  case "$1" in
+    beacon-app | beacon-commerce-reconciler | beacon-tapestry) ;;
+    *) die 'container is not in the deploy health allowlist' ;;
+  esac
+}
+
+compose() {
+  local workspace="$1"
+  local image_tag="$2"
+  shift 2
+
+  (
+    cd "$workspace"
+    BEACON_IMAGE_TAG="$image_tag" docker compose --file "$workspace/docker-compose.yml" \
+      --project-name app --env-file "$PRODUCTION_ENV" "$@"
+  )
+}
+
+network_members() {
+  docker network inspect "$PRIVATE_NETWORK" \
+    --format '{{range .Containers}}{{println .Name}}{{end}}' |
+    sed '/^[[:space:]]*$/d' |
+    sort
+}
+
+require_exact_private_network() {
+  local members
+
+  [ "$(docker network inspect "$PRIVATE_NETWORK" --format '{{.Internal}}')" = true ] ||
+    die 'commerce network is not internal'
+  members="$(network_members)"
+  if [ "$members" != "$EXPECTED_NETWORK_MEMBERS" ]; then
+    printf 'Unexpected %s members:\n%s\n' "$PRIVATE_NETWORK" "$members" >&2
+    exit 1
+  fi
+}
+
+container_has_env_name() {
+  docker inspect "$1" \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' |
+    cut -d= -f1 |
+    grep -Fxq "$2"
+}
+
+container_has_commerce_key() {
+  docker inspect "$1" \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' |
+    cut -d= -f1 |
+    grep -Eq '^BEACON_COMMERCE_SERVICE_KEY_'
+}
+
+preflight() {
+  local workspace="$1"
+  local sha="$2"
+
+  validate_workspace "$workspace"
+  validate_checkout "$sha"
+  [ -r "$PRODUCTION_ENV" ] || die 'production environment is not readable by root'
+  [ -r "$COMMERCE_ENV" ] || die 'commerce environment is not readable by root'
+  [ "$(stat -c '%a:%U:%G' "$COMMERCE_ENV")" = '600:root:root' ] ||
+    die 'commerce environment permissions are not 600:root:root'
+  require_exact_private_network
+  compose "$workspace" "$sha" config --quiet
+}
+
+preserve() {
+  local run_id="$1"
+  local previous_app
+  local previous_tapestry
+
+  validate_run_id "$run_id"
+  previous_app="$(docker inspect beacon-app --format '{{.Image}}' 2>/dev/null || true)"
+  if [ -n "$previous_app" ]; then
+    docker tag "$previous_app" "harmonic-beacon/app:rollback-${run_id}"
+    printf 'app_available=true\n'
+  else
+    printf 'app_available=false\n'
+  fi
+
+  previous_tapestry="$(docker inspect beacon-tapestry --format '{{.Image}}' 2>/dev/null || true)"
+  if [ -n "$previous_tapestry" ]; then
+    docker tag "$previous_tapestry" "harmonic-beacon/tapestry:rollback-${run_id}"
+    printf 'tapestry_available=true\n'
+  else
+    printf 'tapestry_available=false\n'
+  fi
+}
+
+build() {
+  local workspace="$1"
+  local sha="$2"
+  local build_time="$3"
+  local schema_version="$4"
+
+  validate_workspace "$workspace"
+  validate_checkout "$sha"
+  validate_build_time "$build_time"
+  validate_schema_version "$schema_version"
+  (
+    cd "$workspace"
+    BEACON_IMAGE_TAG="$sha" \
+      BEACON_GIT_SHA="$sha" \
+      BEACON_BUILD_TIME="$build_time" \
+      BEACON_DATABASE_SCHEMA_VERSION="$schema_version" \
+      docker compose --file "$workspace/docker-compose.yml" \
+      --project-name app --env-file "$PRODUCTION_ENV" \
+      build app tapestry
+  )
+}
+
+migrate() {
+  local workspace="$1"
+  local sha="$2"
+
+  validate_workspace "$workspace"
+  validate_checkout "$sha"
+  compose "$workspace" "$sha" run --rm --no-deps app npx prisma migrate deploy
+  compose "$workspace" "$sha" run --rm --no-deps app npx prisma migrate status
+}
+
+replace() {
+  local workspace="$1"
+  local sha="$2"
+
+  validate_workspace "$workspace"
+  validate_checkout "$sha"
+  compose "$workspace" "$sha" up -d --no-deps --force-recreate \
+    app commerce-reconciler tapestry
+}
+
+health() {
+  validate_container "$1"
+  docker inspect "$1" --format '{{.State.Health.Status}}'
+}
+
+status() {
+  local workspace="$1"
+  local sha="$2"
+
+  validate_workspace "$workspace"
+  validate_checkout "$sha"
+  compose "$workspace" "$sha" ps
+  for container in beacon-app beacon-commerce-reconciler beacon-tapestry; do
+    docker inspect "$container" \
+      --format 'name={{.Name}} status={{.State.Status}} health={{.State.Health.Status}} restarts={{.RestartCount}}'
+  done
+}
+
+boundary() {
+  require_exact_private_network
+  container_has_env_name beacon-app BEACON_COMMERCE_SERVICE_KEY_CURRENT_ID ||
+    die 'app is missing commerce key id'
+  container_has_env_name beacon-app BEACON_COMMERCE_SERVICE_KEY_CURRENT ||
+    die 'app is missing commerce key'
+
+  for container in beacon-postgres beacon-livekit beacon-playlist-bot \
+    beacon-tapestry beacon-commerce-reconciler pmp-myth-api \
+    pmp-myth-worker pmp-myth-worker-secondary pmp-myth-postgres \
+    pmp-myth-waha pmp-myth-rag pmp-myth-gateway; do
+    if docker inspect "$container" >/dev/null 2>&1 && container_has_commerce_key "$container"; then
+      die "commerce bearer reached unexpected container: $container"
+    fi
+  done
+}
+
+rollback() {
+  local workspace="$1"
+  local run_id="$2"
+  local app_available="$3"
+  local tapestry_available="$4"
+  local rollback_tag
+  local worker_expected=false
+
+  validate_workspace "$workspace"
+  validate_run_id "$run_id"
+  validate_boolean "$app_available"
+  validate_boolean "$tapestry_available"
+  rollback_tag="rollback-${run_id}"
+
+  if [ "$app_available" = true ]; then
+    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate app
+    if docker run --rm --entrypoint test \
+      "harmonic-beacon/app:${rollback_tag}" \
+      -f /app/scripts/commerce-media-worker.ts; then
+      compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate \
+        commerce-reconciler
+      worker_expected=true
+    else
+      docker stop beacon-commerce-reconciler 2>/dev/null || true
+    fi
+  fi
+
+  if [ "$tapestry_available" = true ]; then
+    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate tapestry
+  fi
+
+  for _attempt in $(seq 1 60); do
+    local app_ready=true
+    local worker_ready=true
+    local tapestry_ready=true
+    if [ "$app_available" = true ]; then
+      if [ "$(health beacon-app 2>/dev/null || true)" != healthy ] || \
+        ! curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
+        app_ready=false
+      fi
+    fi
+    if [ "$worker_expected" = true ] && \
+      [ "$(health beacon-commerce-reconciler 2>/dev/null || true)" != healthy ]; then
+      worker_ready=false
+    fi
+    if [ "$tapestry_available" = true ] && \
+      [ "$(health beacon-tapestry 2>/dev/null || true)" != healthy ]; then
+      tapestry_ready=false
+    fi
+    if [ "$app_ready" = true ] && [ "$worker_ready" = true ] && \
+      [ "$tapestry_ready" = true ]; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  compose "$workspace" "$rollback_tag" ps
+  die 'rollback services did not become ready'
+}
+
+usage() {
+  printf '%s\n' 'usage: hb-deploy {preflight|preserve|build|migrate|replace|health|status|boundary|rollback} ...' >&2
+  exit 2
+}
+
+require_root
+[ "$#" -gt 0 ] || usage
+command="$1"
+shift
+
+case "$command" in
+  preflight) [ "$#" -eq 2 ] || usage; preflight "$@" ;;
+  preserve) [ "$#" -eq 1 ] || usage; preserve "$@" ;;
+  build) [ "$#" -eq 4 ] || usage; build "$@" ;;
+  migrate) [ "$#" -eq 2 ] || usage; migrate "$@" ;;
+  replace) [ "$#" -eq 2 ] || usage; replace "$@" ;;
+  health) [ "$#" -eq 1 ] || usage; health "$@" ;;
+  status) [ "$#" -eq 2 ] || usage; status "$@" ;;
+  boundary) [ "$#" -eq 0 ] || usage; boundary ;;
+  rollback) [ "$#" -eq 4 ] || usage; rollback "$@" ;;
+  *) usage ;;
+esac
