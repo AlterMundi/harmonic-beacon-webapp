@@ -126,6 +126,9 @@ preflight() {
   [ -r "$COMMERCE_ENV" ] || die 'commerce environment is not readable by root'
   [ "$(stat -c '%a:%U:%G' "$COMMERCE_ENV")" = '600:root:root' ] ||
     die 'commerce environment permissions are not 600:root:root'
+  if grep -Fxq 'E2E_DASHBOARD_ENABLED=1' "$PRODUCTION_ENV"; then
+    die 'production E2E dashboard must be disabled before deploy'
+  fi
   require_exact_private_network
   compose "$workspace" "$sha" config --quiet
 }
