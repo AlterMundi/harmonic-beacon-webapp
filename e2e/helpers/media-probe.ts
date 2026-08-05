@@ -331,19 +331,41 @@ export async function installMediaProbe(page: Page): Promise<void> {
                                 .map((stat) => stat.selectedCandidatePairId)
                                 .filter((id): id is string => typeof id === 'string'),
                         );
-                        const codecIds = new Set<string>();
+                        const audioCodecIds = new Set(
+                            stats
+                                .filter((stat) =>
+                                    stat.type === 'codec' &&
+                                    typeof stat.id === 'string' &&
+                                    typeof stat.mimeType === 'string' &&
+                                    stat.mimeType.toLowerCase().startsWith('audio/'))
+                                .map((stat) => stat.id as string),
+                        );
+                        const audioRtpIds = new Set<string>();
                         for (const stat of stats) {
                             if (
                                 (stat.type === 'inbound-rtp' || stat.type === 'outbound-rtp') &&
-                                audioStat(stat) &&
-                                typeof stat.codecId === 'string'
+                                (audioStat(stat) ||
+                                    (typeof stat.codecId === 'string' && audioCodecIds.has(stat.codecId))) &&
+                                typeof stat.id === 'string'
                             ) {
-                                codecIds.add(stat.codecId);
+                                audioRtpIds.add(stat.id);
                             }
                         }
+                        const isAudioRtp = (stat: Record<string, unknown>) =>
+                            audioStat(stat) ||
+                            (typeof stat.codecId === 'string' && audioCodecIds.has(stat.codecId)) ||
+                            (typeof stat.id === 'string' && audioRtpIds.has(stat.id)) ||
+                            (stat.type === 'remote-inbound-rtp' &&
+                                typeof stat.localId === 'string' &&
+                                audioRtpIds.has(stat.localId));
+                        const referencedAudioCodecIds = new Set(
+                            stats
+                                .filter((stat) => isAudioRtp(stat) && typeof stat.codecId === 'string')
+                                .map((stat) => stat.codecId as string),
+                        );
 
                         const inbound = stats
-                            .filter((stat) => stat.type === 'inbound-rtp' && audioStat(stat))
+                            .filter((stat) => stat.type === 'inbound-rtp' && isAudioRtp(stat))
                             .map((stat): RtcInboundAudioStats => {
                                 const jitterBufferDelaySeconds = finiteNumber(stat.jitterBufferDelay);
                                 const jitterBufferEmittedCount = finiteNumber(stat.jitterBufferEmittedCount);
@@ -367,7 +389,7 @@ export async function installMediaProbe(page: Page): Promise<void> {
                             });
 
                         const outbound = stats
-                            .filter((stat) => stat.type === 'outbound-rtp' && audioStat(stat))
+                            .filter((stat) => stat.type === 'outbound-rtp' && isAudioRtp(stat))
                             .map((stat): RtcOutboundAudioStats => ({
                                 packetsSent: finiteNumber(stat.packetsSent),
                                 retransmittedPacketsSent: finiteNumber(stat.retransmittedPacketsSent),
@@ -377,7 +399,7 @@ export async function installMediaProbe(page: Page): Promise<void> {
                             }));
 
                         const remoteInbound = stats
-                            .filter((stat) => stat.type === 'remote-inbound-rtp' && audioStat(stat))
+                            .filter((stat) => stat.type === 'remote-inbound-rtp' && isAudioRtp(stat))
                             .map((stat): RtcRemoteInboundAudioStats => ({
                                 packetsLost: finiteNumber(stat.packetsLost),
                                 fractionLost: finiteNumber(stat.fractionLost),
@@ -411,7 +433,7 @@ export async function installMediaProbe(page: Page): Promise<void> {
                             .filter((stat) =>
                                 stat.type === 'codec' &&
                                 typeof stat.id === 'string' &&
-                                codecIds.has(stat.id) &&
+                                referencedAudioCodecIds.has(stat.id) &&
                                 typeof stat.mimeType === 'string' &&
                                 stat.mimeType.toLowerCase().startsWith('audio/'))
                             .map((stat): RtcAudioCodecStats => ({

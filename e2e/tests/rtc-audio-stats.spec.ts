@@ -41,7 +41,6 @@ test.describe('sanitized RTC audio diagnostics', () => {
                 ['outbound-private-id', {
                     id: 'outbound-private-id',
                     type: 'outbound-rtp',
-                    mediaType: 'audio',
                     codecId: 'codec-private-id',
                     ssrc: 654_321,
                     packetsSent: 900,
@@ -53,7 +52,6 @@ test.describe('sanitized RTC audio diagnostics', () => {
                 ['remote-private-id', {
                     id: 'remote-private-id',
                     type: 'remote-inbound-rtp',
-                    kind: 'audio',
                     localId: 'outbound-private-id',
                     packetsLost: 2,
                     fractionLost: 0.002,
