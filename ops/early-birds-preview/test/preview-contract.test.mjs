@@ -186,6 +186,7 @@ test('smoke and rollback contracts cover both probes without deleting state', as
   assert.match(smoke, /api\/health"/);
   assert.match(smoke, /databaseSchemaVersion/);
   assert.match(smoke, /EARLYBIRDS_PREVIEW_SCHEMA_VERSION/);
+  assert.match(smoke, /grep -Fq/, 'host schema check must use the POSIX host toolchain');
   assert.match(smoke, /api\/health\/ready/);
   assert.match(smoke, /stream_port}\/healthz/);
   assert.match(smoke, /127\.0\.0\.1:9090\/readyz/);
