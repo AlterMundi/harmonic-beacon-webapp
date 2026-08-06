@@ -105,4 +105,22 @@ describe('canonical EarlyBird membership HTTP gateway', () => {
             .rejects.toThrow('unavailable');
         expect(applyMembershipProjection).not.toHaveBeenCalled();
     });
+
+    it('fails closed when authority access contradicts canonical state semantics', async () => {
+        const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            ...authorityMembership,
+            state: 'ACTIVE',
+            paid_through: null,
+            access_allowed: false,
+        }), { status: 200 }));
+        const gateway = new HttpEarlyBirdMembershipGateway({
+            baseUrl: 'https://authority.example.test',
+            keyId: 'current',
+            token: 's'.repeat(43),
+        }, request);
+
+        await expect(gateway.redeemFree({ accountId: 'listener-1', opaqueInvitation: TOKEN }))
+            .rejects.toThrow('unavailable');
+        expect(applyMembershipProjection).not.toHaveBeenCalled();
+    });
 });

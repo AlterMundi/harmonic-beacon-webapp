@@ -111,6 +111,22 @@ function common(input: Record<string, unknown>) {
     };
 }
 
+function canonicalAccessAllowed(
+    membership: Pick<CanonicalAuthorityMembership, 'state' | 'paid_through' | 'grace_until'>,
+    now = new Date(),
+): boolean {
+    if (membership.state === 'ACTIVE') {
+        return membership.paid_through === null || new Date(membership.paid_through) > now;
+    }
+    if (membership.state === 'GRACE') {
+        return membership.grace_until !== null && new Date(membership.grace_until) > now;
+    }
+    if (membership.state === 'CANCELLED_PENDING_END') {
+        return membership.paid_through !== null && new Date(membership.paid_through) > now;
+    }
+    return false;
+}
+
 export function parseMembershipProjectionCommand(value: unknown): EarlyBirdMembershipProjectionCommand {
     const input = record(value, 'membership command');
     exactKeys(input, COMMAND_KEYS);
@@ -129,12 +145,18 @@ export function parseCanonicalAuthorityMembership(value: unknown): CanonicalAuth
     if (typeof input.access_allowed !== 'boolean' || typeof input.free_entitlement_consumed !== 'boolean') {
         throw new EarlyBirdMembershipContractError('Authority membership booleans are invalid');
     }
-    return {
+    const membership: CanonicalAuthorityMembership = {
         schema_version: input.schema_version,
         ...common(input),
         access_allowed: input.access_allowed,
         free_entitlement_consumed: input.free_entitlement_consumed,
     };
+    if (membership.access_allowed !== canonicalAccessAllowed(membership)) {
+        throw new EarlyBirdMembershipContractError(
+            'Authority access decision contradicts membership state or time bounds',
+        );
+    }
+    return membership;
 }
 
 export function authorityMembershipCommand(
