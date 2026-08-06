@@ -77,11 +77,11 @@ export async function withoutContributions<T>(
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
-        await client.query('delete from session_contributions where session_id = $1', [sessionId]);
+        await client.query('delete from session_contributions where scheduled_session_id = $1', [sessionId]);
         try {
             return await run();
         } finally {
-            await client.query('delete from session_contributions where session_id = $1', [sessionId]);
+            await client.query('delete from session_contributions where scheduled_session_id = $1', [sessionId]);
         }
     } finally {
         await client.end();
