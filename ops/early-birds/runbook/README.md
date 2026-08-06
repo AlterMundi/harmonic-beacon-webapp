@@ -29,11 +29,13 @@ config with generated fake secrets; it never contacts Telegram.
 
 The included canary reads the HMAC secret from its mounted file and mints a
 fresh, <=120-second manifest URL for every probe using the same canonical GET
-path contract as the origin. It verifies an HLS manifest and a non-empty signed
-segment, then publishes reachability and manifest age. It **does not
-decode audio** and is not evidence of decoder/audio quality. After a format is
-approved, run the decoder canary from an independent VPS and add its private
-target before release.
+path contract as the origin. It verifies the HLS manifest, fetches a non-empty
+signed segment and asks FFmpeg to decode six seconds of the complete fMP4
+playlist. Signed URLs and decoder errors are suppressed from logs; the exporter
+publishes only success, duration, byte count and manifest age. This proves that
+the deployed artifact is continuously decodable, not subjective listening
+quality. Move the same bounded canary to an independent VPS before a production
+capacity claim so it also exercises an external network path.
 
 ## Alert behavior and immediate action
 

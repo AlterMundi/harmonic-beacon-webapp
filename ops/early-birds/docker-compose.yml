@@ -127,13 +127,14 @@ services:
       BEACON_STREAM_PUBLIC_ORIGIN: ${BEACON_STREAM_PUBLIC_ORIGIN:?set in the root-owned ops env file}
       BEACON_STREAM_ARTIFACT_ID: ${BEACON_STREAM_ARTIFACT_ID:?set in the root-owned ops env file}
       BEACON_CANARY_INTERVAL_MS: 30000
+      BEACON_CANARY_DECODER_TIMEOUT_MS: 20000
     volumes: [canary-runtime:/runtime:ro]
     # The canary needs outbound HTTPS to exercise the public origin. Its
     # metrics remain available only to Prometheus on `observability`.
     networks: [observability, ops_edge]
     deploy:
       resources:
-        limits: { cpus: "0.25", memory: 128M }
+        limits: { cpus: "0.5", memory: 192M }
 
 networks:
   observability:

@@ -24,8 +24,8 @@ The first useful release lets a Listener:
    the provider-neutral commerce authority;
 3. open a private, receive-only listening home;
 4. hear a continuous 24/7 Beacon stream;
-5. optionally play one reviewed drop-in in Spanish or English with standard,
-   independent private playback controls;
+5. optionally begin with one reviewed private intro in Spanish or English,
+   using standard private playback controls before the live Beacon is revealed;
 6. return later and recover the same access without joining an event room.
 
 The initial 24/7 source is the long spatialized recording
@@ -45,13 +45,13 @@ change has passed its own audio and operational acceptance.
 | Develop on a long-lived `early-birds` integration branch | Accepted | Weekend work continues independently on `main`. |
 | Use the long master recording as the first 24/7 source | Accepted | We can prove the listening product before the physical live uplink exists. |
 | Make the stream the primary EarlyBirds experience | Accepted | Stream reliability and audio quality precede growth features. |
-| Share only the Beacon stream timeline | Accepted | Drop-ins are private media with independent play, pause, seek and restart controls. |
+| Share only the Beacon stream timeline | Accepted | Intros are private media with local play, pause, seek and restart controls; their natural end reveals the shared live edge. |
 | Design the stream for later reuse by event sessions | Accepted | The source and delivery contract cannot be Listener-specific. |
 | Do not change the current event audio path before the next weekend | Accepted | Reuse by events is a post-weekend convergence card, not an EarlyBirds shortcut. |
 | Use Fast Forward development with risk-based checkpoints | Accepted | Small isolated changes do not run the whole production release ceremony. |
 | Preserve the audio guardrail | Accepted | No codec, rate, channel, gain, buffer, routing or player-path choice ships without Nico's audio approval. |
 | Use deterministic HLS over HTTP | Accepted | Every listener follows one UTC-derived live edge through immutable six-second segments; event WebRTC is untouched. |
-| Keep drop-ins independent | Accepted | Drop-ins have a local timeline; they are not a realtime mix or crossfader. |
+| Keep intros private | Accepted | Intro progress is device-local. The live stream runs muted underneath and is revealed at the handoff; this is not a realtime mix or crossfader. |
 | Offer Free and paid access through one contract | Accepted | One-use signed invitations and PayPal/MercadoPago converge on the same revocable membership state machine. |
 | Launch Free before paid providers | Accepted | Human acceptance of the complete Free flow is a hard gate before PayPal or MercadoPago can be enabled. Both providers remain disabled by default. |
 | Defer app-store distribution | Accepted | Google Play and Apple App Store wrappers and billing are post-MVP work; the provider-neutral membership authority must leave room for them without making them a launch dependency. |
@@ -76,13 +76,11 @@ the older Founders proposal alone.
   create an unrelated payment truth inside the web app.
 - The selected source master is 6,844.426 seconds (1:54:04.426), stereo,
   48 kHz, 32-bit float PCM, 2,628,259,840 bytes.
-- The selected drop-in masters are
-  `/home/nicolas/Downloads/BeaconEarlyAdopters/Proyeccion_Caldeamiento_Amara_Sol_ES_VOICE.wav`
-  and
-  `/home/nicolas/Downloads/BeaconEarlyAdopters/Proyeccion_Caldeamiento_Amara_Sol_EN_VOICE.wav`.
-  Delivery candidates are
-  offline pre-renders with an approved Beacon excerpt ducked by 9 dB; selection,
-  content and every audio artifact still require Nico's listening approval.
+- The approved Spanish intro source is the 2026-08-06 Amara Sol offline mix,
+  including its authored Beacon sidechain/effects and ending fade. The staging
+  derivative is AAC-LC, stereo, 48 kHz and gain-matched to the long Beacon at
+  -35.6 LUFS under Nico's explicit approval. No English artifact is approved
+  yet, so that option must remain honestly unavailable.
 - No `beacon-247` service or room exists today.
 
 ## 4. Corrections to the initial Founders proposal
@@ -123,8 +121,8 @@ steps are not safe to execute literally.
 - One-use, signed, auditable, revocable Free invitations and canonical paid
   membership entitlements from the commerce service.
 - A continuous, monitored stream from the approved long master.
-- Beacon-only playback and one optional ES or EN drop-in on an independent timeline.
-- Standard play, pause, seek and restart controls for the private drop-in.
+- Beacon-only playback and one optional private ES or EN intro before the live handoff.
+- Standard play, pause, seek and restart controls for the private intro.
 - Two-device lease enforcement; a third device evicts the oldest lease.
 - Honest source state: recorded continuous source, reconnecting or unavailable.
 - Cancellation/revocation reflected without relying on a front-end redirect.
@@ -153,7 +151,7 @@ offline reviewed derivative ----> 24/7 stream origin ----> cache/CDN boundary
                                          |                         |
                                          |                         v
                                          |                 Listener browser
-                                         |                 + optional drop-in
+                                         |                 + optional private intro
                                          v
                                   external canary
 
@@ -219,7 +217,7 @@ consumer.
 - The derivative records codec, bitrate, sample rate, channels, loudness/peak
   measurements, encoder version and checksum.
 - Nico approves the derivative by A/B listening before it becomes a candidate.
-- The six drop-in masters follow the same provenance process separately.
+- Every intro master follows the same provenance and explicit listening-approval process separately.
 
 ### 7.2 Delivery shape
 
@@ -246,7 +244,7 @@ artifact is approved, the steady state is:
 5. expose health, current source, media sequence and last-output timestamp.
 
 All listeners hear approximately the same wall-clock position in the 24/7
-Beacon stream. This shared timeline does not apply to drop-ins. Origin restart
+Beacon stream. Intro progress remains private and local. Origin restart
 must preserve the same epoch and live edge; a new epoch is a versioned artifact
 promotion, never an accidental restart side effect.
 
@@ -303,17 +301,21 @@ testing: native HLS on Safari and `hls.js` where Media Source Extensions are
 required. Web Audio, realtime mixing and a crossfader are outside this milestone.
 
 - Playback begins only after an explicit user gesture.
-- Beacon-only is the default and remains available if a drop-in fails.
-- Starting, pausing, seeking, restarting or finishing a drop-in does not
+- Beacon-only is the default and remains available if an intro fails.
+- The Beacon source and lease are prepared before intro controls are enabled;
+  the click starts both media elements inside the same user gesture for iOS.
+- Starting, pausing, seeking, restarting or finishing an intro does not
   reconnect, pause, seek or restart the Beacon stream.
-- Drop-ins expose familiar play, pause, timeline/seek and restart controls.
-- Drop-in position is private to the Listener and is never synchronized with
+- Intros expose familiar play, pause, timeline/seek and restart controls.
+- Intro position is private to the Listener and is never synchronized with
   another Listener.
-- Each drop-in is an offline reviewed render: the chosen Beacon excerpt is
-  ducked by 9 dB under the unmodified voice master. Its play, pause, seek and
-  restart controls never move the 24/7 Beacon timeline.
-- Starting or stopping a drop-in cannot reconnect or replace the underlying
-  Beacon stream.
+- Each intro is an offline reviewed render. Its controls never move the 24/7
+  Beacon timeline, which remains muted underneath; pausing produces silence.
+- A genuine natural end reveals the already-playing Beacon. Browsers with
+  writable element volume use an equal-power three-second fade that follows
+  live volume changes. iOS uses a non-overlapping native unmute because its
+  media-element volume is not script-writable; no Web Audio path is introduced.
+- Starting or stopping an intro cannot reconnect or replace the underlying Beacon stream.
 - A hidden or locked phone behaves honestly; the UI does not claim playback
   while the browser has suspended it.
 - No camera, microphone, chat, hands, tapestry or event presence is created.
@@ -325,8 +327,8 @@ The media test ladder is mandatory and intentionally incremental:
 2. approved derivative in a standard player;
 3. stream in a standard browser player;
 4. stream in the EarlyBird player;
-5. stream plus independently controlled ES pre-render;
-6. stream plus independently controlled EN pre-render.
+5. approved ES intro and handoff to the current stream edge;
+6. approved EN intro and handoff to the current stream edge.
 
 A failure at one level is fixed there before testing the next.
 
@@ -503,7 +505,7 @@ listen, with no event service or current audio file changed.
 - create isolated EarlyBird data models and session cookie;
 - build bilingual public page and private home;
 - use a development-only synthetic entitlement fixture;
-- add Beacon-only player, drop-in selection and independent standard controls;
+- add Beacon-only player, intro selection, standard controls and live-edge handoff;
 - enforce two active device leases and oldest-lease eviction;
 - prove that no event connection/capability is created.
 
@@ -546,7 +548,7 @@ explicitly approved.
 
 - A Listener can sign in, obtain a canonical sandbox membership and listen.
 - The initial recorded source is continuously delivered and truthfully labeled.
-- Beacon-only and both approved drop-in languages pass physical-device listening.
+- Beacon-only and every published intro language pass physical-device listening.
 - No Listener gains event/staff capabilities or creates event media connections.
 - Duplicate/reordered commerce events cannot duplicate or incorrectly preserve
   access.
@@ -595,11 +597,11 @@ event sound and reliability are at least as good as the current path.
 | D3 | Google and Apple through exact stable Better Auth; no Facebook and no account linking. |
 | D4 | Provider-neutral Free, PayPal and MercadoPago grants; Free is single-use, signed, auditable, revocable and consumed by paid upgrade. |
 | D5 | Truthful “continuous recorded Beacon” wording; never imply the physical source is live. |
-| D6 | Exact Amara Sol ES/EN voice masters; offline drop-in renders with Beacon ducked 9 dB; every artifact awaits Nico's approval. |
+| D6 | Each authored Amara Sol offline mix is immutable and separately approved; Spanish staging is gain-matched and approved, English remains unpublished. |
 | D7 | Deterministic UTC HLS, immutable six-second segments, signed paths, native Safari and `hls.js`; codec remains unselected. |
 | D8 | Two device leases; third device evicts oldest. |
 | D9 | Main app after final convergence; independently bounded stream origin; additive models and kill switch. |
-| D10 | One shared wall-clock Beacon timeline; every drop-in has private play/pause/seek/restart controls. |
+| D10 | One shared wall-clock Beacon timeline; every intro has private play/pause/seek/restart controls and hands off to the current live edge. |
 | D11 | Capacity targets 3k committed, 4k expansion and 5k critical at a 450 kbit/s planning budget with 40% headroom. |
 | D12 | All-audiences experience: an adult owns account/payment; no minor profile or minor data. |
 | D13 | Release sequence is Free acceptance first, then separately approved PayPal/MercadoPago activation; Google Play/App Store wrappers and billing are post-MVP. |
@@ -613,7 +615,7 @@ Create milestone `EarlyBirds` and use these non-overlapping delivery cards:
 3. EB-02 — resource isolation, observability, Telegram alerts, capacity model, canary and stop switch.
 4. EB-03 — Google/Apple identity and isolated Listener sessions.
 5. EB-04 — provider-neutral membership and one-use Free invitations.
-6. EB-05 — bilingual Listener UX, two-device leases and independently controlled ES/EN drop-ins.
+6. EB-05 — bilingual Listener UX, two-device leases, private ES/EN intros and live-edge handoff.
 7. EB-06 — PayPal sandbox lifecycle and reconciliation, disabled until Free acceptance and explicit activation approval.
 8. EB-07 — MercadoPago/BCRA pricing, lock and failure lifecycle, disabled until Free acceptance and explicit activation approval.
 9. EB-08 — staging, cross-device/audio acceptance, isolated load/soak and release/rollback rehearsal.

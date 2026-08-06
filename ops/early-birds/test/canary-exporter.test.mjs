@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
 import test from 'node:test';
-import { mintManifestUrl, parseManifest } from '../canary/canary-exporter.mjs';
+import { decodeManifest, mintManifestUrl, parseManifest } from '../canary/canary-exporter.mjs';
 
 test('extracts a signed segment and measures the newest manifest edge age', () => {
   const result = parseManifest([
@@ -29,4 +30,17 @@ test('mints a fresh manifest URL using the exact origin HMAC canonical contract'
     .update(`GET\n/v1/hls/approved-v1/live.m3u8\n${expiresAt}`).digest('base64url');
   assert.equal(url.searchParams.get('sig'), expected);
   assert.throws(() => mintManifestUrl({ origin: 'https://stream.example.test', id: 'approved-v1', secret, nowMs, ttlSeconds: 121 }), /token TTL/);
+});
+
+test('hands the private manifest to a bounded decoder and removes it afterwards', async () => {
+  let temporaryManifest = '';
+  await decodeManifest('#EXTM3U\n#EXT-X-ENDLIST\n', async (command, args, options) => {
+    assert.equal(command, 'ffmpeg');
+    assert.equal(args.includes('-xerror'), true);
+    assert.equal(args.includes('-threads'), true);
+    assert.equal(options.timeout > 0, true);
+    temporaryManifest = args[args.indexOf('-i') + 1];
+    assert.equal(await fs.readFile(temporaryManifest, 'utf8'), '#EXTM3U\n#EXT-X-ENDLIST\n');
+  });
+  await assert.rejects(fs.stat(temporaryManifest), { code: 'ENOENT' });
 });

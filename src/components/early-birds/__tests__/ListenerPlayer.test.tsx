@@ -131,6 +131,7 @@ describe('EarlyBird Listener player', () => {
         const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
         const spanishCard = spanish.closest('article')!;
 
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
         const liveSource = live.src;
@@ -152,6 +153,9 @@ describe('EarlyBird Listener player', () => {
 
         fireEvent.click(within(spanishCard).getByRole('button', { name: 'Play' }));
         await waitFor(() => expect(live.muted).toBe(true));
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        Object.defineProperty(spanish, 'ended', { value: true, configurable: true });
+        fireEvent.playing(live);
         fireEvent.ended(spanish);
         expect(live.muted).toBe(false);
         expect(live.src).toBe(liveSource);
@@ -182,18 +186,113 @@ describe('EarlyBird Listener player', () => {
         const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
         const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
         const card = spanish.closest('article')!;
+        await waitFor(() => expect(within(card).getByRole('button', { name: 'Play' })).toBeEnabled());
         fireEvent.click(within(card).getByRole('button', { name: 'Play' }));
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
         await waitFor(() => expect(play.mock.instances).toContain(live));
         expect(live.src).toContain('/api/early-birds/stream/manifest');
         expect(live.muted).toBe(true);
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        Object.defineProperty(spanish, 'ended', { value: true, configurable: true });
+        fireEvent.playing(live);
         fireEvent.ended(spanish);
         expect(live.muted).toBe(false);
+    });
+
+    it('ignores stale ended events after switching intros', async () => {
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        }), { status: 200 })));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: 'https://media.example.test/drop-en' }} />
+            </LocaleProvider>,
+        );
+        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
+        const english = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
+        const spanishCard = spanish.closest('article')!;
+        const englishCard = english.closest('article')!;
+        await waitFor(() => expect(within(spanishCard).getByRole('button', { name: 'Play' })).toBeEnabled());
+        fireEvent.click(within(spanishCard).getByRole('button', { name: 'Play' }));
+        await waitFor(() => expect(within(spanishCard).getByRole('button', { name: 'Pause' })).toBeInTheDocument());
+        fireEvent.click(within(englishCard).getByRole('button', { name: 'Play' }));
+        await waitFor(() => expect(within(englishCard).getByRole('button', { name: 'Pause' })).toBeInTheDocument());
+
+        Object.defineProperty(spanish, 'ended', { value: true, configurable: true });
+        fireEvent.ended(spanish);
+        expect(live.muted).toBe(true);
+        expect(within(englishCard).getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+
+        fireEvent.click(within(englishCard).getByRole('button', { name: 'Restart' }));
+        Object.defineProperty(english, 'ended', { value: false, configurable: true });
+        fireEvent.ended(english);
+        expect(live.muted).toBe(true);
+        expect(within(englishCard).getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    });
+
+    it('honors a master mute changed during the live fade', async () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+            frames.push(callback);
+            return frames.length;
+        });
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.spyOn(performance, 'now').mockReturnValue(0);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        }), { status: 200 })));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: null }} />
+            </LocaleProvider>,
+        );
+        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
+        const card = spanish.closest('article')!;
+        await waitFor(() => expect(within(card).getByRole('button', { name: 'Play' })).toBeEnabled());
+        fireEvent.click(within(card).getByRole('button', { name: 'Play' }));
+        await waitFor(() => expect(live.muted).toBe(true));
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        Object.defineProperty(spanish, 'ended', { value: true, configurable: true });
+        fireEvent.playing(live);
+        fireEvent.ended(spanish);
+        expect(frames).toHaveLength(1);
+
+        fireEvent.change(screen.getByRole('slider', { name: 'Master volume' }), { target: { value: '0' } });
+        frames.shift()?.(1_500);
+        expect(live.volume).toBe(0);
     });
 
     it('restarts a playing drop-in without pausing and resets a paused drop-in without starting it', async () => {
         const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        }), { status: 200 })));
         render(
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: null }} />
@@ -202,6 +301,7 @@ describe('EarlyBird Listener player', () => {
         const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
         const card = spanish.closest('article')!;
 
+        await waitFor(() => expect(within(card).getByRole('button', { name: 'Play' })).toBeEnabled());
         fireEvent.click(within(card).getByRole('button', { name: 'Play' }));
         await waitFor(() => expect(within(card).getByRole('button', { name: 'Pause' })).toBeInTheDocument());
         spanish.currentTime = 17;
@@ -253,6 +353,7 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
@@ -287,6 +388,7 @@ describe('EarlyBird Listener player', () => {
                 <ListenerPlayer dropIns={{ es: null, en: null }} />
             </LocaleProvider>,
         );
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         hlsHarness.instances[0].emitFatal();
@@ -323,6 +425,7 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
         const live = screen.getByLabelText('Beacon 24/7');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
 
@@ -364,6 +467,7 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
@@ -415,6 +519,7 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
@@ -466,6 +571,7 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         hlsHarness.instances[0].emitFatal();

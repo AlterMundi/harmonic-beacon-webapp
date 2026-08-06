@@ -79,6 +79,11 @@ export default function ListenerPlayer({
     const hls = useRef<Hls | null>(null);
     const liveSuppressedForDrop = useRef(false);
     const liveFadeFrame = useRef<number | null>(null);
+    const pendingLiveFade = useRef(false);
+    const activeDrop = useRef<DropLanguage | null>(null);
+    const volumeRef = useRef(1);
+    const livePreparedRef = useRef(false);
+    const livePreparation = useRef<Promise<boolean> | null>(null);
     const manifestUrl = useRef<string | null>(null);
     const manifestExpiresAt = useRef(0);
     const leaseId = useRef<string | null>(null);
@@ -98,6 +103,8 @@ export default function ListenerPlayer({
     });
     const [volume, setVolume] = useState(1);
     const [volumeSupported, setVolumeSupported] = useState(true);
+    const [livePrepared, setLivePrepared] = useState(false);
+    const [livePreparing, setLivePreparing] = useState(true);
 
     const updateLiveState = useCallback((state: LiveState) => {
         liveStateRef.current = state;
@@ -128,6 +135,8 @@ export default function ListenerPlayer({
         if (prefersNativeHls(audio)) {
             audio.src = url;
             audio.load();
+            livePreparedRef.current = true;
+            setLivePrepared(true);
             return;
         }
 
@@ -136,6 +145,8 @@ export default function ListenerPlayer({
             if (nativeHlsSupported) {
                 audio.src = url;
                 audio.load();
+                livePreparedRef.current = true;
+                setLivePrepared(true);
                 return;
             }
             throw new Error('HLS is not supported');
@@ -153,6 +164,8 @@ export default function ListenerPlayer({
         instance.loadSource(url);
         instance.attachMedia(audio);
         hls.current = instance;
+        livePreparedRef.current = true;
+        setLivePrepared(true);
     }, [stopHls]);
 
     const requestLease = useCallback(async (): Promise<LeasePayload> => {
@@ -195,36 +208,60 @@ export default function ListenerPlayer({
         }
     }, []);
 
-    const restoreLiveOutput = useCallback((fadeIn = false) => {
+    const beginLiveFade = useCallback(() => {
         if (!liveSuppressedForDrop.current) return;
         const audio = liveAudio.current;
+        if (!audio || audio.paused || document.visibilityState !== 'visible') {
+            pendingLiveFade.current = true;
+            return;
+        }
         cancelLiveFade();
-        if (audio) {
-            audio.muted = false;
-            if (fadeIn && volumeSupported && volume > 0) {
-                const startedAt = performance.now();
-                audio.volume = 0;
-                const step = (now: number) => {
-                    const progress = Math.min(1, Math.max(0, (now - startedAt) / LIVE_FADE_IN_MS));
-                    // Equal-power fade avoids an audible dip at the handoff.
-                    audio.volume = volume * Math.sin(progress * Math.PI / 2);
-                    if (progress < 1) {
-                        liveFadeFrame.current = window.requestAnimationFrame(step);
-                    } else {
-                        liveFadeFrame.current = null;
-                    }
-                };
-                liveFadeFrame.current = window.requestAnimationFrame(step);
-            } else {
-                audio.volume = volume;
-            }
+        pendingLiveFade.current = false;
+        audio.muted = false;
+        if (volumeSupported && volumeRef.current > 0) {
+            const startedAt = performance.now();
+            audio.volume = 0;
+            const step = (now: number) => {
+                const progress = Math.min(1, Math.max(0, (now - startedAt) / LIVE_FADE_IN_MS));
+                // Equal-power fade avoids an audible dip at the handoff. Read
+                // the current control value so a mid-fade mute cannot be lost.
+                audio.volume = volumeRef.current * Math.sin(progress * Math.PI / 2);
+                if (progress < 1) {
+                    liveFadeFrame.current = window.requestAnimationFrame(step);
+                } else {
+                    liveFadeFrame.current = null;
+                }
+            };
+            liveFadeFrame.current = window.requestAnimationFrame(step);
+        } else {
+            // iOS does not expose writable per-element volume. Keep its native
+            // level and perform a safe, non-overlapping unmute.
+            audio.volume = volumeRef.current;
         }
         liveSuppressedForDrop.current = false;
-    }, [cancelLiveFade, volume, volumeSupported]);
+    }, [cancelLiveFade, volumeSupported]);
+
+    const restoreLiveOutput = useCallback((fadeIn = false) => {
+        if (!liveSuppressedForDrop.current) return;
+        if (fadeIn) {
+            pendingLiveFade.current = true;
+            beginLiveFade();
+            return;
+        }
+        pendingLiveFade.current = false;
+        cancelLiveFade();
+        const audio = liveAudio.current;
+        if (audio) {
+            audio.muted = false;
+            audio.volume = volumeRef.current;
+        }
+        liveSuppressedForDrop.current = false;
+    }, [beginLiveFade, cancelLiveFade]);
 
     const pauseDropIns = useCallback(() => {
         dropAudio.es.current?.pause();
         dropAudio.en.current?.pause();
+        activeDrop.current = null;
         setPlayingDrop(null);
         restoreLiveOutput();
     }, [dropAudio.en, dropAudio.es, restoreLiveOutput]);
@@ -237,6 +274,9 @@ export default function ListenerPlayer({
         if (!audio || playbackAttemptRunning.current) return false;
         playbackAttemptRunning.current = true;
         try {
+            // Reuse the source preparation started on mount instead of racing
+            // it with a second lease request when a tester clicks immediately.
+            if (!forceRefresh && livePreparation.current) await livePreparation.current;
             if (verifyExistingLease && leaseId.current) {
                 const probe = await probeExistingLease();
                 if (probe.kind === 'displaced' || probe.kind === 'denied') {
@@ -287,6 +327,38 @@ export default function ListenerPlayer({
             playbackAttemptRunning.current = false;
         }
     }, [attachManifest, probeExistingLease, requestLease, stopHls, updateLiveState]);
+
+    const prepareLiveSource = useCallback((forceRefresh = false): Promise<boolean> => {
+        if (!forceRefresh && livePreparedRef.current && manifestExpiresAt.current > Date.now() + 30_000) {
+            return Promise.resolve(true);
+        }
+        if (!forceRefresh && livePreparation.current) return livePreparation.current;
+        setLivePreparing(true);
+        const pending = (async () => {
+            try {
+                const grant = await requestLease();
+                leaseId.current = grant.leaseId;
+                manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+                await attachManifest(grant.stream.manifestUrl);
+                return true;
+            } catch {
+                livePreparedRef.current = false;
+                setLivePrepared(false);
+                return false;
+            } finally {
+                livePreparation.current = null;
+                setLivePreparing(false);
+            }
+        })();
+        livePreparation.current = pending;
+        return pending;
+    }, [attachManifest, requestLease]);
+
+    useEffect(() => {
+        // Preparing (but not playing) the native element lets an intro click
+        // invoke play() on both media elements inside the same iOS gesture.
+        void prepareLiveSource();
+    }, [prepareLiveSource]);
 
     const scheduleAutomaticRecovery = useCallback((initialDelayMs = 0) => {
         if (!wantsLivePlayback.current || liveStateRef.current === 'displaced') return;
@@ -394,7 +466,8 @@ export default function ListenerPlayer({
         nativeSuspendObserved.current = false;
         cancelRecovery(true);
         updateLiveState('playing');
-    }, [cancelRecovery, updateLiveState]);
+        if (pendingLiveFade.current) beginLiveFade();
+    }, [beginLiveFade, cancelRecovery, updateLiveState]);
 
     useEffect(() => {
         const probe = document.createElement('audio');
@@ -404,12 +477,15 @@ export default function ListenerPlayer({
 
     useEffect(() => {
         const all = [liveAudio.current, dropAudio.es.current, dropAudio.en.current];
-        for (const audio of all) if (audio) audio.volume = volume;
+        for (const audio of all) {
+            if (audio && (audio !== liveAudio.current || liveFadeFrame.current === null)) audio.volume = volume;
+        }
     }, [dropAudio.en, dropAudio.es, volume]);
 
     useEffect(() => {
         const recoverAfterResume = () => {
             if (!wantsLivePlayback.current || document.visibilityState !== 'visible') return;
+            if (pendingLiveFade.current && liveAudio.current && !liveAudio.current.paused) beginLiveFade();
             const leaseNearExpiry = manifestExpiresAt.current <= Date.now() + 30_000;
             const suspendedWithoutFutureData = nativeSuspendObserved.current
                 && Boolean(liveAudio.current)
@@ -426,7 +502,7 @@ export default function ListenerPlayer({
             window.removeEventListener('online', recoverAfterResume);
             window.removeEventListener('pageshow', recoverAfterResume);
         };
-    }, [scheduleAutomaticRecovery]);
+    }, [beginLiveFade, scheduleAutomaticRecovery]);
 
     useEffect(() => {
         const interval = window.setInterval(async () => {
@@ -457,6 +533,8 @@ export default function ListenerPlayer({
         wantsLivePlayback.current = false;
         cancelRecovery(true);
         cancelLiveFade();
+        pendingLiveFade.current = false;
+        activeDrop.current = null;
         liveAudio.current?.pause();
         stopHls();
     }, [cancelLiveFade, cancelRecovery, stopHls]);
@@ -498,6 +576,7 @@ export default function ListenerPlayer({
         if (!selected || !dropIns[language]) return;
         if (playingDrop === language) {
             selected.pause();
+            activeDrop.current = null;
             setPlayingDrop(null);
             return;
         }
@@ -510,7 +589,17 @@ export default function ListenerPlayer({
         }
         const other: DropLanguage = language === 'es' ? 'en' : 'es';
         dropAudio[other].current?.pause();
+        activeDrop.current = language;
         try {
+            // The source is pre-attached. Calling both play methods before the
+            // first await preserves per-element user activation on iOS.
+            let liveStarted: Promise<void> | null = null;
+            if (!wantsLivePlayback.current && livePreparedRef.current && liveAudio.current) {
+                wantsLivePlayback.current = true;
+                cancelRecovery(true);
+                updateLiveState('loading');
+                liveStarted = liveAudio.current.play();
+            }
             const dropStarted = selected.play();
             if (!wantsLivePlayback.current) {
                 wantsLivePlayback.current = true;
@@ -523,8 +612,14 @@ export default function ListenerPlayer({
                 });
             }
             await dropStarted;
+            if (liveStarted) {
+                void liveStarted.then(() => updateLiveState('playing')).catch(() => {
+                    scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+                });
+            }
             setPlayingDrop(language);
         } catch {
+            activeDrop.current = null;
             setPlayingDrop(null);
             restoreLiveOutput();
         }
@@ -551,6 +646,11 @@ export default function ListenerPlayer({
     }
 
     function finishDropIn(language: DropLanguage) {
+        const audio = dropAudio[language].current;
+        const genuinelyEnded = Boolean(audio?.ended)
+            || Boolean(audio && Number.isFinite(audio.duration) && audio.currentTime >= audio.duration - 0.25);
+        if (activeDrop.current !== language || !genuinelyEnded) return;
+        activeDrop.current = null;
         try {
             window.localStorage.removeItem(`${DROP_PROGRESS_PREFIX}${language}`);
         } catch {}
@@ -576,7 +676,7 @@ export default function ListenerPlayer({
         <div className="space-y-8">
             <audio
                 ref={liveAudio}
-                preload="none"
+                preload="auto"
                 aria-label={copy.heading}
                 onError={() => handleNativeInterruption('error')}
                 onStalled={() => handleNativeInterruption('stalled')}
@@ -596,7 +696,7 @@ export default function ListenerPlayer({
                     <button
                         type="button"
                         onClick={toggleLive}
-                        disabled={liveState === 'loading'}
+                        disabled={liveState === 'loading' || livePreparing}
                         className="event-button event-button--primary min-w-44"
                     >
                         {liveButton}
@@ -632,7 +732,12 @@ export default function ListenerPlayer({
                                 {available ? (
                                     <>
                                         <div className="mt-5 flex gap-2">
-                                            <button type="button" onClick={() => toggleDropIn(language)} className="event-button event-button--secondary flex-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleDropIn(language)}
+                                                disabled={!livePrepared}
+                                                className="event-button event-button--secondary flex-1"
+                                            >
                                                 {playingDrop === language ? copy.pause : copy.dropPlay}
                                             </button>
                                             <button type="button" onClick={() => restartDropIn(language)} className="event-button event-button--ghost">
@@ -674,7 +779,11 @@ export default function ListenerPlayer({
                         max={1}
                         step={0.01}
                         value={volume}
-                        onChange={(event) => setVolume(Number(event.target.value))}
+                        onChange={(event) => {
+                            const next = Number(event.target.value);
+                            volumeRef.current = next;
+                            setVolume(next);
+                        }}
                         className="mt-2 w-full accent-[var(--gold)]"
                     />
                 </label>

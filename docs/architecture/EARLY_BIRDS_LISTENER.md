@@ -83,11 +83,14 @@ The origin signature is HMAC-SHA-256 base64url over the exact bytes
 The origin manifest must contain individually signed, same-origin segment URLs. Signing material and
 signed URLs are never returned in API JSON or logged.
 
-The reviewed Spanish/English drop-in artifacts are configured as immutable, format-neutral URLs. Listener UI
-does not encode or alter them. Progress is local to the browser. A drop-in mutes only the live output
-while the HLS element, source and lease continue untouched, then restores the still-running Beacon.
-The live pause control produces silence and its resume seeks to the current live edge. No AudioContext,
-LiveKit, chat or session-event behavior is changed, and the initial gain remains the native 1.0.
+Reviewed intro artifacts are configured as immutable, server-selected private files. Listener UI does not
+encode or alter them and their progress is local to the browser. Before either intro can be selected, the
+HLS source and lease are prepared without autoplay. One click then starts the intro and the already-attached
+Beacon element together, keeping the shared timeline muted underneath. Pausing the intro produces silence;
+its natural end reveals the still-running Beacon with a three-second element-volume fade where the browser
+supports writable volume. iOS does not, so it receives a non-overlapping native unmute rather than a false
+fade claim. The live pause control produces silence and its resume seeks to the current live edge. No
+AudioContext, LiveKit, chat or session-event behavior is changed, and the initial gain remains native 1.0.
 
 ## Dependency note
 

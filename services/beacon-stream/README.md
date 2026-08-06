@@ -20,10 +20,12 @@ a codec. It cannot make an audio candidate before an external approval exists.
 
 ## Artifact metadata
 
-`artifact.json` uses schema version 1. Required fields are `approval.status`
+`artifact.json` accepts schema version 1 for legacy transport-stream packages
+and schema version 2 for the current fMP4 package. Both require `approval.status`
 (`APPROVED`), approval timestamp and review record, source master SHA-256, derivative SHA-256,
-fixed `timing.epochUtc`, `segmentDurationSeconds: 6`, `segmentCount`, and the
-complete `{ file, bytes, sha256 }` segment inventory. The UTC epoch means that
+fixed `timing.epochUtc`, `segmentCount`, and a complete immutable file inventory.
+Version 2 additionally records the initialization fragment, exact per-segment
+durations and loop duration. The UTC epoch means that
 every origin instance computes the same global position and restart never
 changes a listener's wall-clock position.
 
@@ -63,9 +65,10 @@ npm run load -- --manifest "$SIGNED_MANIFEST" --clients 50 --rounds 20
 docker compose --env-file preview.env up --build
 ```
 
-The canary verifies HLS syntax and retrieves a non-empty signed segment. It is
-intentionally codec-neutral; audio decode verification is a release gate run
-only after a reviewed delivery format exists. The load harness fetches manifests
+The small service-local canary verifies HLS syntax and retrieves a non-empty
+signed segment. The deployed operations canary under `ops/early-birds` also
+decodes six seconds through FFmpeg now that the delivery format is approved.
+The load harness fetches manifests
 and signed segments without decoding or altering media and reports error rate,
 bytes and p95/p99 latency. It is a ramp harness, not proof of a 3,000-listener
 production target.

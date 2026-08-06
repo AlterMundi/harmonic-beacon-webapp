@@ -1,5 +1,6 @@
 FROM node:22.22.0-alpine
 
+RUN apk add --no-cache ffmpeg
 WORKDIR /srv/canary
 COPY canary-exporter.mjs ./
 USER node

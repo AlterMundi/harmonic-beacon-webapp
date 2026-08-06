@@ -35,7 +35,7 @@ groups:
         expr: beacon_stream_canary_ok == 0
         for: 2m
         labels: { severity: critical, service: beacon-stream }
-        annotations: { summary: "HTTP HLS canary cannot fetch a non-empty segment", runbook: "early-birds-canary" }
+        annotations: { summary: "HLS canary cannot fetch and decode Beacon audio", runbook: "early-birds-canary" }
   - name: early-birds-capacity
     rules:
       - alert: EarlyBirdsHostCpuPrepare

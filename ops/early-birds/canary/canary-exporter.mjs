@@ -1,13 +1,19 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
 
 const signingSecretFile = process.env.BEACON_STREAM_SIGNING_SECRET_FILE ?? '/run/secrets/beacon_stream_signing_secret';
 const publicOrigin = process.env.BEACON_STREAM_PUBLIC_ORIGIN;
 const artifactId = process.env.BEACON_STREAM_ARTIFACT_ID;
 const intervalMs = Number(process.env.BEACON_CANARY_INTERVAL_MS ?? 30_000);
 const timeoutMs = Number(process.env.BEACON_CANARY_TIMEOUT_MS ?? 10_000);
+const decoderTimeoutMs = Number(process.env.BEACON_CANARY_DECODER_TIMEOUT_MS ?? 20_000);
 const port = Number(process.env.CANARY_EXPORTER_PORT ?? 8081);
+const execFileAsync = promisify(execFile);
 
 export function parseManifest(manifest, nowMs = Date.now()) {
   if (!manifest.startsWith('#EXTM3U\n')) throw new Error('not an HLS manifest');
@@ -42,12 +48,36 @@ async function readSigningSecret(file) {
   return (await fs.readFile(file, 'utf8')).trim();
 }
 
+export async function decodeManifest(manifest, run = execFileAsync) {
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'beacon-canary-'));
+  const manifestPath = path.join(temporaryRoot, 'probe.m3u8');
+  try {
+    await fs.writeFile(manifestPath, manifest, { encoding: 'utf8', mode: 0o600 });
+    await run('ffmpeg', [
+      '-nostdin',
+      '-v', 'error',
+      '-xerror',
+      '-protocol_whitelist', 'file,crypto,http,https,tcp,tls',
+      '-allowed_extensions', 'ALL',
+      '-i', manifestPath,
+      '-t', '6',
+      '-vn',
+      '-threads', '1',
+      '-f', 'null',
+      '-',
+    ], { timeout: decoderTimeoutMs, maxBuffer: 64 * 1024 });
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
 export async function probe({
   fetchImpl = fetch,
   nowMs = () => Date.now(),
   origin = publicOrigin,
   id = artifactId,
   secretFile = signingSecretFile,
+  decodeImpl = decodeManifest,
 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -58,11 +88,13 @@ export async function probe({
     const manifestUrl = mintManifestUrl({ origin, id, secret: await readSigningSecret(secretFile), nowMs: nowMs() });
     const manifestResponse = await fetchImpl(manifestUrl, { cache: 'no-store', signal: controller.signal });
     if (!manifestResponse.ok) throw new Error(`manifest HTTP ${manifestResponse.status}`);
-    const { segmentUrl, manifestAgeSeconds } = parseManifest(await manifestResponse.text(), nowMs());
+    const manifest = await manifestResponse.text();
+    const { segmentUrl, manifestAgeSeconds } = parseManifest(manifest, nowMs());
     const segmentResponse = await fetchImpl(segmentUrl, { cache: 'no-store', signal: controller.signal });
     if (!segmentResponse.ok) throw new Error(`segment HTTP ${segmentResponse.status}`);
     const segmentBytes = (await segmentResponse.arrayBuffer()).byteLength;
     if (!segmentBytes) throw new Error('empty segment');
+    await decodeImpl(manifest);
     return { ok: 1, manifestAgeSeconds, segmentBytes, durationSeconds: (nowMs() - startedAt) / 1000, completedAtSeconds: nowMs() / 1000 };
   } catch {
     // URL and exception details may contain an HMAC. The exporter emits state only.
@@ -74,7 +106,7 @@ export async function probe({
 
 function metrics(state) {
   return [
-    '# HELP beacon_stream_canary_ok 1 when the HTTP HLS canary fetched a non-empty segment.',
+    '# HELP beacon_stream_canary_ok 1 when the HLS canary fetched media and decoded six seconds of audio.',
     '# TYPE beacon_stream_canary_ok gauge',
     `beacon_stream_canary_ok ${state.ok}`,
     '# HELP beacon_stream_canary_manifest_age_seconds Age of the newest HLS program date time.',
