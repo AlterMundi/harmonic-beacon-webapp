@@ -10,8 +10,8 @@ ZeroTier/admin tunnel; do not add a public nginx location for metrics or admin.
 Create the private Telegram group **Harmonic Beacon · Ops**, create a dedicated
 bot, add it to the group, and store each value in a separate root-owned `0600`
 file outside Git. `TELEGRAM_BOT_TOKEN_FILE`, `TELEGRAM_CHAT_ID_FILE` and
-`BEACON_CANARY_MANIFEST_URL_FILE` point to those files at Compose runtime. The
-bot token is consumed by Alertmanager as a Docker secret; the chat ID is
+`BEACON_STREAM_SIGNING_SECRET_FILE` point to those files at Compose runtime.
+The bot token is consumed by Alertmanager as a Docker secret; the chat ID is
 validated as an integer by the short-lived config initializer. No credential,
 signed URL, email, account identifier, request path or raw webhook is included
 in an alert.
@@ -27,8 +27,10 @@ docker compose --project-name earlybirds-observability \
 `npm run validate` validates Compose, Prometheus rules/config and Alertmanager
 config with generated fake secrets; it never contacts Telegram.
 
-The included canary is HTTP-only: it verifies an HLS manifest and a non-empty
-signed segment, then publishes reachability and manifest age. It **does not
+The included canary reads the HMAC secret from its mounted file and mints a
+fresh, <=120-second manifest URL for every probe using the same canonical GET
+path contract as the origin. It verifies an HLS manifest and a non-empty signed
+segment, then publishes reachability and manifest age. It **does not
 decode audio** and is not evidence of decoder/audio quality. After a format is
 approved, run the decoder canary from an independent VPS and add its private
 target before release.

@@ -12,7 +12,7 @@ services:
       - -ec
       - |
         chat_id="$$(tr -d '\r\n' </run/secrets/telegram_chat_id)"
-        case "$$chat_id" in -[0-9]*|[0-9]*) ;; *) echo 'invalid Telegram chat id' >&2; exit 1;; esac
+        printf '%s\n' "$$chat_id" | grep -Eq '^-?[0-9]+$$' || { echo 'invalid Telegram chat id' >&2; exit 1; }
         sed "s/__TELEGRAM_CHAT_ID__/$$chat_id/g" /template/alertmanager.yml.tmpl > /runtime/alertmanager.yml
     networks: [observability]
 
@@ -29,7 +29,6 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
       - prometheus-data:/prometheus
-    extra_hosts: [host.docker.internal:host-gateway]
     ports: [127.0.0.1:9090:9090]
     networks: [observability]
     deploy:
@@ -59,13 +58,16 @@ services:
   node-exporter:
     image: prom/node-exporter:v1.9.1
     restart: unless-stopped
-    network_mode: host
-    pid: host
     command:
       - --path.rootfs=/host
-      - --web.listen-address=127.0.0.1:9100
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --web.listen-address=0.0.0.0:9100
     volumes:
       - /:/host:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    networks: [observability]
     deploy:
       resources:
         limits: { cpus: "0.25", memory: 128M }
@@ -88,9 +90,11 @@ services:
   canary-exporter:
     build: ./canary
     restart: unless-stopped
-    secrets: [canary_manifest_url]
+    secrets: [beacon_stream_signing_secret]
     environment:
-      BEACON_CANARY_MANIFEST_URL_FILE: /run/secrets/canary_manifest_url
+      BEACON_STREAM_SIGNING_SECRET_FILE: /run/secrets/beacon_stream_signing_secret
+      BEACON_STREAM_PUBLIC_ORIGIN: ${BEACON_STREAM_PUBLIC_ORIGIN:?set in the root-owned ops env file}
+      BEACON_STREAM_ARTIFACT_ID: ${BEACON_STREAM_ARTIFACT_ID:?set in the root-owned ops env file}
       BEACON_CANARY_INTERVAL_MS: 30000
     networks: [observability]
     deploy:
@@ -112,5 +116,5 @@ secrets:
     file: ${TELEGRAM_BOT_TOKEN_FILE:?set a root-owned secret file outside Git}
   telegram_chat_id:
     file: ${TELEGRAM_CHAT_ID_FILE:?set a root-owned secret file outside Git}
-  canary_manifest_url:
-    file: ${BEACON_CANARY_MANIFEST_URL_FILE:?set a root-owned secret file outside Git}
+  beacon_stream_signing_secret:
+    file: ${BEACON_STREAM_SIGNING_SECRET_FILE:?set a root-owned secret file outside Git}

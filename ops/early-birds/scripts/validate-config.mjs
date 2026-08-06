@@ -14,7 +14,7 @@ const secret = async (name, contents) => {
 try {
   const botToken = await secret('telegram_bot_token', 'not-a-real-token');
   const chatId = await secret('telegram_chat_id', '-1000000000000');
-  const manifestUrl = await secret('canary_manifest_url', 'https://example.invalid/not-a-real-manifest');
+  const signingSecret = await secret('beacon_stream_signing_secret', 'not-a-real-32-character-or-longer-secret');
   const environment = path.join(temporary, 'preview.env');
   await fs.writeFile(environment, [
     'BEACON_STREAM_ARTIFACTS_HOST_PATH=.',
@@ -24,7 +24,7 @@ try {
     'BEACON_STREAM_SIGNING_SECRET=not-a-real-32-character-or-longer-secret',
     `TELEGRAM_BOT_TOKEN_FILE=${botToken}`,
     `TELEGRAM_CHAT_ID_FILE=${chatId}`,
-    `BEACON_CANARY_MANIFEST_URL_FILE=${manifestUrl}`,
+    `BEACON_STREAM_SIGNING_SECRET_FILE=${signingSecret}`,
     '',
   ].join('\n'), { mode: 0o600 });
   const generatedAlertmanager = path.join(temporary, 'alertmanager.yml');

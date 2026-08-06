@@ -1,7 +1,10 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 
-const manifestUrlFile = process.env.BEACON_CANARY_MANIFEST_URL_FILE ?? '/run/secrets/canary_manifest_url';
+const signingSecretFile = process.env.BEACON_STREAM_SIGNING_SECRET_FILE ?? '/run/secrets/beacon_stream_signing_secret';
+const publicOrigin = process.env.BEACON_STREAM_PUBLIC_ORIGIN;
+const artifactId = process.env.BEACON_STREAM_ARTIFACT_ID;
 const intervalMs = Number(process.env.BEACON_CANARY_INTERVAL_MS ?? 30_000);
 const timeoutMs = Number(process.env.BEACON_CANARY_TIMEOUT_MS ?? 10_000);
 const port = Number(process.env.CANARY_EXPORTER_PORT ?? 8081);
@@ -18,18 +21,42 @@ export function parseManifest(manifest, nowMs = Date.now()) {
   return { segmentUrl, manifestAgeSeconds: Math.max(0, (nowMs - programTimes.at(-1)) / 1000) };
 }
 
-async function readManifestUrl() {
-  const value = (await fs.readFile(manifestUrlFile, 'utf8')).trim();
-  if (!/^https?:\/\//.test(value)) throw new Error('manifest URL must be HTTP(S)');
-  return value;
+function canonicalManifestPath(id) {
+  if (!/^[a-z0-9][a-z0-9._-]{0,127}$/.test(id ?? '')) throw new Error('invalid artifact ID');
+  return `/v1/hls/${id}/live.m3u8`;
 }
 
-export async function probe({ fetchImpl = fetch, nowMs = () => Date.now() } = {}) {
+export function mintManifestUrl({ origin, id, secret, nowMs = Date.now(), ttlSeconds = 120 }) {
+  if (!secret || secret.length < 32) throw new Error('invalid signing secret');
+  if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 120) throw new Error('invalid token TTL');
+  const pathname = canonicalManifestPath(id);
+  const expiresAt = Math.floor(nowMs / 1000) + ttlSeconds;
+  const signature = crypto.createHmac('sha256', secret).update(`GET\n${pathname}\n${expiresAt}`).digest('base64url');
+  const url = new URL(pathname, origin);
+  url.searchParams.set('exp', String(expiresAt));
+  url.searchParams.set('sig', signature);
+  return url.toString();
+}
+
+async function readSigningSecret(file) {
+  return (await fs.readFile(file, 'utf8')).trim();
+}
+
+export async function probe({
+  fetchImpl = fetch,
+  nowMs = () => Date.now(),
+  origin = publicOrigin,
+  id = artifactId,
+  secretFile = signingSecretFile,
+} = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = nowMs();
   try {
-    const manifestResponse = await fetchImpl(await readManifestUrl(), { cache: 'no-store', signal: controller.signal });
+    // A new <=120-second signature is minted on every probe. Origin tokens are
+    // intentionally short-lived, so a static signed URL is never monitored.
+    const manifestUrl = mintManifestUrl({ origin, id, secret: await readSigningSecret(secretFile), nowMs: nowMs() });
+    const manifestResponse = await fetchImpl(manifestUrl, { cache: 'no-store', signal: controller.signal });
     if (!manifestResponse.ok) throw new Error(`manifest HTTP ${manifestResponse.status}`);
     const { segmentUrl, manifestAgeSeconds } = parseManifest(await manifestResponse.text(), nowMs());
     const segmentResponse = await fetchImpl(segmentUrl, { cache: 'no-store', signal: controller.signal });
