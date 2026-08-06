@@ -78,15 +78,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const password = testPassword(email);
-    let authResponse = await authRequest(request, 'sign-up', {
+    // Returning testers are the common case during multi-device acceptance.
+    // Sign in first so an existing account does not spend a sign-up rate-limit
+    // attempt before every device login. A new synthetic identity falls back
+    // to the one bounded sign-up request.
+    let authResponse = await authRequest(request, 'sign-in', {
         email,
-        name,
         password,
         rememberMe: true,
     });
     if (!authResponse.ok) {
-        authResponse = await authRequest(request, 'sign-in', {
+        authResponse = await authRequest(request, 'sign-up', {
             email,
+            name,
             password,
             rememberMe: true,
         });

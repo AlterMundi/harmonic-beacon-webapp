@@ -88,6 +88,38 @@ describe('EarlyBird synthetic login seam', () => {
         expect(mocks.issueMembership).toHaveBeenCalledWith('listener-synthetic-1');
     });
 
+    it('signs an existing synthetic account in without spending a sign-up attempt', async () => {
+        const response = await POST(request(`Bearer ${'s'.repeat(32)}`));
+
+        expect(response.status).toBe(200);
+        expect(mocks.handler).toHaveBeenCalledOnce();
+        const internalRequest = mocks.handler.mock.calls[0][0] as Request;
+        expect(internalRequest.url).toContain('/sign-in/email');
+    });
+
+    it('falls back to one bounded sign-up for a new synthetic identity', async () => {
+        mocks.handler
+            .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'invalid credentials' }), {
+                status: 401,
+            }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                user: { id: 'listener-synthetic-new' },
+            }), {
+                status: 200,
+                headers: { 'set-cookie': 'hb_earlybird_session=synthetic; HttpOnly; Secure' },
+            }));
+
+        const response = await POST(request(`Bearer ${'s'.repeat(32)}`));
+
+        expect(response.status).toBe(200);
+        expect(mocks.handler).toHaveBeenCalledTimes(2);
+        const first = mocks.handler.mock.calls[0][0] as Request;
+        const second = mocks.handler.mock.calls[1][0] as Request;
+        expect(first.url).toContain('/sign-in/email');
+        expect(second.url).toContain('/sign-up/email');
+        expect(mocks.issueMembership).toHaveBeenCalledWith('listener-synthetic-new');
+    });
+
     it('creates only the staging identity when a canonical Free invitation will issue access', async () => {
         const secret = 's'.repeat(32);
         const response = await POST(request(`Bearer ${secret}`, true));
