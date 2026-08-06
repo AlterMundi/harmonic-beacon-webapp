@@ -21,9 +21,11 @@ vi.mock('@/lib/db', () => ({ prisma }));
 
 import {
     acquireEarlyBirdStreamLease,
+    EarlyBirdDeviceCapacityError,
     earlyBirdDeviceDigest,
     EARLY_BIRD_LEASE_TTL_MS,
     heartbeatEarlyBirdStreamLease,
+    prepareEarlyBirdStreamLease,
     type EarlyBirdStreamUrlIssuer,
 } from '../stream';
 
@@ -78,6 +80,25 @@ describe('EarlyBird two-device leases', () => {
         expect(result.evictedLeaseId).toBe('00000000-0000-4000-8000-000000000001');
         expect(result.leaseId).toBe('00000000-0000-4000-8000-000000000003');
         expect(issuer.issue).toHaveBeenCalledOnce();
+    });
+
+    it('never evicts an active listener merely to prepare a third device', async () => {
+        tx.earlyBirdStreamLease.findMany.mockResolvedValue([
+            { id: '00000000-0000-4000-8000-000000000001' },
+            { id: '00000000-0000-4000-8000-000000000002' },
+        ]);
+        const issuer: EarlyBirdStreamUrlIssuer = { issue: vi.fn() };
+
+        await expect(prepareEarlyBirdStreamLease(
+            'listener-1',
+            'device_abcdefghijklmnopqrstuvwxyz',
+            NOW,
+            issuer,
+        )).rejects.toBeInstanceOf(EarlyBirdDeviceCapacityError);
+
+        expect(tx.earlyBirdStreamLease.updateMany).not.toHaveBeenCalled();
+        expect(tx.earlyBirdStreamLease.create).not.toHaveBeenCalled();
+        expect(issuer.issue).not.toHaveBeenCalled();
     });
 
     it('marks a just-created lease inactive if URL issuance fails closed', async () => {

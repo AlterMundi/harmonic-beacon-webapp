@@ -5,7 +5,9 @@ import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-bi
 import {
     acquireEarlyBirdStreamLease,
     EarlyBirdAccessDeniedError,
+    EarlyBirdDeviceCapacityError,
     EarlyBirdStreamIssuerUnavailableError,
+    prepareEarlyBirdStreamLease,
 } from '@/lib/early-birds/stream';
 
 export const dynamic = 'force-dynamic';
@@ -17,15 +19,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!session) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
 
     let deviceId: string;
+    let intent: 'play' | 'prepare';
     try {
-        const body = await request.json() as { deviceId?: unknown };
+        const body = await request.json() as { deviceId?: unknown; intent?: unknown };
         deviceId = typeof body.deviceId === 'string' ? body.deviceId : '';
+        intent = body.intent === 'prepare' ? 'prepare' : 'play';
     } catch {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }
 
     try {
-        const grant = await acquireEarlyBirdStreamLease(session.user.id, deviceId);
+        const grant = intent === 'prepare'
+            ? await prepareEarlyBirdStreamLease(session.user.id, deviceId)
+            : await acquireEarlyBirdStreamLease(session.user.id, deviceId);
         return NextResponse.json({
             leaseId: grant.leaseId,
             leaseExpiresAt: grant.leaseExpiresAt.toISOString(),
@@ -41,6 +47,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
         if (error instanceof EarlyBirdStreamIssuerUnavailableError) {
             return NextResponse.json({ error: 'Stream temporarily unavailable.' }, { status: 503 });
+        }
+        if (error instanceof EarlyBirdDeviceCapacityError) {
+            return NextResponse.json({ error: 'Two devices are already active.', reason: 'device_limit' }, { status: 409 });
         }
         if (error instanceof Error && error.message === 'invalid device id') {
             return NextResponse.json({ error: 'Invalid device.' }, { status: 400 });

@@ -92,6 +92,13 @@ export class EarlyBirdAccessDeniedError extends Error {
     }
 }
 
+export class EarlyBirdDeviceCapacityError extends Error {
+    constructor() {
+        super('Two EarlyBird stream devices are already active');
+        this.name = 'EarlyBirdDeviceCapacityError';
+    }
+}
+
 export class EarlyBirdLeaseInactiveError extends Error {
     readonly reason: 'evicted' | 'expired' | 'missing';
 
@@ -232,6 +239,7 @@ export async function acquireEarlyBirdStreamLease(
     deviceId: string,
     now = new Date(),
     issuer = earlyBirdStreamUrlIssuer(),
+    evictOldest = true,
 ): Promise<LeaseAcquisition> {
     const deviceDigest = earlyBirdDeviceDigest(deviceId);
     const leaseExpiresAt = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
@@ -264,6 +272,7 @@ export async function acquireEarlyBirdStreamLease(
         });
 
         const overflow = Math.max(0, active.length - (EARLY_BIRD_MAX_STREAM_DEVICES - 1));
+        if (!evictOldest && overflow > 0) throw new EarlyBirdDeviceCapacityError();
         const evicted = active.slice(0, overflow);
         if (evicted.length > 0) {
             await tx.earlyBirdStreamLease.updateMany({
@@ -303,6 +312,15 @@ export async function acquireEarlyBirdStreamLease(
         });
         throw error;
     }
+}
+
+export function prepareEarlyBirdStreamLease(
+    accountId: string,
+    deviceId: string,
+    now = new Date(),
+    issuer = earlyBirdStreamUrlIssuer(),
+): Promise<LeaseAcquisition> {
+    return acquireEarlyBirdStreamLease(accountId, deviceId, now, issuer, false);
 }
 
 export async function heartbeatEarlyBirdStreamLease(

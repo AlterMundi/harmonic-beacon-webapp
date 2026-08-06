@@ -81,6 +81,7 @@ export default function ListenerPlayer({
     const liveFadeFrame = useRef<number | null>(null);
     const pendingLiveFade = useRef(false);
     const activeDrop = useRef<DropLanguage | null>(null);
+    const dropGeneration = useRef(0);
     const volumeRef = useRef(1);
     const livePreparedRef = useRef(false);
     const livePreparation = useRef<Promise<boolean> | null>(null);
@@ -95,6 +96,7 @@ export default function ListenerPlayer({
     const queuedRecoveryDelay = useRef<number | null>(null);
     const nativeSuspendObserved = useRef(false);
     const automaticRecovery = useRef<(initialDelayMs?: number) => void>(() => undefined);
+    const deferLiveFadeForRecovery = useRef<() => void>(() => undefined);
     const [liveState, setLiveState] = useState<LiveState>('idle');
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
     const [dropProgress, setDropProgress] = useState({
@@ -158,6 +160,7 @@ export default function ListenerPlayer({
         });
         instance.on(HlsConstructor.Events.ERROR, (_event, data) => {
             if (!data.fatal) return;
+            deferLiveFadeForRecovery.current();
             liveAudio.current?.pause();
             automaticRecovery.current(0);
         });
@@ -168,12 +171,12 @@ export default function ListenerPlayer({
         setLivePrepared(true);
     }, [stopHls]);
 
-    const requestLease = useCallback(async (): Promise<LeasePayload> => {
+    const requestLease = useCallback(async (intent: 'play' | 'prepare' = 'play'): Promise<LeasePayload> => {
         const deviceId = getOrCreateEarlyBirdDeviceId(window.localStorage);
         const response = await fetch('/api/early-birds/stream/lease', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ deviceId }),
+            body: JSON.stringify({ deviceId, intent }),
         });
         if (!response.ok) throw new Error(`lease:${response.status}`);
         return response.json() as Promise<LeasePayload>;
@@ -207,6 +210,22 @@ export default function ListenerPlayer({
             liveFadeFrame.current = null;
         }
     }, []);
+
+    const deferLiveFade = useCallback(() => {
+        if (liveFadeFrame.current === null && !pendingLiveFade.current) return;
+        cancelLiveFade();
+        const audio = liveAudio.current;
+        if (audio) audio.muted = true;
+        liveSuppressedForDrop.current = true;
+        pendingLiveFade.current = true;
+    }, [cancelLiveFade]);
+
+    useEffect(() => {
+        deferLiveFadeForRecovery.current = deferLiveFade;
+        return () => {
+            deferLiveFadeForRecovery.current = () => undefined;
+        };
+    }, [deferLiveFade]);
 
     const beginLiveFade = useCallback(() => {
         if (!liveSuppressedForDrop.current) return;
@@ -261,6 +280,7 @@ export default function ListenerPlayer({
     const pauseDropIns = useCallback(() => {
         dropAudio.es.current?.pause();
         dropAudio.en.current?.pause();
+        dropGeneration.current += 1;
         activeDrop.current = null;
         setPlayingDrop(null);
         restoreLiveOutput();
@@ -304,7 +324,7 @@ export default function ListenerPlayer({
                 !manifestUrl.current ||
                 manifestExpiresAt.current <= Date.now() + 30_000
             ) {
-                const grant = await requestLease();
+                const grant = await requestLease('play');
                 leaseId.current = grant.leaseId;
                 manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
                 if (forceRefresh || grant.stream.manifestUrl !== manifestUrl.current) {
@@ -336,7 +356,7 @@ export default function ListenerPlayer({
         setLivePreparing(true);
         const pending = (async () => {
             try {
-                const grant = await requestLease();
+                const grant = await requestLease('prepare');
                 leaseId.current = grant.leaseId;
                 manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
                 await attachManifest(grant.stream.manifestUrl);
@@ -458,8 +478,9 @@ export default function ListenerPlayer({
             nativeSuspendObserved.current = true;
             return;
         }
+        deferLiveFade();
         scheduleAutomaticRecovery(kind === 'error' ? 0 : STALL_RECOVERY_DELAY_MS);
-    }, [scheduleAutomaticRecovery]);
+    }, [deferLiveFade, scheduleAutomaticRecovery]);
 
     const handleNativePlaying = useCallback(() => {
         if (!wantsLivePlayback.current) return;
@@ -484,7 +505,11 @@ export default function ListenerPlayer({
 
     useEffect(() => {
         const recoverAfterResume = () => {
-            if (!wantsLivePlayback.current || document.visibilityState !== 'visible') return;
+            if (!wantsLivePlayback.current) return;
+            if (document.visibilityState !== 'visible') {
+                deferLiveFade();
+                return;
+            }
             if (pendingLiveFade.current && liveAudio.current && !liveAudio.current.paused) beginLiveFade();
             const leaseNearExpiry = manifestExpiresAt.current <= Date.now() + 30_000;
             const suspendedWithoutFutureData = nativeSuspendObserved.current
@@ -502,11 +527,13 @@ export default function ListenerPlayer({
             window.removeEventListener('online', recoverAfterResume);
             window.removeEventListener('pageshow', recoverAfterResume);
         };
-    }, [beginLiveFade, scheduleAutomaticRecovery]);
+    }, [beginLiveFade, deferLiveFade, scheduleAutomaticRecovery]);
 
     useEffect(() => {
         const interval = window.setInterval(async () => {
-            if (!leaseId.current || liveStateRef.current === 'idle') return;
+            // The native element is prepared before the first gesture for iOS,
+            // so its lease must also remain current while playback is idle.
+            if (!leaseId.current) return;
             const probe = await probeExistingLease();
             if (probe.kind === 'displaced' || probe.kind === 'denied') {
                 wantsLivePlayback.current = false;
@@ -519,15 +546,20 @@ export default function ListenerPlayer({
             }
             if (probe.kind === 'reacquire') {
                 leaseId.current = null;
-                scheduleAutomaticRecovery(0);
+                livePreparedRef.current = false;
+                setLivePrepared(false);
+                if (wantsLivePlayback.current) scheduleAutomaticRecovery(0);
+                else void prepareLiveSource(true);
                 return;
             }
             if (probe.kind === 'active') {
                 manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
+                livePreparedRef.current = true;
+                setLivePrepared(true);
             }
         }, 60_000);
         return () => window.clearInterval(interval);
-    }, [cancelRecovery, probeExistingLease, scheduleAutomaticRecovery, stopHls, updateLiveState]);
+    }, [cancelRecovery, prepareLiveSource, probeExistingLease, scheduleAutomaticRecovery, stopHls, updateLiveState]);
 
     useEffect(() => () => {
         wantsLivePlayback.current = false;
@@ -576,6 +608,7 @@ export default function ListenerPlayer({
         if (!selected || !dropIns[language]) return;
         if (playingDrop === language) {
             selected.pause();
+            dropGeneration.current += 1;
             activeDrop.current = null;
             setPlayingDrop(null);
             return;
@@ -589,7 +622,10 @@ export default function ListenerPlayer({
         }
         const other: DropLanguage = language === 'es' ? 'en' : 'es';
         dropAudio[other].current?.pause();
+        const generation = dropGeneration.current + 1;
+        dropGeneration.current = generation;
         activeDrop.current = language;
+        const isCurrent = () => dropGeneration.current === generation && activeDrop.current === language;
         try {
             // The source is pre-attached. Calling both play methods before the
             // first await preserves per-element user activation on iOS.
@@ -612,6 +648,7 @@ export default function ListenerPlayer({
                 });
             }
             await dropStarted;
+            if (!isCurrent()) return;
             if (liveStarted) {
                 void liveStarted.then(() => updateLiveState('playing')).catch(() => {
                     scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
@@ -619,6 +656,7 @@ export default function ListenerPlayer({
             }
             setPlayingDrop(language);
         } catch {
+            if (!isCurrent()) return;
             activeDrop.current = null;
             setPlayingDrop(null);
             restoreLiveOutput();

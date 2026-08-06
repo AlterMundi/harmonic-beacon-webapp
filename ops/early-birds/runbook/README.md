@@ -45,7 +45,7 @@ receivers set `send_resolved: true`, so recovery messages are mandatory.
 
 | Signal | Warning | Critical | Immediate action |
 | --- | --- | --- | --- |
-| Origin/canary | manifest age >18s | origin unavailable, canary failed, age >60s | Check private `/readyz`; stop only the EarlyBird origin if it affects host safety. |
+| Origin/canary | manifest age >18s | origin unavailable, decode failed, no completed probe for 90s, age >60s | Check private `/readyz`; stop only the EarlyBird origin if it affects host safety. |
 | Origin quality | 5xx ≥0.5%, p95 >1s | 5xx ≥2% | Inspect origin logs without copying signed URLs; verify artifact and source state. |
 | Host | CPU >50%, memory >70%, disk <30% | CPU >75%, memory >85%, disk <15% | Prepare/move capacity; never reclaim event volumes during an incident. |
 | Network | sustained egress >1.5 Gbit/s, expansion >1.8 Gbit/s for 5m, retransmits ≥1% or interface errors | egress >2.25 Gbit/s for 2m or retransmits ≥3% | Activate the prepared Bunny pull distribution, then verify cache/origin error rates. |

@@ -36,6 +36,11 @@ groups:
         for: 2m
         labels: { severity: critical, service: beacon-stream }
         annotations: { summary: "HLS canary cannot fetch and decode Beacon audio", runbook: "early-birds-canary" }
+      - alert: EarlyBirdsCanaryStalled
+        expr: absent(beacon_stream_canary_last_completed_unixtime) or (time() - beacon_stream_canary_last_completed_unixtime > 90)
+        for: 2m
+        labels: { severity: critical, service: beacon-stream }
+        annotations: { summary: "HLS decoder canary has not completed a probe for 90 seconds", runbook: "early-birds-canary" }
   - name: early-birds-capacity
     rules:
       - alert: EarlyBirdsHostCpuPrepare

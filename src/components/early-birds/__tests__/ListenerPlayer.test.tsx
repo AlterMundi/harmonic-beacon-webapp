@@ -367,6 +367,130 @@ describe('EarlyBird Listener player', () => {
         expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
     });
 
+    it('keeps the pre-attached iOS source lease alive before the first play gesture', async () => {
+        const intervalCallbacks: Array<() => void | Promise<void>> = [];
+        vi.spyOn(window, 'setInterval').mockImplementation((callback) => {
+            intervalCallbacks.push(callback as () => void | Promise<void>);
+            return intervalCallbacks.length as unknown as ReturnType<typeof window.setInterval>;
+        });
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        const manifestUrl = '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003';
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                leaseId: '00000000-0000-4000-8000-000000000003',
+                leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+                stream: { manifestUrl, expiresAt: '2099-08-06T12:03:00.000Z' },
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                leaseExpiresAt: '2099-08-06T12:04:00.000Z',
+                stream: { manifestUrl, expiresAt: '2099-08-06T12:04:00.000Z' },
+            }), { status: 200 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ intent: 'prepare' });
+
+        await Promise.all(intervalCallbacks.map((callback) => callback()));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/early-birds/stream/heartbeat');
+        expect(screen.getByRole('button', { name: 'Listen now' })).toBeInTheDocument();
+    });
+
+    it('ignores a stale intro play completion after switching languages', async () => {
+        let finishSpanishPlay: (() => void) | undefined;
+        const spanishPlay = new Promise<void>((resolve) => {
+            finishSpanishPlay = resolve;
+        });
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
+            return this.getAttribute('aria-label') === 'Warm-up · Spanish'
+                ? spanishPlay
+                : Promise.resolve();
+        });
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        }), { status: 200 })));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: 'https://media.example.test/drop-en' }} />
+            </LocaleProvider>,
+        );
+        const spanish = screen.getByLabelText('Warm-up · Spanish');
+        const english = screen.getByLabelText('Warm-up · English');
+        const spanishCard = spanish.closest('article')!;
+        const englishCard = english.closest('article')!;
+        await waitFor(() => expect(within(spanishCard).getByRole('button', { name: 'Play' })).toBeEnabled());
+
+        fireEvent.click(within(spanishCard).getByRole('button', { name: 'Play' }));
+        fireEvent.click(within(englishCard).getByRole('button', { name: 'Play' }));
+        await waitFor(() => expect(within(englishCard).getByRole('button', { name: 'Pause' })).toBeInTheDocument());
+        finishSpanishPlay?.();
+
+        await waitFor(() => expect(within(englishCard).getByRole('button', { name: 'Pause' })).toBeInTheDocument());
+        expect(within(spanishCard).getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    });
+
+    it('defers an in-flight live fade while hidden and resumes it when visible', async () => {
+        const frames: FrameRequestCallback[] = [];
+        const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+            frames.push(callback);
+            return frames.length;
+        });
+        vi.spyOn(performance, 'now').mockReturnValue(0);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        }), { status: 200 })));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: null }} />
+            </LocaleProvider>,
+        );
+        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
+        const card = spanish.closest('article')!;
+        await waitFor(() => expect(within(card).getByRole('button', { name: 'Play' })).toBeEnabled());
+        fireEvent.click(within(card).getByRole('button', { name: 'Play' }));
+        await waitFor(() => expect(live.muted).toBe(true));
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        Object.defineProperty(spanish, 'ended', { value: true, configurable: true });
+        fireEvent.playing(live);
+        fireEvent.ended(spanish);
+        expect(frames).toHaveLength(1);
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        expect(cancelFrame).toHaveBeenCalled();
+        expect(live.muted).toBe(true);
+
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        expect(frames).toHaveLength(2);
+        expect(live.muted).toBe(false);
+    });
+
     it('bounds automatic hls.js recovery attempts and ends in an honest unavailable state', async () => {
         vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
