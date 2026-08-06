@@ -211,7 +211,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   startFromEnvironment().then(({ metadata }) => {
     // This deliberately includes only non-sensitive deployment state.
     console.log(`beacon-stream ready artifact=${metadata.artifactId}`);
-  }).catch((error) => {
+  }).catch(() => {
     // Validation details can include a mounted path. Keep startup logs non-sensitive.
     console.error('beacon-stream failed startup validation');
     process.exitCode = 1;
