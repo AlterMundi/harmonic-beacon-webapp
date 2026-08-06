@@ -22,7 +22,6 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 entitled={false}
                 inviteToken={null}
                 authError={false}
-                testAccessEnabled={false}
                 providers={{ google: true, apple: true }}
                 {...overrides}
             />

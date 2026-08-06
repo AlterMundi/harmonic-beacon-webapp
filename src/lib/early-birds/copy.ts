@@ -18,8 +18,6 @@ export const earlyBirdCopy = {
         accessNeeded: 'Tu cuenta todavía no tiene una membresía activa.',
         authError: 'No pudimos completar el acceso. Usa el mismo proveedor con el que creaste tu cuenta o contacta a soporte.',
         privacy: 'La cuenta, la membresía y el pago pertenecen a una persona adulta. No creamos perfiles de menores ni historiales personales de escucha.',
-        testTitle: 'Acceso sintético de prueba',
-        testAction: 'Entrar con acceso de prueba',
     },
     en: {
         eyebrow: 'EARLYBIRDS · FOUNDING ACCESS',
@@ -38,8 +36,6 @@ export const earlyBirdCopy = {
         accessNeeded: 'Your account does not have an active membership yet.',
         authError: 'We could not complete sign-in. Use the provider that created your account, or contact support.',
         privacy: 'An adult owns the account, membership, consent, and payment. We do not create child profiles or personal listening histories.',
-        testTitle: 'Synthetic test access',
-        testAction: 'Enter with test access',
     },
 } satisfies Record<UiLocale, Record<string, string>>;
 

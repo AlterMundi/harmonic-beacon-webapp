@@ -13,14 +13,13 @@ type Props = {
     entitled: boolean;
     inviteToken: string | null;
     authError: boolean;
-    testAccessEnabled: boolean;
     providers: { google: boolean; apple: boolean };
 };
 
 export default function EarlyBirdLanding(props: Props) {
     const { locale } = useLocale();
     const copy = earlyBirdCopy[locale];
-    const [busy, setBusy] = useState<'google' | 'apple' | 'test' | null>(null);
+    const [busy, setBusy] = useState<'google' | 'apple' | null>(null);
     const [error, setError] = useState(false);
     const callbackURL = props.inviteToken
         ? `/early-birds/redeem?token=${encodeURIComponent(props.inviteToken)}`
@@ -40,23 +39,6 @@ export default function EarlyBirdLanding(props: Props) {
             setBusy(null);
             setError(true);
         }
-    }
-
-    async function syntheticLogin() {
-        if (busy) return;
-        setBusy('test');
-        setError(false);
-        const response = await fetch('/api/early-birds/test-login', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ email: 'listener@e2e.invalid', name: 'EarlyBird Test Listener' }),
-        });
-        if (response.ok) {
-            window.location.assign('/early-birds/home');
-            return;
-        }
-        setBusy(null);
-        setError(true);
     }
 
     return (
@@ -127,19 +109,6 @@ export default function EarlyBirdLanding(props: Props) {
                                         )}
                                     </button>
                                 ))}
-                                {props.testAccessEnabled && (
-                                    <div className="mt-6 border-t border-[var(--border-subtle)] pt-5">
-                                        <p className="mb-3 text-xs text-[var(--text-muted)]">{copy.testTitle}</p>
-                                        <button
-                                            type="button"
-                                            onClick={syntheticLogin}
-                                            disabled={busy !== null}
-                                            className="event-button event-button--ghost w-full"
-                                        >
-                                            {busy === 'test' ? copy.signingIn : copy.testAction}
-                                        </button>
-                                    </div>
-                                )}
                             </div>
                         )}
                     </section>

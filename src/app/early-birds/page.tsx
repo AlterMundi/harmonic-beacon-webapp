@@ -4,7 +4,6 @@ import EarlyBirdLanding from '@/components/early-birds/EarlyBirdLanding';
 import {
     currentEarlyBirdSession,
     earlyBirdOAuthAvailability,
-    earlyBirdTestAuthEnabled,
 } from '@/lib/early-birds/auth';
 import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
 
@@ -35,7 +34,6 @@ export default async function EarlyBirdsPage({
             entitled={access?.allowed === true}
             inviteToken={invite}
             authError={params.authError === '1'}
-            testAccessEnabled={earlyBirdTestAuthEnabled()}
             providers={earlyBirdOAuthAvailability()}
         />
     );

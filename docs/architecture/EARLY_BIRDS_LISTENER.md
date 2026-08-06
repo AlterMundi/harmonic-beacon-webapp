@@ -39,9 +39,11 @@ Byte-exact copies live in `contracts/early-bird-authority/v1` and
 - `ACTIVE`, time-valid `GRACE`, and time-valid `CANCELLED_PENDING_END` allow access. Every missing,
   expired, revoked, refunded or unavailable state fails closed.
 
-The optional synthetic login creates a clearly marked, source-null local projection only when both
-`EARLY_BIRDS_TEST_ACCESS_ENABLED=1` and a separate test secret are configured. It cannot replace a
-canonical projection and must never be enabled in production.
+The optional synthetic-login API creates a clearly marked, source-null local projection only when
+both `EARLY_BIRDS_TEST_ACCESS_ENABLED=1` and a separate 32+ character secret are configured. Every
+POST must present that secret as a Bearer token; absent/wrong credentials receive the same hidden
+404. The route is not exposed by the UI or client bundle, cannot replace a canonical projection,
+and must never be enabled in production.
 
 ## Stream and device leases
 

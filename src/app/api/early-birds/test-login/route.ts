@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -15,6 +15,20 @@ function notFound(): NextResponse {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 });
 }
 
+function digest(value: string): Buffer {
+    return createHash('sha256').update(value, 'utf8').digest();
+}
+
+function authorizedSyntheticLogin(request: NextRequest): boolean {
+    if (!earlyBirdTestAuthEnabled()) return false;
+    const authorization = request.headers.get('authorization');
+    const presented = authorization?.startsWith('Bearer ')
+        ? authorization.slice('Bearer '.length)
+        : '';
+    const expected = process.env.EARLY_BIRDS_TEST_LOGIN_SECRET ?? '';
+    return timingSafeEqual(digest(presented), digest(expected));
+}
+
 function testPassword(email: string): string {
     return createHmac('sha256', process.env.EARLY_BIRDS_TEST_LOGIN_SECRET!)
         .update(`early-birds-test-login:v1:${email}`)
@@ -28,6 +42,9 @@ async function authRequest(
 ): Promise<Response> {
     const url = new URL(`${EARLY_BIRD_AUTH_BASE_PATH}/${operation}/email`, request.url);
     const headers = new Headers(request.headers);
+    // The test harness credential authorizes this route only. It is not part
+    // of Better Auth's request and never enters a cookie or client response.
+    headers.delete('authorization');
     headers.set('content-type', 'application/json');
     return earlyBirdAuth().handler(new Request(url, {
         method: 'POST',
@@ -37,7 +54,7 @@ async function authRequest(
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-    if (!earlyBirdTestAuthEnabled()) return notFound();
+    if (!authorizedSyntheticLogin(request)) return notFound();
 
     let email: string;
     let name: string;
