@@ -54,6 +54,7 @@ export default function ListenerPlayer({
         en: useRef<HTMLAudioElement>(null),
     };
     const hls = useRef<Hls | null>(null);
+    const liveSuppressedForDrop = useRef(false);
     const manifestUrl = useRef<string | null>(null);
     const manifestExpiresAt = useRef(0);
     const leaseId = useRef<string | null>(null);
@@ -64,7 +65,7 @@ export default function ListenerPlayer({
         es: { current: 0, duration: 0 },
         en: { current: 0, duration: 0 },
     });
-    const [volume, setVolume] = useState(0.85);
+    const [volume, setVolume] = useState(1);
     const [volumeSupported, setVolumeSupported] = useState(true);
 
     const updateLiveState = useCallback((state: LiveState) => {
@@ -117,11 +118,18 @@ export default function ListenerPlayer({
         return response.json() as Promise<LeasePayload>;
     }, []);
 
+    const restoreLiveOutput = useCallback(() => {
+        if (!liveSuppressedForDrop.current) return;
+        if (liveAudio.current) liveAudio.current.muted = false;
+        liveSuppressedForDrop.current = false;
+    }, []);
+
     const pauseDropIns = useCallback(() => {
         dropAudio.es.current?.pause();
         dropAudio.en.current?.pause();
         setPlayingDrop(null);
-    }, [dropAudio.en, dropAudio.es]);
+        restoreLiveOutput();
+    }, [dropAudio.en, dropAudio.es, restoreLiveOutput]);
 
     const playLive = useCallback(async (forceRefresh = false) => {
         const audio = liveAudio.current;
@@ -162,6 +170,8 @@ export default function ListenerPlayer({
         if (!audio) return;
         if (liveState === 'playing') {
             audio.pause();
+            audio.muted = false;
+            liveSuppressedForDrop.current = false;
             updateLiveState('paused');
             return;
         }
@@ -252,13 +262,18 @@ export default function ListenerPlayer({
     async function toggleDropIn(language: DropLanguage) {
         const selected = dropAudio[language].current;
         if (!selected || !dropIns[language]) return;
-        if (playingDrop === language && !selected.paused) {
+        if (playingDrop === language) {
             selected.pause();
             setPlayingDrop(null);
+            restoreLiveOutput();
             return;
         }
-        liveAudio.current?.pause();
-        if (liveStateRef.current === 'playing') updateLiveState('paused');
+        // A drop-in overlays the still-running shared Beacon. Muting preserves
+        // its timeline, HLS source and lease; ending the drop only restores output.
+        if (liveStateRef.current === 'playing' && liveAudio.current) {
+            liveAudio.current.muted = true;
+            liveSuppressedForDrop.current = true;
+        }
         const other: DropLanguage = language === 'es' ? 'en' : 'es';
         dropAudio[other].current?.pause();
         try {
@@ -266,6 +281,7 @@ export default function ListenerPlayer({
             setPlayingDrop(language);
         } catch {
             setPlayingDrop(null);
+            restoreLiveOutput();
         }
     }
 
@@ -292,7 +308,7 @@ export default function ListenerPlayer({
             ...current,
             [language]: { current: 0, duration: current[language].duration },
         }));
-        void playLive(true);
+        restoreLiveOutput();
     }
 
     const liveButton = liveState === 'loading'

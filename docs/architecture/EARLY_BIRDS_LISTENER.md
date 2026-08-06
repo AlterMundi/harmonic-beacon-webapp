@@ -56,8 +56,10 @@ The origin manifest must contain individually signed, same-origin segment URLs. 
 signed URLs are never returned in API JSON or logged.
 
 The approved Spanish/English drop-in renders are configured as immutable media URLs. Listener UI
-does not encode or alter them. Progress is local to the browser; pause produces silence, resume seeks
-to the current live edge, and no AudioContext, LiveKit, chat or session-event behavior is changed.
+does not encode or alter them. Progress is local to the browser. A drop-in mutes only the live output
+while the HLS element, source and lease continue untouched, then restores the still-running Beacon.
+The live pause control produces silence and its resume seeks to the current live edge. No AudioContext,
+LiveKit, chat or session-event behavior is changed, and the initial gain remains the native 1.0.
 
 ## Dependency note
 
