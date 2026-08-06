@@ -61,7 +61,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         return new NextResponse(manifest, { status: 200, headers: MANIFEST_HEADERS });
     } catch (error) {
         if (error instanceof EarlyBirdLeaseInactiveError) {
-            return NextResponse.json({ error: 'Device displaced.' }, {
+            const reason = error.reason === 'evicted'
+                ? 'displaced'
+                : error.reason === 'expired' ? 'expired' : 'inactive';
+            return NextResponse.json({
+                error: reason === 'displaced'
+                    ? 'Device displaced.'
+                    : reason === 'expired' ? 'Listening lease expired.' : 'Listening lease inactive.',
+                reason,
+            }, {
                 status: 410,
                 headers: { 'Cache-Control': 'private, no-store' },
             });

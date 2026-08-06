@@ -38,7 +38,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
     } catch (error) {
         if (error instanceof EarlyBirdLeaseInactiveError) {
-            return NextResponse.json({ error: 'Device displaced.' }, { status: 410 });
+            const reason = error.reason === 'evicted'
+                ? 'displaced'
+                : error.reason === 'expired' ? 'expired' : 'inactive';
+            return NextResponse.json({
+                error: reason === 'displaced'
+                    ? 'Device displaced.'
+                    : reason === 'expired' ? 'Listening lease expired.' : 'Listening lease inactive.',
+                reason,
+            }, { status: 410 });
         }
         if (error instanceof EarlyBirdAccessDeniedError) {
             return NextResponse.json({ error: 'Membership inactive.' }, { status: 403 });

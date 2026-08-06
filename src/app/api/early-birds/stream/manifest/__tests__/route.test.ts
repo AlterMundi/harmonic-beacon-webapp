@@ -7,7 +7,11 @@ const mocks = vi.hoisted(() => ({
     earlyBirdOriginConfig: vi.fn(),
     signedEarlyBirdOriginManifestUrl: vi.fn(),
     validSignedOriginManifest: vi.fn(),
-    LeaseInactive: class extends Error {},
+    LeaseInactive: class extends Error {
+        constructor(readonly reason: 'evicted' | 'expired' | 'missing' = 'missing') {
+            super('inactive');
+        }
+    },
     AccessDenied: class extends Error {},
 }));
 
@@ -80,9 +84,21 @@ describe('stable EarlyBird lease manifest', () => {
 
     it('cuts off a displaced device on its next manifest refresh', async () => {
         currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
-        authorizeEarlyBirdStreamLease.mockRejectedValue(new LeaseInactive());
+        authorizeEarlyBirdStreamLease.mockRejectedValue(new LeaseInactive('evicted'));
         const response = await GET(request());
         expect(response.status).toBe(410);
         expect(response.headers.get('cache-control')).toContain('no-store');
+        await expect(response.json()).resolves.toMatchObject({ reason: 'displaced' });
+    });
+
+    it('reports ordinary lease expiry without claiming another device displaced it', async () => {
+        currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
+        authorizeEarlyBirdStreamLease.mockRejectedValue(new LeaseInactive('expired'));
+        const response = await GET(request());
+        expect(response.status).toBe(410);
+        await expect(response.json()).resolves.toEqual({
+            error: 'Listening lease expired.',
+            reason: 'expired',
+        });
     });
 });

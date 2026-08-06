@@ -7,15 +7,24 @@ import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
 
 type DropLanguage = 'es' | 'en';
-type LiveState = 'idle' | 'loading' | 'playing' | 'paused' | 'error' | 'displaced';
+type LiveState = 'idle' | 'loading' | 'recovering' | 'playing' | 'paused' | 'error' | 'displaced';
 type LeasePayload = {
     leaseId: string;
     leaseExpiresAt: string;
     stream: { manifestUrl: string; expiresAt: string };
 };
+type HeartbeatPayload = Omit<LeasePayload, 'leaseId'>;
+type LeaseProbeResult =
+    | { kind: 'active'; grant: HeartbeatPayload }
+    | { kind: 'reacquire' }
+    | { kind: 'displaced' }
+    | { kind: 'denied' }
+    | { kind: 'retry' };
 
 const DEVICE_STORAGE_KEY = 'hb_earlybird_device_id';
 const DROP_PROGRESS_PREFIX = 'hb_earlybird_drop_progress_';
+const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
+const STALL_RECOVERY_DELAY_MS = 1_000;
 
 export function getOrCreateEarlyBirdDeviceId(storage: Storage): string {
     const existing = storage.getItem(DEVICE_STORAGE_KEY);
@@ -33,6 +42,11 @@ export function seekNativeAudioToLiveEdge(audio: HTMLAudioElement): boolean {
     if (!Number.isFinite(edge)) return false;
     audio.currentTime = Math.max(0, edge - 0.25);
     return true;
+}
+
+export function earlyBirdLeaseRecoveryDisposition(payload: unknown): 'displaced' | 'recoverable' {
+    if (!payload || typeof payload !== 'object') return 'recoverable';
+    return 'reason' in payload && payload.reason === 'displaced' ? 'displaced' : 'recoverable';
 }
 
 function formatTime(seconds: number): string {
@@ -59,6 +73,13 @@ export default function ListenerPlayer({
     const manifestExpiresAt = useRef(0);
     const leaseId = useRef<string | null>(null);
     const liveStateRef = useRef<LiveState>('idle');
+    const wantsLivePlayback = useRef(false);
+    const playbackAttemptRunning = useRef(false);
+    const recoveryAttempts = useRef(0);
+    const recoveryTimer = useRef<number | null>(null);
+    const queuedRecoveryDelay = useRef<number | null>(null);
+    const nativeSuspendObserved = useRef(false);
+    const automaticRecovery = useRef<(initialDelayMs?: number) => void>(() => undefined);
     const [liveState, setLiveState] = useState<LiveState>('idle');
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
     const [dropProgress, setDropProgress] = useState({
@@ -71,6 +92,15 @@ export default function ListenerPlayer({
     const updateLiveState = useCallback((state: LiveState) => {
         liveStateRef.current = state;
         setLiveState(state);
+    }, []);
+
+    const cancelRecovery = useCallback((resetAttempts = false) => {
+        if (recoveryTimer.current !== null) {
+            window.clearTimeout(recoveryTimer.current);
+            recoveryTimer.current = null;
+        }
+        queuedRecoveryDelay.current = null;
+        if (resetAttempts) recoveryAttempts.current = 0;
     }, []);
 
     const stopHls = useCallback(() => {
@@ -99,13 +129,13 @@ export default function ListenerPlayer({
         });
         instance.on(HlsConstructor.Events.ERROR, (_event, data) => {
             if (!data.fatal) return;
-            updateLiveState('error');
             liveAudio.current?.pause();
+            automaticRecovery.current(0);
         });
         instance.loadSource(url);
         instance.attachMedia(audio);
         hls.current = instance;
-    }, [stopHls, updateLiveState]);
+    }, [stopHls]);
 
     const requestLease = useCallback(async (): Promise<LeasePayload> => {
         const deviceId = getOrCreateEarlyBirdDeviceId(window.localStorage);
@@ -116,6 +146,28 @@ export default function ListenerPlayer({
         });
         if (!response.ok) throw new Error(`lease:${response.status}`);
         return response.json() as Promise<LeasePayload>;
+    }, []);
+
+    const probeExistingLease = useCallback(async (): Promise<LeaseProbeResult> => {
+        if (!leaseId.current) return { kind: 'reacquire' };
+        try {
+            const response = await fetch('/api/early-birds/stream/heartbeat', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ leaseId: leaseId.current }),
+            });
+            if (response.status === 410) {
+                const payload = await response.json().catch(() => null) as { reason?: unknown } | null;
+                return earlyBirdLeaseRecoveryDisposition(payload) === 'displaced'
+                    ? { kind: 'displaced' }
+                    : { kind: 'reacquire' };
+            }
+            if (response.status === 401 || response.status === 403) return { kind: 'denied' };
+            if (!response.ok) return { kind: 'retry' };
+            return { kind: 'active', grant: await response.json() as HeartbeatPayload };
+        } catch {
+            return { kind: 'retry' };
+        }
     }, []);
 
     const restoreLiveOutput = useCallback(() => {
@@ -131,12 +183,35 @@ export default function ListenerPlayer({
         restoreLiveOutput();
     }, [dropAudio.en, dropAudio.es, restoreLiveOutput]);
 
-    const playLive = useCallback(async (forceRefresh = false) => {
+    const attemptLivePlayback = useCallback(async (
+        forceRefresh = false,
+        verifyExistingLease = false,
+    ): Promise<boolean> => {
         const audio = liveAudio.current;
-        if (!audio || liveStateRef.current === 'loading') return;
-        pauseDropIns();
-        updateLiveState('loading');
+        if (!audio || playbackAttemptRunning.current) return false;
+        playbackAttemptRunning.current = true;
         try {
+            if (verifyExistingLease && leaseId.current) {
+                const probe = await probeExistingLease();
+                if (probe.kind === 'displaced' || probe.kind === 'denied') {
+                    wantsLivePlayback.current = false;
+                    audio.pause();
+                    stopHls();
+                    leaseId.current = null;
+                    updateLiveState(probe.kind === 'displaced' ? 'displaced' : 'error');
+                    return false;
+                }
+                if (probe.kind === 'retry') return false;
+                if (probe.kind === 'reacquire') {
+                    leaseId.current = null;
+                    manifestUrl.current = null;
+                    manifestExpiresAt.current = 0;
+                } else {
+                    manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
+                    await attachManifest(probe.grant.stream.manifestUrl);
+                    forceRefresh = false;
+                }
+            }
             if (
                 forceRefresh ||
                 !leaseId.current ||
@@ -146,7 +221,7 @@ export default function ListenerPlayer({
                 const grant = await requestLease();
                 leaseId.current = grant.leaseId;
                 manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
-                if (grant.stream.manifestUrl !== manifestUrl.current) {
+                if (forceRefresh || grant.stream.manifestUrl !== manifestUrl.current) {
                     await attachManifest(grant.stream.manifestUrl);
                 }
             }
@@ -158,17 +233,93 @@ export default function ListenerPlayer({
                 seekNativeAudioToLiveEdge(audio);
             }
             await audio.play();
-            updateLiveState('playing');
+            return true;
         } catch {
             audio.pause();
-            updateLiveState('error');
+            return false;
+        } finally {
+            playbackAttemptRunning.current = false;
         }
-    }, [attachManifest, pauseDropIns, requestLease, updateLiveState]);
+    }, [attachManifest, probeExistingLease, requestLease, stopHls, updateLiveState]);
+
+    const scheduleAutomaticRecovery = useCallback((initialDelayMs = 0) => {
+        if (!wantsLivePlayback.current || liveStateRef.current === 'displaced') return;
+
+        if (playbackAttemptRunning.current) {
+            queuedRecoveryDelay.current = queuedRecoveryDelay.current === null
+                ? Math.max(0, initialDelayMs)
+                : Math.min(queuedRecoveryDelay.current, Math.max(0, initialDelayMs));
+            updateLiveState('recovering');
+            return;
+        }
+        if (recoveryTimer.current !== null) return;
+
+        updateLiveState('recovering');
+        const runAttempt = (delayMs: number) => {
+            if (!wantsLivePlayback.current) return;
+            if (recoveryAttempts.current >= RECOVERY_DELAYS_MS.length) {
+                wantsLivePlayback.current = false;
+                liveAudio.current?.pause();
+                updateLiveState('error');
+                return;
+            }
+            recoveryTimer.current = window.setTimeout(async () => {
+                recoveryTimer.current = null;
+                if (!wantsLivePlayback.current) return;
+                recoveryAttempts.current += 1;
+                const recovered = await attemptLivePlayback(true, true);
+                if (!wantsLivePlayback.current) return;
+                if (queuedRecoveryDelay.current !== null) {
+                    const queuedDelay = queuedRecoveryDelay.current;
+                    queuedRecoveryDelay.current = null;
+                    runAttempt(queuedDelay);
+                    return;
+                }
+                if (recovered) {
+                    recoveryAttempts.current = 0;
+                    updateLiveState('playing');
+                    return;
+                }
+                runAttempt(RECOVERY_DELAYS_MS[recoveryAttempts.current] ?? 0);
+            }, delayMs);
+        };
+        runAttempt(Math.max(0, initialDelayMs));
+    }, [attemptLivePlayback, updateLiveState]);
+
+    useEffect(() => {
+        automaticRecovery.current = scheduleAutomaticRecovery;
+        return () => {
+            automaticRecovery.current = () => undefined;
+        };
+    }, [scheduleAutomaticRecovery]);
+
+    const playLive = useCallback(async (forceRefresh = false) => {
+        if (!liveAudio.current || ['loading', 'recovering'].includes(liveStateRef.current)) return;
+        wantsLivePlayback.current = true;
+        cancelRecovery(true);
+        pauseDropIns();
+        updateLiveState('loading');
+        const played = await attemptLivePlayback(forceRefresh);
+        if (!wantsLivePlayback.current) return;
+        if (queuedRecoveryDelay.current !== null) {
+            const queuedDelay = queuedRecoveryDelay.current;
+            queuedRecoveryDelay.current = null;
+            scheduleAutomaticRecovery(queuedDelay);
+            return;
+        }
+        if (played) {
+            updateLiveState('playing');
+            return;
+        }
+        scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+    }, [attemptLivePlayback, cancelRecovery, pauseDropIns, scheduleAutomaticRecovery, updateLiveState]);
 
     function toggleLive() {
         const audio = liveAudio.current;
         if (!audio) return;
-        if (liveState === 'playing') {
+        if (liveState === 'playing' || liveState === 'recovering') {
+            wantsLivePlayback.current = false;
+            cancelRecovery(true);
             audio.pause();
             audio.muted = false;
             liveSuppressedForDrop.current = false;
@@ -177,6 +328,27 @@ export default function ListenerPlayer({
         }
         void playLive(liveState === 'error' || liveState === 'displaced');
     }
+
+    const handleNativeInterruption = useCallback((kind: 'error' | 'stalled' | 'suspend') => {
+        if (!wantsLivePlayback.current || !['playing', 'recovering'].includes(liveStateRef.current)) {
+            return;
+        }
+        if (kind === 'suspend') {
+            // `suspend` commonly means that the browser intentionally stopped
+            // fetching enough buffered media. It is only supporting evidence;
+            // stalled/error or a non-progressing page resume drives recovery.
+            nativeSuspendObserved.current = true;
+            return;
+        }
+        scheduleAutomaticRecovery(kind === 'error' ? 0 : STALL_RECOVERY_DELAY_MS);
+    }, [scheduleAutomaticRecovery]);
+
+    const handleNativePlaying = useCallback(() => {
+        if (!wantsLivePlayback.current) return;
+        nativeSuspendObserved.current = false;
+        cancelRecovery(true);
+        updateLiveState('playing');
+    }, [cancelRecovery, updateLiveState]);
 
     useEffect(() => {
         const probe = document.createElement('audio');
@@ -190,42 +362,57 @@ export default function ListenerPlayer({
     }, [dropAudio.en, dropAudio.es, volume]);
 
     useEffect(() => {
+        const recoverAfterResume = () => {
+            if (!wantsLivePlayback.current || document.visibilityState !== 'visible') return;
+            const leaseNearExpiry = manifestExpiresAt.current <= Date.now() + 30_000;
+            const suspendedWithoutFutureData = nativeSuspendObserved.current
+                && Boolean(liveAudio.current)
+                && (liveAudio.current?.readyState ?? 0) < 3;
+            if (liveStateRef.current === 'recovering' || leaseNearExpiry || suspendedWithoutFutureData) {
+                scheduleAutomaticRecovery(0);
+            }
+        };
+        document.addEventListener('visibilitychange', recoverAfterResume);
+        window.addEventListener('online', recoverAfterResume);
+        window.addEventListener('pageshow', recoverAfterResume);
+        return () => {
+            document.removeEventListener('visibilitychange', recoverAfterResume);
+            window.removeEventListener('online', recoverAfterResume);
+            window.removeEventListener('pageshow', recoverAfterResume);
+        };
+    }, [scheduleAutomaticRecovery]);
+
+    useEffect(() => {
         const interval = window.setInterval(async () => {
             if (!leaseId.current || liveStateRef.current === 'idle') return;
-            try {
-                const response = await fetch('/api/early-birds/stream/heartbeat', {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ leaseId: leaseId.current }),
-                });
-                if (response.status === 410) {
-                    liveAudio.current?.pause();
-                    stopHls();
-                    leaseId.current = null;
-                    updateLiveState('displaced');
-                    return;
-                }
-                if (response.status === 403) {
-                    liveAudio.current?.pause();
-                    updateLiveState('error');
-                    return;
-                }
-                if (!response.ok) return;
-                const grant = await response.json() as Omit<LeasePayload, 'leaseId'>;
-                manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
-                // Keep the current media pipeline uninterrupted when the issuer
-                // rotates equivalent signed URLs; a fatal HLS error reacquires.
-            } catch {
-                // Transient heartbeat loss does not interrupt already-buffered audio.
+            const probe = await probeExistingLease();
+            if (probe.kind === 'displaced' || probe.kind === 'denied') {
+                wantsLivePlayback.current = false;
+                cancelRecovery(true);
+                liveAudio.current?.pause();
+                stopHls();
+                leaseId.current = null;
+                updateLiveState(probe.kind === 'displaced' ? 'displaced' : 'error');
+                return;
+            }
+            if (probe.kind === 'reacquire') {
+                leaseId.current = null;
+                scheduleAutomaticRecovery(0);
+                return;
+            }
+            if (probe.kind === 'active') {
+                manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
             }
         }, 60_000);
         return () => window.clearInterval(interval);
-    }, [stopHls, updateLiveState]);
+    }, [cancelRecovery, probeExistingLease, scheduleAutomaticRecovery, stopHls, updateLiveState]);
 
     useEffect(() => () => {
+        wantsLivePlayback.current = false;
+        cancelRecovery(true);
         liveAudio.current?.pause();
         stopHls();
-    }, [stopHls]);
+    }, [cancelRecovery, stopHls]);
 
     function restoreProgress(language: DropLanguage) {
         const audio = dropAudio[language].current;
@@ -270,7 +457,7 @@ export default function ListenerPlayer({
         }
         // A drop-in overlays the still-running shared Beacon. Muting preserves
         // its timeline, HLS source and lease; ending the drop only restores output.
-        if (liveStateRef.current === 'playing' && liveAudio.current) {
+        if (wantsLivePlayback.current && liveAudio.current) {
             liveAudio.current.muted = true;
             liveSuppressedForDrop.current = true;
         }
@@ -289,7 +476,13 @@ export default function ListenerPlayer({
         const audio = dropAudio[language].current;
         if (!audio || !dropIns[language]) return;
         audio.currentTime = 0;
-        void toggleDropIn(language);
+        try {
+            window.localStorage.removeItem(`${DROP_PROGRESS_PREFIX}${language}`);
+        } catch {}
+        setDropProgress((current) => ({
+            ...current,
+            [language]: { current: 0, duration: current[language].duration },
+        }));
     }
 
     function seekDropIn(language: DropLanguage, value: number) {
@@ -313,15 +506,25 @@ export default function ListenerPlayer({
 
     const liveButton = liveState === 'loading'
         ? copy.loading
-        : liveState === 'playing'
-            ? copy.pause
-            : liveState === 'paused'
-                ? copy.resume
-                : copy.play;
+        : liveState === 'recovering'
+            ? copy.reconnecting
+            : liveState === 'playing'
+                ? copy.pause
+                : liveState === 'paused'
+                    ? copy.resume
+                    : copy.play;
 
     return (
         <div className="space-y-8">
-            <audio ref={liveAudio} preload="none" aria-label={copy.heading} />
+            <audio
+                ref={liveAudio}
+                preload="none"
+                aria-label={copy.heading}
+                onError={() => handleNativeInterruption('error')}
+                onStalled={() => handleNativeInterruption('stalled')}
+                onSuspend={() => handleNativeInterruption('suspend')}
+                onPlaying={handleNativePlaying}
+            />
             <section className="rounded-2xl border border-cyan-200/20 bg-cyan-200/[0.04] p-6 sm:p-8">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -372,7 +575,7 @@ export default function ListenerPlayer({
                                     <>
                                         <div className="mt-5 flex gap-2">
                                             <button type="button" onClick={() => toggleDropIn(language)} className="event-button event-button--secondary flex-1">
-                                                {playingDrop === language ? copy.pause : 'Play'}
+                                                {playingDrop === language ? copy.pause : copy.dropPlay}
                                             </button>
                                             <button type="button" onClick={() => restartDropIn(language)} className="event-button event-button--ghost">
                                                 {copy.restart}

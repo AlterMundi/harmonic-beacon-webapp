@@ -4,6 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { LocaleProvider } from '@/context/LocaleContext';
+import { earlyBirdCopy } from '@/lib/early-birds/copy';
 
 const signInSocial = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/early-birds/auth-client', () => ({
@@ -50,6 +51,17 @@ describe('EarlyBird public landing', () => {
             errorCallbackURL: '/early-birds?authError=1',
             requestSignUp: true,
         });
+    });
+
+    it('uses audience-neutral account and privacy language in both locales', () => {
+        expect(earlyBirdCopy.es.privacy).toBe(
+            'Tu cuenta y membresía administran el acceso a EarlyBirds. No creamos historiales personales de escucha.',
+        );
+        expect(earlyBirdCopy.en.privacy).toBe(
+            'Your account and membership manage access to EarlyBirds. We do not create personal listening histories.',
+        );
+        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
+            .not.toMatch(/adult|child|minor|menor|adulta/i);
     });
 
     it('makes an unconfigured provider visibly unavailable', () => {

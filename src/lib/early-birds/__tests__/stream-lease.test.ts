@@ -23,6 +23,7 @@ import {
     acquireEarlyBirdStreamLease,
     earlyBirdDeviceDigest,
     EARLY_BIRD_LEASE_TTL_MS,
+    heartbeatEarlyBirdStreamLease,
     type EarlyBirdStreamUrlIssuer,
 } from '../stream';
 
@@ -98,5 +99,25 @@ describe('EarlyBird two-device leases', () => {
             where: { id: '00000000-0000-4000-8000-000000000004', accountId: 'listener-1' },
             data: { evictedAt: NOW },
         });
+    });
+
+    it('distinguishes eviction from ordinary expiry during heartbeat authorization', async () => {
+        tx.earlyBirdStreamLease.findFirst.mockResolvedValueOnce({
+            id: '00000000-0000-4000-8000-000000000001',
+            evictedAt: new Date('2026-08-06T11:59:00.000Z'),
+            expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+        });
+        await expect(heartbeatEarlyBirdStreamLease('listener-1',
+            '00000000-0000-4000-8000-000000000001', NOW))
+            .rejects.toMatchObject({ reason: 'evicted' });
+
+        tx.earlyBirdStreamLease.findFirst.mockResolvedValueOnce({
+            id: '00000000-0000-4000-8000-000000000002',
+            evictedAt: null,
+            expiresAt: new Date('2026-08-06T12:00:00.000Z'),
+        });
+        await expect(heartbeatEarlyBirdStreamLease('listener-1',
+            '00000000-0000-4000-8000-000000000002', NOW))
+            .rejects.toMatchObject({ reason: 'expired' });
     });
 });

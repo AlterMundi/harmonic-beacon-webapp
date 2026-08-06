@@ -93,9 +93,12 @@ export class EarlyBirdAccessDeniedError extends Error {
 }
 
 export class EarlyBirdLeaseInactiveError extends Error {
-    constructor() {
+    readonly reason: 'evicted' | 'expired' | 'missing';
+
+    constructor(reason: 'evicted' | 'expired' | 'missing' = 'missing') {
         super('The stream lease is no longer active');
         this.name = 'EarlyBirdLeaseInactiveError';
+        this.reason = reason;
     }
 }
 
@@ -214,9 +217,9 @@ export async function authorizeEarlyBirdStreamLease(
     if (!membershipAccessDecision(projection, now).allowed) {
         throw new EarlyBirdAccessDeniedError();
     }
-    if (!lease || lease.evictedAt !== null || lease.expiresAt <= now) {
-        throw new EarlyBirdLeaseInactiveError();
-    }
+    if (!lease) throw new EarlyBirdLeaseInactiveError('missing');
+    if (lease.evictedAt !== null) throw new EarlyBirdLeaseInactiveError('evicted');
+    if (lease.expiresAt <= now) throw new EarlyBirdLeaseInactiveError('expired');
     return lease;
 }
 
@@ -315,9 +318,9 @@ export async function heartbeatEarlyBirdStreamLease(
         const current = await tx.earlyBirdStreamLease.findFirst({
             where: { id: leaseId, accountId },
         });
-        if (!current || current.evictedAt !== null || current.expiresAt <= now) {
-            throw new EarlyBirdLeaseInactiveError();
-        }
+        if (!current) throw new EarlyBirdLeaseInactiveError('missing');
+        if (current.evictedAt !== null) throw new EarlyBirdLeaseInactiveError('evicted');
+        if (current.expiresAt <= now) throw new EarlyBirdLeaseInactiveError('expired');
         return tx.earlyBirdStreamLease.update({
             where: { id: current.id },
             data: { lastSeenAt: now, expiresAt: leaseExpiresAt },
