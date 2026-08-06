@@ -73,6 +73,13 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
 
 test('compose gates the loopback Listener on a forward-only isolated database migration', async () => {
   const source = await readPreview('compose.yml');
+  const env = await readPreview('preview.env.synthetic.example');
+  const schemaVersion = env.match(/^EARLYBIRDS_PREVIEW_SCHEMA_VERSION=(.+)$/m)?.[1];
+  const migrations = await fs.readdir(path.join(repositoryRoot, 'prisma/migrations'));
+  assert.ok(schemaVersion, 'preview schema provenance must be explicit');
+  assert.ok(migrations.includes(schemaVersion), 'preview schema provenance must name a checked-in migration');
+  assert.match(source, /BEACON_DATABASE_SCHEMA_VERSION: \$\{EARLYBIRDS_PREVIEW_SCHEMA_VERSION:\?set_in_preview\.env\}/);
+  assert.doesNotMatch(source, /preview-forward-only/);
   assert.match(source, /^  listener:$/m);
   assert.match(source, /127\.0\.0\.1:\$\{EARLYBIRDS_PREVIEW_APP_PORT:-13000\}:3000/);
   assert.match(source, /^  migration:$/m);
@@ -169,6 +176,8 @@ test('production Listener HTTPS validation remains fail closed', async () => {
 test('smoke and rollback contracts cover both probes without deleting state', async () => {
   const smoke = await readRepository('scripts/early-birds-preview/health-smoke.sh');
   assert.match(smoke, /api\/health"/);
+  assert.match(smoke, /databaseSchemaVersion/);
+  assert.match(smoke, /EARLYBIRDS_PREVIEW_SCHEMA_VERSION/);
   assert.match(smoke, /api\/health\/ready/);
   assert.match(smoke, /stream_port}\/healthz/);
   assert.match(smoke, /127\.0\.0\.1:9090\/readyz/);

@@ -22,7 +22,21 @@ test "$(docker inspect --format '{{.State.ExitCode}}' "$migration_id")" = 0 || {
 }
 
 preview_compose_command "$env_file" exec -T postgres sh -ec 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${app_port}/api/health" >/dev/null
+health_body=$(curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${app_port}/api/health")
+expected_schema=$(preview_env_value EARLYBIRDS_PREVIEW_SCHEMA_VERSION "$env_file")
+EXPECTED_SCHEMA="$expected_schema" node -e '
+  let body = "";
+  process.stdin.on("data", chunk => { body += chunk; });
+  process.stdin.on("end", () => {
+    const health = JSON.parse(body);
+    if (health.databaseSchemaVersion !== process.env.EXPECTED_SCHEMA) {
+      console.error(`Listener schema provenance mismatch: expected ${process.env.EXPECTED_SCHEMA}, got ${health.databaseSchemaVersion}`);
+      process.exit(1);
+    }
+  });
+' <<EOF
+$health_body
+EOF
 curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${app_port}/api/health/ready" >/dev/null
 curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${stream_port}/healthz" >/dev/null
 preview_compose_command "$env_file" exec -T beacon-stream node -e \

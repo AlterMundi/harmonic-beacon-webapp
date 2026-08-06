@@ -48,6 +48,9 @@ require_synthetic_env() {
   require_exact_preview_value EARLYBIRDS_PREVIEW_DB_NAME earlybirds_preview "$env_file"
   require_exact_preview_value EARLYBIRDS_PREVIEW_APP_PORT 13000 "$env_file"
   require_exact_preview_value BEACON_STREAM_HOST_PORT 18080 "$env_file"
+  schema_version=$(preview_env_value EARLYBIRDS_PREVIEW_SCHEMA_VERSION "$env_file")
+  printf '%s\n' "$schema_version" | grep -Eq '^[0-9]{14}_[a-z0-9_]+$' || \
+    preview_fail 'EARLYBIRDS_PREVIEW_SCHEMA_VERSION must name a checked-in Prisma migration'
   require_exact_preview_value EARLY_BIRDS_AUTH_BASE_URL https://earlybirds-staging.harmonicbeacon.com "$env_file"
   require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
   require_exact_preview_value EARLY_BIRDS_STREAM_ORIGIN https://stream.harmonicbeacon.com "$env_file"

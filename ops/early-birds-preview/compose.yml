@@ -55,7 +55,7 @@ services:
         NEXT_PUBLIC_LIVEKIT_URL: https://livekit.example.invalid
         BEACON_GIT_SHA: ${EARLYBIRDS_PREVIEW_GIT_SHA:-synthetic-preview}
         BEACON_BUILD_TIME: ${EARLYBIRDS_PREVIEW_BUILD_TIME:-synthetic-preview}
-        BEACON_DATABASE_SCHEMA_VERSION: ${EARLYBIRDS_PREVIEW_SCHEMA_VERSION:-preview-forward-only}
+        BEACON_DATABASE_SCHEMA_VERSION: ${EARLYBIRDS_PREVIEW_SCHEMA_VERSION:?set_in_preview.env}
     restart: unless-stopped
     init: true
     environment:
