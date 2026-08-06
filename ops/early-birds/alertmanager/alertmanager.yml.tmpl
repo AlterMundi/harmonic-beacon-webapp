@@ -17,13 +17,13 @@ route:
 receivers:
   - name: telegram-warning
     telegram_configs:
-      - bot_token_file: /run/secrets/telegram_bot_token
+      - bot_token_file: /runtime-secrets/telegram_bot_token
         chat_id: __TELEGRAM_CHAT_ID__
         send_resolved: true
         message: '{{ template "telegram.default.message" . }}'
   - name: telegram-critical
     telegram_configs:
-      - bot_token_file: /run/secrets/telegram_bot_token
+      - bot_token_file: /runtime-secrets/telegram_bot_token
         chat_id: __TELEGRAM_CHAT_ID__
         send_resolved: true
         message: '{{ template "telegram.default.message" . }}'

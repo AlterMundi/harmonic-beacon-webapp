@@ -28,6 +28,10 @@ test('references Telegram and canary credentials as mounted secret files only', 
   assert.match(compose, /TELEGRAM_BOT_TOKEN_FILE/);
   assert.match(compose, /TELEGRAM_CHAT_ID_FILE/);
   assert.match(compose, /BEACON_STREAM_SIGNING_SECRET_FILE/);
+  assert.match(compose, /alertmanager-secret-init:[\s\S]*network_mode: none/);
+  assert.match(compose, /chown 65534:65534 \/runtime-secrets\/telegram_bot_token/);
+  assert.match(compose, /chmod 0400 \/runtime-secrets\/telegram_bot_token/);
+  assert.match(compose, /alertmanager-secret-init: \{ condition: service_completed_successfully \}/);
   assert.match(compose, /canary-secret-init:[\s\S]*network_mode: none/);
   assert.match(compose, /chown 1000:1000 \/runtime\/signing_secret/);
   assert.match(compose, /canary-secret-init: \{ condition: service_completed_successfully \}/);
@@ -35,7 +39,7 @@ test('references Telegram and canary credentials as mounted secret files only', 
   assert.match(compose, /BEACON_STREAM_PUBLIC_ORIGIN/);
   assert.match(compose, /BEACON_STREAM_ARTIFACT_ID/);
   assert.doesNotMatch(compose, /TELEGRAM_BOT_TOKEN:\s*[^$]/);
-  assert.match(alertmanager, /bot_token_file: \/run\/secrets\/telegram_bot_token/);
+  assert.match(alertmanager, /bot_token_file: \/runtime-secrets\/telegram_bot_token/g);
   assert.match(alertmanager, /send_resolved: true/g);
   assert.ok(compose.includes("grep -Eq '^-?[0-9]+$$'"));
   assert.doesNotMatch(compose, /case "\$\$chat_id" in/);

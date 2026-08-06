@@ -16,6 +16,21 @@ services:
         sed "s/__TELEGRAM_CHAT_ID__/$$chat_id/g" /template/alertmanager.yml.tmpl > /runtime/alertmanager.yml
     networks: [observability]
 
+  alertmanager-secret-init:
+    image: alpine:3.21.3
+    restart: "no"
+    network_mode: none
+    secrets: [telegram_bot_token]
+    volumes: [alertmanager-secrets:/runtime-secrets]
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        cp /run/secrets/telegram_bot_token /runtime-secrets/telegram_bot_token
+        chown 65534:65534 /runtime-secrets/telegram_bot_token
+        chmod 0400 /runtime-secrets/telegram_bot_token
+
   prometheus:
     image: prom/prometheus:v3.4.2
     restart: unless-stopped
@@ -39,13 +54,14 @@ services:
     restart: unless-stopped
     depends_on:
       config-init: { condition: service_completed_successfully }
+      alertmanager-secret-init: { condition: service_completed_successfully }
     command:
       - --config.file=/runtime/alertmanager.yml
       - --storage.path=/alertmanager
       - --web.listen-address=0.0.0.0:9093
-    secrets: [telegram_bot_token]
     volumes:
       - alertmanager-runtime:/runtime:ro
+      - alertmanager-secrets:/runtime-secrets:ro
       - ./alertmanager/telegram.tmpl:/etc/alertmanager/templates/telegram.tmpl:ro
       - alertmanager-data:/alertmanager
     ports: [127.0.0.1:9093:9093]
@@ -132,6 +148,7 @@ volumes:
   prometheus-data:
   alertmanager-data:
   alertmanager-runtime:
+  alertmanager-secrets:
   canary-runtime:
 
 secrets:
