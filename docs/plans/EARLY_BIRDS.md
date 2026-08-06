@@ -253,6 +253,9 @@ promotion, never an accidental restart side effect.
 - The public page does not expose a durable unrestricted media URL.
 - The private player obtains a short-lived signed stream authorization after a
   current membership check.
+- The browser keeps one stable same-origin lease-manifest URL. Each refresh
+  rechecks session, membership and device lease before proxying a fresh signed
+  origin manifest, so authorization refresh never replaces the media source.
 - The manifest embeds individually signed segment URLs; signatures cover HTTP
   method, canonical path and expiry, are compared in constant time and are
   never logged.

@@ -10,9 +10,13 @@ small origin derives the current media sequence from wall-clock time. Restarting
 the origin does not restart or duplicate the Beacon timeline.
 
 Safari uses native HLS and other supported browsers use `hls.js`. Membership
-authorizes a short-lived manifest whose segment URLs are individually signed.
-Signatures cover method, canonical path and expiry, use constant-time comparison
-and are never logged. Public health is minimal; metrics bind privately.
+authorizes a stable, same-origin lease-manifest route. That route rechecks the
+session, current membership and device lease on every manifest refresh, then
+proxies a very short-lived origin manifest whose segment URLs are individually
+signed. Native players therefore never need an `audio.src` replacement merely
+to refresh authorization. Signatures cover method, canonical path and expiry,
+use constant-time comparison and are never logged. Public health is minimal;
+metrics bind privately.
 
 ## Audio boundary
 
