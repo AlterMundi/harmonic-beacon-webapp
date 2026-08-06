@@ -1,96 +1,186 @@
-# EarlyBirds staging preview and rollback
+# EarlyBirds isolated staging runtime
 
-This is the EB-08 preview/rehearsal surface for
-`earlybirds-staging.harmonicbeacon.com`. It is isolated from the weekend event
-stack: project name `earlybirds-preview`, volume `earlybirds-preview-postgres`,
-loopback-only ports, an internal preview network, and the separately bounded
-`services/beacon-stream` origin. It never runs a production deploy, creates a
-real account, calls OAuth, or calls a payment provider.
+This is the non-deploying EB-08 staging lane for exactly:
 
-The URL is a future TLS/DNS boundary. Local validation deliberately uses
-`earlybirds-staging.localhost` and `127.0.0.1`; DNS is not required.
+- `https://earlybirds-staging.harmonicbeacon.com` — Next Listener on host loopback `127.0.0.1:13000`.
+- `https://stream.harmonicbeacon.com` — bounded stream origin on host loopback `127.0.0.1:18080`.
+
+It is a separate Compose project named `earlybirds-preview`. It does not join,
+replace, stop, or migrate the weekend event stack. PostgreSQL is reachable only
+on the internal `preview_db` container network; its named volume is
+`earlybirds-preview-postgres`. The Listener alone also joins
+`listener_egress`, allowing it to fetch the public HTTPS stream hostname.
+Beacon-stream remains on its separate internal observability network.
+
+No deployment, DNS change, certificate request, nginx installation, host
+firewall change, OAuth registration, or provider call is performed by these
+files or lifecycle scripts.
+
+Free acceptance is the only membership flow in this staging milestone. The
+runtime defines no checkout service and supplies no PayPal, Mercado Pago, or
+other paid-provider configuration. Paid acceptance remains disabled even when
+the public Listener kill switch is opened.
 
 ## Prepare synthetic inputs
 
-Copy `ops/early-birds-preview/preview.env.synthetic.example` to a root-owned
-`0600` path outside Git. Keep `EARLYBIRDS_PREVIEW_ENV=synthetic`. The lifecycle
-scripts reject production domains and provider names in this file.
+Copy `ops/early-birds-preview/preview.env.synthetic.example` to a `0600` path
+outside Git and set only `BEACON_STREAM_ARTIFACTS_HOST_PATH` to an existing,
+generated synthetic fixture directory. No artifact, codec work, approved audio,
+drop-in, user export, or event volume belongs in this lane.
 
-Point `BEACON_STREAM_ARTIFACTS_HOST_PATH` only at a generated synthetic HLS
-fixture that satisfies the existing `services/beacon-stream` artifact contract.
-Do not mount an approved master, a drop-in, real Listener data, or an event
-volume. Audio creation, artifact selection, and listening approval remain
-outside EB-08.
+The lifecycle guard deliberately requires:
 
-## Start and validate
+- the preview database user/name and fixed nginx ports;
+- exactly the two HTTPS staging origins above;
+- visibly `synthetic-` secrets and artifact identity;
+- blank Google/Apple client IDs and secrets;
+- the synthetic login seam; and
+- both public/team-entry kill switches equal to `0` or `1`, with the team form
+  allowlisted only for `earlybirds-staging.harmonicbeacon.com`.
 
-From the repository root, with Docker available:
+It rejects other Harmonic Beacon domains, HTTP stream configuration,
+production/provider values, event database identities, real OAuth values, and
+non-synthetic secrets. The example starts with `EARLY_BIRDS_ENABLED=0`, so the
+Listener serves its truthful unavailable state until an operator deliberately
+opens it after the gates pass.
+
+### Optional private authority handoff
+
+The default fixture deliberately points
+`EARLY_BIRDS_AUTHORITY_BASE_URL` at `https://authority.example.invalid` and is
+not connected to an authority. To exercise Free acceptance with the external
+canonical membership authority, its independently owned Compose project must:
+
+1. run in synthetic/staging mode with every paid-provider integration and
+   checkout entry disabled;
+2. join a dedicated external Docker network named
+   `earlybirds_authority_private`, created with Docker `Internal=true`; the
+   Uvicorn `api` service/container must be reachable there by its actual private
+   name `pmp-myth-api` on port `8765`;
+3. accept the matching synthetic bearer/key ID from
+   `EARLY_BIRDS_AUTHORITY_SERVICE_TOKEN` and
+   `EARLY_BIRDS_AUTHORITY_SERVICE_KEY_ID`; and
+4. address this Listener as `http://earlybirds-listener:3000` for authenticated
+   membership projection pushes.
+
+Then set these values in the protected preview env:
+
+```dotenv
+EARLYBIRDS_PREVIEW_AUTHORITY_NETWORK=earlybirds_authority_private
+EARLY_BIRDS_AUTHORITY_BASE_URL=http://pmp-myth-api:8765
+EARLY_BIRDS_AUTHORITY_SERVICE_KEY_ID=synthetic-v1
+EARLY_BIRDS_AUTHORITY_SERVICE_TOKEN=synthetic-<matching-43-plus-character-token>
+```
+
+The lifecycle helper then adds `authority-network.override.yml`; otherwise it
+does not. The helper refuses a network that is absent or not internal. The
+override adds only that private external network and exposes no host port. Its
+only intended members are `pmp-myth-api` and this `listener`; verify membership
+before opening the entry switches. Network creation and authority configuration
+stay with that service's operator; these scripts never create or mutate the
+external project.
+
+## Validate without starting
+
+From the repository root:
 
 ```bash
-npm --prefix ops/early-birds-preview run test
+npm --prefix ops/early-birds-preview run check
+npm --prefix ops/early-birds-preview test
 npm --prefix ops/early-birds-preview run validate
+```
+
+`validate` renders the three-file Compose model and asserts its services,
+loopback bindings, network isolation, migration dependency, blank OAuth inputs,
+and production-mode HTTPS origin. `validate:build` additionally builds the
+Listener, migration, and stream images without starting them.
+
+## Forward-only start and smoke
+
+```bash
 scripts/early-birds-preview/start.sh /secure/earlybirds-preview.env
 scripts/early-birds-preview/health-smoke.sh /secure/earlybirds-preview.env
 ```
 
-`start.sh` starts only PostgreSQL and the existing bounded stream origin.
-`health-smoke.sh` proves PostgreSQL readiness and the stream `/readyz` endpoint.
-It intentionally does not assert playback or decoded audio: that needs an
-approved artifact and EB-08 cross-device/audio acceptance.
+Startup is fail closed:
 
-No Listener service is defined in this slice. When the Listener lane is ready,
-add its explicit image, isolated cookie/OAuth config, and health endpoint as a
-small overlay; do not infer an app health contract here.
+1. preview PostgreSQL must become healthy;
+2. `npx prisma migrate deploy` must complete successfully over the direct,
+   internal PostgreSQL connection; and
+3. only then may the Listener start.
 
-## Migration rehearsal
+The smoke verifies the successful migration container, PostgreSQL readiness,
+Listener `/api/health` liveness, Listener `/api/health/ready` database
+readiness, stream `/healthz` liveness on loopback, and stream `/readyz` inside
+its private container network. It does not claim playback or decoded-audio
+acceptance.
 
-Run this after additive EarlyBird Prisma migrations land:
+To rerun the idempotent forward migration separately:
 
 ```bash
 scripts/early-birds-preview/rehearse-migration.sh /secure/earlybirds-preview.env
 ```
 
-The command runs `prisma migrate deploy` only against the `postgres` service in
-this compose project. It is a forward migration rehearsal, not a destructive
-down-migration. The rollback strategy is additive data retention plus disabling
-the Listener entry and origin; do not delete the preview volume during an
-incident unless its exact target has been reviewed.
+There is no down-migration command. Schema repair is an additive forward
+migration; route rollback retains the preview data for inspection.
 
-## Stop and rollback rehearsal
+## Nginx and TLS handoff (not executed here)
 
-For a normal stop (retains preview data):
+The two files in `ops/early-birds-preview/nginx/` are standalone vhost
+templates. Each names only its exact hostname, includes an ACME webroot path and
+the exact future certificate paths, and proxies only its fixed loopback port.
+The stream vhost exposes `/healthz` and `/v1/hls/`; container-private `/readyz`
+and metrics are not proxied. The Listener vhost exposes only `/early-birds`,
+`/api/early-birds/`, Next static assets and health; it blocks `/api/internal/`
+and returns 404 for the image's weekend, staff, event and checkout surfaces.
+
+A host operator must review certificate/DNS ownership, provision each named
+certificate, install these as new site files, and run `nginx -t` before any
+reload. Do not edit, replace, symlink over, or reload the existing live/event
+vhost as part of this staging lane.
+
+Keep `EARLY_BIRDS_STREAM_ORIGIN=https://stream.harmonicbeacon.com`. The Listener
+runs with `NODE_ENV=production`; its application contract still rejects HTTP
+origins. Public HTTPS egress is an explicit staging topology choice, not a
+relaxation of production validation.
+
+## Open, stop, and rollback
+
+After migration, both liveness/readiness probes, nginx syntax, TLS, and
+synthetic negative-access checks pass, change only:
+
+```dotenv
+EARLY_BIRDS_ENABLED=1
+EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=1
+```
+
+Recreate the Listener through `start.sh`, rerun the smoke, and exercise only
+`@e2e.invalid` synthetic identities with the separate test-login bearer.
+Provider buttons remain disabled because OAuth credentials are blank.
+Return both switches to `0` after the supervised team window.
+
+Normal stop retains all preview data:
 
 ```bash
 scripts/early-birds-preview/stop.sh /secure/earlybirds-preview.env
 ```
 
-For an EarlyBird stream incident, stop only that origin:
+Incident rollback stops the two public-serving components while retaining
+PostgreSQL for diagnosis and a forward fix:
 
 ```bash
 scripts/early-birds-preview/rollback.sh /secure/earlybirds-preview.env
 ```
 
-Then disable the EarlyBird public entry using the Listener lane's feature flag
-and serve its truthful unavailable state. This slice cannot and does not stop
-the event compose project, LiveKit, playlist-bot, or production database.
+Set `EARLY_BIRDS_ENABLED=0` before the next start. None of these scripts uses
+`docker compose down`, deletes a volume, or targets the event/live project.
 
 ## Staging release gate
 
-Before external staging acceptance, record all of the following:
-
-1. Synthetic compose validation, unit contract checks, startup, health smoke,
-   stop, origin rollback, restart, and migration rehearsal evidence.
-2. The existing stream origin/canary and observability validation in
-   `ops/early-birds/runbook/README.md`; use fake alert secrets locally.
-3. Listener auth/authorization negative tests, synthetic entitlement checks,
-   and separate-cookie verification once its lane is integrated.
-4. An approved artifact, external decoded-audio canary, 60-minute physical
-   desktop/iOS/Android listening, and isolated load/soak evidence. These are
-   release prerequisites, not assertions made by this scaffold.
-5. DNS/TLS verification for `earlybirds-staging.harmonicbeacon.com` only after
-   the local/ZeroTier path is green. Never use DNS success as a replacement for
-   the local health and rollback checks.
-
-Do not promote this staging runtime to production without the explicit
-EarlyBirds release, audio, identity, commerce, and rollback gates in
+Record config/test/build output, migration status, smoke output, kill-switch
+state, rollback/stop/restart evidence, and the reviewed nginx/TLS handoff. Audio
+provenance, external decoded-audio canaries, physical device listening,
+load/soak, real identity-provider registration, and commerce reconciliation are
+separate release prerequisites; this plumbing does not satisfy or simulate
+them. Do not promote this runtime to production without the explicit gates in
 `docs/plans/EARLY_BIRDS.md`.

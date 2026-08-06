@@ -3,9 +3,28 @@ set -eu
 . "$(dirname -- "$0")/lib.sh"
 env_file=${1:?usage: scripts/early-birds-preview/health-smoke.sh /secure/preview.env}
 require_synthetic_env "$env_file"
-port=$(sed -n 's/^BEACON_STREAM_HOST_PORT=//p' "$env_file" | tail -n 1)
-port=${port:-18080}
-preview_compose_command "$env_file" ps --status running postgres beacon-stream
+app_port=$(preview_env_value EARLYBIRDS_PREVIEW_APP_PORT "$env_file")
+stream_port=$(preview_env_value BEACON_STREAM_HOST_PORT "$env_file")
+
+running_services=$(preview_compose_command "$env_file" ps --status running --services)
+for service in postgres listener beacon-stream; do
+  printf '%s\n' "$running_services" | grep -qx "$service" || {
+    echo "preview service is not running: $service" >&2
+    exit 1
+  }
+done
+
+migration_id=$(preview_compose_command "$env_file" ps --all --quiet migration)
+test -n "$migration_id" || { echo 'forward-only migration container is missing' >&2; exit 1; }
+test "$(docker inspect --format '{{.State.ExitCode}}' "$migration_id")" = 0 || {
+  echo 'forward-only migration did not complete successfully' >&2
+  exit 1
+}
+
 preview_compose_command "$env_file" exec -T postgres sh -ec 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-curl --fail --silent --show-error "http://127.0.0.1:${port}/readyz" >/dev/null
-echo 'EarlyBirds synthetic preview health smoke passed (PostgreSQL and isolated stream ready).'
+curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${app_port}/api/health" >/dev/null
+curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${app_port}/api/health/ready" >/dev/null
+curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${stream_port}/healthz" >/dev/null
+preview_compose_command "$env_file" exec -T beacon-stream node -e \
+  "fetch('http://127.0.0.1:9090/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+echo 'EarlyBirds preview smoke passed: migration, PostgreSQL, Listener liveness/readiness, and stream liveness/readiness.'

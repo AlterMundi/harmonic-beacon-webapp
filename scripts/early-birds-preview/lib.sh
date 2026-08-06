@@ -4,26 +4,128 @@ set -eu
 preview_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 preview_compose="$preview_root/ops/early-birds-preview/compose.yml"
 stream_compose="$preview_root/services/beacon-stream/docker-compose.yml"
+preview_overlay="$preview_root/ops/early-birds-preview/stream-build.override.yml"
+authority_overlay="$preview_root/ops/early-birds-preview/authority-network.override.yml"
 preview_project=earlybirds-preview
+
+preview_env_value() {
+  preview_key=${1:?usage: preview_env_value KEY FILE}
+  preview_value_file=${2:?usage: preview_env_value KEY FILE}
+  sed -n "s/^${preview_key}=//p" "$preview_value_file" | tail -n 1 | tr -d '\r'
+}
+
+preview_fail() {
+  echo "refusing to run: $1" >&2
+  exit 2
+}
+
+require_exact_preview_value() {
+  required_key=${1:?usage: require_exact_preview_value KEY VALUE FILE}
+  required_value=${2:?usage: require_exact_preview_value KEY VALUE FILE}
+  required_file=${3:?usage: require_exact_preview_value KEY VALUE FILE}
+  actual_value=$(preview_env_value "$required_key" "$required_file")
+  test "$actual_value" = "$required_value" || preview_fail "$required_key must be $required_value"
+}
+
+require_synthetic_secret() {
+  secret_key=${1:?usage: require_synthetic_secret KEY MIN_LENGTH FILE}
+  secret_min_length=${2:?usage: require_synthetic_secret KEY MIN_LENGTH FILE}
+  secret_file=${3:?usage: require_synthetic_secret KEY MIN_LENGTH FILE}
+  secret_value=$(preview_env_value "$secret_key" "$secret_file")
+  case "$secret_value" in
+    synthetic-*) ;;
+    *) preview_fail "$secret_key must remain visibly synthetic" ;;
+  esac
+  test "${#secret_value}" -ge "$secret_min_length" || preview_fail "$secret_key is too short"
+}
 
 require_synthetic_env() {
   env_file=${1:?usage: provide a synthetic preview env file}
-  test -f "$env_file" || { echo "preview env file not found: $env_file" >&2; exit 2; }
-  # Only assignments affect Compose. Comments intentionally describe production
-  # boundaries, so never reject an env file merely for documenting them.
-  effective_assignments=$(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$env_file" || true)
-  printf '%s\n' "$effective_assignments" | grep -q '^EARLYBIRDS_PREVIEW_ENV=synthetic$' || {
-    echo 'refusing to run: EARLYBIRDS_PREVIEW_ENV must be synthetic' >&2; exit 2;
-  }
-  if printf '%s\n' "$effective_assignments" | grep -Eiq '(harmonicbeacon\.com|paypal|mercadopago|production)'; then
-    echo 'refusing to run: synthetic preview env contains a production/provider value' >&2; exit 2
+  test -f "$env_file" || preview_fail "preview env file not found: $env_file"
+
+  require_exact_preview_value EARLYBIRDS_PREVIEW_ENV synthetic "$env_file"
+  require_exact_preview_value EARLYBIRDS_PREVIEW_DB_USER earlybirds_preview "$env_file"
+  require_exact_preview_value EARLYBIRDS_PREVIEW_DB_NAME earlybirds_preview "$env_file"
+  require_exact_preview_value EARLYBIRDS_PREVIEW_APP_PORT 13000 "$env_file"
+  require_exact_preview_value BEACON_STREAM_HOST_PORT 18080 "$env_file"
+  require_exact_preview_value EARLY_BIRDS_AUTH_BASE_URL https://earlybirds-staging.harmonicbeacon.com "$env_file"
+  require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
+  require_exact_preview_value EARLY_BIRDS_STREAM_ORIGIN https://stream.harmonicbeacon.com "$env_file"
+  require_exact_preview_value BEACON_STREAM_PUBLIC_ORIGIN https://stream.harmonicbeacon.com "$env_file"
+  require_exact_preview_value BEACON_STREAM_ALLOWED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
+  require_exact_preview_value EARLY_BIRDS_STREAM_ARTIFACT_ID synthetic-preview-artifact "$env_file"
+  require_exact_preview_value BEACON_STREAM_ARTIFACT_ID synthetic-preview-artifact "$env_file"
+  require_exact_preview_value EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS earlybirds-staging.harmonicbeacon.com "$env_file"
+
+  kill_switch=$(preview_env_value EARLY_BIRDS_ENABLED "$env_file")
+  case "$kill_switch" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_ENABLED must be 0 or 1' ;; esac
+  team_entry_switch=$(preview_env_value EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED "$env_file")
+  case "$team_entry_switch" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED must be 0 or 1' ;; esac
+  require_exact_preview_value EARLY_BIRDS_TEST_ACCESS_ENABLED 1 "$env_file"
+
+  authority_network=$(preview_env_value EARLYBIRDS_PREVIEW_AUTHORITY_NETWORK "$env_file")
+  if test -n "$authority_network"; then
+    test "$authority_network" = earlybirds_authority_private || preview_fail 'authority network must be earlybirds_authority_private'
+    require_exact_preview_value EARLY_BIRDS_AUTHORITY_BASE_URL http://pmp-myth-api:8765 "$env_file"
+  else
+    require_exact_preview_value EARLY_BIRDS_AUTHORITY_BASE_URL https://authority.example.invalid "$env_file"
   fi
+
+  for oauth_key in \
+    EARLY_BIRDS_GOOGLE_CLIENT_ID EARLY_BIRDS_GOOGLE_CLIENT_SECRET \
+    EARLY_BIRDS_APPLE_CLIENT_ID EARLY_BIRDS_APPLE_CLIENT_SECRET
+  do
+    test -z "$(preview_env_value "$oauth_key" "$env_file")" || preview_fail "$oauth_key must stay empty in synthetic staging"
+  done
+
+  require_synthetic_secret EARLYBIRDS_PREVIEW_DB_PASSWORD 24 "$env_file"
+  require_synthetic_secret EARLY_BIRDS_AUTH_SECRET 32 "$env_file"
+  require_synthetic_secret EARLY_BIRDS_AUTHORITY_SERVICE_TOKEN 43 "$env_file"
+  require_synthetic_secret EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT 43 "$env_file"
+  require_synthetic_secret EARLY_BIRDS_STREAM_SIGNING_SECRET 32 "$env_file"
+  require_synthetic_secret EARLY_BIRDS_DEVICE_PEPPER 32 "$env_file"
+  require_synthetic_secret EARLY_BIRDS_TEST_LOGIN_SECRET 32 "$env_file"
+  require_synthetic_secret BEACON_STREAM_SIGNING_SECRET 32 "$env_file"
+
+  listener_signing_secret=$(preview_env_value EARLY_BIRDS_STREAM_SIGNING_SECRET "$env_file")
+  origin_signing_secret=$(preview_env_value BEACON_STREAM_SIGNING_SECRET "$env_file")
+  test "$listener_signing_secret" = "$origin_signing_secret" || preview_fail 'Listener and origin signing secrets must match'
+
+  effective_assignments=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$env_file" || true)
+  while IFS= read -r assignment; do
+    test -n "$assignment" || continue
+    case "$assignment" in
+      EARLY_BIRDS_AUTH_BASE_URL=https://earlybirds-staging.harmonicbeacon.com|\
+      EARLY_BIRDS_TRUSTED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com|\
+      EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=earlybirds-staging.harmonicbeacon.com|\
+      EARLY_BIRDS_STREAM_ORIGIN=https://stream.harmonicbeacon.com|\
+      BEACON_STREAM_PUBLIC_ORIGIN=https://stream.harmonicbeacon.com|\
+      BEACON_STREAM_ALLOWED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com) ;;
+      *harmonicbeacon.com*) preview_fail 'synthetic preview env contains a non-staging Harmonic Beacon hostname' ;;
+    esac
+    assignment_value=${assignment#*=}
+    case "$assignment_value" in
+      *[Pp][Aa][Yy][Pp][Aa][Ll]*|*[Mm][Ee][Rr][Cc][Aa][Dd][Oo][Pp][Aa][Gg][Oo]*|*[Pp][Rr][Oo][Dd][Uu][Cc][Tt][Ii][Oo][Nn]*)
+        preview_fail 'synthetic preview env contains a production/provider value'
+        ;;
+    esac
+  done <<EOF
+$effective_assignments
+EOF
 }
 
 preview_compose_command() {
   env_file=${1:?usage: provide a synthetic preview env file}
   shift
-  docker compose --project-name "$preview_project" --env-file "$env_file" \
-    -f "$preview_compose" -f "$stream_compose" \
-    -f "$preview_root/ops/early-birds-preview/stream-build.override.yml" "$@"
+  authority_network=$(preview_env_value EARLYBIRDS_PREVIEW_AUTHORITY_NETWORK "$env_file")
+  if test -n "$authority_network"; then
+    authority_internal=$(docker network inspect --format '{{.Internal}}' "$authority_network" 2>/dev/null || true)
+    test "$authority_internal" = true || preview_fail 'authority network must already exist with Internal=true'
+    docker compose --project-name "$preview_project" --env-file "$env_file" \
+      -f "$preview_compose" -f "$stream_compose" -f "$preview_overlay" \
+      -f "$authority_overlay" "$@"
+  else
+    docker compose --project-name "$preview_project" --env-file "$env_file" \
+      -f "$preview_compose" -f "$stream_compose" -f "$preview_overlay" "$@"
+  fi
 }

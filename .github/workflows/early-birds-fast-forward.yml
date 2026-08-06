@@ -3,18 +3,38 @@ name: EarlyBirds fast-forward checks
 on:
   pull_request:
     paths:
+      - Dockerfile
+      - package.json
+      - package-lock.json
+      - prisma/**
+      - src/app/api/health/**
+      - src/app/api/early-birds/**
+      - src/app/early-birds/**
+      - src/components/early-birds/**
+      - src/lib/early-birds/**
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
       - scripts/early-birds-preview/**
+      - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
       - .github/workflows/early-birds-fast-forward.yml
   push:
     branches: [early-birds, "feat/early-birds-*"]
     paths:
+      - Dockerfile
+      - package.json
+      - package-lock.json
+      - prisma/**
+      - src/app/api/health/**
+      - src/app/api/early-birds/**
+      - src/app/early-birds/**
+      - src/components/early-birds/**
+      - src/lib/early-birds/**
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
       - scripts/early-birds-preview/**
+      - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
       - .github/workflows/early-birds-fast-forward.yml
 
 permissions:
@@ -52,5 +72,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      - run: npm --prefix ops/early-birds-preview run check
       - run: npm --prefix ops/early-birds-preview test
-      - run: npm --prefix ops/early-birds-preview run validate
+      - run: npm --prefix ops/early-birds-preview run validate:build

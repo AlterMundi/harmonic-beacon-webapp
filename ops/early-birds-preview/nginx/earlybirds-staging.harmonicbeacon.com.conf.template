@@ -1,0 +1,113 @@
+# Isolated EarlyBirds staging vhost. Review and install separately from every
+# live/event vhost only after the named certificate exists.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name earlybirds-staging.harmonicbeacon.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 301 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name earlybirds-staging.harmonicbeacon.com;
+
+    ssl_certificate /etc/letsencrypt/live/earlybirds-staging.harmonicbeacon.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/earlybirds-staging.harmonicbeacon.com/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Membership projection is a private server-to-server boundary and is not
+    # exposed by this public staging vhost.
+    location = /api/internal {
+        return 404;
+    }
+
+    location ^~ /api/internal/ {
+        return 404;
+    }
+
+    location /_next/static/ {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location = /api/health {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+    }
+
+    location = /api/health/ready {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+    }
+
+    location = /early-birds {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    location ^~ /early-birds/ {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    location ^~ /api/early-birds/ {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    location = / {
+        return 302 /early-birds;
+    }
+
+    # The image also contains weekend/event routes. They are intentionally not
+    # part of this staging vhost, keeping checkout and staff surfaces dark.
+    location / {
+        return 404;
+    }
+}
