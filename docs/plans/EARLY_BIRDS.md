@@ -23,8 +23,8 @@ The first useful release lets a Listener:
 2. obtain a valid EarlyBird membership through the existing commerce authority;
 3. open a private, receive-only listening home;
 4. hear a continuous 24/7 Beacon stream;
-5. optionally start one reviewed guided voice track in Spanish or English and
-   balance the guide against the Beacon;
+5. optionally play one reviewed drop-in voice track in Spanish or English with
+   standard private playback controls and balance it against the Beacon;
 6. return later and recover the same access without joining an event room.
 
 The initial 24/7 source is the long spatialized recording
@@ -44,6 +44,7 @@ change has passed its own audio and operational acceptance.
 | Develop on a long-lived `early-birds` integration branch | Accepted | Weekend work continues independently on `main`. |
 | Use the long master recording as the first 24/7 source | Accepted | We can prove the listening product before the physical live uplink exists. |
 | Make the stream the primary EarlyBirds experience | Accepted | Stream reliability and audio quality precede growth features. |
+| Share only the Beacon stream timeline | Accepted | Drop-ins are private media with independent play, pause, seek and restart controls. |
 | Design the stream for later reuse by event sessions | Accepted | The source and delivery contract cannot be Listener-specific. |
 | Do not change the current event audio path before the next weekend | Accepted | Reuse by events is a post-weekend convergence card, not an EarlyBirds shortcut. |
 | Use Fast Forward development with risk-based checkpoints | Accepted | Small isolated changes do not run the whole production release ceremony. |
@@ -68,7 +69,7 @@ the older Founders proposal alone.
   create an unrelated payment truth inside the web app.
 - The selected source master is 6,844.426 seconds (1:54:04.426), stereo,
   48 kHz, 32-bit float PCM, 2,628,259,840 bytes.
-- Six candidate guided voice masters exist. They are mono 24 kHz WAV files,
+- Six candidate drop-in voice masters exist. They are mono 24 kHz WAV files,
   approximately 5.5 minutes each. The final voice/version and permission to use
   it have not yet been recorded as product decisions.
 - No `beacon-247` service or room exists today.
@@ -110,8 +111,9 @@ steps are not safe to execute literally.
 - A separate EarlyBird account/session domain.
 - Canonical membership entitlement from the commerce service.
 - A continuous, monitored stream from the approved long master.
-- Beacon-only playback and one optional ES or EN guide.
-- A simple Beacon/Guide balance with an obvious return to Beacon-only.
+- Beacon-only playback and one optional ES or EN drop-in.
+- Standard play, pause, seek and restart controls for the private drop-in.
+- A simple Beacon/Drop-in balance with an obvious return to Beacon-only.
 - Honest source state: recorded continuous source, reconnecting or unavailable.
 - Cancellation/revocation reflected without relying on a front-end redirect.
 - ES/EN copy, privacy/terms, basic accessibility and mobile-browser acceptance.
@@ -140,7 +142,7 @@ offline reviewed derivative ----> 24/7 stream origin ----> cache/CDN boundary
                                          |                         |
                                          |                         v
                                          |                 Listener browser
-                                         |                 + optional guide
+                                         |                 + optional drop-in
                                          v
                                   external canary
 
@@ -204,7 +206,7 @@ consumer.
 - The derivative records codec, bitrate, sample rate, channels, loudness/peak
   measurements, encoder version and checksum.
 - Nico approves the derivative by A/B listening before it becomes a candidate.
-- The six guide masters follow the same provenance process separately.
+- The six drop-in masters follow the same provenance process separately.
 
 ### 7.2 Delivery shape
 
@@ -228,8 +230,10 @@ To avoid continuous expensive encoding, the expected steady state is:
 4. keep a rolling live manifest and bounded segments;
 5. expose health, current source, media sequence and last-output timestamp.
 
-All listeners should hear approximately the same wall-clock position. A process
-restart may begin a new epoch; it must not produce overlapping publishers.
+All listeners should hear approximately the same wall-clock position in the
+24/7 Beacon stream. This shared timeline does not apply to drop-ins: each
+Listener controls those privately. A stream process restart may begin a new
+Beacon epoch; it must not produce overlapping publishers.
 
 ### 7.3 Access and truthfulness
 
@@ -260,10 +264,15 @@ testing: native media playback. Web Audio is introduced only if a required mix
 behavior cannot be achieved cleanly and the alternative passes the audio gate.
 
 - Playback begins only after an explicit user gesture.
-- Beacon-only is the default and remains available if a guide fails.
-- Starting a guide does not reconnect or restart the Beacon stream.
+- Beacon-only is the default and remains available if a drop-in fails.
+- Starting, pausing, seeking, restarting or finishing a drop-in does not
+  reconnect, pause, seek or restart the Beacon stream.
+- Drop-ins expose familiar play, pause, timeline/seek and restart controls.
+- Drop-in position is private to the Listener and is never synchronized with
+  another Listener.
 - Balance changes are perceptually smooth and never exceed reviewed gain limits.
-- Stopping a guide returns to Beacon-only without a jump in the Beacon timeline.
+- Pausing or stopping a drop-in returns to Beacon-only without a jump in the
+  Beacon timeline.
 - A hidden or locked phone behaves honestly; the UI does not claim playback
   while the browser has suspended it.
 - No camera, microphone, chat, hands, tapestry or event presence is created.
@@ -275,8 +284,8 @@ The media test ladder is mandatory and intentionally incremental:
 2. approved derivative in a standard player;
 3. stream in a standard browser player;
 4. stream in the EarlyBird player;
-5. stream plus ES guide;
-6. stream plus EN guide.
+5. stream plus independently controlled ES drop-in;
+6. stream plus independently controlled EN drop-in.
 
 A failure at one level is fixed there before testing the next.
 
@@ -429,7 +438,7 @@ listen, with no event service or current audio file changed.
 - create isolated EarlyBird data models and session cookie;
 - build bilingual public page and private home;
 - use a development-only synthetic entitlement fixture;
-- add Beacon-only player, guide selection and balance;
+- add Beacon-only player, drop-in selection, standard controls and balance;
 - prove that no event connection/capability is created.
 
 Exit: the team can use the complete listening experience in preview without a
@@ -473,7 +482,7 @@ approved.
 
 - A Listener can sign in, obtain a canonical sandbox membership and listen.
 - The initial recorded source is continuously delivered and truthfully labeled.
-- Beacon-only and both approved guide languages pass physical-device listening.
+- Beacon-only and both approved drop-in languages pass physical-device listening.
 - No Listener gains event/staff capabilities or creates event media connections.
 - Duplicate/reordered commerce events cannot duplicate or incorrectly preserve
   access.
@@ -520,11 +529,11 @@ change only the exceptions.
 | D3 | First identity provider | Google only; Apple/Facebook after launch evidence. |
 | D4 | First payment provider | PayPal through the existing commerce authority; MercadoPago second. |
 | D5 | Initial source wording | "Continuous recorded Beacon"; never imply the physical source is live. |
-| D6 | Guide masters | Amara Sol ES/EN candidates, subject to explicit rights/consent and Nico's content/audio approval. |
+| D6 | Drop-in masters | Amara Sol ES/EN candidates, subject to explicit rights/consent and Nico's content/audio approval. |
 | D7 | Stream delivery | Buffered HTTP/HLS spike; codec selected only after A/B and browser support evidence. |
 | D8 | EarlyBird offer after cancellation | Locked offer survives only involuntary payment failure during grace, not voluntary cancellation/refund/revoke. |
 | D9 | Production topology | Main app after final merge; independent stream-origin service; additive models; feature/kill switch. |
-| D10 | Stream timeline | One shared wall-clock stream position for all Listeners, not a private loop beginning at sign-in. |
+| D10 | Timelines | Accepted: one shared wall-clock position for the Beacon stream; every drop-in has private standard play/pause/seek/restart controls. |
 
 ## 16. Card map after agreement
 
@@ -538,7 +547,7 @@ GitHub issues in this dependency order:
 5. EB-04 — stream canary, observability and incident stop switch.
 6. EB-05 — Listener shell and synthetic-entitlement vertical slice.
 7. EB-06 — Google identity and isolated Listener sessions.
-8. EB-07 — guide asset approval, delivery and Beacon/Guide player.
+8. EB-07 — drop-in asset approval, delivery and Beacon/Drop-in player.
 9. EB-08 — versioned EarlyBird commerce entitlement contract.
 10. EB-09 — PayPal sandbox lifecycle and reconciliation.
 11. EB-10 — privacy, terms, accessibility and bilingual acceptance.
