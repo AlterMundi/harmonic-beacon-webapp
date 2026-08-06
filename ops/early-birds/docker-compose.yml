@@ -86,15 +86,32 @@ services:
       resources:
         limits: { cpus: "0.5", memory: 512M }
 
+  canary-secret-init:
+    image: alpine:3.21.3
+    restart: "no"
+    network_mode: none
+    secrets: [beacon_stream_signing_secret]
+    volumes: [canary-runtime:/runtime]
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        cp /run/secrets/beacon_stream_signing_secret /runtime/signing_secret
+        chown 1000:1000 /runtime/signing_secret
+        chmod 0400 /runtime/signing_secret
+
   canary-exporter:
     build: ./canary
     restart: unless-stopped
-    secrets: [beacon_stream_signing_secret]
+    depends_on:
+      canary-secret-init: { condition: service_completed_successfully }
     environment:
-      BEACON_STREAM_SIGNING_SECRET_FILE: /run/secrets/beacon_stream_signing_secret
+      BEACON_STREAM_SIGNING_SECRET_FILE: /runtime/signing_secret
       BEACON_STREAM_PUBLIC_ORIGIN: ${BEACON_STREAM_PUBLIC_ORIGIN:?set in the root-owned ops env file}
       BEACON_STREAM_ARTIFACT_ID: ${BEACON_STREAM_ARTIFACT_ID:?set in the root-owned ops env file}
       BEACON_CANARY_INTERVAL_MS: 30000
+    volumes: [canary-runtime:/runtime:ro]
     # The canary needs outbound HTTPS to exercise the public origin. Its
     # metrics remain available only to Prometheus on `observability`.
     networks: [observability, ops_edge]
@@ -115,6 +132,7 @@ volumes:
   prometheus-data:
   alertmanager-data:
   alertmanager-runtime:
+  canary-runtime:
 
 secrets:
   telegram_bot_token:

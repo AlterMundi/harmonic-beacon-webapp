@@ -28,6 +28,10 @@ test('references Telegram and canary credentials as mounted secret files only', 
   assert.match(compose, /TELEGRAM_BOT_TOKEN_FILE/);
   assert.match(compose, /TELEGRAM_CHAT_ID_FILE/);
   assert.match(compose, /BEACON_STREAM_SIGNING_SECRET_FILE/);
+  assert.match(compose, /canary-secret-init:[\s\S]*network_mode: none/);
+  assert.match(compose, /chown 1000:1000 \/runtime\/signing_secret/);
+  assert.match(compose, /canary-secret-init: \{ condition: service_completed_successfully \}/);
+  assert.match(compose, /BEACON_STREAM_SIGNING_SECRET_FILE: \/runtime\/signing_secret/);
   assert.match(compose, /BEACON_STREAM_PUBLIC_ORIGIN/);
   assert.match(compose, /BEACON_STREAM_ARTIFACT_ID/);
   assert.doesNotMatch(compose, /TELEGRAM_BOT_TOKEN:\s*[^$]/);
