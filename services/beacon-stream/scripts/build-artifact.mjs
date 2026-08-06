@@ -76,6 +76,9 @@ const metadata = {
 };
 const output = path.join(root, 'artifact.json');
 const temporary = `${output}.${process.pid}.tmp`;
-await fs.writeFile(temporary, `${JSON.stringify(metadata, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+// Approval metadata and hashes are intentionally non-secret. The origin runs
+// as an unprivileged container user over a read-only media mount, so the
+// inventory must remain readable when packaging was performed by root.
+await fs.writeFile(temporary, `${JSON.stringify(metadata, null, 2)}\n`, { flag: 'wx', mode: 0o644 });
 await fs.rename(temporary, output);
 console.log(`artifact inventory written: ${segments.length} segments, ${loopDurationSeconds.toFixed(6)} seconds`);

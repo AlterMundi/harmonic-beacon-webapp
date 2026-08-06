@@ -49,10 +49,10 @@ For each row in the result table:
 6. Reload and open a second device/profile. Both must retain access. Open a
    third device/profile with the same account only during the supervised
    lifecycle test; the oldest active lease must be displaced truthfully.
-7. Exercise pause/resume and background/foreground recovery only with an
-   approved staging audio artifact. If staging still uses the non-audio
-   fixture, mark acoustic and physical playback rows `BLOCKED — audio approval`
-   rather than passing them by appearance.
+7. Exercise Beacon pause/resume and background/foreground recovery, then play,
+   pause, seek and finish the approved EN intro. Confirm its natural end hands
+   off to the current Beacon live edge. ES must state that no intro is
+   available; it must not reuse the obsolete low-gain file.
 8. Revoke the disposable invitation through the authority. Existing playback
    must stop at the next bounded authorization check, a heartbeat must deny
    access, and reloading the private home must return to membership-required.
@@ -61,10 +61,10 @@ For each row in the result table:
 
 | Date/time | Webapp SHA | Authority SHA | Device / OS | Browser | Locale | Free entry | 2→3 device | Revocation | No media permission | Audio | Tester / notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| _pending_ | _pending_ | _pending_ | Desktop | Chromium | ES/EN | PENDING | PENDING | PENDING | PENDING | BLOCKED — audio approval | |
-| _pending_ | _pending_ | _pending_ | Desktop | Firefox | ES/EN | PENDING | PENDING | PENDING | PENDING | BLOCKED — audio approval | |
-| _pending_ | _pending_ | _pending_ | Android physical | Chrome | ES/EN | PENDING | PENDING | PENDING | PENDING | BLOCKED — audio approval | |
-| _pending_ | _pending_ | _pending_ | iPhone physical | Safari | ES/EN | PENDING | PENDING | PENDING | PENDING | BLOCKED — audio approval | |
+| _pending_ | _pending_ | _pending_ | Desktop | Chromium | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | |
+| _pending_ | _pending_ | _pending_ | Desktop | Firefox | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | |
+| _pending_ | _pending_ | _pending_ | Android physical | Chrome | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | |
+| _pending_ | _pending_ | _pending_ | iPhone physical | Safari | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | |
 
 ## Acceptance and rollback
 

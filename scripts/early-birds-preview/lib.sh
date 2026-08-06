@@ -60,7 +60,7 @@ require_synthetic_env() {
   origin_artifact=$(preview_env_value BEACON_STREAM_ARTIFACT_ID "$env_file")
   test "$listener_artifact" = "$origin_artifact" || preview_fail 'Listener and origin artifact IDs must match'
   case "$listener_artifact" in
-    synthetic-preview-artifact|beacon-luz-20260624-aac320-v1) ;;
+    synthetic-preview-artifact|beacon-luz-20260624-aac320-v1|beacon-luz-20260624-2hs-aac320-v2) ;;
     *) preview_fail 'stream artifact is not approved for synthetic staging' ;;
   esac
   require_exact_preview_value EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS earlybirds-staging.harmonicbeacon.com "$env_file"

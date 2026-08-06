@@ -74,14 +74,22 @@ the older Founders proposal alone.
 - PayPal and the commerce/entitlement integration already have an authority in
   `proyecciones-mito`. EarlyBirds must extend or consume that authority, not
   create an unrelated payment truth inside the web app.
-- The selected source master is 6,844.426 seconds (1:54:04.426), stereo,
-  48 kHz, 32-bit float PCM, 2,628,259,840 bytes.
-- The approved Spanish intro source is the 2026-08-06 Amara Sol offline mix,
-  including its authored Beacon sidechain/effects and ending fade. The staging
-  derivative is AAC-LC, stereo, 48 kHz and gain-matched to the long Beacon at
-  -35.6 LUFS under Nico's explicit approval. No English artifact is approved
-  yet, so that option must remain honestly unavailable.
-- No `beacon-247` service or room exists today.
+- The selected source master is
+  `luz_de_manana_20260624-155633_2hs.wav`: 6,844.426 seconds
+  (1:54:04.426), stereo, 48 kHz, 16-bit PCM, 1,314,129,920 bytes and
+  SHA-256 `feb0cac547eee8a2012ede32f9358e1cad4b66f6aea3b1b839610e71fad42685`.
+  Nico approved its authored gain without further normalization. Its AAC-LC
+  320 kbps staging derivative measures -14.2 LUFS with a decoded peak of
+  -0.2 dBFS.
+- The approved English intro source is the 2026-08-06 Amara Sol offline mix
+  `BeaconDropIn-Amara-sol_r1_session.wav`, including its authored Beacon
+  sidechain/effects and ending fade. Nico approved its authored gain without
+  further normalization. Its AAC-LC 320 kbps, stereo, 48 kHz derivative
+  measures -11.2 LUFS with a decoded peak of -0.4 dBFS. No current-gain Spanish
+  artifact is approved, so ES remains honestly unavailable rather than serving
+  the obsolete -35.6 LUFS derivative.
+- No production `beacon-247` LiveKit room exists. The isolated staging HTTP
+  origin is the current 24/7 implementation and remains separate from events.
 
 ## 4. Corrections to the initial Founders proposal
 

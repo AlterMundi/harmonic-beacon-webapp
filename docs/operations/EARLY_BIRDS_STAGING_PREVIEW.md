@@ -56,12 +56,18 @@ evidence, not authorization to promote it to `main` or production.
 - Rollback stopped only Listener/origin, retained healthy preview PostgreSQL,
   kept `live.harmonicbeacon.com` healthy, and restored staging via the normal
   start/smoke path.
-- The origin still serves the previously approved AAC-LC 48 kHz stereo Beacon
-  artifact and the previously approved ES Amara intro. No codec, bitrate,
-  sample rate, gain, routing, event audio or acoustic processing changed in
-  this rollout. EN remains truthfully unavailable.
+- The origin now serves approved artifact
+  `beacon-luz-20260624-2hs-aac320-v2`, derived without gain processing from
+  `luz_de_manana_20260624-155633_2hs.wav`. It is AAC-LC 320 kbps, stereo,
+  48 kHz, -14.2 LUFS with decoded peak -0.2 dBFS. The private EN intro is
+  `amara-sol-en-r1-approved-aac320-v1.m4a`, also derived without gain
+  processing, at -11.2 LUFS and decoded peak -0.4 dBFS. The obsolete -35.6
+  LUFS ES derivative is disabled and ES remains truthfully unavailable.
+  Event/LiveKit audio is unchanged.
 - Rollback snapshots are
   `/etc/harmonic-beacon/earlybirds-preview.env.pre-60bf118` and
+  `/etc/harmonic-beacon/earlybirds-preview.env.pre-audio-2hs-v2`,
+  `/etc/harmonic-beacon/earlybirds-ops.env.pre-audio-2hs-v2` and
   `/etc/harmonic-beacon/earlybirds-authority-deploy.env.pre-21c3637`; the prior
   Listener and authority images remain installed and preview databases must be
   retained.
