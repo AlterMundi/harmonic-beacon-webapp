@@ -53,7 +53,10 @@ function crossOriginHeaders(request, allowedOrigins) {
 function authorized({ request, url, secret }) {
   return verifySignedPath({
     secret,
-    method: request.method,
+    // HEAD is an HTTP metadata view of the same signed GET resource. Browsers
+    // may probe media before their first GET, so validate it against GET rather
+    // than requiring a second signature that the manifest cannot carry.
+    method: request.method === 'HEAD' ? 'GET' : request.method,
     pathname: url.pathname,
     ...tokenFrom(url),
   });

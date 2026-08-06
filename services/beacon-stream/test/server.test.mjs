@@ -41,6 +41,12 @@ test('only exposes minimal health publicly and protects manifest and every segme
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('access-control-allow-origin'), allowedOrigin);
   assert.equal(response.headers.get('vary'), 'Origin');
+  const head = await fetch(`${origin}${pathname}?exp=${expiry}&sig=${signature}`, {
+    method: 'HEAD',
+    headers: { Origin: allowedOrigin },
+  });
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get('access-control-allow-origin'), allowedOrigin);
   const manifest = await response.text();
   const segmentUrl = manifest.split('\n').find((line) => line.startsWith('https://'));
   assert.ok(segmentUrl);
