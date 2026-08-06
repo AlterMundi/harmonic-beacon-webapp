@@ -5,7 +5,7 @@
 The isolated preview is currently running on `mona`; this is operational
 evidence, not authorization to promote it to `main` or production.
 
-- Listener application SHA: `2ee36adf36f0364862b62b0bb0c5df5d49086cc0`.
+- Listener application SHA: `806fe9c6e2ae162c46d841e71813be477c4e58a5`.
 - Free authority preview SHA: `83deaaee1ae3c5adce910c80249a0229ab4199e5`,
   including hardened authority `8638d6e`, durable synthetic-Free
   reconciliation and Alembic head `b8c4d1e7f260`.
@@ -30,6 +30,11 @@ evidence, not authorization to promote it to `main` or production.
 - Public real-browser layout checks passed in ES and EN at 1440, 1024, 390 and
   320 pixels. The DB-backed authenticated fixture passed the same responsive
   matrix without requesting camera or microphone access.
+- A disposable canonical invitation passed real-browser activation and an
+  immediate second sign-in of the same account. The second device path signs in
+  before attempting sign-up, avoiding Better Auth's intentional account-create
+  rate limit. After authority revocation and durable reconciliation, the same
+  browser path remained at the redeem boundary and truthfully denied access.
 - Rollback stopped only Listener/origin, retained healthy preview PostgreSQL,
   kept `live.harmonicbeacon.com` healthy, and restored staging via the normal
   start/smoke path.
