@@ -7,6 +7,7 @@ import { metadata, temporaryArtifact } from './helpers.mjs';
 test('requires explicit approval and exactly six-second immutable segment metadata', () => {
   assert.throws(() => metadata({ approval: { status: 'PENDING' } }), /not explicitly approved/);
   assert.throws(() => metadata({ timing: { epochUtc: '2026-08-06T00:00:00.000Z', segmentDurationSeconds: 5, segmentCount: 3 } }), /six-second/);
+  assert.throws(() => metadata({ timing: { epochUtc: '2026-08-06T00:00:00', segmentDurationSeconds: 6, segmentCount: 3 } }), /UTC timestamp/);
 });
 
 test('loads and checksum-verifies every immutable segment', async () => {

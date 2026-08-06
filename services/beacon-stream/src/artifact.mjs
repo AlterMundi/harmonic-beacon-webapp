@@ -4,6 +4,7 @@ import path from 'node:path';
 
 const ARTIFACT_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -17,7 +18,7 @@ export function validateArtifact(raw) {
   assert(typeof raw.approval?.reviewRecord === 'string' && raw.approval.reviewRecord.length > 0, 'approval.reviewRecord is required');
   assert(typeof raw.source?.masterSha256 === 'string' && SHA256.test(raw.source.masterSha256), 'source.masterSha256 must be SHA-256');
   assert(typeof raw.derivative?.sha256 === 'string' && SHA256.test(raw.derivative.sha256), 'derivative.sha256 must be SHA-256');
-  assert(typeof raw.timing?.epochUtc === 'string' && Number.isFinite(Date.parse(raw.timing.epochUtc)), 'timing.epochUtc is required');
+  assert(typeof raw.timing?.epochUtc === 'string' && UTC_TIMESTAMP.test(raw.timing.epochUtc) && Number.isFinite(Date.parse(raw.timing.epochUtc)), 'timing.epochUtc must be an explicit UTC timestamp ending in Z');
   assert(raw.timing?.segmentDurationSeconds === 6, 'only immutable six-second segments are supported');
   assert(Number.isSafeInteger(raw.timing?.segmentCount) && raw.timing.segmentCount > 0, 'timing.segmentCount must be positive');
   assert(Array.isArray(raw.segments) && raw.segments.length === raw.timing.segmentCount, 'one segment inventory entry is required per segment');

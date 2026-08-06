@@ -1,6 +1,6 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { sha256File } from '../src/inventory.mjs';
 
 function argument(name) {
   const index = process.argv.indexOf(name);
@@ -21,14 +21,13 @@ if (masterPath === outputPath) {
 }
 const stat = await fs.stat(masterPath);
 if (!stat.isFile()) throw new Error('master must be a regular file');
-const bytes = await fs.readFile(masterPath);
 const inventory = {
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
   master: {
     immutable: true,
     path: masterPath,
-    sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+    sha256: await sha256File(masterPath),
     bytes: stat.size,
   },
 };
