@@ -93,6 +93,15 @@ describe('EarlyBird membership read model', () => {
             .not.toBe(membershipCommandHash(command()));
     });
 
+    it.each([
+        'listener/1',
+        '-listener',
+        `a${'b'.repeat(128)}`,
+    ])('rejects account IDs outside the canonical authority contract: %s', (accountId) => {
+        expect(() => membershipCommandHash(command({ account_id: accountId })))
+            .toThrow('account_id is invalid');
+    });
+
     it('applies a new projection and replays the exact same revision', async () => {
         const expected = projection({ commandHash: membershipCommandHash(command()) });
         tx.earlyBirdMembershipProjection.findUnique.mockResolvedValueOnce(null);

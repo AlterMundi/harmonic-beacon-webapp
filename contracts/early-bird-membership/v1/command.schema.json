@@ -20,7 +20,12 @@
   ],
   "properties": {
     "schema_version": {"const": "early-bird-membership.command.v1"},
-    "account_id": {"type": "string", "minLength": 1, "maxLength": 255},
+    "account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
     "membership_revision": {"type": "integer", "minimum": 1},
     "state": {
       "enum": [

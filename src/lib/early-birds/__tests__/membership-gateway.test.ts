@@ -80,6 +80,17 @@ describe('canonical EarlyBird membership HTTP gateway', () => {
         expect(gateway.redeemFree).not.toHaveBeenCalled();
     });
 
+    it.each([
+        'listener/1',
+        '-listener',
+        `a${'b'.repeat(128)}`,
+    ])('rejects account IDs outside the canonical authority contract: %s', async (accountId) => {
+        const gateway = { redeemFree: vi.fn() };
+        await expect(redeemFreeThroughCanonicalGateway(accountId, TOKEN, gateway))
+            .resolves.toEqual({ ok: false, reason: 'unavailable' });
+        expect(gateway.redeemFree).not.toHaveBeenCalled();
+    });
+
     it('fails closed on mismatched or structurally invalid authority responses', async () => {
         const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
             ...authorityMembership,

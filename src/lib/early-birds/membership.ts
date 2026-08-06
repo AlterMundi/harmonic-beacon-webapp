@@ -9,6 +9,8 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 
+import { isEarlyBirdAccountId } from './account-id';
+
 export const EARLY_BIRDS_FOUNDERS_OFFER = 'EARLY_BIRDS_FOUNDERS_V1' as const;
 
 export type EarlyBirdMembershipProjectionCommand = {
@@ -56,7 +58,7 @@ function normalizedCommand(command: EarlyBirdMembershipProjectionCommand): Early
     if (command.schema_version !== 'early-bird-membership.command.v1') {
         throw new Error('Unsupported membership command schema');
     }
-    if (!command.account_id || command.account_id.length > 255) throw new Error('account_id is invalid');
+    if (!isEarlyBirdAccountId(command.account_id)) throw new Error('account_id is invalid');
     if (!Number.isSafeInteger(command.membership_revision) || command.membership_revision < 1) {
         throw new Error('membership_revision must be a positive integer');
     }

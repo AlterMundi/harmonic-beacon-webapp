@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { isEarlyBirdAccountId } from './account-id';
 import {
     authorityMembershipCommand,
     parseCanonicalAuthorityMembership,
@@ -71,6 +72,7 @@ export class HttpEarlyBirdMembershipGateway implements EarlyBirdMembershipGatewa
         accountId: string;
         opaqueInvitation: string;
     }): Promise<CanonicalFreeRedemptionResult> {
+        if (!isEarlyBirdAccountId(accountId)) throw new EarlyBirdMembershipGatewayUnavailableError();
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
         try {
@@ -133,7 +135,8 @@ export async function redeemFreeThroughCanonicalGateway(
     opaqueInvitation: string,
     gateway = earlyBirdMembershipGateway(),
 ): Promise<CanonicalFreeRedemptionResult> {
-    if (opaqueInvitation.length < 32 || opaqueInvitation.length > 512 || !INVITATION_TOKEN.test(opaqueInvitation)) {
+    if (!isEarlyBirdAccountId(accountId) || opaqueInvitation.length < 32 ||
+        opaqueInvitation.length > 512 || !INVITATION_TOKEN.test(opaqueInvitation)) {
         return { ok: false, reason: 'unavailable' };
     }
     const result = await gateway.redeemFree({ accountId, opaqueInvitation });

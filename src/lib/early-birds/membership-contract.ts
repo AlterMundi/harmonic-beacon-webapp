@@ -1,4 +1,5 @@
 import type { EarlyBirdMembershipProjectionCommand } from './membership';
+import { isEarlyBirdAccountId } from './account-id';
 
 const COMMAND_KEYS = [
     'account_id', 'current_price', 'effective_at', 'grace_until', 'membership_revision', 'offer',
@@ -83,7 +84,7 @@ function price(value: unknown): EarlyBirdMembershipProjectionCommand['current_pr
 }
 
 function common(input: Record<string, unknown>) {
-    if (typeof input.account_id !== 'string' || input.account_id.length < 1 || input.account_id.length > 255) {
+    if (!isEarlyBirdAccountId(input.account_id)) {
         throw new EarlyBirdMembershipContractError('account_id is invalid');
     }
     if (!Number.isSafeInteger(input.membership_revision) || (input.membership_revision as number) < 1) {

@@ -23,3 +23,7 @@ cobro. El comando no contiene email, nombre, tokens OAuth, URLs firmadas ni dato
 
 El hash de comando usa JCS/RFC 8785 y SHA-256 sobre exactamente los doce campos requeridos. Los
 archivos cubiertos por `SHA256SUMS` deben copiarse byte-equivalentes al repositorio Beacon.
+
+La autoridad sólo considera aplicada una proyección cuando Beacon confirma revisión suficiente y
+un outcome, estado, acceso y `reconciliation_required=false` coherentes con una revisión local
+conocida. Una respuesta atrasada o contradictoria permanece reintentable y emite alerta.

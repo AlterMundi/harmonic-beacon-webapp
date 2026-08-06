@@ -14,6 +14,12 @@ Las llamadas son server-to-server por red privada. Exigen `Authorization: Bearer
   - correlaciona el token firmado y one-use con el `account_id` opaco ya autenticado por OAuth;
   - una replay idéntica devuelve byte-semánticamente el mismo resultado; reutilizar la key con otro
     body devuelve conflicto.
+- `POST /api/internal/v1/early-bird-checkouts`
+  - body: `checkout-create.schema.json`; resultado: `checkout.schema.json`;
+  - exige el mismo auth interno e `Idempotency-Key`; no existe una variante pública;
+  - persiste la unión cuenta↔suscripción externa antes de devolver la URL sandbox;
+  - un webhook inicial sin esa unión falla cerrado y cualquier `account_id` del payload se trata
+    sólo como comprobación defensiva, nunca como autoridad.
 - `GET /api/internal/v1/early-bird-memberships/{account_id}`
   - devuelve `membership.schema.json` y permite reconciliación pull.
 
@@ -40,3 +46,7 @@ Beacon aplica una revisión mayor, reproduce la misma y rechaza como stale una m
 confirmado la autoridad revoca el grant `FREE`, fija `free_entitlement_consumed=true`, incrementa
 `membership_revision` y proyecta `source=PAYPAL` o `source=MERCADO_PAGO`. Cancelar luego el pago no
 restaura Free. Beacon no debe inferir ese cambio desde redirects, webhooks propios ni estado local.
+
+`account_id` usa exclusivamente 1–128 caracteres RFC 3986 unreserved
+(`[A-Za-z0-9._~-]`) y comienza con un carácter alfanumérico. Los clientes lo validan y además lo
+codifican al construir URLs.

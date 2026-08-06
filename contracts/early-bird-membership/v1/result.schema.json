@@ -17,7 +17,12 @@
   "properties": {
     "schema_version": {"const": "early-bird-membership.result.v1"},
     "membership_id": {"type": "string", "format": "uuid"},
-    "account_id": {"type": "string", "minLength": 1, "maxLength": 255},
+    "account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
     "outcome": {"enum": ["APPLIED", "REPLAYED", "STALE"]},
     "applied_revision": {"type": "integer", "minimum": 1},
     "effective_state": {
