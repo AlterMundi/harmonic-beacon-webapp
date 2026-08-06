@@ -1,0 +1,54 @@
+# EarlyBirds staging foundation. This file is intentionally separate from the
+# event compose project and is safe to combine with services/beacon-stream.
+# It does not define a Listener application until that lane supplies its image
+# and health contract.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${EARLYBIRDS_PREVIEW_DB_USER:?set in preview.env}
+      POSTGRES_PASSWORD: ${EARLYBIRDS_PREVIEW_DB_PASSWORD:?set in preview.env}
+      POSTGRES_DB: ${EARLYBIRDS_PREVIEW_DB_NAME:?set in preview.env}
+    ports:
+      - "127.0.0.1:${EARLYBIRDS_PREVIEW_DB_PORT:-15432}:5432"
+    volumes:
+      - earlybirds-preview-postgres:/var/lib/postgresql/data
+    networks: [preview]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+        reservations: { cpus: "0.25", memory: 256M }
+
+  # Run only on demand. It uses the current repository migrations against the
+  # preview-only database and never points at a production host or volume.
+  migration-rehearsal:
+    build:
+      context: ../..
+      target: deps
+    profiles: [migration]
+    restart: "no"
+    working_dir: /app
+    command: ["npx", "prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [preview]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+networks:
+  preview:
+    name: earlybirds_preview_internal
+    internal: true
+
+volumes:
+  earlybirds-preview-postgres:
+    name: earlybirds-preview-postgres

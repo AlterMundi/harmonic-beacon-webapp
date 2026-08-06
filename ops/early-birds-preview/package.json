@@ -1,0 +1,9 @@
+{
+  "name": "harmonic-beacon-earlybirds-preview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "node ../../scripts/early-birds-preview/validate.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}
