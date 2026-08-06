@@ -74,6 +74,8 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
 
   const postgresBlock = source.slice(source.indexOf('  postgres:'), source.indexOf('\n  # Forward-only'));
   assert.doesNotMatch(postgresBlock, /ports:/, 'preview PostgreSQL must stay container-private');
+  assert.match(postgresBlock, /earlybirds-preview-postgres/, 'preview PostgreSQL needs a collision-proof alias');
+  assert.match(source, /@earlybirds-preview-postgres:5432/, 'database URLs must use the collision-proof alias');
 });
 
 test('optional authority overlay joins only the dedicated external private network', async () => {
@@ -94,6 +96,14 @@ test('stream overlay preserves its isolated build and adds a public liveness pro
   assert.match(source, /context: \.\.\/\.\.\/services\/beacon-stream/);
   assert.match(source, /dockerfile: Dockerfile/);
   assert.match(source, /127\.0\.0\.1:8080\/healthz/);
+});
+
+test('stream publishes only through a dedicated edge network', async () => {
+  const source = await readRepository('services/beacon-stream/docker-compose.yml');
+  assert.match(source, /127\.0\.0\.1:\$\{BEACON_STREAM_HOST_PORT:-18080\}:8080/);
+  assert.match(source, /- stream_observability\s+[^]*- stream_edge/);
+  assert.match(source, /stream_observability:\s+name: earlybirds_stream_observability\s+internal: true/);
+  assert.match(source, /stream_edge:\s+name: earlybirds_stream_edge/);
 });
 
 test('nginx templates name only the two staging hosts and proxy only fixed loopback ports', async () => {

@@ -11,7 +11,13 @@ services:
       POSTGRES_DB: ${EARLYBIRDS_PREVIEW_DB_NAME:?set_in_preview.env}
     volumes:
       - earlybirds-preview-postgres:/var/lib/postgresql/data
-    networks: [preview_db]
+    networks:
+      preview_db:
+        aliases:
+          # The Listener also joins the private membership-authority network,
+          # whose Compose project has its own `postgres` service. Keep the
+          # preview database hostname unambiguous across both networks.
+          - earlybirds-preview-postgres
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -32,7 +38,7 @@ services:
     working_dir: /app
     command: ["npx", "prisma", "migrate", "deploy"]
     environment:
-      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
+      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@earlybirds-preview-postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
     depends_on:
       postgres: { condition: service_healthy }
     networks: [preview_db]
@@ -54,7 +60,7 @@ services:
     init: true
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
+      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@earlybirds-preview-postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
       EARLY_BIRDS_ENABLED: ${EARLY_BIRDS_ENABLED:-0}
       EARLY_BIRDS_AUTH_BASE_URL: ${EARLY_BIRDS_AUTH_BASE_URL:?set_in_preview.env}
       EARLY_BIRDS_TRUSTED_ORIGINS: ${EARLY_BIRDS_TRUSTED_ORIGINS:?set_in_preview.env}

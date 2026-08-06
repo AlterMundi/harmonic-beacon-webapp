@@ -22,6 +22,10 @@ services:
       - "9090"
     networks:
       - stream_observability
+      # Docker does not publish host ports for a container attached only to an
+      # `internal` network. This separate edge bridge permits the explicit
+      # loopback binding above without exposing private readiness/metrics.
+      - stream_edge
     deploy:
       resources:
         limits:
@@ -40,3 +44,5 @@ networks:
   stream_observability:
     name: earlybirds_stream_observability
     internal: true
+  stream_edge:
+    name: earlybirds_stream_edge
