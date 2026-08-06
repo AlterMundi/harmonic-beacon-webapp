@@ -5,10 +5,13 @@
 The isolated preview is currently running on `mona`; this is operational
 evidence, not authorization to promote it to `main` or production.
 
-- Listener application SHA: `806fe9c6e2ae162c46d841e71813be477c4e58a5`.
-- Free authority preview SHA: `83deaaee1ae3c5adce910c80249a0229ab4199e5`,
-  including hardened authority `8638d6e`, durable synthetic-Free
-  reconciliation and Alembic head `b8c4d1e7f260`.
+- Listener application image SHA:
+  `60bf1182c6ed0d3b946dde103e2e43bb5feb69f9`. Branch head may be a later
+  host-tooling or documentation-only commit; `/api/health` attests the exact
+  running application image.
+- Free authority preview SHA:
+  `21c3637ee0f520ee79d20c247e2914699ed8a73a`, with Alembic head
+  `b8c4d1e7f260` and paid checkout still disabled.
 - Runtime, observability and nginx fixes are on the `early-birds` branch. The
   deployed application health response attests the exact Listener image SHA;
   later documentation-only commits do not require rebuilding that image.
@@ -16,9 +19,24 @@ evidence, not authorization to promote it to `main` or production.
   and emit `X-Harmonic-Beacon-Environment: early-birds-staging`; production
   does not emit that attestation.
 - PostgreSQL, migrations, Listener, origin, authority API/worker, Prometheus,
-  node-exporter, cAdvisor and the HTTP segment canary are healthy. The
-  authority has no published host port and paid checkout returns fail-closed
-  `503 paid_checkout_disabled`.
+  Alertmanager, node-exporter, cAdvisor and the decoded HTTP segment canary are
+  healthy with zero runtime restarts. The authority has no published host port
+  and paid checkout remains fail-closed.
+- Health exposes the checked-in Prisma head
+  `20260806040000_early_birds_listener` instead of `unknown`; the host smoke
+  verifies it without requiring Node on `mona`.
+- Private drop-ins now answer `HEAD` from metadata and stream only the requested
+  byte range. A real authenticated browser observed an 11,210,434-byte ES file,
+  a four-byte `206` response, both media elements paused and no media errors.
+- Canonical authority responses that contradict `access_allowed` fail closed.
+  Segment grants cannot outlive the manifest/lease horizon. Paid checkout's
+  future PENDING-to-ACTIVE path now advances durable revisions 1 to 2 while
+  providers remain disabled.
+- Legacy invitation bearer queries are immediately moved into a short-lived
+  `__Host-`, HttpOnly, Secure, SameSite=Lax cookie and redirected to a clean URL.
+  Exact invitation entry locations are excluded from nginx access logs on HTTP
+  and HTTPS. A synthetic probe confirmed clean redirect, cookie attributes and
+  absence from nginx logs.
 - Canonical Free acceptance passed through identity-only synthetic login,
   signed one-use invitation, private authority redemption, membership
   projection, session cookie and Listener home.
@@ -38,9 +56,15 @@ evidence, not authorization to promote it to `main` or production.
 - Rollback stopped only Listener/origin, retained healthy preview PostgreSQL,
   kept `live.harmonicbeacon.com` healthy, and restored staging via the normal
   start/smoke path.
-- Alertmanager remains intentionally stopped until root-owned Telegram bot and
-  chat-ID files exist. The current origin uses a non-audio synthetic fixture;
-  no acoustic choice or real derivative has been made.
+- The origin still serves the previously approved AAC-LC 48 kHz stereo Beacon
+  artifact and the previously approved ES Amara intro. No codec, bitrate,
+  sample rate, gain, routing, event audio or acoustic processing changed in
+  this rollout. EN remains truthfully unavailable.
+- Rollback snapshots are
+  `/etc/harmonic-beacon/earlybirds-preview.env.pre-60bf118` and
+  `/etc/harmonic-beacon/earlybirds-authority-deploy.env.pre-21c3637`; the prior
+  Listener and authority images remain installed and preview databases must be
+  retained.
 - The format-neutral `staging-smoke` load plan was dry-run on the external,
   NTP-synchronized `daimonmatrix` generator with zero network requests. Its
   plan hash is
