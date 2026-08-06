@@ -47,6 +47,14 @@ evidence, not authorization to promote it to `main` or production.
   `2ed8d7dc1717768fe846a87cdad1a67cf681ce58809e7b4e72106b4f1dcd22c6`;
   executing even that ten-client step still requires a real approved artifact,
   short-lived signed manifest and an explicit monitored run window.
+- The `origin-media-3000` profile was also dry-run as four deterministic
+  750-client shards split across two NTP-synchronized external generators
+  (`legion` and `daimonmatrix`). All four PLANNED artifacts have mode `0600`,
+  cover shard indices `0..3`, sum to exactly 3,000 clients, use distinct ordinal
+  hashes, share plan hash
+  `f7d3254d510530172ed1fcc708fb6f7c70487e5d75f5416da3c9ebb591a28d1e`
+  and attest zero network requests. This proves distribution readiness, not
+  throughput or customer capacity.
 
 Protected runtime configuration remains under `/etc/harmonic-beacon/`; this
 record never includes its values. The supervised human Free invitation is
