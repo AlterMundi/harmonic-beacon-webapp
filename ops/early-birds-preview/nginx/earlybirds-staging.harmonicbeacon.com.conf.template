@@ -27,6 +27,7 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
 
     # Membership projection is a private server-to-server boundary and is not
     # exposed by this public staging vhost.

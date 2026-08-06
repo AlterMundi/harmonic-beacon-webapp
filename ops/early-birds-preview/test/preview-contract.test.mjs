@@ -123,6 +123,7 @@ test('nginx templates name only the two staging hosts and proxy only fixed loopb
   assert.match(stream, /letsencrypt\/live\/stream\.harmonicbeacon\.com/);
   assert.match(app, /location \^~ \/api\/internal\//);
   assert.match(app, /location \^~ \/api\/early-birds\//);
+  assert.equal((combined.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length, 2);
   assert.match(app, /location = \/ \{\s*return 302 \/early-birds;/);
   assert.match(app, /location \/ \{\s*return 404;/);
   assert.doesNotMatch(app, /location \^~ \/api\/(auth|ops)|location \^~ \/(login|ops|session)/);
