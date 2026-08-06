@@ -1,0 +1,6 @@
+node_modules/
+coverage/
+media/artifacts/*/segments/
+media/artifacts/*/*.m4s
+media/artifacts/*/*.ts
+media/inventory.json
