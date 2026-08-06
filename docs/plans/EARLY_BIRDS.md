@@ -1,11 +1,11 @@
 # EarlyBirds: product and delivery plan
 
-> **Status:** Draft for agreement with Nico and the Harmonic Beacon team
-> **Date:** 2026-08-05
-> **Integration branch:** `early-birds`, based on `main@f520332`
-> **Operational rule:** this document authorizes planning only. It does not
-> authorize a production deploy, a payment change, or a change to the event
-> audio path.
+> **Status:** Accepted implementation baseline
+> **Date:** 2026-08-06
+> **Integration branch:** `early-birds`; merge current green `main` at controlled checkpoints
+> **Operational rule:** implementation and isolated staging are authorized. Production,
+> real charges and every audio encoding/content/signature choice still require the
+> explicit release and audio gates in this document.
 
 Reviewed inputs: `.hermes/plans/2026-08-05_beacon-founders-mvp.md` and
 `docs/BEACON_FOUNDERS.md` from the daimonmatrix checkout. They remain valuable
@@ -19,12 +19,13 @@ continuous relationship with the Beacon outside scheduled events.
 
 The first useful release lets a Listener:
 
-1. sign in with Google;
-2. obtain a valid EarlyBird membership through the existing commerce authority;
+1. sign in with Google or Apple;
+2. obtain one Free invitation grant or a valid paid EarlyBird membership through
+   the provider-neutral commerce authority;
 3. open a private, receive-only listening home;
 4. hear a continuous 24/7 Beacon stream;
-5. optionally play one reviewed drop-in voice track in Spanish or English with
-   standard private playback controls and balance it against the Beacon;
+5. optionally play one reviewed drop-in in Spanish or English with standard,
+   independent private playback controls;
 6. return later and recover the same access without joining an event room.
 
 The initial 24/7 source is the long spatialized recording
@@ -49,6 +50,10 @@ change has passed its own audio and operational acceptance.
 | Do not change the current event audio path before the next weekend | Accepted | Reuse by events is a post-weekend convergence card, not an EarlyBirds shortcut. |
 | Use Fast Forward development with risk-based checkpoints | Accepted | Small isolated changes do not run the whole production release ceremony. |
 | Preserve the audio guardrail | Accepted | No codec, rate, channel, gain, buffer, routing or player-path choice ships without Nico's audio approval. |
+| Use deterministic HLS over HTTP | Accepted | Every listener follows one UTC-derived live edge through immutable six-second segments; event WebRTC is untouched. |
+| Keep drop-ins independent | Accepted | Drop-ins have a local timeline; they are not a realtime mix or crossfader. |
+| Offer Free and paid access through one contract | Accepted | One-use signed invitations and PayPal/MercadoPago converge on the same revocable membership state machine. |
+| Design for 3,000 concurrent listeners | Accepted | Expand at 4,000 and treat 5,000 as critical; alerts use measured network, CPU, memory, origin and canary health. |
 
 ## 3. Facts from the current system
 
@@ -69,9 +74,13 @@ the older Founders proposal alone.
   create an unrelated payment truth inside the web app.
 - The selected source master is 6,844.426 seconds (1:54:04.426), stereo,
   48 kHz, 32-bit float PCM, 2,628,259,840 bytes.
-- Six candidate drop-in voice masters exist. They are mono 24 kHz WAV files,
-  approximately 5.5 minutes each. The final voice/version and permission to use
-  it have not yet been recorded as product decisions.
+- The selected drop-in masters are
+  `/home/nicolas/Downloads/BeaconEarlyAdopters/Proyeccion_Caldeamiento_Amara_Sol_ES_VOICE.wav`
+  and
+  `/home/nicolas/Downloads/BeaconEarlyAdopters/Proyeccion_Caldeamiento_Amara_Sol_EN_VOICE.wav`.
+  Delivery candidates are
+  offline pre-renders with an approved Beacon excerpt ducked by 9 dB; selection,
+  content and every audio artifact still require Nico's listening approval.
 - No `beacon-247` service or room exists today.
 
 ## 4. Corrections to the initial Founders proposal
@@ -107,13 +116,14 @@ steps are not safe to execute literally.
 
 - `/early-birds` public explanation and sign-in entry.
 - `/early-birds/home` private Listener player.
-- Google sign-in only for the first release.
+- Google and Apple sign-in through an exact, stable Better Auth version.
 - A separate EarlyBird account/session domain.
-- Canonical membership entitlement from the commerce service.
+- One-use, signed, auditable, revocable Free invitations and canonical paid
+  membership entitlements from the commerce service.
 - A continuous, monitored stream from the approved long master.
-- Beacon-only playback and one optional ES or EN drop-in.
+- Beacon-only playback and one optional ES or EN drop-in on an independent timeline.
 - Standard play, pause, seek and restart controls for the private drop-in.
-- A simple Beacon/Drop-in balance with an obvious return to Beacon-only.
+- Two-device lease enforcement; a third device evicts the oldest lease.
 - Honest source state: recorded continuous source, reconnecting or unavailable.
 - Cancellation/revocation reflected without relying on a front-end redirect.
 - ES/EN copy, privacy/terms, basic accessibility and mobile-browser acceptance.
@@ -121,8 +131,7 @@ steps are not safe to execute literally.
 
 ### Deferred
 
-- Apple and Facebook sign-in.
-- MercadoPago as a second recurring provider.
+- Facebook sign-in and cross-provider account linking.
 - PWA installation and custom service worker.
 - Root-route redirection.
 - Post-event upsell inside the current session UI.
@@ -146,10 +155,10 @@ offline reviewed derivative ----> 24/7 stream origin ----> cache/CDN boundary
                                          v
                                   external canary
 
-Google OIDC ---> EarlyBird account/session ---> EarlyBird web routes
+Google/Apple OIDC ---> EarlyBird account/session ---> EarlyBird web routes
                          |
                          v
-commerce entitlement API <--- PayPal/webhooks/reconciliation authority
+membership authority <--- Free invites / PayPal / MercadoPago / future stores
 ```
 
 ### 6.1 Code boundary
@@ -184,9 +193,9 @@ Development and team acceptance use an isolated preview:
 - CPU/memory limits so it cannot starve event services;
 - no automatic production migration or deploy from the `early-birds` branch.
 
-The preferred preview address is
-`earlybirds-staging.harmonicbeacon.com`. A private ZeroTier-only name is an
-acceptable first step if public DNS would delay the media proof.
+The preview address is `earlybirds-staging.harmonicbeacon.com`; the dedicated
+media origin is `stream.harmonicbeacon.com`. Both need DNS/TLS before external
+acceptance, but local and ZeroTier validation do not wait for DNS.
 
 For final production, the code may live in the main app after acceptance, but
 the stream origin remains independently restartable and resource-bounded. Data
@@ -200,7 +209,9 @@ consumer.
 
 ### 7.1 Source and artifacts
 
-- The WAV master is immutable and identified by a recorded SHA-256.
+- The WAV master at
+  `/home/nicolas/Music/beacon/luz_de_manana_20260624-155633.wav` is immutable
+  and identified by a recorded SHA-256.
 - Conversion never overwrites the master.
 - A reproducible command creates a versioned delivery artifact.
 - The derivative records codec, bitrate, sample rate, channels, loudness/peak
@@ -222,24 +233,29 @@ artifact in a standard player and the actual EarlyBird player. Selecting and
 deploying that encoding is an audio-touching decision requiring Nico's explicit
 approval.
 
-To avoid continuous expensive encoding, the expected steady state is:
+Encoding is deliberately excluded until Nico approves a candidate. Once an
+artifact is approved, the steady state is:
 
 1. encode the approved master once;
-2. run a small origin process that reads it at real time and loops it;
-3. package or relay without another lossy encode;
-4. keep a rolling live manifest and bounded segments;
+2. generate immutable six-second segments once;
+3. derive the apparent live edge from a fixed UTC epoch, without a continuously
+   advancing publisher process or another lossy encode;
+4. serve a short manifest whose media sequence follows that deterministic edge;
 5. expose health, current source, media sequence and last-output timestamp.
 
-All listeners should hear approximately the same wall-clock position in the
-24/7 Beacon stream. This shared timeline does not apply to drop-ins: each
-Listener controls those privately. A stream process restart may begin a new
-Beacon epoch; it must not produce overlapping publishers.
+All listeners hear approximately the same wall-clock position in the 24/7
+Beacon stream. This shared timeline does not apply to drop-ins. Origin restart
+must preserve the same epoch and live edge; a new epoch is a versioned artifact
+promotion, never an accidental restart side effect.
 
 ### 7.3 Access and truthfulness
 
 - The public page does not expose a durable unrestricted media URL.
 - The private player obtains a short-lived signed stream authorization after a
   current membership check.
+- The manifest embeds individually signed segment URLs; signatures cover HTTP
+  method, canonical path and expiry, are compared in constant time and are
+  never logged.
 - Expiry and refresh do not interrupt healthy playback unnecessarily.
 - The UI says "continuous recorded Beacon" (localized wording to be approved),
   not "live from Costa Rica".
@@ -247,7 +263,7 @@ Beacon epoch; it must not produce overlapping publishers.
 
 ### 7.4 Reliability acceptance
 
-- One and only one origin publisher/packager is active.
+- One immutable artifact version and UTC epoch are active.
 - The master loops without an audible speed change, channel collapse or
   duplicate overlap.
 - Restart and reconnect recover without manual browser reload.
@@ -256,12 +272,30 @@ Beacon epoch; it must not produce overlapping publishers.
   unexplained gaps, speed shifts or route changes.
 - Stream failure cannot consume resources needed by an event and has a
   one-command stop/rollback.
+- At 450 kbit/s budgeted egress per listener, 3,000 concurrent listeners are
+  the committed envelope with 40% network headroom; 4,000 triggers expansion
+  and 5,000 is critical. Actual NIC throughput, packet loss/retransmits, origin
+  latency/errors, CPU, memory, disk, manifest age and decoded-audio canary state
+  are the scaling truth.
+
+The current `mona` planning baseline is OVH VPS-4: 8 vCPU, 24 GB RAM, 200 GB
+storage and up to 3 Gbit/s network. That headline rate is not a guarantee, so
+promotion depends on measured soak evidence. Bunny CDN is preconfigured but
+stays out of the delivery path until the network expansion threshold or an
+origin-quality trigger is reached.
+
+Prometheus scrapes node-exporter, cAdvisor, the private stream metrics listener
+and an external canary. Alertmanager sends only operational metadata to the
+private `Harmonic Beacon · Ops` Telegram group: warnings are grouped and repeat
+hourly; critical alerts send immediately and repeat every 15 minutes; recovery
+notifications are mandatory. Public health is minimal and `/metrics` is never
+exposed on the public listener origin.
 
 ## 8. Listener player contract
 
 The player starts from the simplest path shown to reproduce clean audio in prior
-testing: native media playback. Web Audio is introduced only if a required mix
-behavior cannot be achieved cleanly and the alternative passes the audio gate.
+testing: native HLS on Safari and `hls.js` where Media Source Extensions are
+required. Web Audio, realtime mixing and a crossfader are outside this milestone.
 
 - Playback begins only after an explicit user gesture.
 - Beacon-only is the default and remains available if a drop-in fails.
@@ -270,9 +304,11 @@ behavior cannot be achieved cleanly and the alternative passes the audio gate.
 - Drop-ins expose familiar play, pause, timeline/seek and restart controls.
 - Drop-in position is private to the Listener and is never synchronized with
   another Listener.
-- Balance changes are perceptually smooth and never exceed reviewed gain limits.
-- Pausing or stopping a drop-in returns to Beacon-only without a jump in the
-  Beacon timeline.
+- Each drop-in is an offline reviewed render: the chosen Beacon excerpt is
+  ducked by 9 dB under the unmodified voice master. Its play, pause, seek and
+  restart controls never move the 24/7 Beacon timeline.
+- Starting or stopping a drop-in cannot reconnect or replace the underlying
+  Beacon stream.
 - A hidden or locked phone behaves honestly; the UI does not claim playback
   while the browser has suspended it.
 - No camera, microphone, chat, hands, tapestry or event presence is created.
@@ -284,8 +320,8 @@ The media test ladder is mandatory and intentionally incremental:
 2. approved derivative in a standard player;
 3. stream in a standard browser player;
 4. stream in the EarlyBird player;
-5. stream plus independently controlled ES drop-in;
-6. stream plus independently controlled EN drop-in.
+5. stream plus independently controlled ES pre-render;
+6. stream plus independently controlled EN pre-render.
 
 A failure at one level is fixed there before testing the next.
 
@@ -305,19 +341,22 @@ Proposed additive concepts:
 The browser uses a separate `hb_earlybird_session` cookie. An EarlyBird session
 cannot grant staff capabilities, event publication or event admission.
 
-Google is the first provider. The implementation uses Authorization Code with
-PKCE, state and nonce, and stores no Google access/refresh token unless a later
-feature proves it necessary. Provider subject is the primary external identity;
-verified email is contact/linkage evidence, not a mutable authorization key.
+Google and Apple use Authorization Code with PKCE, state and nonce. No provider
+access/refresh token is stored unless a later feature proves it necessary.
+Provider subject is the primary external identity; verified email is contact
+evidence, not a mutable authorization key. Cross-provider account linking is
+disabled for the milestone.
 
-Before choosing an auth library, a short ADR must confirm a maintained stable
-option compatible with Next.js 16. The retired NextAuth beta is not the default.
+Better Auth is pinned exactly to `1.6.26` and uses separate
+EarlyBird models, routes and cookie. Its session never upgrades into an event or
+staff principal. The retired NextAuth beta is not reintroduced.
 
 ## 10. Membership and commerce contract
 
-`proyecciones-mito` remains the canonical commerce authority. The web app does
-not infer a membership from a PayPal success page and does not implement a
-parallel webhook truth.
+`proyecciones-mito` remains the canonical membership/commerce authority. The
+web app does not infer access from a provider success page and does not create a
+parallel webhook truth. Free, PayPal, MercadoPago and future app-store grants
+all project into the same provider-neutral contract.
 
 The EarlyBirds contract must provide, at minimum:
 
@@ -333,15 +372,26 @@ The EarlyBirds contract must provide, at minimum:
 - cancellation, failed-renewal, refund, dispute and manual-revoke behavior;
 - a safe test/sandbox mode with synthetic identities.
 
-"Founder price locked for life" is not a boolean. It is a versioned offer grant
-recording the acquired amount/currency, acquisition time and continuity policy.
-The team must define whether cancellation permanently loses the offer and how a
-failed payment during grace differs from voluntary cancellation.
+Free invitations are single-use signed grants, scoped to EarlyBirds, auditable,
+revocable and valid indefinitely until consumed or revoked. They work in
+staging and production. Upgrading Free to paid consumes the free grant so two
+independent memberships cannot remain active.
 
-The first provider should be PayPal because that path already operates in the
-project. MercadoPago follows only after the provider-neutral entitlement
-contract is demonstrated. No provider is enabled for real EarlyBird charges
-until Nico approves the exact offer and a sandbox lifecycle passes end to end.
+"Founder price locked for life" is not a boolean. It is a versioned USD 2/month
+offer grant recording amount/currency, acquisition time and continuity policy.
+Voluntary cancellation preserves access through paid-through time and then
+loses the founder offer. Involuntary payment failure receives 14 days of grace.
+Refund, dispute and administrative revocation remove access immediately.
+
+PayPal and MercadoPago both implement the same contract. MercadoPago charges an
+ARS equivalent derived from the BCRA A3500 reference rate, locks the renewal
+amount 72 hours before collection, displays both USD 2 and the locked ARS
+amount, and retains the previous valid amount when the rate source is
+unavailable. No provider is enabled for real EarlyBird charges until Nico
+approves the exact offer and its sandbox lifecycle passes end to end.
+
+The product is for all audiences. An adult owns the account and payment; the
+service does not request or persist a minor profile or minor-specific data.
 
 ## 11. Fast Forward development lane
 
@@ -420,41 +470,45 @@ dependency graph. No application behavior changes.
 
 Exit: all decisions in section 15 are accepted or deliberately deferred.
 
-### Batch 1 — isolated preview and 24/7 media proof
+### Batch A — contracts, isolated preview and deterministic origin
 
 - add the isolated compose/runtime boundary;
 - inventory and checksum the master;
-- create a reproducible candidate derivative without replacing the master;
-- run the stream origin under resource limits;
-- expose health/source state;
+- inventory the master and define (but do not select) the reproducible artifact pipeline;
+- implement deterministic manifests, signed immutable-segment delivery and two-plane health/metrics;
+- install Prometheus, node-exporter, cAdvisor, Alertmanager and an external decoded-audio canary;
+- route grouped/repeated warning, critical and recovery notices to the dedicated
+  private Telegram group `Harmonic Beacon · Ops` once its bot credentials exist;
 - add a bare private test player and canary;
 - execute the audio test ladder through streamed standard playback.
 
 Exit: the 24/7 recorded source survives restart and a 60-minute cross-device
 listen, with no event service or current audio file changed.
 
-### Batch 2 — Listener vertical slice with synthetic entitlement
+### Batch B — Listener vertical slice with synthetic Free entitlement
 
 - create isolated EarlyBird data models and session cookie;
 - build bilingual public page and private home;
 - use a development-only synthetic entitlement fixture;
-- add Beacon-only player, drop-in selection, standard controls and balance;
+- add Beacon-only player, drop-in selection and independent standard controls;
+- enforce two active device leases and oldest-lease eviction;
 - prove that no event connection/capability is created.
 
 Exit: the team can use the complete listening experience in preview without a
 payment provider.
 
-### Batch 3 — Google identity
+### Batch C — identity and provider-neutral membership
 
 - approve the identity ADR;
-- implement Google sign-in, callback, session/revocation and logout;
-- add account-linking and duplicate-email protections;
+- implement Google and Apple sign-in, callback, session/revocation and logout;
+- keep account linking disabled and test duplicate-email isolation;
+- implement signed one-use Free invitations and the canonical membership projection;
 - run positive and negative auth tests in preview.
 
 Exit: a returning test Listener reaches the same isolated account and cannot
 cross into event/staff privileges.
 
-### Batch 4 — PayPal membership integration
+### Batch D — PayPal, MercadoPago and release candidate
 
 - agree the versioned commerce contract with Mariano/Sai;
 - extend the commerce sandbox for the EarlyBird offer;
@@ -462,13 +516,8 @@ cross into event/staff privileges.
 - test create, duplicate webhook, out-of-order event, retry, renewal failure,
   grace, cancellation, refund and revoke;
 - reconcile stale/missing delivery.
-
-Exit: sandbox purchase-to-listen and revoke-to-deny work without trusting a
-browser redirect or duplicate authority.
-
-### Batch 5 — release candidate
-
-- approve terms, privacy, offer copy and source wording;
+- implement MercadoPago/BCRA rate lock and failure semantics through the same contract;
+- approve terms, privacy, all-ages offer copy and source wording;
 - complete accessibility/mobile/audio/security acceptance;
 - run sustained origin/canary test and failure rehearsal;
 - verify backups, observability, stop switch and rollback;
@@ -488,6 +537,11 @@ approved.
   access.
 - Revocation becomes effective within the agreed propagation window.
 - Origin, app and commerce dependencies have useful health/alert signals.
+- A dedicated Telegram operations group receives warning, critical and recovery
+  notifications without PII or secrets.
+- The isolated load/soak evidence supports the 3,000-listener committed envelope
+  or records a lower measured limit before launch; 4,000/5,000 thresholds and
+  the Bunny CDN expansion switch are rehearsed.
 - The entire EarlyBird feature can be disabled without rolling back weekend
   event code or data.
 - Current event tests remain green at final convergence.
@@ -517,41 +571,38 @@ The expected benefit is one continuously proven, buffer-friendly Beacon source
 for both products. It is an experiment until the comparison demonstrates that
 event sound and reliability are at least as good as the current path.
 
-## 15. Decisions required before cards are created
+## 15. Frozen decisions
 
-Recommended defaults are included so the team can approve them as a block or
-change only the exceptions.
+| ID | Accepted decision |
+|---|---|
+| D1 | `EarlyBirds`; preview `earlybirds-staging.harmonicbeacon.com`; production route `/early-birds`; origin `stream.harmonicbeacon.com`. |
+| D2 | USD 2/month founder offer; 14-day involuntary grace; voluntary cancellation loses founder terms after paid-through; refund/dispute/admin revoke immediately. |
+| D3 | Google and Apple through exact stable Better Auth; no Facebook and no account linking. |
+| D4 | Provider-neutral Free, PayPal and MercadoPago grants; Free is single-use, signed, auditable, revocable and consumed by paid upgrade. |
+| D5 | Truthful “continuous recorded Beacon” wording; never imply the physical source is live. |
+| D6 | Exact Amara Sol ES/EN voice masters; offline drop-in renders with Beacon ducked 9 dB; every artifact awaits Nico's approval. |
+| D7 | Deterministic UTC HLS, immutable six-second segments, signed paths, native Safari and `hls.js`; codec remains unselected. |
+| D8 | Two device leases; third device evicts oldest. |
+| D9 | Main app after final convergence; independently bounded stream origin; additive models and kill switch. |
+| D10 | One shared wall-clock Beacon timeline; every drop-in has private play/pause/seek/restart controls. |
+| D11 | Capacity targets 3k committed, 4k expansion and 5k critical at a 450 kbit/s planning budget with 40% headroom. |
+| D12 | All-audiences experience: an adult owns account/payment; no minor profile or minor data. |
 
-| ID | Decision | Recommended default |
-|---|---|---|
-| D1 | Public name and URL | Product name `EarlyBirds`; preview at `earlybirds-staging.harmonicbeacon.com`; final entry at `/early-birds`. |
-| D2 | Founder offer | USD 2/month, amount locked while the same subscription remains active; voluntary cancellation loses the locked offer, provider failure gets a defined grace period. |
-| D3 | First identity provider | Google only; Apple/Facebook after launch evidence. |
-| D4 | First payment provider | PayPal through the existing commerce authority; MercadoPago second. |
-| D5 | Initial source wording | "Continuous recorded Beacon"; never imply the physical source is live. |
-| D6 | Drop-in masters | Amara Sol ES/EN candidates, subject to explicit rights/consent and Nico's content/audio approval. |
-| D7 | Stream delivery | Buffered HTTP/HLS spike; codec selected only after A/B and browser support evidence. |
-| D8 | EarlyBird offer after cancellation | Locked offer survives only involuntary payment failure during grace, not voluntary cancellation/refund/revoke. |
-| D9 | Production topology | Main app after final merge; independent stream-origin service; additive models; feature/kill switch. |
-| D10 | Timelines | Accepted: one shared wall-clock position for the Beacon stream; every drop-in has private standard play/pause/seek/restart controls. |
+## 16. Card map
 
-## 16. Card map after agreement
+Create milestone `EarlyBirds` and use these non-overlapping delivery cards:
 
-Only after section 15 is agreed, create milestone `EarlyBirds` and non-duplicate
-GitHub issues in this dependency order:
-
-1. EB-00 — freeze product, identity, commerce and media ADRs.
-2. EB-01 — isolated preview runtime and Fast Forward CI lane.
-3. EB-02 — source provenance and reproducible media artifact pipeline.
-4. EB-03 — resource-bounded 24/7 stream origin and health.
-5. EB-04 — stream canary, observability and incident stop switch.
-6. EB-05 — Listener shell and synthetic-entitlement vertical slice.
-7. EB-06 — Google identity and isolated Listener sessions.
-8. EB-07 — drop-in asset approval, delivery and Beacon/Drop-in player.
-9. EB-08 — versioned EarlyBird commerce entitlement contract.
-10. EB-09 — PayPal sandbox lifecycle and reconciliation.
-11. EB-10 — privacy, terms, accessibility and bilingual acceptance.
-12. EB-11 — release/rollback rehearsal and go/no-go.
+1. EB-00 — freeze product, identity, membership, media and Fast Forward ADRs.
+2. EB-01 — immutable media inventory, reproducible candidate pipeline and deterministic HLS origin.
+3. EB-02 — resource isolation, observability, Telegram alerts, capacity model, canary and stop switch.
+4. EB-03 — Google/Apple identity and isolated Listener sessions.
+5. EB-04 — provider-neutral membership and one-use Free invitations.
+6. EB-05 — bilingual Listener UX, two-device leases and independently controlled ES/EN drop-ins.
+7. EB-06 — PayPal sandbox lifecycle and reconciliation.
+8. EB-07 — MercadoPago/BCRA pricing, lock and failure lifecycle.
+9. EB-08 — staging, cross-device/audio acceptance, isolated load/soak and release/rollback rehearsal.
+10. EB-09 — event-stream convergence investigation after the milestone (tracked
+    separately and never implemented before explicit audio approval).
 
 Create a separate post-milestone issue for section 14. Do not hide it inside an
 audio or player issue, because it changes the event sound architecture and needs
