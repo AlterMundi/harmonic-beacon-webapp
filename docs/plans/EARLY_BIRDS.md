@@ -53,6 +53,8 @@ change has passed its own audio and operational acceptance.
 | Use deterministic HLS over HTTP | Accepted | Every listener follows one UTC-derived live edge through immutable six-second segments; event WebRTC is untouched. |
 | Keep drop-ins independent | Accepted | Drop-ins have a local timeline; they are not a realtime mix or crossfader. |
 | Offer Free and paid access through one contract | Accepted | One-use signed invitations and PayPal/MercadoPago converge on the same revocable membership state machine. |
+| Launch Free before paid providers | Accepted | Human acceptance of the complete Free flow is a hard gate before PayPal or MercadoPago can be enabled. Both providers remain disabled by default. |
+| Defer app-store distribution | Accepted | Google Play and Apple App Store wrappers and billing are post-MVP work; the provider-neutral membership authority must leave room for them without making them a launch dependency. |
 | Design for 3,000 concurrent listeners | Accepted | Expand at 4,000 and treat 5,000 as critical; alerts use measured network, CPU, memory, origin and canary health. |
 
 ## 3. Facts from the current system
@@ -393,6 +395,14 @@ amount, and retains the previous valid amount when the rate source is
 unavailable. No provider is enabled for real EarlyBird charges until Nico
 approves the exact offer and its sandbox lifecycle passes end to end.
 
+Activation is intentionally sequenced. The first usable EarlyBirds release is
+Free-only and must pass human acceptance, revocation and reconciliation before
+either paid provider is enabled. PayPal and MercadoPago may be implemented and
+tested behind disabled provider flags, but no paid checkout is exposed merely
+because its adapter exists. Google Play and Apple App Store distribution and
+billing are deferred beyond this MVP; a future store adapter must project into
+this same authority instead of creating app-specific membership truth.
+
 The product is for all audiences. An adult owns the account and payment; the
 service does not request or persist a minor profile or minor-specific data.
 
@@ -511,11 +521,12 @@ payment provider.
 Exit: a returning test Listener reaches the same isolated account and cannot
 cross into event/staff privileges.
 
-### Batch D — PayPal, MercadoPago and release candidate
+### Batch D — Free release candidate, then disabled paid-provider readiness
 
 - agree the versioned commerce contract with Mariano/Sai;
 - extend the commerce sandbox for the EarlyBird offer;
 - consume canonical membership state in the app;
+- complete Free-only human acceptance before exposing any paid checkout;
 - test create, duplicate webhook, out-of-order event, retry, renewal failure,
   grace, cancellation, refund and revoke;
 - reconcile stale/missing delivery.
@@ -527,8 +538,9 @@ cross into event/staff privileges.
 - merge current `main` into `early-birds` and resolve conflicts;
 - run the release checkpoint once.
 
-Exit: a documented go/no-go decision. Production remains off until explicitly
-approved.
+Exit: a documented Free-only go/no-go decision and a separate paid-provider
+readiness decision. Production and every paid provider remain off until each is
+explicitly approved.
 
 ## 13. Definition of done for the EarlyBirds milestone
 
@@ -590,6 +602,7 @@ event sound and reliability are at least as good as the current path.
 | D10 | One shared wall-clock Beacon timeline; every drop-in has private play/pause/seek/restart controls. |
 | D11 | Capacity targets 3k committed, 4k expansion and 5k critical at a 450 kbit/s planning budget with 40% headroom. |
 | D12 | All-audiences experience: an adult owns account/payment; no minor profile or minor data. |
+| D13 | Release sequence is Free acceptance first, then separately approved PayPal/MercadoPago activation; Google Play/App Store wrappers and billing are post-MVP. |
 
 ## 16. Card map
 
@@ -601,11 +614,14 @@ Create milestone `EarlyBirds` and use these non-overlapping delivery cards:
 4. EB-03 — Google/Apple identity and isolated Listener sessions.
 5. EB-04 — provider-neutral membership and one-use Free invitations.
 6. EB-05 — bilingual Listener UX, two-device leases and independently controlled ES/EN drop-ins.
-7. EB-06 — PayPal sandbox lifecycle and reconciliation.
-8. EB-07 — MercadoPago/BCRA pricing, lock and failure lifecycle.
+7. EB-06 — PayPal sandbox lifecycle and reconciliation, disabled until Free acceptance and explicit activation approval.
+8. EB-07 — MercadoPago/BCRA pricing, lock and failure lifecycle, disabled until Free acceptance and explicit activation approval.
 9. EB-08 — staging, cross-device/audio acceptance, isolated load/soak and release/rollback rehearsal.
 10. EB-09 — event-stream convergence investigation after the milestone (tracked
     separately and never implemented before explicit audio approval).
+
+Track Google Play/App Store packaging and billing in a separate post-MVP card;
+it must not block the Free release or silently replace EB-06/EB-07.
 
 Create a separate post-milestone issue for section 14. Do not hide it inside an
 audio or player issue, because it changes the event sound architecture and needs
