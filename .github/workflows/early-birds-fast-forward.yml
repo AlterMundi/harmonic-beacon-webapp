@@ -1,0 +1,43 @@
+name: EarlyBirds fast-forward checks
+
+on:
+  pull_request:
+    paths:
+      - services/beacon-stream/**
+      - ops/early-birds/**
+      - .github/workflows/early-birds-fast-forward.yml
+  push:
+    branches: [early-birds, "feat/early-birds-*"]
+    paths:
+      - services/beacon-stream/**
+      - ops/early-birds/**
+      - .github/workflows/early-birds-fast-forward.yml
+
+permissions:
+  contents: read
+
+jobs:
+  stream-origin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/beacon-stream
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+      - run: npm run check
+
+  observability-config:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ops/early-birds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+      - run: npm run check
+      - run: npm run validate

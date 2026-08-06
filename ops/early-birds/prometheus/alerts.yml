@@ -1,0 +1,101 @@
+groups:
+  - name: early-birds-origin
+    rules:
+      - alert: EarlyBirdsOriginUnreachable
+        expr: up{job="beacon-stream"} == 0
+        for: 2m
+        labels: { severity: critical, service: beacon-stream }
+        annotations: { summary: "EarlyBirds stream origin is unreachable", runbook: "early-birds-origin-unreachable" }
+      - alert: EarlyBirdsManifestStale
+        expr: beacon_stream_canary_manifest_age_seconds > 18
+        for: 2m
+        labels: { severity: warning, service: beacon-stream }
+        annotations: { summary: "Beacon manifest edge is more than 18 seconds old", runbook: "early-birds-canary" }
+      - alert: EarlyBirdsManifestVeryStale
+        expr: beacon_stream_canary_manifest_age_seconds > 60
+        for: 1m
+        labels: { severity: critical, service: beacon-stream }
+        annotations: { summary: "Beacon manifest edge is more than 60 seconds old", runbook: "early-birds-canary" }
+      - alert: EarlyBirdsOriginErrorRateHigh
+        expr: sum(rate(beacon_stream_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(beacon_stream_http_requests_total[5m])), 1) >= 0.005
+        for: 5m
+        labels: { severity: warning, service: beacon-stream }
+        annotations: { summary: "Origin 5xx rate is at least 0.5%", runbook: "early-birds-origin-errors" }
+      - alert: EarlyBirdsOriginErrorRateCritical
+        expr: sum(rate(beacon_stream_http_requests_total{status=~"5.."}[2m])) / clamp_min(sum(rate(beacon_stream_http_requests_total[2m])), 1) >= 0.02
+        for: 2m
+        labels: { severity: critical, service: beacon-stream }
+        annotations: { summary: "Origin 5xx rate is at least 2%", runbook: "early-birds-origin-errors" }
+      - alert: EarlyBirdsOriginLatencyHigh
+        expr: beacon_stream_http_request_duration_seconds{quantile="0.95"} > 1
+        for: 5m
+        labels: { severity: warning, service: beacon-stream }
+        annotations: { summary: "Origin p95 request latency exceeds 1 second", runbook: "early-birds-origin-errors" }
+      - alert: EarlyBirdsCanaryFailed
+        expr: beacon_stream_canary_ok == 0
+        for: 2m
+        labels: { severity: critical, service: beacon-stream }
+        annotations: { summary: "HTTP HLS canary cannot fetch a non-empty segment", runbook: "early-birds-canary" }
+  - name: early-birds-capacity
+    rules:
+      - alert: EarlyBirdsHostCpuPrepare
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.50
+        for: 15m
+        labels: { severity: warning, service: host }
+        annotations: { summary: "Host CPU has exceeded the 50% prepare threshold", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsHostCpuCritical
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) > 0.75
+        for: 2m
+        labels: { severity: critical, service: host }
+        annotations: { summary: "Host CPU has exceeded the 75% critical threshold", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsHostMemoryPrepare
+        expr: 1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.70
+        for: 10m
+        labels: { severity: warning, service: host }
+        annotations: { summary: "Host memory has exceeded the 70% prepare threshold", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsHostMemoryCritical
+        expr: 1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
+        for: 2m
+        labels: { severity: critical, service: host }
+        annotations: { summary: "Host memory has exceeded the 85% critical threshold", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsDiskPrepare
+        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.30
+        for: 15m
+        labels: { severity: warning, service: host }
+        annotations: { summary: "Host root disk has less than 30% free space", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsDiskCritical
+        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.15
+        for: 2m
+        labels: { severity: critical, service: host }
+        annotations: { summary: "Host root disk has less than 15% free space", runbook: "early-birds-capacity" }
+      # VPS-4 headline is 3 Gbit/s. Actual soak evidence may lower these values.
+      - alert: EarlyBirdsNetworkPrepare
+        expr: sum(rate(node_network_transmit_bytes_total{device!~"lo|docker.*|veth.*"}[30m])) * 8 > 1.5e9
+        for: 30m
+        labels: { severity: warning, service: host }
+        annotations: { summary: "Host egress sustained the 50% capacity-prepare threshold", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsNetworkExpansion
+        expr: sum(rate(node_network_transmit_bytes_total{device!~"lo|docker.*|veth.*"}[5m])) * 8 > 1.8e9
+        for: 5m
+        labels: { severity: warning, service: host }
+        annotations: { summary: "Host egress reached the 4,000-listener expansion threshold", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsNetworkCritical
+        expr: sum(rate(node_network_transmit_bytes_total{device!~"lo|docker.*|veth.*"}[2m])) * 8 > 2.25e9
+        for: 2m
+        labels: { severity: critical, service: host }
+        annotations: { summary: "Host egress reached the 5,000-listener critical threshold", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsTcpRetransmitsHigh
+        expr: rate(node_netstat_Tcp_RetransSegs[5m]) / clamp_min(rate(node_netstat_Tcp_OutSegs[5m]), 1) >= 0.01
+        for: 5m
+        labels: { severity: warning, service: host }
+        annotations: { summary: "TCP retransmit rate is at least 1%", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsTcpRetransmitsCritical
+        expr: rate(node_netstat_Tcp_RetransSegs[2m]) / clamp_min(rate(node_netstat_Tcp_OutSegs[2m]), 1) >= 0.03
+        for: 2m
+        labels: { severity: critical, service: host }
+        annotations: { summary: "TCP retransmit rate is at least 3%", runbook: "early-birds-capacity" }
+      - alert: EarlyBirdsNetworkErrors
+        expr: sum(rate(node_network_transmit_errs_total{device!~"lo|docker.*|veth.*"}[5m])) + sum(rate(node_network_receive_errs_total{device!~"lo|docker.*|veth.*"}[5m])) + sum(rate(node_network_transmit_drop_total{device!~"lo|docker.*|veth.*"}[5m])) > 0
+        for: 5m
+        labels: { severity: warning, service: host }
+        annotations: { summary: "Host network interface reports errors or dropped packets", runbook: "early-birds-capacity" }
