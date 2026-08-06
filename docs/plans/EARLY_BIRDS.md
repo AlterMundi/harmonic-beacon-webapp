@@ -122,15 +122,15 @@ steps are not safe to execute literally.
 
 ### Included
 
-- `/early-birds` public explanation and sign-in entry.
-- `/early-birds/home` private Listener player.
+- `/early-birds` unified entry: public sign-in without access, private Listener with a valid projection.
+- `/early-birds/home` compatibility redirect only. The dedicated staging hostname exposes the unified entry canonically at `/`.
 - Google and Apple sign-in through an exact, stable Better Auth version.
 - A separate EarlyBird account/session domain.
 - One-use, signed, auditable, revocable Free invitations and canonical paid
   membership entitlements from the commerce service.
 - A continuous, monitored stream from the approved long master.
-- Beacon-only playback and one optional private ES or EN intro before the live handoff.
-- Standard play, pause, seek and restart controls for the private intro.
+- One unified transport: Beacon-only or a selected private ES/EN intro followed automatically by the live handoff; Stop controls the whole sequence.
+- The Beacon fades in on every start/restart and stops over a short fade-out where the browser exposes media-element volume.
 - Two-device lease enforcement; a third device evicts the oldest lease.
 - Honest source state: recorded continuous source, reconnecting or unavailable.
 - Cancellation/revocation reflected without relying on a front-end redirect.

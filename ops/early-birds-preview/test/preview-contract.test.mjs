@@ -146,7 +146,8 @@ test('nginx templates name only the two staging hosts and proxy only fixed loopb
   assert.match(app, /location \^~ \/api\/internal\//);
   assert.match(app, /location \^~ \/api\/early-birds\//);
   assert.equal((combined.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length, 2);
-  assert.match(app, /location = \/ \{\s*return 302 \/early-birds;/);
+  assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/early-birds break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
+  assert.match(app, /location = \/early-birds\/home \{\s*return 302 \/;/);
   assert.match(app, /location \/ \{\s*return 404;/);
   assert.doesNotMatch(app, /location \^~ \/api\/(auth|ops)|location \^~ \/(login|ops|session)/);
   assert.doesNotMatch(stream, /proxy_pass[^\n]*(9090|readyz|metrics)/);
@@ -156,8 +157,8 @@ test('nginx templates name only the two staging hosts and proxy only fixed loopb
   )];
   assert.equal(invitationEntryLocations.length, 4, 'HTTP and HTTPS must both protect both legacy invitation entries');
   assert.ok(invitationEntryLocations.every((match) => /access_log off;/.test(match[1])));
-  assert.equal((app.match(/add_header Referrer-Policy "no-referrer" always;/g) ?? []).length, 2);
-  assert.equal((app.match(/add_header Cache-Control "private, no-store" always;/g) ?? []).length, 2);
+  assert.equal((app.match(/add_header Referrer-Policy "no-referrer" always;/g) ?? []).length, 3);
+  assert.equal((app.match(/add_header Cache-Control "private, no-store" always;/g) ?? []).length, 3);
 });
 
 test('ACME bootstrap serves only challenges and never proxies preview traffic', async () => {
@@ -205,7 +206,8 @@ test('canonical Free smoke keeps credentials out of argv and verifies the entitl
   assert.match(source, /require_synthetic_env/);
   assert.match(source, /--config "\$temporary\/login\.curl"/);
   assert.match(source, /api\/early-birds\/free\/redeem/);
-  assert.match(source, /early-birds\/home/);
+  assert.match(source, /\$base_url\//);
+  assert.match(source, /invitation\.curl/);
   assert.match(source, /trap 'rm -rf "\$temporary"'/);
   assert.doesNotMatch(source, /echo[^\n]*(login_secret|invitation_token)/);
 });

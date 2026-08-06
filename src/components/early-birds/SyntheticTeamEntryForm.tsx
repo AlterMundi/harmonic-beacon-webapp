@@ -7,7 +7,7 @@ import { earlyBirdSyntheticEntryCopy } from '@/lib/early-birds/copy';
 
 export default function SyntheticTeamEntryForm({
     authOnly = false,
-    postLoginPath = '/early-birds/home',
+    postLoginPath = '/early-birds',
 }: {
     authOnly?: boolean;
     postLoginPath?: string;

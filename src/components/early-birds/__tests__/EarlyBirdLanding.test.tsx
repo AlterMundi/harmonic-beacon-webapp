@@ -83,7 +83,7 @@ describe('EarlyBird public landing', () => {
 
     it('takes an entitled signed-in listener directly to the private home', () => {
         renderLanding({ signedIn: true, entitled: true });
-        expect(screen.getByRole('link', { name: 'Enter the Beacon' })).toHaveAttribute('href', '/early-birds/home');
+        expect(screen.getByRole('link', { name: 'Enter the Beacon' })).toHaveAttribute('href', '/early-birds');
         expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
     });
 });

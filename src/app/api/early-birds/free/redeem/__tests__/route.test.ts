@@ -64,7 +64,7 @@ describe('EarlyBird Free redemption boundary', () => {
         expect(redeemFreeThroughCanonicalGateway).toHaveBeenCalledWith('listener-1', token);
         await expect(response.json()).resolves.toMatchObject({
             ok: true,
-            landing: '/early-birds/home',
+            landing: '/early-birds',
         });
         expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toMatchObject({
             value: '',

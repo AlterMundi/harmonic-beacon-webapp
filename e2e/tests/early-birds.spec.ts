@@ -9,7 +9,7 @@ test.describe('EarlyBird Listener boundary', () => {
         await expect(page.getByRole('button', { name: 'Entrar con acceso de prueba' })).toHaveCount(0);
     });
 
-    test('redirects an unauthenticated listener away from the private home', async ({ page }) => {
+    test('keeps the legacy private-home URL as a compatibility redirect', async ({ page }) => {
         await page.goto('/early-birds/home');
         await expect(page).toHaveURL(/\/early-birds$/);
         await expect(page.getByRole('heading', { name: 'El Beacon, siempre presente.' })).toBeVisible();
@@ -58,13 +58,14 @@ test.describe('EarlyBird Listener boundary', () => {
         expect(response.status()).toBe(200);
         await expect(response.json()).resolves.toMatchObject({
             ok: true,
-            landing: '/early-birds/home',
+            landing: '/early-birds',
         });
 
-        await page.goto('/early-birds/home');
+        await page.goto('/early-birds');
         await expect(page.getByText('Synthetic Listener')).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Beacon 24/7' })).toBeVisible();
         await expect(page.getByText(/Membresía activa · TEST/)).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Escuchar ahora' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Play con intro' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Play · solo Beacon' })).toBeVisible();
     });
 });

@@ -107,7 +107,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!authOnly) await issueSyntheticMembership(accountId);
 
     return NextResponse.json(
-        { ok: true, landing: '/early-birds/home' },
+        { ok: true, landing: '/early-birds' },
         { headers: new Headers(authResponse.headers) },
     );
 }

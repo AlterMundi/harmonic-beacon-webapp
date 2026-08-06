@@ -80,7 +80,7 @@ describe('EarlyBird synthetic login seam', () => {
         const secret = 's'.repeat(32);
         const response = await POST(request(`Bearer ${secret}`));
         expect(response.status).toBe(200);
-        await expect(response.json()).resolves.toEqual({ ok: true, landing: '/early-birds/home' });
+        await expect(response.json()).resolves.toEqual({ ok: true, landing: '/early-birds' });
         expect(mocks.handler).toHaveBeenCalledOnce();
         const internalRequest = mocks.handler.mock.calls[0][0] as Request;
         expect(internalRequest.headers.get('authorization')).toBeNull();

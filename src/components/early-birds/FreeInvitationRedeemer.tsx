@@ -35,7 +35,7 @@ export default function FreeInvitationRedeemer() {
                 method: 'POST',
             });
             if (response.ok) {
-                window.location.assign('/early-birds/home');
+                window.location.assign('/early-birds');
                 return;
             }
         } catch {}

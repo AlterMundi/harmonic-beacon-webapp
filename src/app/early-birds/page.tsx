@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { cookies, headers as requestHeaders } from 'next/headers';
 
 import EarlyBirdLanding from '@/components/early-birds/EarlyBirdLanding';
+import EarlyBirdHome from '@/components/early-birds/EarlyBirdHome';
 import EarlyBirdUnavailable from '@/components/early-birds/EarlyBirdUnavailable';
 import {
     currentEarlyBirdSession,
@@ -14,6 +15,7 @@ import {
     EARLY_BIRD_INVITATION_COOKIE,
 } from '@/lib/early-birds/invitation-cookie';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
+import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +41,19 @@ export default async function EarlyBirdsPage({
     const invitationAvailable = canonicalEarlyBirdInvitation(
         cookieStore.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
     ) !== null;
+
+    if (session && access?.allowed === true && access.projection) {
+        return (
+            <EarlyBirdHome
+                displayName={session.user.name}
+                membershipSource={access.projection.source}
+                dropIns={{
+                    es: configuredEarlyBirdDropIn('es'),
+                    en: configuredEarlyBirdDropIn('en'),
+                }}
+            />
+        );
+    }
 
     return (
         <EarlyBirdLanding

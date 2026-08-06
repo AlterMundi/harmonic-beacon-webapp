@@ -41,7 +41,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     const response = NextResponse.json({
         ok: true,
-        landing: '/early-birds/home',
+        landing: '/early-birds',
         replayed: result.replayed,
         alreadyEntitled: result.alreadyEntitled,
     });

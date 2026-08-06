@@ -60,8 +60,9 @@ evidence, not authorization to promote it to `main` or production.
   `beacon-luz-20260624-2hs-aac320-v2`, derived without gain processing from
   `luz_de_manana_20260624-155633_2hs.wav`. It is AAC-LC 320 kbps, stereo,
   48 kHz, -14.2 LUFS with decoded peak -0.2 dBFS. The private EN intro is
-  `amara-sol-en-r1-approved-aac320-v1.m4a`, also derived without gain
-  processing, at -11.2 LUFS and decoded peak -0.4 dBFS. The obsolete -35.6
+  `amara-sol-en-r1-approved-aac320-v2.m4a`, re-exported on 2026-08-06 at
+  15:27 ART with a complete fade tail and derived without gain processing.
+  It remains -11.2 LUFS with decoded peak -0.4 dBFS. The obsolete -35.6
   LUFS ES derivative is disabled and ES remains truthfully unavailable.
   Event/LiveKit audio is unchanged.
 - Rollback snapshots are
@@ -220,8 +221,9 @@ The two files in `ops/early-birds-preview/nginx/` are standalone vhost
 templates. Each names only its exact hostname, includes an ACME webroot path and
 the exact future certificate paths, and proxies only its fixed loopback port.
 The stream vhost exposes `/healthz` and `/v1/hls/`; container-private `/readyz`
-and metrics are not proxied. The Listener vhost exposes only `/early-birds`,
-`/api/early-birds/`, Next static assets and health; it blocks `/api/internal/`
+and metrics are not proxied. The Listener vhost exposes the unified Listener
+entry canonically at `/`, plus `/api/early-birds/`, Next static assets and health;
+legacy `/early-birds/home` redirects to `/`. It blocks `/api/internal/`
 and returns 404 for the image's weekend, staff, event and checkout surfaces.
 
 A host operator must review certificate/DNS ownership, provision each named

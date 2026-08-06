@@ -32,6 +32,7 @@ const DROP_PROGRESS_PREFIX = 'hb_earlybird_drop_progress_';
 const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
 const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
+const TRANSPORT_FADE_OUT_MS = 650;
 
 export function getOrCreateEarlyBirdDeviceId(storage: Storage): string {
     const existing = storage.getItem(DEVICE_STORAGE_KEY);
@@ -85,6 +86,7 @@ export default function ListenerPlayer({
     const hls = useRef<Hls | null>(null);
     const liveSuppressedForDrop = useRef(false);
     const liveFadeFrame = useRef<number | null>(null);
+    const dropFadeFrame = useRef<number | null>(null);
     const pendingLiveFade = useRef(false);
     const activeDrop = useRef<DropLanguage | null>(null);
     const dropGeneration = useRef(0);
@@ -105,6 +107,7 @@ export default function ListenerPlayer({
     const deferLiveFadeForRecovery = useRef<() => void>(() => undefined);
     const [liveState, setLiveState] = useState<LiveState>('idle');
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
+    const [selectedDrop, setSelectedDrop] = useState<DropLanguage>(dropIns.en ? 'en' : 'es');
     const [dropProgress, setDropProgress] = useState({
         es: { current: 0, duration: 0 },
         en: { current: 0, duration: 0 },
@@ -222,8 +225,24 @@ export default function ListenerPlayer({
         }
     }, []);
 
+    const cancelDropFade = useCallback(() => {
+        if (dropFadeFrame.current !== null) {
+            window.cancelAnimationFrame(dropFadeFrame.current);
+            dropFadeFrame.current = null;
+        }
+    }, []);
+
+    const armLiveFadeIn = useCallback(() => {
+        const audio = liveAudio.current;
+        cancelLiveFade();
+        if (!audio) return;
+        liveSuppressedForDrop.current = true;
+        pendingLiveFade.current = true;
+        audio.muted = true;
+        if (volumeSupported) audio.volume = 0;
+    }, [cancelLiveFade, volumeSupported]);
+
     const deferLiveFade = useCallback(() => {
-        if (liveFadeFrame.current === null && !pendingLiveFade.current) return;
         cancelLiveFade();
         const audio = liveAudio.current;
         if (audio) audio.muted = true;
@@ -271,31 +290,49 @@ export default function ListenerPlayer({
         liveSuppressedForDrop.current = false;
     }, [cancelLiveFade, volumeSupported]);
 
-    const restoreLiveOutput = useCallback((fadeIn = false) => {
-        if (!liveSuppressedForDrop.current) return;
-        if (fadeIn) {
-            pendingLiveFade.current = true;
-            beginLiveFade();
-            return;
+    const pauseDropIns = useCallback((reset = false) => {
+        cancelDropFade();
+        for (const audio of [dropAudio.es.current, dropAudio.en.current]) {
+            audio?.pause();
+            if (audio && reset) audio.currentTime = 0;
+            if (audio) audio.volume = volumeRef.current;
         }
-        pendingLiveFade.current = false;
-        cancelLiveFade();
-        const audio = liveAudio.current;
-        if (audio) {
-            audio.muted = false;
-            audio.volume = volumeRef.current;
-        }
-        liveSuppressedForDrop.current = false;
-    }, [beginLiveFade, cancelLiveFade]);
-
-    const pauseDropIns = useCallback(() => {
-        dropAudio.es.current?.pause();
-        dropAudio.en.current?.pause();
-        dropGeneration.current += 1;
         activeDrop.current = null;
         setPlayingDrop(null);
-        restoreLiveOutput();
-    }, [dropAudio.en, dropAudio.es, restoreLiveOutput]);
+    }, [cancelDropFade, dropAudio.en, dropAudio.es]);
+
+    const fadeOutAndPause = useCallback((
+        audio: HTMLAudioElement,
+        kind: 'live' | 'drop',
+        onComplete: () => void,
+    ) => {
+        const frameRef = kind === 'live' ? liveFadeFrame : dropFadeFrame;
+        if (kind === 'live') cancelLiveFade();
+        else cancelDropFade();
+        if (!volumeSupported || audio.paused || audio.volume <= 0) {
+            audio.pause();
+            audio.muted = false;
+            audio.volume = volumeRef.current;
+            onComplete();
+            return;
+        }
+        const startedAt = performance.now();
+        const startedVolume = audio.volume;
+        const step = (now: number) => {
+            const progress = Math.min(1, Math.max(0, (now - startedAt) / TRANSPORT_FADE_OUT_MS));
+            audio.volume = startedVolume * Math.cos(progress * Math.PI / 2);
+            if (progress < 1) {
+                frameRef.current = window.requestAnimationFrame(step);
+                return;
+            }
+            frameRef.current = null;
+            audio.pause();
+            audio.muted = false;
+            audio.volume = volumeRef.current;
+            onComplete();
+        };
+        frameRef.current = window.requestAnimationFrame(step);
+    }, [cancelDropFade, cancelLiveFade, volumeSupported]);
 
     const attemptLivePlayback = useCallback(async (
         forceRefresh = false,
@@ -539,14 +576,15 @@ export default function ListenerPlayer({
         };
     }, [scheduleAutomaticRecovery]);
 
-    const playLive = useCallback(async (forceRefresh = false) => {
+    const playLive = useCallback(async (forceRefresh = false, expectedGeneration = dropGeneration.current) => {
         if (!liveAudio.current || ['loading', 'recovering'].includes(liveStateRef.current)) return;
         wantsLivePlayback.current = true;
         cancelRecovery(true);
-        pauseDropIns();
+        pauseDropIns(true);
+        armLiveFadeIn();
         updateLiveState('loading');
         const played = await attemptLivePlayback(forceRefresh);
-        if (!wantsLivePlayback.current) return;
+        if (!wantsLivePlayback.current || expectedGeneration !== dropGeneration.current) return;
         if (queuedRecoveryDelay.current !== null) {
             const queuedDelay = queuedRecoveryDelay.current;
             queuedRecoveryDelay.current = null;
@@ -558,25 +596,39 @@ export default function ListenerPlayer({
             return;
         }
         scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
-    }, [attemptLivePlayback, cancelRecovery, pauseDropIns, scheduleAutomaticRecovery, updateLiveState]);
+    }, [armLiveFadeIn, attemptLivePlayback, cancelRecovery, pauseDropIns, scheduleAutomaticRecovery, updateLiveState]);
 
-    function toggleLive() {
-        const audio = liveAudio.current;
-        if (!audio) return;
-        if (liveState === 'playing' || liveState === 'recovering') {
-            wantsLivePlayback.current = false;
-            cancelRecovery(true);
-            audio.pause();
-            audio.muted = false;
-            liveSuppressedForDrop.current = false;
-            updateLiveState('paused');
-            return;
-        }
+    function playBeaconOnly() {
+        dropGeneration.current += 1;
         if (!livePreparedRef.current) {
             void claimLiveSource();
             return;
         }
-        void playLive(liveState === 'error' || liveState === 'displaced');
+        void playLive(liveState === 'error' || liveState === 'displaced', dropGeneration.current);
+    }
+
+    function stopTransport() {
+        dropGeneration.current += 1;
+        wantsLivePlayback.current = false;
+        cancelRecovery(true);
+        pendingLiveFade.current = false;
+        liveSuppressedForDrop.current = false;
+
+        const selected = activeDrop.current ? dropAudio[activeDrop.current].current : null;
+        activeDrop.current = null;
+        setPlayingDrop(null);
+        if (selected) {
+            fadeOutAndPause(selected, 'drop', () => {
+                selected.currentTime = 0;
+                storeProgress(selectedDrop);
+            });
+        } else {
+            pauseDropIns(true);
+        }
+
+        const live = liveAudio.current;
+        if (!live) return;
+        fadeOutAndPause(live, 'live', () => updateLiveState('paused'));
     }
 
     const handleNativeInterruption = useCallback((kind: 'error' | 'stalled' | 'suspend') => {
@@ -690,11 +742,12 @@ export default function ListenerPlayer({
         wantsLivePlayback.current = false;
         cancelRecovery(true);
         cancelLiveFade();
+        cancelDropFade();
         pendingLiveFade.current = false;
         activeDrop.current = null;
         liveAudio.current?.pause();
         stopHls();
-    }, [cancelLiveFade, cancelRecovery, stopHls]);
+    }, [cancelDropFade, cancelLiveFade, cancelRecovery, stopHls]);
 
     function restoreProgress(language: DropLanguage) {
         const audio = dropAudio[language].current;
@@ -728,83 +781,40 @@ export default function ListenerPlayer({
         }
     }
 
-    async function toggleDropIn(language: DropLanguage) {
+    async function playWithIntro(language: DropLanguage) {
         const selected = dropAudio[language].current;
         if (!selected || !dropIns[language]) return;
-        if (playingDrop === language) {
-            selected.pause();
-            dropGeneration.current += 1;
-            activeDrop.current = null;
-            setPlayingDrop(null);
-            return;
-        }
-        // The reviewed render is the intro. Start or preserve the shared Beacon
-        // muted underneath it so the handoff lands on the current 24/7 timeline.
+        // The intro already contains the Beacon. Stop the live source before
+        // the first intro frame so the two sources can never overlap.
+        wantsLivePlayback.current = false;
+        cancelRecovery(true);
+        cancelLiveFade();
+        pendingLiveFade.current = false;
+        liveSuppressedForDrop.current = false;
+        liveAudio.current?.pause();
         if (liveAudio.current) {
-            cancelLiveFade();
-            liveAudio.current.muted = true;
-            liveSuppressedForDrop.current = true;
+            liveAudio.current.muted = false;
+            liveAudio.current.volume = volumeRef.current;
         }
+        updateLiveState('paused');
         const other: DropLanguage = language === 'es' ? 'en' : 'es';
         dropAudio[other].current?.pause();
+        cancelDropFade();
+        selected.currentTime = 0;
+        selected.volume = volumeRef.current;
         const generation = dropGeneration.current + 1;
         dropGeneration.current = generation;
         activeDrop.current = language;
         const isCurrent = () => dropGeneration.current === generation && activeDrop.current === language;
         try {
-            // The source is pre-attached. Calling both play methods before the
-            // first await preserves per-element user activation on iOS.
-            let liveStarted: Promise<void> | null = null;
-            if (!wantsLivePlayback.current && livePreparedRef.current && liveAudio.current) {
-                wantsLivePlayback.current = true;
-                cancelRecovery(true);
-                updateLiveState('loading');
-                void requestLease('play').then((grant) => {
-                    leaseId.current = grant.leaseId;
-                    manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
-                }).catch(() => {
-                    // Keep the prepared source playing and retry on heartbeat.
-                });
-                liveStarted = liveAudio.current.play();
-            }
-            const dropStarted = selected.play();
-            if (!wantsLivePlayback.current) {
-                wantsLivePlayback.current = true;
-                cancelRecovery(true);
-                updateLiveState('loading');
-                void attemptLivePlayback().then((played) => {
-                    if (!wantsLivePlayback.current) return;
-                    if (played) updateLiveState('playing');
-                    else scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
-                });
-            }
-            await dropStarted;
+            await selected.play();
             if (!isCurrent()) return;
-            if (liveStarted) {
-                void liveStarted.then(() => updateLiveState('playing')).catch(() => {
-                    scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
-                });
-            }
             setPlayingDrop(language);
         } catch {
             if (!isCurrent()) return;
             activeDrop.current = null;
             setPlayingDrop(null);
-            restoreLiveOutput();
         }
-    }
-
-    function restartDropIn(language: DropLanguage) {
-        const audio = dropAudio[language].current;
-        if (!audio || !dropIns[language]) return;
-        audio.currentTime = 0;
-        try {
-            window.localStorage.removeItem(`${DROP_PROGRESS_PREFIX}${language}`);
-        } catch {}
-        setDropProgress((current) => ({
-            ...current,
-            [language]: { current: 0, duration: current[language].duration },
-        }));
     }
 
     function seekDropIn(language: DropLanguage, value: number) {
@@ -828,20 +838,22 @@ export default function ListenerPlayer({
             ...current,
             [language]: { current: 0, duration: current[language].duration },
         }));
-        restoreLiveOutput(true);
+        audio!.currentTime = 0;
+        void playLive(false, dropGeneration.current);
     }
 
-    const liveButton = liveState === 'loading' || (livePreparing && !livePrepared)
-        ? copy.loading
-        : liveState === 'recovering'
-            ? copy.reconnecting
-            : liveState === 'playing'
-                ? copy.pause
-                : !livePrepared
-                    ? copy.prepareDevice
-                    : liveState === 'paused'
-                        ? copy.resume
-                        : copy.play;
+    const selectedProgress = dropProgress[selectedDrop];
+    const selectedDropAvailable = Boolean(dropIns[selectedDrop]);
+    const transportBusy = liveState === 'loading' || liveState === 'recovering' || livePreparing;
+    const transportStatus = playingDrop
+        ? copy.playingIntro
+        : liveState === 'playing'
+            ? copy.playingBeacon
+            : liveState === 'recovering'
+                ? copy.reconnecting
+            : transportBusy
+                ? copy.loading
+                : copy.stopped;
 
     return (
         <div className="space-y-8">
@@ -855,7 +867,7 @@ export default function ListenerPlayer({
                 onPlaying={handleNativePlaying}
             />
             <section className="rounded-2xl border border-cyan-200/20 bg-cyan-200/[0.04] p-6 sm:p-8">
-                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-5">
                     <div>
                         <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[var(--cyan)]">
                             <span className="h-2 w-2 animate-live-pulse rounded-full bg-[var(--cyan)]" aria-hidden="true" />
@@ -864,13 +876,50 @@ export default function ListenerPlayer({
                         <h2 className="mt-3 font-serif text-4xl">{copy.heading}</h2>
                         <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">{copy.subheading}</p>
                     </div>
+                    <p role="status" className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                        {transportStatus}
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+                        <label className="text-xs text-[var(--text-muted)]">
+                            {copy.introSelection}
+                            <select
+                                value={selectedDrop}
+                                onChange={(event) => setSelectedDrop(event.target.value as DropLanguage)}
+                                disabled={playingDrop !== null}
+                                className="mt-2 block w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] px-3 py-3 text-sm text-[var(--paper)]"
+                            >
+                                {dropIns.en && <option value="en">{copy.english}</option>}
+                                {dropIns.es && <option value="es">{copy.spanish}</option>}
+                                {!dropIns.en && !dropIns.es && <option value="en">{copy.dropUnavailable}</option>}
+                            </select>
+                        </label>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!livePreparedRef.current) void claimLiveSource();
+                                else void playWithIntro(selectedDrop);
+                            }}
+                            disabled={transportBusy || !selectedDropAvailable}
+                            className="event-button event-button--primary"
+                        >
+                            {copy.playWithIntro}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={playBeaconOnly}
+                            disabled={transportBusy}
+                            className="event-button event-button--secondary"
+                        >
+                            {copy.playBeaconOnly}
+                        </button>
+                    </div>
                     <button
                         type="button"
-                        onClick={toggleLive}
-                        disabled={liveState === 'loading' || livePreparing}
-                        className="event-button event-button--primary min-w-44"
+                        onClick={stopTransport}
+                        disabled={transportBusy || (playingDrop === null && liveState !== 'playing')}
+                        className="event-button event-button--ghost self-start"
                     >
-                        {liveButton}
+                        {copy.stop}
                     </button>
                 </div>
                 {(liveState === 'error' || liveState === 'displaced') && (
@@ -892,63 +941,47 @@ export default function ListenerPlayer({
 
             <section className="space-y-4">
                 <h2 className="font-serif text-3xl">{copy.dropIns}</h2>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="hidden">
                     {(['es', 'en'] as const).map((language) => {
-                        const progress = dropProgress[language];
-                        const available = Boolean(dropIns[language]);
                         const title = language === 'es' ? copy.spanish : copy.english;
                         return (
-                            <article key={language} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
-                                <audio
-                                    ref={dropAudio[language]}
-                                    src={dropIns[language] ?? undefined}
-                                    preload="metadata"
-                                    onLoadedMetadata={() => restoreProgress(language)}
-                                    onTimeUpdate={() => storeProgress(language)}
-                                    onEnded={() => finishDropIn(language)}
-                                    aria-label={title}
-                                />
-                                <p className="font-mono text-xs uppercase tracking-[0.22em] text-[var(--gold)]">{language.toUpperCase()}</p>
-                                <h3 className="mt-2 text-base font-medium">{title}</h3>
-                                {available ? (
-                                    <>
-                                        <div className="mt-5 flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleDropIn(language)}
-                                                disabled={livePreparing || !livePrepared}
-                                                className="event-button event-button--secondary flex-1"
-                                            >
-                                                {playingDrop === language ? copy.pause : copy.dropPlay}
-                                            </button>
-                                            <button type="button" onClick={() => restartDropIn(language)} className="event-button event-button--ghost">
-                                                {copy.restart}
-                                            </button>
-                                        </div>
-                                        <label className="mt-4 block text-xs text-[var(--text-muted)]">
-                                            <span className="sr-only">{title}</span>
-                                            <input
-                                                type="range"
-                                                min={0}
-                                                max={Math.max(progress.duration, 0)}
-                                                step={0.1}
-                                                value={Math.min(progress.current, progress.duration || 0)}
-                                                onChange={(event) => seekDropIn(language, Number(event.target.value))}
-                                                className="w-full accent-[var(--gold)]"
-                                            />
-                                            <span className="mt-1 flex justify-between font-mono">
-                                                <span>{formatTime(progress.current)}</span>
-                                                <span>{formatTime(progress.duration)}</span>
-                                            </span>
-                                        </label>
-                                    </>
-                                ) : (
-                                    <p className="mt-4 text-sm text-[var(--text-muted)]">{copy.dropUnavailable}</p>
-                                )}
-                            </article>
+                            <audio
+                                key={language}
+                                ref={dropAudio[language]}
+                                src={dropIns[language] ?? undefined}
+                                preload={language === selectedDrop ? 'auto' : 'metadata'}
+                                onLoadedMetadata={() => restoreProgress(language)}
+                                onTimeUpdate={() => storeProgress(language)}
+                                onEnded={() => finishDropIn(language)}
+                                aria-label={title}
+                            />
                         );
                     })}
                 </div>
+                {selectedDropAvailable ? (
+                    <article className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+                        <p className="font-mono text-xs uppercase tracking-[0.22em] text-[var(--gold)]">{selectedDrop.toUpperCase()}</p>
+                        <h3 className="mt-2 text-base font-medium">{selectedDrop === 'es' ? copy.spanish : copy.english}</h3>
+                        <label className="mt-4 block text-xs text-[var(--text-muted)]">
+                            <span className="sr-only">{selectedDrop === 'es' ? copy.spanish : copy.english}</span>
+                            <input
+                                type="range"
+                                min={0}
+                                max={Math.max(selectedProgress.duration, 0)}
+                                step={0.1}
+                                value={Math.min(selectedProgress.current, selectedProgress.duration || 0)}
+                                onChange={(event) => seekDropIn(selectedDrop, Number(event.target.value))}
+                                className="w-full accent-[var(--gold)]"
+                            />
+                            <span className="mt-1 flex justify-between font-mono">
+                                <span>{formatTime(selectedProgress.current)}</span>
+                                <span>{formatTime(selectedProgress.duration)}</span>
+                            </span>
+                        </label>
+                    </article>
+                ) : (
+                    <p className="text-sm text-[var(--text-muted)]">{copy.dropUnavailable}</p>
+                )}
             </section>
 
             {volumeSupported && (

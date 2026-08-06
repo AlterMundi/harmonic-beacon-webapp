@@ -17,9 +17,13 @@ test "${#invitation_token}" -ge 32 || preview_fail "invitation token is too shor
 
 synthetic_email="free-smoke-$(date +%s)-$$@e2e.invalid"
 printf '{"name":"Canonical Free smoke","email":"%s","authOnly":true}' "$synthetic_email" >"$temporary/login.json"
-printf '{"token":"%s"}' "$invitation_token" >"$temporary/redeem.json"
 printf 'header = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\n' \
   "$login_secret" >"$temporary/login.curl"
+printf 'url = "%s/early-birds?invite=%s"\n' "$base_url" "$invitation_token" >"$temporary/invitation.curl"
+
+invitation_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  --location --config "$temporary/invitation.curl" --cookie-jar "$temporary/cookies")
+test "$invitation_status" = 200 || preview_fail "invitation cookie handoff returned HTTP $invitation_status"
 
 login_status=$(curl --silent --show-error --output "$temporary/login.response" \
   --write-out '%{http_code}' --request POST --config "$temporary/login.curl" \
@@ -29,14 +33,13 @@ test "$login_status" = 200 || preview_fail "synthetic login returned HTTP $login
 grep -q '"ok":true' "$temporary/login.response" || preview_fail "synthetic login response is invalid"
 
 redeem_status=$(curl --silent --show-error --output "$temporary/redeem.response" \
-  --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' \
-  --cookie "$temporary/cookies" --cookie-jar "$temporary/cookies" \
-  --data-binary @"$temporary/redeem.json" "$base_url/api/early-birds/free/redeem")
+  --write-out '%{http_code}' --request POST --cookie "$temporary/cookies" \
+  --cookie-jar "$temporary/cookies" "$base_url/api/early-birds/free/redeem")
 test "$redeem_status" = 200 || preview_fail "canonical Free redeem returned HTTP $redeem_status"
 grep -q '"ok":true' "$temporary/redeem.response" || preview_fail "canonical Free redeem response is invalid"
 
 home_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-  --cookie "$temporary/cookies" "$base_url/early-birds/home")
+  --cookie "$temporary/cookies" "$base_url/")
 test "$home_status" = 200 || preview_fail "entitled Listener home returned HTTP $home_status"
 
 echo "Canonical Free smoke passed: synthetic login, private authority redeem, projection, session cookie, and Listener home."

@@ -26,7 +26,7 @@ export default function EarlyBirdLanding(props: Props) {
     const [error, setError] = useState(false);
     const callbackURL = props.invitationAvailable
         ? '/early-birds/redeem'
-        : '/early-birds/home';
+        : '/early-birds';
 
     async function signIn(provider: 'google' | 'apple') {
         if (busy || !props.providers[provider]) return;
@@ -83,7 +83,7 @@ export default function EarlyBirdLanding(props: Props) {
                             <div className="space-y-5">
                                 <p className="text-sm text-[var(--text-secondary)]">{copy.signedIn}</p>
                                 {props.entitled ? (
-                                    <a href="/early-birds/home" className="event-button event-button--primary inline-flex w-full">
+                                    <a href="/early-birds" className="event-button event-button--primary inline-flex w-full">
                                         {copy.enter}
                                     </a>
                                 ) : props.invitationAvailable ? (
