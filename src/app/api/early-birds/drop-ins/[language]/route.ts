@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -52,29 +53,48 @@ async function serve(
     if (!configuredPath || !isAbsolute(configuredPath)) return unavailable();
 
     try {
-        const file = await readFile(configuredPath);
+        const metadata = await stat(configuredPath);
+        if (!metadata.isFile()) return unavailable();
+        const fileSize = metadata.size;
         const match = request.headers.get('range')?.match(/^bytes=(\d+)-(\d*)$/);
         let start = 0;
-        let end = file.length - 1;
+        let end = fileSize - 1;
         let status = 200;
         if (match) {
             start = Number(match[1]);
             end = match[2] ? Math.min(Number(match[2]), end) : end;
-            if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= file.length) {
+            if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= fileSize) {
                 return new NextResponse(null, {
                     status: 416,
-                    headers: { ...PRIVATE_HEADERS, 'Content-Range': `bytes */${file.length}` },
+                    headers: { ...PRIVATE_HEADERS, 'Content-Range': `bytes */${fileSize}` },
                 });
             }
             status = 206;
         }
-        const body = file.subarray(start, end + 1);
-        return new NextResponse(head ? null : body, {
+        const contentLength = Math.max(0, end - start + 1);
+        if (head || contentLength === 0) {
+            return new NextResponse(null, {
+                status,
+                headers: {
+                    ...PRIVATE_HEADERS,
+                    'Content-Length': String(contentLength),
+                    ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${fileSize}` } : {}),
+                },
+            });
+        }
+
+        const file = await open(configuredPath, 'r');
+        const body = Readable.toWeb(file.createReadStream({
+            start,
+            end,
+            autoClose: true,
+        })) as ReadableStream<Uint8Array>;
+        return new NextResponse(body, {
             status,
             headers: {
                 ...PRIVATE_HEADERS,
-                'Content-Length': String(body.length),
-                ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${file.length}` } : {}),
+                'Content-Length': String(contentLength),
+                ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${fileSize}` } : {}),
             },
         });
     } catch {
