@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/server.mjs && node --check src/inventory.mjs && node --check scripts/inventory.mjs && node --check scripts/verify-artifact.mjs",
+    "check": "node --check src/server.mjs && node --check src/inventory.mjs && node --check scripts/inventory.mjs && node --check scripts/build-artifact.mjs && node --check scripts/verify-artifact.mjs",
     "inventory": "node scripts/inventory.mjs",
     "verify-artifact": "node scripts/verify-artifact.mjs",
     "canary": "node scripts/canary.mjs",
