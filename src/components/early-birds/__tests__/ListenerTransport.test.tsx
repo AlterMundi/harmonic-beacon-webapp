@@ -58,8 +58,26 @@ describe('EarlyBird unified playlist transport', () => {
 
         expect(screen.getByRole('combobox', { name: 'Intro before the Beacon' })).toHaveValue('en');
         await waitFor(() => expect(screen.getByRole('button', { name: 'Play with intro' })).toBeEnabled());
+        expect(screen.getByRole('button', { name: 'Play with intro' })).toHaveAttribute('aria-pressed', 'false');
         expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toHaveAttribute('aria-pressed', 'false');
         expect(screen.getByRole('button', { name: 'Stop' })).toBeDisabled();
+    });
+
+    it('keeps the intro timeline and master volume inside Beacon 24/7 without a separate drop-ins section', async () => {
+        prepareMedia();
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: '/api/drop-ins/en' }} />
+            </LocaleProvider>,
+        );
+
+        const beaconPanel = screen.getByRole('heading', { name: 'Beacon 24/7' }).closest('section');
+        expect(beaconPanel).not.toBeNull();
+        expect(beaconPanel).toContainElement(screen.getByRole('heading', { name: 'Warm-up · English' }));
+        expect(beaconPanel).toContainElement(screen.getByRole('slider', { name: 'Intro before the Beacon: Warm-up · English' }));
+        expect(beaconPanel).toContainElement(screen.getByRole('slider', { name: 'Master volume' }));
+        expect(screen.queryByRole('heading', { name: 'Private drop-ins' })).not.toBeInTheDocument();
     });
 
     it('plays the intro from the beginning while the Beacon is fully stopped', async () => {
@@ -78,6 +96,8 @@ describe('EarlyBird unified playlist transport', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Play with intro' }));
 
         await waitFor(() => expect(screen.getByText('Playing intro · Beacon follows')).toBeInTheDocument());
+        expect(screen.getByRole('button', { name: 'Play with intro' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toHaveAttribute('aria-pressed', 'false');
         expect(intro.currentTime).toBe(0);
         expect(play.mock.instances).toContain(intro);
         expect(play.mock.instances).not.toContain(live);
@@ -115,6 +135,8 @@ describe('EarlyBird unified playlist transport', () => {
         frames.shift()?.(3_000);
         expect(live.volume).toBeCloseTo(1);
         expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Play with intro' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('plays Beacon-only with a fade-in and stops it over a short fade-out', async () => {
@@ -138,13 +160,18 @@ describe('EarlyBird unified playlist transport', () => {
         fireEvent.playing(live);
         frames.shift()?.(3_000);
         expect(live.volume).toBeCloseTo(1);
+        expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toHaveAttribute('aria-pressed', 'true');
         pause.mockClear();
 
         fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+        expect(screen.getByRole('button', { name: 'Play with intro' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toHaveAttribute('aria-pressed', 'false');
         expect(pause.mock.instances).not.toContain(live);
         act(() => frames.shift()?.(650));
         expect(pause.mock.instances).toContain(live);
         expect(screen.getByText('Stopped')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Play with intro' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('stops an already playing Beacon before the selected intro starts', async () => {

@@ -107,6 +107,7 @@ export default function ListenerPlayer({
     const deferLiveFadeForRecovery = useRef<() => void>(() => undefined);
     const [liveState, setLiveState] = useState<LiveState>('idle');
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
+    const [transportStopped, setTransportStopped] = useState(true);
     const [selectedDrop, setSelectedDrop] = useState<DropLanguage>(dropIns.en ? 'en' : 'es');
     const [dropProgress, setDropProgress] = useState({
         es: { current: 0, duration: 0 },
@@ -604,11 +605,13 @@ export default function ListenerPlayer({
             void claimLiveSource();
             return;
         }
+        setTransportStopped(false);
         void playLive(liveState === 'error' || liveState === 'displaced', dropGeneration.current);
     }
 
     function stopTransport() {
         dropGeneration.current += 1;
+        setTransportStopped(true);
         wantsLivePlayback.current = false;
         cancelRecovery(true);
         pendingLiveFade.current = false;
@@ -809,10 +812,12 @@ export default function ListenerPlayer({
         try {
             await selected.play();
             if (!isCurrent()) return;
+            setTransportStopped(false);
             setPlayingDrop(language);
         } catch {
             if (!isCurrent()) return;
             activeDrop.current = null;
+            setTransportStopped(true);
             setPlayingDrop(null);
         }
     }
@@ -845,6 +850,8 @@ export default function ListenerPlayer({
     const selectedProgress = dropProgress[selectedDrop];
     const selectedDropAvailable = Boolean(dropIns[selectedDrop]);
     const transportBusy = liveState === 'loading' || liveState === 'recovering' || livePreparing;
+    const introActive = !transportStopped && playingDrop !== null;
+    const beaconActive = !transportStopped && playingDrop === null && liveState === 'playing';
     const transportStatus = playingDrop
         ? copy.playingIntro
         : liveState === 'playing'
@@ -900,7 +907,8 @@ export default function ListenerPlayer({
                                 else void playWithIntro(selectedDrop);
                             }}
                             disabled={transportBusy || !selectedDropAvailable}
-                            className="event-button event-button--primary"
+                            aria-pressed={introActive}
+                            className="event-button event-button--primary listener-transport__button"
                         >
                             {copy.playWithIntro}
                         </button>
@@ -908,7 +916,8 @@ export default function ListenerPlayer({
                             type="button"
                             onClick={playBeaconOnly}
                             disabled={transportBusy}
-                            className="event-button event-button--secondary"
+                            aria-pressed={beaconActive}
+                            className="event-button event-button--secondary listener-transport__button"
                         >
                             {copy.playBeaconOnly}
                         </button>
@@ -937,10 +946,6 @@ export default function ListenerPlayer({
                         {prepareFailure === 'capacity' ? copy.deviceLimitClaim : copy.prepareHelp}
                     </p>
                 )}
-            </section>
-
-            <section className="space-y-4">
-                <h2 className="font-serif text-3xl">{copy.dropIns}</h2>
                 <div className="hidden">
                     {(['es', 'en'] as const).map((language) => {
                         const title = language === 'es' ? copy.spanish : copy.english;
@@ -959,13 +964,14 @@ export default function ListenerPlayer({
                     })}
                 </div>
                 {selectedDropAvailable ? (
-                    <article className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+                    <article className="mt-6 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
                         <p className="font-mono text-xs uppercase tracking-[0.22em] text-[var(--gold)]">{selectedDrop.toUpperCase()}</p>
                         <h3 className="mt-2 text-base font-medium">{selectedDrop === 'es' ? copy.spanish : copy.english}</h3>
                         <label className="mt-4 block text-xs text-[var(--text-muted)]">
                             <span className="sr-only">{selectedDrop === 'es' ? copy.spanish : copy.english}</span>
                             <input
                                 type="range"
+                                aria-label={`${copy.introSelection}: ${selectedDrop === 'es' ? copy.spanish : copy.english}`}
                                 min={0}
                                 max={Math.max(selectedProgress.duration, 0)}
                                 step={0.1}
@@ -980,28 +986,28 @@ export default function ListenerPlayer({
                         </label>
                     </article>
                 ) : (
-                    <p className="text-sm text-[var(--text-muted)]">{copy.dropUnavailable}</p>
+                    <p className="mt-6 text-sm text-[var(--text-muted)]">{copy.dropUnavailable}</p>
+                )}
+
+                {volumeSupported && (
+                    <label className="mt-6 block max-w-sm text-xs text-[var(--text-muted)]">
+                        {copy.master}
+                        <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={volume}
+                            onChange={(event) => {
+                                const next = Number(event.target.value);
+                                volumeRef.current = next;
+                                setVolume(next);
+                            }}
+                            className="mt-2 w-full accent-[var(--gold)]"
+                        />
+                    </label>
                 )}
             </section>
-
-            {volumeSupported && (
-                <label className="block max-w-sm text-xs text-[var(--text-muted)]">
-                    {copy.master}
-                    <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={volume}
-                        onChange={(event) => {
-                            const next = Number(event.target.value);
-                            volumeRef.current = next;
-                            setVolume(next);
-                        }}
-                        className="mt-2 w-full accent-[var(--gold)]"
-                    />
-                </label>
-            )}
         </div>
     );
 }
