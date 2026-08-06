@@ -67,8 +67,8 @@ describe('EarlyBird Listener player', () => {
         render(
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer dropIns={{
-                    es: 'https://media.example.test/drop-es.mp3',
-                    en: 'https://media.example.test/drop-en.mp3',
+                    es: 'https://media.example.test/reviewed-drop-es',
+                    en: 'https://media.example.test/reviewed-drop-en',
                 }} />
             </LocaleProvider>,
         );
@@ -112,7 +112,7 @@ describe('EarlyBird Listener player', () => {
         vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
-                <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es.mp3', en: null }} />
+                <ListenerPlayer dropIns={{ es: 'https://media.example.test/reviewed-drop-es', en: null }} />
             </LocaleProvider>,
         );
         const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;

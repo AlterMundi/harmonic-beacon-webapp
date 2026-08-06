@@ -57,7 +57,7 @@ The origin signature is HMAC-SHA-256 base64url over the exact bytes
 The origin manifest must contain individually signed, same-origin segment URLs. Signing material and
 signed URLs are never returned in API JSON or logged.
 
-The approved Spanish/English drop-in renders are configured as immutable media URLs. Listener UI
+The reviewed Spanish/English drop-in artifacts are configured as immutable, format-neutral URLs. Listener UI
 does not encode or alter them. Progress is local to the browser. A drop-in mutes only the live output
 while the HLS element, source and lease continue untouched, then restores the still-running Beacon.
 The live pause control produces silence and its resume seeks to the current live edge. No AudioContext,
