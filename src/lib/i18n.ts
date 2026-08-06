@@ -126,6 +126,15 @@ export type Messages = {
         masterVolume: string;
         mix: string;
         sessionChannel: string;
+        guidance: {
+            label: string;
+            intention: string;
+            volume: string;
+            balance: string;
+            balanceFullBeacon: string;
+            cameraMic: string;
+            control: string;
+        };
         beaconRoom: string;
         playlist: string;
         live: string;
@@ -607,6 +616,15 @@ export const messages: Record<UiLocale, Messages> = {
             masterVolume: 'Volumen general de la sala',
             mix: 'Balance Beacon / Sesión',
             sessionChannel: 'Sesión',
+            guidance: {
+                label: 'Cómo funciona la escucha',
+                intention: 'La experiencia te invita a buscar una pregunta, no una respuesta.',
+                volume: 'El volumen general controla todo lo que escuchás en la sala.',
+                balance: 'El balance elige cuánto escuchás del Beacon y cuánto de la sesión.',
+                balanceFullBeacon: 'Si llevás el balance completamente hacia Beacon, podés quedarte solo con su sonido y dejar la voz de la sesión en cero.',
+                cameraMic: 'Apagar la cámara no apaga tu micrófono. Cada control funciona por separado.',
+                control: 'Tu cámara y tu micrófono permanecen siempre bajo tu control.',
+            },
             beaconRoom: 'Sala Beacon',
             playlist: 'Playlist',
             live: 'En vivo',
@@ -1143,6 +1161,15 @@ export const messages: Record<UiLocale, Messages> = {
             masterVolume: 'Overall room volume',
             mix: 'Beacon / Session balance',
             sessionChannel: 'Session',
+            guidance: {
+                label: 'How listening works',
+                intention: 'The experience invites you to look for a question, not an answer.',
+                volume: 'Overall volume controls everything you hear in the room.',
+                balance: 'The balance chooses how much of the Beacon and how much of the session you hear.',
+                balanceFullBeacon: 'Move the balance fully toward Beacon to hear only the Beacon and bring the session voice to zero.',
+                cameraMic: 'Turning off your camera does not turn off your microphone. Each control works independently.',
+                control: 'Your camera and microphone always remain under your control.',
+            },
             beaconRoom: 'Beacon room',
             playlist: 'Playlist',
             live: 'Live',
