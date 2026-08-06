@@ -415,6 +415,85 @@ describe('EarlyBird Listener player', () => {
         expect(screen.getByRole('button', { name: 'Listen now' })).toBeInTheDocument();
     });
 
+    it('disables stale intro controls when an idle prepared lease is displaced', async () => {
+        const intervalCallbacks: Array<() => void | Promise<void>> = [];
+        vi.spyOn(window, 'setInterval').mockImplementation((callback) => {
+            intervalCallbacks.push(callback as () => void | Promise<void>);
+            return intervalCallbacks.length as unknown as ReturnType<typeof window.setInterval>;
+        });
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                error: 'Device displaced.',
+                reason: 'displaced',
+            }), { status: 410 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: null }} />
+            </LocaleProvider>,
+        );
+        const card = screen.getByLabelText('Warm-up · Spanish').closest('article')!;
+        await waitFor(() => expect(within(card).getByRole('button', { name: 'Play' })).toBeEnabled());
+
+        await Promise.all(intervalCallbacks.map((callback) => callback()));
+
+        await waitFor(() => expect(within(card).getByRole('button', { name: 'Play' })).toBeDisabled());
+        expect(screen.getByRole('button', { name: 'Enable this device' })).toBeEnabled();
+        expect(screen.getByRole('alert')).toHaveTextContent('This device was displaced');
+    });
+
+    it('revalidates an idle prepared source after resume before enabling intros', async () => {
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                error: 'Listening lease expired.',
+                reason: 'expired',
+            }), { status: 410 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                error: 'Two devices are already active.',
+                reason: 'device_limit',
+            }), { status: 409 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: null }} />
+            </LocaleProvider>,
+        );
+        const card = screen.getByLabelText('Warm-up · Spanish').closest('article')!;
+        await waitFor(() => expect(within(card).getByRole('button', { name: 'Play' })).toBeEnabled());
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+        expect(within(card).getByRole('button', { name: 'Play' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Enable this device' })).toBeEnabled();
+        expect(screen.getByRole('status')).toHaveTextContent('Two devices are already active.');
+    });
+
     it('claims a capacity-blocked device before enabling iOS-safe playback controls', async () => {
         const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);

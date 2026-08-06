@@ -389,6 +389,7 @@ export default function ListenerPlayer({
             } catch (error) {
                 livePreparedRef.current = false;
                 setLivePrepared(false);
+                setDevicePreparedByGesture(false);
                 setPrepareFailure(error instanceof LeaseRequestError && error.status === 409
                     ? 'capacity'
                     : 'unavailable');
@@ -420,11 +421,66 @@ export default function ListenerPlayer({
         } catch {
             livePreparedRef.current = false;
             setLivePrepared(false);
+            setDevicePreparedByGesture(false);
             updateLiveState('error');
         } finally {
             setLivePreparing(false);
         }
     }, [attachManifest, livePreparing, requestLease, updateLiveState]);
+
+    const revalidateIdlePreparedSource = useCallback(() => {
+        if (!leaseId.current || livePreparation.current) return;
+        setLivePreparing(true);
+        livePreparedRef.current = false;
+        setLivePrepared(false);
+        setDevicePreparedByGesture(false);
+        const pending = (async () => {
+            try {
+                const probe = await probeExistingLease();
+                if (probe.kind === 'displaced' || probe.kind === 'denied') {
+                    stopHls();
+                    leaseId.current = null;
+                    setPrepareFailure(probe.kind === 'displaced' ? 'capacity' : 'unavailable');
+                    if (probe.kind === 'denied') updateLiveState('error');
+                    return false;
+                }
+                if (probe.kind === 'retry') {
+                    setPrepareFailure('unavailable');
+                    return false;
+                }
+                if (probe.kind === 'active') {
+                    manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
+                    if (probe.grant.stream.manifestUrl !== manifestUrl.current) {
+                        await attachManifest(probe.grant.stream.manifestUrl);
+                    } else {
+                        livePreparedRef.current = true;
+                        setLivePrepared(true);
+                    }
+                    setPrepareFailure(null);
+                    return true;
+                }
+
+                leaseId.current = null;
+                manifestUrl.current = null;
+                manifestExpiresAt.current = 0;
+                const grant = await requestLease('prepare');
+                leaseId.current = grant.leaseId;
+                manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+                await attachManifest(grant.stream.manifestUrl);
+                setPrepareFailure(null);
+                return true;
+            } catch (error) {
+                setPrepareFailure(error instanceof LeaseRequestError && error.status === 409
+                    ? 'capacity'
+                    : 'unavailable');
+                return false;
+            } finally {
+                livePreparation.current = null;
+                setLivePreparing(false);
+            }
+        })();
+        livePreparation.current = pending;
+    }, [attachManifest, probeExistingLease, requestLease, stopHls, updateLiveState]);
 
     useEffect(() => {
         // Preparing (but not playing) the native element lets an intro click
@@ -561,9 +617,12 @@ export default function ListenerPlayer({
 
     useEffect(() => {
         const recoverAfterResume = () => {
-            if (!wantsLivePlayback.current) return;
             if (document.visibilityState !== 'visible') {
-                deferLiveFade();
+                if (wantsLivePlayback.current) deferLiveFade();
+                return;
+            }
+            if (!wantsLivePlayback.current) {
+                revalidateIdlePreparedSource();
                 return;
             }
             const pausedDuringPendingFade = pendingLiveFade.current
@@ -588,7 +647,7 @@ export default function ListenerPlayer({
             window.removeEventListener('online', recoverAfterResume);
             window.removeEventListener('pageshow', recoverAfterResume);
         };
-    }, [beginLiveFade, deferLiveFade, scheduleAutomaticRecovery]);
+    }, [beginLiveFade, deferLiveFade, revalidateIdlePreparedSource, scheduleAutomaticRecovery]);
 
     useEffect(() => {
         const interval = window.setInterval(async () => {
@@ -602,6 +661,10 @@ export default function ListenerPlayer({
                 liveAudio.current?.pause();
                 stopHls();
                 leaseId.current = null;
+                livePreparedRef.current = false;
+                setLivePrepared(false);
+                setDevicePreparedByGesture(false);
+                setPrepareFailure(probe.kind === 'displaced' ? 'capacity' : 'unavailable');
                 updateLiveState(probe.kind === 'displaced' ? 'displaced' : 'error');
                 return;
             }
@@ -609,6 +672,7 @@ export default function ListenerPlayer({
                 leaseId.current = null;
                 livePreparedRef.current = false;
                 setLivePrepared(false);
+                setDevicePreparedByGesture(false);
                 if (wantsLivePlayback.current) scheduleAutomaticRecovery(0);
                 else void prepareLiveSource(true);
                 return;
