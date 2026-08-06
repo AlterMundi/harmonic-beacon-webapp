@@ -165,3 +165,13 @@ test('smoke and rollback contracts cover both probes without deleting state', as
   assert.match(stop, /stop listener beacon-stream postgres/);
   assert.doesNotMatch(stop, /\bdown\b|-v\b|volume rm/);
 });
+
+test('canonical Free smoke keeps credentials out of argv and verifies the entitled home', async () => {
+  const source = await readRepository('scripts/early-birds-preview/canonical-free-smoke.sh');
+  assert.match(source, /require_synthetic_env/);
+  assert.match(source, /--config "\$temporary\/login\.curl"/);
+  assert.match(source, /api\/early-birds\/free\/redeem/);
+  assert.match(source, /early-birds\/home/);
+  assert.match(source, /trap 'rm -rf "\$temporary"'/);
+  assert.doesNotMatch(source, /echo[^\n]*(login_secret|invitation_token)/);
+});
