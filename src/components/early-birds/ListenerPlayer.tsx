@@ -50,6 +50,14 @@ export function earlyBirdLeaseRecoveryDisposition(payload: unknown): 'displaced'
     return 'reason' in payload && payload.reason === 'displaced' ? 'displaced' : 'recoverable';
 }
 
+export function prefersNativeHls(
+    audio: HTMLAudioElement,
+    browser: Pick<Navigator, 'vendor'> = navigator,
+): boolean {
+    return browser.vendor === 'Apple Computer, Inc.'
+        && Boolean(audio.canPlayType('application/vnd.apple.mpegurl'));
+}
+
 function formatTime(seconds: number): string {
     if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
     const rounded = Math.floor(seconds);
@@ -116,14 +124,22 @@ export default function ListenerPlayer({
         stopHls();
         manifestUrl.current = url;
 
-        if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+        const nativeHlsSupported = Boolean(audio.canPlayType('application/vnd.apple.mpegurl'));
+        if (prefersNativeHls(audio)) {
             audio.src = url;
             audio.load();
             return;
         }
 
         const HlsConstructor = (await import('hls.js')).default;
-        if (!HlsConstructor.isSupported()) throw new Error('HLS is not supported');
+        if (!HlsConstructor.isSupported()) {
+            if (nativeHlsSupported) {
+                audio.src = url;
+                audio.load();
+                return;
+            }
+            throw new Error('HLS is not supported');
+        }
         const instance = new HlsConstructor({
             lowLatencyMode: false,
             liveDurationInfinity: true,

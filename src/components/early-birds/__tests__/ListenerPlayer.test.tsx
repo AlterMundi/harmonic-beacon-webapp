@@ -44,6 +44,7 @@ vi.mock('hls.js', () => {
 import ListenerPlayer, {
     earlyBirdLeaseRecoveryDisposition,
     getOrCreateEarlyBirdDeviceId,
+    prefersNativeHls,
     seekNativeAudioToLiveEdge,
 } from '../ListenerPlayer';
 
@@ -74,6 +75,12 @@ describe('EarlyBird Listener player', () => {
         } as unknown as HTMLAudioElement;
         expect(seekNativeAudioToLiveEdge(audio)).toBe(true);
         expect(audio.currentTime).toBe(123.25);
+    });
+
+    it('does not trust Chromium native HLS claims while preserving Apple native playback', () => {
+        const audio = { canPlayType: () => 'maybe' } as unknown as HTMLAudioElement;
+        expect(prefersNativeHls(audio, { vendor: 'Google Inc.' })).toBe(false);
+        expect(prefersNativeHls(audio, { vendor: 'Apple Computer, Inc.' })).toBe(true);
     });
 
     it('treats only an explicit eviction as displacement', () => {
