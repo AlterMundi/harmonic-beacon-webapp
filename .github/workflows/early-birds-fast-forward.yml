@@ -5,12 +5,16 @@ on:
     paths:
       - services/beacon-stream/**
       - ops/early-birds/**
+      - ops/early-birds-preview/**
+      - scripts/early-birds-preview/**
       - .github/workflows/early-birds-fast-forward.yml
   push:
     branches: [early-birds, "feat/early-birds-*"]
     paths:
       - services/beacon-stream/**
       - ops/early-birds/**
+      - ops/early-birds-preview/**
+      - scripts/early-birds-preview/**
       - .github/workflows/early-birds-fast-forward.yml
 
 permissions:
@@ -41,3 +45,12 @@ jobs:
       - run: npm test
       - run: npm run check
       - run: npm run validate
+
+  staging-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm --prefix ops/early-birds-preview test
+      - run: npm --prefix ops/early-birds-preview run validate
