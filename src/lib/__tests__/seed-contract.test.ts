@@ -197,4 +197,25 @@ describe('weekend seed contract', () => {
         expect(migration).toContain('old_count NOT IN (0, 1)');
         expect(migration).toContain('new_count <> old_count');
     });
+
+    it('creates LOGOS as a fresh entitlement-gated production session', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260806233000_add_logos_private_session/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain('40000000-0000-4000-8000-202608070001');
+        expect(migration).toContain('20000000-0000-4000-8000-202608080001');
+        expect(migration).toContain("'2026-08-07 22:00:00'::timestamp");
+        expect(migration).toContain("'SPANISH'::\"SessionLanguage\"");
+        expect(migration).toContain("'SCHEDULED'::\"ScheduledSessionStatus\"");
+        expect(migration).toContain('"is_test" = false');
+        expect(migration).toContain('"paid_mode" = true');
+        expect(migration).toContain('source_count NOT IN (0, 1)');
+        expect(migration).toContain('target_count <> source_count');
+        expect(migration).not.toMatch(/UPDATE\s+"scheduled_sessions"/i);
+    });
 });
