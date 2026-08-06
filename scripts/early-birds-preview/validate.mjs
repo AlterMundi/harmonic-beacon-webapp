@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,9 +20,15 @@ await fs.writeFile(envFile, [
   '',
 ].join('\n'), { mode: 0o600 });
 try {
-  execFileSync('docker', ['compose', '--project-name', 'earlybirds-preview-validation', '--env-file', envFile,
+  const composeArgs = ['compose', '--project-name', 'earlybirds-preview-validation', '--env-file', envFile,
     '-f', path.join(root, 'ops/early-birds-preview/compose.yml'),
-    '-f', path.join(root, 'services/beacon-stream/docker-compose.yml'), 'config', '--quiet'], { stdio: 'inherit' });
+    '-f', path.join(root, 'services/beacon-stream/docker-compose.yml'),
+    '-f', path.join(root, 'ops/early-birds-preview/stream-build.override.yml')];
+  execFileSync('docker', [...composeArgs, 'config', '--quiet'], { stdio: 'inherit' });
+  const resolved = JSON.parse(execFileSync('docker', [...composeArgs, 'config', '--format', 'json'], { encoding: 'utf8' }));
+  const build = resolved.services?.['beacon-stream']?.build;
+  assert.equal(build?.context, path.join(root, 'services/beacon-stream'));
+  assert.equal(build?.dockerfile, 'Dockerfile');
   console.log('EarlyBirds preview compose configuration is valid.');
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });

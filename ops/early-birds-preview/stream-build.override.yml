@@ -1,0 +1,8 @@
+# Compose resolves relative paths from the first -f file. This last overlay
+# deliberately replaces services/beacon-stream/docker-compose.yml's `build: .`
+# after it is merged, keeping the origin build rooted at its own service.
+services:
+  beacon-stream:
+    build:
+      context: ../../services/beacon-stream
+      dockerfile: Dockerfile
