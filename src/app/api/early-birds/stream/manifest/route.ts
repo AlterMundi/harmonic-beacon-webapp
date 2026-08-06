@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
+import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
 import {
     authorizeEarlyBirdStreamLease,
     earlyBirdOriginConfig,
@@ -19,6 +20,8 @@ const MANIFEST_HEADERS = {
 };
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+    if (!earlyBirdsEnabled()) return earlyBirdsUnavailableResponse();
+
     const session = await currentEarlyBirdSession(request.headers).catch(() => null);
     if (!session) {
         return NextResponse.json({ error: 'Sign in required.' }, {

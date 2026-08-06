@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
@@ -38,9 +38,11 @@ function request() {
     return new NextRequest(`https://live.example.test/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`);
 }
 
+beforeEach(() => vi.stubEnv('EARLY_BIRDS_ENABLED', '1'));
 afterEach(() => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
 });
 
 describe('stable EarlyBird lease manifest', () => {

@@ -8,6 +8,7 @@ import {
     earlyBirdTestAuthEnabled,
 } from '@/lib/early-birds/auth';
 import { issueSyntheticMembership } from '@/lib/early-birds/membership';
+import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,7 @@ async function authRequest(
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    if (!earlyBirdsEnabled()) return notFound();
     if (!authorizedSyntheticLogin(request)) return notFound();
 
     let email: string;

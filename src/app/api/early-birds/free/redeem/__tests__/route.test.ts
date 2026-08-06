@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const currentEarlyBirdSession = vi.hoisted(() => vi.fn());
@@ -20,9 +20,23 @@ function request(token = 'a'.repeat(43)) {
     });
 }
 
-afterEach(() => vi.clearAllMocks());
+beforeEach(() => vi.stubEnv('EARLY_BIRDS_ENABLED', '1'));
+afterEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+});
 
 describe('EarlyBird Free redemption boundary', () => {
+    it('stops before auth and canonical membership while public entry is disabled', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '0');
+        const response = await POST(request());
+
+        expect(response.status).toBe(503);
+        expect(currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(redeemFreeThroughCanonicalGateway).not.toHaveBeenCalled();
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
+    });
+
     it('never sends an invitation to the canonical authority before EarlyBird auth', async () => {
         currentEarlyBirdSession.mockResolvedValue(null);
         const response = await POST(request());

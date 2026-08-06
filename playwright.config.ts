@@ -166,6 +166,7 @@ export default defineConfig({
                   LIVEKIT_API_KEY: process.env.E2E_LIVEKIT_API_KEY ?? 'devkey',
                   LIVEKIT_API_SECRET: process.env.E2E_LIVEKIT_API_SECRET ?? 'secret',
                   LIVEKIT_ROOM_NAME: 'beacon',
+                  EARLY_BIRDS_ENABLED: '1',
                   EARLY_BIRDS_AUTH_SECRET: 'early-birds-e2e-auth-secret-not-for-production',
                   EARLY_BIRDS_AUTH_BASE_URL: BASE_URL,
                   EARLY_BIRDS_TRUSTED_ORIGINS: BASE_URL,

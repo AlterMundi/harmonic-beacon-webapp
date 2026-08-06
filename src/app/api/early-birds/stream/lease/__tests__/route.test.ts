@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const currentEarlyBirdSession = vi.hoisted(() => vi.fn());
@@ -21,7 +21,11 @@ function request(deviceId = 'device_abcdefghijklmnopqrstuvwxyz') {
     });
 }
 
-afterEach(() => vi.clearAllMocks());
+beforeEach(() => vi.stubEnv('EARLY_BIRDS_ENABLED', '1'));
+afterEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+});
 
 describe('EarlyBird stream lease route', () => {
     it('requires an EarlyBird session independent from weekend auth', async () => {

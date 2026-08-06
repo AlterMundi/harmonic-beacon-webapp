@@ -21,6 +21,7 @@ function request(authorization?: string): NextRequest {
 
 describe('EarlyBird synthetic login seam', () => {
     beforeEach(() => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_TEST_ACCESS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_TEST_LOGIN_SECRET', 's'.repeat(32));
     });

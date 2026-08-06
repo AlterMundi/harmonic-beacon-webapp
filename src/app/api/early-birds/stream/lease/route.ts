@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
+import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
 import {
     acquireEarlyBirdStreamLease,
     EarlyBirdAccessDeniedError,
@@ -10,6 +11,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    if (!earlyBirdsEnabled()) return earlyBirdsUnavailableResponse();
+
     const session = await currentEarlyBirdSession(request.headers).catch(() => null);
     if (!session) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
 

@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
 
 import EarlyBirdLanding from '@/components/early-birds/EarlyBirdLanding';
+import EarlyBirdUnavailable from '@/components/early-birds/EarlyBirdUnavailable';
 import {
     currentEarlyBirdSession,
     earlyBirdOAuthAvailability,
 } from '@/lib/early-birds/auth';
 import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
+import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +21,8 @@ export default async function EarlyBirdsPage({
 }: {
     searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+    if (!earlyBirdsEnabled()) return <EarlyBirdUnavailable />;
+
     const params = await searchParams;
     const session = await currentEarlyBirdSession().catch(() => null);
     const access = session
