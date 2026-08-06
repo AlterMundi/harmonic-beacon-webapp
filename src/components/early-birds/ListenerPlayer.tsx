@@ -879,7 +879,7 @@ export default function ListenerPlayer({
                     <p role="status" className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
                         {transportStatus}
                     </p>
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-end">
                         <label className="text-xs text-[var(--text-muted)]">
                             {copy.introSelection}
                             <select
@@ -912,15 +912,15 @@ export default function ListenerPlayer({
                         >
                             {copy.playBeaconOnly}
                         </button>
+                        <button
+                            type="button"
+                            onClick={stopTransport}
+                            disabled={transportBusy || (playingDrop === null && liveState !== 'playing')}
+                            className="event-button event-button--secondary"
+                        >
+                            {copy.stop}
+                        </button>
                     </div>
-                    <button
-                        type="button"
-                        onClick={stopTransport}
-                        disabled={transportBusy || (playingDrop === null && liveState !== 'playing')}
-                        className="event-button event-button--ghost self-start"
-                    >
-                        {copy.stop}
-                    </button>
                 </div>
                 {(liveState === 'error' || liveState === 'displaced') && (
                     <p role="alert" className="mt-5 event-alert event-alert--danger">

@@ -60,9 +60,9 @@ evidence, not authorization to promote it to `main` or production.
   `beacon-luz-20260624-2hs-aac320-v2`, derived without gain processing from
   `luz_de_manana_20260624-155633_2hs.wav`. It is AAC-LC 320 kbps, stereo,
   48 kHz, -14.2 LUFS with decoded peak -0.2 dBFS. The private EN intro is
-  `amara-sol-en-r1-approved-aac320-v2.m4a`, re-exported on 2026-08-06 at
-  15:27 ART with a complete fade tail and derived without gain processing.
-  It remains -11.2 LUFS with decoded peak -0.4 dBFS. The obsolete -35.6
+  `amara-sol-en-r1-approved-aac320-v3.m4a`, re-exported on 2026-08-06 at
+  18:16 ART with the approved long Beacon fade-in and derived without gain
+  processing. It is -11.3 LUFS with decoded peak -0.5 dBFS. The obsolete -35.6
   LUFS ES derivative is disabled and ES remains truthfully unavailable.
   Event/LiveKit audio is unchanged.
 - Rollback snapshots are

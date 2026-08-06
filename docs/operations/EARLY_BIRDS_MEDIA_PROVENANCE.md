@@ -49,8 +49,10 @@ normalization, dynamics or other signal processing.
 | Role | Source | Source SHA-256 | Artifact | Artifact SHA-256 | Duration | Decoded level |
 |---|---|---|---|---|---:|---|
 | Continuous Beacon | `luz_de_manana_20260624-155633_2hs.wav` | `feb0cac547eee8a2012ede32f9358e1cad4b66f6aea3b1b839610e71fad42685` | `beacon-luz-20260624-2hs-aac320-v2` | recorded in its immutable `artifact.json` | 7,200 s | -14.2 LUFS, -0.2 dBFS true peak |
-| EN intro | `BeaconDropIn-Amara-sol_r1_session.wav`, mtime `2026-08-06 15:27:25 ART` | `3f75c5ac5fe8edcd133bb8f1d4aec1dfcb0c5dfb2bba10f4b075358bd8bc1a41` | `amara-sol-en-r1-approved-aac320-v2.m4a` | `a249aa16511fffac20ab51f861c9d0119097fc368bdc900016a581105c4b5ac2` | 332.939 s | -11.2 LUFS, -0.4 dBFS true peak |
+| EN intro | `BeaconDropIn-Amara-sol_r1_session.wav`, mtime `2026-08-06 18:16:41 ART` | `aa519b117f885b5ec457dc1736e18175e6a307d301bd5c295b9c58ee85a01168` | `amara-sol-en-r1-approved-aac320-v3.m4a` | `a67068458f3d72dcd13be1e8dc753d21e238c270195f93e26599aa2910a181db` | 332.939 s | -11.3 LUFS, -0.5 dBFS true peak |
 
-The EN v2 source supersedes the earlier same-named export by immutable hash;
-the previous artifact remains available only for rollback. ES remains disabled
-until a separately approved render exists.
+The EN v3 source supersedes the earlier same-named exports by immutable hash and
+adds the approved long Beacon fade-in. Its opening five-second mean level rises
+from -17.1 dB through -15.2, -13.4 and -12.5 dB in consecutive windows. The v2
+artifact remains available only for rollback. ES remains disabled until a
+separately approved render exists.
