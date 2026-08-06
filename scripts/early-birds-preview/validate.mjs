@@ -78,6 +78,7 @@ try {
   ]);
   assert.equal(postgres.ports, undefined, 'PostgreSQL must not publish a host port');
   assert.deepEqual(Object.keys(postgres.networks), ['preview_db']);
+  assert.deepEqual(postgres.networks.preview_db.aliases, ['earlybirds-preview-postgres']);
   assert.equal(resolved.networks.preview_db.internal, true);
   assert.equal(resolved.networks.preview_db.name, 'earlybirds_preview_db_internal');
   assert.notEqual(resolved.networks.listener_egress.internal, true);
@@ -109,8 +110,11 @@ try {
 
   assert.equal(stream.build.context, path.join(root, 'services/beacon-stream'));
   assert.equal(stream.build.dockerfile, 'Dockerfile');
-  assert.deepEqual(Object.keys(stream.networks), ['stream_observability']);
+  assert.deepEqual(Object.keys(stream.networks).sort(), ['stream_edge', 'stream_observability']);
   assert.equal(resolved.networks.stream_observability.internal, true);
+  assert.equal(resolved.networks.stream_observability.name, 'earlybirds_stream_observability');
+  assert.notEqual(resolved.networks.stream_edge.internal, true);
+  assert.equal(resolved.networks.stream_edge.name, 'earlybirds_stream_edge');
   const streamPort = publishedPort(stream, 8080);
   assert.equal(streamPort.host_ip, '127.0.0.1');
   assert.equal(Number(streamPort.published), 18080);
