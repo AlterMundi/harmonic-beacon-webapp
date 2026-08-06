@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/early-bird-authority/v1/invitation-redeem.schema.json",
+  "title": "EarlyBird invitation redeem request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "account_id", "invitation_token"],
+  "properties": {
+    "schema_version": {"const": "early-bird-authority.invitation-redeem.v1"},
+    "account_id": {"type": "string", "minLength": 1, "maxLength": 255},
+    "invitation_token": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 512,
+      "pattern": "^ebi_v1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+    }
+  }
+}
