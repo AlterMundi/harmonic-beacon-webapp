@@ -19,6 +19,37 @@ function tokenFrom(url) {
   return { expiresAt, signature: url.searchParams.get('sig') };
 }
 
+export function parseAllowedOrigins(value) {
+  const origins = new Set();
+  for (const item of String(value ?? '').split(',')) {
+    const candidate = item.trim();
+    if (!candidate) continue;
+    const parsed = new URL(candidate);
+    if (!['http:', 'https:'].includes(parsed.protocol)
+      || parsed.username
+      || parsed.password
+      || parsed.pathname !== '/'
+      || parsed.search
+      || parsed.hash) {
+      throw new Error('BEACON_STREAM_ALLOWED_ORIGINS contains an invalid origin');
+    }
+    origins.add(parsed.origin);
+  }
+  if (origins.size === 0) {
+    throw new Error('BEACON_STREAM_ALLOWED_ORIGINS must contain at least one origin');
+  }
+  return origins;
+}
+
+function crossOriginHeaders(request, allowedOrigins) {
+  const origin = request.headers.origin;
+  if (!origin || !allowedOrigins.has(origin)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    Vary: 'Origin',
+  };
+}
+
 function authorized({ request, url, secret }) {
   return verifySignedPath({
     secret,
@@ -35,7 +66,7 @@ function routeName(pathname) {
   return 'unknown';
 }
 
-export function createPublicHandler({ artifactRoot, metadata, publicOrigin, signingSecret, metrics = new Metrics(), now = () => Date.now() }) {
+export function createPublicHandler({ artifactRoot, metadata, publicOrigin, signingSecret, allowedOrigins = new Set(), metrics = new Metrics(), now = () => Date.now() }) {
   const manifestPath = `/v1/hls/${metadata.artifactId}/live.m3u8`;
   const segmentPrefix = `/v1/hls/${metadata.artifactId}/segments/`;
 
@@ -45,27 +76,31 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
     const route = routeName(url.pathname);
     let status = 500;
     let bytes = 0;
+    const cors = crossOriginHeaders(request, allowedOrigins);
+    const respond = (responseStatus, body = '', headers = {}) => (
+      send(response, responseStatus, body, { ...cors, ...headers })
+    );
     try {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         status = 405;
-        send(response, status, 'method not allowed\n', { Allow: 'GET, HEAD' });
+        respond(status, 'method not allowed\n', { Allow: 'GET, HEAD' });
         return;
       }
       if (url.pathname === '/healthz') {
         status = 200;
-        send(response, status, 'ok\n', { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        respond(status, 'ok\n', { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
         return;
       }
       if (url.pathname === manifestPath) {
         if (!authorized({ request, url, secret: signingSecret })) {
           status = 403;
-          send(response, status, 'forbidden\n', { 'Cache-Control': 'no-store' });
+          respond(status, 'forbidden\n', { 'Cache-Control': 'no-store' });
           return;
         }
         const manifest = renderManifest({ metadata, origin: publicOrigin, secret: signingSecret, nowMs: now() });
         status = 200;
         bytes = request.method === 'HEAD' ? 0 : Buffer.byteLength(manifest);
-        send(response, status, request.method === 'HEAD' ? '' : manifest, {
+        respond(status, request.method === 'HEAD' ? '' : manifest, {
           'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
           'Cache-Control': 'private, no-store',
         });
@@ -74,26 +109,26 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
       if (url.pathname.startsWith(segmentPrefix)) {
         if (!authorized({ request, url, secret: signingSecret })) {
           status = 403;
-          send(response, status, 'forbidden\n', { 'Cache-Control': 'no-store' });
+          respond(status, 'forbidden\n', { 'Cache-Control': 'no-store' });
           return;
         }
         const file = decodeURIComponent(url.pathname.slice(segmentPrefix.length));
         if (!metadata.segmentByFile.has(file)) {
           status = 404;
-          send(response, status, 'not found\n', { 'Cache-Control': 'no-store' });
+          respond(status, 'not found\n', { 'Cache-Control': 'no-store' });
           return;
         }
         const segmentPath = path.resolve(artifactRoot, 'segments', file);
         const segmentsRoot = path.resolve(artifactRoot, 'segments');
         if (!segmentPath.startsWith(`${segmentsRoot}${path.sep}`)) {
           status = 404;
-          send(response, status, 'not found\n', { 'Cache-Control': 'no-store' });
+          respond(status, 'not found\n', { 'Cache-Control': 'no-store' });
           return;
         }
         const segment = await fs.readFile(segmentPath);
         status = 200;
         bytes = request.method === 'HEAD' ? 0 : segment.byteLength;
-        send(response, status, request.method === 'HEAD' ? '' : segment, {
+        respond(status, request.method === 'HEAD' ? '' : segment, {
           'Content-Type': 'application/octet-stream',
           'Cache-Control': 'private, no-store',
           'Content-Length': String(segment.byteLength),
@@ -101,11 +136,11 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
         return;
       }
       status = 404;
-      send(response, status, 'not found\n', { 'Cache-Control': 'no-store' });
+      respond(status, 'not found\n', { 'Cache-Control': 'no-store' });
     } catch {
       // Do not expose filesystem paths, credentials or signed URLs.
       status = 500;
-      if (!response.headersSent) send(response, status, 'internal server error\n', { 'Cache-Control': 'no-store' });
+      if (!response.headersSent) respond(status, 'internal server error\n', { 'Cache-Control': 'no-store' });
     } finally {
       metrics.observe({ route, status, bytes, durationMs: Math.max(0, now() - startedAt) });
     }
@@ -135,13 +170,15 @@ export async function startFromEnvironment(environment = process.env) {
   const artifactId = environment.BEACON_STREAM_ARTIFACT_ID;
   const signingSecret = environment.BEACON_STREAM_SIGNING_SECRET;
   const publicOrigin = environment.BEACON_STREAM_PUBLIC_ORIGIN;
-  if (!mediaRoot || !artifactId || !signingSecret || !publicOrigin) {
-    throw new Error('BEACON_STREAM_MEDIA_ROOT, BEACON_STREAM_ARTIFACT_ID, BEACON_STREAM_SIGNING_SECRET and BEACON_STREAM_PUBLIC_ORIGIN are required');
+  const allowedOriginsValue = environment.BEACON_STREAM_ALLOWED_ORIGINS;
+  if (!mediaRoot || !artifactId || !signingSecret || !publicOrigin || !allowedOriginsValue) {
+    throw new Error('BEACON_STREAM_MEDIA_ROOT, BEACON_STREAM_ARTIFACT_ID, BEACON_STREAM_SIGNING_SECRET, BEACON_STREAM_PUBLIC_ORIGIN and BEACON_STREAM_ALLOWED_ORIGINS are required');
   }
+  const allowedOrigins = parseAllowedOrigins(allowedOriginsValue);
   const { root: artifactRoot, metadata } = await loadArtifact({ mediaRoot, artifactId });
   await verifyArtifactFiles({ root: artifactRoot, metadata });
   const metrics = new Metrics();
-  const publicServer = http.createServer(createPublicHandler({ artifactRoot, metadata, publicOrigin, signingSecret, metrics }));
+  const publicServer = http.createServer(createPublicHandler({ artifactRoot, metadata, publicOrigin, signingSecret, allowedOrigins, metrics }));
   const internalServer = http.createServer(createInternalHandler({ metadata, metrics }));
   const publicPort = Number(environment.BEACON_STREAM_PORT ?? 8080);
   const internalPort = Number(environment.BEACON_STREAM_METRICS_PORT ?? 9090);

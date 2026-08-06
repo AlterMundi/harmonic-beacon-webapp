@@ -42,6 +42,11 @@ time. The manifest signs every individual segment URL because native HLS does
 not inherit the playlist query string. Signatures, secrets, and complete signed
 URLs are never logged.
 
+Chrome/Firefox fetch signed segments through `hls.js`, so the origin returns
+CORS headers only for the exact comma-separated origins configured in
+`BEACON_STREAM_ALLOWED_ORIGINS`. Use the Listener application origin here, not
+the media origin itself; no wildcard is accepted or emitted.
+
 Public listener routes are `/healthz` and authenticated HLS paths. `/readyz`
 and `/metrics` listen separately on a private metrics interface; they must not
 be reverse-proxied on the listener origin. The origin emits low-cardinality

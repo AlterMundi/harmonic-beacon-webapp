@@ -16,6 +16,7 @@ await fs.writeFile(envFile, [
   'BEACON_STREAM_MEDIA_ROOT=/media/artifacts',
   'BEACON_STREAM_ARTIFACT_ID=synthetic-preview-artifact',
   'BEACON_STREAM_PUBLIC_ORIGIN=http://earlybirds-staging.localhost',
+  'BEACON_STREAM_ALLOWED_ORIGINS=http://earlybirds-staging.localhost',
   'BEACON_STREAM_SIGNING_SECRET=synthetic-local-only-32-character-minimum-secret',
   '',
 ].join('\n'), { mode: 0o600 });

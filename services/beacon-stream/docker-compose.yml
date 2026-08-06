@@ -8,6 +8,7 @@ services:
       BEACON_STREAM_MEDIA_ROOT: ${BEACON_STREAM_MEDIA_ROOT:?set_in_preview.env}
       BEACON_STREAM_ARTIFACT_ID: ${BEACON_STREAM_ARTIFACT_ID:?set_in_preview.env}
       BEACON_STREAM_PUBLIC_ORIGIN: ${BEACON_STREAM_PUBLIC_ORIGIN:?set_in_preview.env}
+      BEACON_STREAM_ALLOWED_ORIGINS: ${BEACON_STREAM_ALLOWED_ORIGINS:?set_in_preview.env}
       BEACON_STREAM_SIGNING_SECRET: ${BEACON_STREAM_SIGNING_SECRET:?set_in_preview.env}
       # Metrics and ready state are network-private; do not publish this port.
       BEACON_STREAM_METRICS_PORT: 9090
