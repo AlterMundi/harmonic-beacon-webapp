@@ -106,7 +106,12 @@ export function useContributionsFeed<T extends PublicContribution | StaffContrib
             return { ended: true };
         }
         if (!response.ok) return { failed: true };
-        const payload = (await response.json()) as ContributionPage<T>;
+        let payload: ContributionPage<T>;
+        try {
+            payload = (await response.json()) as ContributionPage<T>;
+        } catch {
+            return { failed: true };
+        }
         // A malformed page (proxy mangling, stale cache, mismatched deploy)
         // is a recoverable feed error, never a render-time crash.
         if (!payload || !Array.isArray(payload.contributions)) return { failed: true };
@@ -227,7 +232,20 @@ export function useContributionsFeed<T extends PublicContribution | StaffContrib
             return { kind: 'error' };
         }
         if (response.status === 201 || response.status === 200) {
-            const contribution = (await response.json()) as PublicContribution;
+            let contribution: PublicContribution;
+            try {
+                contribution = (await response.json()) as PublicContribution;
+            } catch {
+                return { kind: 'error' };
+            }
+            if (
+                !contribution
+                || typeof contribution.id !== 'string'
+                || typeof contribution.body !== 'string'
+                || (contribution.visibility !== 'NAMED' && contribution.visibility !== 'ANONYMOUS')
+            ) {
+                return { kind: 'error' };
+            }
             setItems((previous) => previous.some((row) => row.id === contribution.id)
                 ? previous
                 : [...previous, contribution as unknown as T]);

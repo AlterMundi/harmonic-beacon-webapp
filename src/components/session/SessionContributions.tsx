@@ -61,6 +61,7 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
     const [body, setBody] = useState(draft?.body ?? '');
     const [key, setKey] = useState<string | null>(draft?.key ?? null);
     const [sending, setSending] = useState<ContributionVisibility | null>(null);
+    const [retryVisibility, setRetryVisibility] = useState<ContributionVisibility | null>(null);
     const [error, setError] = useState<ComposerError>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [rateLimitLeft, setRateLimitLeft] = useState(0);
@@ -152,6 +153,7 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
         const submitKey = key ?? window.crypto.randomUUID();
         setKey(submitKey);
         setSending(visibility);
+        setRetryVisibility(null);
         setError(null);
         setNotice(null);
         const result = await feed.submit({ body: trimmed, visibility, idempotencyKey: submitKey });
@@ -182,6 +184,7 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
             case 'conflict':
                 // Same key, different payload: rotate and offer an explicit resend.
                 setKey(window.crypto.randomUUID());
+                setRetryVisibility(visibility);
                 setError('retry');
                 break;
             default:
@@ -239,7 +242,16 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
                     <p className="py-2 text-center text-xs text-[var(--text-muted)]" role="status">{t.loadingEarlier}</p>
                 )}
                 {feed.status === 'error' && (
-                    <p className="py-6 text-center text-xs text-[var(--danger)]" role="alert">{t.error}</p>
+                    <div className="space-y-2 py-6 text-center">
+                        <p className="text-xs text-[var(--danger)]" role="alert">{t.loadError}</p>
+                        <button
+                            type="button"
+                            onClick={feed.reload}
+                            className="text-xs text-[var(--gold)] underline"
+                        >
+                            {t.retry}
+                        </button>
+                    </div>
                 )}
                 {feed.status === 'ended' && (
                     <p className="py-4 text-center text-xs leading-5 text-[var(--text-muted)]">{t.sessionEnded}</p>
@@ -295,12 +307,6 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
                             ref={textareaRef}
                             value={body}
                             onChange={(event) => onChangeBody(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter' && !event.shiftKey) {
-                                    event.preventDefault();
-                                    void submit('NAMED');
-                                }
-                            }}
                             placeholder={t.placeholder}
                             rows={3}
                             aria-describedby={noteId}
@@ -335,10 +341,10 @@ export default function SessionContributions({ sessionId }: { sessionId: string 
                                 {sending === 'ANONYMOUS' ? t.sending : t.shareAnonymous}
                             </button>
                         </div>
-                        {error === 'retry' && (
+                        {error === 'retry' && retryVisibility && (
                             <button
                                 type="button"
-                                onClick={() => void submit('NAMED')}
+                                onClick={() => void submit(retryVisibility)}
                                 className="text-xs text-[var(--gold)] underline"
                             >
                                 {t.retry}

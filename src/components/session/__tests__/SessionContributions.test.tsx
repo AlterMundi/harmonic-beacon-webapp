@@ -50,6 +50,16 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
     } as unknown as Response;
 }
 
+function malformedJsonResponse(status = 200) {
+    return {
+        ok: true,
+        status,
+        headers: { get: () => null },
+        json: async () => { throw new SyntaxError('truncated JSON'); },
+        clone() { return this; },
+    } as unknown as Response;
+}
+
 type FetchHandler = (url: string, init?: RequestInit) => Promise<Response> | Response;
 
 function installFetch(handler: FetchHandler) {
@@ -131,7 +141,23 @@ describe('initial load and pagination', () => {
     it('shows the error state when the initial load fails', async () => {
         installFetch(async () => jsonResponse(500, {}));
         render(<SessionContributions sessionId={SESSION} />);
-        expect(await screen.findByText('Could not publish. Your text is still here, try again.')).toBeInTheDocument();
+        expect(await screen.findByText('Could not load the conversation.')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    });
+
+    it('recovers from malformed 2xx feed JSON through the explicit retry', async () => {
+        let malformed = true;
+        installFetch(async () => {
+            if (malformed) {
+                malformed = false;
+                return malformedJsonResponse();
+            }
+            return jsonResponse(200, page([]));
+        });
+        render(<SessionContributions sessionId={SESSION} />);
+        expect(await screen.findByText('Could not load the conversation.')).toBeInTheDocument();
+        await userEvent.setup().click(screen.getByRole('button', { name: 'Retry' }));
+        expect(await screen.findByText('No questions or emotions yet. Be the first voice.')).toBeInTheDocument();
     });
 });
 
@@ -223,6 +249,15 @@ describe('composer', () => {
         await user.type(textarea, 'Second message');
         await user.click(screen.getByRole('button', { name: 'Share anonymously' }));
         expect(postCalls(calls)[1].body).toMatchObject({ body: 'Second message', visibility: 'ANONYMOUS' });
+    });
+
+    it('plain Enter never chooses a visibility or publishes', async () => {
+        const { calls } = await renderWithFeed();
+        const user = userEvent.setup();
+        const textarea = screen.getByRole('textbox');
+        await user.type(textarea, 'First line{enter}Second line');
+        expect(postCalls(calls)).toHaveLength(0);
+        expect(textarea).toHaveValue('First line\nSecond line');
     });
 
     it('success clears the draft, announces the publication and rotates the key', async () => {
@@ -350,6 +385,48 @@ describe('composer', () => {
         expect(posts).toHaveLength(2);
         expect((posts[0].body as { idempotencyKey: string }).idempotencyKey)
             .not.toBe((posts[1].body as { idempotencyKey: string }).idempotencyKey);
+    });
+
+    it('a conflict retry preserves the anonymous visibility choice', async () => {
+        let conflicted = true;
+        const { calls } = installFetch(async (_url, init) => {
+            if (init?.method === 'POST') {
+                if (conflicted) {
+                    conflicted = false;
+                    return jsonResponse(409, { code: 'idempotency_key_conflict' });
+                }
+                return jsonResponse(201, contribution({
+                    id: 'resent-anonymous',
+                    visibility: 'ANONYMOUS',
+                    displayName: null,
+                }));
+            }
+            return jsonResponse(200, page([], {}));
+        });
+        render(<SessionContributions sessionId={SESSION} />);
+        await screen.findByText('No questions or emotions yet. Be the first voice.');
+        const user = userEvent.setup();
+        await user.type(screen.getByRole('textbox'), 'anonymous conflict');
+        await user.click(screen.getByRole('button', { name: 'Share anonymously' }));
+        await user.click(await screen.findByRole('button', { name: 'Retry' }));
+        await flush();
+        expect(postCalls(calls).map((call) => (call.body as { visibility: string }).visibility))
+            .toEqual(['ANONYMOUS', 'ANONYMOUS']);
+    });
+
+    it('malformed 2xx submit JSON preserves the draft and re-enables both actions', async () => {
+        installFetch(async (_url, init) => init?.method === 'POST'
+            ? malformedJsonResponse(201)
+            : jsonResponse(200, page([], {})));
+        render(<SessionContributions sessionId={SESSION} />);
+        await screen.findByText('No questions or emotions yet. Be the first voice.');
+        const user = userEvent.setup();
+        await user.type(screen.getByRole('textbox'), 'keep malformed response draft');
+        await user.click(screen.getByRole('button', { name: 'Share anonymously' }));
+        expect(await screen.findByText('Could not publish. Your text is still here, try again.')).toBeInTheDocument();
+        expect(screen.getByRole('textbox')).toHaveValue('keep malformed response draft');
+        expect(screen.getByRole('button', { name: 'Share' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Share anonymously' })).toBeEnabled();
     });
 
     it('blocks typing beyond 1000 code points', async () => {

@@ -211,6 +211,7 @@ export type Messages = {
         charLimit: string;
         rateLimited: string;
         error: string;
+        loadError: string;
         empty: string;
         anonymousAuthor: string;
         newMessages: string;
@@ -691,10 +692,11 @@ export const messages: Record<UiLocale, Messages> = {
             charLimit: 'Llegaste al máximo de 1000 caracteres',
             rateLimited: 'Esperá {seconds} s antes de compartir de nuevo',
             error: 'No se pudo publicar. Tu texto sigue acá, probá de nuevo.',
+            loadError: 'No se pudo cargar la conversación.',
             empty: 'Todavía no hay preguntas ni emociones. Sé la primera voz.',
             anonymousAuthor: 'Anónimo',
             newMessages: 'Hay mensajes nuevos ↓',
-            keyboardHint: 'Enter para compartir · Shift+Enter para una nueva línea',
+            keyboardHint: 'Elegí cómo compartir con uno de los botones',
             offline: 'Sin conexión. Tu texto está a salvo; retomamos al volver.',
             reconnecting: 'Reconectando con la sala…',
             sessionEnded: 'La sesión terminó. La conversación queda en solo lectura.',
@@ -1226,10 +1228,11 @@ export const messages: Record<UiLocale, Messages> = {
             charLimit: 'You reached the 1000-character limit',
             rateLimited: 'Wait {seconds} s before sharing again',
             error: 'Could not publish. Your text is still here, try again.',
+            loadError: 'Could not load the conversation.',
             empty: 'No questions or emotions yet. Be the first voice.',
             anonymousAuthor: 'Anonymous',
             newMessages: 'New messages ↓',
-            keyboardHint: 'Enter to share · Shift+Enter for a new line',
+            keyboardHint: 'Choose how to share with one of the buttons',
             offline: 'You are offline. Your text is safe; we resume when you are back.',
             reconnecting: 'Reconnecting with the room…',
             sessionEnded: 'The session has ended. The conversation is read-only.',
