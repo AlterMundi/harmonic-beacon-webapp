@@ -130,15 +130,6 @@ jobs:
           CLEAN_URL="${E2E_DATABASE_URL/beacon_test/beacon_migration_check}"
           DATABASE_URL="$CLEAN_URL" npx prisma migrate deploy
 
-      # TEMPORARY for PR #206: regenerate the attendee visual baseline on the
-      # reference environment (the guidance disclosure legitimately added one
-      # row above the volume controls) BEFORE the gates, so this same run
-      # validates against the new baselines. Reverted before merge once the
-      # affected PNG is committed.
-      - name: TEMP regenerate visual baselines (#206)
-        if: github.head_ref == 'feat/ux-copy-01-session-guidance'
-        run: npx playwright test e2e/tests/visual.spec.ts --update-snapshots
-
       - name: Run Chromium and Android gates
         run: >-
           npx playwright test
@@ -148,13 +139,6 @@ jobs:
           --project=w390
           --project=w320
           --project=android-chrome
-
-      - name: TEMP upload regenerated baselines (#206)
-        if: always() && github.head_ref == 'feat/ux-copy-01-session-guidance'
-        uses: actions/upload-artifact@v4
-        with:
-          name: regenerated-visual-baselines
-          path: e2e/tests/visual.spec.ts-snapshots/
 
       - name: Install Firefox after Chromium screenshot gates
         run: npx playwright install --with-deps firefox
