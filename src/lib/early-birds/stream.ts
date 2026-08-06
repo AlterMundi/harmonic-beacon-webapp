@@ -281,13 +281,16 @@ export async function acquireEarlyBirdStreamLease(
             });
         }
 
+        // A prepare lease may decode/prefetch for iOS, but it must always lose
+        // an eviction contest against a device on which the person pressed play.
+        const prioritySeenAt = evictOldest ? now : new Date(0);
         const current = previous
             ? await tx.earlyBirdStreamLease.update({
                 where: { id: previous.id },
-                data: { createdAt: now, lastSeenAt: now, expiresAt: leaseExpiresAt, evictedAt: null },
+                data: { createdAt: now, lastSeenAt: prioritySeenAt, expiresAt: leaseExpiresAt, evictedAt: null },
             })
             : await tx.earlyBirdStreamLease.create({
-                data: { accountId, deviceDigest, lastSeenAt: now, expiresAt: leaseExpiresAt },
+                data: { accountId, deviceDigest, lastSeenAt: prioritySeenAt, expiresAt: leaseExpiresAt },
             });
         return { current, evictedLeaseId: evicted[0]?.id ?? null };
     });
@@ -328,6 +331,7 @@ export async function heartbeatEarlyBirdStreamLease(
     leaseId: string,
     now = new Date(),
     issuer = earlyBirdStreamUrlIssuer(),
+    refreshPriority = true,
 ): Promise<{ leaseExpiresAt: Date; stream: StreamUrlGrant }> {
     const leaseExpiresAt = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
     const lease = await prisma.$transaction(async (tx) => {
@@ -345,7 +349,9 @@ export async function heartbeatEarlyBirdStreamLease(
         if (current.expiresAt <= now) throw new EarlyBirdLeaseInactiveError('expired');
         return tx.earlyBirdStreamLease.update({
             where: { id: current.id },
-            data: { lastSeenAt: now, expiresAt: leaseExpiresAt },
+            data: refreshPriority
+                ? { lastSeenAt: now, expiresAt: leaseExpiresAt }
+                : { expiresAt: leaseExpiresAt },
         });
     });
 

@@ -169,14 +169,18 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
-        const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        const grant = {
             leaseId: '00000000-0000-4000-8000-000000000003',
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
                 expiresAt: '2099-08-06T12:03:00.000Z',
             },
-        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+        };
+        const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(
+            JSON.stringify(grant),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+        )));
         vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
@@ -188,7 +192,7 @@ describe('EarlyBird Listener player', () => {
         const card = spanish.closest('article')!;
         await waitFor(() => expect(within(card).getByRole('button', { name: 'Play' })).toBeEnabled());
         fireEvent.click(within(card).getByRole('button', { name: 'Play' }));
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
         await waitFor(() => expect(play.mock.instances).toContain(live));
         expect(live.src).toContain('/api/early-birds/stream/manifest');
         expect(live.muted).toBe(true);
@@ -204,14 +208,18 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        const grant = {
             leaseId: '00000000-0000-4000-8000-000000000003',
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
                 expiresAt: '2099-08-06T12:03:00.000Z',
             },
-        }), { status: 200 })));
+        };
+        const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        ));
+        vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: 'https://media.example.test/drop-en' }} />
@@ -252,14 +260,18 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        const grant = {
             leaseId: '00000000-0000-4000-8000-000000000003',
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
                 expiresAt: '2099-08-06T12:03:00.000Z',
             },
-        }), { status: 200 })));
+        };
+        const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        ));
+        vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: null }} />
@@ -345,6 +357,7 @@ describe('EarlyBird Listener player', () => {
         }));
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(grants[0]), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(grants[0]), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(grants[1]), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
         render(
@@ -359,9 +372,9 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
-        expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/early-birds/stream/heartbeat');
+        expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/early-birds/stream/heartbeat');
         expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
         expect(hlsHarness.instances[1].loadedSources).toEqual([grants[1].stream.manifestUrl]);
         expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
@@ -455,14 +468,18 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        const grant = {
             leaseId: '00000000-0000-4000-8000-000000000003',
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
                 expiresAt: '2099-08-06T12:03:00.000Z',
             },
-        }), { status: 200 })));
+        };
+        const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        ));
+        vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: null }} />
@@ -484,9 +501,13 @@ describe('EarlyBird Listener player', () => {
         fireEvent(document, new Event('visibilitychange'));
         expect(cancelFrame).toHaveBeenCalled();
         expect(live.muted).toBe(true);
+        Object.defineProperty(live, 'paused', { value: true, configurable: true });
 
         Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
         fireEvent(document, new Event('visibilitychange'));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        fireEvent.playing(live);
         expect(frames).toHaveLength(2);
         expect(live.muted).toBe(false);
     });
@@ -505,6 +526,7 @@ describe('EarlyBird Listener player', () => {
         };
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
             .mockRejectedValue(new Error('synthetic outage'));
         vi.stubGlobal('fetch', fetchMock);
         render(
@@ -517,12 +539,12 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         hlsHarness.instances[0].emitFatal();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4), { timeout: 5_500 });
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5), { timeout: 5_500 });
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
             'The Beacon is unavailable right now.',
         ));
         await new Promise((resolve) => setTimeout(resolve, 100));
-        expect(fetchMock).toHaveBeenCalledTimes(4);
+        expect(fetchMock).toHaveBeenCalledTimes(5);
     }, 7_000);
 
     it('does not churn a healthy native stream on suspend and refreshes it after an error', async () => {
@@ -557,12 +579,12 @@ describe('EarlyBird Listener player', () => {
         fireEvent.suspend(live);
         await vi.advanceTimersByTimeAsync(2_500);
         expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
-        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
         vi.useRealTimers();
 
         fireEvent.error(live);
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), { timeout: 3_000 });
-        expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/early-birds/stream/heartbeat');
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3), { timeout: 3_000 });
+        expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/early-birds/stream/heartbeat');
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
     });
 
@@ -579,6 +601,7 @@ describe('EarlyBird Listener player', () => {
             },
         };
         const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 error: 'Device displaced.',
@@ -600,13 +623,14 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
             'This device was displaced because the account is already listening on two other devices.',
         ));
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
         expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+            '/api/early-birds/stream/lease',
             '/api/early-birds/stream/lease',
             '/api/early-birds/stream/heartbeat',
         ]);
         await new Promise((resolve) => setTimeout(resolve, 100));
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
     });
 
     it('reacquires only after the recovery probe confirms that the lease expired', async () => {
@@ -631,6 +655,7 @@ describe('EarlyBird Listener player', () => {
         };
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 error: 'Listening lease expired.',
                 reason: 'expired',
@@ -649,8 +674,9 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
         expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+            '/api/early-birds/stream/lease',
             '/api/early-birds/stream/lease',
             '/api/early-birds/stream/heartbeat',
             '/api/early-birds/stream/lease',
@@ -687,6 +713,7 @@ describe('EarlyBird Listener player', () => {
         };
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(refreshedGrant), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
         render(
@@ -703,7 +730,7 @@ describe('EarlyBird Listener player', () => {
             .toBeInTheDocument());
         finishFirstPlay?.();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
         expect(hlsHarness.instances[1].loadedSources).toEqual([refreshedGrant.stream.manifestUrl]);

@@ -17,9 +17,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!session) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
 
     let leaseId: string;
+    let intent: 'play' | 'prepare';
     try {
-        const body = await request.json() as { leaseId?: unknown };
+        const body = await request.json() as { leaseId?: unknown; intent?: unknown };
         leaseId = typeof body.leaseId === 'string' ? body.leaseId : '';
+        intent = body.intent === 'prepare' ? 'prepare' : 'play';
     } catch {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }
@@ -28,7 +30,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     try {
-        const grant = await heartbeatEarlyBirdStreamLease(session.user.id, leaseId);
+        const grant = await heartbeatEarlyBirdStreamLease(
+            session.user.id,
+            leaseId,
+            undefined,
+            undefined,
+            intent === 'play',
+        );
         return NextResponse.json({
             leaseExpiresAt: grant.leaseExpiresAt.toISOString(),
             stream: {

@@ -101,6 +101,60 @@ describe('EarlyBird two-device leases', () => {
         expect(issuer.issue).not.toHaveBeenCalled();
     });
 
+    it('gives a prepared source lower eviction priority than real playback', async () => {
+        tx.earlyBirdStreamLease.findMany.mockResolvedValue([]);
+        tx.earlyBirdStreamLease.create.mockResolvedValue({
+            id: '00000000-0000-4000-8000-000000000003',
+        });
+        const issuer: EarlyBirdStreamUrlIssuer = {
+            issue: vi.fn().mockResolvedValue({
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=3',
+                expiresAt: new Date(NOW.getTime() + EARLY_BIRD_LEASE_TTL_MS),
+            }),
+        };
+
+        await prepareEarlyBirdStreamLease(
+            'listener-1',
+            'device_abcdefghijklmnopqrstuvwxyz',
+            NOW,
+            issuer,
+        );
+
+        expect(tx.earlyBirdStreamLease.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ lastSeenAt: new Date(0) }),
+        });
+    });
+
+    it('renews an idle prepared lease without raising its eviction priority', async () => {
+        tx.earlyBirdStreamLease.findFirst.mockResolvedValue({
+            id: '00000000-0000-4000-8000-000000000003',
+            evictedAt: null,
+            expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+        });
+        tx.earlyBirdStreamLease.update.mockResolvedValue({
+            id: '00000000-0000-4000-8000-000000000003',
+        });
+        const issuer: EarlyBirdStreamUrlIssuer = {
+            issue: vi.fn().mockResolvedValue({
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=3',
+                expiresAt: new Date(NOW.getTime() + EARLY_BIRD_LEASE_TTL_MS),
+            }),
+        };
+
+        await heartbeatEarlyBirdStreamLease(
+            'listener-1',
+            '00000000-0000-4000-8000-000000000003',
+            NOW,
+            issuer,
+            false,
+        );
+
+        expect(tx.earlyBirdStreamLease.update).toHaveBeenCalledWith({
+            where: { id: '00000000-0000-4000-8000-000000000003' },
+            data: { expiresAt: new Date(NOW.getTime() + EARLY_BIRD_LEASE_TTL_MS) },
+        });
+    });
+
     it('marks a just-created lease inactive if URL issuance fails closed', async () => {
         tx.earlyBirdStreamLease.findMany.mockResolvedValue([]);
         tx.earlyBirdStreamLease.create.mockResolvedValue({

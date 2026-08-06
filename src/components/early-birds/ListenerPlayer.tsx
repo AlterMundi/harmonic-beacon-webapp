@@ -105,7 +105,7 @@ export default function ListenerPlayer({
     });
     const [volume, setVolume] = useState(1);
     const [volumeSupported, setVolumeSupported] = useState(true);
-    const [livePrepared, setLivePrepared] = useState(false);
+    const [, setLivePrepared] = useState(false);
     const [livePreparing, setLivePreparing] = useState(true);
 
     const updateLiveState = useCallback((state: LiveState) => {
@@ -188,7 +188,10 @@ export default function ListenerPlayer({
             const response = await fetch('/api/early-birds/stream/heartbeat', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ leaseId: leaseId.current }),
+                body: JSON.stringify({
+                    leaseId: leaseId.current,
+                    intent: wantsLivePlayback.current ? 'play' : 'prepare',
+                }),
             });
             if (response.status === 410) {
                 const payload = await response.json().catch(() => null) as { reason?: unknown } | null;
@@ -294,6 +297,7 @@ export default function ListenerPlayer({
         if (!audio || playbackAttemptRunning.current) return false;
         playbackAttemptRunning.current = true;
         try {
+            let priorityRefreshed = false;
             // Reuse the source preparation started on mount instead of racing
             // it with a second lease request when a tester clicks immediately.
             if (!forceRefresh && livePreparation.current) await livePreparation.current;
@@ -316,6 +320,7 @@ export default function ListenerPlayer({
                     manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
                     await attachManifest(probe.grant.stream.manifestUrl);
                     forceRefresh = false;
+                    priorityRefreshed = true;
                 }
             }
             if (
@@ -330,6 +335,17 @@ export default function ListenerPlayer({
                 if (forceRefresh || grant.stream.manifestUrl !== manifestUrl.current) {
                     await attachManifest(grant.stream.manifestUrl);
                 }
+                priorityRefreshed = true;
+            } else if (!priorityRefreshed) {
+                // Promote an iOS prewarm lease without delaying play() beyond
+                // the user gesture. The stable same-device lease keeps the URL.
+                void requestLease('play').then((grant) => {
+                    leaseId.current = grant.leaseId;
+                    manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+                }).catch(() => {
+                    // The already-authorized source remains usable. Its active
+                    // heartbeat retries priority promotion without interrupting audio.
+                });
             }
 
             const liveSyncPosition = hls.current?.liveSyncPosition;
@@ -510,12 +526,17 @@ export default function ListenerPlayer({
                 deferLiveFade();
                 return;
             }
+            const pausedDuringPendingFade = pendingLiveFade.current
+                && Boolean(liveAudio.current?.paused);
             if (pendingLiveFade.current && liveAudio.current && !liveAudio.current.paused) beginLiveFade();
             const leaseNearExpiry = manifestExpiresAt.current <= Date.now() + 30_000;
             const suspendedWithoutFutureData = nativeSuspendObserved.current
                 && Boolean(liveAudio.current)
                 && (liveAudio.current?.readyState ?? 0) < 3;
-            if (liveStateRef.current === 'recovering' || leaseNearExpiry || suspendedWithoutFutureData) {
+            if (liveStateRef.current === 'recovering'
+                || leaseNearExpiry
+                || suspendedWithoutFutureData
+                || pausedDuringPendingFade) {
                 scheduleAutomaticRecovery(0);
             }
         };
@@ -634,6 +655,12 @@ export default function ListenerPlayer({
                 wantsLivePlayback.current = true;
                 cancelRecovery(true);
                 updateLiveState('loading');
+                void requestLease('play').then((grant) => {
+                    leaseId.current = grant.leaseId;
+                    manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+                }).catch(() => {
+                    // Keep the prepared source playing and retry on heartbeat.
+                });
                 liveStarted = liveAudio.current.play();
             }
             const dropStarted = selected.play();
@@ -773,7 +800,7 @@ export default function ListenerPlayer({
                                             <button
                                                 type="button"
                                                 onClick={() => toggleDropIn(language)}
-                                                disabled={!livePrepared}
+                                                disabled={livePreparing}
                                                 className="event-button event-button--secondary flex-1"
                                             >
                                                 {playingDrop === language ? copy.pause : copy.dropPlay}

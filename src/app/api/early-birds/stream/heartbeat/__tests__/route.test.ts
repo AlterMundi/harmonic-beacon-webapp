@@ -25,11 +25,11 @@ import { POST } from '../route';
 
 const LEASE_ID = '00000000-0000-4000-8000-000000000003';
 
-function request() {
+function request(intent?: 'play' | 'prepare') {
     return new NextRequest('https://listener.example.test/api/early-birds/stream/heartbeat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ leaseId: LEASE_ID }),
+        body: JSON.stringify({ leaseId: LEASE_ID, intent }),
     });
 }
 
@@ -77,5 +77,23 @@ describe('EarlyBird stream heartbeat route', () => {
         await expect(response.json()).resolves.toMatchObject({
             stream: { manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}` },
         });
+        expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
+            'listener-1', LEASE_ID, undefined, undefined, true,
+        );
+    });
+
+    it('renews a prepared source without promoting its eviction priority', async () => {
+        mocks.heartbeatEarlyBirdStreamLease.mockResolvedValue({
+            leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            stream: {
+                manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`,
+                expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            },
+        });
+
+        expect((await POST(request('prepare'))).status).toBe(200);
+        expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
+            'listener-1', LEASE_ID, undefined, undefined, false,
+        );
     });
 });
