@@ -25,6 +25,7 @@ const DEVICE_STORAGE_KEY = 'hb_earlybird_device_id';
 const DROP_PROGRESS_PREFIX = 'hb_earlybird_drop_progress_';
 const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
 const STALL_RECOVERY_DELAY_MS = 1_000;
+const LIVE_FADE_IN_MS = 3_000;
 
 export function getOrCreateEarlyBirdDeviceId(storage: Storage): string {
     const existing = storage.getItem(DEVICE_STORAGE_KEY);
@@ -69,6 +70,7 @@ export default function ListenerPlayer({
     };
     const hls = useRef<Hls | null>(null);
     const liveSuppressedForDrop = useRef(false);
+    const liveFadeFrame = useRef<number | null>(null);
     const manifestUrl = useRef<string | null>(null);
     const manifestExpiresAt = useRef(0);
     const leaseId = useRef<string | null>(null);
@@ -170,11 +172,39 @@ export default function ListenerPlayer({
         }
     }, []);
 
-    const restoreLiveOutput = useCallback(() => {
-        if (!liveSuppressedForDrop.current) return;
-        if (liveAudio.current) liveAudio.current.muted = false;
-        liveSuppressedForDrop.current = false;
+    const cancelLiveFade = useCallback(() => {
+        if (liveFadeFrame.current !== null) {
+            window.cancelAnimationFrame(liveFadeFrame.current);
+            liveFadeFrame.current = null;
+        }
     }, []);
+
+    const restoreLiveOutput = useCallback((fadeIn = false) => {
+        if (!liveSuppressedForDrop.current) return;
+        const audio = liveAudio.current;
+        cancelLiveFade();
+        if (audio) {
+            audio.muted = false;
+            if (fadeIn && volumeSupported && volume > 0) {
+                const startedAt = performance.now();
+                audio.volume = 0;
+                const step = (now: number) => {
+                    const progress = Math.min(1, Math.max(0, (now - startedAt) / LIVE_FADE_IN_MS));
+                    // Equal-power fade avoids an audible dip at the handoff.
+                    audio.volume = volume * Math.sin(progress * Math.PI / 2);
+                    if (progress < 1) {
+                        liveFadeFrame.current = window.requestAnimationFrame(step);
+                    } else {
+                        liveFadeFrame.current = null;
+                    }
+                };
+                liveFadeFrame.current = window.requestAnimationFrame(step);
+            } else {
+                audio.volume = volume;
+            }
+        }
+        liveSuppressedForDrop.current = false;
+    }, [cancelLiveFade, volume, volumeSupported]);
 
     const pauseDropIns = useCallback(() => {
         dropAudio.es.current?.pause();
@@ -410,9 +440,10 @@ export default function ListenerPlayer({
     useEffect(() => () => {
         wantsLivePlayback.current = false;
         cancelRecovery(true);
+        cancelLiveFade();
         liveAudio.current?.pause();
         stopHls();
-    }, [cancelRecovery, stopHls]);
+    }, [cancelLiveFade, cancelRecovery, stopHls]);
 
     function restoreProgress(language: DropLanguage) {
         const audio = dropAudio[language].current;
@@ -452,19 +483,30 @@ export default function ListenerPlayer({
         if (playingDrop === language) {
             selected.pause();
             setPlayingDrop(null);
-            restoreLiveOutput();
             return;
         }
-        // A drop-in overlays the still-running shared Beacon. Muting preserves
-        // its timeline, HLS source and lease; ending the drop only restores output.
-        if (wantsLivePlayback.current && liveAudio.current) {
+        // The reviewed render is the intro. Start or preserve the shared Beacon
+        // muted underneath it so the handoff lands on the current 24/7 timeline.
+        if (liveAudio.current) {
+            cancelLiveFade();
             liveAudio.current.muted = true;
             liveSuppressedForDrop.current = true;
         }
         const other: DropLanguage = language === 'es' ? 'en' : 'es';
         dropAudio[other].current?.pause();
         try {
-            await selected.play();
+            const dropStarted = selected.play();
+            if (!wantsLivePlayback.current) {
+                wantsLivePlayback.current = true;
+                cancelRecovery(true);
+                updateLiveState('loading');
+                void attemptLivePlayback().then((played) => {
+                    if (!wantsLivePlayback.current) return;
+                    if (played) updateLiveState('playing');
+                    else scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+                });
+            }
+            await dropStarted;
             setPlayingDrop(language);
         } catch {
             setPlayingDrop(null);
@@ -501,7 +543,7 @@ export default function ListenerPlayer({
             ...current,
             [language]: { current: 0, duration: current[language].duration },
         }));
-        restoreLiveOutput();
+        restoreLiveOutput(true);
     }
 
     const liveButton = liveState === 'loading'

@@ -97,7 +97,7 @@ describe('EarlyBird Listener player', () => {
         expect(screen.getByRole('slider', { name: 'Master volume' })).toHaveValue('1');
     });
 
-    it('keeps the Beacon timeline, source and lease untouched across drop-in pause and end', async () => {
+    it('keeps the Beacon timeline, source and lease untouched while the intro pauses and ends', async () => {
         const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
@@ -139,7 +139,7 @@ describe('EarlyBird Listener player', () => {
         expect(live.src).toBe(liveSource);
 
         fireEvent.click(within(spanishCard).getByRole('button', { name: 'Pause' }));
-        expect(live.muted).toBe(false);
+        expect(live.muted).toBe(true);
         expect(pause.mock.instances).not.toContain(live);
         expect(fetchMock).toHaveBeenCalledTimes(leaseRequests);
 
@@ -153,10 +153,19 @@ describe('EarlyBird Listener player', () => {
         expect(pause.mock.instances).not.toContain(live);
     });
 
-    it('keeps a drop-in independent when the Beacon has never started', async () => {
+    it('starts the shared Beacon muted beneath an intro and reveals it when the intro ends', async () => {
         const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
-        const fetchMock = vi.fn();
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
         vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
@@ -167,12 +176,12 @@ describe('EarlyBird Listener player', () => {
         const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
         const card = spanish.closest('article')!;
         fireEvent.click(within(card).getByRole('button', { name: 'Play' }));
-        await waitFor(() => expect(play).toHaveBeenCalled());
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(play.mock.instances).toContain(live));
+        expect(live.src).toContain('/api/early-birds/stream/manifest');
+        expect(live.muted).toBe(true);
         fireEvent.ended(spanish);
-        expect(fetchMock).not.toHaveBeenCalled();
-        expect(live.src).toBe('');
         expect(live.muted).toBe(false);
-        expect(play.mock.instances).not.toContain(live);
     });
 
     it('restarts a playing drop-in without pausing and resets a paused drop-in without starting it', async () => {
