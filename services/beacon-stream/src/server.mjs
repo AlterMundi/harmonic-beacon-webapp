@@ -106,7 +106,15 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
           respond(status, 'forbidden\n', { 'Cache-Control': 'no-store' });
           return;
         }
-        const manifest = renderManifest({ metadata, origin: publicOrigin, secret: signingSecret, nowMs: now() });
+        const manifest = renderManifest({
+          metadata,
+          origin: publicOrigin,
+          secret: signingSecret,
+          nowMs: now(),
+          // A segment grant is derived from this manifest grant and must never
+          // remain usable after the upstream Listener lease horizon.
+          authorizationExpiresAtSeconds: tokenFrom(url).expiresAt,
+        });
         status = 200;
         bytes = request.method === 'HEAD' ? 0 : Buffer.byteLength(manifest);
         respond(status, request.method === 'HEAD' ? '' : manifest, {

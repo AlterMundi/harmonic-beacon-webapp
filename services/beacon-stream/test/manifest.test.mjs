@@ -21,6 +21,26 @@ test('builds a deterministic wall-clock manifest and signs each segment URI', ()
   }
 });
 
+test('never signs a segment beyond the inbound manifest authorization horizon', () => {
+  const item = metadata();
+  const nowMs = item.epochMs + 42_000;
+  const authorizationExpiresAtSeconds = Math.floor(nowMs / 1000) + 7;
+  const manifest = renderManifest({
+    metadata: item,
+    origin: 'https://stream.example.test',
+    secret,
+    nowMs,
+    tokenTtlSeconds: 120,
+    authorizationExpiresAtSeconds,
+  });
+
+  const urls = manifest.split('\n').filter((line) => line.startsWith('https://'));
+  assert.ok(urls.length > 0);
+  for (const stringUrl of urls) {
+    assert.equal(Number(new URL(stringUrl).searchParams.get('exp')), authorizationExpiresAtSeconds);
+  }
+});
+
 test('renders a signed fMP4 map and preserves a short final segment across loops', () => {
   const item = variableMetadata();
   const epoch = item.epochMs;

@@ -27,10 +27,20 @@ function segmentAtSequence(metadata, sequence) {
   };
 }
 
-export function renderManifest({ metadata, origin, secret, nowMs = Date.now(), tokenTtlSeconds = 120 }) {
+export function renderManifest({
+  metadata,
+  origin,
+  secret,
+  nowMs = Date.now(),
+  tokenTtlSeconds = 120,
+  authorizationExpiresAtSeconds = Number.POSITIVE_INFINITY,
+}) {
   const edgeSequence = currentSequence(metadata, nowMs);
   const firstSequence = Math.max(0, edgeSequence - (WINDOW_SEGMENTS - 1));
-  const expiresAt = Math.floor(nowMs / 1000) + tokenTtlSeconds;
+  const expiresAt = Math.min(
+    Math.floor(nowMs / 1000) + tokenTtlSeconds,
+    authorizationExpiresAtSeconds,
+  );
   const targetDuration = Math.ceil(Math.max(...metadata.segments.map((segment) => segment.durationSeconds)));
   const discontinuitiesRemoved = Math.floor(
     Math.max(0, firstSequence - 1) / metadata.timing.segmentCount,

@@ -51,6 +51,7 @@ test('only exposes minimal health publicly and protects manifest and every segme
   const segmentUrl = manifest.split('\n').find((line) => line.startsWith('https://'));
   assert.ok(segmentUrl);
   const productionUrl = new URL(segmentUrl);
+  assert.equal(Number(productionUrl.searchParams.get('exp')), expiry);
   const localUrl = new URL(`${origin}${productionUrl.pathname}${productionUrl.search}`);
   const segment = await fetch(localUrl, { headers: { Origin: allowedOrigin } });
   assert.equal(segment.status, 200);
