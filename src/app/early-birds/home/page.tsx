@@ -2,31 +2,11 @@ import { redirect } from 'next/navigation';
 
 import EarlyBirdHome from '@/components/early-birds/EarlyBirdHome';
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
+import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
 
 export const dynamic = 'force-dynamic';
-
-function configuredMediaUrl(name: string): string | null {
-    const value = process.env[name]?.trim();
-    if (!value) return null;
-    try {
-        const url = new URL(value);
-        if (!['https:', 'http:'].includes(url.protocol)) return null;
-        if (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') return null;
-        return url.toString();
-    } catch {
-        return null;
-    }
-}
-
-function configuredDropIn(language: 'es' | 'en'): string | null {
-    const suffix = language.toUpperCase();
-    if (process.env[`EARLY_BIRDS_DROPIN_${suffix}_PATH`]?.trim()) {
-        return `/api/early-birds/drop-ins/${language}`;
-    }
-    return configuredMediaUrl(`EARLY_BIRDS_DROPIN_${suffix}_URL`);
-}
 
 export default async function EarlyBirdHomePage() {
     if (!earlyBirdsEnabled()) redirect('/early-birds');
@@ -41,8 +21,8 @@ export default async function EarlyBirdHomePage() {
             displayName={session.user.name}
             membershipSource={access.projection.source}
             dropIns={{
-                es: configuredDropIn('es'),
-                en: configuredDropIn('en'),
+                es: configuredEarlyBirdDropIn('es'),
+                en: configuredEarlyBirdDropIn('en'),
             }}
         />
     );

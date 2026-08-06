@@ -21,7 +21,7 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
             <EarlyBirdLanding
                 signedIn={false}
                 entitled={false}
-                inviteToken={null}
+                invitationAvailable={false}
                 authError={false}
                 providers={{ google: true, apple: true }}
                 syntheticTeamEntryAvailable={false}
@@ -39,15 +39,15 @@ describe('EarlyBird public landing', () => {
     });
     afterEach(() => cleanup());
 
-    it('offers exactly Google and Apple and preserves an invitation through OAuth', async () => {
-        renderLanding({ inviteToken: 'opaque_'.padEnd(43, 'x') });
+    it('offers exactly Google and Apple and preserves a cookie-backed invitation through OAuth', async () => {
+        renderLanding({ invitationAvailable: true });
         expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeInTheDocument();
 
         await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }));
         expect(signInSocial).toHaveBeenCalledWith({
             provider: 'google',
-            callbackURL: expect.stringMatching(/^\/early-birds\/redeem\?token=/),
+            callbackURL: '/early-birds/redeem',
             errorCallbackURL: '/early-birds?authError=1',
             requestSignUp: true,
         });
@@ -68,6 +68,17 @@ describe('EarlyBird public landing', () => {
         renderLanding({ providers: { google: true, apple: false } });
         expect(screen.getByRole('button', { name: /Continue with Apple/ })).toBeDisabled();
         expect(screen.getByText('Configuration pending')).toBeInTheDocument();
+    });
+
+    it('reports a rejected social sign-in and re-enables the providers', async () => {
+        signInSocial.mockRejectedValueOnce(new Error('network unavailable'));
+        renderLanding();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(earlyBirdCopy.en.authError);
+        expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeEnabled();
     });
 
     it('takes an entitled signed-in listener directly to the private home', () => {

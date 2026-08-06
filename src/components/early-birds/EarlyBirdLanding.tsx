@@ -13,7 +13,7 @@ import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
 type Props = {
     signedIn: boolean;
     entitled: boolean;
-    inviteToken: string | null;
+    invitationAvailable: boolean;
     authError: boolean;
     providers: { google: boolean; apple: boolean };
     syntheticTeamEntryAvailable: boolean;
@@ -24,24 +24,25 @@ export default function EarlyBirdLanding(props: Props) {
     const copy = earlyBirdCopy[locale];
     const [busy, setBusy] = useState<'google' | 'apple' | null>(null);
     const [error, setError] = useState(false);
-    const callbackURL = props.inviteToken
-        ? `/early-birds/redeem?token=${encodeURIComponent(props.inviteToken)}`
+    const callbackURL = props.invitationAvailable
+        ? '/early-birds/redeem'
         : '/early-birds/home';
 
     async function signIn(provider: 'google' | 'apple') {
         if (busy || !props.providers[provider]) return;
         setBusy(provider);
         setError(false);
-        const result = await earlyBirdAuthClient.signIn.social({
-            provider,
-            callbackURL,
-            errorCallbackURL: '/early-birds?authError=1',
-            requestSignUp: true,
-        });
-        if (result.error) {
-            setBusy(null);
-            setError(true);
-        }
+        try {
+            const result = await earlyBirdAuthClient.signIn.social({
+                provider,
+                callbackURL,
+                errorCallbackURL: '/early-birds?authError=1',
+                requestSignUp: true,
+            });
+            if (!result.error) return;
+        } catch {}
+        setBusy(null);
+        setError(true);
     }
 
     return (
@@ -85,7 +86,7 @@ export default function EarlyBirdLanding(props: Props) {
                                     <a href="/early-birds/home" className="event-button event-button--primary inline-flex w-full">
                                         {copy.enter}
                                     </a>
-                                ) : props.inviteToken ? (
+                                ) : props.invitationAvailable ? (
                                     <a href={callbackURL} className="event-button event-button--primary inline-flex w-full">
                                         {copy.redeem}
                                     </a>
@@ -114,7 +115,7 @@ export default function EarlyBirdLanding(props: Props) {
                                 ))}
                                 {props.syntheticTeamEntryAvailable && (
                                     <SyntheticTeamEntryForm
-                                        authOnly={Boolean(props.inviteToken)}
+                                        authOnly={props.invitationAvailable}
                                         postLoginPath={callbackURL}
                                     />
                                 )}

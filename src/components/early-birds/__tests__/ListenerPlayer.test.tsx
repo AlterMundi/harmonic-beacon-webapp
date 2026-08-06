@@ -494,6 +494,55 @@ describe('EarlyBird Listener player', () => {
         expect(screen.getByRole('status')).toHaveTextContent('Two devices are already active.');
     });
 
+    it('does not offer resume after a paused source loses preparation', async () => {
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000005',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000005',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                error: 'Listening lease expired.',
+                reason: 'expired',
+            }), { status: 410 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                error: 'Two devices are already active.',
+                reason: 'device_limit',
+            }), { status: 409 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled());
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+        expect(screen.getByRole('button', { name: 'Return to now' })).toBeEnabled();
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+        expect(screen.queryByRole('button', { name: 'Return to now' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Enable this device' })).toBeEnabled();
+        expect(screen.getByRole('status')).toHaveTextContent('Two devices are already active.');
+    });
+
     it('claims a capacity-blocked device before enabling iOS-safe playback controls', async () => {
         const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);

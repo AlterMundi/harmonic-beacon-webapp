@@ -837,11 +837,11 @@ export default function ListenerPlayer({
             ? copy.reconnecting
             : liveState === 'playing'
                 ? copy.pause
-                : liveState === 'paused'
-                    ? copy.resume
-                    : livePrepared
-                        ? copy.play
-                        : copy.prepareDevice;
+                : !livePrepared
+                    ? copy.prepareDevice
+                    : liveState === 'paused'
+                        ? copy.resume
+                        : copy.play;
 
     return (
         <div className="space-y-8">

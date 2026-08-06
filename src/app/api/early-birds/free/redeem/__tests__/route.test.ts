@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
+import {
+    EARLY_BIRD_INVITATION_COOKIE,
+} from '@/lib/early-birds/invitation-cookie';
+
 const currentEarlyBirdSession = vi.hoisted(() => vi.fn());
 const redeemFreeThroughCanonicalGateway = vi.hoisted(() => vi.fn());
 
@@ -12,11 +16,14 @@ vi.mock('@/lib/early-birds/membership-gateway', () => ({
 
 import { POST } from '../route';
 
-function request(token = 'a'.repeat(43)) {
+const TOKEN = `ebi_v1.${'a'.repeat(32)}.${'b'.repeat(32)}.${'c'.repeat(32)}`;
+
+function request(token: string | null = TOKEN) {
+    const headers = new Headers();
+    if (token) headers.set('cookie', `${EARLY_BIRD_INVITATION_COOKIE}=${token}`);
     return new NextRequest('https://live.example.test/api/early-birds/free/redeem', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token }),
+        headers,
     });
 }
 
@@ -51,7 +58,7 @@ describe('EarlyBird Free redemption boundary', () => {
             replayed: false,
             alreadyEntitled: false,
         });
-        const token = 'opaque_'.padEnd(43, 'x');
+        const token = TOKEN;
         const response = await POST(request(token));
         expect(response.status).toBe(200);
         expect(redeemFreeThroughCanonicalGateway).toHaveBeenCalledWith('listener-1', token);
@@ -59,6 +66,29 @@ describe('EarlyBird Free redemption boundary', () => {
             ok: true,
             landing: '/early-birds/home',
         });
+        expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toMatchObject({
+            value: '',
+            maxAge: 0,
+            httpOnly: true,
+            secure: true,
+            sameSite: 'lax',
+            path: '/',
+        });
+    });
+
+    it('does not accept an invitation token from a request body', async () => {
+        currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
+        const response = await POST(new NextRequest(
+            'https://live.example.test/api/early-birds/free/redeem',
+            {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ token: TOKEN }),
+            },
+        ));
+
+        expect(response.status).toBe(409);
+        expect(redeemFreeThroughCanonicalGateway).not.toHaveBeenCalled();
     });
 
     it('fails closed without leaking whether a token exists', async () => {

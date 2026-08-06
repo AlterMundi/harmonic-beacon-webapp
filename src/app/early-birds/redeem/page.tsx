@@ -1,26 +1,27 @@
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 
 import FreeInvitationRedeemer from '@/components/early-birds/FreeInvitationRedeemer';
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
+import {
+    canonicalEarlyBirdInvitation,
+    EARLY_BIRD_INVITATION_COOKIE,
+} from '@/lib/early-birds/invitation-cookie';
 
 export const dynamic = 'force-dynamic';
 
-export default async function EarlyBirdRedeemPage({
-    searchParams,
-}: {
-    searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function EarlyBirdRedeemPage() {
     if (!earlyBirdsEnabled()) redirect('/early-birds');
 
-    const params = await searchParams;
-    const token = typeof params.token === 'string' && params.token.length <= 512
-        ? params.token
-        : null;
+    const cookieStore = await cookies();
+    const token = canonicalEarlyBirdInvitation(
+        cookieStore.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
+    );
     if (!token) redirect('/early-birds');
 
     const session = await currentEarlyBirdSession().catch(() => null);
-    if (!session) redirect(`/early-birds?invite=${encodeURIComponent(token)}`);
+    if (!session) redirect('/early-birds');
 
-    return <FreeInvitationRedeemer token={token} />;
+    return <FreeInvitationRedeemer />;
 }

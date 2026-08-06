@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { SESSION_COOKIE_NAME } from './src/lib/session-auth';
+import {
+    EARLY_BIRD_INVITATION_COOKIE,
+    EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
+} from './src/lib/early-birds/invitation-cookie';
 // `src/middleware.ts`, not the repository root: Next only loads the middleware
 // convention from inside `src` when the app lives there, and a root-level file is
 // silently ignored — which is what it had been doing.
 import middleware, { config } from './src/middleware';
+
+const INVITATION = `ebi_v1.${'a'.repeat(32)}.${'b'.repeat(32)}.${'c'.repeat(32)}`;
 
 /**
  * Middleware is navigation convenience, not the authorization boundary.
@@ -31,6 +37,43 @@ function location(response: NextResponse): URL {
 }
 
 describe('middleware', () => {
+    describe('EarlyBird invitation URL scrubbing', () => {
+        it.each([
+            ['/early-birds', 'invite'],
+            ['/early-birds/redeem', 'token'],
+        ])('moves the canonical %s query token to a short HttpOnly cookie', (pathname, queryName) => {
+            const response = middleware(request(`${pathname}?${queryName}=${INVITATION}&locale=en`));
+
+            expect(response.status).toBe(307);
+            const target = location(response);
+            expect(target.pathname).toBe(pathname);
+            expect(target.searchParams.has(queryName)).toBe(false);
+            expect(target.searchParams.get('locale')).toBe('en');
+            expect(response.headers.get('cache-control')).toBe('private, no-store');
+            expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+            expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toMatchObject({
+                value: INVITATION,
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax',
+                path: '/',
+                maxAge: EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
+            });
+        });
+
+        it('scrubs malformed or ambiguous query values without persisting them', () => {
+            for (const pathname of [
+                '/early-birds?invite=not-canonical',
+                `/early-birds?invite=${INVITATION}&invite=${INVITATION}`,
+            ]) {
+                const response = middleware(request(pathname));
+                expect(response.status).toBe(307);
+                expect(location(response).searchParams.has('invite')).toBe(false);
+                expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            }
+        });
+    });
+
     it('recognizes exactly the cookie the session contract issues', () => {
         // Drift guard for the literal in `middleware.ts`, which cannot import
         // `@/lib/session-auth` because the edge runtime has no `node:crypto`.
@@ -100,8 +143,13 @@ describe('middleware', () => {
     });
 
     describe('matcher', () => {
-        it('runs only on the two protected surfaces', () => {
-            expect(config.matcher).toEqual(['/session/:path*', '/ops/:path*']);
+        it('runs only on invitation entry and the two protected surfaces', () => {
+            expect(config.matcher).toEqual([
+                '/early-birds',
+                '/early-birds/redeem',
+                '/session/:path*',
+                '/ops/:path*',
+            ]);
         });
     });
 });

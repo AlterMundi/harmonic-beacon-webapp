@@ -150,6 +150,14 @@ test('nginx templates name only the two staging hosts and proxy only fixed loopb
   assert.match(app, /location \/ \{\s*return 404;/);
   assert.doesNotMatch(app, /location \^~ \/api\/(auth|ops)|location \^~ \/(login|ops|session)/);
   assert.doesNotMatch(stream, /proxy_pass[^\n]*(9090|readyz|metrics)/);
+
+  const invitationEntryLocations = [...app.matchAll(
+    /location = \/early-birds(?:\/redeem)? \{([^}]*)\}/g,
+  )];
+  assert.equal(invitationEntryLocations.length, 4, 'HTTP and HTTPS must both protect both legacy invitation entries');
+  assert.ok(invitationEntryLocations.every((match) => /access_log off;/.test(match[1])));
+  assert.equal((app.match(/add_header Referrer-Policy "no-referrer" always;/g) ?? []).length, 2);
+  assert.equal((app.match(/add_header Cache-Control "private, no-store" always;/g) ?? []).length, 2);
 });
 
 test('ACME bootstrap serves only challenges and never proxies preview traffic', async () => {

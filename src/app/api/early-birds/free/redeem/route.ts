@@ -3,6 +3,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
 import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
 import {
+    canonicalEarlyBirdInvitation,
+    clearedEarlyBirdInvitationCookie,
+    EARLY_BIRD_INVITATION_COOKIE,
+} from '@/lib/early-birds/invitation-cookie';
+import {
     EarlyBirdMembershipGatewayUnavailableError,
     redeemFreeThroughCanonicalGateway,
 } from '@/lib/early-birds/membership-gateway';
@@ -15,14 +20,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const session = await currentEarlyBirdSession(request.headers).catch(() => null);
     if (!session) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
 
-    let token: string;
-    try {
-        const body = await request.json() as { token?: unknown };
-        token = typeof body.token === 'string' ? body.token : '';
-    } catch {
-        return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
-    }
-    if (token.length < 32 || token.length > 512) {
+    const token = canonicalEarlyBirdInvitation(
+        request.cookies.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
+    );
+    if (!token) {
         return NextResponse.json({ error: 'Invitation unavailable.' }, { status: 409 });
     }
 
@@ -38,10 +39,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!result.ok) {
         return NextResponse.json({ error: 'Invitation unavailable.' }, { status: 409 });
     }
-    return NextResponse.json({
+    const response = NextResponse.json({
         ok: true,
         landing: '/early-birds/home',
         replayed: result.replayed,
         alreadyEntitled: result.alreadyEntitled,
     });
+    response.cookies.set(clearedEarlyBirdInvitationCookie());
+    return response;
 }

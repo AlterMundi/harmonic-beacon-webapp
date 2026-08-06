@@ -6,7 +6,7 @@ import BrandLockup from '@/components/brand/BrandLockup';
 import LanguageControl from '@/components/brand/LanguageControl';
 import { useLocale } from '@/context/LocaleContext';
 
-export default function FreeInvitationRedeemer({ token }: { token: string }) {
+export default function FreeInvitationRedeemer() {
     const { locale } = useLocale();
     const copy = locale === 'es' ? {
         eyebrow: 'INVITACIÓN PERSONAL',
@@ -30,15 +30,15 @@ export default function FreeInvitationRedeemer({ token }: { token: string }) {
         if (busy) return;
         setBusy(true);
         setError(false);
-        const response = await fetch('/api/early-birds/free/redeem', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ token }),
-        });
-        if (response.ok) {
-            window.location.assign('/early-birds/home');
-            return;
-        }
+        try {
+            const response = await fetch('/api/early-birds/free/redeem', {
+                method: 'POST',
+            });
+            if (response.ok) {
+                window.location.assign('/early-birds/home');
+                return;
+            }
+        } catch {}
         setBusy(false);
         setError(true);
     }

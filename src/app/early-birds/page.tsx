@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { headers as requestHeaders } from 'next/headers';
+import { cookies, headers as requestHeaders } from 'next/headers';
 
 import EarlyBirdLanding from '@/components/early-birds/EarlyBirdLanding';
 import EarlyBirdUnavailable from '@/components/early-birds/EarlyBirdUnavailable';
@@ -9,6 +9,10 @@ import {
 } from '@/lib/early-birds/auth';
 import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
+import {
+    canonicalEarlyBirdInvitation,
+    EARLY_BIRD_INVITATION_COOKIE,
+} from '@/lib/early-birds/invitation-cookie';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 
 export const dynamic = 'force-dynamic';
@@ -27,19 +31,20 @@ export default async function EarlyBirdsPage({
 
     const params = await searchParams;
     const incomingHeaders = new Headers(await requestHeaders());
+    const cookieStore = await cookies();
     const session = await currentEarlyBirdSession().catch(() => null);
     const access = session
         ? await getEarlyBirdAccess(session.user.id).catch(() => null)
         : null;
-    const invite = typeof params.invite === 'string' && params.invite.length <= 512
-        ? params.invite
-        : null;
+    const invitationAvailable = canonicalEarlyBirdInvitation(
+        cookieStore.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
+    ) !== null;
 
     return (
         <EarlyBirdLanding
             signedIn={Boolean(session)}
             entitled={access?.allowed === true}
-            inviteToken={invite}
+            invitationAvailable={invitationAvailable}
             authError={params.authError === '1'}
             providers={earlyBirdOAuthAvailability()}
             syntheticTeamEntryAvailable={syntheticTeamEntryAllowed({ headers: incomingHeaders })}
