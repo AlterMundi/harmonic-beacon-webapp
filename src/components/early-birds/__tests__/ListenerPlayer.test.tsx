@@ -96,7 +96,7 @@ describe('EarlyBird Listener player', () => {
                 <ListenerPlayer dropIns={{ es: null, en: null }} />
             </LocaleProvider>,
         );
-        expect(screen.getByRole('button', { name: 'Listen now' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Connecting…' })).toBeInTheDocument();
         expect(screen.getByText('Warm-up · Spanish')).toBeInTheDocument();
         expect(screen.getByText('Warm-up · English')).toBeInTheDocument();
         expect(screen.getAllByText('The approved render has not been published yet.')).toHaveLength(2);
@@ -413,6 +413,56 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
         expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/early-birds/stream/heartbeat');
         expect(screen.getByRole('button', { name: 'Listen now' })).toBeInTheDocument();
+    });
+
+    it('claims a capacity-blocked device before enabling iOS-safe playback controls', async () => {
+        const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000004',
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000004',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                error: 'Two devices are already active.',
+                reason: 'device_limit',
+            }), { status: 409 }))
+            .mockResolvedValue(new Response(JSON.stringify(grant), { status: 200 }));
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: 'https://media.example.test/drop-es', en: null }} />
+            </LocaleProvider>,
+        );
+
+        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
+        const card = spanish.closest('article')!;
+        const introButton = within(card).getByRole('button', { name: 'Play' });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Enable this device' })).toBeEnabled());
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'Two devices are already active. Enabling this one will stop playback on the least recent device.',
+        );
+        expect(introButton).toBeDisabled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Enable this device' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen now' })).toBeEnabled());
+        expect(screen.getByRole('status')).toHaveTextContent('Device ready. Tap again to listen, or choose a drop-in.');
+        expect(within(card).getByRole('button', { name: 'Play' })).toBeEnabled();
+        expect(play).not.toHaveBeenCalled();
+        expect(live.src).toContain('/api/early-birds/stream/manifest');
+        expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ intent: 'prepare' });
+        expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({ intent: 'play' });
+
+        fireEvent.click(within(card).getByRole('button', { name: 'Play' }));
+        expect(play.mock.instances).toContain(live);
+        expect(play.mock.instances).toContain(spanish);
     });
 
     it('ignores a stale intro play completion after switching languages', async () => {

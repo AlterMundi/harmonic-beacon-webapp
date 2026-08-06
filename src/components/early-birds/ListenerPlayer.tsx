@@ -21,6 +21,12 @@ type LeaseProbeResult =
     | { kind: 'denied' }
     | { kind: 'retry' };
 
+class LeaseRequestError extends Error {
+    constructor(readonly status: number) {
+        super(`lease:${status}`);
+    }
+}
+
 const DEVICE_STORAGE_KEY = 'hb_earlybird_device_id';
 const DROP_PROGRESS_PREFIX = 'hb_earlybird_drop_progress_';
 const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
@@ -105,8 +111,10 @@ export default function ListenerPlayer({
     });
     const [volume, setVolume] = useState(1);
     const [volumeSupported, setVolumeSupported] = useState(true);
-    const [, setLivePrepared] = useState(false);
+    const [livePrepared, setLivePrepared] = useState(false);
     const [livePreparing, setLivePreparing] = useState(true);
+    const [devicePreparedByGesture, setDevicePreparedByGesture] = useState(false);
+    const [prepareFailure, setPrepareFailure] = useState<'capacity' | 'unavailable' | null>(null);
 
     const updateLiveState = useCallback((state: LiveState) => {
         liveStateRef.current = state;
@@ -178,7 +186,7 @@ export default function ListenerPlayer({
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ deviceId, intent }),
         });
-        if (!response.ok) throw new Error(`lease:${response.status}`);
+        if (!response.ok) throw new LeaseRequestError(response.status);
         return response.json() as Promise<LeasePayload>;
     }, []);
 
@@ -376,10 +384,14 @@ export default function ListenerPlayer({
                 leaseId.current = grant.leaseId;
                 manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
                 await attachManifest(grant.stream.manifestUrl);
+                setPrepareFailure(null);
                 return true;
-            } catch {
+            } catch (error) {
                 livePreparedRef.current = false;
                 setLivePrepared(false);
+                setPrepareFailure(error instanceof LeaseRequestError && error.status === 409
+                    ? 'capacity'
+                    : 'unavailable');
                 return false;
             } finally {
                 livePreparation.current = null;
@@ -389,6 +401,30 @@ export default function ListenerPlayer({
         livePreparation.current = pending;
         return pending;
     }, [attachManifest, requestLease]);
+
+    const claimLiveSource = useCallback(async () => {
+        if (livePreparing) return;
+        setLivePreparing(true);
+        updateLiveState('loading');
+        try {
+            // An explicit play intent may displace the account's oldest device.
+            // It deliberately prepares only: iOS needs a second gesture once the
+            // source exists so play() stays inside that gesture for every element.
+            const grant = await requestLease('play');
+            leaseId.current = grant.leaseId;
+            manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+            await attachManifest(grant.stream.manifestUrl);
+            setPrepareFailure(null);
+            setDevicePreparedByGesture(true);
+            updateLiveState('idle');
+        } catch {
+            livePreparedRef.current = false;
+            setLivePrepared(false);
+            updateLiveState('error');
+        } finally {
+            setLivePreparing(false);
+        }
+    }, [attachManifest, livePreparing, requestLease, updateLiveState]);
 
     useEffect(() => {
         // Preparing (but not playing) the native element lets an intro click
@@ -478,6 +514,10 @@ export default function ListenerPlayer({
             audio.muted = false;
             liveSuppressedForDrop.current = false;
             updateLiveState('paused');
+            return;
+        }
+        if (!livePreparedRef.current) {
+            void claimLiveSource();
             return;
         }
         void playLive(liveState === 'error' || liveState === 'displaced');
@@ -727,7 +767,7 @@ export default function ListenerPlayer({
         restoreLiveOutput(true);
     }
 
-    const liveButton = liveState === 'loading'
+    const liveButton = liveState === 'loading' || (livePreparing && !livePrepared)
         ? copy.loading
         : liveState === 'recovering'
             ? copy.reconnecting
@@ -735,7 +775,9 @@ export default function ListenerPlayer({
                 ? copy.pause
                 : liveState === 'paused'
                     ? copy.resume
-                    : copy.play;
+                    : livePrepared
+                        ? copy.play
+                        : copy.prepareDevice;
 
     return (
         <div className="space-y-8">
@@ -772,6 +814,16 @@ export default function ListenerPlayer({
                         {liveState === 'displaced' ? copy.displaced : copy.unavailable}
                     </p>
                 )}
+                {devicePreparedByGesture && liveState === 'idle' && (
+                    <p role="status" className="mt-5 text-sm text-[var(--text-muted)]">
+                        {copy.deviceReady}
+                    </p>
+                )}
+                {!livePreparing && !livePrepared && liveState !== 'error' && (
+                    <p role="status" className="mt-5 text-sm text-[var(--text-muted)]">
+                        {prepareFailure === 'capacity' ? copy.deviceLimitClaim : copy.prepareHelp}
+                    </p>
+                )}
             </section>
 
             <section className="space-y-4">
@@ -800,7 +852,7 @@ export default function ListenerPlayer({
                                             <button
                                                 type="button"
                                                 onClick={() => toggleDropIn(language)}
-                                                disabled={livePreparing}
+                                                disabled={livePreparing || !livePrepared}
                                                 className="event-button event-button--secondary flex-1"
                                             >
                                                 {playingDrop === language ? copy.pause : copy.dropPlay}
