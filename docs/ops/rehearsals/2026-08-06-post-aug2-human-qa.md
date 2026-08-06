@@ -25,23 +25,33 @@ recording what they observed.
 | `origin/main` SHA at preparation | `341c15c` |
 | Deployed SHA (`/api/health` `gitSha`) | `3473397f0d7acd316b42230e197d932aa36d31e3` |
 | Database schema (deployed) | `20260805230000_move_english_session_to_august_9` |
-| Gap between main and deployed | Exactly 1 commit: `341c15c` (SessionGuidance, PR #206) |
+| Gap between main and deployed | `main@341c15c` is **19 commits ahead** of deployed `3473397` (`git rev-list --left-right --count` → `0 19`) |
 | Rollback SHA | PENDING — record from the deploy workflow before execution |
 | URL / environment | `https://live.harmonicbeacon.com` (production event stack) |
 | Test session UUID | PENDING — derive from the canonical catalog/cockpit at execution time; never copy from historical docs |
 | Execution date/time (UTC) | PENDING |
 
-Verified facts at preparation time (2026-08-06, `git merge-base --is-ancestor`
-against the deployed SHA, plus `/api/health` and `/api/health/ready`):
+Verified facts at preparation time (2026-08-06) — `/api/health` and
+`/api/health/ready` plus `git merge-base --is-ancestor <sha> 3473397f…`,
+where **exit code 0 means "contained" and exit code 1 means "not
+contained"**:
 
-- The deployed SHA **does contain** PR #187 (`388fe8f`, chat UI) and PR #192
-  (`d547e96`, E2E fixes). Contributions are live in production.
-- The deployed SHA **does not contain** PR #206 (`341c15c`, SessionGuidance).
+- `89f77991` (PR #161, contributions contract/backend) → **exit 0**:
+  production contains the contributions backend.
+- `388fe8f` (PR #187, attendee/staff UI) → **exit 1**: not deployed.
+- `671cde8` (final contribution hardening) → **exit 1**: not deployed.
+- `d547e96` (PR #192, E2E fixes) → **exit 1**: not deployed.
+- `341c15c` (PR #206, SessionGuidance) → **exit 1**: not deployed.
+- `git rev-list --left-right --count 3473397f… origin/main` → `0 19`:
+  main is 19 commits ahead of the deployed SHA.
 
-**Fail-closed rule:** if `/api/health` at execution time does not show a
-candidate containing PRs #187, #192 **and #206**, mark every row
-**BLOCKED** and attribute no result to the new design. Execution is equally
-blocked until real humans fill every role in §2 — a prepared sheet is not an
+**Fail-closed rule:** production contains the contributions
+contract/backend of PR #161, but not yet the attendee/staff UI of
+PR #187, its final hardening, the PR #192 fixes, or SessionGuidance of
+PR #206. If `/api/health` at execution time does not show a candidate
+containing PRs #187, #192 **and #206**, mark every row **BLOCKED** and
+attribute no result to the new design. Execution is equally blocked
+until real humans fill every role in §2 — a prepared sheet is not an
 executed rehearsal.
 
 ## 2. Roles (synthetic codes only)
