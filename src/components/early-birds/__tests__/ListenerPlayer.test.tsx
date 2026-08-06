@@ -41,7 +41,7 @@ describe('EarlyBird Listener player', () => {
                 <ListenerPlayer dropIns={{ es: null, en: null }} />
             </LocaleProvider>,
         );
-        expect(screen.getByRole('button', { name: 'Listen live' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Listen now' })).toBeInTheDocument();
         expect(screen.getByText('Warm-up · Spanish')).toBeInTheDocument();
         expect(screen.getByText('Warm-up · English')).toBeInTheDocument();
         expect(screen.getAllByText('The approved render has not been published yet.')).toHaveLength(2);
@@ -76,7 +76,7 @@ describe('EarlyBird Listener player', () => {
         const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
         const spanishCard = spanish.closest('article')!;
 
-        fireEvent.click(screen.getByRole('button', { name: 'Listen live' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Listen now' }));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument());
         const liveSource = live.src;
         const leaseRequests = fetchMock.mock.calls.length;

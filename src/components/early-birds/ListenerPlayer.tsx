@@ -327,7 +327,7 @@ export default function ListenerPlayer({
                     <div>
                         <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[var(--cyan)]">
                             <span className="h-2 w-2 animate-live-pulse rounded-full bg-[var(--cyan)]" aria-hidden="true" />
-                            Live edge
+                            {copy.sharedPoint}
                         </div>
                         <h2 className="mt-3 font-serif text-4xl">{copy.heading}</h2>
                         <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">{copy.subheading}</p>
