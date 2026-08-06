@@ -56,3 +56,9 @@ test('routes warnings hourly and critical alerts immediately every fifteen minut
   assert.match(alertmanager, /group_wait: 5m[\s\S]*repeat_interval: 1h/);
   assert.match(alertmanager, /matchers: \[severity="critical"\][\s\S]*group_wait: 0s[\s\S]*repeat_interval: 15m/);
 });
+
+test('disk alerts report their measured free-space percentage', async () => {
+  const alerts = await read('prometheus/alerts.yml');
+  assert.match(alerts, /EarlyBirdsDiskPrepare[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(warning below 30%\)/);
+  assert.match(alerts, /EarlyBirdsDiskCritical[\s\S]*\{\{ \$value \| humanizePercentage \}\} free \(critical below 15%\)/);
+});
