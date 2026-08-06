@@ -16,6 +16,7 @@ import {
 import { AudioProvider, useAudio } from "@/context/AudioContext";
 import { useLocale } from "@/context/LocaleContext";
 import HandRaiseButton from "@/components/session/HandRaiseButton";
+import SessionContributions from "@/components/session/SessionContributions";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
 import ThumbnailSender from "@/components/session/ThumbnailSender";
 import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
@@ -975,7 +976,8 @@ function SessionRoom() {
                     </div>
                 </header>
 
-                {/* Stage */}
+                {/* Stage + contributions panel (side on desktop, below on mobile) */}
+                <div className="flex flex-1 flex-col lg:flex-row">
                 <div className="flex flex-1 flex-col items-center justify-center gap-5 px-3 py-4 sm:px-4">
                     <StageLayout
                         publishers={stagePublishers}
@@ -1111,6 +1113,10 @@ function SessionRoom() {
                             </div>
                         </div>
                     </div>
+                </div>
+                {principalKind === 'ticket' && (
+                    <SessionContributions key={id} sessionId={id} />
+                )}
                 </div>
 
                 {principalKind === 'staff' && (

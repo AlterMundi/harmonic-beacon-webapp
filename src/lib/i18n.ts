@@ -198,6 +198,32 @@ export type Messages = {
         permissionDenied: string;
         raisedHands: string;
     };
+    contributions: {
+        heading: string;
+        prompt: string;
+        placeholder: string;
+        share: string;
+        shareAnonymous: string;
+        anonymityNote: string;
+        sending: string;
+        published: string;
+        retry: string;
+        charLimit: string;
+        rateLimited: string;
+        error: string;
+        loadError: string;
+        empty: string;
+        anonymousAuthor: string;
+        newMessages: string;
+        keyboardHint: string;
+        offline: string;
+        reconnecting: string;
+        sessionEnded: string;
+        loading: string;
+        loadingEarlier: string;
+        collapse: string;
+        expand: string;
+    };
     staffRoles: Record<LocalizedStaffRole, string>;
     staffRoleDescriptions: Record<LocalizedStaffRole, string>;
     ops: {
@@ -467,9 +493,17 @@ export type Messages = {
             tapestryPanel: string;
             admissionPanel: string;
             healthPanel: string;
+            contributionsPanel: string;
             closePanel: string;
             returnToRoom: string;
             tools: string;
+        };
+        contributionsPanel: {
+            loading: string;
+            empty: string;
+            error: string;
+            retry: string;
+            anonymousBadge: string;
         };
     };
 };
@@ -644,6 +678,32 @@ export const messages: Record<UiLocale, Messages> = {
             shareSnapshot: 'Compartir una imagen de cámara',
             permissionDenied: 'No se otorgó permiso para usar la cámara. Igual podés participar de la sesión.',
             raisedHands: 'Manos levantadas: {names}',
+        },
+        contributions: {
+            heading: 'Preguntas y emociones',
+            prompt: 'Compartí una pregunta o una emoción con la sala',
+            placeholder: 'Escribí tu pregunta o emoción…',
+            share: 'Compartir',
+            shareAnonymous: 'Compartir anónimo',
+            anonymityNote: 'Con “Compartir anónimo” la sala no verá tu nombre. El equipo facilitador sí puede ver quién lo escribió, para cuidar el espacio.',
+            sending: 'Enviando…',
+            published: 'Publicado',
+            retry: 'Reintentar',
+            charLimit: 'Llegaste al máximo de 1000 caracteres',
+            rateLimited: 'Esperá {seconds} s antes de compartir de nuevo',
+            error: 'No se pudo publicar. Tu texto sigue acá, probá de nuevo.',
+            loadError: 'No se pudo cargar la conversación.',
+            empty: 'Todavía no hay preguntas ni emociones. Sé la primera voz.',
+            anonymousAuthor: 'Anónimo',
+            newMessages: 'Hay mensajes nuevos ↓',
+            keyboardHint: 'Elegí cómo compartir con uno de los botones',
+            offline: 'Sin conexión. Tu texto está a salvo; retomamos al volver.',
+            reconnecting: 'Reconectando con la sala…',
+            sessionEnded: 'La sesión terminó. La conversación queda en solo lectura.',
+            loading: 'Cargando la conversación…',
+            loadingEarlier: 'Cargando mensajes anteriores…',
+            collapse: 'Ocultar preguntas y emociones',
+            expand: 'Mostrar preguntas y emociones',
         },
         staffRoles: {
             FACILITATOR: 'Facilitador/a',
@@ -971,9 +1031,17 @@ export const messages: Record<UiLocale, Messages> = {
                 tapestryPanel: 'Composición del tapiz',
                 admissionPanel: 'Soporte de entradas',
                 healthPanel: 'Estado técnico',
+                contributionsPanel: 'Preguntas y emociones',
                 closePanel: 'Cerrar herramienta',
                 returnToRoom: 'Volver a la sala en vivo',
                 tools: 'Herramientas',
+            },
+            contributionsPanel: {
+                loading: 'Cargando la conversación…',
+                empty: 'Todavía no hay contribuciones.',
+                error: 'No se pudo cargar la conversación.',
+                retry: 'Reintentar',
+                anonymousBadge: 'Anónimo para la audiencia',
             },
         },
     },
@@ -1146,6 +1214,32 @@ export const messages: Record<UiLocale, Messages> = {
             shareSnapshot: 'Share a camera snapshot',
             permissionDenied: 'Camera permission was not granted. You can still take part in the session.',
             raisedHands: 'Raised hands: {names}',
+        },
+        contributions: {
+            heading: 'Questions and emotions',
+            prompt: 'Share a question or an emotion with the room',
+            placeholder: 'Write your question or emotion…',
+            share: 'Share',
+            shareAnonymous: 'Share anonymously',
+            anonymityNote: 'With “Share anonymously” the room will not see your name. The facilitation team can still see who wrote it, to keep the space safe.',
+            sending: 'Sending…',
+            published: 'Published',
+            retry: 'Retry',
+            charLimit: 'You reached the 1000-character limit',
+            rateLimited: 'Wait {seconds} s before sharing again',
+            error: 'Could not publish. Your text is still here, try again.',
+            loadError: 'Could not load the conversation.',
+            empty: 'No questions or emotions yet. Be the first voice.',
+            anonymousAuthor: 'Anonymous',
+            newMessages: 'New messages ↓',
+            keyboardHint: 'Choose how to share with one of the buttons',
+            offline: 'You are offline. Your text is safe; we resume when you are back.',
+            reconnecting: 'Reconnecting with the room…',
+            sessionEnded: 'The session has ended. The conversation is read-only.',
+            loading: 'Loading the conversation…',
+            loadingEarlier: 'Loading earlier messages…',
+            collapse: 'Hide questions and emotions',
+            expand: 'Show questions and emotions',
         },
         staffRoles: {
             FACILITATOR: 'Facilitator',
@@ -1473,9 +1567,17 @@ export const messages: Record<UiLocale, Messages> = {
                 tapestryPanel: 'Tapestry composition',
                 admissionPanel: 'Admission support',
                 healthPanel: 'System health',
+                contributionsPanel: 'Questions and emotions',
                 closePanel: 'Close tool',
                 returnToRoom: 'Return to the live room',
                 tools: 'Tools',
+            },
+            contributionsPanel: {
+                loading: 'Loading the conversation…',
+                empty: 'No contributions yet.',
+                error: 'Could not load the conversation.',
+                retry: 'Retry',
+                anonymousBadge: 'Anonymous to the audience',
             },
         },
     },

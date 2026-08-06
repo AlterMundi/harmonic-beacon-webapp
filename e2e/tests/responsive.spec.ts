@@ -155,6 +155,7 @@ stackTest.describe('responsive live surfaces', () => {
             '[data-signal="hands"]',
             '[data-tool="tapestry"]',
             '[data-tool="admission"]',
+            '[data-tool="contributions"]',
             '[data-signal="health"]',
         ]) {
             await page.locator(selector).click();

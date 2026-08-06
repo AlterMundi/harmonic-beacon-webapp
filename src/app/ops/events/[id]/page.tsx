@@ -103,6 +103,7 @@ export default async function EventPage({
                 spotlightCopy={copy.spotlight}
                 healthCopy={copy.healthPanel}
                 admissionCopy={copy.admissionPanel}
+                contributionsCopy={copy.contributionsPanel}
                 tapestryCopy={copy.tapestryArrange}
                 opsTapestryCopy={copy.opsTapestry}
                 staffRoleLabels={messages[locale].staffRoles}
