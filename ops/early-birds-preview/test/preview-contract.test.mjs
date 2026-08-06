@@ -54,6 +54,21 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ].join('\n'), { mode: 0o600 });
     assert.equal(runGuard(envFile).status, 0);
   });
+
+  await t.test('guarded reviewed Beacon artifact handoff', async () => {
+    const envFile = path.join(temporary, 'reviewed-beacon.env');
+    await fs.writeFile(envFile, source
+      .replaceAll('synthetic-preview-artifact', 'beacon-luz-20260624-aac320-v1'), { mode: 0o600 });
+    assert.equal(runGuard(envFile).status, 0);
+  });
+
+  await t.test('mismatched Listener and origin artifacts fail closed', async () => {
+    const envFile = path.join(temporary, 'mismatched-beacon.env');
+    await fs.writeFile(envFile, `${source}\nEARLY_BIRDS_STREAM_ARTIFACT_ID=beacon-luz-20260624-aac320-v1\n`, { mode: 0o600 });
+    const result = runGuard(envFile);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /artifact IDs must match/);
+  });
 });
 
 test('compose gates the loopback Listener on a forward-only isolated database migration', async () => {

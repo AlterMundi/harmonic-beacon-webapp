@@ -53,8 +53,13 @@ require_synthetic_env() {
   require_exact_preview_value EARLY_BIRDS_STREAM_ORIGIN https://stream.harmonicbeacon.com "$env_file"
   require_exact_preview_value BEACON_STREAM_PUBLIC_ORIGIN https://stream.harmonicbeacon.com "$env_file"
   require_exact_preview_value BEACON_STREAM_ALLOWED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
-  require_exact_preview_value EARLY_BIRDS_STREAM_ARTIFACT_ID synthetic-preview-artifact "$env_file"
-  require_exact_preview_value BEACON_STREAM_ARTIFACT_ID synthetic-preview-artifact "$env_file"
+  listener_artifact=$(preview_env_value EARLY_BIRDS_STREAM_ARTIFACT_ID "$env_file")
+  origin_artifact=$(preview_env_value BEACON_STREAM_ARTIFACT_ID "$env_file")
+  test "$listener_artifact" = "$origin_artifact" || preview_fail 'Listener and origin artifact IDs must match'
+  case "$listener_artifact" in
+    synthetic-preview-artifact|beacon-luz-20260624-aac320-v1) ;;
+    *) preview_fail 'stream artifact is not approved for synthetic staging' ;;
+  esac
   require_exact_preview_value EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS earlybirds-staging.harmonicbeacon.com "$env_file"
 
   kill_switch=$(preview_env_value EARLY_BIRDS_ENABLED "$env_file")
