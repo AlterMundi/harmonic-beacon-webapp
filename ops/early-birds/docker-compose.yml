@@ -24,13 +24,12 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=14d
       - --storage.tsdb.retention.size=8GB
-      - --web.enable-lifecycle=false
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
       - prometheus-data:/prometheus
     ports: [127.0.0.1:9090:9090]
-    networks: [observability]
+    networks: [observability, ops_edge]
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1G }
@@ -50,7 +49,7 @@ services:
       - ./alertmanager/telegram.tmpl:/etc/alertmanager/templates/telegram.tmpl:ro
       - alertmanager-data:/alertmanager
     ports: [127.0.0.1:9093:9093]
-    networks: [observability]
+    networks: [observability, ops_edge]
     deploy:
       resources:
         limits: { cpus: "0.25", memory: 256M }
@@ -96,7 +95,9 @@ services:
       BEACON_STREAM_PUBLIC_ORIGIN: ${BEACON_STREAM_PUBLIC_ORIGIN:?set in the root-owned ops env file}
       BEACON_STREAM_ARTIFACT_ID: ${BEACON_STREAM_ARTIFACT_ID:?set in the root-owned ops env file}
       BEACON_CANARY_INTERVAL_MS: 30000
-    networks: [observability]
+    # The canary needs outbound HTTPS to exercise the public origin. Its
+    # metrics remain available only to Prometheus on `observability`.
+    networks: [observability, ops_edge]
     deploy:
       resources:
         limits: { cpus: "0.25", memory: 128M }
@@ -105,6 +106,10 @@ networks:
   observability:
     external: true
     name: earlybirds_stream_observability
+  # Explicit egress plus loopback-published admin ports. No service publishes
+  # a wildcard host port on this bridge.
+  ops_edge:
+    name: earlybirds_observability_edge
 
 volumes:
   prometheus-data:

@@ -14,6 +14,9 @@ test('keeps all metrics and Alertmanager listeners off public interfaces', async
   assert.match(compose, /--path\.procfs=\/host\/proc/);
   assert.match(compose, /--path\.sysfs=\/host\/sys/);
   assert.match(compose, /networks: \[observability\]/);
+  assert.match(compose, /networks: \[observability, ops_edge\]/g);
+  assert.match(compose, /ops_edge:\s+name: earlybirds_observability_edge/);
+  assert.doesNotMatch(compose, /--web\.enable-lifecycle=false/);
   // Alertmanager may bind inside its private Docker network, but host-published
   // admin/metrics ports must remain loopback-only.
   assert.doesNotMatch(compose, /ports:\s*\[0\.0\.0\.0:909[0-3]/);
