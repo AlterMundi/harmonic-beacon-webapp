@@ -20,6 +20,14 @@ function configuredMediaUrl(name: string): string | null {
     }
 }
 
+function configuredDropIn(language: 'es' | 'en'): string | null {
+    const suffix = language.toUpperCase();
+    if (process.env[`EARLY_BIRDS_DROPIN_${suffix}_PATH`]?.trim()) {
+        return `/api/early-birds/drop-ins/${language}`;
+    }
+    return configuredMediaUrl(`EARLY_BIRDS_DROPIN_${suffix}_URL`);
+}
+
 export default async function EarlyBirdHomePage() {
     if (!earlyBirdsEnabled()) redirect('/early-birds');
 
@@ -33,8 +41,8 @@ export default async function EarlyBirdHomePage() {
             displayName={session.user.name}
             membershipSource={access.projection.source}
             dropIns={{
-                es: configuredMediaUrl('EARLY_BIRDS_DROPIN_ES_URL'),
-                en: configuredMediaUrl('EARLY_BIRDS_DROPIN_EN_URL'),
+                es: configuredDropIn('es'),
+                en: configuredDropIn('en'),
             }}
         />
     );

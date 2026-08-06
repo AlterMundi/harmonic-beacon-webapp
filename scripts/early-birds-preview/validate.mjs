@@ -41,6 +41,8 @@ const syntheticEnv = [
   'EARLY_BIRDS_STREAM_ARTIFACT_ID=synthetic-preview-artifact',
   `EARLY_BIRDS_STREAM_SIGNING_SECRET=${syntheticSecret}`,
   'EARLY_BIRDS_DEVICE_PEPPER=synthetic-preview-device-pepper-at-least-32-characters',
+  'EARLY_BIRDS_DROPIN_ES_PATH=',
+  'EARLY_BIRDS_DROPIN_EN_PATH=',
   'BEACON_STREAM_ARTIFACTS_HOST_PATH=.',
   'BEACON_STREAM_MEDIA_ROOT=/media/artifacts',
   'BEACON_STREAM_ARTIFACT_ID=synthetic-preview-artifact',
@@ -101,6 +103,11 @@ try {
   assert.equal(listener.environment.EARLY_BIRDS_STREAM_ORIGIN, 'https://stream.harmonicbeacon.com');
   assert.equal(listener.environment.EARLY_BIRDS_GOOGLE_CLIENT_ID, '');
   assert.equal(listener.environment.EARLY_BIRDS_APPLE_CLIENT_ID, '');
+  assert.equal(listener.environment.EARLY_BIRDS_DROPIN_ES_PATH, '');
+  assert.equal(listener.volumes.length, 1);
+  assert.equal(listener.volumes[0].type, 'bind');
+  assert.equal(listener.volumes[0].target, '/media/artifacts');
+  assert.equal(listener.volumes[0].read_only, true);
   assert.equal(listener.depends_on.postgres.condition, 'service_healthy');
   assert.equal(listener.depends_on.migration.condition, 'service_completed_successfully');
   assert.deepEqual(Object.keys(listener.networks).sort(), ['listener_egress', 'preview_db']);
