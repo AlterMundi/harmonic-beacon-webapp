@@ -1,5 +1,36 @@
 # EarlyBirds isolated staging runtime
 
+## 2026-08-06 staging deployment record
+
+The isolated preview is currently running on `mona`; this is operational
+evidence, not authorization to promote it to `main` or production.
+
+- Listener application SHA: `3ec91cf7589c8ec57f892a4a9e5e190c5bc3462d`.
+- Free authority preview SHA: `f91c6416c8980b9862aa372610118bc937f4dda5`,
+  including hardened authority `8638d6e` and Alembic head `b8c4d1e7f260`.
+- Runtime, observability and nginx fixes are on the `early-birds` branch through
+  `e23ba4c`; the app image was not rebuilt for docs/ops-only commits.
+- Both exact hosts have valid Let's Encrypt certificates expiring 2026-11-04
+  and emit `X-Harmonic-Beacon-Environment: early-birds-staging`; production
+  does not emit that attestation.
+- PostgreSQL, migrations, Listener, origin, authority API/worker, Prometheus,
+  node-exporter, cAdvisor and the HTTP segment canary are healthy. The
+  authority has no published host port and paid checkout returns fail-closed
+  `503 paid_checkout_disabled`.
+- Canonical Free acceptance passed through identity-only synthetic login,
+  signed one-use invitation, private authority redemption, membership
+  projection, session cookie and Listener home.
+- Rollback stopped only Listener/origin, retained healthy preview PostgreSQL,
+  kept `live.harmonicbeacon.com` healthy, and restored staging via the normal
+  start/smoke path.
+- Alertmanager remains intentionally stopped until root-owned Telegram bot and
+  chat-ID files exist. The current origin uses a non-audio synthetic fixture;
+  no acoustic choice or real derivative has been made.
+
+Protected runtime configuration remains under `/etc/harmonic-beacon/`; this
+record never includes its values. The supervised human Free invitation is
+root-owned and mode `0600` on the host.
+
 This is the non-deploying EB-08 staging lane for exactly:
 
 - `https://earlybirds-staging.harmonicbeacon.com` — Next Listener on host loopback `127.0.0.1:13000`.
