@@ -5,11 +5,13 @@
 The isolated preview is currently running on `mona`; this is operational
 evidence, not authorization to promote it to `main` or production.
 
-- Listener application SHA: `3ec91cf7589c8ec57f892a4a9e5e190c5bc3462d`.
-- Free authority preview SHA: `f91c6416c8980b9862aa372610118bc937f4dda5`,
-  including hardened authority `8638d6e` and Alembic head `b8c4d1e7f260`.
-- Runtime, observability and nginx fixes are on the `early-birds` branch through
-  `e23ba4c`; the app image was not rebuilt for docs/ops-only commits.
+- Listener application SHA: `2ee36adf36f0364862b62b0bb0c5df5d49086cc0`.
+- Free authority preview SHA: `83deaaee1ae3c5adce910c80249a0229ab4199e5`,
+  including hardened authority `8638d6e`, durable synthetic-Free
+  reconciliation and Alembic head `b8c4d1e7f260`.
+- Runtime, observability and nginx fixes are on the `early-birds` branch. The
+  deployed application health response attests the exact Listener image SHA;
+  later documentation-only commits do not require rebuilding that image.
 - Both exact hosts have valid Let's Encrypt certificates expiring 2026-11-04
   and emit `X-Harmonic-Beacon-Environment: early-birds-staging`; production
   does not emit that attestation.
@@ -20,12 +22,26 @@ evidence, not authorization to promote it to `main` or production.
 - Canonical Free acceptance passed through identity-only synthetic login,
   signed one-use invitation, private authority redemption, membership
   projection, session cookie and Listener home.
+- The current canonical lifecycle smoke also passed same-account idempotent
+  replay, cross-account one-use rejection, three-device/oldest-lease eviction,
+  durable revocation reconciliation, existing-stream denial and Listener
+  redirect. A fresh human invitation and its non-secret UUID sidecar are stored
+  root-only at mode `0600`; the previous invitation was revoked before archival.
+- Public real-browser layout checks passed in ES and EN at 1440, 1024, 390 and
+  320 pixels. The DB-backed authenticated fixture passed the same responsive
+  matrix without requesting camera or microphone access.
 - Rollback stopped only Listener/origin, retained healthy preview PostgreSQL,
   kept `live.harmonicbeacon.com` healthy, and restored staging via the normal
   start/smoke path.
 - Alertmanager remains intentionally stopped until root-owned Telegram bot and
   chat-ID files exist. The current origin uses a non-audio synthetic fixture;
   no acoustic choice or real derivative has been made.
+- The format-neutral `staging-smoke` load plan was dry-run on the external,
+  NTP-synchronized `daimonmatrix` generator with zero network requests. Its
+  plan hash is
+  `2ed8d7dc1717768fe846a87cdad1a67cf681ce58809e7b4e72106b4f1dcd22c6`;
+  executing even that ten-client step still requires a real approved artifact,
+  short-lived signed manifest and an explicit monitored run window.
 
 Protected runtime configuration remains under `/etc/harmonic-beacon/`; this
 record never includes its values. The supervised human Free invitation is
