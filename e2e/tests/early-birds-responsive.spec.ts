@@ -27,7 +27,7 @@ test.describe('EarlyBirds responsive bilingual boundary', () => {
             expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 1);
         }
 
-        await page.getByRole('button', { name: 'EN' }).click();
+        await page.getByRole('button', { name: 'EN', exact: true }).click();
         await expect(page.locator('html')).toHaveAttribute('lang', 'en');
         await expect(page.getByRole('heading', { name: 'The Beacon, always present.' })).toBeVisible();
         await expect(page.getByLabel('Test name')).toBeVisible();
@@ -56,7 +56,7 @@ test.describe('EarlyBirds responsive bilingual boundary', () => {
                 'x-forwarded-proto': 'https',
             },
             data: {
-                email: `responsive-${test.info().project.name}@e2e.invalid`,
+                email: `responsive-${test.info().project.name}-${Date.now()}@e2e.invalid`,
                 name: 'Responsive Listener',
             },
         });
