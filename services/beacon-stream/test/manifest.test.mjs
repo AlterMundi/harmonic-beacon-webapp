@@ -33,3 +33,22 @@ test('renders a signed fMP4 map and preserves a short final segment across loops
   const mapUrl = new URL(manifest.match(/#EXT-X-MAP:URI="([^"]+)"/)?.[1]);
   assert.equal(verifySignedPath({ secret, pathname: mapUrl.pathname, expiresAt: Number(mapUrl.searchParams.get('exp')), signature: mapUrl.searchParams.get('sig'), now: Math.floor((epoch + 50_000) / 1000) }), true);
 });
+
+test('keeps a retained segment on the same discontinuity sequence across window reloads', () => {
+  const item = variableMetadata();
+  const epoch = item.epochMs;
+  const before = renderManifest({ metadata: item, origin: 'https://stream.example.test', secret, nowMs: epoch + 62_000 });
+  const after = renderManifest({ metadata: item, origin: 'https://stream.example.test', secret, nowMs: epoch + 65_000 });
+
+  assert.match(before, /#EXT-X-DISCONTINUITY-SEQUENCE:1\n#EXT-X-MEDIA-SEQUENCE:6/);
+  assert.match(after, /#EXT-X-DISCONTINUITY-SEQUENCE:2\n#EXT-X-MEDIA-SEQUENCE:7/);
+  // Sequence 7 is retained. Its effective discontinuity number is the base
+  // plus explicit tags before it: 1 + 1 before, then 2 + 0 after.
+  const effectiveSequence = (manifest) => {
+    const base = Number(manifest.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/)?.[1]);
+    const beforeRetainedSegment = manifest.slice(0, manifest.indexOf('00001.m4s'));
+    return base + (beforeRetainedSegment.match(/#EXT-X-DISCONTINUITY\n/g) ?? []).length;
+  };
+  assert.equal(effectiveSequence(before), 2);
+  assert.equal(effectiveSequence(after), 2);
+});

@@ -32,10 +32,14 @@ export function renderManifest({ metadata, origin, secret, nowMs = Date.now(), t
   const firstSequence = Math.max(0, edgeSequence - (WINDOW_SEGMENTS - 1));
   const expiresAt = Math.floor(nowMs / 1000) + tokenTtlSeconds;
   const targetDuration = Math.ceil(Math.max(...metadata.segments.map((segment) => segment.durationSeconds)));
+  const discontinuitiesRemoved = Math.floor(
+    Math.max(0, firstSequence - 1) / metadata.timing.segmentCount,
+  );
   const lines = [
     '#EXTM3U',
     '#EXT-X-VERSION:7',
     `#EXT-X-TARGETDURATION:${targetDuration}`,
+    `#EXT-X-DISCONTINUITY-SEQUENCE:${discontinuitiesRemoved}`,
     `#EXT-X-MEDIA-SEQUENCE:${firstSequence}`,
     '#EXT-X-INDEPENDENT-SEGMENTS',
   ];
