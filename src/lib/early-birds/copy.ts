@@ -39,6 +39,29 @@ export const earlyBirdCopy = {
     },
 } satisfies Record<UiLocale, Record<string, string>>;
 
+export const earlyBirdSyntheticEntryCopy = {
+    es: {
+        title: 'Acceso de equipo · staging',
+        description: 'Sólo para pruebas acordadas. Usa una cuenta sintética @e2e.invalid y el código temporal del equipo.',
+        name: 'Nombre de prueba',
+        email: 'Cuenta sintética',
+        accessCode: 'Código de acceso temporal',
+        enter: 'Entrar a staging',
+        entering: 'Abriendo staging…',
+        failed: 'El acceso de prueba no está disponible o los datos no son válidos.',
+    },
+    en: {
+        title: 'Team access · staging',
+        description: 'For agreed testing only. Use a synthetic @e2e.invalid account and the team’s temporary access code.',
+        name: 'Test name',
+        email: 'Synthetic account',
+        accessCode: 'Temporary access code',
+        enter: 'Enter staging',
+        entering: 'Opening staging…',
+        failed: 'Test access is unavailable or the supplied details are invalid.',
+    },
+} satisfies Record<UiLocale, Record<string, string>>;
+
 export const earlyBirdHomeCopy = {
     es: {
         eyebrow: 'EARLYBIRDS · LISTENER',

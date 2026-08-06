@@ -23,6 +23,7 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 inviteToken={null}
                 authError={false}
                 providers={{ google: true, apple: true }}
+                syntheticTeamEntryAvailable={false}
                 {...overrides}
             />
         </LocaleProvider>,

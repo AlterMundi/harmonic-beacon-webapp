@@ -9,6 +9,7 @@ import {
 } from '@/lib/early-birds/auth';
 import { issueSyntheticMembership } from '@/lib/early-birds/membership';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
+import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,7 +56,10 @@ async function authRequest(
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-    if (!earlyBirdsEnabled()) return notFound();
+    if (!earlyBirdsEnabled() || !syntheticTeamEntryAllowed({
+        headers: request.headers,
+        requestProtocol: request.nextUrl.protocol,
+    })) return notFound();
     if (!authorizedSyntheticLogin(request)) return notFound();
 
     let email: string;

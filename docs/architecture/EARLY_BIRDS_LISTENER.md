@@ -43,7 +43,33 @@ The optional synthetic-login API creates a clearly marked, source-null local pro
 both `EARLY_BIRDS_TEST_ACCESS_ENABLED=1` and a separate 32+ character secret are configured. Every
 POST must present that secret as a Bearer token; absent/wrong credentials receive the same hidden
 404. The route is not exposed by the UI or client bundle, cannot replace a canonical projection,
-and must never be enabled in production.
+and must never be enabled on the customer-production hostname.
+
+### Human-operated staging entry
+
+An optional bilingual team form can expose that API on a dedicated staging hostname without putting
+the Bearer code into HTML, JavaScript, `NEXT_PUBLIC_*`, storage, cookies or logs. A tester types a
+name, an `@e2e.invalid` account and the separately shared temporary code. The component keeps the
+code only in memory, sends it once as `Authorization: Bearer ...`, clears the field immediately and
+sends only name/email in the JSON body.
+
+The form and API fail closed unless every condition below is true:
+
+- the runtime is a production build (`NODE_ENV=production`) served through HTTPS;
+- `EARLY_BIRDS_ENABLED=1` and `EARLY_BIRDS_TEST_ACCESS_ENABLED=1`;
+- `EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=1`;
+- the request's exact `Host` is listed in `EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS`.
+
+The host list accepts comma-separated `host` or `host:port` values only—no schemes, paths or
+wildcards. The trusted staging reverse proxy must replace `X-Forwarded-Proto` with exactly `https`.
+Missing, malformed, HTTP or non-allowlisted requests receive a non-descriptive 404 from the
+synthetic-login endpoint and never reach Better Auth. Direct public Better Auth email sign-up/sign-in
+routes are also hidden; only the authenticated staging endpoint can invoke that adapter internally.
+
+This creates only an isolated EarlyBird account, Better Auth session and synthetic EarlyBird
+membership projection. It grants no weekend-event principal, ticket, staff role, LiveKit capability,
+chat capability or other event authorization. Keep both staging gates at `0` outside a supervised
+test window and rotate the temporary code after the window.
 
 ## Stream and device leases
 

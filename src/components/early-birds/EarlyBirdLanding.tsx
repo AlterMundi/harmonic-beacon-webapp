@@ -8,12 +8,15 @@ import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
 
+import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
+
 type Props = {
     signedIn: boolean;
     entitled: boolean;
     inviteToken: string | null;
     authError: boolean;
     providers: { google: boolean; apple: boolean };
+    syntheticTeamEntryAvailable: boolean;
 };
 
 export default function EarlyBirdLanding(props: Props) {
@@ -109,6 +112,7 @@ export default function EarlyBirdLanding(props: Props) {
                                         )}
                                     </button>
                                 ))}
+                                {props.syntheticTeamEntryAvailable && <SyntheticTeamEntryForm />}
                             </div>
                         )}
                     </section>

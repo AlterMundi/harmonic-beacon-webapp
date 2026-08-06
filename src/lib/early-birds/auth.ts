@@ -13,10 +13,10 @@ function nonEmpty(value: string | undefined): string | undefined {
     return normalized ? normalized : undefined;
 }
 
-export function earlyBirdTestAuthEnabled(): boolean {
-    const secret = nonEmpty(process.env.EARLY_BIRDS_TEST_LOGIN_SECRET);
+export function earlyBirdTestAuthEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+    const secret = nonEmpty(environment.EARLY_BIRDS_TEST_LOGIN_SECRET);
     return (
-        process.env.EARLY_BIRDS_TEST_ACCESS_ENABLED === '1' &&
+        environment.EARLY_BIRDS_TEST_ACCESS_ENABLED === '1' &&
         Boolean(secret && secret.length >= 32)
     );
 }

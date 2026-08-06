@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers as requestHeaders } from 'next/headers';
 
 import EarlyBirdLanding from '@/components/early-birds/EarlyBirdLanding';
 import EarlyBirdUnavailable from '@/components/early-birds/EarlyBirdUnavailable';
@@ -8,6 +9,7 @@ import {
 } from '@/lib/early-birds/auth';
 import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
+import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +26,7 @@ export default async function EarlyBirdsPage({
     if (!earlyBirdsEnabled()) return <EarlyBirdUnavailable />;
 
     const params = await searchParams;
+    const incomingHeaders = new Headers(await requestHeaders());
     const session = await currentEarlyBirdSession().catch(() => null);
     const access = session
         ? await getEarlyBirdAccess(session.user.id).catch(() => null)
@@ -39,6 +42,7 @@ export default async function EarlyBirdsPage({
             inviteToken={invite}
             authError={params.authError === '1'}
             providers={earlyBirdOAuthAvailability()}
+            syntheticTeamEntryAvailable={syntheticTeamEntryAllowed({ headers: incomingHeaders })}
         />
     );
 }

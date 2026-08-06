@@ -172,6 +172,8 @@ export default defineConfig({
                   EARLY_BIRDS_TRUSTED_ORIGINS: BASE_URL,
                   EARLY_BIRDS_TEST_ACCESS_ENABLED: '1',
                   EARLY_BIRDS_TEST_LOGIN_SECRET: 'early-birds-e2e-login-secret-not-for-production',
+                  EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: '1',
+                  EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS: `localhost:${PORT}`,
               },
           },
 });
