@@ -14,7 +14,7 @@ import { POST } from '../route';
 
 const URL = 'https://app.example.test/api/early-birds/test-login';
 
-function request(authorization?: string): NextRequest {
+function request(authorization?: string, authOnly = false): NextRequest {
     return new NextRequest(URL, {
         method: 'POST',
         headers: {
@@ -26,6 +26,7 @@ function request(authorization?: string): NextRequest {
         body: JSON.stringify({
             email: 'listener@e2e.invalid',
             name: 'Synthetic Listener',
+            authOnly,
         }),
     });
 }
@@ -85,5 +86,13 @@ describe('EarlyBird synthetic login seam', () => {
         expect(internalRequest.headers.get('authorization')).toBeNull();
         expect(JSON.stringify(await internalRequest.clone().json())).not.toContain(secret);
         expect(mocks.issueMembership).toHaveBeenCalledWith('listener-synthetic-1');
+    });
+
+    it('creates only the staging identity when a canonical Free invitation will issue access', async () => {
+        const secret = 's'.repeat(32);
+        const response = await POST(request(`Bearer ${secret}`, true));
+        expect(response.status).toBe(200);
+        expect(mocks.handler).toHaveBeenCalledOnce();
+        expect(mocks.issueMembership).not.toHaveBeenCalled();
     });
 });

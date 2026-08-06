@@ -5,7 +5,13 @@ import { useState, type FormEvent } from 'react';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdSyntheticEntryCopy } from '@/lib/early-birds/copy';
 
-export default function SyntheticTeamEntryForm() {
+export default function SyntheticTeamEntryForm({
+    authOnly = false,
+    postLoginPath = '/early-birds/home',
+}: {
+    authOnly?: boolean;
+    postLoginPath?: string;
+}) {
     const { locale } = useLocale();
     const copy = earlyBirdSyntheticEntryCopy[locale];
     const [name, setName] = useState('');
@@ -32,10 +38,10 @@ export default function SyntheticTeamEntryForm() {
                     authorization: `Bearer ${bearer}`,
                     'content-type': 'application/json',
                 },
-                body: JSON.stringify({ name, email }),
+                body: JSON.stringify({ name, email, authOnly }),
             });
             if (!response.ok) throw new Error('synthetic entry unavailable');
-            window.location.assign('/early-birds/home');
+            window.location.assign(postLoginPath);
         } catch {
             setBusy(false);
             setFailed(true);

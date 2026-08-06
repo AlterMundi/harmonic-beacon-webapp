@@ -112,7 +112,12 @@ export default function EarlyBirdLanding(props: Props) {
                                         )}
                                     </button>
                                 ))}
-                                {props.syntheticTeamEntryAvailable && <SyntheticTeamEntryForm />}
+                                {props.syntheticTeamEntryAvailable && (
+                                    <SyntheticTeamEntryForm
+                                        authOnly={Boolean(props.inviteToken)}
+                                        postLoginPath={callbackURL}
+                                    />
+                                )}
                             </div>
                         )}
                     </section>

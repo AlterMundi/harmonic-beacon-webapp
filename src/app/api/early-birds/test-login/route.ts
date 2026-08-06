@@ -64,10 +64,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     let email: string;
     let name: string;
+    let authOnly: boolean;
     try {
-        const body = await request.json() as { email?: unknown; name?: unknown };
+        const body = await request.json() as { email?: unknown; name?: unknown; authOnly?: unknown };
         email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
         name = typeof body.name === 'string' ? body.name.trim() : '';
+        authOnly = body.authOnly === true;
     } catch {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }
@@ -96,7 +98,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const payload = await authResponse.clone().json() as { user?: { id?: unknown } };
     const accountId = typeof payload.user?.id === 'string' ? payload.user.id : null;
     if (!accountId) return NextResponse.json({ error: 'Synthetic login failed.' }, { status: 503 });
-    await issueSyntheticMembership(accountId);
+    // Invitation acceptance uses this seam only for its staging identity. The
+    // canonical authority remains the sole issuer of the Free membership.
+    if (!authOnly) await issueSyntheticMembership(accountId);
 
     return NextResponse.json(
         { ok: true, landing: '/early-birds/home' },

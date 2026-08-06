@@ -48,9 +48,32 @@ describe('EarlyBird staging team entry form', () => {
         expect(JSON.parse(String(init.body))).toEqual({
             name: 'Team Listener',
             email: 'team.listener@e2e.invalid',
+            authOnly: false,
         });
         expect(screen.getByLabelText('Temporary access code')).toHaveValue('');
         expect(JSON.stringify(window.localStorage)).not.toContain(accessCode);
         expect(JSON.stringify(window.sessionStorage)).not.toContain(accessCode);
+    });
+
+    it('requests identity only when entering through a canonical Free invitation', async () => {
+        const request = vi.fn().mockResolvedValue(new Response('{}', { status: 404 }));
+        vi.stubGlobal('fetch', request);
+        render(
+            <LocaleProvider initialLocale="en">
+                <SyntheticTeamEntryForm
+                    authOnly
+                    postLoginPath="/early-birds/redeem?token=opaque-invitation"
+                />
+            </LocaleProvider>,
+        );
+
+        await userEvent.type(screen.getByLabelText('Test name'), 'Free Listener');
+        await userEvent.type(screen.getByLabelText('Synthetic account'), 'free.listener@e2e.invalid');
+        await userEvent.type(screen.getByLabelText('Temporary access code'), 'team-staging-access-code-0000000000000001');
+        await userEvent.click(screen.getByRole('button', { name: 'Enter staging' }));
+
+        await waitFor(() => expect(request).toHaveBeenCalledOnce());
+        const [, init] = request.mock.calls[0] as [string, RequestInit];
+        expect(JSON.parse(String(init.body))).toMatchObject({ authOnly: true });
     });
 });

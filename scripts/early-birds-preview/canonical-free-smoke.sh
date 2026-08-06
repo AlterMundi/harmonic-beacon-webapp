@@ -16,7 +16,7 @@ invitation_token=$(tr -d '\r\n' <"$invitation_file")
 test "${#invitation_token}" -ge 32 || preview_fail "invitation token is too short"
 
 synthetic_email="free-smoke-$(date +%s)-$$@e2e.invalid"
-printf '{"name":"Canonical Free smoke","email":"%s"}' "$synthetic_email" >"$temporary/login.json"
+printf '{"name":"Canonical Free smoke","email":"%s","authOnly":true}' "$synthetic_email" >"$temporary/login.json"
 printf '{"token":"%s"}' "$invitation_token" >"$temporary/redeem.json"
 printf 'header = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\n' \
   "$login_secret" >"$temporary/login.curl"
