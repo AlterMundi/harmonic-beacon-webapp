@@ -129,6 +129,15 @@ test('nginx templates name only the two staging hosts and proxy only fixed loopb
   assert.doesNotMatch(stream, /proxy_pass[^\n]*(9090|readyz|metrics)/);
 });
 
+test('ACME bootstrap serves only challenges and never proxies preview traffic', async () => {
+  const source = await readPreview('nginx/acme-bootstrap.conf.template');
+  assert.match(source, /server_name earlybirds-staging\.harmonicbeacon\.com stream\.harmonicbeacon\.com/);
+  assert.match(source, /location \/\.well-known\/acme-challenge\//);
+  assert.match(source, /root \/var\/www\/html/);
+  assert.match(source, /location \/ \{\s*return 503;/);
+  assert.doesNotMatch(source, /listen 443|ssl_certificate|proxy_pass/);
+});
+
 test('production Listener HTTPS validation remains fail closed', async () => {
   const streamContract = await readRepository('src/lib/early-birds/stream.ts');
   assert.match(
