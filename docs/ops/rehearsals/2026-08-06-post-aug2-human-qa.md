@@ -184,8 +184,10 @@ never silently edit evidence.
   commercial evidence from Mariano/Sai is linked, not re-executed).
 - It does **not** test moderation/withdrawal: #134 remains pending; register
   its absence as a pending feature, not a failure.
-- It does **not** test a facilitation mix override: #98 does not exist and no
-  interface copy claims it does.
+- It does **not** execute or certify the facilitation-driven shared mix
+  override: **#98 (RTC-02) exists and remains OPEN and unimplemented**; that
+  work stays under `audio-touching` governance and requires explicit acoustic
+  approval. No interface copy claims the override exists.
 - It does **not** require a mic checker: #126 remains pending.
 - It does **not** require staff audio return: #131 remains pending.
 - EarlyBirds (PR #203 line) is a separate staging lane: not part of this
