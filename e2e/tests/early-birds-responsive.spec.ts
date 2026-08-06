@@ -56,7 +56,10 @@ test.describe('EarlyBirds responsive bilingual boundary', () => {
                 'x-forwarded-proto': 'https',
             },
             data: {
-                email: `responsive-${test.info().project.name}-${Date.now()}@e2e.invalid`,
+                // Reuse one synthetic identity across viewport projects. This
+                // exercises sign-up followed by sign-in and stays below Better
+                // Auth's intentional account-creation rate limit.
+                email: 'responsive-listener@e2e.invalid',
                 name: 'Responsive Listener',
             },
         });
