@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
 import { createPublicHandler, createInternalHandler, parseAllowedOrigins } from '../src/server.mjs';
-import { signPath } from '../src/auth.mjs';
+import { signedUrl, signPath } from '../src/auth.mjs';
 import { Metrics } from '../src/metrics.mjs';
-import { metadata, temporaryArtifact } from './helpers.mjs';
+import { metadata, temporaryArtifact, temporaryVariableArtifact, variableMetadata } from './helpers.mjs';
 
 const secret = 'z'.repeat(32);
 
@@ -62,6 +62,34 @@ test('only exposes minimal health publicly and protects manifest and every segme
   });
   assert.equal(disallowed.status, 200);
   assert.equal(disallowed.headers.get('access-control-allow-origin'), null);
+});
+
+test('serves an fMP4 initialization map and media segments with browser-compatible content types', async (t) => {
+  const artifact = await temporaryVariableArtifact();
+  const item = variableMetadata();
+  const server = http.createServer(createPublicHandler({
+    artifactRoot: artifact.artifactRoot,
+    metadata: item,
+    publicOrigin: 'https://stream.example.test',
+    signingSecret: secret,
+    allowedOrigins: new Set(['https://listener.example.test']),
+    now: () => item.epochMs + 10_000,
+  }));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+
+  const address = server.address();
+  const expiresAt = Math.floor(Date.now() / 1000) + 60;
+  for (const [file, expected] of [['init.mp4', 'video/mp4'], ['00000.m4s', 'video/iso.segment']]) {
+    const pathname = `/v1/hls/${item.artifactId}/segments/${file}`;
+    const publicUrl = new URL(signedUrl({ origin: 'https://stream.example.test', secret, pathname, expiresAt }));
+    publicUrl.hostname = '127.0.0.1';
+    publicUrl.port = String(address.port);
+    publicUrl.protocol = 'http:';
+    const response = await fetch(publicUrl);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), expected);
+  }
 });
 
 test('accepts only explicit canonical HTTP origins for browser media fetches', () => {

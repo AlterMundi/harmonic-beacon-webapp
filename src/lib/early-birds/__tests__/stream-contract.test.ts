@@ -73,6 +73,7 @@ describe('Beacon origin signing contract', () => {
         const manifest = [
             '#EXTM3U',
             '#EXT-X-VERSION:7',
+            '#EXT-X-MAP:URI="https://stream.example.test/v1/hls/approved-v1/segments/init.mp4?exp=1100&sig=map-signature"',
             '#EXTINF:6.000,',
             'https://stream.example.test/v1/hls/approved-v1/segments/000001.m4s?exp=1100&sig=abc',
             '',
@@ -80,6 +81,7 @@ describe('Beacon origin signing contract', () => {
         expect(validSignedOriginManifest(manifest, config)).toBe(true);
         expect(validSignedOriginManifest(manifest.replace('stream.example.test', 'evil.example'), config)).toBe(false);
         expect(validSignedOriginManifest(manifest.replace('&sig=abc', ''), config)).toBe(false);
+        expect(validSignedOriginManifest(manifest.replace('&sig=map-signature', ''), config)).toBe(false);
     });
 
     it('gives browsers only the stable same-origin lease manifest URL', async () => {

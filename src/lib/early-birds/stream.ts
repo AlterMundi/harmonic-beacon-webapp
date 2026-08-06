@@ -190,9 +190,9 @@ export function validSignedOriginManifest(
     const mediaLines = body.split('\n').filter((line) => line && !line.startsWith('#'));
     if (mediaLines.length < 1) return false;
     const segmentPrefix = `/v1/hls/${config.artifactId}/segments/`;
-    return mediaLines.every((line) => {
+    const validMediaUrl = (value: string) => {
         try {
-            const url = new URL(line);
+            const url = new URL(value);
             return (
                 url.origin === config.origin &&
                 url.pathname.startsWith(segmentPrefix) &&
@@ -202,7 +202,11 @@ export function validSignedOriginManifest(
         } catch {
             return false;
         }
-    });
+    };
+    const mapLines = body.split('\n').filter((line) => line.startsWith('#EXT-X-MAP:'));
+    const mapUris = mapLines.map((line) => line.match(/(?:^|[:,])URI="([^"]+)"(?:,|$)/)?.[1] ?? '');
+    return mediaLines.every(validMediaUrl)
+        && mapUris.every((uri) => uri !== '' && validMediaUrl(uri));
 }
 
 export async function authorizeEarlyBirdStreamLease(

@@ -69,6 +69,12 @@ function routeName(pathname) {
   return 'unknown';
 }
 
+function mediaContentType(file) {
+  if (file.endsWith('.mp4')) return 'video/mp4';
+  if (file.endsWith('.m4s')) return 'video/iso.segment';
+  return 'application/octet-stream';
+}
+
 export function createPublicHandler({ artifactRoot, metadata, publicOrigin, signingSecret, allowedOrigins = new Set(), metrics = new Metrics(), now = () => Date.now() }) {
   const manifestPath = `/v1/hls/${metadata.artifactId}/live.m3u8`;
   const segmentPrefix = `/v1/hls/${metadata.artifactId}/segments/`;
@@ -132,7 +138,7 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
         status = 200;
         bytes = request.method === 'HEAD' ? 0 : segment.byteLength;
         respond(status, request.method === 'HEAD' ? '' : segment, {
-          'Content-Type': 'application/octet-stream',
+          'Content-Type': mediaContentType(file),
           'Cache-Control': 'private, no-store',
           'Content-Length': String(segment.byteLength),
         });

@@ -2,33 +2,54 @@ import { signedUrl } from './auth.mjs';
 
 const WINDOW_SEGMENTS = 6;
 
-function isoAt(epochMs, sequence, durationSeconds) {
-  return new Date(epochMs + sequence * durationSeconds * 1000).toISOString();
+export function currentSequence(metadata, nowMs = Date.now()) {
+  const elapsedSeconds = Math.max(0, (nowMs - metadata.epochMs) / 1000);
+  if (metadata.schemaVersion === 1) {
+    return Math.floor(elapsedSeconds / metadata.timing.segmentDurationSeconds);
+  }
+  const cycle = Math.floor(elapsedSeconds / metadata.loopDurationSeconds);
+  const position = elapsedSeconds - cycle * metadata.loopDurationSeconds;
+  const index = metadata.segments.findIndex((segment, candidate) => (
+    position < metadata.segmentStartsSeconds[candidate] + segment.durationSeconds
+  ));
+  return cycle * metadata.timing.segmentCount + Math.max(0, index);
 }
 
-export function currentSequence(metadata, nowMs = Date.now()) {
-  return Math.max(0, Math.floor((nowMs - metadata.epochMs) / (metadata.timing.segmentDurationSeconds * 1000)));
+function segmentAtSequence(metadata, sequence) {
+  const count = metadata.timing.segmentCount;
+  const index = sequence % count;
+  const cycle = Math.floor(sequence / count);
+  return {
+    index,
+    segment: metadata.segments[index],
+    startsAtMs: metadata.epochMs
+      + (cycle * metadata.loopDurationSeconds + metadata.segmentStartsSeconds[index]) * 1000,
+  };
 }
 
 export function renderManifest({ metadata, origin, secret, nowMs = Date.now(), tokenTtlSeconds = 120 }) {
-  const duration = metadata.timing.segmentDurationSeconds;
   const edgeSequence = currentSequence(metadata, nowMs);
   const firstSequence = Math.max(0, edgeSequence - (WINDOW_SEGMENTS - 1));
   const expiresAt = Math.floor(nowMs / 1000) + tokenTtlSeconds;
+  const targetDuration = Math.ceil(Math.max(...metadata.segments.map((segment) => segment.durationSeconds)));
   const lines = [
     '#EXTM3U',
     '#EXT-X-VERSION:7',
-    `#EXT-X-TARGETDURATION:${duration}`,
+    `#EXT-X-TARGETDURATION:${targetDuration}`,
     `#EXT-X-MEDIA-SEQUENCE:${firstSequence}`,
     '#EXT-X-INDEPENDENT-SEGMENTS',
   ];
 
+  if (metadata.initialization) {
+    const pathname = `/v1/hls/${metadata.artifactId}/segments/${encodeURIComponent(metadata.initialization.file)}`;
+    lines.push(`#EXT-X-MAP:URI="${signedUrl({ origin, secret, pathname, expiresAt })}"`);
+  }
+
   for (let sequence = firstSequence; sequence <= edgeSequence; sequence += 1) {
-    const index = sequence % metadata.timing.segmentCount;
-    const segment = metadata.segments[index];
+    const { index, segment, startsAtMs } = segmentAtSequence(metadata, sequence);
     if (index === 0 && sequence !== 0) lines.push('#EXT-X-DISCONTINUITY');
-    lines.push(`#EXT-X-PROGRAM-DATE-TIME:${isoAt(metadata.epochMs, sequence, duration)}`);
-    lines.push(`#EXTINF:${duration.toFixed(3)},`);
+    lines.push(`#EXT-X-PROGRAM-DATE-TIME:${new Date(startsAtMs).toISOString()}`);
+    lines.push(`#EXTINF:${segment.durationSeconds.toFixed(6)},`);
     const pathname = `/v1/hls/${metadata.artifactId}/segments/${encodeURIComponent(segment.file)}`;
     // Native HLS does not inherit the manifest query string. Every URI is signed.
     lines.push(signedUrl({ origin, secret, pathname, expiresAt }));
