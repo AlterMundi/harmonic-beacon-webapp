@@ -72,7 +72,7 @@ function buildEarlyBirdAuth() {
     const baseURL = nonEmpty(process.env.EARLY_BIRDS_AUTH_BASE_URL);
 
     return betterAuth({
-        appName: 'Harmonic Beacon EarlyBirds',
+        appName: 'Harmonic Beacon Listener',
         ...(baseURL ? { baseURL } : {}),
         basePath: EARLY_BIRD_AUTH_BASE_PATH,
         secret: authSecret(),

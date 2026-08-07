@@ -279,9 +279,12 @@ entry canonically at `/`, plus `/api/early-birds/`, Next static assets and healt
 legacy `/early-birds/home` redirects to `/`. It blocks `/api/internal/`
 and returns 404 for the image's weekend, staff, event and checkout surfaces.
 The `listen.harmonicbeacon.com` vhost is narrower: it exposes only `/`, Next
-static assets, health, stream leases/manifests and configured drop-ins. Auth,
-synthetic login, invitation, membership projection and all other app routes
-remain unreachable from that host.
+static assets, health, the dedicated Listener OAuth/session namespace, stream
+leases/manifests and configured drop-ins. Synthetic login, invitation,
+membership projection and all other app routes remain unreachable from that
+host. The application additionally returns a hidden 404 for Better Auth's
+email/password endpoints, so the public namespace offers only configured
+Google and Apple social providers.
 
 A host operator must review certificate/DNS ownership, provision each named
 certificate, install these as new site files, and run `nginx -t` before any
@@ -305,7 +308,11 @@ EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=1
 
 Recreate the Listener through `start.sh`, rerun the smoke, and exercise only
 `@e2e.invalid` synthetic identities with the separate test-login bearer.
-Provider buttons remain disabled because OAuth credentials are blank.
+Provider buttons remain disabled while OAuth credentials are blank. A shared
+preview runtime may instead use `listen.harmonicbeacon.com` as its canonical
+OAuth base URL, keep both Listener hosts in `EARLY_BIRDS_TRUSTED_ORIGINS`, and
+configure one or both complete provider credential pairs. Synthetic team entry
+remains allowlisted only on the staging hostname.
 Return both switches to `0` after the supervised team window.
 
 ### Operator-controlled Free for All
@@ -330,8 +337,9 @@ deletion is required.
 
 Before opening the public hostname, verify its certificate, the exact origin
 CORS pair above, `/api/health/ready`, an anonymous lease/manifest/playback, and
-that `/api/early-birds/auth/session`, `/api/early-birds/test-login` and
-`/api/internal/` all return 404 at the edge.
+that `/api/early-birds/auth/session` is reachable without disclosing a session,
+while `/api/early-birds/auth/sign-in/email`, `/api/early-birds/test-login` and
+`/api/internal/` all return 404.
 
 Normal stop retains all preview data:
 

@@ -51,8 +51,26 @@ require_synthetic_env() {
   schema_version=$(preview_env_value EARLYBIRDS_PREVIEW_SCHEMA_VERSION "$env_file")
   printf '%s\n' "$schema_version" | grep -Eq '^[0-9]{14}_[a-z0-9_]+$' || \
     preview_fail 'EARLYBIRDS_PREVIEW_SCHEMA_VERSION must name a checked-in Prisma migration'
-  require_exact_preview_value EARLY_BIRDS_AUTH_BASE_URL https://earlybirds-staging.harmonicbeacon.com "$env_file"
-  require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
+  google_client_id=$(preview_env_value EARLY_BIRDS_GOOGLE_CLIENT_ID "$env_file")
+  google_client_secret=$(preview_env_value EARLY_BIRDS_GOOGLE_CLIENT_SECRET "$env_file")
+  apple_client_id=$(preview_env_value EARLY_BIRDS_APPLE_CLIENT_ID "$env_file")
+  apple_client_secret=$(preview_env_value EARLY_BIRDS_APPLE_CLIENT_SECRET "$env_file")
+  if { test -n "$google_client_id" && test -z "$google_client_secret"; } || \
+     { test -z "$google_client_id" && test -n "$google_client_secret"; }; then
+    preview_fail 'Google OAuth client ID and secret must be configured together'
+  fi
+  if { test -n "$apple_client_id" && test -z "$apple_client_secret"; } || \
+     { test -z "$apple_client_id" && test -n "$apple_client_secret"; }; then
+    preview_fail 'Apple OAuth client ID and secret must be configured together'
+  fi
+  if test -n "$google_client_id" || test -n "$apple_client_id"; then
+    require_exact_preview_value EARLY_BIRDS_AUTH_BASE_URL https://listen.harmonicbeacon.com "$env_file"
+    require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS \
+      https://listen.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com "$env_file"
+  else
+    require_exact_preview_value EARLY_BIRDS_AUTH_BASE_URL https://earlybirds-staging.harmonicbeacon.com "$env_file"
+    require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
+  fi
   require_exact_preview_value EARLY_BIRDS_STREAM_ORIGIN https://stream.harmonicbeacon.com "$env_file"
   require_exact_preview_value BEACON_STREAM_PUBLIC_ORIGIN https://stream.harmonicbeacon.com "$env_file"
   stream_allowed_origins=$(preview_env_value BEACON_STREAM_ALLOWED_ORIGINS "$env_file")
@@ -86,13 +104,6 @@ require_synthetic_env() {
     require_exact_preview_value EARLY_BIRDS_AUTHORITY_BASE_URL https://authority.example.invalid "$env_file"
   fi
 
-  for oauth_key in \
-    EARLY_BIRDS_GOOGLE_CLIENT_ID EARLY_BIRDS_GOOGLE_CLIENT_SECRET \
-    EARLY_BIRDS_APPLE_CLIENT_ID EARLY_BIRDS_APPLE_CLIENT_SECRET
-  do
-    test -z "$(preview_env_value "$oauth_key" "$env_file")" || preview_fail "$oauth_key must stay empty in synthetic staging"
-  done
-
   require_synthetic_secret EARLYBIRDS_PREVIEW_DB_PASSWORD 24 "$env_file"
   require_synthetic_secret EARLY_BIRDS_AUTH_SECRET 32 "$env_file"
   require_synthetic_secret EARLY_BIRDS_AUTHORITY_SERVICE_TOKEN 43 "$env_file"
@@ -112,6 +123,8 @@ require_synthetic_env() {
     case "$assignment" in
       EARLY_BIRDS_AUTH_BASE_URL=https://earlybirds-staging.harmonicbeacon.com|\
       EARLY_BIRDS_TRUSTED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com|\
+      EARLY_BIRDS_AUTH_BASE_URL=https://listen.harmonicbeacon.com|\
+      EARLY_BIRDS_TRUSTED_ORIGINS=https://listen.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com|\
       EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=earlybirds-staging.harmonicbeacon.com|\
       EARLY_BIRDS_STREAM_ORIGIN=https://stream.harmonicbeacon.com|\
       BEACON_STREAM_PUBLIC_ORIGIN=https://stream.harmonicbeacon.com|\

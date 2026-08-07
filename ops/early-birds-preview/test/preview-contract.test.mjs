@@ -26,7 +26,7 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
   const cases = [
     ['live hostname', 'EARLY_BIRDS_AUTH_BASE_URL=https://live.harmonicbeacon.com', /must be https:\/\/earlybirds-staging/],
     ['HTTP stream origin', 'EARLY_BIRDS_STREAM_ORIGIN=http://stream.harmonicbeacon.com', /must be https:\/\/stream/],
-    ['real OAuth seam', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=real-client-id', /must stay empty/],
+    ['half-configured OAuth seam', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=real-client-id', /configured together/],
     ['event database identity', 'EARLYBIRDS_PREVIEW_DB_NAME=beacon', /must be earlybirds_preview/],
     ['unsafe kill switch value', 'EARLY_BIRDS_ENABLED=true', /must be 0 or 1/],
     ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
@@ -60,6 +60,24 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     const envFile = path.join(temporary, 'reviewed-beacon.env');
     await fs.writeFile(envFile, source
       .replaceAll('synthetic-preview-artifact', 'beacon-luz-20260624-2hs-aac320-v2'), { mode: 0o600 });
+    assert.equal(runGuard(envFile).status, 0);
+  });
+
+  await t.test('guarded public Google OAuth handoff', async () => {
+    const envFile = path.join(temporary, 'public-google-oauth.env');
+    await fs.writeFile(envFile, source
+      .replace(
+        'EARLY_BIRDS_AUTH_BASE_URL=https://earlybirds-staging.harmonicbeacon.com',
+        'EARLY_BIRDS_AUTH_BASE_URL=https://listen.harmonicbeacon.com',
+      )
+      .replace(
+        'EARLY_BIRDS_TRUSTED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com',
+        'EARLY_BIRDS_TRUSTED_ORIGINS=https://listen.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com',
+      )
+      .replace('EARLY_BIRDS_GOOGLE_CLIENT_ID=', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=google-client-id')
+      .replace('EARLY_BIRDS_GOOGLE_CLIENT_SECRET=', 'EARLY_BIRDS_GOOGLE_CLIENT_SECRET=google-client-secret'), {
+      mode: 0o600,
+    });
     assert.equal(runGuard(envFile).status, 0);
   });
 
@@ -162,7 +180,8 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.doesNotMatch(stream, /proxy_pass[^\n]*(9090|readyz|metrics)/);
   assert.match(listener, /location \^~ \/api\/early-birds\/stream\//);
   assert.match(listener, /location \^~ \/api\/early-birds\/drop-ins\//);
-  assert.doesNotMatch(listener, /api\/early-birds\/(auth|test-login|free|membership)/);
+  assert.match(listener, /location \^~ \/api\/early-birds\/auth\//);
+  assert.doesNotMatch(listener, /api\/early-birds\/(test-login|free|membership)/);
   assert.doesNotMatch(listener, /location \^~ \/early-birds\//);
 
   const invitationEntryLocations = [...app.matchAll(

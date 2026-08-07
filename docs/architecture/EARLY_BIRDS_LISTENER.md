@@ -15,12 +15,15 @@ The test suite locks this pre-adapter invariant.
 
 Required OAuth callbacks are:
 
-- `https://<app-host>/api/early-birds/auth/callback/google`
-- `https://<app-host>/api/early-birds/auth/callback/apple`
+- `https://listen.harmonicbeacon.com/api/early-birds/auth/callback/google`
+- `https://listen.harmonicbeacon.com/api/early-birds/auth/callback/apple`
 
-Production therefore needs the final HTTPS app hostname/DNS record before Google and Apple callback
-registration. Provider credentials may remain unset during local testing; the corresponding button
-is visibly disabled.
+The staging callbacks with the same suffixes may be registered for isolated QA,
+but the shared preview runtime uses `listen.harmonicbeacon.com` as its canonical
+OAuth base URL. Provider credentials may remain unset during local testing; the
+corresponding button is visibly disabled. Public nginx exposes this dedicated
+auth namespace while continuing to block synthetic login, invitations and
+internal membership routes.
 
 ## Canonical membership boundary
 
