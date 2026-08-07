@@ -12,7 +12,6 @@ device/browser, result and a non-sensitive symptom.
 ## Fixed candidate
 
 - Listener application: `575b75aae5609b1813485d955a3e8ea753018084`
-- Documentation head: `637c5e014620581a100f976cdbe68ff56cd68a31`
 - Listener schema: `20260807070000_early_bird_free_schedule`
 - Stream origin: `https://stream.harmonicbeacon.com`
 - Approved intro languages: Spanish and English
@@ -26,8 +25,8 @@ device/browser, result and a non-sensitive symptom.
 - Apple: absent until Apple Developer Program credentials and 2FA are supplied
 - Event application and `live.harmonicbeacon.com`: out of scope and unchanged
 
-The deployed application SHA deliberately differs from the documentation-only
-branch head. Health must attest the application SHA above.
+Documentation may advance without rebuilding the application. Health must
+attest the application SHA above rather than the current branch head.
 
 ## Automated preflight
 
