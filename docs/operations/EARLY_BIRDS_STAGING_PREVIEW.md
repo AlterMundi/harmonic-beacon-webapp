@@ -1,12 +1,42 @@
 # EarlyBirds isolated staging runtime
 
-## 2026-08-07 registered Free and identity hardening
+## 2026-08-07 first-listen access and boundary synchronization
 
 The isolated Listener runs application SHA
+`dad29d4dc5010603a5bbc7ed309c8f78e7c0f384`, image
+`harmonic-beacon/earlybirds-preview-listener:dad29d4` and schema
+`20260807100000_early_bird_welcome_access`. Free for All remains OFF for the
+coordinated registered-access acceptance.
+
+- A new signed-in account may explicitly start one durable 30-minute first
+  listen before selecting its recurring schedule. Registration, page view,
+  FFA, Founder membership and schedule selection do not consume it.
+- Stream lease and manifest authorization are capped at the exact server-side
+  welcome end. A protected synthetic runtime smoke proved unused state,
+  activation, exact duration, replay without extension, signed media and
+  rejection of a second activation.
+- An already-open waiting/player page now revalidates once at the scheduled
+  start/end boundary and on resume, without continuous pre-boundary polling.
+  Physical timing acceptance remains in #216.
+- The passwordless email seam from #221 is present but intentionally hidden.
+  Real delivery remains blocked on `SairaAsua/proyecciones-mito#44`; no Gmail
+  OAuth material is installed in Listener.
+- Local checkpoint passed 1,124 tests with 19 standard skips, ESLint,
+  TypeScript, production build, Prisma validation and preview checks. PR #222
+  CI passed stream, observability and preview builds. Host/public health,
+  PostgreSQL, origin and event-production health are green; Listener has zero
+  restarts.
+- Rollback restores root-only
+  `/etc/harmonic-beacon/earlybirds-preview.env.pre-dad29d4`, selects Listener
+  image `55bf282` and retains PostgreSQL, the additive welcome table and all
+  approved media.
+
+## 2026-08-07 registered Free and identity hardening
+
+This prior candidate ran application SHA
 `575b75aae5609b1813485d955a3e8ea753018084` and schema
 `20260807070000_early_bird_free_schedule`. The global Free for All override is
-ON after the acceptance exercises below; it remains independent from account
-schedules and membership.
+independent from account schedules and membership.
 
 - A registered account may select one recurring two-hour daily window using a
   canonical IANA time zone. The server owns authorization, the rolling

@@ -11,8 +11,8 @@ device/browser, result and a non-sensitive symptom.
 
 ## Fixed candidate
 
-- Listener application: `575b75aae5609b1813485d955a3e8ea753018084`
-- Listener schema: `20260807070000_early_bird_free_schedule`
+- Listener application: `dad29d4dc5010603a5bbc7ed309c8f78e7c0f384`
+- Listener schema: `20260807100000_early_bird_welcome_access`
 - Stream origin: `https://stream.harmonicbeacon.com`
 - Approved intro languages: Spanish and English
 - Ordinary Free access: registered account plus one recurring two-hour daily
