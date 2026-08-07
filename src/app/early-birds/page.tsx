@@ -17,6 +17,7 @@ import {
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 import { freeWindowState, serializeFreeWindowState } from '@/lib/early-birds/free-window';
+import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,6 +79,7 @@ export default async function EarlyBirdsPage({
             invitationAvailable={invitationAvailable}
             authError={params.authError === '1'}
             providers={earlyBirdOAuthAvailability()}
+            emailMagicLinkAvailable={earlyBirdMagicLinkAvailable()}
             syntheticTeamEntryAvailable={syntheticTeamEntryAllowed({ headers: incomingHeaders })}
             freeWindow={serializeFreeWindowState(access?.freeWindow ?? freeWindowState(null))}
         />

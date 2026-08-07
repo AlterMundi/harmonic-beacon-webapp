@@ -4,10 +4,17 @@
 
 ## Decision
 
-EarlyBirds uses an exact stable Better Auth release with Google and Apple only.
+EarlyBirds uses an exact stable Better Auth release with configured Google and
+Apple providers plus an optional one-use email magic-link fallback through the
+existing private mail authority.
 It owns additive `EarlyBirdAccount`, provider identity and session data, a
 separate `hb_earlybird_session` cookie and namespaced routes. Cross-provider
 account linking and Facebook are disabled.
+
+The email fallback was added on 2026-08-07. Its random token is stored only as
+a verifier, expires after ten minutes and is consumed once. It never silently
+authenticates a Listener whose address is already owned by a social or
+supervised identity; explicit account linking remains outside this milestone.
 
 An EarlyBird session can request a current membership projection and signed
 media lease. It can never create a staff principal, an event ticket principal,

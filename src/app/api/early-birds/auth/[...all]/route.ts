@@ -2,6 +2,11 @@ import type { NextRequest } from 'next/server';
 
 import { earlyBirdAuth } from '@/lib/early-birds/auth';
 import {
+    EARLY_BIRD_MAGIC_LINK_PATH,
+    EARLY_BIRD_MAGIC_LINK_VERIFY_PATH,
+    earlyBirdMagicLinkAvailable,
+} from '@/lib/early-birds/magic-link';
+import {
     earlyBirdsEnabled,
     earlyBirdsUnavailableResponse,
 } from '@/lib/early-birds/enabled';
@@ -34,15 +39,79 @@ function oauthCallback(request: NextRequest): boolean {
     return request.nextUrl.pathname.includes('/api/early-birds/auth/callback/');
 }
 
+function magicLinkRequest(request: NextRequest): boolean {
+    return request.nextUrl.pathname.endsWith(EARLY_BIRD_MAGIC_LINK_PATH);
+}
+
+function magicLinkVerification(request: NextRequest): boolean {
+    return request.nextUrl.pathname.endsWith(EARLY_BIRD_MAGIC_LINK_VERIFY_PATH);
+}
+
+const LISTENER_CALLBACKS = new Set(['/early-birds', '/early-birds/redeem']);
+
+function safeListenerCallback(value: unknown, kind: 'success' | 'error'): boolean {
+    if (value === undefined) return true;
+    if (typeof value !== 'string') return false;
+    if (kind === 'success') return LISTENER_CALLBACKS.has(value);
+    return value === '/early-birds?authError=1';
+}
+
+async function safeMagicLinkRequest(request: NextRequest): Promise<boolean> {
+    try {
+        const body = await request.clone().json() as Record<string, unknown>;
+        const metadata = body.metadata;
+        return typeof body.callbackURL === 'string' &&
+            safeListenerCallback(body.callbackURL, 'success') &&
+            safeListenerCallback(body.newUserCallbackURL, 'success') &&
+            safeListenerCallback(body.errorCallbackURL, 'error') &&
+            (metadata === undefined || (
+                typeof metadata === 'object' && metadata !== null &&
+                Object.keys(metadata).every((key) => key === 'locale') &&
+                ['es', 'en'].includes(String((metadata as Record<string, unknown>).locale))
+            ));
+    } catch {
+        return false;
+    }
+}
+
+function safeMagicLinkVerification(request: NextRequest): boolean {
+    const callbackURL = request.nextUrl.searchParams.get('callbackURL');
+    return callbackURL !== null && safeListenerCallback(callbackURL, 'success') &&
+        safeListenerCallback(request.nextUrl.searchParams.get('newUserCallbackURL') ?? undefined, 'success') &&
+        safeListenerCallback(request.nextUrl.searchParams.get('errorCallbackURL') ?? undefined, 'error');
+}
+
+function hiddenMagicLinkResponse(): Response {
+    return Response.json({ error: 'Not found.' }, {
+        status: 404,
+        headers: { 'Cache-Control': 'private, no-store' },
+    });
+}
+
+function invalidMagicLinkResponse(): Response {
+    return Response.json({ error: 'Invalid request.' }, {
+        status: 400,
+        headers: { 'Cache-Control': 'private, no-store' },
+    });
+}
+
 export function GET(request: NextRequest): Promise<Response> | Response {
     if (!earlyBirdsEnabled()) return earlyBirdsUnavailableResponse();
+    if (magicLinkVerification(request)) {
+        if (!earlyBirdMagicLinkAvailable()) return hiddenMagicLinkResponse();
+        if (!safeMagicLinkVerification(request)) return invalidMagicLinkResponse();
+    }
     return earlyBirdAuth().handler(request);
 }
 
-export function POST(request: NextRequest): Promise<Response> | Response {
+export async function POST(request: NextRequest): Promise<Response> {
     if (!earlyBirdsEnabled()) return earlyBirdsUnavailableResponse();
     const hidden = hiddenSyntheticEmailEndpoint(request);
     if (hidden) return hidden;
+    if (magicLinkRequest(request)) {
+        if (!earlyBirdMagicLinkAvailable()) return hiddenMagicLinkResponse();
+        if (!await safeMagicLinkRequest(request)) return invalidMagicLinkResponse();
+    }
     // Provider callbacks are protected by the one-time state/cookie verifier
     // and Apple uses a cross-site form_post. Every browser-initiated mutation
     // must instead originate from one of the exact Listener hosts.

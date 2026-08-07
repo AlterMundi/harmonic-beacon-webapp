@@ -352,6 +352,25 @@ configure one or both complete provider credential pairs. Synthetic team entry
 remains allowlisted only on the staging hostname.
 Return both switches to `0` after the supervised team window.
 
+### Optional email magic-link fallback
+
+The fallback remains absent until the existing PMP mail authority implements
+the exact private contract in
+`docs/architecture/EARLY_BIRDS_MAGIC_LINK.md`. Do not copy or mount its Gmail
+OAuth grant into the Listener. After that adapter is deployed on
+`earlybirds_authority_private`, apply the additive
+`20260807090000_early_bird_magic_link_throttles` migration and configure all
+three values together:
+
+```dotenv
+EARLY_BIRDS_MAGIC_LINK_DELIVERY_URL=http://pmp-myth-api:8765/api/internal/v1/listener-magic-links/deliver
+EARLY_BIRDS_MAGIC_LINK_DELIVERY_TOKEN=<dedicated-32-plus-character-token>
+EARLY_BIRDS_MAGIC_LINK_RATE_SECRET=<independent-32-plus-character-secret>
+```
+
+Partial or invalid configuration exposes neither the UI nor the auth endpoint.
+Rollback clears all three values and recreates only the isolated Listener.
+
 ### Ordinary Free listening windows
 
 When Free for All is off, an authenticated account without a canonical Founder

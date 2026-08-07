@@ -19,7 +19,7 @@ continuous relationship with the Beacon outside scheduled events.
 
 The first useful release lets a Listener:
 
-1. sign in with Google or Apple;
+1. sign in with a configured Google/Apple provider or a passwordless email link;
 2. obtain one Free invitation grant or a valid paid EarlyBird membership through
    the provider-neutral commerce authority;
 3. open a private, receive-only listening home;
@@ -127,7 +127,8 @@ steps are not safe to execute literally.
 
 - `/early-birds` unified entry: public sign-in without access, private Listener with a valid projection.
 - `/early-birds/home` compatibility redirect only. The dedicated staging hostname exposes the unified entry canonically at `/`.
-- Google and Apple sign-in through an exact, stable Better Auth version.
+- Google and Apple sign-in plus an optional passwordless email fallback through
+  an exact, stable Better Auth version and the existing private mail authority.
 - A separate EarlyBird account/session domain.
 - One-use, signed, auditable, revocable Free invitations and canonical paid
   membership entitlements from the commerce service.
@@ -167,9 +168,10 @@ offline reviewed derivative ----> 24/7 stream origin ----> cache/CDN boundary
                                          v
                                   external canary
 
-Google/Apple OIDC ---> EarlyBird account/session ---> EarlyBird web routes
-                         |
-                         v
+Google/Apple OIDC --\
+email magic link ----> EarlyBird account/session ---> EarlyBird web routes
+                           |
+                           v
 membership authority <--- Free invites / PayPal / MercadoPago / future stores
 ```
 
@@ -360,7 +362,9 @@ Proposed additive concepts:
 The browser uses a separate `hb_earlybird_session` cookie. An EarlyBird session
 cannot grant staff capabilities, event publication or event admission.
 
-Google and Apple use Authorization Code with PKCE, state and nonce. No provider
+Google and Apple use Authorization Code with PKCE, state and nonce. Email uses
+a verifier-only, short-lived, single-use link delivered by the existing mail
+authority. No provider
 access/refresh token is stored unless a later feature proves it necessary.
 Provider subject is the primary external identity; verified email is contact
 evidence, not a mutable authorization key. Cross-provider account linking is
@@ -528,7 +532,8 @@ payment provider.
 ### Batch C — identity and provider-neutral membership
 
 - approve the identity ADR;
-- implement Google and Apple sign-in, callback, session/revocation and logout;
+- implement Google and Apple sign-in plus optional email magic-link request,
+  callback, session/revocation and logout;
 - keep account linking disabled and test duplicate-email isolation;
 - implement signed one-use Free invitations and the canonical membership projection;
 - run positive and negative auth tests in preview.
@@ -608,7 +613,7 @@ event sound and reliability are at least as good as the current path.
 |---|---|
 | D1 | `EarlyBirds`; preview `earlybirds-staging.harmonicbeacon.com`; production route `/early-birds`; origin `stream.harmonicbeacon.com`. |
 | D2 | USD 2/month founder offer; 14-day involuntary grace; voluntary cancellation loses founder terms after paid-through; refund/dispute/admin revoke immediately. |
-| D3 | Google and Apple through exact stable Better Auth; no Facebook and no account linking. |
+| D3 | Google and Apple through exact stable Better Auth, plus an optional passwordless email magic-link fallback through the existing private mail authority; no Facebook and no implicit account linking. |
 | D4 | Provider-neutral Free, PayPal and MercadoPago grants; Free is single-use, signed, auditable, revocable and consumed by paid upgrade. |
 | D5 | Source-neutral “continuous Beacon stream” wording; never claim whether the source is an instrument, a file or another origin. |
 | D6 | Each authored Amara Sol offline mix is immutable and separately approved; the English intro is the currently approved and published default. |
@@ -628,7 +633,7 @@ Create milestone `EarlyBirds` and use these non-overlapping delivery cards:
 1. EB-00 — freeze product, identity, membership, media and Fast Forward ADRs.
 2. EB-01 — immutable media inventory, reproducible candidate pipeline and deterministic HLS origin.
 3. EB-02 — resource isolation, observability, Telegram alerts, capacity model, canary and stop switch.
-4. EB-03 — Google/Apple identity and isolated Listener sessions.
+4. EB-03 — Google/Apple/email identity and isolated Listener sessions.
 5. EB-04 — provider-neutral membership and one-use Free invitations.
 6. EB-05 — bilingual Listener UX, two-device leases, private ES/EN intros and live-edge handoff.
 7. EB-06 — PayPal sandbox lifecycle and reconciliation, disabled until Free acceptance and explicit activation approval.

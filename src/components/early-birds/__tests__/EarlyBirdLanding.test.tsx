@@ -7,9 +7,10 @@ import { LocaleProvider } from '@/context/LocaleContext';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
 
 const signInSocial = vi.hoisted(() => vi.fn());
+const signInMagicLink = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/early-birds/auth-client', () => ({
-    earlyBirdAuthClient: { signIn: { social: signInSocial }, signOut },
+    earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
 }));
 vi.mock('@/components/brand/LanguageControl', () => ({ default: () => <div data-testid="language" /> }));
 vi.mock('@/components/brand/BrandLockup', () => ({ default: () => <a href="/early-birds">Harmonic Beacon</a> }));
@@ -25,6 +26,7 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 invitationAvailable={false}
                 authError={false}
                 providers={{ google: true, apple: true }}
+                emailMagicLinkAvailable={false}
                 syntheticTeamEntryAvailable={false}
                 freeWindow={{
                     configured: false,
@@ -49,6 +51,8 @@ describe('EarlyBird public landing', () => {
     beforeEach(() => {
         signInSocial.mockReset();
         signInSocial.mockResolvedValue({ error: null });
+        signInMagicLink.mockReset();
+        signInMagicLink.mockResolvedValue({ data: { status: true }, error: null });
         signOut.mockReset();
         signOut.mockResolvedValue({ error: null });
         window.localStorage.clear();
@@ -95,6 +99,38 @@ describe('EarlyBird public landing', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent(earlyBirdCopy.en.authError);
         expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeEnabled();
+    });
+
+    it('offers an enumeration-resistant email fallback only when delivery is configured', async () => {
+        renderLanding({ providers: { google: true, apple: false }, emailMagicLinkAvailable: true });
+
+        await userEvent.type(screen.getByLabelText('Email address'), 'listener@example.test');
+        await userEvent.click(screen.getByRole('button', { name: 'Email me a sign-in link' }));
+
+        expect(signInMagicLink).toHaveBeenCalledWith({
+            email: 'listener@example.test',
+            callbackURL: '/early-birds',
+            errorCallbackURL: '/early-birds?authError=1',
+            metadata: { locale: 'en' },
+        });
+        expect(screen.getByRole('status')).toHaveTextContent('If this email can be used for access');
+        expect(screen.queryByDisplayValue('listener@example.test')).not.toBeInTheDocument();
+    });
+
+    it('shows the same generic response when the email request transport rejects', async () => {
+        signInMagicLink.mockRejectedValueOnce(new Error('provider unavailable'));
+        renderLanding({ emailMagicLinkAvailable: true });
+
+        await userEvent.type(screen.getByLabelText('Email address'), 'unknown@example.test');
+        await userEvent.click(screen.getByRole('button', { name: 'Email me a sign-in link' }));
+
+        expect(await screen.findByRole('status')).toHaveTextContent('If this email can be used for access');
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('hides email login when the delivery boundary is incomplete', () => {
+        renderLanding({ emailMagicLinkAvailable: false });
+        expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
     });
 
     it('takes an entitled signed-in listener directly to the private home', () => {

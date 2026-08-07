@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     currentEarlyBirdSession: vi.fn(),
     earlyBirdOAuthAvailability: vi.fn(),
+    earlyBirdMagicLinkAvailable: vi.fn(),
     getEarlyBirdListeningAccess: vi.fn(),
     cookies: vi.fn(),
     headers: vi.fn(),
@@ -15,6 +16,9 @@ vi.mock('next/headers', () => ({
 vi.mock('@/lib/early-birds/auth', () => ({
     currentEarlyBirdSession: mocks.currentEarlyBirdSession,
     earlyBirdOAuthAvailability: mocks.earlyBirdOAuthAvailability,
+}));
+vi.mock('@/lib/early-birds/magic-link', () => ({
+    earlyBirdMagicLinkAvailable: mocks.earlyBirdMagicLinkAvailable,
 }));
 vi.mock('@/lib/early-birds/access', () => ({
     getEarlyBirdListeningAccess: mocks.getEarlyBirdListeningAccess,
@@ -91,6 +95,7 @@ describe('EarlyBird Listener page', () => {
         mocks.headers.mockResolvedValue(new Headers());
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
         mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(true);
         mocks.getEarlyBirdListeningAccess.mockResolvedValue({
             allowed: false,
             kind: 'denied',
@@ -104,6 +109,7 @@ describe('EarlyBird Listener page', () => {
             signedIn: true,
             entitled: false,
             providers: { google: true, apple: false },
+            emailMagicLinkAvailable: true,
             freeWindow: {
                 configured: true,
                 active: false,
