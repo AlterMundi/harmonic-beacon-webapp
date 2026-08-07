@@ -21,6 +21,7 @@ const syntheticEnv = [
   'EARLYBIRDS_PREVIEW_SCHEMA_VERSION=preview-forward-only',
   'EARLYBIRDS_PREVIEW_AUTHORITY_NETWORK=',
   'EARLY_BIRDS_ENABLED=0',
+  'EARLY_BIRDS_FREE_FOR_ALL=0',
   'EARLY_BIRDS_AUTH_BASE_URL=https://earlybirds-staging.harmonicbeacon.com',
   'EARLY_BIRDS_TRUSTED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com',
   'EARLY_BIRDS_AUTH_SECRET=synthetic-preview-auth-secret-at-least-32-characters',
@@ -95,6 +96,7 @@ try {
   assert.equal(listener.build.target, 'runner');
   assert.equal(listener.environment.NODE_ENV, 'production');
   assert.equal(listener.environment.EARLY_BIRDS_ENABLED, '0');
+  assert.equal(listener.environment.EARLY_BIRDS_FREE_FOR_ALL, '0');
   assert.equal(listener.environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED, '0');
   assert.equal(
     listener.environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS,

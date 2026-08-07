@@ -145,6 +145,8 @@ root-owned and mode `0600` on the host.
 This is the non-deploying EB-08 staging lane for exactly:
 
 - `https://earlybirds-staging.harmonicbeacon.com` — Next Listener on host loopback `127.0.0.1:13000`.
+- `https://listen.harmonicbeacon.com` — constrained public edge to the same
+  Listener, usable only during an operator-controlled Free for All window.
 - `https://stream.harmonicbeacon.com` — bounded stream origin on host loopback `127.0.0.1:18080`.
 
 It is a separate Compose project named `earlybirds-preview`. It does not join,
@@ -173,7 +175,7 @@ drop-in, user export, or event volume belongs in this lane.
 The lifecycle guard deliberately requires:
 
 - the preview database user/name and fixed nginx ports;
-- exactly the two HTTPS staging origins above;
+- the reviewed HTTPS Listener and stream origins above;
 - visibly `synthetic-` secrets and artifact identity;
 - blank Google/Apple client IDs and secrets;
 - the synthetic login seam; and
@@ -266,9 +268,9 @@ scripts/early-birds-preview/rehearse-migration.sh /secure/earlybirds-preview.env
 There is no down-migration command. Schema repair is an additive forward
 migration; route rollback retains the preview data for inspection.
 
-## Nginx and TLS handoff (not executed here)
+## Nginx and TLS handoff
 
-The two files in `ops/early-birds-preview/nginx/` are standalone vhost
+The three host files in `ops/early-birds-preview/nginx/` are standalone vhost
 templates. Each names only its exact hostname, includes an ACME webroot path and
 the exact future certificate paths, and proxies only its fixed loopback port.
 The stream vhost exposes `/healthz` and `/v1/hls/`; container-private `/readyz`
@@ -276,6 +278,10 @@ and metrics are not proxied. The Listener vhost exposes the unified Listener
 entry canonically at `/`, plus `/api/early-birds/`, Next static assets and health;
 legacy `/early-birds/home` redirects to `/`. It blocks `/api/internal/`
 and returns 404 for the image's weekend, staff, event and checkout surfaces.
+The `listen.harmonicbeacon.com` vhost is narrower: it exposes only `/`, Next
+static assets, health, stream leases/manifests and configured drop-ins. Auth,
+synthetic login, invitation, membership projection and all other app routes
+remain unreachable from that host.
 
 A host operator must review certificate/DNS ownership, provision each named
 certificate, install these as new site files, and run `nginx -t` before any
@@ -302,6 +308,31 @@ Recreate the Listener through `start.sh`, rerun the smoke, and exercise only
 Provider buttons remain disabled because OAuth credentials are blank.
 Return both switches to `0` after the supervised team window.
 
+### Operator-controlled Free for All
+
+`EARLY_BIRDS_FREE_FOR_ALL` is independent from the Listener kill switch. Set it
+to exactly `1` and recreate only the Listener to let anonymous visitors use the
+Listener and configured drop-ins without creating a membership:
+
+```dotenv
+EARLY_BIRDS_ENABLED=1
+EARLY_BIRDS_FREE_FOR_ALL=1
+BEACON_STREAM_ALLOWED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com,https://listen.harmonicbeacon.com
+```
+
+Public leases use one non-PII technical account, keep raw browser device IDs out
+of PostgreSQL, and retain the same short-lived signed-origin boundary. This mode
+does not create a membership or unlock any event, staff, payment or internal
+surface. Set `EARLY_BIRDS_FREE_FOR_ALL=0` and recreate only the Listener to end
+the moment; anonymous heartbeat and manifest requests then fail immediately,
+while normal signed-in membership access resumes. No schema rollback or data
+deletion is required.
+
+Before opening the public hostname, verify its certificate, the exact origin
+CORS pair above, `/api/health/ready`, an anonymous lease/manifest/playback, and
+that `/api/early-birds/auth/session`, `/api/early-birds/test-login` and
+`/api/internal/` all return 404 at the edge.
+
 Normal stop retains all preview data:
 
 ```bash
@@ -315,7 +346,8 @@ PostgreSQL for diagnosis and a forward fix:
 scripts/early-birds-preview/rollback.sh /secure/earlybirds-preview.env
 ```
 
-Set `EARLY_BIRDS_ENABLED=0` before the next start. None of these scripts uses
+Set `EARLY_BIRDS_ENABLED=0` and `EARLY_BIRDS_FREE_FOR_ALL=0` before the next
+start. None of these scripts uses
 `docker compose down`, deletes a volume, or targets the event/live project.
 
 ## Staging release gate

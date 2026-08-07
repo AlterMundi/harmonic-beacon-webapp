@@ -55,7 +55,12 @@ require_synthetic_env() {
   require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
   require_exact_preview_value EARLY_BIRDS_STREAM_ORIGIN https://stream.harmonicbeacon.com "$env_file"
   require_exact_preview_value BEACON_STREAM_PUBLIC_ORIGIN https://stream.harmonicbeacon.com "$env_file"
-  require_exact_preview_value BEACON_STREAM_ALLOWED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
+  stream_allowed_origins=$(preview_env_value BEACON_STREAM_ALLOWED_ORIGINS "$env_file")
+  case "$stream_allowed_origins" in
+    https://earlybirds-staging.harmonicbeacon.com|\
+    https://earlybirds-staging.harmonicbeacon.com,https://listen.harmonicbeacon.com) ;;
+    *) preview_fail 'BEACON_STREAM_ALLOWED_ORIGINS must contain only the reviewed Listener hosts' ;;
+  esac
   listener_artifact=$(preview_env_value EARLY_BIRDS_STREAM_ARTIFACT_ID "$env_file")
   origin_artifact=$(preview_env_value BEACON_STREAM_ARTIFACT_ID "$env_file")
   test "$listener_artifact" = "$origin_artifact" || preview_fail 'Listener and origin artifact IDs must match'
@@ -67,6 +72,8 @@ require_synthetic_env() {
 
   kill_switch=$(preview_env_value EARLY_BIRDS_ENABLED "$env_file")
   case "$kill_switch" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_ENABLED must be 0 or 1' ;; esac
+  free_for_all_switch=$(preview_env_value EARLY_BIRDS_FREE_FOR_ALL "$env_file")
+  case "$free_for_all_switch" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_FREE_FOR_ALL must be 0 or 1' ;; esac
   team_entry_switch=$(preview_env_value EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED "$env_file")
   case "$team_entry_switch" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED must be 0 or 1' ;; esac
   require_exact_preview_value EARLY_BIRDS_TEST_ACCESS_ENABLED 1 "$env_file"
@@ -108,7 +115,8 @@ require_synthetic_env() {
       EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=earlybirds-staging.harmonicbeacon.com|\
       EARLY_BIRDS_STREAM_ORIGIN=https://stream.harmonicbeacon.com|\
       BEACON_STREAM_PUBLIC_ORIGIN=https://stream.harmonicbeacon.com|\
-      BEACON_STREAM_ALLOWED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com) ;;
+      BEACON_STREAM_ALLOWED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com|\
+      BEACON_STREAM_ALLOWED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com,https://listen.harmonicbeacon.com) ;;
       *harmonicbeacon.com*) preview_fail 'synthetic preview env contains a non-staging Harmonic Beacon hostname' ;;
     esac
     assignment_value=${assignment#*=}

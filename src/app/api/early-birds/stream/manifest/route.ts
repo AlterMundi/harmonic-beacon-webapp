@@ -1,9 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
-import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
+import {
+    earlyBirdsEnabled,
+    earlyBirdsFreeForAll,
+    earlyBirdsUnavailableResponse,
+} from '@/lib/early-birds/enabled';
 import {
     authorizeEarlyBirdStreamLease,
+    authorizeFreeForAllStreamLease,
     earlyBirdOriginConfig,
     EarlyBirdAccessDeniedError,
     EarlyBirdLeaseInactiveError,
@@ -22,8 +27,11 @@ const MANIFEST_HEADERS = {
 export async function GET(request: NextRequest): Promise<NextResponse> {
     if (!earlyBirdsEnabled()) return earlyBirdsUnavailableResponse();
 
-    const session = await currentEarlyBirdSession(request.headers).catch(() => null);
-    if (!session) {
+    const freeForAll = earlyBirdsFreeForAll();
+    const session = freeForAll
+        ? null
+        : await currentEarlyBirdSession(request.headers).catch(() => null);
+    if (!freeForAll && !session) {
         return NextResponse.json({ error: 'Sign in required.' }, {
             status: 401,
             headers: { 'Cache-Control': 'private, no-store' },
@@ -39,7 +47,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     try {
         const now = new Date();
-        const lease = await authorizeEarlyBirdStreamLease(session.user.id, leaseId, now);
+        const lease = freeForAll
+            ? await authorizeFreeForAllStreamLease(leaseId, now)
+            : await authorizeEarlyBirdStreamLease(session!.user.id, leaseId, now);
         const config = earlyBirdOriginConfig();
         const upstreamUrl = signedEarlyBirdOriginManifestUrl({
             config,

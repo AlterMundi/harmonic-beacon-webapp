@@ -1,9 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
-import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
+import {
+    earlyBirdsEnabled,
+    earlyBirdsFreeForAll,
+    earlyBirdsUnavailableResponse,
+} from '@/lib/early-birds/enabled';
 import {
     acquireEarlyBirdStreamLease,
+    acquireFreeForAllStreamLease,
     EarlyBirdAccessDeniedError,
     EarlyBirdDeviceCapacityError,
     EarlyBirdStreamIssuerUnavailableError,
@@ -15,8 +20,13 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!earlyBirdsEnabled()) return earlyBirdsUnavailableResponse();
 
-    const session = await currentEarlyBirdSession(request.headers).catch(() => null);
-    if (!session) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
+    const freeForAll = earlyBirdsFreeForAll();
+    const session = freeForAll
+        ? null
+        : await currentEarlyBirdSession(request.headers).catch(() => null);
+    if (!freeForAll && !session) {
+        return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
+    }
 
     let deviceId: string;
     let intent: 'play' | 'prepare';
@@ -29,9 +39,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     try {
-        const grant = intent === 'prepare'
-            ? await prepareEarlyBirdStreamLease(session.user.id, deviceId)
-            : await acquireEarlyBirdStreamLease(session.user.id, deviceId);
+        const grant = freeForAll
+            ? await acquireFreeForAllStreamLease(deviceId)
+            : intent === 'prepare'
+                ? await prepareEarlyBirdStreamLease(session!.user.id, deviceId)
+                : await acquireEarlyBirdStreamLease(session!.user.id, deviceId);
         return NextResponse.json({
             leaseId: grant.leaseId,
             leaseExpiresAt: grant.leaseExpiresAt.toISOString(),

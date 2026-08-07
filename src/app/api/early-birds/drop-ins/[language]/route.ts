@@ -5,7 +5,11 @@ import { Readable } from 'node:stream';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
-import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
+import {
+    earlyBirdsEnabled,
+    earlyBirdsFreeForAll,
+    earlyBirdsUnavailableResponse,
+} from '@/lib/early-birds/enabled';
 import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
 
 export const dynamic = 'force-dynamic';
@@ -31,15 +35,20 @@ async function serve(
     head: boolean,
 ) {
     if (!earlyBirdsEnabled()) return earlyBirdsUnavailableResponse();
-    const session = await currentEarlyBirdSession(request.headers).catch(() => null);
-    if (!session) {
+    const freeForAll = earlyBirdsFreeForAll();
+    const session = freeForAll
+        ? null
+        : await currentEarlyBirdSession(request.headers).catch(() => null);
+    if (!freeForAll && !session) {
         return NextResponse.json({ error: 'Sign in required.' }, {
             status: 401,
             headers: { 'Cache-Control': 'private, no-store' },
         });
     }
-    const access = await getEarlyBirdAccess(session.user.id).catch(() => null);
-    if (!access?.allowed) {
+    const access = session
+        ? await getEarlyBirdAccess(session.user.id).catch(() => null)
+        : null;
+    if (!freeForAll && !access?.allowed) {
         return NextResponse.json({ error: 'Membership inactive.' }, {
             status: 403,
             headers: { 'Cache-Control': 'private, no-store' },

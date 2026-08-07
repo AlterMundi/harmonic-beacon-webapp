@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
     currentEarlyBirdSession: vi.fn(),
     heartbeatEarlyBirdStreamLease: vi.fn(),
+    heartbeatFreeForAllStreamLease: vi.fn(),
     LeaseInactive: class extends Error {
         constructor(readonly reason: 'evicted' | 'expired' | 'missing' = 'missing') {
             super('inactive');
@@ -17,6 +18,7 @@ vi.mock('@/lib/early-birds/auth', () => ({
 }));
 vi.mock('@/lib/early-birds/stream', () => ({
     heartbeatEarlyBirdStreamLease: mocks.heartbeatEarlyBirdStreamLease,
+    heartbeatFreeForAllStreamLease: mocks.heartbeatFreeForAllStreamLease,
     EarlyBirdLeaseInactiveError: mocks.LeaseInactive,
     EarlyBirdAccessDeniedError: mocks.AccessDenied,
 }));
@@ -80,6 +82,23 @@ describe('EarlyBird stream heartbeat route', () => {
         expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
             'listener-1', LEASE_ID, undefined, undefined, true,
         );
+    });
+
+    it('renews an anonymous lease without consulting auth in Free for All mode', async () => {
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+        mocks.heartbeatFreeForAllStreamLease.mockResolvedValue({
+            leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            stream: {
+                manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`,
+                expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            },
+        });
+
+        expect((await POST(request())).status).toBe(200);
+        expect(mocks.heartbeatFreeForAllStreamLease).toHaveBeenCalledWith(LEASE_ID);
+        expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(mocks.heartbeatEarlyBirdStreamLease).not.toHaveBeenCalled();
     });
 
     it('renews a prepared source without promoting its eviction priority', async () => {

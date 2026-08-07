@@ -49,6 +49,20 @@ describe('private EarlyBird drop-in media', () => {
         expect(mocks.open).not.toHaveBeenCalled();
     });
 
+    it('serves the configured drop-in anonymously only in Free for All mode', async () => {
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+
+        const response = await GET(
+            new NextRequest('https://listener.test/api/early-birds/drop-ins/es'),
+            context('es'),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(mocks.getEarlyBirdAccess).not.toHaveBeenCalled();
+    });
+
     it('streams only the selected byte range from an immutable server-selected path', async () => {
         const request = new NextRequest('https://listener.test/api/early-birds/drop-ins/es', {
             headers: { range: 'bytes=2-5' },

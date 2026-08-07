@@ -3,12 +3,14 @@ import { NextRequest } from 'next/server';
 
 const currentEarlyBirdSession = vi.hoisted(() => vi.fn());
 const acquireEarlyBirdStreamLease = vi.hoisted(() => vi.fn());
+const acquireFreeForAllStreamLease = vi.hoisted(() => vi.fn());
 const prepareEarlyBirdStreamLease = vi.hoisted(() => vi.fn());
 const EarlyBirdDeviceCapacityError = vi.hoisted(() => class extends Error {});
 
 vi.mock('@/lib/early-birds/auth', () => ({ currentEarlyBirdSession }));
 vi.mock('@/lib/early-birds/stream', () => ({
     acquireEarlyBirdStreamLease,
+    acquireFreeForAllStreamLease,
     prepareEarlyBirdStreamLease,
     EarlyBirdAccessDeniedError: class extends Error {},
     EarlyBirdDeviceCapacityError,
@@ -36,6 +38,27 @@ describe('EarlyBird stream lease route', () => {
         currentEarlyBirdSession.mockResolvedValue(null);
         const response = await POST(request());
         expect(response.status).toBe(401);
+        expect(acquireEarlyBirdStreamLease).not.toHaveBeenCalled();
+    });
+
+    it('issues an anonymous public lease only while Free for All is explicit', async () => {
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        currentEarlyBirdSession.mockResolvedValue(null);
+        acquireFreeForAllStreamLease.mockResolvedValue({
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            evictedLeaseId: null,
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            },
+        });
+
+        const response = await POST(request());
+
+        expect(response.status).toBe(200);
+        expect(acquireFreeForAllStreamLease).toHaveBeenCalledWith('device_abcdefghijklmnopqrstuvwxyz');
+        expect(currentEarlyBirdSession).not.toHaveBeenCalled();
         expect(acquireEarlyBirdStreamLease).not.toHaveBeenCalled();
     });
 

@@ -1,10 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
-import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
+import {
+    earlyBirdsEnabled,
+    earlyBirdsFreeForAll,
+    earlyBirdsUnavailableResponse,
+} from '@/lib/early-birds/enabled';
 import {
     EarlyBirdAccessDeniedError,
     EarlyBirdLeaseInactiveError,
+    heartbeatFreeForAllStreamLease,
     heartbeatEarlyBirdStreamLease,
 } from '@/lib/early-birds/stream';
 
@@ -13,8 +18,13 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!earlyBirdsEnabled()) return earlyBirdsUnavailableResponse();
 
-    const session = await currentEarlyBirdSession(request.headers).catch(() => null);
-    if (!session) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
+    const freeForAll = earlyBirdsFreeForAll();
+    const session = freeForAll
+        ? null
+        : await currentEarlyBirdSession(request.headers).catch(() => null);
+    if (!freeForAll && !session) {
+        return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
+    }
 
     let leaseId: string;
     let intent: 'play' | 'prepare';
@@ -30,13 +40,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     try {
-        const grant = await heartbeatEarlyBirdStreamLease(
-            session.user.id,
-            leaseId,
-            undefined,
-            undefined,
-            intent === 'play',
-        );
+        const grant = freeForAll
+            ? await heartbeatFreeForAllStreamLease(leaseId)
+            : await heartbeatEarlyBirdStreamLease(
+                session!.user.id,
+                leaseId,
+                undefined,
+                undefined,
+                intent === 'play',
+            );
         return NextResponse.json({
             leaseExpiresAt: grant.leaseExpiresAt.toISOString(),
             stream: {

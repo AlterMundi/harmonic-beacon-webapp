@@ -12,10 +12,12 @@ export default function EarlyBirdHome({
     displayName,
     membershipSource,
     dropIns,
+    publicAccess = false,
 }: {
     displayName: string;
     membershipSource: string | null;
     dropIns: { es: string | null; en: string | null };
+    publicAccess?: boolean;
 }) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
@@ -32,7 +34,7 @@ export default function EarlyBirdHome({
                     <BrandLockup href="/early-birds" />
                     <div className="listener-rail__actions">
                         <LanguageControl />
-                        <details className="listener-account">
+                        {!publicAccess && <details className="listener-account">
                             <summary aria-label={copy.account} title={copy.account}>
                                 {displayName.slice(0, 1).toUpperCase()}
                             </summary>
@@ -42,7 +44,7 @@ export default function EarlyBirdHome({
                                 {membershipSource && <small>{membershipSource}</small>}
                                 <button type="button" onClick={signOut}>{copy.signOut}</button>
                             </div>
-                        </details>
+                        </details>}
                     </div>
                 </header>
                 <ListenerPlayer dropIns={dropIns} />

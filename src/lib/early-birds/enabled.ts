@@ -9,6 +9,15 @@ export function earlyBirdsEnabled(environment: NodeJS.ProcessEnv = process.env):
     return environment.EARLY_BIRDS_ENABLED === '1';
 }
 
+/**
+ * Reversible operator override for short public listening moments. This does
+ * not create or mutate memberships: when disabled, anonymous stream and
+ * drop-in authorization stops on the next request/manifest refresh.
+ */
+export function earlyBirdsFreeForAll(environment: NodeJS.ProcessEnv = process.env): boolean {
+    return environment.EARLY_BIRDS_FREE_FOR_ALL === '1';
+}
+
 export function earlyBirdsUnavailableResponse(): NextResponse {
     return NextResponse.json(
         { error: 'EarlyBirds is temporarily unavailable.' },

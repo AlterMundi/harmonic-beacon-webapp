@@ -10,6 +10,14 @@ export const EARLY_BIRD_LEASE_TTL_MS = 3 * 60 * 1000;
 export const EARLY_BIRD_ORIGIN_MAX_SIGNATURE_TTL_SECONDS = 10 * 60;
 export const EARLY_BIRD_ORIGIN_MANIFEST_TTL_SECONDS = 60;
 export const EARLY_BIRD_LEASE_MANIFEST_PATH = '/api/early-birds/stream/manifest';
+export const EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID = 'early-birds-free-for-all';
+
+const EARLY_BIRD_FREE_FOR_ALL_ACCOUNT = {
+    id: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+    name: 'Public Listener',
+    email: 'public-listener@free.invalid',
+    emailVerified: false,
+} as const;
 
 export type StreamUrlIssueRequest = {
     accountId: string;
@@ -357,6 +365,101 @@ export async function heartbeatEarlyBirdStreamLease(
 
     const stream = await issuer.issue({
         accountId,
+        leaseId: lease.id,
+        issuedAt: now,
+        leaseExpiresAt,
+    });
+    return { leaseExpiresAt, stream };
+}
+
+/**
+ * Public-mode leases intentionally do not fabricate a membership projection.
+ * They live under one non-PII technical account and remain usable only while
+ * the route-level Free for All switch is enabled. Device identifiers are still
+ * HMACed and origin URLs remain short-lived and signed.
+ */
+export async function acquireFreeForAllStreamLease(
+    deviceId: string,
+    now = new Date(),
+    issuer = earlyBirdStreamUrlIssuer(),
+): Promise<LeaseAcquisition> {
+    const deviceDigest = earlyBirdDeviceDigest(deviceId);
+    const leaseExpiresAt = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
+
+    await prisma.earlyBirdUser.upsert({
+        where: { id: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID },
+        create: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT,
+        update: {},
+    });
+    const lease = await prisma.earlyBirdStreamLease.upsert({
+        where: {
+            accountId_deviceDigest: {
+                accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+                deviceDigest,
+            },
+        },
+        create: {
+            accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+            deviceDigest,
+            lastSeenAt: now,
+            expiresAt: leaseExpiresAt,
+        },
+        update: {
+            createdAt: now,
+            lastSeenAt: now,
+            expiresAt: leaseExpiresAt,
+            evictedAt: null,
+        },
+    });
+
+    try {
+        const stream = await issuer.issue({
+            accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+            leaseId: lease.id,
+            issuedAt: now,
+            leaseExpiresAt,
+        });
+        return {
+            leaseId: lease.id,
+            leaseExpiresAt,
+            evictedLeaseId: null,
+            stream,
+        };
+    } catch (error) {
+        await prisma.earlyBirdStreamLease.updateMany({
+            where: { id: lease.id, accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID },
+            data: { evictedAt: now },
+        });
+        throw error;
+    }
+}
+
+export async function authorizeFreeForAllStreamLease(
+    leaseId: string,
+    now = new Date(),
+) {
+    const lease = await prisma.earlyBirdStreamLease.findFirst({
+        where: { id: leaseId, accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID },
+    });
+    if (!lease) throw new EarlyBirdLeaseInactiveError('missing');
+    if (lease.evictedAt !== null) throw new EarlyBirdLeaseInactiveError('evicted');
+    if (lease.expiresAt <= now) throw new EarlyBirdLeaseInactiveError('expired');
+    return lease;
+}
+
+export async function heartbeatFreeForAllStreamLease(
+    leaseId: string,
+    now = new Date(),
+    issuer = earlyBirdStreamUrlIssuer(),
+): Promise<{ leaseExpiresAt: Date; stream: StreamUrlGrant }> {
+    const leaseExpiresAt = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
+    const current = await authorizeFreeForAllStreamLease(leaseId, now);
+    const lease = await prisma.earlyBirdStreamLease.update({
+        where: { id: current.id },
+        data: { lastSeenAt: now, expiresAt: leaseExpiresAt },
+    });
+    const stream = await issuer.issue({
+        accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
         leaseId: lease.id,
         issuedAt: now,
         leaseExpiresAt,

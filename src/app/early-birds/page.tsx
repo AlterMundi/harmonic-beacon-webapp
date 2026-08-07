@@ -9,7 +9,7 @@ import {
     earlyBirdOAuthAvailability,
 } from '@/lib/early-birds/auth';
 import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
-import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
+import { earlyBirdsEnabled, earlyBirdsFreeForAll } from '@/lib/early-birds/enabled';
 import {
     canonicalEarlyBirdInvitation,
     EARLY_BIRD_INVITATION_COOKIE,
@@ -30,6 +30,20 @@ export default async function EarlyBirdsPage({
     searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
     if (!earlyBirdsEnabled()) return <EarlyBirdUnavailable />;
+
+    if (earlyBirdsFreeForAll()) {
+        return (
+            <EarlyBirdHome
+                publicAccess
+                displayName=""
+                membershipSource={null}
+                dropIns={{
+                    es: configuredEarlyBirdDropIn('es'),
+                    en: configuredEarlyBirdDropIn('en'),
+                }}
+            />
+        );
+    }
 
     const params = await searchParams;
     const incomingHeaders = new Headers(await requestHeaders());

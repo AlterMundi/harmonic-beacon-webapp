@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     earlyBirdsEnabled,
+    earlyBirdsFreeForAll,
     earlyBirdsUnavailableResponse,
 } from '@/lib/early-birds/enabled';
 
@@ -21,6 +22,15 @@ describe('EarlyBird public kill switch', () => {
     it('enables public entry only for the explicit value 1', () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         expect(earlyBirdsEnabled()).toBe(true);
+    });
+
+    it('enables the Free for All override only for the explicit value 1', () => {
+        for (const value of ['', 'true', 'yes', '0', ' 1 ']) {
+            vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', value);
+            expect(earlyBirdsFreeForAll()).toBe(false);
+        }
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        expect(earlyBirdsFreeForAll()).toBe(true);
     });
 
     it('returns a non-cacheable, retryable unavailable response', async () => {

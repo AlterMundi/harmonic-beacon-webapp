@@ -14,18 +14,27 @@ const tx = vi.hoisted(() => ({
 }));
 const prisma = vi.hoisted(() => ({
     $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
-    earlyBirdStreamLease: { updateMany: vi.fn(), findFirst: vi.fn() },
+    earlyBirdUser: { upsert: vi.fn() },
+    earlyBirdStreamLease: {
+        updateMany: vi.fn(),
+        findFirst: vi.fn(),
+        upsert: vi.fn(),
+        update: vi.fn(),
+    },
     earlyBirdMembershipProjection: { findUnique: vi.fn() },
 }));
 vi.mock('@/lib/db', () => ({ prisma }));
 
 import {
     acquireEarlyBirdStreamLease,
+    acquireFreeForAllStreamLease,
+    authorizeFreeForAllStreamLease,
     EarlyBirdDeviceCapacityError,
     earlyBirdDeviceDigest,
     EARLY_BIRD_LEASE_TTL_MS,
     heartbeatEarlyBirdStreamLease,
     prepareEarlyBirdStreamLease,
+    EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
     type EarlyBirdStreamUrlIssuer,
 } from '../stream';
 
@@ -194,5 +203,67 @@ describe('EarlyBird two-device leases', () => {
         await expect(heartbeatEarlyBirdStreamLease('listener-1',
             '00000000-0000-4000-8000-000000000002', NOW))
             .rejects.toMatchObject({ reason: 'expired' });
+    });
+
+    it('creates a non-PII technical account and an unlimited public device lease', async () => {
+        prisma.earlyBirdStreamLease.upsert.mockResolvedValue({
+            id: '00000000-0000-4000-8000-000000000005',
+        });
+        const issuer: EarlyBirdStreamUrlIssuer = {
+            issue: vi.fn().mockResolvedValue({
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=5',
+                expiresAt: new Date(NOW.getTime() + EARLY_BIRD_LEASE_TTL_MS),
+            }),
+        };
+
+        const result = await acquireFreeForAllStreamLease(
+            'device_abcdefghijklmnopqrstuvwxyz',
+            NOW,
+            issuer,
+        );
+
+        expect(prisma.earlyBirdUser.upsert).toHaveBeenCalledWith({
+            where: { id: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID },
+            create: expect.objectContaining({
+                id: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+                email: 'public-listener@free.invalid',
+            }),
+            update: {},
+        });
+        expect(prisma.earlyBirdStreamLease.upsert).toHaveBeenCalledWith(expect.objectContaining({
+            where: { accountId_deviceDigest: expect.objectContaining({
+                accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+            }) },
+        }));
+        expect(result.evictedLeaseId).toBeNull();
+        expect(tx.earlyBirdMembershipProjection.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('authorizes public leases by technical account and still enforces expiry', async () => {
+        prisma.earlyBirdStreamLease.findFirst.mockResolvedValueOnce({
+            id: '00000000-0000-4000-8000-000000000005',
+            evictedAt: null,
+            expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+        });
+        await expect(authorizeFreeForAllStreamLease(
+            '00000000-0000-4000-8000-000000000005',
+            NOW,
+        )).resolves.toMatchObject({ id: '00000000-0000-4000-8000-000000000005' });
+        expect(prisma.earlyBirdStreamLease.findFirst).toHaveBeenCalledWith({
+            where: {
+                id: '00000000-0000-4000-8000-000000000005',
+                accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+            },
+        });
+
+        prisma.earlyBirdStreamLease.findFirst.mockResolvedValueOnce({
+            id: '00000000-0000-4000-8000-000000000005',
+            evictedAt: null,
+            expiresAt: NOW,
+        });
+        await expect(authorizeFreeForAllStreamLease(
+            '00000000-0000-4000-8000-000000000005',
+            NOW,
+        )).rejects.toMatchObject({ reason: 'expired' });
     });
 });

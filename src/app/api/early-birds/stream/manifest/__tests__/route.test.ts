@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
     currentEarlyBirdSession: vi.fn(),
     authorizeEarlyBirdStreamLease: vi.fn(),
+    authorizeFreeForAllStreamLease: vi.fn(),
     earlyBirdOriginConfig: vi.fn(),
     signedEarlyBirdOriginManifestUrl: vi.fn(),
     validSignedOriginManifest: vi.fn(),
@@ -27,6 +28,7 @@ const {
 vi.mock('@/lib/early-birds/auth', () => ({ currentEarlyBirdSession: mocks.currentEarlyBirdSession }));
 vi.mock('@/lib/early-birds/stream', () => ({
     authorizeEarlyBirdStreamLease: mocks.authorizeEarlyBirdStreamLease,
+    authorizeFreeForAllStreamLease: mocks.authorizeFreeForAllStreamLease,
     earlyBirdOriginConfig: mocks.earlyBirdOriginConfig,
     signedEarlyBirdOriginManifestUrl: mocks.signedEarlyBirdOriginManifestUrl,
     validSignedOriginManifest: mocks.validSignedOriginManifest,
@@ -80,6 +82,27 @@ describe('stable EarlyBird lease manifest', () => {
         await expect(response.text()).resolves.toBe(manifest);
         expect(authorizeEarlyBirdStreamLease).toHaveBeenCalledWith('listener-1', LEASE_ID, expect.any(Date));
         expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it('authorizes the bearer lease without session lookup in Free for All mode', async () => {
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        currentEarlyBirdSession.mockResolvedValue(null);
+        mocks.authorizeFreeForAllStreamLease.mockResolvedValue({
+            id: LEASE_ID,
+            expiresAt: new Date(Date.now() + 120_000),
+        });
+        earlyBirdOriginConfig.mockReturnValue({ origin: 'https://stream.example.test' });
+        signedEarlyBirdOriginManifestUrl.mockReturnValue('https://stream.example.test/live.m3u8?exp=1&sig=x');
+        validSignedOriginManifest.mockReturnValue(true);
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+            '#EXTM3U\nhttps://stream.example.test/segment?exp=2&sig=x\n',
+            { status: 200 },
+        )));
+
+        expect((await GET(request())).status).toBe(200);
+        expect(mocks.authorizeFreeForAllStreamLease).toHaveBeenCalledWith(LEASE_ID, expect.any(Date));
+        expect(currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(authorizeEarlyBirdStreamLease).not.toHaveBeenCalled();
     });
 
     it('cuts off a displaced device on its next manifest refresh', async () => {

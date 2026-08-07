@@ -29,6 +29,7 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['real OAuth seam', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=real-client-id', /must stay empty/],
     ['event database identity', 'EARLYBIRDS_PREVIEW_DB_NAME=beacon', /must be earlybirds_preview/],
     ['unsafe kill switch value', 'EARLY_BIRDS_ENABLED=true', /must be 0 or 1/],
+    ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
     ['unsafe team-entry switch', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=true', /must be 0 or 1/],
     ['wrong team-entry host', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=staging.example.invalid', /must be earlybirds-staging/],
     ['non-synthetic secret', 'EARLY_BIRDS_AUTH_SECRET=not-a-real-but-long-enough-secret-value', /visibly synthetic/],
@@ -87,6 +88,7 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /condition: service_completed_successfully/);
   assert.doesNotMatch(source, /prisma[^\n]*(migrate reset|db push)/i);
   assert.match(source, /EARLY_BIRDS_ENABLED: \$\{EARLY_BIRDS_ENABLED:-0\}/);
+  assert.match(source, /EARLY_BIRDS_FREE_FOR_ALL: \$\{EARLY_BIRDS_FREE_FOR_ALL:-0\}/);
   assert.match(source, /EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: \$\{EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED:-0\}/);
   assert.match(source, /NODE_ENV: production/);
   assert.match(source, /preview_db:[\s\S]*internal: true/);
@@ -128,13 +130,15 @@ test('stream publishes only through a dedicated edge network', async () => {
   assert.match(source, /stream_edge:\s+name: earlybirds_stream_edge/);
 });
 
-test('nginx templates name only the two staging hosts and proxy only fixed loopback ports', async () => {
+test('nginx templates isolate staging, stream and the constrained public Listener host', async () => {
   const app = await readPreview('nginx/earlybirds-staging.harmonicbeacon.com.conf.template');
+  const listener = await readPreview('nginx/listen.harmonicbeacon.com.conf.template');
   const stream = await readPreview('nginx/stream.harmonicbeacon.com.conf.template');
-  const combined = `${app}\n${stream}`;
+  const combined = `${app}\n${listener}\n${stream}`;
   const serverNames = [...combined.matchAll(/server_name\s+([^;]+);/g)].map((match) => match[1]);
   assert.deepEqual([...new Set(serverNames)].sort(), [
     'earlybirds-staging.harmonicbeacon.com',
+    'listen.harmonicbeacon.com',
     'stream.harmonicbeacon.com',
   ]);
   const proxyTargets = [...combined.matchAll(/proxy_pass\s+([^;]+);/g)].map((match) => match[1]);
@@ -143,14 +147,20 @@ test('nginx templates name only the two staging hosts and proxy only fixed loopb
   assert.doesNotMatch(combined, /live\.harmonicbeacon\.com/);
   assert.match(app, /letsencrypt\/live\/earlybirds-staging\.harmonicbeacon\.com/);
   assert.match(stream, /letsencrypt\/live\/stream\.harmonicbeacon\.com/);
+  assert.match(listener, /letsencrypt\/live\/listen\.harmonicbeacon\.com/);
   assert.match(app, /location \^~ \/api\/internal\//);
   assert.match(app, /location \^~ \/api\/early-birds\//);
   assert.equal((combined.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length, 2);
+  assert.equal((listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length, 1);
   assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/early-birds break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
   assert.match(app, /location = \/early-birds\/home \{\s*return 302 \/;/);
   assert.match(app, /location \/ \{\s*return 404;/);
   assert.doesNotMatch(app, /location \^~ \/api\/(auth|ops)|location \^~ \/(login|ops|session)/);
   assert.doesNotMatch(stream, /proxy_pass[^\n]*(9090|readyz|metrics)/);
+  assert.match(listener, /location \^~ \/api\/early-birds\/stream\//);
+  assert.match(listener, /location \^~ \/api\/early-birds\/drop-ins\//);
+  assert.doesNotMatch(listener, /api\/early-birds\/(auth|test-login|free|membership)/);
+  assert.doesNotMatch(listener, /location \^~ \/early-birds\//);
 
   const invitationEntryLocations = [...app.matchAll(
     /location = \/early-birds(?:\/redeem)? \{([^}]*)\}/g,
