@@ -70,8 +70,16 @@ function bucketKey(kind: 'email' | 'origin_ip', value: string, secret: string): 
 }
 
 function sourceAddress(request: Request | undefined): string {
-    const forwarded = request?.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-    const address = forwarded || request?.headers.get('x-real-ip')?.trim();
+    // Listener nginx overwrites X-Real-IP with its direct peer. A caller may
+    // prefix X-Forwarded-For before `$proxy_add_x_forwarded_for`, so trusting
+    // its first value would let one client manufacture fresh throttle buckets.
+    const direct = request?.headers.get('x-real-ip')?.trim();
+    const forwarded = request?.headers.get('x-forwarded-for')
+        ?.split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .at(-1);
+    const address = direct || forwarded;
     return address && address.length <= 128 ? address : 'unavailable';
 }
 

@@ -138,6 +138,41 @@ describe('EarlyBird email magic link', () => {
         expect(JSON.stringify([...buckets.entries()])).not.toContain('203.0.113.44');
     });
 
+    it('does not let a prefixed forwarded address manufacture a new throttle bucket', async () => {
+        const { buckets, client } = throttleClient();
+        const input = {
+            email: 'listener@example.test',
+            secret: 'rate-secret-with-at-least-32-characters-long',
+            now: new Date('2026-08-07T10:00:00.000Z'),
+            client: client as never,
+        };
+
+        await consumeEarlyBirdMagicLinkRateLimit({
+            ...input,
+            request: new Request('https://listen.example.test', {
+                headers: {
+                    origin: 'https://listen.example.test',
+                    'x-real-ip': '203.0.113.44',
+                    'x-forwarded-for': '198.51.100.1, 203.0.113.44',
+                },
+            }),
+        });
+        await consumeEarlyBirdMagicLinkRateLimit({
+            ...input,
+            request: new Request('https://listen.example.test', {
+                headers: {
+                    origin: 'https://listen.example.test',
+                    'x-real-ip': '203.0.113.44',
+                    'x-forwarded-for': '198.51.100.2, 203.0.113.44',
+                },
+            }),
+        });
+
+        expect([...buckets.keys()]).toHaveLength(2);
+        expect(JSON.stringify([...buckets.entries()])).not.toContain('198.51.100');
+        expect(JSON.stringify([...buckets.entries()])).not.toContain('203.0.113.44');
+    });
+
     it('never lets magic-link verification become a credential for a social identity', async () => {
         const noIdentity = { earlyBirdIdentity: { count: vi.fn().mockResolvedValue(0) } };
         const socialIdentity = { earlyBirdIdentity: { count: vi.fn().mockResolvedValue(1) } };
