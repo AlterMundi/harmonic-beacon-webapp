@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     STAFF_ROLE_KEYS,
+    localeForBrowserLanguage,
     localeForEventLanguage,
     messages,
     parseUiLocale,
@@ -10,6 +11,14 @@ import {
 } from '@/lib/i18n';
 
 describe('UI locale policy', () => {
+    it('uses Spanish only for Spanish browser preferences and English otherwise', () => {
+        expect(localeForBrowserLanguage('es-AR,es;q=0.9,en;q=0.8')).toBe('es');
+        expect(localeForBrowserLanguage('es')).toBe('es');
+        expect(localeForBrowserLanguage('en-US,en;q=0.9')).toBe('en');
+        expect(localeForBrowserLanguage('pt-BR,pt;q=0.9,es;q=0.8')).toBe('en');
+        expect(localeForBrowserLanguage(null)).toBe('en');
+    });
+
     it('accepts only supported persisted locale values', () => {
         expect(parseUiLocale('es')).toBe('es');
         expect(parseUiLocale('en')).toBe('en');

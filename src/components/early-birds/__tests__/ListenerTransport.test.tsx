@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { LocaleProvider } from '@/context/LocaleContext';
+import type { UiLocale } from '@/lib/i18n';
 
 vi.mock('hls.js', () => {
     class TestHls {
@@ -40,16 +41,19 @@ function prepareMedia() {
     return { play, pause };
 }
 
-function renderPlayer(dropIns = { es: null, en: '/api/drop-ins/en' }) {
+function renderPlayer(
+    dropIns = { es: null, en: '/api/drop-ins/en' },
+    initialLocale: UiLocale = 'en',
+) {
     return render(
-        <LocaleProvider initialLocale="en">
+        <LocaleProvider initialLocale={initialLocale}>
             <ListenerPlayer dropIns={dropIns} />
         </LocaleProvider>,
     );
 }
 
 async function waitForListen() {
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /^(Listen|Escuchar)$/ })).toBeEnabled());
 }
 
 async function chooseBeaconOnly() {
@@ -82,21 +86,37 @@ describe('Listener one-action playlist transport', () => {
         expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
     });
 
-    it('plays only the explicitly selected Spanish introduction', async () => {
+    it('uses the browser-derived page language to play only the matching introduction', async () => {
         const { play } = prepareMedia();
-        renderPlayer({ es: '/api/drop-ins/es', en: '/api/drop-ins/en' });
-        const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
+        renderPlayer({ es: '/api/drop-ins/es', en: '/api/drop-ins/en' }, 'es');
+        const spanish = screen.getByLabelText('Caldeamiento · Español') as HTMLAudioElement;
         const english = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
         await waitForListen();
 
-        fireEvent.change(screen.getByRole('combobox', { name: 'Intro before the Beacon' }), {
-            target: { value: 'es' },
-        });
+        await waitFor(() => expect(screen.getByRole('combobox', { name: 'Intro antes del Beacon' }))
+            .toHaveValue('es'));
         play.mockClear();
-        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Escuchar' }));
 
         await waitFor(() => expect(play.mock.instances).toContain(spanish));
         expect(play.mock.instances).not.toContain(english);
+    });
+
+    it('lets the intro dropdown override the browser-language default', async () => {
+        const { play } = prepareMedia();
+        renderPlayer({ es: '/api/drop-ins/es', en: '/api/drop-ins/en' }, 'es');
+        const spanish = screen.getByLabelText('Caldeamiento · Español') as HTMLAudioElement;
+        const english = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
+        await waitForListen();
+
+        fireEvent.change(screen.getByRole('combobox', { name: 'Intro antes del Beacon' }), {
+            target: { value: 'en' },
+        });
+        play.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: 'Escuchar' }));
+
+        await waitFor(() => expect(play.mock.instances).toContain(english));
+        expect(play.mock.instances).not.toContain(spanish);
     });
 
     it('remembers the device mode without changing the stream contract', async () => {

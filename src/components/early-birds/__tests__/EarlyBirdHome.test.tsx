@@ -7,10 +7,6 @@ import { LocaleProvider } from '@/context/LocaleContext';
 vi.mock('../ListenerPlayer', () => ({
     default: () => <section aria-label="listener-player" />,
 }));
-vi.mock('@/components/brand/LanguageControl', () => ({
-    default: () => <button type="button">Language</button>,
-}));
-
 import EarlyBirdHome from '../EarlyBirdHome';
 
 afterEach(cleanup);
@@ -45,6 +41,7 @@ describe('EarlyBird Listener home access chrome', () => {
 
         expect(screen.queryByLabelText('Account')).not.toBeInTheDocument();
         expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
+        expect(screen.queryByRole('group', { name: /language|idioma/i })).not.toBeInTheDocument();
         expect(screen.getByLabelText('listener-player')).toBeInTheDocument();
     });
 });

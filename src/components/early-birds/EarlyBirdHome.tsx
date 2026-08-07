@@ -1,7 +1,6 @@
 'use client';
 
 import BrandLockup from '@/components/brand/BrandLockup';
-import LanguageControl from '@/components/brand/LanguageControl';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
@@ -33,7 +32,6 @@ export default function EarlyBirdHome({
                 <header className="listener-rail">
                     <BrandLockup href="/early-birds" />
                     <div className="listener-rail__actions">
-                        <LanguageControl />
                         {!publicAccess && <details className="listener-account">
                             <summary aria-label={copy.account} title={copy.account}>
                                 {displayName.slice(0, 1).toUpperCase()}

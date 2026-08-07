@@ -88,6 +88,16 @@ function formatTime(seconds: number): string {
     return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')}`;
 }
 
+function preferredDropLanguage(
+    locale: DropLanguage,
+    spanishDropIn: string | null,
+    englishDropIn: string | null,
+): DropLanguage {
+    if (locale === 'es' && spanishDropIn) return 'es';
+    if (locale === 'en' && englishDropIn) return 'en';
+    return englishDropIn ? 'en' : 'es';
+}
+
 export default function ListenerPlayer({
     dropIns,
 }: {
@@ -127,7 +137,9 @@ export default function ListenerPlayer({
     const [transportStopped, setTransportStopped] = useState(true);
     const [transportPaused, setTransportPaused] = useState(false);
     const [hasStarted, setHasStarted] = useState(false);
-    const [selectedDrop, setSelectedDrop] = useState<DropLanguage>(dropIns.en ? 'en' : 'es');
+    const [selectedDrop, setSelectedDrop] = useState<DropLanguage>(() => (
+        preferredDropLanguage(locale, dropIns.es, dropIns.en)
+    ));
     const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(dropIns.en || dropIns.es ? 'intro' : 'beacon');
     const [dropProgress, setDropProgress] = useState({
         es: { current: 0, duration: 0 },
@@ -928,6 +940,14 @@ export default function ListenerPlayer({
     const introProgressVisible = selectedDropAvailable
         && (playingDrop === selectedDrop || (transportPaused && activeDrop.current === selectedDrop));
     const availableDropCount = Number(Boolean(dropIns.es)) + Number(Boolean(dropIns.en));
+
+    useEffect(() => {
+        // The page language is also the natural introduction preference. Do
+        // not replace an introduction that is already playing; apply the new
+        // preference as soon as the transport returns to rest.
+        if (transportActive) return;
+        setSelectedDrop(preferredDropLanguage(locale, dropIns.es, dropIns.en));
+    }, [dropIns.en, dropIns.es, locale, transportActive]);
 
     function selectPlaybackMode(mode: PlaybackMode) {
         if (transportActive || transportBusy) return;
