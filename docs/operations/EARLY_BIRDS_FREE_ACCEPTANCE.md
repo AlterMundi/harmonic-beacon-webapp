@@ -1,75 +1,133 @@
-# EarlyBirds Free acceptance
+# Founding Listener public acceptance
 
-This sheet records the human release gate for the Free-first EarlyBirds MVP.
-It never authorizes paid checkout, an app-store release, production promotion,
-or an acoustic choice. Use only the isolated staging hosts and synthetic
-`@e2e.invalid` identities.
+This sheet records the human release gate for the bounded Founding Listener
+public test at `https://listen.harmonicbeacon.com/`. It does not authorize paid
+checkout, a worldwide campaign, an app-store release, a merge to `main`, an
+event-stack change or an acoustic change.
 
-## Fixed scope
+Do not paste account details, OAuth material, invitation tokens, cookies or
+temporary operator values into GitHub or test notes. Record only the tester,
+device/browser, result and a non-sensitive symptom.
 
-- Listener: `https://earlybirds-staging.harmonicbeacon.com`
+## Fixed candidate
+
+- Listener application: `575b75aae5609b1813485d955a3e8ea753018084`
+- Documentation head: `637c5e014620581a100f976cdbe68ff56cd68a31`
+- Listener schema: `20260807070000_early_bird_free_schedule`
 - Stream origin: `https://stream.harmonicbeacon.com`
-- Membership path: signed one-use Free invitation only
-- PayPal and Mercado Pago: disabled and expected to fail closed
-- Google Play and Apple App Store: post-MVP
+- Approved intro languages: Spanish and English
+- Ordinary Free access: registered account plus one recurring two-hour daily
+  window, changeable again after seven days
+- Founding Listener access: canonical active membership projection
+- Connections: at most two active devices per account
+- Free for All: an independent reversible operator override, currently ON
+- PayPal and Mercado Pago: disabled for this acceptance and expected to fail
+  closed
+- Apple: absent until Apple Developer Program credentials and 2FA are supplied
 - Event application and `live.harmonicbeacon.com`: out of scope and unchanged
 
-Do not paste the invitation or temporary team code into GitHub, test notes or
-chat. Retrieve them directly on `mona` through the protected files documented
-in `EARLY_BIRDS_STAGING_PREVIEW.md`. Use a new browser profile and a unique
-`@e2e.invalid` address. The supervised invitation is one-use.
+The deployed application SHA deliberately differs from the documentation-only
+branch head. Health must attest the application SHA above.
 
 ## Automated preflight
 
-Record the exact webapp and authority SHAs, then require:
+Before a human session, require:
 
-- webapp PR checks green;
-- authority PR checks green;
-- Listener, origin, both PostgreSQL databases and authority API/worker healthy;
-- staging app/origin return HTTP 200;
-- `live.harmonicbeacon.com/api/health` remains HTTP 200;
-- canonical Free lifecycle smoke passes redeem, replay isolation, two-device
-  eviction, revocation projection and post-revocation stream denial;
-- paid checkout remains disabled.
+- PR #203 checks green;
+- Listener liveness/readiness, PostgreSQL, origin and decoded canary green;
+- health attests the exact application SHA and schema above;
+- Alertmanager has no unexplained active critical alert;
+- Google authorization reaches the exact Listener callback with one-time state
+  and PKCE S256;
+- missing or foreign browser Origin fails auth mutations closed;
+- unconfigured Apple is absent, not a dead public button;
+- registered Free selection is server-authoritative and a stream lease cannot
+  outlive the active window;
+- canonical Founder/invitation projection still outranks ordinary Free and
+  terminal membership states fail closed;
+- anonymous Free for All lease and ES/EN media ranges work while the override
+  is ON;
+- event production health remains unchanged.
 
-## Human browser flow
+## Human Google and ordinary Free flow
 
-For each row in the result table:
+Free for All makes anonymous listening intentionally possible, so ordinary
+registered-Free acceptance needs a short coordinated interval with that
+override OFF. Restore it immediately after the flow if the public demo should
+remain open.
 
-1. Open the signed invitation in a clean profile.
-2. Confirm the page names staging and never displays a paid checkout.
-3. Switch ES → EN → ES. Confirm labels change, `lang` follows the selection,
-   no text clips and no horizontal scrolling appears.
-4. Enter a synthetic display name, unique `@e2e.invalid` address and the
-   protected team code. Confirm the code clears after submission and is absent
-   from local/session storage.
-5. Activate the invitation. Confirm the private Listener shows the chosen name
-   and an active `FREE` membership, with no camera or microphone prompt and no
-   LiveKit/event controls.
-6. Reload and open a second device/profile. Both must retain access. Open a
-   third device/profile with the same account only during the supervised
-   lifecycle test; the oldest active lease must be displaced truthfully.
-7. Exercise Beacon pause/resume and background/foreground recovery, then play,
-   pause, seek and finish the approved EN intro. Confirm its natural end hands
-   off to the current Beacon live edge. ES must state that no intro is
-   available; it must not reuse the obsolete low-gain file.
-8. Revoke the disposable invitation through the authority. Existing playback
-   must stop at the next bounded authorization check, a heartbeat must deny
-   access, and reloading the private home must return to membership-required.
+1. Open the Listener in a clean browser profile. With Free for All OFF, choose
+   Google and complete the real provider callback with a supervised test
+   account.
+2. Confirm the callback returns to `listen.harmonicbeacon.com`, creates only a
+   Listener identity/session and never exposes provider tokens or requests
+   camera/microphone access.
+3. Confirm a configured account sees either **Listen free now** or a local-time
+   selection. Choose **Listen free now** for the first human pass.
+4. Confirm the two-hour window is shown in the browser's local time together
+   with the next window and the date/time when it can be changed again.
+5. Begin **With introduction**. The intro may pause and seek. Confirm its
+   natural completion hands off to the current Beacon live edge.
+6. Stop, choose **Beacon only** and listen again. The Beacon exposes Stop but
+   no Pause or Seek; listening again rejoins the current live point.
+7. Change the intro selector. Spanish must play the Spanish Amara Sol asset and
+   English the English asset. The browser locale chooses the initial UI/intro;
+   the selector overrides only the intro.
+8. Reload, background/foreground the browser and reconnect the network once.
+   The UI must remain truthful, avoid duplicate playback and recover or offer
+   one clear retry.
+9. Open the same account on a second device; both may listen. A supervised
+   third active device must displace only the oldest lease and explain that
+   state truthfully.
+10. Confirm logout is available both during and outside the Free window. After
+    logout, the Listener session endpoint must be anonymous.
+11. At the exact Free-window boundary, playback must stop after the bounded
+    authorization horizon and a new lease/manifest must fail until the next
+    window. This row may be exercised with a synthetic clock in automation and
+    one shorter supervised server-side fixture rather than waiting two hours.
 
-## Result record
+Do not change the selected schedule merely to repeat a test: the seven-day lock
+is product behavior. Use a separate supervised account for a custom future
+time. DST gap/ambiguity, idempotency and cooldown are covered by automated
+tests; physical acceptance only confirms local-time comprehension.
 
-| Date/time | Webapp SHA | Authority SHA | Device / OS | Browser | Locale | Free entry | 2→3 device | Revocation | No media permission | Audio | Tester / notes |
+## Free for All operator flow
+
+1. With the override OFF, verify an anonymous lease and manifest fail closed.
+2. Enable only the isolated Listener override and recreate only that app.
+3. Verify health, then confirm anonymous playback works without creating an
+   account, Free schedule, membership or Purchase.
+4. Disable it and verify denial again; re-enable it only if the current public
+   demo decision requires it.
+
+Existing signed manifests or already buffered media may drain for the short
+signature/manifest horizon. This is expected and must not be described as
+instant revocation.
+
+## Physical acceptance matrix
+
+| Date/time | Device / OS | Browser | Locale | Google callback | Free schedule | Intro / handoff | Beacon live edge | 2→3 devices | Reconnect | Logout | Tester / notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| _pending_ | _pending_ | _pending_ | Desktop | Chromium | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | |
-| _pending_ | _pending_ | _pending_ | Desktop | Firefox | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | |
-| _pending_ | _pending_ | _pending_ | Android physical | Chrome | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | |
-| _pending_ | _pending_ | _pending_ | iPhone physical | Safari | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | |
+| _pending_ | Desktop | Chromium | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
+| _pending_ | Desktop | Firefox | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
+| _pending_ | Android physical | Chrome | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
+| _pending_ | iPhone physical | Safari | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
 
-## Acceptance and rollback
+Run one 60-minute physical listen covering intro, handoff, Stop/restart,
+background/foreground and a network transition. Report audible glitches as a
+human signal only; do not alter codec, gain, buffers or routing from this sheet.
 
-Only Nico records the Free human acceptance decision. Failed rows stay failed
-or blocked; they are not averaged into a pass. If staging degrades, close the
-Listener/team-entry switches and run the isolated rollback from
-`EARLY_BIRDS_STAGING_PREVIEW.md`. Retain the preview databases for audit and do
-not touch the event runtime.
+## Acceptance, external blockers and rollback
+
+Only Nico records the public-test acceptance decision. Failed rows stay failed
+or blocked; they are not averaged into a pass.
+
+Apple's exact external blocker is an authenticated Apple Developer Program
+account with 2FA, a primary App ID, Services ID, key/team identifiers, private
+key and generated client-secret JWT for the documented callback. It must remain
+absent until all material exists.
+
+If the isolated Listener degrades, restore root-only
+`/etc/harmonic-beacon/earlybirds-preview.env.pre-575b75a`, select Listener image
+`d7ed952`, retain both preview databases and origin media, and run the preview
+health smoke. Do not touch the event runtime.
