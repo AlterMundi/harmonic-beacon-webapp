@@ -73,6 +73,21 @@ describe('EarlyBird Listener page', () => {
         expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
     });
 
+    it('passes the campfire fixture only behind the exact server-side prototype flag', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        vi.stubEnv('LISTENER_CAMPFIRE_PROTOTYPE', '1');
+        vi.stubEnv('LISTENER_CAMPFIRE_FIXTURE', 'near');
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.type).toBe(EarlyBirdHome);
+        expect(result.props).toMatchObject({
+            campfirePrototype: true,
+            campfireFixture: 'near',
+        });
+    });
+
     it('renders an authenticated Listener during an active Free window', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');

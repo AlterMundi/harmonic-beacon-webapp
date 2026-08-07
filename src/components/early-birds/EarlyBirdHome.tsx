@@ -3,10 +3,12 @@
 import BrandLockup from '@/components/brand/BrandLockup';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
+import type { ListenerCampfireFixture } from '@/lib/early-birds/campfire-prototype';
 import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
 
 import ListenerPlayer from './ListenerPlayer';
 import AccessBoundarySync from './AccessBoundarySync';
+import CosmicCampfire from './CosmicCampfire';
 
 export default function EarlyBirdHome({
     displayName,
@@ -16,6 +18,8 @@ export default function EarlyBirdHome({
     serverNow = new Date(0).toISOString(),
     dropIns,
     publicAccess = false,
+    campfirePrototype = false,
+    campfireFixture = 'empty',
 }: {
     displayName: string;
     membershipSource: string | null;
@@ -24,6 +28,8 @@ export default function EarlyBirdHome({
     serverNow?: string;
     dropIns: { es: string | null; en: string | null };
     publicAccess?: boolean;
+    campfirePrototype?: boolean;
+    campfireFixture?: ListenerCampfireFixture;
 }) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
@@ -35,6 +41,7 @@ export default function EarlyBirdHome({
 
     return (
         <main className="listener-shell">
+            {campfirePrototype && <CosmicCampfire fixture={campfireFixture} />}
             {accessKind !== 'membership' && (
                 <AccessBoundarySync
                     expectedKind={accessKind}

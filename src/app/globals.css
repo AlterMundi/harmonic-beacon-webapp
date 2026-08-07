@@ -1158,6 +1158,31 @@ body {
   opacity: 0.34;
 }
 
+.listener-campfire {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  opacity: 0.82;
+}
+
+.listener-campfire::after {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(5, 11, 12, 0.08), transparent 24%, transparent 72%, rgba(5, 11, 12, 0.42)),
+    radial-gradient(ellipse at 50% 55%, transparent 0%, transparent 31%, rgba(5, 11, 12, 0.2) 74%);
+  content: '';
+}
+
+.listener-campfire canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .listener-shell__frame {
   width: min(100%, 1180px);
   min-height: 100vh;
@@ -1803,6 +1828,7 @@ body {
 }
 
 @media (max-width: 760px) {
+  .listener-campfire { opacity: 0.72; }
   .listener-shell__frame { padding-inline: 1rem; }
   .listener-rail .brand-lockup { font-size: 0.72rem; }
   .listener-experience { margin-top: 0.55rem; }
@@ -1836,6 +1862,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .listener-campfire { opacity: 0.74; }
   .listener-field__aurora,
   .listener-field__orbit,
   .listener-field__core,

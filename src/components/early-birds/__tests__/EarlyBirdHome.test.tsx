@@ -7,6 +7,11 @@ import { LocaleProvider } from '@/context/LocaleContext';
 vi.mock('../ListenerPlayer', () => ({
     default: () => <section aria-label="listener-player" />,
 }));
+vi.mock('../CosmicCampfire', () => ({
+    default: ({ fixture }: { fixture: string }) => (
+        <div data-testid="listener-campfire" data-fixture={fixture} aria-hidden="true" />
+    ),
+}));
 import EarlyBirdHome from '../EarlyBirdHome';
 
 afterEach(cleanup);
@@ -43,5 +48,33 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
         expect(screen.queryByRole('group', { name: /language|idioma/i })).not.toBeInTheDocument();
         expect(screen.getByLabelText('listener-player')).toBeInTheDocument();
+    });
+
+    it('keeps the campfire prototype absent unless its exact server flag is passed', () => {
+        const view = render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membershipSource="FREE"
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.queryByTestId('listener-campfire')).not.toBeInTheDocument();
+        view.rerender(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    campfirePrototype
+                    campfireFixture="far"
+                    displayName="Nico"
+                    membershipSource="FREE"
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByTestId('listener-campfire')).toHaveAttribute('data-fixture', 'far');
+        expect(screen.getByTestId('listener-campfire')).toHaveAttribute('aria-hidden', 'true');
     });
 });

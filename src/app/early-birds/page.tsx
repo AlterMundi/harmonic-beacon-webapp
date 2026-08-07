@@ -19,6 +19,7 @@ import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 import { freeWindowState, serializeFreeWindowState } from '@/lib/early-birds/free-window';
 import { serializeWelcomeAccessState, welcomeAccessState } from '@/lib/early-birds/welcome-access';
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
+import { listenerCampfirePrototypeConfig } from '@/lib/early-birds/campfire-prototype';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,11 +34,14 @@ export default async function EarlyBirdsPage({
     searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
     if (!earlyBirdsEnabled()) return <EarlyBirdUnavailable />;
+    const campfire = listenerCampfirePrototypeConfig();
 
     if (earlyBirdsFreeForAll()) {
         return (
             <EarlyBirdHome
                 publicAccess
+                campfirePrototype={campfire.enabled}
+                campfireFixture={campfire.fixture}
                 displayName=""
                 membershipSource={null}
                 dropIns={{
@@ -64,6 +68,8 @@ export default async function EarlyBirdsPage({
         return (
             <EarlyBirdHome
                 displayName={session.user.name}
+                campfirePrototype={campfire.enabled}
+                campfireFixture={campfire.fixture}
                 membershipSource={access.membership.projection?.source ?? null}
                 accessKind={access.kind === 'free-window'
                     ? 'free-window'
