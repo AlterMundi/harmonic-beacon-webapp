@@ -7,8 +7,9 @@ import { LocaleProvider } from '@/context/LocaleContext';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
 
 const signInSocial = vi.hoisted(() => vi.fn());
+const signOut = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/early-birds/auth-client', () => ({
-    earlyBirdAuthClient: { signIn: { social: signInSocial } },
+    earlyBirdAuthClient: { signIn: { social: signInSocial }, signOut },
 }));
 vi.mock('@/components/brand/LanguageControl', () => ({ default: () => <div data-testid="language" /> }));
 vi.mock('@/components/brand/BrandLockup', () => ({ default: () => <a href="/early-birds">Harmonic Beacon</a> }));
@@ -48,6 +49,8 @@ describe('EarlyBird public landing', () => {
     beforeEach(() => {
         signInSocial.mockReset();
         signInSocial.mockResolvedValue({ error: null });
+        signOut.mockReset();
+        signOut.mockResolvedValue({ error: null });
         window.localStorage.clear();
     });
     afterEach(() => cleanup());
@@ -101,5 +104,6 @@ describe('EarlyBird public landing', () => {
                 expect.objectContaining({ href: expect.stringMatching(/\/early-birds$/) }),
             ]));
         expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
     });
 });

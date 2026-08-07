@@ -48,6 +48,11 @@ export default function EarlyBirdLanding(props: Props) {
         setError(true);
     }
 
+    async function signOut() {
+        await earlyBirdAuthClient.signOut();
+        window.location.assign('/early-birds');
+    }
+
     return (
         <main className="listener-shell listener-shell--public">
             <div className="listener-shell__frame">
@@ -102,6 +107,13 @@ export default function EarlyBirdLanding(props: Props) {
                                 ) : (
                                     <FreeWindowSetup state={props.freeWindow} />
                                 )}
+                                <button
+                                    type="button"
+                                    onClick={signOut}
+                                    className="listener-account-link"
+                                >
+                                    {copy.signOut}
+                                </button>
                             </div>
                         ) : (
                             <div className="space-y-3">

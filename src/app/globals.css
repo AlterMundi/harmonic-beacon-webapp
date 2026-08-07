@@ -1709,6 +1709,15 @@ body {
 }
 .listener-free-window__chooser p { color: var(--text-muted); font-size: 0.72rem; }
 
+.listener-account-link {
+  min-height: 2.75rem;
+  width: 100%;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-underline-offset: 0.25rem;
+}
+
 .listener-footer {
   max-width: 45rem;
   padding: 1.5rem 0;
