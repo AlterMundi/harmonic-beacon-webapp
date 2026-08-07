@@ -202,6 +202,16 @@ evidence, not authorization to promote it to `main` or production.
   `f7d3254d510530172ed1fcc708fb6f7c70487e5d75f5416da3c9ebb591a28d1e`
   and attest zero network requests. This proves distribution readiness, not
   throughput or customer capacity.
+- The 4,000 expansion and 5,000 critical profiles were subsequently dry-run
+  across the same two external generators as six and eight shards. The verified
+  plans cover every index, sum to exactly 4,000 and 5,000 clients, use two
+  distinct generator fingerprints, preserve mode `0600` and attest zero network
+  requests. Their plan hashes are respectively
+  `67b68f412789c1ae3ad8e950c49480704d5c06f33b445788272a0a73fb73a3dd`
+  and `845206f4b8c1e605953a1efd8066b73b9bba87e2487627f3022bd337ec6d44ec`.
+  The exact redacted evidence record is
+  `docs/ops/evidence/2026-08-07-listener-4k5k-dryruns.md`. No load was executed;
+  measured origin, application and customer capacity remain open.
 
 Protected runtime configuration remains under `/etc/harmonic-beacon/`; this
 record never includes its values. The supervised human Free invitation is
