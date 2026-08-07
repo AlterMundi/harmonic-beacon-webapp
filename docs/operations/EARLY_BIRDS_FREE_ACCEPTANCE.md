@@ -19,7 +19,8 @@ device/browser, result and a non-sensitive symptom.
   window, changeable again after seven days
 - Founding Listener access: canonical active membership projection
 - Connections: at most two active devices per account
-- Free for All: an independent reversible operator override, currently ON
+- Free for All: an independent reversible operator override, temporarily OFF
+  for coordinated registered-Free acceptance
 - PayPal and Mercado Pago: disabled for this acceptance and expected to fail
   closed
 - Apple: absent until Apple Developer Program credentials and 2FA are supplied
@@ -90,6 +91,14 @@ is product behavior. Use a separate supervised account for a custom future
 time. DST gap/ambiguity, idempotency and cooldown are covered by automated
 tests; physical acceptance only confirms local-time comprehension.
 
+The first supervised real-provider pass completed Google callback, logout and
+sign-in again on 2026-08-07. A custom window selected one minute ahead became
+authorized by the server and entered Listener after reload. The open waiting
+page did not refresh itself at the boundary; #216 tracks that behavior and is
+explicitly conditional on retaining the recurring two-hour Free model. The
+sanitized server audit confirmed one recent identity/session, exact seven-day
+cooldown, scrubbed OAuth tokens and no stored session IP or user-agent.
+
 ## Free for All operator flow
 
 1. With the override OFF, verify an anonymous lease and manifest fail closed.
@@ -122,9 +131,14 @@ Only Nico records the public-test acceptance decision. Failed rows stay failed
 or blocked; they are not averaged into a pass.
 
 Apple's exact external blocker is an authenticated Apple Developer Program
-account with 2FA, a primary App ID, Services ID, key/team identifiers, private
-key and generated client-secret JWT for the documented callback. It must remain
-absent until all material exists.
+Account Holder/Admin with 2FA, a primary App ID with Sign in with Apple, a
+Services ID associated with that App ID, the `listen.harmonicbeacon.com` and
+staging domains/absolute callback URLs, Team ID, Key ID, the one-time-download
+private `.p8` key and a generated client-secret JWT. The Services ID is the
+OAuth client ID. It must remain absent until all material exists; the private
+key/client secret must be delivered and installed securely, never committed or
+pasted into GitHub. A normal Apple Account on an iPhone is sufficient for the
+physical login test only after this developer configuration exists.
 
 If the isolated Listener degrades, restore root-only
 `/etc/harmonic-beacon/earlybirds-preview.env.pre-575b75a`, select Listener image
