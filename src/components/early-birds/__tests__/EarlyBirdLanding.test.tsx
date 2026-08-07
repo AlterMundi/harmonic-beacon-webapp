@@ -41,6 +41,14 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                     nextStart: null,
                     nextEnd: null,
                 }}
+                welcome={{
+                    available: false,
+                    active: false,
+                    used: false,
+                    startedAt: null,
+                    endsAt: null,
+                }}
+                serverNow="2026-08-07T15:00:00.000Z"
                 {...overrides}
             />
         </LocaleProvider>,
@@ -141,5 +149,28 @@ describe('EarlyBird public landing', () => {
             ]));
         expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
         expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+    });
+
+    it('offers the one-time welcome listen without selecting a recurring schedule', async () => {
+        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('{}', { status: 409 }));
+        renderLanding({
+            signedIn: true,
+            providers: { google: true, apple: false },
+            welcome: {
+                available: true,
+                active: false,
+                used: false,
+                startedAt: null,
+                endsAt: null,
+            },
+        });
+
+        await userEvent.click(screen.getByRole('button', { name: 'Listen for 30 minutes now' }));
+
+        expect(fetchMock).toHaveBeenCalledWith('/api/early-birds/welcome-access', expect.objectContaining({
+            method: 'POST',
+        }));
+        expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('activationRequestId');
+        fetchMock.mockRestore();
     });
 });

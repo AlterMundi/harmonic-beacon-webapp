@@ -17,6 +17,7 @@ import {
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 import { freeWindowState, serializeFreeWindowState } from '@/lib/early-birds/free-window';
+import { serializeWelcomeAccessState, welcomeAccessState } from '@/lib/early-birds/welcome-access';
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +49,7 @@ export default async function EarlyBirdsPage({
     }
 
     const params = await searchParams;
+    const serverNow = new Date().toISOString();
     const incomingHeaders = new Headers(await requestHeaders());
     const cookieStore = await cookies();
     const session = await currentEarlyBirdSession().catch(() => null);
@@ -63,7 +65,11 @@ export default async function EarlyBirdsPage({
             <EarlyBirdHome
                 displayName={session.user.name}
                 membershipSource={access.membership.projection?.source ?? null}
-                accessKind={access.kind === 'free-window' ? 'free-window' : 'membership'}
+                accessKind={access.kind === 'free-window'
+                    ? 'free-window'
+                    : access.kind === 'welcome' ? 'welcome' : 'membership'}
+                accessUntil={access.allowedUntil?.toISOString() ?? null}
+                serverNow={serverNow}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
                     en: configuredEarlyBirdDropIn('en'),
@@ -82,6 +88,8 @@ export default async function EarlyBirdsPage({
             emailMagicLinkAvailable={earlyBirdMagicLinkAvailable()}
             syntheticTeamEntryAvailable={syntheticTeamEntryAllowed({ headers: incomingHeaders })}
             freeWindow={serializeFreeWindowState(access?.freeWindow ?? freeWindowState(null))}
+            welcome={serializeWelcomeAccessState(access?.welcome ?? welcomeAccessState(null))}
+            serverNow={serverNow}
         />
     );
 }

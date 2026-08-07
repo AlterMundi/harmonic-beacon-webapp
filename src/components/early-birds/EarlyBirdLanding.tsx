@@ -7,10 +7,13 @@ import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
 import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-window';
+import type { SerializedEarlyBirdWelcomeAccessState } from '@/lib/early-birds/welcome-access';
 
+import AccessBoundarySync from './AccessBoundarySync';
 import BeaconField from './BeaconField';
 import FreeWindowSetup from './FreeWindowSetup';
 import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
+import WelcomeAccessAction from './WelcomeAccessAction';
 
 type Props = {
     signedIn: boolean;
@@ -21,6 +24,8 @@ type Props = {
     emailMagicLinkAvailable: boolean;
     syntheticTeamEntryAvailable: boolean;
     freeWindow: SerializedEarlyBirdFreeWindowState;
+    welcome: SerializedEarlyBirdWelcomeAccessState;
+    serverNow: string;
 };
 
 export default function EarlyBirdLanding(props: Props) {
@@ -82,6 +87,13 @@ export default function EarlyBirdLanding(props: Props) {
 
     return (
         <main className="listener-shell listener-shell--public">
+            {props.signedIn && props.freeWindow.nextStart && (
+                <AccessBoundarySync
+                    expectedKind="denied"
+                    boundaryAt={props.freeWindow.nextStart}
+                    serverNow={props.serverNow}
+                />
+            )}
             <div className="listener-shell__frame">
                 <header className="listener-rail">
                     <BrandLockup href="/early-birds" />
@@ -132,7 +144,10 @@ export default function EarlyBirdLanding(props: Props) {
                                         {copy.redeem}
                                     </a>
                                 ) : (
-                                    <FreeWindowSetup state={props.freeWindow} />
+                                    <>
+                                        {props.welcome.available && <WelcomeAccessAction />}
+                                        <FreeWindowSetup state={props.freeWindow} />
+                                    </>
                                 )}
                                 <button
                                     type="button"

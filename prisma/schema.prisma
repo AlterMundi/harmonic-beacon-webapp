@@ -429,6 +429,7 @@ model EarlyBirdUser {
   authSessions EarlyBirdAuthSession[]
   membership   EarlyBirdMembershipProjection?
   freeSchedule EarlyBirdFreeSchedule?
+  welcomeAccess EarlyBirdWelcomeAccess?
   streamLeases EarlyBirdStreamLease[]
 
   @@map("early_bird_users")
@@ -543,6 +544,22 @@ model EarlyBirdFreeSchedule {
 
   @@index([changeAllowedAt])
   @@map("early_bird_free_schedules")
+}
+
+// One explicit, account-bound first listen before a person commits to a daily
+// Free schedule. The row is the durable consumed marker; it is never created
+// by registration, Free for All, membership or a page view.
+model EarlyBirdWelcomeAccess {
+  accountId           String        @id @map("account_id")
+  account             EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  startedAt           DateTime      @map("started_at")
+  endsAt              DateTime      @map("ends_at")
+  activationRequestId String        @unique @map("activation_request_id") @db.VarChar(64)
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  @@index([endsAt])
+  @@map("early_bird_welcome_accesses")
 }
 
 model EarlyBirdStreamLease {

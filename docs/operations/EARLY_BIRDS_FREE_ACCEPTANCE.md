@@ -17,6 +17,8 @@ device/browser, result and a non-sensitive symptom.
 - Approved intro languages: Spanish and English
 - Ordinary Free access: registered account plus one recurring two-hour daily
   window, changeable again after seven days
+- First access: one explicit account-bound 30-minute listen before selecting a
+  recurring schedule
 - Founding Listener access: canonical active membership projection
 - Connections: at most two active devices per account
 - Free for All: an independent reversible operator override, temporarily OFF
@@ -43,6 +45,8 @@ Before a human session, require:
 - unconfigured Apple is absent, not a dead public button;
 - registered Free selection is server-authoritative and a stream lease cannot
   outlive the active window;
+- first-listen activation is explicit, idempotent, single-use and its leases
+  and manifests cannot outlive the exact 30-minute server boundary;
 - canonical Founder/invitation projection still outranks ordinary Free and
   terminal membership states fail closed;
 - anonymous Free for All lease and ES/EN media ranges work while the override
@@ -62,29 +66,36 @@ remain open.
 2. Confirm the callback returns to `listen.harmonicbeacon.com`, creates only a
    Listener identity/session and never exposes provider tokens or requests
    camera/microphone access.
-3. Confirm a configured account sees either **Listen free now** or a local-time
-   selection. Choose **Listen free now** for the first human pass.
-4. Confirm the two-hour window is shown in the browser's local time together
+3. With a new account, press **Listen for 30 minutes now** and confirm access
+   begins without selecting or locking a recurring schedule. Refresh and a
+   second device must retain the original end rather than extending it.
+4. With a second new account, choose **Listen free now** without starting the
+   first listen. Confirm no first-listen row is consumed and the daily schedule
+   is the only active grant.
+5. Confirm the two-hour window is shown in the browser's local time together
    with the next window and the date/time when it can be changed again.
-5. Begin **With introduction**. The intro may pause and seek. Confirm its
+6. Begin **With introduction**. The intro may pause and seek. Confirm its
    natural completion hands off to the current Beacon live edge.
-6. Stop, choose **Beacon only** and listen again. The Beacon exposes Stop but
+7. Stop, choose **Beacon only** and listen again. The Beacon exposes Stop but
    no Pause or Seek; listening again rejoins the current live point.
-7. Change the intro selector. Spanish must play the Spanish Amara Sol asset and
+8. Change the intro selector. Spanish must play the Spanish Amara Sol asset and
    English the English asset. The browser locale chooses the initial UI/intro;
    the selector overrides only the intro.
-8. Reload, background/foreground the browser and reconnect the network once.
+9. Reload, background/foreground the browser and reconnect the network once.
    The UI must remain truthful, avoid duplicate playback and recover or offer
    one clear retry.
-9. Open the same account on a second device; both may listen. A supervised
+10. Open the same account on a second device; both may listen. A supervised
    third active device must displace only the oldest lease and explain that
    state truthfully.
-10. Confirm logout is available both during and outside the Free window. After
+11. Confirm logout is available both during and outside the Free window. After
     logout, the Listener session endpoint must be anonymous.
-11. At the exact Free-window boundary, playback must stop after the bounded
+12. At the exact first-listen and Free-window boundaries, playback must stop after the bounded
     authorization horizon and a new lease/manifest must fail until the next
     window. This row may be exercised with a synthetic clock in automation and
     one shorter supervised server-side fixture rather than waiting two hours.
+13. Leave the waiting page open across a scheduled start, and the player open
+    across an end. Both views must update from server authority without a
+    manual reload.
 
 Do not change the selected schedule merely to repeat a test: the seven-day lock
 is product behavior. Use a separate supervised account for a custom future
@@ -94,8 +105,8 @@ tests; physical acceptance only confirms local-time comprehension.
 The first supervised real-provider pass completed Google callback, logout and
 sign-in again on 2026-08-07. A custom window selected one minute ahead became
 authorized by the server and entered Listener after reload. The open waiting
-page did not refresh itself at the boundary; #216 tracks that behavior and is
-explicitly conditional on retaining the recurring two-hour Free model. The
+page did not refresh itself at the boundary; #216 now has an implementation
+that must be confirmed in the next deployed acceptance. The
 sanitized server audit confirmed one recent identity/session, exact seven-day
 cooldown, scrubbed OAuth tokens and no stored session IP or user-agent.
 

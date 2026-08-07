@@ -4,6 +4,7 @@ const tx = vi.hoisted(() => ({
     $queryRaw: vi.fn(),
     earlyBirdMembershipProjection: { findUnique: vi.fn() },
     earlyBirdFreeSchedule: { findUnique: vi.fn() },
+    earlyBirdWelcomeAccess: { findUnique: vi.fn() },
     earlyBirdStreamLease: {
         findUnique: vi.fn(),
         findMany: vi.fn(),
@@ -24,6 +25,7 @@ const prisma = vi.hoisted(() => ({
     },
     earlyBirdMembershipProjection: { findUnique: vi.fn() },
     earlyBirdFreeSchedule: { findUnique: vi.fn() },
+    earlyBirdWelcomeAccess: { findUnique: vi.fn() },
 }));
 vi.mock('@/lib/db', () => ({ prisma }));
 
@@ -31,6 +33,8 @@ import {
     acquireEarlyBirdStreamLease,
     acquireFreeForAllStreamLease,
     authorizeFreeForAllStreamLease,
+    authorizeEarlyBirdStreamLease,
+    EarlyBirdAccessDeniedError,
     EarlyBirdDeviceCapacityError,
     earlyBirdDeviceDigest,
     EARLY_BIRD_LEASE_TTL_MS,
@@ -52,6 +56,8 @@ describe('EarlyBird two-device leases', () => {
         });
         tx.earlyBirdFreeSchedule.findUnique.mockResolvedValue(null);
         prisma.earlyBirdFreeSchedule.findUnique.mockResolvedValue(null);
+        tx.earlyBirdWelcomeAccess.findUnique.mockResolvedValue(null);
+        prisma.earlyBirdWelcomeAccess.findUnique.mockResolvedValue(null);
         tx.earlyBirdStreamLease.findUnique.mockResolvedValue(null);
         tx.earlyBirdStreamLease.updateMany.mockResolvedValue({ count: 1 });
         prisma.earlyBirdStreamLease.updateMany.mockResolvedValue({ count: 1 });
@@ -170,6 +176,58 @@ describe('EarlyBird two-device leases', () => {
         expect(tx.earlyBirdStreamLease.create).toHaveBeenCalledWith({
             data: expect.objectContaining({ expiresAt: new Date('2026-08-06T13:00:00.000Z') }),
         });
+    });
+
+    it('caps a welcome lease at the exact thirty-minute boundary', async () => {
+        tx.earlyBirdMembershipProjection.findUnique.mockResolvedValue(null);
+        tx.earlyBirdFreeSchedule.findUnique.mockResolvedValue(null);
+        tx.earlyBirdWelcomeAccess.findUnique.mockResolvedValue({
+            accountId: 'listener-1',
+            startedAt: new Date('2026-08-06T11:32:00.000Z'),
+            endsAt: new Date('2026-08-06T12:02:00.000Z'),
+            activationRequestId: '00000000-0000-4000-8000-000000000004',
+        });
+        tx.earlyBirdStreamLease.findMany.mockResolvedValue([]);
+        tx.earlyBirdStreamLease.create.mockImplementation(({ data }) => ({
+            id: '00000000-0000-4000-8000-000000000003',
+            ...data,
+        }));
+        const issuer: EarlyBirdStreamUrlIssuer = {
+            issue: vi.fn().mockImplementation(({ leaseExpiresAt }) => ({
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=3',
+                expiresAt: leaseExpiresAt,
+            })),
+        };
+
+        const result = await acquireEarlyBirdStreamLease(
+            'listener-1',
+            'device_abcdefghijklmnopqrstuvwxyz',
+            NOW,
+            issuer,
+        );
+
+        expect(result.leaseExpiresAt).toEqual(new Date('2026-08-06T12:02:00.000Z'));
+    });
+
+    it('rechecks active welcome access before authorizing a manifest', async () => {
+        prisma.earlyBirdMembershipProjection.findUnique.mockResolvedValue(null);
+        prisma.earlyBirdFreeSchedule.findUnique.mockResolvedValue(null);
+        prisma.earlyBirdWelcomeAccess.findUnique.mockResolvedValue({
+            accountId: 'listener-1',
+            startedAt: new Date('2026-08-06T11:30:00.000Z'),
+            endsAt: new Date('2026-08-06T12:00:00.000Z'),
+        });
+        prisma.earlyBirdStreamLease.findFirst.mockResolvedValue({
+            id: '00000000-0000-4000-8000-000000000003',
+            evictedAt: null,
+            expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+        });
+
+        await expect(authorizeEarlyBirdStreamLease(
+            'listener-1',
+            '00000000-0000-4000-8000-000000000003',
+            NOW,
+        )).rejects.toBeInstanceOf(EarlyBirdAccessDeniedError);
     });
 
     it('renews an idle prepared lease without raising its eviction priority', async () => {
