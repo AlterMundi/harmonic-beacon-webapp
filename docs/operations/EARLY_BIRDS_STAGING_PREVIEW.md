@@ -1,5 +1,40 @@
 # EarlyBirds isolated staging runtime
 
+## 2026-08-07 registered Free and identity hardening
+
+The isolated Listener runs application SHA
+`575b75aae5609b1813485d955a3e8ea753018084` and schema
+`20260807070000_early_bird_free_schedule`. The global Free for All override is
+ON after the acceptance exercises below; it remains independent from account
+schedules and membership.
+
+- A registered account may select one recurring two-hour daily window using a
+  canonical IANA time zone. The server owns authorization, the rolling
+  seven-day change boundary and DST resolution. Stream leases and manifests
+  cannot outlive the active window.
+- A synthetic identity-only staging pass selected Listen now, rendered the
+  active Free home, acquired a lease bounded by the exact window end and
+  fetched a valid HLS manifest. Free for All was then restored and anonymous
+  playback passed again.
+- Google authorization reached the real Google account chooser in Chromium
+  with the exact Listener callback, one-time state and PKCE S256. No real
+  account was selected. Apple is absent and fails closed until its external
+  developer credentials exist.
+- Browser auth mutations now require an exact trusted Origin; Apple/provider
+  callbacks remain state/cookie and PKCE bound. A synthetic session verified
+  logout and confirmed that provider tokens, IP address and user-agent are not
+  retained in the Listener tables.
+- All 1,087 tests, ESLint, TypeScript, production build, frozen-audio,
+  stream-origin, observability and preview checks passed. Public readiness,
+  ES/EN drop-ins, FFA lease and decoded canary are green.
+- The two builds used only temporary Docker build cache. Pruning only unused
+  cache left every image, container, volume and runtime datum intact. Approved
+  media remains on `/mnt/beacon-data`; moving containerd itself still requires
+  a production maintenance window.
+- Rollback restores root-only
+  `/etc/harmonic-beacon/earlybirds-preview.env.pre-575b75a`, selects Listener
+  image `d7ed952`, and retains PostgreSQL, origin media and the authority.
+
 ## 2026-08-07 live-edge transport refinement
 
 The isolated Listener now runs application SHA
