@@ -44,6 +44,11 @@ describe('anonymous Listener regional presence', () => {
         expect(snapshot).toMatchObject({
             schema: 'listener-presence.v1',
             observedAt: '2026-08-07T20:00:00.000Z',
+            attribution: {
+                label: 'IP Geolocation by DB-IP',
+                href: 'https://db-ip.com',
+                license: 'CC BY 4.0',
+            },
         });
         expect(snapshot.regions.find(({ region }) => region === 'EUROPE')?.level).toBe('radiant');
         expect(snapshot.regions.find(({ region }) => region === 'LATIN_AMERICA')?.level).toBe('cluster');

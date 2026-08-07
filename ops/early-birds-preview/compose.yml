@@ -91,11 +91,13 @@ services:
       EARLY_BIRDS_TEST_LOGIN_SECRET: ${EARLY_BIRDS_TEST_LOGIN_SECRET:-}
       EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: ${EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED:-0}
       EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS: ${EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS:?set_in_preview.env}
+      BEACON_LISTENER_GEOIP_DB_PATH: /data/geoip/dbip-country-lite.mmdb
       TRUSTED_PROXY_HOPS: "1"
     ports:
       - "127.0.0.1:${EARLYBIRDS_PREVIEW_APP_PORT:-13000}:3000"
     volumes:
       - ${BEACON_STREAM_ARTIFACTS_HOST_PATH:?set_in_preview.env}:/media/artifacts:ro
+      - ${BEACON_LISTENER_GEOIP_HOST_PATH:?set_in_preview.env}:/data/geoip/dbip-country-lite.mmdb:ro
     networks:
       - preview_db
       - listener_egress

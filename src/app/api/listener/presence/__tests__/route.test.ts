@@ -9,6 +9,11 @@ import { GET } from '../route';
 const snapshot = {
     schema: 'listener-presence.v1' as const,
     observedAt: '2026-08-07T20:00:00.000Z',
+    attribution: {
+        label: 'IP Geolocation by DB-IP' as const,
+        href: 'https://db-ip.com' as const,
+        license: 'CC BY 4.0' as const,
+    },
     regions: [{ region: 'EUROPE' as const, level: 'cluster' as const }],
 };
 

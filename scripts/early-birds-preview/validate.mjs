@@ -33,6 +33,7 @@ const syntheticEnv = [
   'EARLY_BIRDS_TEST_LOGIN_SECRET=synthetic-preview-login-secret-at-least-32-characters',
   'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=0',
   'EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=earlybirds-staging.harmonicbeacon.com',
+  'BEACON_LISTENER_GEOIP_HOST_PATH=.',
   'EARLY_BIRDS_AUTHORITY_BASE_URL=https://authority.example.invalid',
   'EARLY_BIRDS_AUTHORITY_SERVICE_KEY_ID=synthetic-v1',
   'EARLY_BIRDS_AUTHORITY_SERVICE_TOKEN=synthetic-preview-authority-token-at-least-43-characters-long',
@@ -109,10 +110,14 @@ try {
   assert.equal(listener.environment.EARLY_BIRDS_GOOGLE_CLIENT_ID, '');
   assert.equal(listener.environment.EARLY_BIRDS_APPLE_CLIENT_ID, '');
   assert.equal(listener.environment.EARLY_BIRDS_DROPIN_ES_PATH, '');
-  assert.equal(listener.volumes.length, 1);
+  assert.equal(listener.environment.BEACON_LISTENER_GEOIP_DB_PATH, '/data/geoip/dbip-country-lite.mmdb');
+  assert.equal(listener.volumes.length, 2);
   assert.equal(listener.volumes[0].type, 'bind');
   assert.equal(listener.volumes[0].target, '/media/artifacts');
   assert.equal(listener.volumes[0].read_only, true);
+  assert.equal(listener.volumes[1].type, 'bind');
+  assert.equal(listener.volumes[1].target, '/data/geoip/dbip-country-lite.mmdb');
+  assert.equal(listener.volumes[1].read_only, true);
   assert.equal(listener.depends_on.postgres.condition, 'service_healthy');
   assert.equal(listener.depends_on.migration.condition, 'service_completed_successfully');
   assert.deepEqual(Object.keys(listener.networks).sort(), ['listener_egress', 'preview_db']);

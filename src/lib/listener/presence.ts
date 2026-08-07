@@ -22,6 +22,11 @@ export type ListenerPresenceLevel = 'none' | 'trace' | 'cluster' | 'field' | 'ra
 export type ListenerPresenceSnapshot = {
     schema: 'listener-presence.v1';
     observedAt: string;
+    attribution: {
+        label: 'IP Geolocation by DB-IP';
+        href: 'https://db-ip.com';
+        license: 'CC BY 4.0';
+    };
     regions: Array<{
         region: ListenerMacroRegion;
         level: ListenerPresenceLevel;
@@ -96,6 +101,11 @@ export function publicPresenceSnapshot(
     return {
         schema: 'listener-presence.v1',
         observedAt: observedAt.toISOString(),
+        attribution: {
+            label: 'IP Geolocation by DB-IP',
+            href: 'https://db-ip.com',
+            license: 'CC BY 4.0',
+        },
         regions: LISTENER_MACRO_REGIONS.map((region) => ({
             region,
             level: presenceLevel(counts.get(region) ?? 0),
