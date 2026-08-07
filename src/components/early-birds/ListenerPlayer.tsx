@@ -130,6 +130,7 @@ export default function ListenerPlayer({
     const recoveryTimer = useRef<number | null>(null);
     const queuedRecoveryDelay = useRef<number | null>(null);
     const nativeSuspendObserved = useRef(false);
+    const listenerPresence = useRef<'idle' | 'listening'>('idle');
     const automaticRecovery = useRef<(initialDelayMs?: number) => void>(() => undefined);
     const deferLiveFadeForRecovery = useRef<() => void>(() => undefined);
     const [liveState, setLiveState] = useState<LiveState>('idle');
@@ -221,7 +222,9 @@ export default function ListenerPlayer({
         return response.json() as Promise<LeasePayload>;
     }, []);
 
-    const probeExistingLease = useCallback(async (): Promise<LeaseProbeResult> => {
+    const probeExistingLease = useCallback(async (
+        presence = listenerPresence.current,
+    ): Promise<LeaseProbeResult> => {
         if (!leaseId.current) return { kind: 'reacquire' };
         try {
             const response = await fetch('/api/early-birds/stream/heartbeat', {
@@ -230,6 +233,7 @@ export default function ListenerPlayer({
                 body: JSON.stringify({
                     leaseId: leaseId.current,
                     intent: wantsLivePlayback.current ? 'play' : 'prepare',
+                    presence,
                 }),
             });
             if (response.status === 410) {
@@ -244,6 +248,22 @@ export default function ListenerPlayer({
         } catch {
             return { kind: 'retry' };
         }
+    }, []);
+
+    const reportPresence = useCallback((presence: 'idle' | 'listening') => {
+        listenerPresence.current = presence;
+        const currentLeaseId = leaseId.current;
+        if (!currentLeaseId || typeof navigator.sendBeacon !== 'function') return;
+        const body = new Blob([
+            JSON.stringify({
+                leaseId: currentLeaseId,
+                intent: wantsLivePlayback.current ? 'play' : 'prepare',
+                presence,
+            }),
+        ], { type: 'application/json' });
+        // sendBeacon survives pagehide and does not compete with playback or
+        // recovery fetches. The ordinary heartbeat remains the reliable retry.
+        navigator.sendBeacon('/api/early-birds/stream/heartbeat', body);
     }, []);
 
     const cancelLiveFade = useCallback(() => {
@@ -581,6 +601,7 @@ export default function ListenerPlayer({
             if (recoveryAttempts.current >= RECOVERY_DELAYS_MS.length) {
                 wantsLivePlayback.current = false;
                 liveAudio.current?.pause();
+                reportPresence('idle');
                 updateLiveState('error');
                 return;
             }
@@ -605,7 +626,7 @@ export default function ListenerPlayer({
             }, delayMs);
         };
         runAttempt(Math.max(0, initialDelayMs));
-    }, [attemptLivePlayback, updateLiveState]);
+    }, [attemptLivePlayback, reportPresence, updateLiveState]);
 
     useEffect(() => {
         automaticRecovery.current = scheduleAutomaticRecovery;
@@ -631,11 +652,12 @@ export default function ListenerPlayer({
         }
         if (played) {
             setTransportPaused(false);
+            reportPresence('listening');
             updateLiveState('playing');
             return;
         }
         scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
-    }, [armLiveFadeIn, attemptLivePlayback, cancelRecovery, pauseDropIns, scheduleAutomaticRecovery, updateLiveState]);
+    }, [armLiveFadeIn, attemptLivePlayback, cancelRecovery, pauseDropIns, reportPresence, scheduleAutomaticRecovery, updateLiveState]);
 
     function playBeaconOnly() {
         dropGeneration.current += 1;
@@ -662,6 +684,7 @@ export default function ListenerPlayer({
             try {
                 await intro.play();
                 setTransportPaused(false);
+                reportPresence('listening');
             } catch {
                 // Keep the paused state visible when the browser rejects resume.
             }
@@ -673,6 +696,7 @@ export default function ListenerPlayer({
         intro?.pause();
         storeProgress(language);
         setTransportPaused(true);
+        reportPresence('idle');
     }
 
     function stopTransport() {
@@ -680,6 +704,7 @@ export default function ListenerPlayer({
         setTransportStopped(true);
         setTransportPaused(false);
         wantsLivePlayback.current = false;
+        reportPresence('idle');
         cancelRecovery(true);
         pendingLiveFade.current = false;
         liveSuppressedForDrop.current = false;
@@ -712,17 +737,25 @@ export default function ListenerPlayer({
             nativeSuspendObserved.current = true;
             return;
         }
+        reportPresence('idle');
         deferLiveFade();
         scheduleAutomaticRecovery(kind === 'error' ? 0 : STALL_RECOVERY_DELAY_MS);
-    }, [deferLiveFade, scheduleAutomaticRecovery]);
+    }, [deferLiveFade, reportPresence, scheduleAutomaticRecovery]);
 
-    const handleNativePlaying = useCallback(() => {
+    function handleNativePlaying() {
         if (!wantsLivePlayback.current) return;
         nativeSuspendObserved.current = false;
         cancelRecovery(true);
+        const introduction = activeDrop.current
+            ? dropAudio[activeDrop.current].current
+            : null;
+        // The live element remains muted and playing behind an introduction
+        // so Safari can hand off without another gesture. A paused intro is
+        // therefore idle even if that hidden element emits `playing`.
+        if (!introduction || !introduction.paused) reportPresence('listening');
         updateLiveState('playing');
         if (pendingLiveFade.current) beginLiveFade();
-    }, [beginLiveFade, cancelRecovery, updateLiveState]);
+    }
 
     useEffect(() => {
         const probe = document.createElement('audio');
@@ -783,6 +816,7 @@ export default function ListenerPlayer({
             const probe = await probeExistingLease();
             if (probe.kind === 'displaced' || probe.kind === 'denied') {
                 wantsLivePlayback.current = false;
+                reportPresence('idle');
                 cancelRecovery(true);
                 liveAudio.current?.pause();
                 stopHls();
@@ -810,10 +844,11 @@ export default function ListenerPlayer({
             }
         }, 60_000);
         return () => window.clearInterval(interval);
-    }, [cancelRecovery, prepareLiveSource, probeExistingLease, scheduleAutomaticRecovery, stopHls, updateLiveState]);
+    }, [cancelRecovery, prepareLiveSource, probeExistingLease, reportPresence, scheduleAutomaticRecovery, stopHls, updateLiveState]);
 
     useEffect(() => () => {
         wantsLivePlayback.current = false;
+        reportPresence('idle');
         cancelRecovery(true);
         cancelLiveFade();
         cancelDropFade();
@@ -821,7 +856,7 @@ export default function ListenerPlayer({
         activeDrop.current = null;
         liveAudio.current?.pause();
         stopHls();
-    }, [cancelDropFade, cancelLiveFade, cancelRecovery, stopHls]);
+    }, [cancelDropFade, cancelLiveFade, cancelRecovery, reportPresence, stopHls]);
 
     function restoreProgress(language: DropLanguage) {
         const audio = dropAudio[language].current;
@@ -918,6 +953,7 @@ export default function ListenerPlayer({
             setTransportStopped(false);
             setTransportPaused(false);
             setPlayingDrop(language);
+            reportPresence('listening');
         } catch {
             if (!isCurrent()) return;
             activeDrop.current = null;
@@ -930,6 +966,7 @@ export default function ListenerPlayer({
                 liveAudio.current.volume = volumeRef.current;
             }
             liveSuppressedForDrop.current = false;
+            reportPresence('idle');
         }
     }
 

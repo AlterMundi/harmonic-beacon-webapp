@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { clientAddress } from '@/lib/client-address';
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
 import {
     earlyBirdsEnabled,
@@ -12,6 +13,7 @@ import {
     heartbeatFreeForAllStreamLease,
     heartbeatEarlyBirdStreamLease,
 } from '@/lib/early-birds/stream';
+import { resolveListenerMacroRegion } from '@/lib/listener/presence';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,10 +30,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     let leaseId: string;
     let intent: 'play' | 'prepare';
+    let presence: 'IDLE' | 'LISTENING';
     try {
-        const body = await request.json() as { leaseId?: unknown; intent?: unknown };
+        const body = await request.json() as {
+            leaseId?: unknown;
+            intent?: unknown;
+            presence?: unknown;
+        };
         leaseId = typeof body.leaseId === 'string' ? body.leaseId : '';
         intent = body.intent === 'prepare' ? 'prepare' : 'play';
+        presence = body.presence === 'idle'
+            ? 'IDLE'
+            : body.presence === 'listening'
+                ? 'LISTENING'
+                // Backward compatibility for a browser tab loaded before the
+                // presence-aware deploy. `play` was already its real intent.
+                : intent === 'play' ? 'LISTENING' : 'IDLE';
     } catch {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }
@@ -40,14 +54,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     try {
+        const macroRegion = await resolveListenerMacroRegion(clientAddress(request.headers));
+        const reportedPresence = { state: presence, macroRegion } as const;
         const grant = freeForAll
-            ? await heartbeatFreeForAllStreamLease(leaseId)
+            ? await heartbeatFreeForAllStreamLease(
+                leaseId,
+                undefined,
+                undefined,
+                reportedPresence,
+            )
             : await heartbeatEarlyBirdStreamLease(
                 session!.user.id,
                 leaseId,
                 undefined,
                 undefined,
                 intent === 'play',
+                reportedPresence,
             );
         return NextResponse.json({
             leaseExpiresAt: grant.leaseExpiresAt.toISOString(),
