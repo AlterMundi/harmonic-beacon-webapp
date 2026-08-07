@@ -370,6 +370,22 @@ start minute. Active leases are capped at the end of the current window and a
 schedule change evicts existing leases. The global Free for All switch remains
 an independent operator override and never creates or edits this schedule.
 
+With Free for All temporarily disabled, the protected staging host can exercise
+the complete registered-Free boundary using only unique `@e2e.invalid`
+identities:
+
+```bash
+sudo scripts/early-birds-preview/registered-free-smoke.sh \
+  /etc/harmonic-beacon/earlybirds-preview.env
+```
+
+The smoke keeps the synthetic bearer in a mode-0600 curl config, selects a
+future schedule, proves idempotent replay and the seven-day cooldown, selects
+Listen now for a second account, verifies the exact two-hour lease cap, opens
+three devices, observes oldest-device displacement and fetches a valid signed
+manifest. It deliberately does not toggle Free for All itself; the operator
+must restore the configured public mode and rerun health after the test.
+
 ### Operator-controlled Free for All
 
 `EARLY_BIRDS_FREE_FOR_ALL` is independent from the Listener kill switch. Set it

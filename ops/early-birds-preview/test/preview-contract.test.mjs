@@ -252,3 +252,18 @@ test('canonical Free smoke keeps credentials out of argv and verifies the entitl
   assert.match(source, /trap 'rm -rf "\$temporary"'/);
   assert.doesNotMatch(source, /echo[^\n]*(login_secret|invitation_token)/);
 });
+
+test('registered Free smoke covers schedule and device boundaries without exposing its bearer', async () => {
+  const source = await readRepository('scripts/early-birds-preview/registered-free-smoke.sh');
+  assert.match(source, /require_synthetic_env/);
+  assert.match(source, /--config "\$temporary\/login\.curl"/);
+  assert.match(source, /"mode":"custom"/);
+  assert.match(source, /"mode":"now"/);
+  assert.match(source, /test "\$cooldown_status" = 409/);
+  assert.match(source, /for ordinal in 1 2 3/);
+  assert.match(source, /evictedAnotherDevice/);
+  assert.match(source, /\.reason == "displaced"/);
+  assert.match(source, /api\/early-birds\/stream\/manifest/);
+  assert.match(source, /trap 'rm -rf "\$temporary"'/);
+  assert.doesNotMatch(source, /echo[^\n]*login_secret/);
+});
