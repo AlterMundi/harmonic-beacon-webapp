@@ -66,7 +66,7 @@ test.describe('EarlyBirds responsive bilingual boundary', () => {
         expect(response.status()).toBe(200);
 
         await page.goto('/early-birds');
-        await expect(page.getByRole('heading', { name: 'Beacon 24/7' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Beacon' })).toBeAttached();
         await expect(page.getByRole('button', { name: 'Account' })).toHaveText('R');
         await expect(page.getByRole('button', { name: 'Listen' })).toBeVisible();
         await expectNoHorizontalScroll(page);

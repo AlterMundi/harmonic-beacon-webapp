@@ -71,7 +71,7 @@ describe('Listener one-action playlist transport', () => {
         renderPlayer();
 
         expect(screen.getByRole('radio', { name: /With introduction/ })).toHaveAttribute('aria-checked', 'true');
-        expect(screen.getAllByText('Amara Sol · English')).toHaveLength(2);
+        expect(screen.queryByText('Amara Sol · English')).not.toBeInTheDocument();
         await waitForListen();
         expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
@@ -110,40 +110,60 @@ describe('Listener one-action playlist transport', () => {
         expect(intro.currentTime).toBe(42);
     });
 
-    it('pauses and resumes the Beacon without restarting the transport', async () => {
-        const { play, pause } = prepareMedia();
+    it('treats the Beacon as live: Stop is available but Pause and Seek are not', async () => {
+        prepareMedia();
         renderPlayer();
-        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        const live = screen.getByLabelText('Beacon');
         await chooseBeaconOnly();
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         Object.defineProperty(live, 'paused', { value: false, configurable: true });
         fireEvent.playing(live);
-        live.currentTime = 73;
-        pause.mockClear();
-
-        fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
-        expect(pause.mock.instances).toContain(live);
-        expect(live.currentTime).toBe(73);
-
-        play.mockClear();
-        fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled());
-        expect(play.mock.instances).toContain(live);
-        expect(live.currentTime).toBe(73);
+        expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled();
+        expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Seek' })).not.toBeInTheDocument();
     });
 
     it('shows real intro progress only while the intro is active', async () => {
         prepareMedia();
         renderPlayer();
         await waitForListen();
-        expect(screen.queryByRole('slider', { name: 'Intro before the Beacon: Warm-up · English' }))
+        expect(screen.queryByRole('slider', { name: 'Seek' }))
             .not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
-        expect(await screen.findByRole('slider', { name: 'Intro before the Beacon: Warm-up · English' }))
+        expect(await screen.findByRole('slider', { name: 'Seek' }))
             .toBeInTheDocument();
-        expect(screen.getByText('The Beacon follows')).toBeInTheDocument();
+        expect(screen.queryByText('Amara Sol · English')).not.toBeInTheDocument();
         expect(screen.getByRole('slider', { name: 'Volume' })).toBeInTheDocument();
+    });
+
+    it('updates media-element volume directly without changing the live transport state', async () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+            frames.push(callback);
+            return frames.length;
+        });
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.spyOn(performance, 'now').mockReturnValue(0);
+        const { pause } = prepareMedia();
+        renderPlayer();
+        const live = screen.getByLabelText('Beacon') as HTMLAudioElement;
+        await chooseBeaconOnly();
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        fireEvent.playing(live);
+        frames.shift()?.(3_000);
+        pause.mockClear();
+
+        for (const value of ['0.85', '0.62', '0.4']) {
+            fireEvent.change(screen.getByRole('slider', { name: 'Volume' }), { target: { value } });
+        }
+
+        expect(live.volume).toBeCloseTo(0.4);
+        expect(screen.getByText('Beacon playing')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
+        expect(pause.mock.instances).not.toContain(live);
     });
 
     it('hands off naturally from the intro to the Beacon using the approved fade', async () => {
@@ -156,7 +176,7 @@ describe('Listener one-action playlist transport', () => {
         vi.spyOn(performance, 'now').mockReturnValue(0);
         const { play } = prepareMedia();
         renderPlayer();
-        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        const live = screen.getByLabelText('Beacon') as HTMLAudioElement;
         const intro = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
         await waitForListen();
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
@@ -169,13 +189,13 @@ describe('Listener one-action playlist transport', () => {
         fireEvent.playing(live);
         frames.shift()?.(3_000);
         expect(live.volume).toBeCloseTo(1);
-        expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument();
+        expect(screen.getByText('Beacon playing')).toBeInTheDocument();
     });
 
     it('can skip the private intro into the same Beacon handoff', async () => {
         const { play, pause } = prepareMedia();
         renderPlayer();
-        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        const live = screen.getByLabelText('Beacon') as HTMLAudioElement;
         const intro = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
         await waitForListen();
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
@@ -197,7 +217,7 @@ describe('Listener one-action playlist transport', () => {
         vi.spyOn(performance, 'now').mockReturnValue(0);
         const { pause } = prepareMedia();
         renderPlayer();
-        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        const live = screen.getByLabelText('Beacon') as HTMLAudioElement;
         await chooseBeaconOnly();
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         Object.defineProperty(live, 'paused', { value: false, configurable: true });

@@ -39,6 +39,19 @@ const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
 const TRANSPORT_FADE_OUT_MS = 650;
 
+// The Listener does not need low latency. Holding roughly five six-second HLS
+// segments behind the edge gives desktop browsers useful network headroom
+// while every fresh play still seeks to the current configured live position.
+export const LISTENER_HLS_BUFFER_CONFIG = {
+    lowLatencyMode: false,
+    liveDurationInfinity: true,
+    liveSyncDurationCount: 5,
+    liveMaxLatencyDurationCount: 10,
+    maxBufferLength: 60,
+    maxMaxBufferLength: 90,
+    backBufferLength: 0,
+} as const;
+
 export function getOrCreateEarlyBirdDeviceId(storage: Storage): string {
     const existing = storage.getItem(DEVICE_STORAGE_KEY);
     if (existing && /^[A-Za-z0-9_-]{16,200}$/.test(existing)) return existing;
@@ -121,7 +134,6 @@ export default function ListenerPlayer({
         es: { current: 0, duration: 0 },
         en: { current: 0, duration: 0 },
     });
-    const [volume, setVolume] = useState(1);
     const [volumeSupported, setVolumeSupported] = useState(true);
     const [livePrepared, setLivePrepared] = useState(false);
     const [livePreparing, setLivePreparing] = useState(true);
@@ -173,11 +185,7 @@ export default function ListenerPlayer({
             }
             throw new Error('HLS is not supported');
         }
-        const instance = new HlsConstructor({
-            lowLatencyMode: false,
-            liveDurationInfinity: true,
-            backBufferLength: 0,
-        });
+        const instance = new HlsConstructor(LISTENER_HLS_BUFFER_CONFIG);
         instance.on(HlsConstructor.Events.ERROR, (_event, data) => {
             if (!data.fatal) return;
             deferLiveFadeForRecovery.current();
@@ -634,56 +642,25 @@ export default function ListenerPlayer({
         if (transportStopped) return;
 
         const language = activeDrop.current;
+        // Pause belongs only to private, seekable introductions. The Beacon
+        // is a live-edge stream: listeners either hear it now or stop it.
+        if (!language) return;
         if (transportPaused) {
-            if (language) {
-                const intro = dropAudio[language].current;
-                if (!intro) return;
-                try {
-                    await intro.play();
-                    setTransportPaused(false);
-                } catch {
-                    // Keep the paused state visible when the browser rejects resume.
-                }
-                return;
-            }
-
-            const live = liveAudio.current;
-            if (!live) return;
-            wantsLivePlayback.current = true;
-            cancelRecovery(true);
-            try {
-                await live.play();
-                setTransportPaused(false);
-                updateLiveState('playing');
-                void requestLease('play').then((grant) => {
-                    leaseId.current = grant.leaseId;
-                    manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
-                }).catch(() => {
-                    // The current authorized source remains usable; heartbeat retries promotion.
-                });
-            } catch {
-                scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
-            }
-            return;
-        }
-
-        if (language) {
-            cancelDropFade();
             const intro = dropAudio[language].current;
-            intro?.pause();
-            storeProgress(language);
-            setTransportPaused(true);
+            if (!intro) return;
+            try {
+                await intro.play();
+                setTransportPaused(false);
+            } catch {
+                // Keep the paused state visible when the browser rejects resume.
+            }
             return;
         }
 
-        const live = liveAudio.current;
-        if (!live || liveStateRef.current !== 'playing') return;
-        wantsLivePlayback.current = false;
-        cancelRecovery(true);
-        cancelLiveFade();
-        pendingLiveFade.current = false;
-        live.pause();
-        updateLiveState('paused');
+        cancelDropFade();
+        const intro = dropAudio[language].current;
+        intro?.pause();
+        storeProgress(language);
         setTransportPaused(true);
     }
 
@@ -742,12 +719,16 @@ export default function ListenerPlayer({
         setVolumeSupported(Math.abs(probe.volume - 0.37) < 0.01);
     }, []);
 
-    useEffect(() => {
-        const all = [liveAudio.current, dropAudio.es.current, dropAudio.en.current];
-        for (const audio of all) {
-            if (audio && (audio !== liveAudio.current || liveFadeFrame.current === null)) audio.volume = volume;
+    function changeVolume(next: number) {
+        volumeRef.current = next;
+        // Keep slider movement off React's render path. Updating the media
+        // elements directly avoids decorative UI work competing with audio.
+        for (const audio of [liveAudio.current, dropAudio.es.current, dropAudio.en.current]) {
+            if (audio && (audio !== liveAudio.current || liveFadeFrame.current === null)) {
+                audio.volume = next;
+            }
         }
-    }, [dropAudio.en, dropAudio.es, volume]);
+    }
 
     useEffect(() => {
         const recoverAfterResume = () => {
@@ -994,8 +975,7 @@ export default function ListenerPlayer({
             <section className="listener-stage" aria-label={copy.sharedPoint}>
                 <div className="listener-stage__copy">
                     <p className="listener-stage__eyebrow">{copy.sharedPoint}</p>
-                    <h1 id="listener-heading">{copy.heading}</h1>
-                    <p>{copy.subheading}</p>
+                    <h1 id="listener-heading" className="sr-only">{copy.heading}</h1>
                 </div>
 
                 <BeaconField phase={phase} />
@@ -1017,7 +997,6 @@ export default function ListenerPlayer({
                         disabled={transportActive || transportBusy || !selectedDropAvailable}
                     >
                         <span>{copy.withIntro}</span>
-                        <small>{selectedDropAvailable ? copy.introBy : copy.dropUnavailable}</small>
                     </button>
                     <button
                         type="button"
@@ -1027,8 +1006,59 @@ export default function ListenerPlayer({
                         disabled={transportActive || transportBusy}
                     >
                         <span>{copy.beaconOnly}</span>
-                        <small>{copy.heading}</small>
                     </button>
+                </div>
+
+                <div className="listener-details">
+                    {availableDropCount > 1 && !transportActive && (
+                        <label className="listener-details__selection">
+                            <span>{copy.introSelection}</span>
+                            <select
+                                value={selectedDrop}
+                                onChange={(event) => setSelectedDrop(event.target.value as DropLanguage)}
+                                aria-label={copy.introSelection}
+                            >
+                                {dropIns.en && <option value="en">{copy.english}</option>}
+                                {dropIns.es && <option value="es">{copy.spanish}</option>}
+                            </select>
+                        </label>
+                    )}
+
+                    {volumeSupported && (
+                        <label className="listener-details__control">
+                            <span>{copy.master}</span>
+                            <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={volumeRef.current}
+                                onChange={(event) => changeVolume(Number(event.target.value))}
+                            />
+                        </label>
+                    )}
+
+                    {introProgressVisible && (
+                        <div className="listener-details__seek">
+                            <label>
+                                <span>{copy.seek}</span>
+                                <input
+                                    type="range"
+                                    aria-label={copy.seek}
+                                    min={0}
+                                    max={Math.max(selectedProgress.duration, 0)}
+                                    step={0.1}
+                                    value={Math.min(selectedProgress.current, selectedProgress.duration || 0)}
+                                    onChange={(event) => seekDropIn(selectedDrop, Number(event.target.value))}
+                                />
+                                <span className="listener-details__time">
+                                    <span>{formatTime(selectedProgress.current)}</span>
+                                    <span>{formatTime(selectedProgress.duration)}</span>
+                                </span>
+                            </label>
+                            <button type="button" onClick={skipToBeacon}>{copy.skipToBeacon}</button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="listener-transport">
@@ -1041,11 +1071,11 @@ export default function ListenerPlayer({
                         <span aria-hidden="true">{transportActive ? '■' : '▶'}</span>
                         {transportActive ? copy.stop : transportBusy ? copy.loading : copy.listen}
                     </button>
-                    {transportActive && (
+                    {playingDrop !== null && transportActive && (
                         <button
                             type="button"
                             onClick={() => void toggleTransportPause()}
-                            disabled={transportBusy || (!transportPaused && playingDrop === null && liveState !== 'playing')}
+                            disabled={transportBusy}
                             aria-pressed={transportPaused}
                             className="listener-transport__secondary"
                         >
@@ -1087,68 +1117,6 @@ export default function ListenerPlayer({
                     })}
                 </div>
 
-                <div className="listener-details">
-                    <div className="listener-details__intro">
-                        <div>
-                            <span>{copy.introSelection}</span>
-                            {availableDropCount > 1 ? (
-                                <select
-                                    value={selectedDrop}
-                                    onChange={(event) => setSelectedDrop(event.target.value as DropLanguage)}
-                                    disabled={transportActive}
-                                    aria-label={copy.introSelection}
-                                >
-                                    {dropIns.en && <option value="en">{copy.english}</option>}
-                                    {dropIns.es && <option value="es">{copy.spanish}</option>}
-                                </select>
-                            ) : (
-                                <strong>{selectedDropAvailable ? copy.introBy : copy.dropUnavailable}</strong>
-                            )}
-                        </div>
-                        {introProgressVisible && (
-                            <>
-                                <span className="listener-details__follows">{copy.beaconFollows}</span>
-                                <label>
-                                    <span className="sr-only">{copy.introSelection}: {copy.introBy}</span>
-                                    <input
-                                        type="range"
-                                        aria-label={`${copy.introSelection}: ${selectedDrop === 'es' ? copy.spanish : copy.english}`}
-                                        min={0}
-                                        max={Math.max(selectedProgress.duration, 0)}
-                                        step={0.1}
-                                        value={Math.min(selectedProgress.current, selectedProgress.duration || 0)}
-                                        onChange={(event) => seekDropIn(selectedDrop, Number(event.target.value))}
-                                    />
-                                    <span>
-                                        <span>{formatTime(selectedProgress.current)}</span>
-                                        <span>{formatTime(selectedProgress.duration)}</span>
-                                    </span>
-                                </label>
-                                {!transportPaused && (
-                                    <button type="button" onClick={skipToBeacon}>{copy.skipToBeacon}</button>
-                                )}
-                            </>
-                        )}
-                    </div>
-
-                    {volumeSupported && (
-                        <label className="listener-details__volume">
-                            <span>{copy.master}</span>
-                            <input
-                                type="range"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                value={volume}
-                                onChange={(event) => {
-                                    const next = Number(event.target.value);
-                                    volumeRef.current = next;
-                                    setVolume(next);
-                                }}
-                            />
-                        </label>
-                    )}
-                </div>
             </section>
         </div>
     );

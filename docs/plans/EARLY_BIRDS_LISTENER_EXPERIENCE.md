@@ -38,9 +38,11 @@ The interface should reward listening by becoming simpler after playback starts.
 - **Preparing**: short truthful preparation state; controls do not appear dead.
 - **Intro playing**: intro identity, progress and “Beacon follows.”
 - **Transitioning**: brief handoff state without showing two active sources.
-- **Beacon playing**: shared-point visual, active state and Stop. Public copy
-  never claims whether the source is an instrument, a file or another origin.
-- **Paused/stopped**: preserve the chosen mode and make restart obvious.
+- **Beacon playing**: shared-point visual and Stop only. The Beacon cannot be
+  paused or sought; a later Listen always rejoins the configured live edge.
+  Public copy never claims whether the source is an instrument, a file or
+  another origin.
+- **Intro paused / stopped**: preserve the chosen mode and make restart obvious.
 - **Reconnecting**: keep intent visible, explain automatic recovery and expose a
   manual retry only after recovery is exhausted.
 - **Access/device error**: plain-language cause and one appropriate next action.
@@ -76,7 +78,7 @@ The interface should reward listening by becoming simpler after playback starts.
 - Collapse the duplicated content card into the active intro choice.
 - Add content details through a drawer/sheet when more than one intro exists.
 - Preserve standard seek/progress semantics for drop-ins; the shared Beacon has
-  no fake seek timeline.
+  no fake seek timeline or Pause control.
 
 ### UX-4 — polish and acceptance
 

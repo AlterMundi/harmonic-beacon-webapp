@@ -63,7 +63,7 @@ test.describe('EarlyBird Listener boundary', () => {
 
         await page.goto('/early-birds');
         await expect(page.getByText('Synthetic Listener')).toBeVisible();
-        await expect(page.getByRole('heading', { name: 'Beacon 24/7' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Beacon' })).toBeAttached();
         await expect(page.getByText(/Membresía activa · TEST/)).toBeVisible();
         await expect(page.getByRole('button', { name: 'Play con intro' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Play · solo Beacon' })).toBeVisible();

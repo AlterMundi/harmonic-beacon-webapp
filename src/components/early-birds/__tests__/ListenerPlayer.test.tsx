@@ -43,6 +43,7 @@ vi.mock('hls.js', () => {
 import ListenerPlayer, {
     earlyBirdLeaseRecoveryDisposition,
     getOrCreateEarlyBirdDeviceId,
+    LISTENER_HLS_BUFFER_CONFIG,
     prefersNativeHls,
     seekNativeAudioToLiveEdge,
 } from '../ListenerPlayer';
@@ -74,6 +75,16 @@ describe('EarlyBird Listener player', () => {
         } as unknown as HTMLAudioElement;
         expect(seekNativeAudioToLiveEdge(audio)).toBe(true);
         expect(audio.currentTime).toBe(123.25);
+    });
+
+    it('keeps a stability-first desktop HLS buffer without enabling low latency', () => {
+        expect(LISTENER_HLS_BUFFER_CONFIG).toMatchObject({
+            lowLatencyMode: false,
+            liveSyncDurationCount: 5,
+            liveMaxLatencyDurationCount: 10,
+            maxBufferLength: 60,
+            maxMaxBufferLength: 90,
+        });
     });
 
     it('does not trust Chromium native HLS claims while preserving Apple native playback', () => {
@@ -115,7 +126,7 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
-        await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Beacon playing')).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
@@ -123,7 +134,7 @@ describe('EarlyBird Listener player', () => {
         expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/early-birds/stream/heartbeat');
         expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
         expect(hlsHarness.instances[1].loadedSources).toEqual([grants[1].stream.manifestUrl]);
-        expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument();
+        expect(screen.getByText('Beacon playing')).toBeInTheDocument();
     });
 
     it('keeps the pre-attached iOS source lease alive before the first play gesture', async () => {
@@ -194,7 +205,7 @@ describe('EarlyBird Listener player', () => {
 
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
-        await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Beacon playing')).toBeInTheDocument());
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
         fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
 
@@ -267,22 +278,22 @@ describe('EarlyBird Listener player', () => {
                 <ListenerPlayer dropIns={{ es: null, en: null }} />
             </LocaleProvider>,
         );
-        const live = screen.getByLabelText('Beacon 24/7');
+        const live = screen.getByLabelText('Beacon');
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
-        await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Beacon playing')).toBeInTheDocument());
 
         vi.useFakeTimers();
         fireEvent.suspend(live);
         await vi.advanceTimersByTimeAsync(2_500);
-        expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument();
+        expect(screen.getByText('Beacon playing')).toBeInTheDocument();
         expect(fetchMock).toHaveBeenCalledTimes(2);
         vi.useRealTimers();
 
         fireEvent.error(live);
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3), { timeout: 3_000 });
         expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/early-birds/stream/heartbeat');
-        await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Beacon playing')).toBeInTheDocument());
     });
 
     it('makes a displaced fatal recovery terminal without acquiring another lease', async () => {
@@ -314,7 +325,7 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
-        await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Beacon playing')).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
 
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
@@ -368,7 +379,7 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
-        await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Beacon playing')).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
@@ -380,7 +391,7 @@ describe('EarlyBird Listener player', () => {
         ]);
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
         expect(hlsHarness.instances[1].loadedSources).toEqual([replacementGrant.stream.manifestUrl]);
-        expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument();
+        expect(screen.getByText('Beacon playing')).toBeInTheDocument();
     });
 
     it('does not strand a fatal hls.js signal raised while playback is still starting', async () => {
@@ -428,7 +439,7 @@ describe('EarlyBird Listener player', () => {
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
-        await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Beacon playing')).toBeInTheDocument());
         expect(hlsHarness.instances[1].loadedSources).toEqual([refreshedGrant.stream.manifestUrl]);
     });
 });

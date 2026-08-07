@@ -51,6 +51,7 @@ change has passed its own audio and operational acceptance.
 | Use Fast Forward development with risk-based checkpoints | Accepted | Small isolated changes do not run the whole production release ceremony. |
 | Preserve the audio guardrail | Accepted | No codec, rate, channel, gain, buffer, routing or player-path choice ships without Nico's audio approval. |
 | Use deterministic HLS over HTTP | Accepted | Every listener follows one UTC-derived live edge through immutable six-second segments; event WebRTC is untouched. |
+| Favor continuity over low latency in the Listener | Accepted | Desktop HLS stays about five segments behind the edge with a 60-second target buffer; Stop and a later Listen rejoin the current configured edge. |
 | Keep intros private | Accepted | Intro progress is device-local. The live stream runs muted underneath and is revealed at the handoff; this is not a realtime mix or crossfader. |
 | Offer Free and paid access through one contract | Accepted | One-use signed invitations and PayPal/MercadoPago converge on the same revocable membership state machine. |
 | Launch Free before paid providers | Accepted | Human acceptance of the complete Free flow is a hard gate before PayPal or MercadoPago can be enabled. Both providers remain disabled by default. |
