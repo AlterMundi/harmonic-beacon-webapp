@@ -62,7 +62,7 @@ describe('EarlyBird staging team entry form', () => {
             <LocaleProvider initialLocale="en">
                 <SyntheticTeamEntryForm
                     authOnly
-                    postLoginPath="/early-birds/redeem"
+                    postLoginPath="/listener/redeem"
                 />
             </LocaleProvider>,
         );

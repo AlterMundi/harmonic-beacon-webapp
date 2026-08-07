@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from '@/context/LocaleContext';
 import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-window';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 function currentLocalTime(): string {
     const now = new Date();
@@ -63,7 +64,7 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
         setBusy(mode);
         setError(false);
         try {
-            const response = await fetch('/api/early-birds/free-window', {
+            const response = await fetch(LISTENER_NAMESPACE.canonical.api.freeWindow, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

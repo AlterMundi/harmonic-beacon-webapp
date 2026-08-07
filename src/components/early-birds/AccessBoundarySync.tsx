@@ -3,6 +3,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
+
 type AccessKind = 'membership' | 'free-window' | 'welcome' | 'denied';
 
 /**
@@ -36,7 +38,7 @@ export default function AccessBoundarySync({
             inFlight = true;
             if (timer !== null) window.clearTimeout(timer);
             try {
-                const response = await fetch('/api/early-birds/access-state', {
+                const response = await fetch(LISTENER_NAMESPACE.canonical.api.accessState, {
                     cache: 'no-store',
                     headers: { Accept: 'application/json' },
                 });

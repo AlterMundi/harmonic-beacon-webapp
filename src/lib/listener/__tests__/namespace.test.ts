@@ -10,6 +10,7 @@ describe('Listener namespace compatibility contract', () => {
         expect(LISTENER_NAMESPACE.canonical).toEqual({
             home: '/listener',
             redeem: '/listener/redeem',
+            authError: '/listener?authError=1',
             api: {
                 accessState: '/api/listener/access-state',
                 freeWindow: '/api/listener/free-window',
@@ -19,6 +20,7 @@ describe('Listener namespace compatibility contract', () => {
         });
         expect(LISTENER_NAMESPACE.legacy.home).toBe('/early-birds');
         expect(LISTENER_NAMESPACE.legacy.redeem).toBe('/early-birds/redeem');
+        expect(LISTENER_NAMESPACE.legacy.authError).toBe('/early-birds?authError=1');
     });
 
     it.each([

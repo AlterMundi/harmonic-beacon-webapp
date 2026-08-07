@@ -10,6 +10,7 @@ import {
     earlyBirdsEnabled,
     earlyBirdsUnavailableResponse,
 } from '@/lib/early-birds/enabled';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,13 +48,22 @@ function magicLinkVerification(request: NextRequest): boolean {
     return request.nextUrl.pathname.endsWith(EARLY_BIRD_MAGIC_LINK_VERIFY_PATH);
 }
 
-const LISTENER_CALLBACKS = new Set(['/early-birds', '/early-birds/redeem']);
+const LISTENER_CALLBACKS: ReadonlySet<string> = new Set([
+    LISTENER_NAMESPACE.canonical.home,
+    LISTENER_NAMESPACE.canonical.redeem,
+    LISTENER_NAMESPACE.legacy.home,
+    LISTENER_NAMESPACE.legacy.redeem,
+]);
+const LISTENER_ERROR_CALLBACKS: ReadonlySet<string> = new Set([
+    LISTENER_NAMESPACE.canonical.authError,
+    LISTENER_NAMESPACE.legacy.authError,
+]);
 
 function safeListenerCallback(value: unknown, kind: 'success' | 'error'): boolean {
     if (value === undefined) return true;
     if (typeof value !== 'string') return false;
     if (kind === 'success') return LISTENER_CALLBACKS.has(value);
-    return value === '/early-birds?authError=1';
+    return LISTENER_ERROR_CALLBACKS.has(value);
 }
 
 async function safeMagicLinkRequest(request: NextRequest): Promise<boolean> {

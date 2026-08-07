@@ -93,8 +93,12 @@ server {
         return 302 /;
     }
 
+    location = /listener {
+        return 302 /;
+    }
+
     location = / {
-        rewrite ^ /early-birds break;
+        rewrite ^ /listener break;
         proxy_pass http://127.0.0.1:13000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -133,9 +137,75 @@ server {
         proxy_read_timeout 60s;
     }
 
-    # Authenticated ordinary-Free scheduling. This is account-local access
-    # state, not a commerce membership or a staging synthetic seam.
+    # Canonical account-local Listener state. Keep the exact legacy aliases
+    # during the measured namespace support window; neither family exposes a
+    # commerce membership or staging synthetic seam.
+    location = /api/listener/access-state {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /api/early-birds/access-state {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /api/listener/free-window {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
     location = /api/early-birds/free-window {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /api/listener/welcome-access {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /api/early-birds/welcome-access {
         proxy_pass http://127.0.0.1:13000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

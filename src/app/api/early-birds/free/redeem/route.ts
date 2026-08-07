@@ -11,6 +11,7 @@ import {
     EarlyBirdMembershipGatewayUnavailableError,
     redeemFreeThroughCanonicalGateway,
 } from '@/lib/early-birds/membership-gateway';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,9 +40,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!result.ok) {
         return NextResponse.json({ error: 'Invitation unavailable.' }, { status: 409 });
     }
+    const landing = request.nextUrl.pathname === LISTENER_NAMESPACE.canonical.api.freeRedeem
+        ? LISTENER_NAMESPACE.canonical.home
+        : LISTENER_NAMESPACE.legacy.home;
     const response = NextResponse.json({
         ok: true,
-        landing: '/early-birds',
+        landing,
         replayed: result.replayed,
         alreadyEntitled: result.alreadyEntitled,
     });

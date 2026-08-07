@@ -61,6 +61,7 @@ describe('Free listening schedule UI', () => {
         await userEvent.click(screen.getByRole('button', { name: 'Save my listening time' }));
 
         expect(fetch).toHaveBeenCalledOnce();
+        expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/listener/free-window');
         const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
         expect(JSON.parse(init.body as string)).toMatchObject({
             mode: 'custom',

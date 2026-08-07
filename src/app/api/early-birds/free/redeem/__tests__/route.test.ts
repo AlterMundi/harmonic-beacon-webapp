@@ -18,10 +18,13 @@ import { POST } from '../route';
 
 const TOKEN = `ebi_v1.${'a'.repeat(32)}.${'b'.repeat(32)}.${'c'.repeat(32)}`;
 
-function request(token: string | null = TOKEN) {
+function request(token: string | null = TOKEN, namespace: 'legacy' | 'canonical' = 'legacy') {
     const headers = new Headers();
     if (token) headers.set('cookie', `${EARLY_BIRD_INVITATION_COOKIE}=${token}`);
-    return new NextRequest('https://live.example.test/api/early-birds/free/redeem', {
+    const pathname = namespace === 'canonical'
+        ? '/api/listener/free/redeem'
+        : '/api/early-birds/free/redeem';
+    return new NextRequest(`https://live.example.test${pathname}`, {
         method: 'POST',
         headers,
     });
@@ -74,6 +77,21 @@ describe('EarlyBird Free redemption boundary', () => {
             sameSite: 'lax',
             path: '/',
         });
+    });
+
+    it('returns the canonical landing only to the canonical alias', async () => {
+        currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
+        redeemFreeThroughCanonicalGateway.mockResolvedValue({
+            ok: true,
+            replayed: true,
+            alreadyEntitled: true,
+        });
+
+        const canonical = await POST(request(TOKEN, 'canonical'));
+        await expect(canonical.json()).resolves.toMatchObject({ landing: '/listener' });
+
+        const legacy = await POST(request(TOKEN, 'legacy'));
+        await expect(legacy.json()).resolves.toMatchObject({ landing: '/early-birds' });
     });
 
     it('does not accept an invitation token from a request body', async () => {

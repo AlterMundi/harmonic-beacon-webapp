@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 export default function WelcomeAccessAction() {
     const { locale } = useLocale();
@@ -18,7 +19,7 @@ export default function WelcomeAccessAction() {
         setBusy(true);
         setError(false);
         try {
-            const response = await fetch('/api/early-birds/welcome-access', {
+            const response = await fetch(LISTENER_NAMESPACE.canonical.api.welcomeAccess, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ activationRequestId: activationRequestId.current }),
