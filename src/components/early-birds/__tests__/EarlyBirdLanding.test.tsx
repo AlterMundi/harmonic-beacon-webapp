@@ -24,6 +24,7 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
             <EarlyBirdLanding
                 signedIn={false}
                 entitled={false}
+                serviceUnavailable={null}
                 invitationAvailable={false}
                 authError={false}
                 providers={{ google: true, apple: true }}
@@ -146,6 +147,25 @@ describe('EarlyBird public landing', () => {
     it('hides email login when the delivery boundary is incomplete', () => {
         renderLanding({ emailMagicLinkAvailable: false });
         expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['identity', 'The identity service is not responding.'],
+        ['access', 'We could not check your schedule or membership.'],
+    ] as const)('fails truthfully and retryably when %s resolution is unavailable', (kind, detail) => {
+        renderLanding({
+            signedIn: kind === 'access',
+            serviceUnavailable: kind,
+            freeWindow: null,
+            welcome: null,
+        });
+
+        expect(screen.getByRole('alert')).toHaveTextContent(detail);
+        expect(screen.getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/listener');
+        expect(screen.queryByRole('heading', { name: 'Your first listen · 30 minutes' })).toBeNull();
+        expect(screen.queryByRole('heading', { name: 'Your daily time · 2 hours' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
+        expect(screen.queryByLabelText('Email address')).toBeNull();
     });
 
     it('takes an entitled signed-in listener directly to the private home', () => {

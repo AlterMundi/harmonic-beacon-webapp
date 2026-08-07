@@ -5,6 +5,7 @@ import {
     LISTENER_CANONICAL_URL,
     listenerPreviewMetadata,
     listenerPublicMetadata,
+    listenerLocaleForHeaders,
     listenerRobotsText,
     listenerSitemapXml,
 } from '../public-discovery';
@@ -25,6 +26,16 @@ describe('Listener public discovery', () => {
         expect(isCanonicalListenerHost(requestHeaders('live.harmonicbeacon.com@listen.harmonicbeacon.com'))).toBe(false);
         expect(isCanonicalListenerHost(requestHeaders('listen.harmonicbeacon.com:99999'))).toBe(false);
         expect(isCanonicalListenerHost(requestHeaders(null))).toBe(false);
+    });
+
+    it('uses the same browser-language decision for public content and document metadata', () => {
+        const spanish = requestHeaders('listen.harmonicbeacon.com');
+        spanish.set('accept-language', 'es-MX,es;q=0.9,en;q=0.7');
+        const english = requestHeaders('listen.harmonicbeacon.com');
+        english.set('accept-language', 'fr-FR,fr;q=0.9,en;q=0.8');
+
+        expect(listenerLocaleForHeaders(spanish)).toBe('es');
+        expect(listenerLocaleForHeaders(english)).toBe('en');
     });
 
     it.each([
