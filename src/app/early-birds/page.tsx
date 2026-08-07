@@ -20,8 +20,8 @@ import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-    title: 'EarlyBirds · Harmonic Beacon',
-    description: 'Beacon 24/7 and private bilingual drop-ins for EarlyBird listeners.',
+    title: 'Listen · Harmonic Beacon',
+    description: 'A continuous harmonic field, shared across the world.',
 };
 
 export default async function EarlyBirdsPage({

@@ -24,15 +24,15 @@ The first useful release lets a Listener:
    the provider-neutral commerce authority;
 3. open a private, receive-only listening home;
 4. hear a continuous 24/7 Beacon stream;
-5. optionally begin with one reviewed private intro in Spanish or English,
-   using standard private playback controls before the live Beacon is revealed;
+5. optionally begin with one reviewed private intro, using standard private
+   playback controls before the continuous Beacon stream is revealed;
 6. return later and recover the same access without joining an event room.
 
-The initial 24/7 source is the long spatialized recording
-`luz_de_manana_20260624-155633.wav`, played continuously. It is not yet the live
-Costa Rica instrument. The product must say this truthfully. The delivery
-service is designed so that a real live source can replace the recorded source
-later without replacing the Listener product.
+The initial 24/7 source is the approved long spatialized master, played
+continuously. Its origin is an operational concern, not a public product state:
+the interface identifies only the continuous Beacon stream. The delivery
+service is designed so that its origin can change without replacing the
+Listener product or requiring new public copy.
 
 EarlyBirds is developed quickly and in isolation. Weekend event releases remain
 on `main` and must not depend on EarlyBirds until a later, explicit convergence
@@ -43,7 +43,7 @@ change has passed its own audio and operational acceptance.
 | Decision | State | Consequence |
 |---|---|---|
 | Develop on a long-lived `early-birds` integration branch | Accepted | Weekend work continues independently on `main`. |
-| Use the long master recording as the first 24/7 source | Accepted | We can prove the listening product before the physical live uplink exists. |
+| Use the approved long master as the first 24/7 source | Accepted | We can prove the listening product before the physical live uplink exists. |
 | Make the stream the primary EarlyBirds experience | Accepted | Stream reliability and audio quality precede growth features. |
 | Share only the Beacon stream timeline | Accepted | Intros are private media with local play, pause, seek and restart controls; their natural end reveals the shared live edge. |
 | Design the stream for later reuse by event sessions | Accepted | The source and delivery contract cannot be Listener-specific. |
@@ -132,7 +132,8 @@ steps are not safe to execute literally.
 - One unified transport: Beacon-only or a selected private ES/EN intro followed automatically by the live handoff; Stop controls the whole sequence.
 - The Beacon fades in on every start/restart and stops over a short fade-out where the browser exposes media-element volume.
 - Two-device lease enforcement; a third device evicts the oldest lease.
-- Honest source state: recorded continuous source, reconnecting or unavailable.
+- Honest delivery state: ready, playing, reconnecting or unavailable, without
+  making a public claim about the stream origin.
 - Cancellation/revocation reflected without relying on a front-end redirect.
 - ES/EN copy, privacy/terms, basic accessibility and mobile-browser acceptance.
 - Metrics sufficient to know whether the stream is reachable and audible.
@@ -268,9 +269,9 @@ promotion, never an accidental restart side effect.
   method, canonical path and expiry, are compared in constant time and are
   never logged.
 - Expiry and refresh do not interrupt healthy playback unnecessarily.
-- The UI says "continuous recorded Beacon" (localized wording to be approved),
-  not "live from Costa Rica".
-- Source state comes from the same origin state that drives delivery.
+- The UI says "continuous Beacon stream" and does not claim whether the source
+  is an instrument, a file or another origin.
+- Delivery state comes from the same origin state that drives playback.
 
 ### 7.4 Reliability acceptance
 
@@ -505,7 +506,7 @@ Exit: all decisions in section 15 are accepted or deliberately deferred.
 - add a bare private test player and canary;
 - execute the audio test ladder through streamed standard playback.
 
-Exit: the 24/7 recorded source survives restart and a 60-minute cross-device
+Exit: the 24/7 source survives restart and a 60-minute cross-device
 listen, with no event service or current audio file changed.
 
 ### Batch B — Listener vertical slice with synthetic Free entitlement
@@ -555,7 +556,8 @@ explicitly approved.
 ## 13. Definition of done for the EarlyBirds milestone
 
 - A Listener can sign in, obtain a canonical sandbox membership and listen.
-- The initial recorded source is continuously delivered and truthfully labeled.
+- The initial source is continuously delivered while public copy remains
+  source-neutral.
 - Beacon-only and every published intro language pass physical-device listening.
 - No Listener gains event/staff capabilities or creates event media connections.
 - Duplicate/reordered commerce events cannot duplicate or incorrectly preserve
@@ -604,8 +606,8 @@ event sound and reliability are at least as good as the current path.
 | D2 | USD 2/month founder offer; 14-day involuntary grace; voluntary cancellation loses founder terms after paid-through; refund/dispute/admin revoke immediately. |
 | D3 | Google and Apple through exact stable Better Auth; no Facebook and no account linking. |
 | D4 | Provider-neutral Free, PayPal and MercadoPago grants; Free is single-use, signed, auditable, revocable and consumed by paid upgrade. |
-| D5 | Truthful “continuous recorded Beacon” wording; never imply the physical source is live. |
-| D6 | Each authored Amara Sol offline mix is immutable and separately approved; Spanish staging is gain-matched and approved, English remains unpublished. |
+| D5 | Source-neutral “continuous Beacon stream” wording; never claim whether the source is an instrument, a file or another origin. |
+| D6 | Each authored Amara Sol offline mix is immutable and separately approved; the English intro is the currently approved and published default. |
 | D7 | Deterministic UTC HLS, immutable six-second segments, signed paths, native Safari and `hls.js`; codec remains unselected. |
 | D8 | Two device leases; third device evicts oldest. |
 | D9 | Main app after final convergence; independently bounded stream origin; additive models and kill switch. |

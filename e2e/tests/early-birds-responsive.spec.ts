@@ -29,7 +29,7 @@ test.describe('EarlyBirds responsive bilingual boundary', () => {
 
         await page.getByRole('button', { name: 'EN', exact: true }).click();
         await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-        await expect(page.getByRole('heading', { name: 'The Beacon, always present.' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Remember your harmonic center.' })).toBeVisible();
         await expect(page.getByLabel('Test name')).toBeVisible();
         await expect(page.getByLabel('Synthetic account')).toBeVisible();
         await expect(page.getByLabel('Temporary access code')).toBeVisible();
@@ -67,7 +67,8 @@ test.describe('EarlyBirds responsive bilingual boundary', () => {
 
         await page.goto('/early-birds');
         await expect(page.getByRole('heading', { name: 'Beacon 24/7' })).toBeVisible();
-        await expect(page.getByText('Responsive Listener')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Account' })).toHaveText('R');
+        await expect(page.getByRole('button', { name: 'Listen' })).toBeVisible();
         await expectNoHorizontalScroll(page);
         await expect.poll(() => page.evaluate(
             () => (window as typeof window & { __earlyBirdMediaRequests: number }).__earlyBirdMediaRequests,

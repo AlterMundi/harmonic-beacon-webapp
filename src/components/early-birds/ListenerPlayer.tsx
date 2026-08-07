@@ -6,7 +6,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
 
+import BeaconField from './BeaconField';
+import { deriveListenerPresentationPhase } from './listener-presentation';
+
 type DropLanguage = 'es' | 'en';
+type PlaybackMode = 'intro' | 'beacon';
 type LiveState = 'idle' | 'loading' | 'recovering' | 'playing' | 'paused' | 'error' | 'displaced';
 type LeasePayload = {
     leaseId: string;
@@ -29,6 +33,7 @@ class LeaseRequestError extends Error {
 
 const DEVICE_STORAGE_KEY = 'hb_earlybird_device_id';
 const DROP_PROGRESS_PREFIX = 'hb_earlybird_drop_progress_';
+const PLAYBACK_MODE_STORAGE_KEY = 'hb_listener_playback_mode';
 const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
 const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
@@ -109,7 +114,9 @@ export default function ListenerPlayer({
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
     const [transportStopped, setTransportStopped] = useState(true);
     const [transportPaused, setTransportPaused] = useState(false);
+    const [hasStarted, setHasStarted] = useState(false);
     const [selectedDrop, setSelectedDrop] = useState<DropLanguage>(dropIns.en ? 'en' : 'es');
+    const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(dropIns.en || dropIns.es ? 'intro' : 'beacon');
     const [dropProgress, setDropProgress] = useState({
         es: { current: 0, duration: 0 },
         en: { current: 0, duration: 0 },
@@ -527,6 +534,16 @@ export default function ListenerPlayer({
         void prepareLiveSource();
     }, [prepareLiveSource]);
 
+    useEffect(() => {
+        try {
+            const saved = window.localStorage.getItem(PLAYBACK_MODE_STORAGE_KEY);
+            if (saved === 'beacon') setPlaybackMode('beacon');
+            if (saved === 'intro' && (dropIns.en || dropIns.es)) setPlaybackMode('intro');
+        } catch {
+            // The mode preference is device-local and best effort.
+        }
+    }, [dropIns.en, dropIns.es]);
+
     const scheduleAutomaticRecovery = useCallback((initialDelayMs = 0) => {
         if (!wantsLivePlayback.current || liveStateRef.current === 'displaced') return;
 
@@ -607,6 +624,7 @@ export default function ListenerPlayer({
             void claimLiveSource();
             return;
         }
+        setHasStarted(true);
         setTransportStopped(false);
         setTransportPaused(false);
         void playLive(liveState === 'error' || liveState === 'displaced', dropGeneration.current);
@@ -873,6 +891,7 @@ export default function ListenerPlayer({
         try {
             await selected.play();
             if (!isCurrent()) return;
+            setHasStarted(true);
             setTransportStopped(false);
             setTransportPaused(false);
             setPlayingDrop(language);
@@ -912,22 +931,57 @@ export default function ListenerPlayer({
     const selectedProgress = dropProgress[selectedDrop];
     const selectedDropAvailable = Boolean(dropIns[selectedDrop]);
     const transportBusy = liveState === 'loading' || liveState === 'recovering' || livePreparing;
-    const introActive = !transportStopped && !transportPaused && playingDrop !== null;
-    const beaconActive = !transportStopped && !transportPaused && playingDrop === null && liveState === 'playing';
-    const transportStatus = transportPaused
-        ? copy.paused
-        : playingDrop
-        ? copy.playingIntro
-        : liveState === 'playing'
-            ? copy.playingBeacon
-            : liveState === 'recovering'
-                ? copy.reconnecting
-            : transportBusy
-                ? copy.loading
-                : copy.stopped;
+    const phase = deriveListenerPresentationPhase({
+        liveState,
+        livePreparing,
+        playingDrop,
+        transportPaused,
+        transportStopped,
+        hasStarted,
+    });
+    const phaseLabel = {
+        ready: copy.ready,
+        preparing: copy.loading,
+        intro: copy.playingIntro,
+        beacon: copy.playingBeacon,
+        paused: copy.paused,
+        reconnecting: copy.reconnecting,
+        stopped: copy.stopped,
+        unavailable: copy.unavailable,
+        displaced: copy.displaced,
+    }[phase];
+    const transportActive = !transportStopped;
+    const introProgressVisible = selectedDropAvailable
+        && (playingDrop === selectedDrop || (transportPaused && activeDrop.current === selectedDrop));
+    const availableDropCount = Number(Boolean(dropIns.es)) + Number(Boolean(dropIns.en));
+
+    function selectPlaybackMode(mode: PlaybackMode) {
+        if (transportActive || transportBusy) return;
+        setPlaybackMode(mode);
+        try {
+            window.localStorage.setItem(PLAYBACK_MODE_STORAGE_KEY, mode);
+        } catch {
+            // The preference is intentionally local and non-essential.
+        }
+    }
+
+    function startSelectedMode() {
+        if (playbackMode === 'intro') {
+            if (!livePreparedRef.current) void claimLiveSource();
+            else void playWithIntro(selectedDrop);
+            return;
+        }
+        playBeaconOnly();
+    }
+
+    function skipToBeacon() {
+        dropGeneration.current += 1;
+        setTransportPaused(false);
+        void playLive(false, dropGeneration.current);
+    }
 
     return (
-        <div className="space-y-8">
+        <div className="listener-experience" data-phase={phase}>
             <audio
                 ref={liveAudio}
                 preload="auto"
@@ -937,85 +991,81 @@ export default function ListenerPlayer({
                 onSuspend={() => handleNativeInterruption('suspend')}
                 onPlaying={handleNativePlaying}
             />
-            <section className="rounded-2xl border border-cyan-200/20 bg-cyan-200/[0.04] p-6 sm:p-8">
-                <div className="flex flex-col gap-5">
-                    <div>
-                        <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[var(--cyan)]">
-                            <span className="h-2 w-2 animate-live-pulse rounded-full bg-[var(--cyan)]" aria-hidden="true" />
-                            {copy.sharedPoint}
-                        </div>
-                        <h2 className="mt-3 font-serif text-4xl">{copy.heading}</h2>
-                        <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">{copy.subheading}</p>
-                    </div>
-                    <p role="status" className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                        {transportStatus}
-                    </p>
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] sm:items-end">
-                        <label className="text-xs text-[var(--text-muted)]">
-                            {copy.introSelection}
-                            <select
-                                value={selectedDrop}
-                                onChange={(event) => setSelectedDrop(event.target.value as DropLanguage)}
-                                disabled={playingDrop !== null}
-                                className="mt-2 block w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] px-3 py-3 text-sm text-[var(--paper)]"
-                            >
-                                {dropIns.en && <option value="en">{copy.english}</option>}
-                                {dropIns.es && <option value="es">{copy.spanish}</option>}
-                                {!dropIns.en && !dropIns.es && <option value="en">{copy.dropUnavailable}</option>}
-                            </select>
-                        </label>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                if (!livePreparedRef.current) void claimLiveSource();
-                                else void playWithIntro(selectedDrop);
-                            }}
-                            disabled={transportBusy || !selectedDropAvailable}
-                            aria-pressed={introActive}
-                            className="event-button event-button--primary listener-transport__button"
-                        >
-                            {copy.playWithIntro}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={playBeaconOnly}
-                            disabled={transportBusy}
-                            aria-pressed={beaconActive}
-                            className="event-button event-button--secondary listener-transport__button"
-                        >
-                            {copy.playBeaconOnly}
-                        </button>
+            <section className="listener-stage" aria-label={copy.sharedPoint}>
+                <div className="listener-stage__copy">
+                    <p className="listener-stage__eyebrow">{copy.sharedPoint}</p>
+                    <h1 id="listener-heading">{copy.heading}</h1>
+                    <p>{copy.subheading}</p>
+                </div>
+
+                <BeaconField phase={phase} />
+
+                <p
+                    role={phase === 'unavailable' || phase === 'displaced' ? 'alert' : 'status'}
+                    className="listener-stage__status"
+                >
+                    <span className="listener-stage__status-dot" aria-hidden="true" />
+                    {phaseLabel}
+                </p>
+
+                <div className="listener-mode" role="radiogroup" aria-label={copy.mode}>
+                    <button
+                        type="button"
+                        role="radio"
+                        aria-checked={playbackMode === 'intro'}
+                        onClick={() => selectPlaybackMode('intro')}
+                        disabled={transportActive || transportBusy || !selectedDropAvailable}
+                    >
+                        <span>{copy.withIntro}</span>
+                        <small>{selectedDropAvailable ? copy.introBy : copy.dropUnavailable}</small>
+                    </button>
+                    <button
+                        type="button"
+                        role="radio"
+                        aria-checked={playbackMode === 'beacon'}
+                        onClick={() => selectPlaybackMode('beacon')}
+                        disabled={transportActive || transportBusy}
+                    >
+                        <span>{copy.beaconOnly}</span>
+                        <small>{copy.heading}</small>
+                    </button>
+                </div>
+
+                <div className="listener-transport">
+                    <button
+                        type="button"
+                        onClick={transportActive ? stopTransport : startSelectedMode}
+                        disabled={transportBusy || (!transportActive && playbackMode === 'intro' && !selectedDropAvailable)}
+                        className="listener-transport__primary"
+                    >
+                        <span aria-hidden="true">{transportActive ? '■' : '▶'}</span>
+                        {transportActive ? copy.stop : transportBusy ? copy.loading : copy.listen}
+                    </button>
+                    {transportActive && (
                         <button
                             type="button"
                             onClick={() => void toggleTransportPause()}
-                            disabled={transportBusy || transportStopped}
+                            disabled={transportBusy || (!transportPaused && playingDrop === null && liveState !== 'playing')}
                             aria-pressed={transportPaused}
-                            className="event-button event-button--secondary listener-transport__button"
+                            className="listener-transport__secondary"
                         >
                             {transportPaused ? copy.resume : copy.pause}
                         </button>
-                        <button
-                            type="button"
-                            onClick={stopTransport}
-                            disabled={transportBusy || transportStopped}
-                            className="event-button event-button--secondary"
-                        >
-                            {copy.stop}
-                        </button>
-                    </div>
+                    )}
                 </div>
+
                 {(liveState === 'error' || liveState === 'displaced') && (
-                    <p role="alert" className="mt-5 event-alert event-alert--danger">
-                        {liveState === 'displaced' ? copy.displaced : copy.unavailable}
-                    </p>
+                    <button type="button" onClick={() => void claimLiveSource()} className="listener-retry">
+                        {copy.prepareDevice}
+                    </button>
                 )}
                 {devicePreparedByGesture && liveState === 'idle' && (
-                    <p role="status" className="mt-5 text-sm text-[var(--text-muted)]">
+                    <p role="status" className="listener-stage__hint">
                         {copy.deviceReady}
                     </p>
                 )}
                 {!livePreparing && !livePrepared && liveState !== 'error' && (
-                    <p role="status" className="mt-5 text-sm text-[var(--text-muted)]">
+                    <p role="status" className="listener-stage__hint">
                         {prepareFailure === 'capacity' ? copy.deviceLimitClaim : copy.prepareHelp}
                     </p>
                 )}
@@ -1036,50 +1086,69 @@ export default function ListenerPlayer({
                         );
                     })}
                 </div>
-                {selectedDropAvailable ? (
-                    <article className="mt-6 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
-                        <p className="font-mono text-xs uppercase tracking-[0.22em] text-[var(--gold)]">{selectedDrop.toUpperCase()}</p>
-                        <h3 className="mt-2 text-base font-medium">{selectedDrop === 'es' ? copy.spanish : copy.english}</h3>
-                        <label className="mt-4 block text-xs text-[var(--text-muted)]">
-                            <span className="sr-only">{selectedDrop === 'es' ? copy.spanish : copy.english}</span>
+
+                <div className="listener-details">
+                    <div className="listener-details__intro">
+                        <div>
+                            <span>{copy.introSelection}</span>
+                            {availableDropCount > 1 ? (
+                                <select
+                                    value={selectedDrop}
+                                    onChange={(event) => setSelectedDrop(event.target.value as DropLanguage)}
+                                    disabled={transportActive}
+                                    aria-label={copy.introSelection}
+                                >
+                                    {dropIns.en && <option value="en">{copy.english}</option>}
+                                    {dropIns.es && <option value="es">{copy.spanish}</option>}
+                                </select>
+                            ) : (
+                                <strong>{selectedDropAvailable ? copy.introBy : copy.dropUnavailable}</strong>
+                            )}
+                        </div>
+                        {introProgressVisible && (
+                            <>
+                                <span className="listener-details__follows">{copy.beaconFollows}</span>
+                                <label>
+                                    <span className="sr-only">{copy.introSelection}: {copy.introBy}</span>
+                                    <input
+                                        type="range"
+                                        aria-label={`${copy.introSelection}: ${selectedDrop === 'es' ? copy.spanish : copy.english}`}
+                                        min={0}
+                                        max={Math.max(selectedProgress.duration, 0)}
+                                        step={0.1}
+                                        value={Math.min(selectedProgress.current, selectedProgress.duration || 0)}
+                                        onChange={(event) => seekDropIn(selectedDrop, Number(event.target.value))}
+                                    />
+                                    <span>
+                                        <span>{formatTime(selectedProgress.current)}</span>
+                                        <span>{formatTime(selectedProgress.duration)}</span>
+                                    </span>
+                                </label>
+                                {!transportPaused && (
+                                    <button type="button" onClick={skipToBeacon}>{copy.skipToBeacon}</button>
+                                )}
+                            </>
+                        )}
+                    </div>
+
+                    {volumeSupported && (
+                        <label className="listener-details__volume">
+                            <span>{copy.master}</span>
                             <input
                                 type="range"
-                                aria-label={`${copy.introSelection}: ${selectedDrop === 'es' ? copy.spanish : copy.english}`}
                                 min={0}
-                                max={Math.max(selectedProgress.duration, 0)}
-                                step={0.1}
-                                value={Math.min(selectedProgress.current, selectedProgress.duration || 0)}
-                                onChange={(event) => seekDropIn(selectedDrop, Number(event.target.value))}
-                                className="w-full accent-[var(--gold)]"
+                                max={1}
+                                step={0.01}
+                                value={volume}
+                                onChange={(event) => {
+                                    const next = Number(event.target.value);
+                                    volumeRef.current = next;
+                                    setVolume(next);
+                                }}
                             />
-                            <span className="mt-1 flex justify-between font-mono">
-                                <span>{formatTime(selectedProgress.current)}</span>
-                                <span>{formatTime(selectedProgress.duration)}</span>
-                            </span>
                         </label>
-                    </article>
-                ) : (
-                    <p className="mt-6 text-sm text-[var(--text-muted)]">{copy.dropUnavailable}</p>
-                )}
-
-                {volumeSupported && (
-                    <label className="mt-6 block max-w-sm text-xs text-[var(--text-muted)]">
-                        {copy.master}
-                        <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            value={volume}
-                            onChange={(event) => {
-                                const next = Number(event.target.value);
-                                volumeRef.current = next;
-                                setVolume(next);
-                            }}
-                            className="mt-2 w-full accent-[var(--gold)]"
-                        />
-                    </label>
-                )}
+                    )}
+                </div>
             </section>
         </div>
     );

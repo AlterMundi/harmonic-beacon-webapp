@@ -8,6 +8,7 @@ import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
 
+import BeaconField from './BeaconField';
 import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
 
 type Props = {
@@ -46,33 +47,40 @@ export default function EarlyBirdLanding(props: Props) {
     }
 
     return (
-        <main className="event-shell">
-            <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
-                <header className="flex items-center justify-between gap-4">
+        <main className="listener-shell listener-shell--public">
+            <div className="listener-shell__frame">
+                <header className="listener-rail">
                     <BrandLockup href="/early-birds" />
                     <LanguageControl />
                 </header>
 
-                <div className="grid flex-1 items-center gap-12 py-14 lg:grid-cols-[1.2fr_0.8fr]">
-                    <section className="max-w-2xl space-y-7">
-                        <p className="font-mono text-xs tracking-[0.24em] text-[var(--gold)]">{copy.eyebrow}</p>
-                        <h1 className="font-serif text-5xl font-normal leading-[0.95] text-[var(--paper)] sm:text-7xl">
+                <section className="listener-public-hero">
+                    <div className="listener-public-hero__copy">
+                        <p>{copy.eyebrow}</p>
+                        <h1>
                             {copy.title}
                         </h1>
-                        <p className="max-w-xl text-base leading-7 text-[var(--text-secondary)] sm:text-lg">
-                            {copy.intro}
-                        </p>
-                        <ul className="space-y-3 text-sm text-[var(--text-secondary)]">
-                            {[copy.live, copy.privateDropIns, copy.membership].map((item) => (
-                                <li key={item} className="flex items-center gap-3">
-                                    <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--cyan)]" />
-                                    {item}
-                                </li>
-                            ))}
-                        </ul>
-                    </section>
+                        <p>{copy.intro}</p>
+                        <a href="#listener-access" className="listener-public-hero__cta">{copy.enter}</a>
+                    </div>
+                    <BeaconField phase="ready" />
+                </section>
 
-                    <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-6 shadow-[var(--shadow-deep)] backdrop-blur-xl sm:p-8">
+                <section className="listener-public-story" aria-label={copy.membership}>
+                    {[copy.live, copy.privateDropIns, copy.membership].map((item, index) => (
+                        <article key={item}>
+                            <span aria-hidden="true">0{index + 1}</span>
+                            <p>{item}</p>
+                        </article>
+                    ))}
+                </section>
+
+                <section id="listener-access" className="listener-access">
+                    <div className="listener-access__intro">
+                        <p>{copy.eyebrow}</p>
+                        <h2>{copy.enter}</h2>
+                    </div>
+                    <div className="listener-access__card">
                         {(props.authError || error) && (
                             <p role="alert" className="mb-5 rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-100">
                                 {copy.authError}
@@ -121,10 +129,10 @@ export default function EarlyBirdLanding(props: Props) {
                                 )}
                             </div>
                         )}
-                    </section>
-                </div>
+                    </div>
+                </section>
 
-                <footer className="max-w-3xl border-t border-[var(--border-subtle)] pt-5 text-xs leading-5 text-[var(--text-muted)]">
+                <footer className="listener-footer">
                     {copy.privacy}
                 </footer>
             </div>

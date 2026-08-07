@@ -1,8 +1,8 @@
 # EarlyBirds Listener experience
 
-Status: proposal for product review. This plan changes presentation and
-interaction hierarchy only. It must not alter codec, gain, timing, routing,
-leases, membership rules or event/LiveKit audio.
+Status: accepted presentation baseline for the EarlyBirds milestone. This plan
+changes presentation and interaction hierarchy only. It must not alter codec,
+gain, timing, routing, leases, membership rules or event/LiveKit audio.
 
 ## Product intent
 
@@ -17,9 +17,9 @@ The interface should reward listening by becoming simpler after playback starts.
 
 ## Information architecture
 
-1. **Compact identity rail**: Harmonic Beacon, language, listener name and a
-   discreet membership indicator. `TEST` remains visible in staging but is not
-   styled as part of the experience.
+1. **Compact identity rail**: Harmonic Beacon, language and an account menu.
+   Membership provenance and staging diagnostics stay inside progressive
+   disclosure, outside the primary listening experience.
 2. **Beacon stage**: one dominant visual and one sentence explaining the shared
    live point. This surface owns every playback state.
 3. **Transport dock**: one obvious primary action plus a secondary mode choice.
@@ -34,11 +34,12 @@ The interface should reward listening by becoming simpler after playback starts.
 
 ## State model shown to the listener
 
-- **Ready**: selected mode and a single unmistakable Play action.
+- **Ready**: selected mode and a single unmistakable Listen action.
 - **Preparing**: short truthful preparation state; controls do not appear dead.
 - **Intro playing**: intro identity, progress and “Beacon follows.”
 - **Transitioning**: brief handoff state without showing two active sources.
-- **Beacon live**: shared-point visual, active state and Stop.
+- **Beacon playing**: shared-point visual, active state and Stop. Public copy
+  never claims whether the source is an instrument, a file or another origin.
 - **Paused/stopped**: preserve the chosen mode and make restart obvious.
 - **Reconnecting**: keep intent visible, explain automatic recovery and expose a
   manual retry only after recovery is exhausted.
@@ -59,8 +60,8 @@ The interface should reward listening by becoming simpler after playback starts.
 
 ### UX-1 — coherent transport
 
-- Put intro selection, Play with intro, Beacon-only and Stop in one responsive
-  control system.
+- Put the intro preference, Beacon-only preference and one contextual
+  Listen/Stop action in one responsive control system.
 - Give Stop the same dimensions, typography and affordance as the other actions.
 - Remove duplicate or inert controls and make disabled/loading states explicit.
 
@@ -72,7 +73,7 @@ The interface should reward listening by becoming simpler after playback starts.
 
 ### UX-3 — intro and content model
 
-- Collapse the duplicated “Private drop-ins” card into the active intro choice.
+- Collapse the duplicated content card into the active intro choice.
 - Add content details through a drawer/sheet when more than one intro exists.
 - Preserve standard seek/progress semantics for drop-ins; the shared Beacon has
   no fake seek timeline.

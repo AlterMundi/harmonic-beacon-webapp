@@ -55,10 +55,10 @@ describe('EarlyBird public landing', () => {
 
     it('uses audience-neutral account and privacy language in both locales', () => {
         expect(earlyBirdCopy.es.privacy).toBe(
-            'Tu cuenta y membresía administran el acceso a EarlyBirds. No creamos historiales personales de escucha.',
+            'Tu cuenta y membresía administran el acceso privado. No creamos historiales personales de escucha.',
         );
         expect(earlyBirdCopy.en.privacy).toBe(
-            'Your account and membership manage access to EarlyBirds. We do not create personal listening histories.',
+            'Your account and membership manage private access. We do not create personal listening histories.',
         );
         expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
             .not.toMatch(/adult|child|minor|menor|adulta/i);
@@ -83,7 +83,10 @@ describe('EarlyBird public landing', () => {
 
     it('takes an entitled signed-in listener directly to the private home', () => {
         renderLanding({ signedIn: true, entitled: true });
-        expect(screen.getByRole('link', { name: 'Enter the Beacon' })).toHaveAttribute('href', '/early-birds');
+        expect(screen.getAllByRole('link', { name: 'Enter the Beacon' }))
+            .toEqual(expect.arrayContaining([
+                expect.objectContaining({ href: expect.stringMatching(/\/early-birds$/) }),
+            ]));
         expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
     });
 });

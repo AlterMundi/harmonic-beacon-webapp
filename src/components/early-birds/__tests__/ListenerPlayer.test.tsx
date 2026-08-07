@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { LocaleProvider } from '@/context/LocaleContext';
 
@@ -112,8 +112,8 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
-        fireEvent.click(screen.getByRole('button', { name: 'Play · Beacon only' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
@@ -151,14 +151,14 @@ describe('EarlyBird Listener player', () => {
                 <ListenerPlayer dropIns={{ es: null, en: null }} />
             </LocaleProvider>,
         );
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ intent: 'prepare' });
 
         await Promise.all(intervalCallbacks.map((callback) => callback()));
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
         expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/early-birds/stream/heartbeat');
-        expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
     });
 
     it('does not offer resume after a paused source loses preparation', async () => {
@@ -192,8 +192,8 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
-        fireEvent.click(screen.getByRole('button', { name: 'Play · Beacon only' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
         fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
@@ -204,7 +204,7 @@ describe('EarlyBird Listener player', () => {
         fireEvent(document, new Event('visibilitychange'));
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-        expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled();
         expect(screen.getByText('Two devices are already active. Enabling this one will stop playback on the least recent device.'))
             .toBeInTheDocument();
     });
@@ -231,8 +231,8 @@ describe('EarlyBird Listener player', () => {
                 <ListenerPlayer dropIns={{ es: null, en: null }} />
             </LocaleProvider>,
         );
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
-        fireEvent.click(screen.getByRole('button', { name: 'Play · Beacon only' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         hlsHarness.instances[0].emitFatal();
 
@@ -268,8 +268,8 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
         const live = screen.getByLabelText('Beacon 24/7');
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
-        fireEvent.click(screen.getByRole('button', { name: 'Play · Beacon only' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
 
         vi.useFakeTimers();
@@ -311,8 +311,8 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
-        fireEvent.click(screen.getByRole('button', { name: 'Play · Beacon only' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
@@ -365,8 +365,8 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
-        fireEvent.click(screen.getByRole('button', { name: 'Play · Beacon only' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByText('Playing Beacon 24/7')).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
@@ -419,8 +419,8 @@ describe('EarlyBird Listener player', () => {
             </LocaleProvider>,
         );
 
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
-        fireEvent.click(screen.getByRole('button', { name: 'Play · Beacon only' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         hlsHarness.instances[0].emitFatal();
         await waitFor(() => expect(screen.getByText('Restoring connection…')).toBeInTheDocument());
