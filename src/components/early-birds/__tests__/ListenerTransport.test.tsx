@@ -89,8 +89,8 @@ describe('Listener one-action playlist transport', () => {
     it('uses the browser-derived page language to play only the matching introduction', async () => {
         const { play } = prepareMedia();
         renderPlayer({ es: '/api/drop-ins/es', en: '/api/drop-ins/en' }, 'es');
-        const spanish = screen.getByLabelText('Caldeamiento · Español') as HTMLAudioElement;
-        const english = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
+        const spanish = screen.getByLabelText('Introducción · Español') as HTMLAudioElement;
+        const english = screen.getByLabelText('Introducción · Inglés') as HTMLAudioElement;
         await waitForListen();
 
         await waitFor(() => expect(screen.getByRole('combobox', { name: 'Intro antes del Beacon' }))
@@ -105,8 +105,8 @@ describe('Listener one-action playlist transport', () => {
     it('lets the intro dropdown override the browser-language default', async () => {
         const { play } = prepareMedia();
         renderPlayer({ es: '/api/drop-ins/es', en: '/api/drop-ins/en' }, 'es');
-        const spanish = screen.getByLabelText('Caldeamiento · Español') as HTMLAudioElement;
-        const english = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
+        const spanish = screen.getByLabelText('Introducción · Español') as HTMLAudioElement;
+        const english = screen.getByLabelText('Introducción · Inglés') as HTMLAudioElement;
         await waitForListen();
 
         fireEvent.change(screen.getByRole('combobox', { name: 'Intro antes del Beacon' }), {
