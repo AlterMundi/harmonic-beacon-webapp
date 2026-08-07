@@ -249,6 +249,20 @@ test('smoke and rollback contracts cover both probes without deleting state', as
   const stop = await readRepository('scripts/early-birds-preview/stop.sh');
   assert.match(stop, /stop listener beacon-stream postgres/);
   assert.doesNotMatch(stop, /\bdown\b|-v\b|volume rm/);
+
+  const disablePublic = await readRepository('scripts/early-birds-preview/disable-public.sh');
+  assert.match(disablePublic, /--dry-run\|--apply/);
+  assert.match(disablePublic, /flock -n 9/);
+  assert.match(disablePublic, /pre-disable-public/);
+  assert.match(disablePublic, /chmod 0600 "\$backup"/);
+  assert.match(disablePublic, /mv -f "\$candidate" "\$env_file"/);
+  assert.match(disablePublic, /sync -f "\$env_file"/);
+  assert.match(disablePublic, /up -d --no-deps --force-recreate --no-build listener/);
+  assert.match(disablePublic, /api\/health\/ready/);
+  assert.match(disablePublic, /api\/early-birds\/stream\/lease/);
+  assert.match(disablePublic, /test "\$denial_status" = 503/);
+  assert.match(disablePublic, /stop listener/);
+  assert.doesNotMatch(disablePublic, /\bdown\b|volume rm|stop (?:.* )?(postgres|beacon-stream)/);
 });
 
 test('canonical Free smoke keeps credentials out of argv and verifies the entitled home', async () => {

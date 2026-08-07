@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check ../../scripts/early-birds-preview/validate.mjs && sh -n ../../scripts/early-birds-preview/lib.sh ../../scripts/early-birds-preview/start.sh ../../scripts/early-birds-preview/stop.sh ../../scripts/early-birds-preview/rollback.sh ../../scripts/early-birds-preview/rehearse-migration.sh ../../scripts/early-birds-preview/health-smoke.sh ../../scripts/early-birds-preview/canonical-free-smoke.sh ../../scripts/early-birds-preview/registered-free-smoke.sh",
+    "check": "node --check ../../scripts/early-birds-preview/validate.mjs && sh -n ../../scripts/early-birds-preview/lib.sh ../../scripts/early-birds-preview/start.sh ../../scripts/early-birds-preview/stop.sh ../../scripts/early-birds-preview/rollback.sh ../../scripts/early-birds-preview/disable-public.sh ../../scripts/early-birds-preview/rehearse-migration.sh ../../scripts/early-birds-preview/health-smoke.sh ../../scripts/early-birds-preview/canonical-free-smoke.sh ../../scripts/early-birds-preview/registered-free-smoke.sh",
     "validate": "node ../../scripts/early-birds-preview/validate.mjs",
     "validate:build": "node ../../scripts/early-birds-preview/validate.mjs --build",
     "test": "node --test test/*.test.mjs"
