@@ -17,7 +17,7 @@ an event-stack deployment or an acoustic change.
 | Artifact | Exact value |
 |---|---|
 | Deployed Listener application | `dad29d4dc5010603a5bbc7ed309c8f78e7c0f384` |
-| Branch/documentation head | `dad29d4` |
+| Branch/documentation head | `4cd9968` (documentation may advance independently) |
 | Listener database schema | `20260807100000_early_bird_welcome_access` |
 | Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
 | Public mode | Free for All OFF during coordinated registered-Free acceptance |
@@ -49,7 +49,7 @@ test-only branch head.
 | Free/FFA never fabricate membership or Purchase | Proven | Separate schedule/technical-account tables and route-level override; no payment/Meta event is emitted by Listener paths. |
 | FFA reversible | Proven | OFF denied anonymous lease; ON restored anonymous lease 200 without schema or membership mutation. |
 | ES/EN and override | Proven | Locale default, explicit intro override, private byte ranges and distinct immutable assets pass tests/runtime. |
-| Intro to Beacon lifecycle | Automated/browser proven; physical pending | Intro play/pause/seek, natural handoff, mutual exclusion, live-edge Stop/rejoin and duplicate guards pass. Acoustic/device acceptance remains human. |
+| Intro to Beacon lifecycle | Automated/browser and iPhone human proven | Intro play/pause/seek, natural handoff, mutual exclusion, live-edge Stop/rejoin and duplicate guards pass. Nico confirmed the deployed iPhone flow worked correctly after the gesture-safe fix. |
 | Mobile one-screen interaction | Browser proven; physical pending | Chromium 390x844 has no overflow; mode targets are 52 px and primary action 56 px. Physical keyboard/screen-reader/touch review remains. |
 | Audio guardrail | Proven | Frozen-audio gate is green; this registration slice changed no asset, codec, rate, channel, gain, fade, buffer, routing or event audio. |
 | App/origin/DB/canary | Proven | Public readiness, exact schema/SHA, stream health and decoded canary are green. |
@@ -101,8 +101,8 @@ deployed image; later documentation-only commits do not require rebuilding it.
   physical start/end confirmation.
 - #217 remains open on the external Gmail delivery endpoint #44.
 - #218 is closed/Done with deployed runtime evidence.
-- #219 remains In Progress for physical iPhone natural-handoff/reconnect
-  acceptance; the gesture-safe implementation is deployed.
+- #219 is closed/Done after positive physical iPhone acceptance of the deployed
+  gesture-safe handoff.
 - #213 is Todo; #211/#212 and the larger campaign/cosmic-campfire journey are
   post-MVP and do not block this bounded test.
 
@@ -112,7 +112,8 @@ Use `docs/operations/EARLY_BIRDS_FREE_ACCEPTANCE.md` as the authoritative
 worksheet.
 
 1. Finish playback/reconnect checks in the already active FFA-OFF interval.
-2. Complete physical Chrome, Firefox, Android Chrome and iPhone Safari rows.
+2. Complete the remaining physical Chrome, Firefox and Android Chrome rows;
+   retain the accepted iPhone result.
 3. Run one 60-minute physical listen with intro, handoff, background/foreground,
    network transition and Stop/rejoin.
 4. Restore FFA ON and verify anonymous playback before public sharing.

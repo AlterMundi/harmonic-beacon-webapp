@@ -130,7 +130,7 @@ instant revocation.
 | _pending_ | Desktop | Chromium | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
 | _pending_ | Desktop | Firefox | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
 | _pending_ | Android physical | Chrome | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
-| _pending_ | iPhone physical | Safari | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
+| 2026-08-07 | iPhone physical | Safari | ES/EN | Previously proven | Tested flow passed | PASS | PASS | Not separately recorded | PASS | PASS | Nico confirmed the deployed iPhone Listener flow worked correctly; #219 closed. |
 
 Run one 60-minute physical listen covering intro, handoff, Stop/restart,
 background/foreground and a network transition. Report audible glitches as a
@@ -152,6 +152,6 @@ pasted into GitHub. A normal Apple Account on an iPhone is sufficient for the
 physical login test only after this developer configuration exists.
 
 If the isolated Listener degrades, restore root-only
-`/etc/harmonic-beacon/earlybirds-preview.env.pre-575b75a`, select Listener image
-`d7ed952`, retain both preview databases and origin media, and run the preview
-health smoke. Do not touch the event runtime.
+`/etc/harmonic-beacon/earlybirds-preview.env.pre-dad29d4`, select Listener image
+`55bf282`, retain the preview database, additive welcome-access table and origin
+media, and run the preview health smoke. Do not touch the event runtime.
