@@ -1,8 +1,16 @@
 import { headers as requestHeaders } from 'next/headers';
 import { betterAuth } from 'better-auth/minimal';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
+import { magicLink } from 'better-auth/plugins';
 
 import { prisma } from '@/lib/db';
+import {
+    deliverEarlyBirdMagicLink,
+    EARLY_BIRD_MAGIC_LINK_TTL_SECONDS,
+    earlyBirdMagicLinkAvailable,
+    earlyBirdMagicLinkSessionAllowed,
+    hashEarlyBirdMagicLinkToken,
+} from '@/lib/early-birds/magic-link';
 
 export const EARLY_BIRD_AUTH_BASE_PATH = '/api/early-birds/auth';
 export const EARLY_BIRD_COOKIE_PREFIX = 'hb_earlybird';
@@ -93,6 +101,7 @@ function scrubSessionMetadata<T extends Record<string, unknown>>(session: T): T 
 function buildEarlyBirdAuth() {
     const testAuth = earlyBirdTestAuthEnabled();
     const baseURL = nonEmpty(process.env.EARLY_BIRDS_AUTH_BASE_URL);
+    const magicLinkEnabled = earlyBirdMagicLinkAvailable();
 
     return betterAuth({
         appName: 'Harmonic Beacon Listener',
@@ -102,8 +111,19 @@ function buildEarlyBirdAuth() {
         trustedOrigins: trustedOrigins(),
         database: prismaAdapter(prisma, { provider: 'postgresql' }),
         socialProviders: earlyBirdSocialProviders(),
-        // Email/password is a supervised synthetic-login seam only. The public
-        // product exposes exactly Google and Apple, and the seam is absent
+        plugins: magicLinkEnabled ? [magicLink({
+            expiresIn: EARLY_BIRD_MAGIC_LINK_TTL_SECONDS,
+            storeToken: {
+                type: 'custom-hasher',
+                hash: async (token) => hashEarlyBirdMagicLinkToken(token),
+            },
+            rateLimit: { window: 60, max: 3 },
+            async sendMagicLink(data, context) {
+                await deliverEarlyBirdMagicLink(data, context?.request);
+            },
+        })] : [],
+        // Email/password is a supervised synthetic-login seam only. Public
+        // passwordless email is a separate one-use plugin, and this seam is absent
         // unless both an explicit gate and a separate secret are present.
         emailAndPassword: { enabled: testAuth },
         user: {
@@ -147,7 +167,11 @@ function buildEarlyBirdAuth() {
             },
             session: {
                 create: {
-                    async before(session) {
+                    async before(session, context) {
+                        if (!await earlyBirdMagicLinkSessionAllowed(
+                            session.userId,
+                            context?.path,
+                        )) return false;
                         return { data: scrubSessionMetadata(session) };
                     },
                 },

@@ -484,6 +484,20 @@ model EarlyBirdVerification {
   @@map("early_bird_verifications")
 }
 
+// HMAC-keyed abuse buckets for the Listener email fallback. Neither raw email
+// addresses nor raw network addresses are persisted here.
+model EarlyBirdMagicLinkThrottle {
+  key             String   @id
+  kind            String
+  windowStartedAt DateTime @map("window_started_at")
+  attempts        Int      @default(0)
+  blockedUntil    DateTime? @map("blocked_until")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("early_bird_magic_link_throttles")
+}
+
 // Read-side projection of the canonical membership owned by
 // proyecciones-mito. The revision and hash make delivery monotonic and
 // idempotent; redirect URLs and local UI state are never authorization proof.

@@ -18,6 +18,7 @@ type Props = {
     invitationAvailable: boolean;
     authError: boolean;
     providers: { google: boolean; apple: boolean };
+    emailMagicLinkAvailable: boolean;
     syntheticTeamEntryAvailable: boolean;
     freeWindow: SerializedEarlyBirdFreeWindowState;
 };
@@ -25,8 +26,10 @@ type Props = {
 export default function EarlyBirdLanding(props: Props) {
     const { locale } = useLocale();
     const copy = earlyBirdCopy[locale];
-    const [busy, setBusy] = useState<'google' | 'apple' | null>(null);
+    const [busy, setBusy] = useState<'google' | 'apple' | 'email' | null>(null);
     const [error, setError] = useState(false);
+    const [email, setEmail] = useState('');
+    const [emailRequested, setEmailRequested] = useState(false);
     const callbackURL = props.invitationAvailable
         ? '/early-birds/redeem'
         : '/early-birds';
@@ -51,6 +54,30 @@ export default function EarlyBirdLanding(props: Props) {
     async function signOut() {
         await earlyBirdAuthClient.signOut();
         window.location.assign('/early-birds');
+    }
+
+    async function requestMagicLink(event: React.FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        if (busy || !props.emailMagicLinkAvailable) return;
+        setBusy('email');
+        setError(false);
+        try {
+            await earlyBirdAuthClient.signIn.magicLink({
+                email,
+                callbackURL,
+                errorCallbackURL: '/early-birds?authError=1',
+                metadata: { locale },
+            });
+            // The same response is intentionally shown for unknown accounts,
+            // throttled requests and provider delivery uncertainty.
+            setEmailRequested(true);
+            setEmail('');
+        } catch {
+            setEmailRequested(true);
+            setEmail('');
+        } finally {
+            setBusy(null);
+        }
     }
 
     return (
@@ -130,6 +157,42 @@ export default function EarlyBirdLanding(props: Props) {
                                             : provider === 'google' ? copy.signInGoogle : copy.signInApple}
                                     </button>
                                 ))}
+                                {props.emailMagicLinkAvailable && (
+                                    <div className="listener-email-access">
+                                        {(props.providers.google || props.providers.apple) && (
+                                            <p className="listener-email-access__divider">
+                                                <span>{copy.magicLinkDivider}</span>
+                                            </p>
+                                        )}
+                                        {emailRequested ? (
+                                            <p role="status" className="listener-email-access__status">
+                                                {copy.magicLinkSent}
+                                            </p>
+                                        ) : (
+                                            <form onSubmit={requestMagicLink} className="listener-email-access__form">
+                                                <label htmlFor="listener-email">{copy.magicLinkEmail}</label>
+                                                <input
+                                                    id="listener-email"
+                                                    name="email"
+                                                    type="email"
+                                                    inputMode="email"
+                                                    autoComplete="email"
+                                                    required
+                                                    value={email}
+                                                    onChange={(event) => setEmail(event.target.value)}
+                                                    placeholder={copy.magicLinkPlaceholder}
+                                                />
+                                                <button
+                                                    type="submit"
+                                                    disabled={busy !== null}
+                                                    className="event-button event-button--secondary w-full"
+                                                >
+                                                    {busy === 'email' ? copy.magicLinkSending : copy.magicLinkSend}
+                                                </button>
+                                            </form>
+                                        )}
+                                    </div>
+                                )}
                                 {props.syntheticTeamEntryAvailable && (
                                     <SyntheticTeamEntryForm
                                         authOnly={props.invitationAvailable}

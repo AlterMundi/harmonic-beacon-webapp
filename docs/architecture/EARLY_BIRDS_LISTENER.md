@@ -8,8 +8,8 @@ for Free, PayPal and Mercado Pago membership state.
 ## Identity boundary
 
 Better Auth uses dedicated `early_bird_*` tables and the `hb_earlybird_session` cookie. Public login
-offers exactly Google and Apple. Account linking, implicit linking, unlinking and the account cookie
-are disabled. The adapter requires nullable OAuth token columns, but Better Auth database hooks scrub
+offers configured social providers plus an optional passwordless email fallback. Account linking,
+implicit linking, unlinking and the account cookie are disabled. The adapter requires nullable OAuth token columns, but Better Auth database hooks scrub
 access, refresh and ID tokens, token expiries and scope to `null` before create/update reaches Prisma.
 Listener session hooks likewise discard IP address and user-agent values before
 Prisma writes them. The test suite locks both pre-adapter invariants.
@@ -32,6 +32,34 @@ cross-site `form_post`; those callbacks are bound instead by Better Auth's
 short-lived, one-use state cookie/database verifier and PKCE code verifier.
 Unknown, expired or cookie-mismatched state fails before account or session
 creation.
+
+### Passwordless email fallback
+
+The email fallback is an exact Better Auth `1.6.26` magic-link plugin and is
+absent unless its private delivery URL, service token and independent HMAC rate
+secret are all configured. Tokens are random, stored only as SHA-256
+verifiers, expire after ten minutes and are atomically consumed on the first
+verification attempt. Success, replay, expiry and alteration keep the same
+isolated session boundary and fixed `/early-birds` callback allowlist.
+
+Requests use a generic response regardless of account existence, throttling or
+mail-provider uncertainty. Durable 15-minute buckets allow three requests per
+normalized address and ten per Origin/network-address pair; only HMAC keys are
+stored, never raw network addresses, and stale buckets are discarded after 24
+hours. Better Auth additionally bounds the route
+to three requests per minute per process/network source. A magic link may
+create an email-only Listener, but both delivery and session creation reject an
+address already owned by a Google, Apple or supervised credential identity.
+Email equality therefore never silently adds a new way to authenticate an
+existing account.
+
+Mail crosses one versioned private boundary:
+`POST /api/internal/v1/listener-magic-links/deliver`. The Listener sends the
+recipient, locale, expiring URL and an opaque idempotency key under a dedicated
+Bearer credential. The existing mail authority renders and sends the message;
+its Gmail OAuth grant is never copied or mounted into the Listener. Until that
+endpoint exists and the three Listener values are installed, the control and
+auth plugin stay hidden and fail closed.
 
 ## Canonical membership boundary
 

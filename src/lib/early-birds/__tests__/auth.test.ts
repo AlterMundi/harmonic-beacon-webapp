@@ -96,12 +96,12 @@ describe('EarlyBird Better Auth isolation', () => {
             updatedAt: new Date('2026-08-07T00:00:00.000Z'),
         };
 
-        const created = await hooks?.create?.before?.(sessionPayload);
+        const created = await hooks?.create?.before?.(sessionPayload, null);
         const updated = await hooks?.update?.before?.(sessionPayload);
 
         for (const outcome of [created, updated]) {
             expect(outcome).not.toBe(false);
-            expect(outcome && 'data' in outcome ? outcome.data : null).toMatchObject({
+            expect(outcome && outcome !== true && 'data' in outcome ? outcome.data : null).toMatchObject({
                 id: 'session-1',
                 ipAddress: null,
                 userAgent: null,
