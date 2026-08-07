@@ -27,11 +27,11 @@ import { POST } from '../route';
 
 const LEASE_ID = '00000000-0000-4000-8000-000000000003';
 
-function request(intent?: 'play' | 'prepare') {
+function request(intent?: 'play' | 'prepare', presence?: 'idle' | 'listening') {
     return new NextRequest('https://listener.example.test/api/early-birds/stream/heartbeat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ leaseId: LEASE_ID, intent }),
+        body: JSON.stringify({ leaseId: LEASE_ID, intent, presence }),
     });
 }
 
@@ -81,6 +81,7 @@ describe('EarlyBird stream heartbeat route', () => {
         });
         expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
             'listener-1', LEASE_ID, undefined, undefined, true,
+            { state: 'LISTENING', macroRegion: 'UNKNOWN' },
         );
     });
 
@@ -96,7 +97,12 @@ describe('EarlyBird stream heartbeat route', () => {
         });
 
         expect((await POST(request())).status).toBe(200);
-        expect(mocks.heartbeatFreeForAllStreamLease).toHaveBeenCalledWith(LEASE_ID);
+        expect(mocks.heartbeatFreeForAllStreamLease).toHaveBeenCalledWith(
+            LEASE_ID,
+            undefined,
+            undefined,
+            { state: 'LISTENING', macroRegion: 'UNKNOWN' },
+        );
         expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
         expect(mocks.heartbeatEarlyBirdStreamLease).not.toHaveBeenCalled();
     });
@@ -110,9 +116,38 @@ describe('EarlyBird stream heartbeat route', () => {
             },
         });
 
-        expect((await POST(request('prepare'))).status).toBe(200);
+        expect((await POST(request('prepare', 'idle'))).status).toBe(200);
         expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
             'listener-1', LEASE_ID, undefined, undefined, false,
+            { state: 'IDLE', macroRegion: 'UNKNOWN' },
+        );
+    });
+
+    it('does not let an unknown presence value manufacture listening state', async () => {
+        mocks.heartbeatEarlyBirdStreamLease.mockResolvedValue({
+            leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            stream: {
+                manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`,
+                expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            },
+        });
+        const malformedPresence = new NextRequest(
+            'https://listener.example.test/api/early-birds/stream/heartbeat',
+            {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    leaseId: LEASE_ID,
+                    intent: 'prepare',
+                    presence: 'radiant',
+                }),
+            },
+        );
+
+        expect((await POST(malformedPresence)).status).toBe(200);
+        expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
+            'listener-1', LEASE_ID, undefined, undefined, false,
+            { state: 'IDLE', macroRegion: 'UNKNOWN' },
         );
     });
 });
