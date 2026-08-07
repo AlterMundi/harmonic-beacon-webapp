@@ -1,5 +1,29 @@
 # EarlyBirds isolated staging runtime
 
+## 2026-08-07 live-edge transport refinement
+
+The isolated Listener now runs application SHA
+`2f057e0a31e384ba4d47cd14652afe1967c830ae` (image
+`harmonic-beacon/earlybirds-preview-listener:2f057e0`). Nico explicitly
+approved a stability-first Listener buffer after hearing choppiness while
+moving the volume control.
+
+- The Beacon is live-edge only: it exposes Stop, never Pause or Seek, and a
+  later Listen seeks to the current configured edge.
+- Pause and Seek remain available only while a private introduction is active.
+- Desktop hls.js targets five six-second segments behind the edge, a 60-second
+  forward buffer and a 90-second hard maximum; low-latency mode remains off.
+- Volume input updates media elements directly instead of re-rendering the
+  Listener constellation for every slider movement.
+- A real 390x844 Chromium pass fit the complete active-Beacon UI without
+  vertical or horizontal overflow. Five rapid volume changes left playback
+  active at the requested volume with 27.8 seconds buffered ahead.
+- All 1,049 tests, ESLint, TypeScript, production build, frozen-audio-path,
+  stream-origin, observability and staging-preview checks passed.
+- Host smoke passed and public health attests the exact SHA. Rollback restores
+  root-only `/etc/harmonic-beacon/earlybirds-preview.env.pre-2f057e0` and
+  recreates only Listener release `04e578b`; retain PostgreSQL and media.
+
 ## 2026-08-07 Listener presentation deployment
 
 The isolated Listener was updated to application SHA
