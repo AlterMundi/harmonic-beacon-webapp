@@ -58,6 +58,11 @@ async function chooseBeaconOnly() {
     expect(screen.getByRole('radio', { name: /Beacon only/ })).toHaveAttribute('aria-checked', 'true');
 }
 
+function expectPhase(phase: string) {
+    expect(screen.getByRole('heading', { name: 'Beacon' }).closest('.listener-experience'))
+        .toHaveAttribute('data-phase', phase);
+}
+
 afterEach(() => {
     cleanup();
     window.localStorage.clear();
@@ -101,7 +106,7 @@ describe('Listener one-action playlist transport', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
         expect(pause.mock.instances).toContain(intro);
         expect(intro.currentTime).toBe(42);
-        expect(screen.getByText('Paused')).toBeInTheDocument();
+        expectPhase('paused');
 
         play.mockClear();
         fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
@@ -161,7 +166,7 @@ describe('Listener one-action playlist transport', () => {
         }
 
         expect(live.volume).toBeCloseTo(0.4);
-        expect(screen.getByText('Beacon playing')).toBeInTheDocument();
+        expectPhase('beacon');
         expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
         expect(pause.mock.instances).not.toContain(live);
     });
@@ -180,7 +185,7 @@ describe('Listener one-action playlist transport', () => {
         const intro = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
         await waitForListen();
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
-        await screen.findByText('Playing intro · Beacon follows');
+        await waitFor(() => expectPhase('intro'));
 
         Object.defineProperty(intro, 'ended', { value: true, configurable: true });
         fireEvent.ended(intro);
@@ -189,7 +194,7 @@ describe('Listener one-action playlist transport', () => {
         fireEvent.playing(live);
         frames.shift()?.(3_000);
         expect(live.volume).toBeCloseTo(1);
-        expect(screen.getByText('Beacon playing')).toBeInTheDocument();
+        expectPhase('beacon');
     });
 
     it('can skip the private intro into the same Beacon handoff', async () => {
@@ -199,7 +204,7 @@ describe('Listener one-action playlist transport', () => {
         const intro = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
         await waitForListen();
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
-        await screen.findByText('Playing intro · Beacon follows');
+        await waitFor(() => expectPhase('intro'));
 
         pause.mockClear();
         fireEvent.click(screen.getByRole('button', { name: 'Skip to the Beacon' }));
@@ -226,7 +231,7 @@ describe('Listener one-action playlist transport', () => {
         pause.mockClear();
 
         fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
-        expect(screen.getByText('Stopped')).toBeInTheDocument();
+        expectPhase('stopped');
         expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
         expect(pause.mock.instances).not.toContain(live);
         act(() => frames.shift()?.(650));

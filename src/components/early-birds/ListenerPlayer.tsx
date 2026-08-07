@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
 
-import BeaconField from './BeaconField';
 import { deriveListenerPresentationPhase } from './listener-presentation';
 
 type DropLanguage = 'es' | 'en';
@@ -920,17 +919,11 @@ export default function ListenerPlayer({
         transportStopped,
         hasStarted,
     });
-    const phaseLabel = {
-        ready: copy.ready,
-        preparing: copy.loading,
-        intro: copy.playingIntro,
-        beacon: copy.playingBeacon,
-        paused: copy.paused,
-        reconnecting: copy.reconnecting,
-        stopped: copy.stopped,
-        unavailable: copy.unavailable,
-        displaced: copy.displaced,
-    }[phase];
+    const phaseLabel = phase === 'preparing' ? copy.loading
+        : phase === 'reconnecting' ? copy.reconnecting
+            : phase === 'unavailable' ? copy.unavailable
+                : phase === 'displaced' ? copy.displaced
+                    : null;
     const transportActive = !transportStopped;
     const introProgressVisible = selectedDropAvailable
         && (playingDrop === selectedDrop || (transportPaused && activeDrop.current === selectedDrop));
@@ -972,21 +965,16 @@ export default function ListenerPlayer({
                 onSuspend={() => handleNativeInterruption('suspend')}
                 onPlaying={handleNativePlaying}
             />
-            <section className="listener-stage" aria-label={copy.sharedPoint}>
-                <div className="listener-stage__copy">
-                    <p className="listener-stage__eyebrow">{copy.sharedPoint}</p>
-                    <h1 id="listener-heading" className="sr-only">{copy.heading}</h1>
-                </div>
+            <section className="listener-stage">
+                <h1 id="listener-heading" className="sr-only">{copy.heading}</h1>
 
-                <BeaconField phase={phase} />
-
-                <p
+                {phaseLabel && <p
                     role={phase === 'unavailable' || phase === 'displaced' ? 'alert' : 'status'}
                     className="listener-stage__status"
                 >
                     <span className="listener-stage__status-dot" aria-hidden="true" />
                     {phaseLabel}
-                </p>
+                </p>}
 
                 <div className="listener-mode" role="radiogroup" aria-label={copy.mode}>
                     <button

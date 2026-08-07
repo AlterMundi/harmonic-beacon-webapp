@@ -66,8 +66,6 @@ export const earlyBirdHomeCopy = {
     es: {
         eyebrow: 'HARMONIC BEACON · LISTENER',
         heading: 'Beacon',
-        sharedPoint: 'Escucha compartida',
-        ready: 'Listo para escuchar',
         listen: 'Escuchar',
         mode: 'Cómo querés entrar',
         withIntro: 'Con introducción',
@@ -101,8 +99,6 @@ export const earlyBirdHomeCopy = {
     en: {
         eyebrow: 'HARMONIC BEACON · LISTENER',
         heading: 'Beacon',
-        sharedPoint: 'Shared listening',
-        ready: 'Ready to listen',
         listen: 'Listen',
         mode: 'How you want to enter',
         withIntro: 'With introduction',
