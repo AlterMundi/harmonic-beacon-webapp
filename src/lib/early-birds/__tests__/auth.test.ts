@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
     EARLY_BIRD_SESSION_COOKIE,
     earlyBirdAuth,
+    earlyBirdOAuthAvailability,
+    earlyBirdSocialProviders,
 } from '../auth';
 
 describe('EarlyBird Better Auth isolation', () => {
@@ -15,7 +17,12 @@ describe('EarlyBird Better Auth isolation', () => {
         expect(options.verification?.modelName).toBe('earlyBirdVerification');
         expect(options.advanced?.cookiePrefix).toBe('hb_earlybird');
         expect(options.advanced?.cookies?.session_token?.name).toBe(EARLY_BIRD_SESSION_COOKIE);
-        expect(Object.keys(options.socialProviders ?? {}).sort()).toEqual(['apple', 'google']);
+        const available = earlyBirdOAuthAvailability();
+        expect(Object.keys(options.socialProviders ?? {}).sort()).toEqual(
+            (Object.keys(available) as Array<keyof typeof available>)
+                .filter((provider) => available[provider])
+                .sort(),
+        );
         expect(options.account?.accountLinking).toMatchObject({
             enabled: false,
             disableImplicitLinking: true,
@@ -24,6 +31,17 @@ describe('EarlyBird Better Auth isolation', () => {
             allowUnlinkingAll: false,
         });
         expect(options.account?.storeAccountCookie).toBe(false);
+    });
+
+    it('installs only providers with complete credential pairs', () => {
+        const environment = {
+            EARLY_BIRDS_GOOGLE_CLIENT_ID: 'google-id',
+            EARLY_BIRDS_GOOGLE_CLIENT_SECRET: 'google-secret',
+            EARLY_BIRDS_APPLE_CLIENT_ID: 'half-configured-apple',
+        } as unknown as NodeJS.ProcessEnv;
+
+        expect(earlyBirdOAuthAvailability(environment)).toEqual({ google: true, apple: false });
+        expect(Object.keys(earlyBirdSocialProviders(environment))).toEqual(['google']);
     });
 
     it('scrubs provider token material before create and update reach Prisma', async () => {

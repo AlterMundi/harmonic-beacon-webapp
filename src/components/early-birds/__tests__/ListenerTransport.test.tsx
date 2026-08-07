@@ -42,7 +42,7 @@ function prepareMedia() {
 }
 
 function renderPlayer(
-    dropIns = { es: null, en: '/api/drop-ins/en' },
+    dropIns: { es: string | null; en: string | null } = { es: null, en: '/api/drop-ins/en' },
     initialLocale: UiLocale = 'en',
 ) {
     return render(

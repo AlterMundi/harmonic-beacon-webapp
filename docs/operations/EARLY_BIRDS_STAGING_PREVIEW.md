@@ -279,8 +279,9 @@ entry canonically at `/`, plus `/api/early-birds/`, Next static assets and healt
 legacy `/early-birds/home` redirects to `/`. It blocks `/api/internal/`
 and returns 404 for the image's weekend, staff, event and checkout surfaces.
 The `listen.harmonicbeacon.com` vhost is narrower: it exposes only `/`, Next
-static assets, health, the dedicated Listener OAuth/session namespace, stream
-leases/manifests and configured drop-ins. Synthetic login, invitation,
+static assets, health, the dedicated Listener OAuth/session namespace, the
+exact ordinary-Free schedule endpoint, stream leases/manifests and configured
+drop-ins. Synthetic login, invitation,
 membership projection and all other app routes remain unreachable from that
 host. The application additionally returns a hidden 404 for Better Auth's
 email/password endpoints, so the public namespace offers only configured
@@ -308,12 +309,31 @@ EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=1
 
 Recreate the Listener through `start.sh`, rerun the smoke, and exercise only
 `@e2e.invalid` synthetic identities with the separate test-login bearer.
-Provider buttons remain disabled while OAuth credentials are blank. A shared
+Providers with incomplete credentials are absent from both the public UI and
+the Better Auth runtime. A shared
 preview runtime may instead use `listen.harmonicbeacon.com` as its canonical
 OAuth base URL, keep both Listener hosts in `EARLY_BIRDS_TRUSTED_ORIGINS`, and
 configure one or both complete provider credential pairs. Synthetic team entry
 remains allowlisted only on the staging hostname.
 Return both switches to `0` after the supervised team window.
+
+### Ordinary Free listening windows
+
+When Free for All is off, an authenticated account without a canonical Founder
+membership may select one recurring two-hour daily window. The selection is
+stored separately from commerce and membership state, is authorized from the
+server clock, and may be changed only after a rolling seven-day cooldown. The
+client supplies an IANA time zone and local wall-clock start; spring-forward
+gaps advance to the first valid local minute and fall-back ambiguity uses the
+first occurrence. Selecting “listen now” derives that wall-clock value from the
+server instant rather than trusting the browser clock.
+
+The exact public endpoint is `/api/early-birds/free-window`: `GET` returns the
+current window state for an authenticated session and `POST` requires an exact
+trusted `Origin`, a UUID idempotency key and either `now` or a validated local
+start minute. Active leases are capped at the end of the current window and a
+schedule change evicts existing leases. The global Free for All switch remains
+an independent operator override and never creates or edits this schedule.
 
 ### Operator-controlled Free for All
 

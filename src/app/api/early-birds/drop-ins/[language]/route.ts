@@ -5,12 +5,12 @@ import { Readable } from 'node:stream';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
+import { getEarlyBirdListeningAccess } from '@/lib/early-birds/access';
 import {
     earlyBirdsEnabled,
     earlyBirdsFreeForAll,
     earlyBirdsUnavailableResponse,
 } from '@/lib/early-birds/enabled';
-import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -46,7 +46,7 @@ async function serve(
         });
     }
     const access = session
-        ? await getEarlyBirdAccess(session.user.id).catch(() => null)
+        ? await getEarlyBirdListeningAccess(session.user.id).catch(() => null)
         : null;
     if (!freeForAll && !access?.allowed) {
         return NextResponse.json({ error: 'Membership inactive.' }, {

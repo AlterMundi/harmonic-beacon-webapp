@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
     currentEarlyBirdSession: vi.fn(),
-    getEarlyBirdAccess: vi.fn(),
+    getEarlyBirdListeningAccess: vi.fn(),
     stat: vi.fn(),
     open: vi.fn(),
     createReadStream: vi.fn(),
@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('node:fs/promises', () => ({ stat: mocks.stat, open: mocks.open }));
 vi.mock('@/lib/early-birds/auth', () => ({ currentEarlyBirdSession: mocks.currentEarlyBirdSession }));
-vi.mock('@/lib/early-birds/membership', () => ({ getEarlyBirdAccess: mocks.getEarlyBirdAccess }));
+vi.mock('@/lib/early-birds/access', () => ({
+    getEarlyBirdListeningAccess: mocks.getEarlyBirdListeningAccess,
+}));
 
 import { GET, HEAD } from '../route';
 
@@ -22,7 +24,7 @@ beforeEach(() => {
     vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
     vi.stubEnv('EARLY_BIRDS_DROPIN_ES_PATH', '/media/drop-ins/amara.m4a');
     mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
-    mocks.getEarlyBirdAccess.mockResolvedValue({ allowed: true });
+    mocks.getEarlyBirdListeningAccess.mockResolvedValue({ allowed: true });
     mocks.stat.mockResolvedValue({ size: 10, isFile: () => true });
     mocks.createReadStream.mockImplementation(({ start, end }: { start: number; end: number }) => (
         Readable.from([Buffer.from('0123456789').subarray(start, end + 1)])
@@ -43,7 +45,7 @@ describe('private EarlyBird drop-in media', () => {
         expect(mocks.open).not.toHaveBeenCalled();
 
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
-        mocks.getEarlyBirdAccess.mockResolvedValue({ allowed: false });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({ allowed: false });
         expect((await GET(new NextRequest('https://listener.test/api/early-birds/drop-ins/es'), context('es'))).status).toBe(403);
         expect(mocks.stat).not.toHaveBeenCalled();
         expect(mocks.open).not.toHaveBeenCalled();
@@ -60,7 +62,7 @@ describe('private EarlyBird drop-in media', () => {
 
         expect(response.status).toBe(200);
         expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
-        expect(mocks.getEarlyBirdAccess).not.toHaveBeenCalled();
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
     });
 
     it('streams only the selected byte range from an immutable server-selected path', async () => {

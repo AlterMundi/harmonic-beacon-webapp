@@ -85,7 +85,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             });
         }
         if (error instanceof EarlyBirdAccessDeniedError) {
-            return NextResponse.json({ error: 'Membership inactive.' }, {
+            return NextResponse.json({ error: 'Listening access inactive.' }, {
                 status: 403,
                 headers: { 'Cache-Control': 'private, no-store' },
             });

@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import { membershipAccessDecision } from './membership';
+import { listeningAccessDecision } from './access';
 
 export const EARLY_BIRD_MAX_STREAM_DEVICES = 2;
 export const EARLY_BIRD_LEASE_TTL_MS = 3 * 60 * 1000;
@@ -115,6 +115,11 @@ export class EarlyBirdLeaseInactiveError extends Error {
         this.name = 'EarlyBirdLeaseInactiveError';
         this.reason = reason;
     }
+}
+
+function cappedLeaseExpiry(now: Date, allowedUntil: Date | null): Date {
+    const ttlExpiry = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
+    return allowedUntil && allowedUntil < ttlExpiry ? allowedUntil : ttlExpiry;
 }
 
 export type EarlyBirdOriginConfig = {
@@ -229,11 +234,12 @@ export async function authorizeEarlyBirdStreamLease(
     leaseId: string,
     now = new Date(),
 ) {
-    const [projection, lease] = await Promise.all([
+    const [projection, schedule, lease] = await Promise.all([
         prisma.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
+        prisma.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
         prisma.earlyBirdStreamLease.findFirst({ where: { id: leaseId, accountId } }),
     ]);
-    if (!membershipAccessDecision(projection, now).allowed) {
+    if (!listeningAccessDecision(projection, schedule, now).allowed) {
         throw new EarlyBirdAccessDeniedError();
     }
     if (!lease) throw new EarlyBirdLeaseInactiveError('missing');
@@ -250,7 +256,6 @@ export async function acquireEarlyBirdStreamLease(
     evictOldest = true,
 ): Promise<LeaseAcquisition> {
     const deviceDigest = earlyBirdDeviceDigest(deviceId);
-    const leaseExpiresAt = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
 
     const lease = await prisma.$transaction(async (tx) => {
         const accountRows = await tx.$queryRaw<Array<{ id: string }>>(
@@ -258,12 +263,16 @@ export async function acquireEarlyBirdStreamLease(
         );
         if (accountRows.length !== 1) throw new EarlyBirdAccessDeniedError();
 
-        const projection = await tx.earlyBirdMembershipProjection.findUnique({
-            where: { accountId },
-        });
-        if (!membershipAccessDecision(projection, now).allowed) {
+        const [projection, schedule] = await Promise.all([
+            tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
+            tx.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
+        ]);
+        const access = listeningAccessDecision(projection, schedule, now);
+        if (!access.allowed) {
             throw new EarlyBirdAccessDeniedError();
         }
+        const leaseExpiresAt = cappedLeaseExpiry(now, access.allowedUntil);
+        if (leaseExpiresAt <= now) throw new EarlyBirdAccessDeniedError();
 
         const previous = await tx.earlyBirdStreamLease.findUnique({
             where: { accountId_deviceDigest: { accountId, deviceDigest } },
@@ -300,7 +309,7 @@ export async function acquireEarlyBirdStreamLease(
             : await tx.earlyBirdStreamLease.create({
                 data: { accountId, deviceDigest, lastSeenAt: prioritySeenAt, expiresAt: leaseExpiresAt },
             });
-        return { current, evictedLeaseId: evicted[0]?.id ?? null };
+        return { current, evictedLeaseId: evicted[0]?.id ?? null, leaseExpiresAt };
     });
 
     try {
@@ -308,11 +317,11 @@ export async function acquireEarlyBirdStreamLease(
             accountId,
             leaseId: lease.current.id,
             issuedAt: now,
-            leaseExpiresAt,
+            leaseExpiresAt: lease.leaseExpiresAt,
         });
         return {
             leaseId: lease.current.id,
-            leaseExpiresAt,
+            leaseExpiresAt: lease.leaseExpiresAt,
             evictedLeaseId: lease.evictedLeaseId,
             stream,
         };
@@ -341,35 +350,39 @@ export async function heartbeatEarlyBirdStreamLease(
     issuer = earlyBirdStreamUrlIssuer(),
     refreshPriority = true,
 ): Promise<{ leaseExpiresAt: Date; stream: StreamUrlGrant }> {
-    const leaseExpiresAt = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
     const lease = await prisma.$transaction(async (tx) => {
-        const projection = await tx.earlyBirdMembershipProjection.findUnique({
-            where: { accountId },
-        });
-        if (!membershipAccessDecision(projection, now).allowed) {
+        const [projection, schedule] = await Promise.all([
+            tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
+            tx.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
+        ]);
+        const access = listeningAccessDecision(projection, schedule, now);
+        if (!access.allowed) {
             throw new EarlyBirdAccessDeniedError();
         }
+        const leaseExpiresAt = cappedLeaseExpiry(now, access.allowedUntil);
+        if (leaseExpiresAt <= now) throw new EarlyBirdAccessDeniedError();
         const current = await tx.earlyBirdStreamLease.findFirst({
             where: { id: leaseId, accountId },
         });
         if (!current) throw new EarlyBirdLeaseInactiveError('missing');
         if (current.evictedAt !== null) throw new EarlyBirdLeaseInactiveError('evicted');
         if (current.expiresAt <= now) throw new EarlyBirdLeaseInactiveError('expired');
-        return tx.earlyBirdStreamLease.update({
+        const updated = await tx.earlyBirdStreamLease.update({
             where: { id: current.id },
             data: refreshPriority
                 ? { lastSeenAt: now, expiresAt: leaseExpiresAt }
                 : { expiresAt: leaseExpiresAt },
         });
+        return { updated, leaseExpiresAt };
     });
 
     const stream = await issuer.issue({
         accountId,
-        leaseId: lease.id,
+        leaseId: lease.updated.id,
         issuedAt: now,
-        leaseExpiresAt,
+        leaseExpiresAt: lease.leaseExpiresAt,
     });
-    return { leaseExpiresAt, stream };
+    return { leaseExpiresAt: lease.leaseExpiresAt, stream };
 }
 
 /**

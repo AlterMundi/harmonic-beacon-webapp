@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const tx = vi.hoisted(() => ({
     $queryRaw: vi.fn(),
     earlyBirdMembershipProjection: { findUnique: vi.fn() },
+    earlyBirdFreeSchedule: { findUnique: vi.fn() },
     earlyBirdStreamLease: {
         findUnique: vi.fn(),
         findMany: vi.fn(),
@@ -22,6 +23,7 @@ const prisma = vi.hoisted(() => ({
         update: vi.fn(),
     },
     earlyBirdMembershipProjection: { findUnique: vi.fn() },
+    earlyBirdFreeSchedule: { findUnique: vi.fn() },
 }));
 vi.mock('@/lib/db', () => ({ prisma }));
 
@@ -48,6 +50,8 @@ describe('EarlyBird two-device leases', () => {
             state: 'ACTIVE',
             paidThrough: null,
         });
+        tx.earlyBirdFreeSchedule.findUnique.mockResolvedValue(null);
+        prisma.earlyBirdFreeSchedule.findUnique.mockResolvedValue(null);
         tx.earlyBirdStreamLease.findUnique.mockResolvedValue(null);
         tx.earlyBirdStreamLease.updateMany.mockResolvedValue({ count: 1 });
         prisma.earlyBirdStreamLease.updateMany.mockResolvedValue({ count: 1 });
@@ -131,6 +135,40 @@ describe('EarlyBird two-device leases', () => {
 
         expect(tx.earlyBirdStreamLease.create).toHaveBeenCalledWith({
             data: expect.objectContaining({ lastSeenAt: new Date(0) }),
+        });
+    });
+
+    it('caps a Free lease at the exact listening-window boundary', async () => {
+        tx.earlyBirdMembershipProjection.findUnique.mockResolvedValue(null);
+        tx.earlyBirdFreeSchedule.findUnique.mockResolvedValue({
+            timeZone: 'UTC',
+            localStartMinute: 11 * 60,
+            selectedAt: new Date('2026-08-01T00:00:00.000Z'),
+            changeAllowedAt: new Date('2026-08-08T00:00:00.000Z'),
+        });
+        tx.earlyBirdStreamLease.findMany.mockResolvedValue([]);
+        tx.earlyBirdStreamLease.create.mockImplementation(({ data }) => ({
+            id: '00000000-0000-4000-8000-000000000003',
+            ...data,
+        }));
+        const issuer: EarlyBirdStreamUrlIssuer = {
+            issue: vi.fn().mockImplementation(({ leaseExpiresAt }) => ({
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=3',
+                expiresAt: leaseExpiresAt,
+            })),
+        };
+
+        const nearBoundary = new Date('2026-08-06T12:59:00.000Z');
+        const result = await acquireEarlyBirdStreamLease(
+            'listener-1',
+            'device_abcdefghijklmnopqrstuvwxyz',
+            nearBoundary,
+            issuer,
+        );
+
+        expect(result.leaseExpiresAt).toEqual(new Date('2026-08-06T13:00:00.000Z'));
+        expect(tx.earlyBirdStreamLease.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ expiresAt: new Date('2026-08-06T13:00:00.000Z') }),
         });
     });
 

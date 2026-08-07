@@ -3,12 +3,13 @@
 import { useState } from 'react';
 
 import BrandLockup from '@/components/brand/BrandLockup';
-import LanguageControl from '@/components/brand/LanguageControl';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
+import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-window';
 
 import BeaconField from './BeaconField';
+import FreeWindowSetup from './FreeWindowSetup';
 import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
 
 type Props = {
@@ -18,6 +19,7 @@ type Props = {
     authError: boolean;
     providers: { google: boolean; apple: boolean };
     syntheticTeamEntryAvailable: boolean;
+    freeWindow: SerializedEarlyBirdFreeWindowState;
 };
 
 export default function EarlyBirdLanding(props: Props) {
@@ -51,7 +53,6 @@ export default function EarlyBirdLanding(props: Props) {
             <div className="listener-shell__frame">
                 <header className="listener-rail">
                     <BrandLockup href="/early-birds" />
-                    <LanguageControl />
                 </header>
 
                 <section className="listener-public-hero">
@@ -99,26 +100,22 @@ export default function EarlyBirdLanding(props: Props) {
                                         {copy.redeem}
                                     </a>
                                 ) : (
-                                    <p className="event-alert event-alert--info">{copy.accessNeeded}</p>
+                                    <FreeWindowSetup state={props.freeWindow} />
                                 )}
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {(['google', 'apple'] as const).map((provider) => (
+                                {(['google', 'apple'] as const).filter((provider) => props.providers[provider]).map((provider) => (
                                     <button
                                         key={provider}
                                         type="button"
                                         onClick={() => signIn(provider)}
-                                        disabled={busy !== null || !props.providers[provider]}
+                                        disabled={busy !== null}
                                         className="event-button event-button--secondary w-full"
-                                        title={!props.providers[provider] ? copy.providerSoon : undefined}
                                     >
                                         {busy === provider
                                             ? copy.signingIn
                                             : provider === 'google' ? copy.signInGoogle : copy.signInApple}
-                                        {!props.providers[provider] && (
-                                            <span className="ml-2 text-xs uppercase tracking-wider opacity-60">{copy.providerSoon}</span>
-                                        )}
                                     </button>
                                 ))}
                                 {props.syntheticTeamEntryAvailable && (

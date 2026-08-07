@@ -2,19 +2,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     currentEarlyBirdSession: vi.fn(),
-    getEarlyBirdAccess: vi.fn(),
-}));
-
-vi.mock('next/headers', () => ({
+    earlyBirdOAuthAvailability: vi.fn(),
+    getEarlyBirdListeningAccess: vi.fn(),
     cookies: vi.fn(),
     headers: vi.fn(),
 }));
+
+vi.mock('next/headers', () => ({
+    cookies: mocks.cookies,
+    headers: mocks.headers,
+}));
 vi.mock('@/lib/early-birds/auth', () => ({
     currentEarlyBirdSession: mocks.currentEarlyBirdSession,
-    earlyBirdOAuthAvailability: vi.fn(),
+    earlyBirdOAuthAvailability: mocks.earlyBirdOAuthAvailability,
 }));
-vi.mock('@/lib/early-birds/membership', () => ({
-    getEarlyBirdAccess: mocks.getEarlyBirdAccess,
+vi.mock('@/lib/early-birds/access', () => ({
+    getEarlyBirdListeningAccess: mocks.getEarlyBirdListeningAccess,
 }));
 
 import EarlyBirdHome from '@/components/early-birds/EarlyBirdHome';
@@ -24,6 +27,20 @@ afterEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
 });
+
+const inactiveFreeWindow = {
+    configured: true,
+    active: false,
+    timeZone: 'UTC',
+    localStartMinute: 600,
+    selectedAt: new Date('2026-08-01T00:00:00.000Z'),
+    changeAllowedAt: new Date('2026-08-08T00:00:00.000Z'),
+    canChange: false,
+    activeStart: null,
+    activeEnd: null,
+    nextStart: new Date('2026-08-08T10:00:00.000Z'),
+    nextEnd: new Date('2026-08-08T12:00:00.000Z'),
+};
 
 describe('EarlyBird Listener page', () => {
     it('renders the Listener directly without auth or membership in Free for All mode', async () => {
@@ -41,6 +58,57 @@ describe('EarlyBird Listener page', () => {
             dropIns: { es: null, en: '/api/early-birds/drop-ins/en' },
         });
         expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
-        expect(mocks.getEarlyBirdAccess).not.toHaveBeenCalled();
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('renders an authenticated Listener during an active Free window', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: true,
+            kind: 'free-window',
+            membership: { allowed: false, projection: null },
+            freeWindow: { ...inactiveFreeWindow, active: true },
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.type).toBe(EarlyBirdHome);
+        expect(result.props).toMatchObject({
+            displayName: 'Nico',
+            membershipSource: null,
+            accessKind: 'free-window',
+        });
+    });
+
+    it('shows the saved schedule rather than fabricating membership outside the window', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: false,
+            kind: 'denied',
+            membership: { allowed: false, projection: null },
+            freeWindow: inactiveFreeWindow,
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props).toMatchObject({
+            signedIn: true,
+            entitled: false,
+            providers: { google: true, apple: false },
+            freeWindow: {
+                configured: true,
+                active: false,
+                nextStart: '2026-08-08T10:00:00.000Z',
+            },
+        });
     });
 });

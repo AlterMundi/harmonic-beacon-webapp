@@ -428,6 +428,7 @@ model EarlyBirdUser {
   identities   EarlyBirdIdentity[]
   authSessions EarlyBirdAuthSession[]
   membership   EarlyBirdMembershipProjection?
+  freeSchedule EarlyBirdFreeSchedule?
   streamLeases EarlyBirdStreamLease[]
 
   @@map("early_bird_users")
@@ -509,6 +510,25 @@ model EarlyBirdMembershipProjection {
 
   @@index([state, paidThrough])
   @@map("early_bird_membership_projections")
+}
+
+// Account-bound ordinary Free access. This is deliberately independent from
+// the canonical commerce membership projection: choosing a listening window
+// can never fabricate a purchase or a Founding Listener entitlement.
+model EarlyBirdFreeSchedule {
+  accountId          String        @id @map("account_id")
+  account            EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  timeZone           String        @map("time_zone") @db.VarChar(64)
+  localStartMinute   Int           @map("local_start_minute")
+  selectedAt         DateTime      @map("selected_at")
+  changeAllowedAt    DateTime      @map("change_allowed_at")
+  selectionRequestId String        @unique @map("selection_request_id") @db.VarChar(64)
+  revision           Int           @default(1)
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  @@index([changeAllowedAt])
+  @@map("early_bird_free_schedules")
 }
 
 model EarlyBirdStreamLease {

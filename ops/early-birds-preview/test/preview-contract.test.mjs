@@ -181,7 +181,8 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(listener, /location \^~ \/api\/early-birds\/stream\//);
   assert.match(listener, /location \^~ \/api\/early-birds\/drop-ins\//);
   assert.match(listener, /location \^~ \/api\/early-birds\/auth\//);
-  assert.doesNotMatch(listener, /api\/early-birds\/(test-login|free|membership)/);
+  assert.match(listener, /location = \/api\/early-birds\/free-window/);
+  assert.doesNotMatch(listener, /api\/early-birds\/(test-login|free\/|membership)/);
   assert.doesNotMatch(listener, /location \^~ \/early-birds\//);
 
   const invitationEntryLocations = [...app.matchAll(

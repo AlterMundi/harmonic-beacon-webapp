@@ -417,8 +417,9 @@ because its adapter exists. Google Play and Apple App Store distribution and
 billing are deferred beyond this MVP; a future store adapter must project into
 this same authority instead of creating app-specific membership truth.
 
-The product is for all audiences. An adult owns the account and payment; the
-service does not request or persist a minor profile or minor-specific data.
+The product is for all audiences. The service requests only the account and
+payment information required for the selected access path and does not create
+age-specific profiles.
 
 ## 11. Fast Forward development lane
 
@@ -618,6 +619,7 @@ event sound and reliability are at least as good as the current path.
 | D11 | Capacity targets 3k committed, 4k expansion and 5k critical at a 450 kbit/s planning budget with 40% headroom. |
 | D12 | All-audiences experience: an adult owns account/payment; no minor profile or minor data. |
 | D13 | Release sequence is Free acceptance first, then separately approved PayPal/MercadoPago activation; Google Play/App Store wrappers and billing are post-MVP. |
+| D14 | Ordinary Free requires Listener registration and grants one recurring two-hour daily wall-clock window, locked for rolling seven days; the server resolves IANA/DST boundaries and caps leases. Founder membership grants anytime access, while the operator Free for All override remains independent. |
 
 ## 16. Card map
 

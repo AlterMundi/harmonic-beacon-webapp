@@ -25,6 +25,19 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 authError={false}
                 providers={{ google: true, apple: true }}
                 syntheticTeamEntryAvailable={false}
+                freeWindow={{
+                    configured: false,
+                    active: false,
+                    timeZone: null,
+                    localStartMinute: null,
+                    selectedAt: null,
+                    changeAllowedAt: null,
+                    canChange: true,
+                    activeStart: null,
+                    activeEnd: null,
+                    nextStart: null,
+                    nextEnd: null,
+                }}
                 {...overrides}
             />
         </LocaleProvider>,
@@ -64,10 +77,10 @@ describe('EarlyBird public landing', () => {
             .not.toMatch(/adult|child|minor|menor|adulta/i);
     });
 
-    it('makes an unconfigured provider visibly unavailable', () => {
+    it('hides an unconfigured provider from the public identity surface', () => {
         renderLanding({ providers: { google: true, apple: false } });
-        expect(screen.getByRole('button', { name: /Continue with Apple/ })).toBeDisabled();
-        expect(screen.getByText('Configuration pending')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Continue with Apple/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
     });
 
     it('reports a rejected social sign-in and re-enables the providers', async () => {

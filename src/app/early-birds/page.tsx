@@ -8,7 +8,7 @@ import {
     currentEarlyBirdSession,
     earlyBirdOAuthAvailability,
 } from '@/lib/early-birds/auth';
-import { getEarlyBirdAccess } from '@/lib/early-birds/membership';
+import { getEarlyBirdListeningAccess } from '@/lib/early-birds/access';
 import { earlyBirdsEnabled, earlyBirdsFreeForAll } from '@/lib/early-birds/enabled';
 import {
     canonicalEarlyBirdInvitation,
@@ -16,6 +16,7 @@ import {
 } from '@/lib/early-birds/invitation-cookie';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
+import { freeWindowState, serializeFreeWindowState } from '@/lib/early-birds/free-window';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,17 +51,18 @@ export default async function EarlyBirdsPage({
     const cookieStore = await cookies();
     const session = await currentEarlyBirdSession().catch(() => null);
     const access = session
-        ? await getEarlyBirdAccess(session.user.id).catch(() => null)
+        ? await getEarlyBirdListeningAccess(session.user.id).catch(() => null)
         : null;
     const invitationAvailable = canonicalEarlyBirdInvitation(
         cookieStore.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
     ) !== null;
 
-    if (session && access?.allowed === true && access.projection) {
+    if (session && access?.allowed === true) {
         return (
             <EarlyBirdHome
                 displayName={session.user.name}
-                membershipSource={access.projection.source}
+                membershipSource={access.membership.projection?.source ?? null}
+                accessKind={access.kind === 'free-window' ? 'free-window' : 'membership'}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
                     en: configuredEarlyBirdDropIn('en'),
@@ -72,11 +74,12 @@ export default async function EarlyBirdsPage({
     return (
         <EarlyBirdLanding
             signedIn={Boolean(session)}
-            entitled={access?.allowed === true}
+            entitled={access?.membership.allowed === true}
             invitationAvailable={invitationAvailable}
             authError={params.authError === '1'}
             providers={earlyBirdOAuthAvailability()}
             syntheticTeamEntryAvailable={syntheticTeamEntryAllowed({ headers: incomingHeaders })}
+            freeWindow={serializeFreeWindowState(access?.freeWindow ?? freeWindowState(null))}
         />
     );
 }

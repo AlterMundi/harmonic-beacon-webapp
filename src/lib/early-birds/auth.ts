@@ -21,17 +21,32 @@ export function earlyBirdTestAuthEnabled(environment: NodeJS.ProcessEnv = proces
     );
 }
 
-export function earlyBirdOAuthAvailability() {
+export function earlyBirdOAuthAvailability(environment: NodeJS.ProcessEnv = process.env) {
     return {
         google: Boolean(
-            nonEmpty(process.env.EARLY_BIRDS_GOOGLE_CLIENT_ID) &&
-            nonEmpty(process.env.EARLY_BIRDS_GOOGLE_CLIENT_SECRET),
+            nonEmpty(environment.EARLY_BIRDS_GOOGLE_CLIENT_ID) &&
+            nonEmpty(environment.EARLY_BIRDS_GOOGLE_CLIENT_SECRET),
         ),
         apple: Boolean(
-            nonEmpty(process.env.EARLY_BIRDS_APPLE_CLIENT_ID) &&
-            nonEmpty(process.env.EARLY_BIRDS_APPLE_CLIENT_SECRET),
+            nonEmpty(environment.EARLY_BIRDS_APPLE_CLIENT_ID) &&
+            nonEmpty(environment.EARLY_BIRDS_APPLE_CLIENT_SECRET),
         ),
     } as const;
+}
+
+export function earlyBirdSocialProviders(environment: NodeJS.ProcessEnv = process.env) {
+    const googleId = nonEmpty(environment.EARLY_BIRDS_GOOGLE_CLIENT_ID);
+    const googleSecret = nonEmpty(environment.EARLY_BIRDS_GOOGLE_CLIENT_SECRET);
+    const appleId = nonEmpty(environment.EARLY_BIRDS_APPLE_CLIENT_ID);
+    const appleSecret = nonEmpty(environment.EARLY_BIRDS_APPLE_CLIENT_SECRET);
+    return {
+        ...(googleId && googleSecret ? {
+            google: { clientId: googleId, clientSecret: googleSecret, accessType: 'online' as const },
+        } : {}),
+        ...(appleId && appleSecret ? {
+            apple: { clientId: appleId, clientSecret: appleSecret },
+        } : {}),
+    };
 }
 
 function authSecret(): string {
@@ -78,17 +93,7 @@ function buildEarlyBirdAuth() {
         secret: authSecret(),
         trustedOrigins: trustedOrigins(),
         database: prismaAdapter(prisma, { provider: 'postgresql' }),
-        socialProviders: {
-            google: {
-                clientId: nonEmpty(process.env.EARLY_BIRDS_GOOGLE_CLIENT_ID) ?? 'not-configured',
-                clientSecret: nonEmpty(process.env.EARLY_BIRDS_GOOGLE_CLIENT_SECRET) ?? 'not-configured',
-                accessType: 'online',
-            },
-            apple: {
-                clientId: nonEmpty(process.env.EARLY_BIRDS_APPLE_CLIENT_ID) ?? 'not-configured',
-                clientSecret: nonEmpty(process.env.EARLY_BIRDS_APPLE_CLIENT_SECRET) ?? 'not-configured',
-            },
-        },
+        socialProviders: earlyBirdSocialProviders(),
         // Email/password is a supervised synthetic-login seam only. The public
         // product exposes exactly Google and Apple, and the seam is absent
         // unless both an explicit gate and a separate secret are present.

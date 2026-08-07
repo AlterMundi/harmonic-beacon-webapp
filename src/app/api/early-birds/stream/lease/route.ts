@@ -55,7 +55,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
     } catch (error) {
         if (error instanceof EarlyBirdAccessDeniedError) {
-            return NextResponse.json({ error: 'Membership inactive.' }, { status: 403 });
+            return NextResponse.json({ error: 'Listening access inactive.' }, { status: 403 });
         }
         if (error instanceof EarlyBirdStreamIssuerUnavailableError) {
             return NextResponse.json({ error: 'Stream temporarily unavailable.' }, { status: 503 });

@@ -21,7 +21,7 @@ Required OAuth callbacks are:
 The staging callbacks with the same suffixes may be registered for isolated QA,
 but the shared preview runtime uses `listen.harmonicbeacon.com` as its canonical
 OAuth base URL. Provider credentials may remain unset during local testing; the
-corresponding button is visibly disabled. Public nginx exposes this dedicated
+corresponding provider is absent from the public UI and auth runtime. Public nginx exposes this dedicated
 auth namespace while continuing to block synthetic login, invitations and
 internal membership routes.
 
@@ -41,6 +41,39 @@ Byte-exact copies live in `contracts/early-bird-authority/v1` and
   `STALE`, and equal revisions with different payloads conflict.
 - `ACTIVE`, time-valid `GRACE`, and time-valid `CANCELLED_PENDING_END` allow access. Every missing,
   expired, revoked, refunded or unavailable state fails closed.
+
+## Ordinary Free listening window
+
+Registration does not fabricate a commerce membership. A signed-in account
+without current canonical membership may instead select one recurring local
+wall-clock start and listen for two real hours each day. The first selection is
+either **Listen free now**, derived from server time in the validated browser
+IANA zone, or an explicit local time. The selection is account-bound and may be
+changed again at or after `selected_at + 7 days`.
+
+`early_bird_free_schedules` is a separate access layer from
+`early_bird_membership_projections`. It stores only account ID, canonical IANA
+zone, local start minute, selection/cooldown instants, idempotency request ID and
+revision. It never writes provider, offer, price, Purchase or membership state.
+
+Authorization resolves in this order:
+
+1. a time-valid canonical membership grants its canonical boundary or anytime
+   access;
+2. otherwise the current recurring Free window grants access until its exact
+   end;
+3. otherwise access fails closed.
+
+The server resolves wall-clock dates with `Intl` timezone data. A fall-back
+ambiguity uses the first occurrence; a spring-forward nonexistent minute moves
+to the first real local minute after it. Window duration is always 120 real
+minutes. Stream leases, signed manifests and segment signatures are capped at
+the resulting boundary. Changing an unlocked schedule evicts existing leases
+so every device must reauthorize. Browser time is presentation/input only and
+never authorizes a request.
+
+The operator `EARLY_BIRDS_FREE_FOR_ALL=1` override remains route-level,
+anonymous and independent. It creates neither a Free schedule nor membership.
 
 The optional synthetic-login API creates a clearly marked, source-null local projection only when
 both `EARLY_BIRDS_TEST_ACCESS_ENABLED=1` and a separate 32+ character secret are configured. Every
