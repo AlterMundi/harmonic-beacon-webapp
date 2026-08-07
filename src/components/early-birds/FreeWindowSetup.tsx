@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { useLocale } from '@/context/LocaleContext';
 import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-window';
@@ -21,12 +22,13 @@ function localStartMinute(value: string): number | null {
 }
 
 export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdFreeWindowState }) {
+    const router = useRouter();
     const { locale } = useLocale();
     const copy = earlyBirdCopy[locale];
     const [timeZone, setTimeZone] = useState<string | null>(null);
     const [time, setTime] = useState(currentLocalTime);
     const [choosing, setChoosing] = useState(false);
-    const [busy, setBusy] = useState(false);
+    const [busy, setBusy] = useState<'now' | 'custom' | null>(null);
     const [error, setError] = useState(false);
     const selectionRequestId = useRef<string | null>(null);
 
@@ -43,12 +45,22 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
         }).format(new Date(value));
     };
 
+    const formatLocalStart = (minute: number | null) => {
+        if (minute === null) return null;
+        const instant = new Date(Date.UTC(2026, 0, 1, Math.floor(minute / 60), minute % 60));
+        return new Intl.DateTimeFormat(locale === 'es' ? 'es' : 'en', {
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZone: 'UTC',
+        }).format(instant);
+    };
+
     async function select(mode: 'now' | 'custom') {
-        if (!timeZone || busy) return;
+        if (!timeZone || busy !== null) return;
         const minute = localStartMinute(time);
         if (mode === 'custom' && minute === null) return;
         selectionRequestId.current ??= crypto.randomUUID();
-        setBusy(true);
+        setBusy(mode);
         setError(false);
         try {
             const response = await fetch('/api/early-birds/free-window', {
@@ -63,23 +75,32 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
             });
             if (response.ok) {
                 selectionRequestId.current = null;
-                window.location.reload();
+                setBusy(null);
+                setChoosing(false);
+                router.refresh();
                 return;
             }
         } catch {}
-        setBusy(false);
+        setBusy(null);
         setError(true);
     }
 
     const nextWindow = formatInstant(state.nextStart);
     const changeAllowed = formatInstant(state.changeAllowedAt);
+    const savedStart = formatLocalStart(state.localStartMinute);
     const mayChoose = !state.configured || state.canChange;
 
     return (
-        <div className="listener-free-window">
+        <div className="listener-free-window" aria-busy={busy !== null}>
             <h3>{copy.freeTitle}</h3>
             <p>{copy.freeDescription}</p>
 
+            {state.configured && savedStart && state.timeZone && (
+                <p className="listener-free-window__fact">
+                    <span>{copy.savedFreeTime}</span>
+                    <strong>{savedStart} · {state.timeZone}</strong>
+                </p>
+            )}
             {state.configured && nextWindow && (
                 <p className="listener-free-window__fact">
                     <span>{copy.nextFreeWindow}</span>
@@ -98,15 +119,15 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
                     <button
                         type="button"
                         className="event-button event-button--primary w-full"
-                        disabled={!timeZone || busy}
+                        disabled={!timeZone || busy !== null}
                         onClick={() => select('now')}
                     >
-                        {copy.listenFreeNow}
+                        {busy === 'now' ? copy.startingFreeTime : copy.listenFreeNow}
                     </button>
                     <button
                         type="button"
                         className="event-button event-button--secondary w-full"
-                        disabled={!timeZone || busy}
+                        disabled={!timeZone || busy !== null}
                         onClick={() => setChoosing(true)}
                     >
                         {copy.chooseFreeTime}
@@ -124,10 +145,18 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
                     <button
                         type="button"
                         className="event-button event-button--primary w-full"
-                        disabled={!timeZone || busy || localStartMinute(time) === null}
+                        disabled={!timeZone || busy !== null || localStartMinute(time) === null}
                         onClick={() => select('custom')}
                     >
-                        {copy.saveFreeTime}
+                        {busy === 'custom' ? copy.savingFreeTime : copy.saveFreeTime}
+                    </button>
+                    <button
+                        type="button"
+                        className="event-button event-button--secondary w-full"
+                        disabled={busy !== null}
+                        onClick={() => setChoosing(false)}
+                    >
+                        {copy.cancelFreeTime}
                     </button>
                 </div>
             )}

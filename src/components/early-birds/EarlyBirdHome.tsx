@@ -4,7 +4,8 @@ import BrandLockup from '@/components/brand/BrandLockup';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import type { ListenerCampfireFixture } from '@/lib/early-birds/campfire-prototype';
-import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
+import { earlyBirdCopy, earlyBirdHomeCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
+import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 
 import ListenerPlayer from './ListenerPlayer';
 import AccessBoundarySync from './AccessBoundarySync';
@@ -12,7 +13,7 @@ import CosmicCampfire from './CosmicCampfire';
 
 export default function EarlyBirdHome({
     displayName,
-    membershipSource,
+    membership,
     accessKind = 'membership',
     accessUntil = null,
     serverNow = new Date(0).toISOString(),
@@ -22,7 +23,7 @@ export default function EarlyBirdHome({
     campfireFixture = 'empty',
 }: {
     displayName: string;
-    membershipSource: string | null;
+    membership: ListenerMembershipPresentation;
     accessKind?: 'membership' | 'free-window' | 'welcome';
     accessUntil?: string | null;
     serverNow?: string;
@@ -33,6 +34,7 @@ export default function EarlyBirdHome({
 }) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
+    const membershipCopy = listenerMembershipPresentationCopy(earlyBirdCopy[locale], membership);
 
     async function signOut() {
         await earlyBirdAuthClient.signOut();
@@ -61,8 +63,12 @@ export default function EarlyBirdHome({
                                 <p>{displayName}</p>
                                 <span>{accessKind === 'free-window'
                                     ? copy.freeActive
-                                    : accessKind === 'welcome' ? copy.welcomeActive : copy.active}</span>
-                                {membershipSource && <small>{membershipSource}</small>}
+                                    : accessKind === 'welcome'
+                                        ? copy.welcomeActive
+                                        : membershipCopy?.title ?? copy.active}</span>
+                                {accessKind === 'membership' && membership.kind === 'founder' && membershipCopy?.detail && (
+                                    <small>{membershipCopy.detail}</small>
+                                )}
                                 <button type="button" onClick={signOut}>{copy.signOut}</button>
                             </div>
                         </details>}

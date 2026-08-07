@@ -9,10 +9,11 @@ import { earlyBirdCopy } from '@/lib/early-birds/copy';
 const signInSocial = vi.hoisted(() => vi.fn());
 const signInMagicLink = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
+const refresh = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 vi.mock('@/lib/early-birds/auth-client', () => ({
     earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
 }));
-vi.mock('@/components/brand/LanguageControl', () => ({ default: () => <div data-testid="language" /> }));
 vi.mock('@/components/brand/BrandLockup', () => ({ default: () => <a href="/early-birds">Harmonic Beacon</a> }));
 
 import EarlyBirdLanding from '../EarlyBirdLanding';
@@ -48,6 +49,7 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                     startedAt: null,
                     endsAt: null,
                 }}
+                membership={{ kind: 'none', state: 'none' }}
                 serverNow="2026-08-07T15:00:00.000Z"
                 {...overrides}
             />
@@ -63,6 +65,7 @@ describe('EarlyBird public landing', () => {
         signInMagicLink.mockResolvedValue({ data: { status: true }, error: null });
         signOut.mockReset();
         signOut.mockResolvedValue({ error: null });
+        refresh.mockReset();
         window.localStorage.clear();
     });
     afterEach(() => cleanup());
@@ -83,13 +86,17 @@ describe('EarlyBird public landing', () => {
 
     it('uses audience-neutral account and privacy language in both locales', () => {
         expect(earlyBirdCopy.es.privacy).toBe(
-            'Tu cuenta y membresía administran el acceso privado. No creamos historiales personales de escucha.',
+            'Tu cuenta y membresía administran el acceso. Durante la escucha sólo compartimos una presencia regional amplia y efímera; nunca tu ubicación exacta ni un historial personal de escucha.',
         );
         expect(earlyBirdCopy.en.privacy).toBe(
-            'Your account and membership manage private access. We do not create personal listening histories.',
+            'Your account and membership manage access. While you listen, we share only broad, ephemeral regional presence—never your exact location or a personal listening history.',
         );
         expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
             .not.toMatch(/adult|child|minor|menor|adulta/i);
+        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
+            .toMatch(/regional.*efímera|ephemeral regional/i);
+        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
+            .toMatch(/ubicación exacta|exact location/i);
     });
 
     it('hides an unconfigured provider from the public identity surface', () => {
@@ -165,12 +172,41 @@ describe('EarlyBird public landing', () => {
             },
         });
 
-        await userEvent.click(screen.getByRole('button', { name: 'Listen for 30 minutes now' }));
+        expect(screen.getByRole('heading', { name: 'Your first listen · 30 minutes' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Your daily time · 2 hours' })).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Listen now' }));
 
         expect(fetchMock).toHaveBeenCalledWith('/api/early-birds/welcome-access', expect.objectContaining({
             method: 'POST',
         }));
         expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('activationRequestId');
         fetchMock.mockRestore();
+    });
+
+    it('explains terminal Founder access and returns the account to truthful Free choices', () => {
+        renderLanding({
+            signedIn: true,
+            membership: { kind: 'founder', provider: 'mercado-pago', state: 'refunded' },
+        });
+
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'The payment was refunded and Founder access has ended.',
+        );
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'You can continue with the Free listening available to your account.',
+        );
+        expect(screen.getByRole('heading', { name: 'Your daily time · 2 hours' })).toBeInTheDocument();
+        expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
+    });
+
+    it('uses neutral Listener positioning in both languages', () => {
+        expect(earlyBirdCopy.es.eyebrow).toBe('HARMONIC BEACON · LISTENER');
+        expect(earlyBirdCopy.en.eyebrow).toBe('HARMONIC BEACON · LISTENER');
+        expect(`${earlyBirdCopy.es.live} ${earlyBirdCopy.en.live}`)
+            .not.toMatch(/disponible siempre|available whenever/i);
+        expect(`${earlyBirdCopy.es.membership} ${earlyBirdCopy.en.membership}`)
+            .not.toMatch(/Founding Listener/i);
+        expect(Object.values(earlyBirdCopy.es).join(' '))
+            .not.toMatch(/\b(elegí|tocá|habilitá|querés)\b/i);
     });
 });

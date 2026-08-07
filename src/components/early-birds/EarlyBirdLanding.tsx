@@ -5,9 +5,10 @@ import { useState } from 'react';
 import BrandLockup from '@/components/brand/BrandLockup';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
-import { earlyBirdCopy } from '@/lib/early-birds/copy';
+import { earlyBirdCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
 import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-window';
 import type { SerializedEarlyBirdWelcomeAccessState } from '@/lib/early-birds/welcome-access';
+import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 
 import AccessBoundarySync from './AccessBoundarySync';
 import BeaconField from './BeaconField';
@@ -25,6 +26,7 @@ type Props = {
     syntheticTeamEntryAvailable: boolean;
     freeWindow: SerializedEarlyBirdFreeWindowState;
     welcome: SerializedEarlyBirdWelcomeAccessState;
+    membership: ListenerMembershipPresentation;
     serverNow: string;
 };
 
@@ -35,6 +37,7 @@ export default function EarlyBirdLanding(props: Props) {
     const [error, setError] = useState(false);
     const [email, setEmail] = useState('');
     const [emailRequested, setEmailRequested] = useState(false);
+    const membership = listenerMembershipPresentationCopy(copy, props.membership);
     const callbackURL = props.invitationAvailable
         ? '/early-birds/redeem'
         : '/early-birds';
@@ -145,6 +148,12 @@ export default function EarlyBirdLanding(props: Props) {
                                     </a>
                                 ) : (
                                     <>
+                                        {membership && props.membership.state !== 'active' && (
+                                            <div className="listener-membership-status" role="status">
+                                                <strong>{membership.title}</strong>
+                                                {membership.detail && <p>{membership.detail}</p>}
+                                            </div>
+                                        )}
                                         {props.welcome.available && <WelcomeAccessAction />}
                                         <FreeWindowSetup state={props.freeWindow} />
                                     </>

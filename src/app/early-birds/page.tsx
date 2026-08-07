@@ -20,6 +20,7 @@ import { freeWindowState, serializeFreeWindowState } from '@/lib/early-birds/fre
 import { serializeWelcomeAccessState, welcomeAccessState } from '@/lib/early-birds/welcome-access';
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
 import { listenerCampfirePrototypeConfig } from '@/lib/early-birds/campfire-prototype';
+import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,7 @@ export default async function EarlyBirdsPage({
                 campfirePrototype={campfire.enabled}
                 campfireFixture={campfire.fixture}
                 displayName=""
-                membershipSource={null}
+                membership={listenerMembershipPresentation(null)}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
                     en: configuredEarlyBirdDropIn('en'),
@@ -70,7 +71,7 @@ export default async function EarlyBirdsPage({
                 displayName={session.user.name}
                 campfirePrototype={campfire.enabled}
                 campfireFixture={campfire.fixture}
-                membershipSource={access.membership.projection?.source ?? null}
+                membership={listenerMembershipPresentation(access.membership.projection)}
                 accessKind={access.kind === 'free-window'
                     ? 'free-window'
                     : access.kind === 'welcome' ? 'welcome' : 'membership'}
@@ -95,6 +96,7 @@ export default async function EarlyBirdsPage({
             syntheticTeamEntryAvailable={syntheticTeamEntryAllowed({ headers: incomingHeaders })}
             freeWindow={serializeFreeWindowState(access?.freeWindow ?? freeWindowState(null))}
             welcome={serializeWelcomeAccessState(access?.welcome ?? welcomeAccessState(null))}
+            membership={listenerMembershipPresentation(access?.membership.projection ?? null)}
             serverNow={serverNow}
         />
     );

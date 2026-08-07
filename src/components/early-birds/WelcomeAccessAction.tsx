@@ -33,7 +33,9 @@ export default function WelcomeAccessAction() {
     }
 
     return (
-        <div className="listener-welcome-access">
+        <div className="listener-welcome-access" aria-busy={busy}>
+            <h3>{copy.welcomeTitle}</h3>
+            <p>{copy.welcomeDescription}</p>
             <button
                 type="button"
                 className="event-button event-button--primary w-full"
@@ -42,7 +44,6 @@ export default function WelcomeAccessAction() {
             >
                 {busy ? copy.welcomeStarting : copy.welcomeListen}
             </button>
-            <p>{copy.welcomeDescription}</p>
             {error && <p role="alert" className="event-alert event-alert--error">{copy.welcomeError}</p>}
         </div>
     );

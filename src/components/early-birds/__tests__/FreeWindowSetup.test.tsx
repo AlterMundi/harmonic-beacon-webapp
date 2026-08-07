@@ -8,6 +8,9 @@ import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-
 
 import FreeWindowSetup from '../FreeWindowSetup';
 
+const refresh = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
+
 const emptyState: SerializedEarlyBirdFreeWindowState = {
     configured: false,
     active: false,
@@ -32,6 +35,7 @@ function renderSetup(state = emptyState) {
 
 describe('Free listening schedule UI', () => {
     beforeEach(() => {
+        refresh.mockReset();
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 400 })));
     });
     afterEach(() => {
@@ -42,7 +46,7 @@ describe('Free listening schedule UI', () => {
 
     it('offers immediate or chosen daily Free hours after registration', async () => {
         renderSetup();
-        expect(screen.getByRole('heading', { name: 'Two hours of Beacon every day' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Your daily time · 2 hours' })).toBeInTheDocument();
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen free now' })).toBeEnabled());
         expect(screen.getByRole('button', { name: 'Choose another time' })).toBeEnabled();
     });
@@ -51,6 +55,7 @@ describe('Free listening schedule UI', () => {
         renderSetup();
         await waitFor(() => expect(screen.getByRole('button', { name: 'Choose another time' })).toBeEnabled());
         await userEvent.click(screen.getByRole('button', { name: 'Choose another time' }));
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
         await userEvent.clear(screen.getByLabelText('Start time'));
         await userEvent.type(screen.getByLabelText('Start time'), '09:45');
         await userEvent.click(screen.getByRole('button', { name: 'Save my listening time' }));
@@ -63,6 +68,28 @@ describe('Free listening schedule UI', () => {
         });
         expect(JSON.parse(init.body as string).timeZone).toBeTruthy();
         expect(JSON.parse(init.body as string).selectionRequestId).toMatch(/^[0-9a-f-]{36}$/i);
+    });
+
+    it('can leave the custom chooser without changing the saved schedule', async () => {
+        renderSetup();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Choose another time' })).toBeEnabled());
+        await userEvent.click(screen.getByRole('button', { name: 'Choose another time' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+
+        expect(screen.getByRole('button', { name: 'Listen free now' })).toBeEnabled();
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('refreshes authoritative state without leaving the chooser busy after save', async () => {
+        vi.mocked(fetch).mockResolvedValueOnce(new Response('{}', { status: 200 }));
+        renderSetup();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Choose another time' })).toBeEnabled());
+        await userEvent.click(screen.getByRole('button', { name: 'Choose another time' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Save my listening time' }));
+
+        expect(refresh).toHaveBeenCalledOnce();
+        expect(screen.getByRole('button', { name: 'Listen free now' })).toBeEnabled();
+        expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
     });
 
     it('shows the next window and cooldown without offering a forbidden change', () => {
@@ -79,6 +106,8 @@ describe('Free listening schedule UI', () => {
         });
 
         expect(screen.getByText('Your next listening window begins')).toBeInTheDocument();
+        expect(screen.getByText('Your daily time')).toBeInTheDocument();
+        expect(screen.getByText(/10:00.*UTC/)).toBeInTheDocument();
         expect(screen.getByText('You can change this schedule')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Listen free now' })).not.toBeInTheDocument();
     });

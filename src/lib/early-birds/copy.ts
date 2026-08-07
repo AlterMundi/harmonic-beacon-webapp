@@ -1,13 +1,14 @@
 import type { UiLocale } from '@/lib/i18n';
+import type { ListenerMembershipPresentation } from './membership-presentation';
 
 export const earlyBirdCopy = {
     es: {
-        eyebrow: 'HARMONIC BEACON · FOUNDING LISTENER',
+        eyebrow: 'HARMONIC BEACON · LISTENER',
         title: 'Recuerda tu centro armónico.',
         intro: 'Un campo armónico continuo, compartido alrededor del mundo.',
-        live: 'Escucha privada, disponible siempre',
+        live: 'Escucha durante el acceso disponible para tu cuenta',
         privateDropIns: 'Una introducción opcional antes de entrar al Beacon',
-        membership: 'Acceso Founding Listener',
+        membership: 'Primera escucha y horario Free diario',
         signInGoogle: 'Continuar con Google',
         signInApple: 'Continuar con Apple',
         signingIn: 'Abriendo acceso…',
@@ -23,30 +24,47 @@ export const earlyBirdCopy = {
         enter: 'Entrar al Beacon',
         redeem: 'Activar mi invitación',
         accessNeeded: 'Tu cuenta todavía no tiene una membresía activa.',
-        freeTitle: 'Dos horas de Beacon cada día',
-        freeDescription: 'Elegí una hora local. Será la misma todos los días y podrás cambiarla después de siete días.',
+        freeTitle: 'Tu horario diario · 2 horas',
+        freeDescription: 'Elige una hora local. Será la misma todos los días y podrás cambiarla después de siete días.',
         listenFreeNow: 'Escuchar gratis ahora',
         chooseFreeTime: 'Elegir otro horario',
         freeStartTime: 'Hora de inicio',
         saveFreeTime: 'Guardar mi horario',
+        savingFreeTime: 'Guardando horario…',
+        startingFreeTime: 'Abriendo horario Free…',
+        cancelFreeTime: 'Volver',
         freeTimeZone: 'Zona horaria',
+        savedFreeTime: 'Tu horario diario',
         nextFreeWindow: 'Tu próxima escucha comienza',
         freeScheduleLocked: 'Podrás cambiar este horario',
         freeScheduleError: 'No pudimos guardar el horario. Inténtalo nuevamente.',
-        welcomeListen: 'Escuchar 30 minutos ahora',
+        welcomeTitle: 'Tu primera escucha · 30 minutos',
+        welcomeListen: 'Escuchar ahora',
         welcomeStarting: 'Abriendo el Beacon…',
         welcomeDescription: 'Tu primera escucha no fija todavía el horario diario.',
         welcomeError: 'No pudimos abrir esta primera escucha. Inténtalo nuevamente.',
         authError: 'No pudimos completar el acceso. Usa el mismo proveedor con el que creaste tu cuenta o contacta a soporte.',
-        privacy: 'Tu cuenta y membresía administran el acceso privado. No creamos historiales personales de escucha.',
+        privacy: 'Tu cuenta y membresía administran el acceso. Durante la escucha sólo compartimos una presencia regional amplia y efímera; nunca tu ubicación exacta ni un historial personal de escucha.',
+        membershipInvitation: 'Acceso por invitación',
+        membershipPreview: 'Acceso de prueba',
+        membershipFounderActive: 'Founder activo',
+        membershipFounderGrace: 'Founder · acceso temporal',
+        membershipFounderEnding: 'Founder · activo hasta el final del período',
+        membershipFounderPending: 'La membresía Founder todavía no está confirmada.',
+        membershipFounderExpired: 'La membresía Founder finalizó.',
+        membershipFounderRefunded: 'El pago fue reembolsado y el acceso Founder finalizó.',
+        membershipFounderRevoked: 'El acceso Founder fue cerrado.',
+        membershipFreeFallback: 'Puedes continuar con la escucha Free disponible para tu cuenta.',
+        membershipInvitationEnded: 'La invitación ya no habilita el acceso.',
+        membershipPreviewEnded: 'El acceso de prueba finalizó.',
     },
     en: {
-        eyebrow: 'HARMONIC BEACON · FOUNDING LISTENER',
+        eyebrow: 'HARMONIC BEACON · LISTENER',
         title: 'Remember your harmonic center.',
         intro: 'A continuous harmonic field, shared across the world.',
-        live: 'Private listening, available whenever you return',
+        live: 'Listen during the access available to your account',
         privateDropIns: 'An optional introduction before entering the Beacon',
-        membership: 'Founding Listener access',
+        membership: 'A first listen and a daily Free schedule',
         signInGoogle: 'Continue with Google',
         signInApple: 'Continue with Apple',
         signingIn: 'Opening access…',
@@ -62,22 +80,39 @@ export const earlyBirdCopy = {
         enter: 'Enter the Beacon',
         redeem: 'Activate my invitation',
         accessNeeded: 'Your account does not have an active membership yet.',
-        freeTitle: 'Two hours of Beacon every day',
+        freeTitle: 'Your daily time · 2 hours',
         freeDescription: 'Choose a local start time. It repeats daily and can be changed after seven days.',
         listenFreeNow: 'Listen free now',
         chooseFreeTime: 'Choose another time',
         freeStartTime: 'Start time',
         saveFreeTime: 'Save my listening time',
+        savingFreeTime: 'Saving your time…',
+        startingFreeTime: 'Opening your Free time…',
+        cancelFreeTime: 'Back',
         freeTimeZone: 'Time zone',
+        savedFreeTime: 'Your daily time',
         nextFreeWindow: 'Your next listening window begins',
         freeScheduleLocked: 'You can change this schedule',
         freeScheduleError: 'We could not save the schedule. Please try again.',
-        welcomeListen: 'Listen for 30 minutes now',
+        welcomeTitle: 'Your first listen · 30 minutes',
+        welcomeListen: 'Listen now',
         welcomeStarting: 'Opening the Beacon…',
         welcomeDescription: 'Your first listen does not set your daily time yet.',
         welcomeError: 'We could not open this first listen. Please try again.',
         authError: 'We could not complete sign-in. Use the provider that created your account, or contact support.',
-        privacy: 'Your account and membership manage private access. We do not create personal listening histories.',
+        privacy: 'Your account and membership manage access. While you listen, we share only broad, ephemeral regional presence—never your exact location or a personal listening history.',
+        membershipInvitation: 'Invitation access',
+        membershipPreview: 'Preview access',
+        membershipFounderActive: 'Founder active',
+        membershipFounderGrace: 'Founder · temporary access',
+        membershipFounderEnding: 'Founder · active until the end of the period',
+        membershipFounderPending: 'Founder membership is not confirmed yet.',
+        membershipFounderExpired: 'Founder membership has ended.',
+        membershipFounderRefunded: 'The payment was refunded and Founder access has ended.',
+        membershipFounderRevoked: 'Founder access was closed.',
+        membershipFreeFallback: 'You can continue with the Free listening available to your account.',
+        membershipInvitationEnded: 'The invitation no longer provides access.',
+        membershipPreviewEnded: 'Preview access has ended.',
     },
 } satisfies Record<UiLocale, Record<string, string>>;
 
@@ -109,15 +144,15 @@ export const earlyBirdHomeCopy = {
         eyebrow: 'HARMONIC BEACON · LISTENER',
         heading: 'Beacon',
         listen: 'Escuchar',
-        mode: 'Cómo querés entrar',
+        mode: 'Cómo quieres entrar',
         withIntro: 'Con introducción',
         beaconOnly: 'Solo Beacon',
         skipToBeacon: 'Saltar al Beacon',
         seek: 'Posición',
         prepareDevice: 'Habilitar este dispositivo',
-        deviceReady: 'Dispositivo listo. Tocá otra vez para escuchar o elegí un drop-in.',
+        deviceReady: 'Dispositivo listo. Toca otra vez para escuchar o elige una introducción.',
         deviceLimitClaim: 'Ya hay dos dispositivos activos. Habilitar éste detendrá la escucha en el menos reciente.',
-        prepareHelp: 'No pudimos preparar el stream automáticamente. Habilitá este dispositivo antes de escuchar.',
+        prepareHelp: 'No pudimos preparar el stream automáticamente. Habilita este dispositivo antes de escuchar.',
         pause: 'Pausar',
         resume: 'Continuar',
         paused: 'Pausado',
@@ -125,8 +160,8 @@ export const earlyBirdHomeCopy = {
         reconnecting: 'Restableciendo conexión…',
         unavailable: 'El Beacon no está disponible en este momento.',
         displaced: 'Este dispositivo fue desplazado porque la cuenta ya está escuchando en otros dos dispositivos.',
-        spanish: 'Caldeamiento · Español',
-        english: 'Warm-up · English',
+        spanish: 'Introducción · Español',
+        english: 'Introducción · Inglés',
         dropUnavailable: 'El render aprobado todavía no fue publicado.',
         introSelection: 'Intro antes del Beacon',
         stop: 'Detener',
@@ -135,7 +170,7 @@ export const earlyBirdHomeCopy = {
         stopped: 'Detenido',
         master: 'Volumen',
         signOut: 'Cerrar sesión',
-        active: 'Founding Listener activo',
+        active: 'Listener activo',
         freeActive: 'Horario Free activo',
         welcomeActive: 'Primera escucha activa',
         account: 'Cuenta',
@@ -170,9 +205,42 @@ export const earlyBirdHomeCopy = {
         stopped: 'Stopped',
         master: 'Volume',
         signOut: 'Sign out',
-        active: 'Founding Listener active',
+        active: 'Listener active',
         freeActive: 'Free window active',
         welcomeActive: 'First listen active',
         account: 'Account',
     },
 } satisfies Record<UiLocale, Record<string, string>>;
+
+type MembershipCopy = { [Key in keyof typeof earlyBirdCopy.en]: string };
+
+export function listenerMembershipPresentationCopy(
+    copy: MembershipCopy,
+    presentation: ListenerMembershipPresentation,
+): { title: string; detail: string | null } | null {
+    if (presentation.kind === 'none') return null;
+
+    if (presentation.kind === 'invitation') {
+        return {
+            title: copy.membershipInvitation,
+            detail: presentation.state === 'active' ? null : copy.membershipInvitationEnded,
+        };
+    }
+    if (presentation.kind === 'preview') {
+        return {
+            title: copy.membershipPreview,
+            detail: presentation.state === 'active' ? null : copy.membershipPreviewEnded,
+        };
+    }
+
+    const provider = presentation.provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
+    switch (presentation.state) {
+        case 'active': return { title: copy.membershipFounderActive, detail: provider };
+        case 'grace': return { title: copy.membershipFounderGrace, detail: provider };
+        case 'ending': return { title: copy.membershipFounderEnding, detail: provider };
+        case 'pending': return { title: copy.membershipFounderPending, detail: copy.membershipFreeFallback };
+        case 'expired': return { title: copy.membershipFounderExpired, detail: copy.membershipFreeFallback };
+        case 'refunded': return { title: copy.membershipFounderRefunded, detail: copy.membershipFreeFallback };
+        case 'revoked': return { title: copy.membershipFounderRevoked, detail: copy.membershipFreeFallback };
+    }
+}
