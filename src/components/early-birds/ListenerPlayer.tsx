@@ -108,6 +108,7 @@ export default function ListenerPlayer({
     const [liveState, setLiveState] = useState<LiveState>('idle');
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
     const [transportStopped, setTransportStopped] = useState(true);
+    const [transportPaused, setTransportPaused] = useState(false);
     const [selectedDrop, setSelectedDrop] = useState<DropLanguage>(dropIns.en ? 'en' : 'es');
     const [dropProgress, setDropProgress] = useState({
         es: { current: 0, duration: 0 },
@@ -593,6 +594,7 @@ export default function ListenerPlayer({
             return;
         }
         if (played) {
+            setTransportPaused(false);
             updateLiveState('playing');
             return;
         }
@@ -606,12 +608,71 @@ export default function ListenerPlayer({
             return;
         }
         setTransportStopped(false);
+        setTransportPaused(false);
         void playLive(liveState === 'error' || liveState === 'displaced', dropGeneration.current);
+    }
+
+    async function toggleTransportPause() {
+        if (transportStopped) return;
+
+        const language = activeDrop.current;
+        if (transportPaused) {
+            if (language) {
+                const intro = dropAudio[language].current;
+                if (!intro) return;
+                try {
+                    await intro.play();
+                    setTransportPaused(false);
+                } catch {
+                    // Keep the paused state visible when the browser rejects resume.
+                }
+                return;
+            }
+
+            const live = liveAudio.current;
+            if (!live) return;
+            wantsLivePlayback.current = true;
+            cancelRecovery(true);
+            try {
+                await live.play();
+                setTransportPaused(false);
+                updateLiveState('playing');
+                void requestLease('play').then((grant) => {
+                    leaseId.current = grant.leaseId;
+                    manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+                }).catch(() => {
+                    // The current authorized source remains usable; heartbeat retries promotion.
+                });
+            } catch {
+                scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+            }
+            return;
+        }
+
+        if (language) {
+            cancelDropFade();
+            const intro = dropAudio[language].current;
+            intro?.pause();
+            storeProgress(language);
+            setTransportPaused(true);
+            return;
+        }
+
+        const live = liveAudio.current;
+        if (!live || liveStateRef.current !== 'playing') return;
+        wantsLivePlayback.current = false;
+        cancelRecovery(true);
+        cancelLiveFade();
+        pendingLiveFade.current = false;
+        live.pause();
+        updateLiveState('paused');
+        setTransportPaused(true);
     }
 
     function stopTransport() {
         dropGeneration.current += 1;
         setTransportStopped(true);
+        setTransportPaused(false);
         wantsLivePlayback.current = false;
         cancelRecovery(true);
         pendingLiveFade.current = false;
@@ -813,6 +874,7 @@ export default function ListenerPlayer({
             await selected.play();
             if (!isCurrent()) return;
             setTransportStopped(false);
+            setTransportPaused(false);
             setPlayingDrop(language);
         } catch {
             if (!isCurrent()) return;
@@ -850,9 +912,11 @@ export default function ListenerPlayer({
     const selectedProgress = dropProgress[selectedDrop];
     const selectedDropAvailable = Boolean(dropIns[selectedDrop]);
     const transportBusy = liveState === 'loading' || liveState === 'recovering' || livePreparing;
-    const introActive = !transportStopped && playingDrop !== null;
-    const beaconActive = !transportStopped && playingDrop === null && liveState === 'playing';
-    const transportStatus = playingDrop
+    const introActive = !transportStopped && !transportPaused && playingDrop !== null;
+    const beaconActive = !transportStopped && !transportPaused && playingDrop === null && liveState === 'playing';
+    const transportStatus = transportPaused
+        ? copy.paused
+        : playingDrop
         ? copy.playingIntro
         : liveState === 'playing'
             ? copy.playingBeacon
@@ -886,7 +950,7 @@ export default function ListenerPlayer({
                     <p role="status" className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">
                         {transportStatus}
                     </p>
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-end">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] sm:items-end">
                         <label className="text-xs text-[var(--text-muted)]">
                             {copy.introSelection}
                             <select
@@ -923,8 +987,17 @@ export default function ListenerPlayer({
                         </button>
                         <button
                             type="button"
+                            onClick={() => void toggleTransportPause()}
+                            disabled={transportBusy || transportStopped}
+                            aria-pressed={transportPaused}
+                            className="event-button event-button--secondary listener-transport__button"
+                        >
+                            {transportPaused ? copy.resume : copy.pause}
+                        </button>
+                        <button
+                            type="button"
                             onClick={stopTransport}
-                            disabled={transportBusy || (playingDrop === null && liveState !== 'playing')}
+                            disabled={transportBusy || transportStopped}
                             className="event-button event-button--secondary"
                         >
                             {copy.stop}

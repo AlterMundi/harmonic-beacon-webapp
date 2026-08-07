@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe('EarlyBird unified playlist transport', () => {
-    it('defaults to the English intro and exposes exactly two play choices plus Stop', async () => {
+    it('defaults to the English intro and exposes two play choices, Pause and Stop', async () => {
         prepareMedia();
         render(
             <LocaleProvider initialLocale="en">
@@ -61,7 +61,64 @@ describe('EarlyBird unified playlist transport', () => {
         expect(screen.getByRole('button', { name: 'Play with intro' })).toHaveAttribute('aria-pressed', 'false');
         expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Pause' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Stop' })).toBeDisabled();
+    });
+
+    it('pauses and resumes the intro at the same position', async () => {
+        const { play, pause } = prepareMedia();
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: '/api/drop-ins/en' }} />
+            </LocaleProvider>,
+        );
+        const intro = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Play with intro' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Play with intro' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled());
+        intro.currentTime = 42;
+        pause.mockClear();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+        expect(pause.mock.instances).toContain(intro);
+        expect(intro.currentTime).toBe(42);
+        expect(screen.getByText('Paused')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Resume' })).toHaveAttribute('aria-pressed', 'true');
+
+        play.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled());
+        expect(play.mock.instances).toContain(intro);
+        expect(intro.currentTime).toBe(42);
+    });
+
+    it('pauses and resumes the Beacon without restarting the transport', async () => {
+        const { play, pause } = prepareMedia();
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: '/api/drop-ins/en' }} />
+            </LocaleProvider>,
+        );
+        const live = screen.getByLabelText('Beacon 24/7') as HTMLAudioElement;
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Play · Beacon only' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Play · Beacon only' }));
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        fireEvent.playing(live);
+        live.currentTime = 73;
+        pause.mockClear();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+        expect(pause.mock.instances).toContain(live);
+        expect(live.currentTime).toBe(73);
+        expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled();
+
+        play.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled());
+        expect(play.mock.instances).toContain(live);
+        expect(live.currentTime).toBe(73);
     });
 
     it('keeps the intro timeline and master volume inside Beacon 24/7 without a separate drop-ins section', async () => {
