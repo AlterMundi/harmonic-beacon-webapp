@@ -5,6 +5,7 @@ import {
     canonicalEarlyBirdInvitation,
     earlyBirdInvitationCookie,
 } from '@/lib/early-birds/invitation-cookie';
+import { listenerInvitationQuery } from '@/lib/listener/namespace';
 
 /**
  * Navigation convenience, not an authorization boundary.
@@ -36,17 +37,12 @@ const ATTENDEE_PREFIXES = ['/session'];
 /** Staff surfaces: the operator console. */
 const STAFF_PREFIXES = ['/ops'];
 
-const EARLY_BIRD_INVITATION_QUERY = new Map([
-    ['/early-birds', 'invite'],
-    ['/early-birds/redeem', 'token'],
-]);
-
 function matches(pathname: string, prefixes: string[]): boolean {
     return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 function scrubEarlyBirdInvitation(request: NextRequest): NextResponse | null {
-    const queryName = EARLY_BIRD_INVITATION_QUERY.get(request.nextUrl.pathname);
+    const queryName = listenerInvitationQuery(request.nextUrl.pathname);
     if (!queryName || !request.nextUrl.searchParams.has(queryName)) return null;
 
     const candidates = request.nextUrl.searchParams.getAll(queryName);
@@ -89,5 +85,12 @@ export default function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-    matcher: ['/early-birds', '/early-birds/redeem', '/session/:path*', '/ops/:path*'],
+    matcher: [
+        '/listener',
+        '/listener/redeem',
+        '/early-birds',
+        '/early-birds/redeem',
+        '/session/:path*',
+        '/ops/:path*',
+    ],
 };

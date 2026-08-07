@@ -39,6 +39,8 @@ function location(response: NextResponse): URL {
 describe('middleware', () => {
     describe('EarlyBird invitation URL scrubbing', () => {
         it.each([
+            ['/listener', 'invite'],
+            ['/listener/redeem', 'token'],
             ['/early-birds', 'invite'],
             ['/early-birds/redeem', 'token'],
         ])('moves the canonical %s query token to a short HttpOnly cookie', (pathname, queryName) => {
@@ -145,6 +147,8 @@ describe('middleware', () => {
     describe('matcher', () => {
         it('runs only on invitation entry and the two protected surfaces', () => {
             expect(config.matcher).toEqual([
+                '/listener',
+                '/listener/redeem',
                 '/early-birds',
                 '/early-birds/redeem',
                 '/session/:path*',
