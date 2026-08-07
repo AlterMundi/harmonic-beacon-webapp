@@ -81,7 +81,14 @@ Byte-exact copies live in `contracts/early-bird-authority/v1` and
 ## Ordinary Free listening window
 
 Registration does not fabricate a commerce membership. A signed-in account
-without current canonical membership may instead select one recurring local
+without current canonical membership and without a previously selected Free
+schedule may explicitly start one 30-minute first listen. Registration, OAuth
+callback, page view, Free for All and canonical membership never create or
+consume it. Its durable one-row marker is account-bound and cannot be reset by
+retry, refresh or a second device; leases and manifests are capped at the exact
+server-side end.
+
+The same account may instead select one recurring local
 wall-clock start and listen for two real hours each day. The first selection is
 either **Listen free now**, derived from server time in the validated browser
 IANA zone, or an explicit local time. The selection is account-bound and may be
@@ -98,7 +105,15 @@ Authorization resolves in this order:
    access;
 2. otherwise the current recurring Free window grants access until its exact
    end;
-3. otherwise access fails closed.
+3. otherwise an already-started first listen grants access until its exact
+   30-minute end;
+4. otherwise access fails closed.
+
+Starting the first listen requires a same-origin authenticated idempotent POST.
+It is available only before a recurring schedule exists. Selecting the schedule
+first does not create or consume the first-listen row. The operational Free for
+All override rejects first-listen activation, so public access never spends an
+account's welcome session.
 
 The server resolves wall-clock dates with `Intl` timezone data. A fall-back
 ambiguity uses the first occurrence; a spring-forward nonexistent minute moves

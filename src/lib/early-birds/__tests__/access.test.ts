@@ -1,4 +1,8 @@
-import type { EarlyBirdFreeSchedule, EarlyBirdMembershipProjection } from '@prisma/client';
+import type {
+    EarlyBirdFreeSchedule,
+    EarlyBirdMembershipProjection,
+    EarlyBirdWelcomeAccess,
+} from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { listeningAccessDecision } from '../access';
@@ -43,6 +47,18 @@ function schedule(): EarlyBirdFreeSchedule {
     };
 }
 
+function welcome(overrides: Partial<EarlyBirdWelcomeAccess> = {}): EarlyBirdWelcomeAccess {
+    return {
+        accountId: 'listener-1',
+        startedAt: new Date('2026-08-07T15:30:00.000Z'),
+        endsAt: new Date('2026-08-07T16:00:00.000Z'),
+        activationRequestId: '00000000-0000-4000-8000-000000000002',
+        createdAt: NOW,
+        updatedAt: NOW,
+        ...overrides,
+    };
+}
+
 describe('combined Listener access authority', () => {
     it('gives an active canonical membership unrestricted priority over Free', () => {
         expect(listeningAccessDecision(membership(), schedule(), NOW)).toMatchObject({
@@ -70,5 +86,24 @@ describe('combined Listener access authority', () => {
             kind: 'membership',
             allowedUntil: paidThrough,
         });
+    });
+
+    it('allows an active welcome listen only until its exact durable boundary', () => {
+        expect(listeningAccessDecision(null, null, NOW, welcome())).toMatchObject({
+            allowed: true,
+            kind: 'welcome',
+            allowedUntil: new Date('2026-08-07T16:00:00.000Z'),
+        });
+        expect(listeningAccessDecision(
+            null,
+            null,
+            new Date('2026-08-07T16:00:00.000Z'),
+            welcome(),
+        )).toMatchObject({ allowed: false, kind: 'denied' });
+    });
+
+    it('does not let welcome access override membership or an active Free window', () => {
+        expect(listeningAccessDecision(membership(), null, NOW, welcome()).kind).toBe('membership');
+        expect(listeningAccessDecision(null, schedule(), NOW, welcome()).kind).toBe('free-window');
     });
 });

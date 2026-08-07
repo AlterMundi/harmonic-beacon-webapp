@@ -95,7 +95,7 @@ export type LeaseAcquisition = {
 
 export class EarlyBirdAccessDeniedError extends Error {
     constructor() {
-        super('An active EarlyBird membership is required');
+        super('Active Listener access is required');
         this.name = 'EarlyBirdAccessDeniedError';
     }
 }
@@ -234,12 +234,13 @@ export async function authorizeEarlyBirdStreamLease(
     leaseId: string,
     now = new Date(),
 ) {
-    const [projection, schedule, lease] = await Promise.all([
+    const [projection, schedule, welcome, lease] = await Promise.all([
         prisma.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
         prisma.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
+        prisma.earlyBirdWelcomeAccess.findUnique({ where: { accountId } }),
         prisma.earlyBirdStreamLease.findFirst({ where: { id: leaseId, accountId } }),
     ]);
-    if (!listeningAccessDecision(projection, schedule, now).allowed) {
+    if (!listeningAccessDecision(projection, schedule, now, welcome).allowed) {
         throw new EarlyBirdAccessDeniedError();
     }
     if (!lease) throw new EarlyBirdLeaseInactiveError('missing');
@@ -263,11 +264,12 @@ export async function acquireEarlyBirdStreamLease(
         );
         if (accountRows.length !== 1) throw new EarlyBirdAccessDeniedError();
 
-        const [projection, schedule] = await Promise.all([
+        const [projection, schedule, welcome] = await Promise.all([
             tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
             tx.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
+            tx.earlyBirdWelcomeAccess.findUnique({ where: { accountId } }),
         ]);
-        const access = listeningAccessDecision(projection, schedule, now);
+        const access = listeningAccessDecision(projection, schedule, now, welcome);
         if (!access.allowed) {
             throw new EarlyBirdAccessDeniedError();
         }
@@ -351,11 +353,12 @@ export async function heartbeatEarlyBirdStreamLease(
     refreshPriority = true,
 ): Promise<{ leaseExpiresAt: Date; stream: StreamUrlGrant }> {
     const lease = await prisma.$transaction(async (tx) => {
-        const [projection, schedule] = await Promise.all([
+        const [projection, schedule, welcome] = await Promise.all([
             tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
             tx.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
+            tx.earlyBirdWelcomeAccess.findUnique({ where: { accountId } }),
         ]);
-        const access = listeningAccessDecision(projection, schedule, now);
+        const access = listeningAccessDecision(projection, schedule, now, welcome);
         if (!access.allowed) {
             throw new EarlyBirdAccessDeniedError();
         }

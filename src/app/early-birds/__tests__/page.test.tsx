@@ -46,6 +46,14 @@ const inactiveFreeWindow = {
     nextEnd: new Date('2026-08-08T12:00:00.000Z'),
 };
 
+const unusedWelcome = {
+    available: true,
+    active: false,
+    used: false,
+    startedAt: null,
+    endsAt: null,
+};
+
 describe('EarlyBird Listener page', () => {
     it('renders the Listener directly without auth or membership in Free for All mode', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
@@ -76,6 +84,8 @@ describe('EarlyBird Listener page', () => {
             kind: 'free-window',
             membership: { allowed: false, projection: null },
             freeWindow: { ...inactiveFreeWindow, active: true },
+            welcome: { ...unusedWelcome, available: false },
+            allowedUntil: new Date('2026-08-07T17:30:00.000Z'),
         });
 
         const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
@@ -101,6 +111,7 @@ describe('EarlyBird Listener page', () => {
             kind: 'denied',
             membership: { allowed: false, projection: null },
             freeWindow: inactiveFreeWindow,
+            welcome: { ...unusedWelcome, available: false },
         });
 
         const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
@@ -115,6 +126,37 @@ describe('EarlyBird Listener page', () => {
                 active: false,
                 nextStart: '2026-08-08T10:00:00.000Z',
             },
+            welcome: expect.objectContaining({ available: false }),
+        });
+    });
+
+    it('renders the Listener during the one-time welcome session', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: true,
+            kind: 'welcome',
+            allowedUntil: new Date('2026-08-07T16:00:00.000Z'),
+            membership: { allowed: false, projection: null },
+            freeWindow: { ...inactiveFreeWindow, configured: false, nextStart: null, nextEnd: null },
+            welcome: {
+                available: false,
+                active: true,
+                used: true,
+                startedAt: new Date('2026-08-07T15:30:00.000Z'),
+                endsAt: new Date('2026-08-07T16:00:00.000Z'),
+            },
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.type).toBe(EarlyBirdHome);
+        expect(result.props).toMatchObject({
+            accessKind: 'welcome',
+            accessUntil: '2026-08-07T16:00:00.000Z',
         });
     });
 });

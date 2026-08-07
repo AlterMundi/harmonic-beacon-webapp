@@ -1668,6 +1668,20 @@ body {
   line-height: 1;
 }
 
+.listener-welcome-access {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.listener-welcome-access > p {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
 .listener-free-window > p {
   margin-top: 0.85rem;
   color: var(--text-secondary);
