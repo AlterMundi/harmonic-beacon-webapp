@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 type AccessKind = 'membership' | 'free-window' | 'welcome' | 'denied';
-const reloadPage = () => window.location.reload();
 
 /**
  * Revalidates once at a server-computed authorization boundary. Stream grants
@@ -14,13 +14,15 @@ export default function AccessBoundarySync({
     expectedKind,
     boundaryAt,
     serverNow,
-    onAccessChanged = reloadPage,
+    onAccessChanged,
 }: {
     expectedKind: AccessKind;
     boundaryAt: string | null;
     serverNow: string;
     onAccessChanged?: () => void;
 }) {
+    const router = useRouter();
+
     useEffect(() => {
         if (!boundaryAt) return;
         let cancelled = false;
@@ -47,7 +49,11 @@ export default function AccessBoundarySync({
                     payload.access?.kind !== expectedKind
                     || (expectedKind !== 'denied' && payload.access?.allowedUntil !== boundaryAt)
                 ) {
-                    onAccessChanged();
+                    // Refresh the server component tree without replacing the
+                    // browser document. The new tree authoritatively enters
+                    // or leaves Listener while the browser session survives.
+                    if (onAccessChanged) onAccessChanged();
+                    else router.refresh();
                     return;
                 }
                 // A client clock may be ahead of the server by a few seconds.
@@ -82,7 +88,7 @@ export default function AccessBoundarySync({
             window.removeEventListener('pageshow', revalidateAfterResume);
             document.removeEventListener('visibilitychange', revalidateAfterResume);
         };
-    }, [boundaryAt, expectedKind, onAccessChanged, serverNow]);
+    }, [boundaryAt, expectedKind, onAccessChanged, router, serverNow]);
 
     return null;
 }
