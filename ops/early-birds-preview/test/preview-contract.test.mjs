@@ -186,6 +186,11 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(listener, /location \^~ \/api\/early-birds\/auth\//);
   assert.match(listener, /location = \/api\/early-birds\/free-window/);
   assert.match(listener, /location = \/api\/listener\/presence/);
+  assert.match(listener, /location = \/robots\.txt \{[^}]*rewrite \^ \/api\/listener\/public-discovery\/robots\.txt break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;[^}]*proxy_set_header Host \$host;/s);
+  assert.match(listener, /location = \/sitemap\.xml \{[^}]*rewrite \^ \/api\/listener\/public-discovery\/sitemap\.xml break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;[^}]*proxy_set_header Host \$host;/s);
+  assert.equal((listener.match(/location = \/robots\.txt/g) ?? []).length, 1);
+  assert.equal((listener.match(/location = \/sitemap\.xml/g) ?? []).length, 1);
+  assert.doesNotMatch(listener, /location \^~ \/api\/listener\/public-discovery\//);
   assert.doesNotMatch(listener, /api\/early-birds\/(test-login|free\/|membership)/);
   assert.doesNotMatch(listener, /location \^~ \/early-birds\//);
 
