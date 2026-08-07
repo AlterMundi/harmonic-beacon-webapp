@@ -858,19 +858,17 @@ export default function ListenerPlayer({
     async function playWithIntro(language: DropLanguage) {
         const selected = dropAudio[language].current;
         if (!selected || !dropIns[language]) return;
-        // The intro already contains the Beacon. Stop the live source before
-        // the first intro frame so the two sources can never overlap.
-        wantsLivePlayback.current = false;
-        cancelRecovery(true);
+        // The intro already contains the Beacon, so the shared stream must stay
+        // inaudible underneath it. Starting both prepared elements inside this
+        // gesture preserves iOS authorization for the later automatic handoff.
+        // Pausing the live element here would make Safari require another tap.
         cancelLiveFade();
         pendingLiveFade.current = false;
-        liveSuppressedForDrop.current = false;
-        liveAudio.current?.pause();
         if (liveAudio.current) {
-            liveAudio.current.muted = false;
-            liveAudio.current.volume = volumeRef.current;
+            liveAudio.current.muted = true;
+            liveSuppressedForDrop.current = true;
+            if (volumeSupported) liveAudio.current.volume = 0;
         }
-        updateLiveState('paused');
         const other: DropLanguage = language === 'es' ? 'en' : 'es';
         dropAudio[other].current?.pause();
         cancelDropFade();
@@ -881,8 +879,41 @@ export default function ListenerPlayer({
         activeDrop.current = language;
         const isCurrent = () => dropGeneration.current === generation && activeDrop.current === language;
         try {
-            await selected.play();
+            let liveStarted: Promise<void> | null = null;
+            if (!wantsLivePlayback.current && livePreparedRef.current && liveAudio.current) {
+                wantsLivePlayback.current = true;
+                cancelRecovery(true);
+                updateLiveState('loading');
+                seekNativeAudioToLiveEdge(liveAudio.current);
+                // Promote the already prepared same-device lease without
+                // delaying either media play() call beyond this user gesture.
+                void requestLease('play').then((grant) => {
+                    leaseId.current = grant.leaseId;
+                    manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+                }).catch(() => {
+                    // The prepared source remains authorized. Heartbeat/recovery
+                    // will retry without interrupting the introduction.
+                });
+                liveStarted = liveAudio.current.play();
+            }
+            const introStarted = selected.play();
+            if (!wantsLivePlayback.current) {
+                wantsLivePlayback.current = true;
+                cancelRecovery(true);
+                updateLiveState('loading');
+                void attemptLivePlayback().then((played) => {
+                    if (!wantsLivePlayback.current) return;
+                    if (played) updateLiveState('playing');
+                    else scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+                });
+            }
+            await introStarted;
             if (!isCurrent()) return;
+            if (liveStarted) {
+                void liveStarted.then(() => updateLiveState('playing')).catch(() => {
+                    scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+                });
+            }
             setHasStarted(true);
             setTransportStopped(false);
             setTransportPaused(false);
@@ -892,6 +923,13 @@ export default function ListenerPlayer({
             activeDrop.current = null;
             setTransportStopped(true);
             setPlayingDrop(null);
+            wantsLivePlayback.current = false;
+            liveAudio.current?.pause();
+            if (liveAudio.current) {
+                liveAudio.current.muted = false;
+                liveAudio.current.volume = volumeRef.current;
+            }
+            liveSuppressedForDrop.current = false;
         }
     }
 
@@ -917,6 +955,14 @@ export default function ListenerPlayer({
             [language]: { current: 0, duration: current[language].duration },
         }));
         audio!.currentTime = 0;
+        if (liveAudio.current && !liveAudio.current.paused) {
+            cancelRecovery(true);
+            setTransportPaused(false);
+            updateLiveState('playing');
+            pendingLiveFade.current = true;
+            beginLiveFade();
+            return;
+        }
         void playLive(false, dropGeneration.current);
     }
 
