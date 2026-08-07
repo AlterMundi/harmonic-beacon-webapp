@@ -1686,7 +1686,8 @@ body {
   backdrop-filter: blur(18px);
 }
 
-.listener-free-window h3 {
+.listener-free-window h3,
+.listener-welcome-access h3 {
   font-family: var(--font-cormorant), Georgia, serif;
   font-size: clamp(1.8rem, 5vw, 2.5rem);
   font-weight: 500;
@@ -1703,6 +1704,28 @@ body {
 
 .listener-welcome-access > p {
   color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.listener-membership-status {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 214, 112, 0.22);
+  border-radius: 0.9rem;
+  background: rgba(255, 214, 112, 0.06);
+}
+
+.listener-membership-status strong {
+  color: var(--paper);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.listener-membership-status p {
+  color: var(--text-secondary);
   font-size: 0.78rem;
   line-height: 1.5;
 }

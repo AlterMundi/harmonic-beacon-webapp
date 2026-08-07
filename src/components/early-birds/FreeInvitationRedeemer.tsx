@@ -3,22 +3,21 @@
 import { useState } from 'react';
 
 import BrandLockup from '@/components/brand/BrandLockup';
-import LanguageControl from '@/components/brand/LanguageControl';
 import { useLocale } from '@/context/LocaleContext';
 
 export default function FreeInvitationRedeemer() {
     const { locale } = useLocale();
     const copy = locale === 'es' ? {
-        eyebrow: 'INVITACIÓN PERSONAL',
-        heading: 'Activa tu acceso EarlyBird.',
-        body: 'Esta invitación es individual y de un solo uso. Al activarla, tu cuenta recibirá el mismo acceso Listener que una membresía paga.',
+        eyebrow: 'HARMONIC BEACON · LISTENER',
+        heading: 'Activa tu invitación Listener.',
+        body: 'Esta invitación es individual y de un solo uso. Al activarla, tu cuenta recibirá acceso Listener por invitación; no crea una compra ni una membresía paga.',
         action: 'Activar invitación',
         activating: 'Activando…',
         error: 'Esta invitación no está disponible. Si crees que es un error, contacta a soporte.',
     } : {
-        eyebrow: 'PERSONAL INVITATION',
-        heading: 'Activate your EarlyBird access.',
-        body: 'This invitation is individual and can be used once. Activating it gives your account the same Listener access as a paid membership.',
+        eyebrow: 'HARMONIC BEACON · LISTENER',
+        heading: 'Activate your Listener invitation.',
+        body: 'This invitation is individual and can be used once. Activating it grants invitation access; it does not create a purchase or paid membership.',
         action: 'Activate invitation',
         activating: 'Activating…',
         error: 'This invitation is unavailable. Contact support if you believe this is a mistake.',
@@ -48,7 +47,6 @@ export default function FreeInvitationRedeemer() {
             <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center gap-8 px-6 py-12">
                 <header className="flex items-center justify-between gap-4">
                     <BrandLockup href="/early-birds" />
-                    <LanguageControl />
                 </header>
                 <section className="space-y-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-7 shadow-[var(--shadow-deep)]">
                     <p className="font-mono text-xs tracking-[0.22em] text-[var(--gold)]">{copy.eyebrow}</p>

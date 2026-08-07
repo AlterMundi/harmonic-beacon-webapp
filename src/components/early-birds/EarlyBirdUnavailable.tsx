@@ -1,19 +1,18 @@
 'use client';
 
 import BrandLockup from '@/components/brand/BrandLockup';
-import LanguageControl from '@/components/brand/LanguageControl';
 import { useLocale } from '@/context/LocaleContext';
 
 const copy = {
     es: {
-        eyebrow: 'EARLYBIRDS',
+        eyebrow: 'HARMONIC BEACON · LISTENER',
         title: 'Estamos preparando el Beacon.',
-        body: 'El acceso fundador todavía no está disponible. Volvé a intentarlo más tarde.',
+        body: 'El acceso Listener no está disponible en este momento. Vuelve a intentarlo más tarde.',
     },
     en: {
-        eyebrow: 'EARLYBIRDS',
+        eyebrow: 'HARMONIC BEACON · LISTENER',
         title: 'We are preparing the Beacon.',
-        body: 'Founding access is not available yet. Please try again later.',
+        body: 'Listener access is unavailable right now. Please try again later.',
     },
 } as const;
 
@@ -26,7 +25,6 @@ export default function EarlyBirdUnavailable() {
             <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
                 <header className="flex items-center justify-between gap-4">
                     <BrandLockup href="/early-birds" />
-                    <LanguageControl />
                 </header>
                 <section className="flex flex-1 items-center py-14">
                     <div className="max-w-2xl space-y-7">

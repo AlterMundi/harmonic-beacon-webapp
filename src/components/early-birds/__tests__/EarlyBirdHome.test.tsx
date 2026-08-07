@@ -22,7 +22,7 @@ describe('EarlyBird Listener home access chrome', () => {
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
                     displayName="Nico"
-                    membershipSource="FREE"
+                    membership={{ kind: 'invitation', state: 'active' }}
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -30,6 +30,8 @@ describe('EarlyBird Listener home access chrome', () => {
 
         expect(screen.getByLabelText('Account')).toBeInTheDocument();
         expect(screen.getByText('Sign out')).toBeInTheDocument();
+        expect(screen.getByText('Invitation access')).toBeInTheDocument();
+        expect(screen.queryByText('FREE')).not.toBeInTheDocument();
     });
 
     it('does not imply an account or expose sign-out in public mode', () => {
@@ -38,7 +40,7 @@ describe('EarlyBird Listener home access chrome', () => {
                 <EarlyBirdHome
                     publicAccess
                     displayName=""
-                    membershipSource={null}
+                    membership={{ kind: 'none', state: 'none' }}
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -55,7 +57,7 @@ describe('EarlyBird Listener home access chrome', () => {
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
                     displayName="Nico"
-                    membershipSource="FREE"
+                    membership={{ kind: 'invitation', state: 'active' }}
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -68,7 +70,7 @@ describe('EarlyBird Listener home access chrome', () => {
                     campfirePrototype
                     campfireFixture="far"
                     displayName="Nico"
-                    membershipSource="FREE"
+                    membership={{ kind: 'invitation', state: 'active' }}
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -76,5 +78,21 @@ describe('EarlyBird Listener home access chrome', () => {
 
         expect(screen.getByTestId('listener-campfire')).toHaveAttribute('data-fixture', 'far');
         expect(screen.getByTestId('listener-campfire')).toHaveAttribute('aria-hidden', 'true');
+    });
+
+    it('presents a normalized Founder status and provider without raw membership source', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'founder', provider: 'mercado-pago', state: 'ending' }}
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByText('Founder · active until the end of the period')).toBeInTheDocument();
+        expect(screen.getByText('Mercado Pago')).toBeInTheDocument();
+        expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
     });
 });

@@ -66,7 +66,7 @@ describe('EarlyBird Listener page', () => {
         expect(result.props).toMatchObject({
             publicAccess: true,
             displayName: '',
-            membershipSource: null,
+            membership: { kind: 'none', state: 'none' },
             dropIns: { es: null, en: '/api/early-birds/drop-ins/en' },
         });
         expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
@@ -108,9 +108,45 @@ describe('EarlyBird Listener page', () => {
         expect(result.type).toBe(EarlyBirdHome);
         expect(result.props).toMatchObject({
             displayName: 'Nico',
-            membershipSource: null,
+            membership: { kind: 'none', state: 'none' },
             accessKind: 'free-window',
         });
+    });
+
+    it('derives a sanitized Founder presentation on the server', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: true,
+            kind: 'membership',
+            membership: {
+                allowed: true,
+                projection: {
+                    state: 'CANCELLED_PENDING_END',
+                    source: 'MERCADO_PAGO',
+                    offerCode: 'EARLY_BIRDS_FOUNDERS_V1',
+                    synthetic: false,
+                    provider: 'internal-provider-value',
+                    reasonCode: 'PRIVATE_REASON',
+                },
+            },
+            freeWindow: inactiveFreeWindow,
+            welcome: { ...unusedWelcome, available: false },
+            allowedUntil: new Date('2026-08-31T00:00:00.000Z'),
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.type).toBe(EarlyBirdHome);
+        expect(result.props.membership).toEqual({
+            kind: 'founder',
+            provider: 'mercado-pago',
+            state: 'ending',
+        });
+        expect(JSON.stringify(result.props.membership)).not.toMatch(/PRIVATE_REASON|internal-provider-value|MERCADO_PAGO/);
     });
 
     it('shows the saved schedule rather than fabricating membership outside the window', async () => {

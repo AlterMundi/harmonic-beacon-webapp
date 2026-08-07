@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event';
 
 import { LocaleProvider } from '@/context/LocaleContext';
 
-vi.mock('@/components/brand/LanguageControl', () => ({ default: () => <div data-testid="language" /> }));
 vi.mock('@/components/brand/BrandLockup', () => ({ default: () => <a href="/early-birds">Harmonic Beacon</a> }));
 
 import FreeInvitationRedeemer from '../FreeInvitationRedeemer';
@@ -16,6 +15,18 @@ afterEach(() => {
 });
 
 describe('EarlyBird free invitation redeemer', () => {
+    it('presents invitation access without claiming a paid membership', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <FreeInvitationRedeemer />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByRole('heading', { name: 'Activate your Listener invitation.' })).toBeInTheDocument();
+        expect(screen.getByText(/does not create a purchase or paid membership/)).toBeInTheDocument();
+        expect(screen.queryByText(/same Listener access as a paid membership/)).not.toBeInTheDocument();
+    });
+
     it('reports a network failure and re-enables redemption', async () => {
         const request = vi.fn().mockRejectedValue(new Error('network unavailable'));
         vi.stubGlobal('fetch', request);
