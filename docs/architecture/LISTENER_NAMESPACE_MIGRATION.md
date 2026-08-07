@@ -69,9 +69,12 @@ internals.
 The phase 2A candidate changes only account-local access-state, Free-window,
 welcome-access and staging invitation redemption. Better Auth continues to use
 its legacy base path and cookies. The public edge continues to exclude
-invitation redemption and synthetic entry; the staging edge exposes only the
-four exact canonical non-media APIs. Stream, heartbeat, manifest, drop-in and
-player storage paths remain on their accepted legacy URLs.
+invitation redemption and synthetic entry: invitation queries are accepted only
+on the exact staging hostname, while the public edge suppresses access logs,
+scrubs the bearer with no-store/no-referrer and never mints its cookie. The
+staging edge exposes only the four exact canonical non-media APIs. Stream,
+heartbeat, manifest, drop-in and player storage paths remain on their accepted
+legacy URLs.
 
 Roll out the edge and application as a compatibility handoff, never as one
 blind replacement:

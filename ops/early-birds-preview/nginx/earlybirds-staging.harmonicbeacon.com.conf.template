@@ -9,6 +9,13 @@ server {
         root /var/www/html;
     }
 
+    location = / {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+
     # Legacy invitation links carry a bearer in the query string. Suppress the
     # very first edge log and avoid caching the one redirect that still has it.
     location = /early-birds {

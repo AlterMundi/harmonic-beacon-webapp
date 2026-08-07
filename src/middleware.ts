@@ -16,11 +16,12 @@ import { listenerInvitationQuery } from '@/lib/listener/namespace';
  * as authorization would mean a revoked ticket kept its access simply because
  * the browser still held the cookie.
  *
- * It performs two edge-local navigation chores: it exchanges a canonical
- * EarlyBird invitation query for a short browser-inaccessible cookie before any
- * page renders, and it sends visitors with no session cookie to the relevant
- * login surface. Every protected page and API route still resolves the principal
- * itself through `@/lib/auth`, and none of them may assume this file ran.
+ * It performs two edge-local navigation chores: on the exact invitation
+ * staging host it exchanges a canonical Listener invitation query for a short
+ * browser-inaccessible cookie, while every other host only scrubs the bearer;
+ * it also sends visitors with no session cookie to the relevant login surface.
+ * Every protected page and API route still resolves the principal itself
+ * through `@/lib/auth`, and none of them may assume this file ran.
  */
 
 /**
@@ -36,6 +37,7 @@ const ATTENDEE_PREFIXES = ['/session'];
 
 /** Staff surfaces: the operator console. */
 const STAFF_PREFIXES = ['/ops'];
+const LISTENER_INVITATION_HOST = 'earlybirds-staging.harmonicbeacon.com';
 
 function matches(pathname: string, prefixes: string[]): boolean {
     return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -54,7 +56,12 @@ function scrubEarlyBirdInvitation(request: NextRequest): NextResponse | null {
     const response = NextResponse.redirect(target);
     response.headers.set('Cache-Control', 'private, no-store');
     response.headers.set('Referrer-Policy', 'no-referrer');
-    if (token) response.cookies.set(earlyBirdInvitationCookie(token));
+    // Invitation redemption remains a staging-only surface. The canonical
+    // public Listener edge must still remove a bearer query without turning it
+    // into a durable browser credential or a dead-end redemption state.
+    if (token && request.nextUrl.hostname === LISTENER_INVITATION_HOST) {
+        response.cookies.set(earlyBirdInvitationCookie(token));
+    }
     return response;
 }
 
