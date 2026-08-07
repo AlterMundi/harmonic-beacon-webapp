@@ -1,5 +1,32 @@
 # EarlyBirds isolated staging runtime
 
+## 2026-08-07 Listener presentation deployment
+
+The isolated Listener was updated to application SHA
+`04e578b5d4abc7b73f3ac782abb4dfc6fc70efa8` (image
+`harmonic-beacon/earlybirds-preview-listener:04e578b`). This presentation slice
+does not change the stream origin, approved media artifacts, audio constants,
+event application or membership authority.
+
+- Local and CI checkpoints passed: 1,047 tests, ESLint, TypeScript, production
+  build, frozen-audio-path verification, stream-origin checks, observability
+  checks and the isolated preview build validation.
+- The forward-only migration exited successfully; PostgreSQL, Listener
+  liveness/readiness and stream liveness/readiness passed the host smoke. Public
+  `/api/health` attests the exact SHA and schema
+  `20260806040000_early_birds_listener`.
+- Public ES/EN layout passed at 1440 and 390 pixels. A real authenticated
+  Chromium pass at 390 pixels reported zero horizontal overflow and zero
+  camera/microphone requests.
+- The authenticated transport completed introduction, pause, resume, Skip to
+  Beacon, Beacon playback and Stop, ending in the truthful `stopped` state.
+- `live.harmonicbeacon.com/api/health` and the unchanged stream origin remained
+  healthy after replacement.
+- Rollback restores root-only
+  `/etc/harmonic-beacon/earlybirds-preview.env.pre-04e578b`, selects release
+  `0b186df` and recreates only the preview Listener. Preview PostgreSQL and all
+  approved media must be retained.
+
 ## 2026-08-06 staging deployment record
 
 The isolated preview is currently running on `mona`; this is operational
