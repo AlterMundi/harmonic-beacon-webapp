@@ -95,6 +95,9 @@ try {
   assert.equal(listener.build.context, root);
   assert.equal(listener.build.target, 'runner');
   assert.equal(listener.environment.NODE_ENV, 'production');
+  assert.equal(listener.environment.BEACON_GIT_SHA, 'synthetic-preview');
+  assert.equal(listener.environment.BEACON_BUILD_TIME, 'synthetic-preview');
+  assert.equal(listener.environment.BEACON_DATABASE_SCHEMA_VERSION, 'preview-forward-only');
   assert.equal(listener.environment.EARLY_BIRDS_ENABLED, '0');
   assert.equal(listener.environment.EARLY_BIRDS_FREE_FOR_ALL, '0');
   assert.equal(listener.environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED, '0');

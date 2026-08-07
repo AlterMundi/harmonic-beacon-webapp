@@ -60,6 +60,9 @@ services:
     init: true
     environment:
       NODE_ENV: production
+      BEACON_GIT_SHA: ${EARLYBIRDS_PREVIEW_GIT_SHA:-synthetic-preview}
+      BEACON_BUILD_TIME: ${EARLYBIRDS_PREVIEW_BUILD_TIME:-synthetic-preview}
+      BEACON_DATABASE_SCHEMA_VERSION: ${EARLYBIRDS_PREVIEW_SCHEMA_VERSION:?set_in_preview.env}
       DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@earlybirds-preview-postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
       EARLY_BIRDS_ENABLED: ${EARLY_BIRDS_ENABLED:-0}
       EARLY_BIRDS_FREE_FOR_ALL: ${EARLY_BIRDS_FREE_FOR_ALL:-0}

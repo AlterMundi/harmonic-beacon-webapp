@@ -80,6 +80,9 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.ok(schemaVersion, 'preview schema provenance must be explicit');
   assert.ok(migrations.includes(schemaVersion), 'preview schema provenance must name a checked-in migration');
   assert.match(source, /BEACON_DATABASE_SCHEMA_VERSION: \$\{EARLYBIRDS_PREVIEW_SCHEMA_VERSION:\?set_in_preview\.env\}/);
+  assert.equal((source.match(/BEACON_GIT_SHA: \$\{EARLYBIRDS_PREVIEW_GIT_SHA:-synthetic-preview\}/g) ?? []).length, 2);
+  assert.equal((source.match(/BEACON_BUILD_TIME: \$\{EARLYBIRDS_PREVIEW_BUILD_TIME:-synthetic-preview\}/g) ?? []).length, 2);
+  assert.equal((source.match(/BEACON_DATABASE_SCHEMA_VERSION: \$\{EARLYBIRDS_PREVIEW_SCHEMA_VERSION:\?set_in_preview\.env\}/g) ?? []).length, 2);
   assert.doesNotMatch(source, /preview-forward-only/);
   assert.match(source, /^  listener:$/m);
   assert.match(source, /127\.0\.0\.1:\$\{EARLYBIRDS_PREVIEW_APP_PORT:-13000\}:3000/);
