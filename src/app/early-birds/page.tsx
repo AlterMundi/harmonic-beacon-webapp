@@ -1,4 +1,3 @@
-import type { Metadata } from 'next';
 import { cookies, headers as requestHeaders } from 'next/headers';
 
 import EarlyBirdLanding from '@/components/early-birds/EarlyBirdLanding';
@@ -21,13 +20,23 @@ import { serializeWelcomeAccessState, welcomeAccessState } from '@/lib/early-bir
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
 import { listenerCampfirePrototypeConfig } from '@/lib/early-birds/campfire-prototype';
 import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
+import { localeForBrowserLanguage } from '@/lib/i18n';
+import {
+    isCanonicalListenerHost,
+    listenerPreviewMetadata,
+    listenerPublicMetadata,
+} from '@/lib/listener/public-discovery';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-    title: 'Listen · Harmonic Beacon',
-    description: 'A continuous harmonic field, shared across the world.',
-};
+export async function generateMetadata() {
+    const incomingHeaders = await requestHeaders();
+    if (!isCanonicalListenerHost(incomingHeaders)) return listenerPreviewMetadata();
+
+    return listenerPublicMetadata(
+        localeForBrowserLanguage(incomingHeaders.get('accept-language')),
+    );
+}
 
 export default async function EarlyBirdsPage({
     searchParams,
