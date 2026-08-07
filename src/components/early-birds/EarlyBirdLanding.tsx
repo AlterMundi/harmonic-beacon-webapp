@@ -20,13 +20,14 @@ import WelcomeAccessAction from './WelcomeAccessAction';
 type Props = {
     signedIn: boolean;
     entitled: boolean;
+    serviceUnavailable: 'identity' | 'access' | null;
     invitationAvailable: boolean;
     authError: boolean;
     providers: { google: boolean; apple: boolean };
     emailMagicLinkAvailable: boolean;
     syntheticTeamEntryAvailable: boolean;
-    freeWindow: SerializedEarlyBirdFreeWindowState;
-    welcome: SerializedEarlyBirdWelcomeAccessState;
+    freeWindow: SerializedEarlyBirdFreeWindowState | null;
+    welcome: SerializedEarlyBirdWelcomeAccessState | null;
     membership: ListenerMembershipPresentation;
     serverNow: string;
 };
@@ -91,7 +92,7 @@ export default function EarlyBirdLanding(props: Props) {
 
     return (
         <main className="listener-shell listener-shell--public">
-            {props.signedIn && props.freeWindow.nextStart && (
+            {props.signedIn && props.freeWindow?.nextStart && (
                 <AccessBoundarySync
                     expectedKind="denied"
                     boundaryAt={props.freeWindow.nextStart}
@@ -136,7 +137,29 @@ export default function EarlyBirdLanding(props: Props) {
                             </p>
                         )}
 
-                        {props.signedIn ? (
+                        {props.serviceUnavailable ? (
+                            <div className="listener-access-unavailable" role="alert">
+                                <strong>{copy.serviceUnavailableTitle}</strong>
+                                <p>{props.serviceUnavailable === 'identity'
+                                    ? copy.identityUnavailable
+                                    : copy.accessUnavailable}</p>
+                                <a
+                                    href={LISTENER_NAMESPACE.canonical.home}
+                                    className="event-button event-button--secondary w-full"
+                                >
+                                    {copy.retryAccess}
+                                </a>
+                                {props.signedIn && (
+                                    <button
+                                        type="button"
+                                        onClick={signOut}
+                                        className="listener-account-link"
+                                    >
+                                        {copy.signOut}
+                                    </button>
+                                )}
+                            </div>
+                        ) : props.signedIn && props.freeWindow && props.welcome ? (
                             <div className="space-y-5">
                                 <p className="text-sm text-[var(--text-secondary)]">{copy.signedIn}</p>
                                 {props.entitled ? (

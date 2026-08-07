@@ -210,4 +210,58 @@ describe('EarlyBird Listener page', () => {
             accessUntil: '2026-08-07T16:00:00.000Z',
         });
     });
+
+    it('does not fabricate Free or welcome state when identity resolution fails', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockRejectedValue(new Error('identity unavailable'));
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props).toMatchObject({
+            signedIn: false,
+            serviceUnavailable: 'identity',
+            freeWindow: null,
+            welcome: null,
+        });
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('does not fabricate Free or welcome state when access resolution fails', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.getEarlyBirdListeningAccess.mockRejectedValue(new Error('database unavailable'));
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props).toMatchObject({
+            signedIn: true,
+            serviceUnavailable: 'access',
+            freeWindow: null,
+            welcome: null,
+        });
+    });
+
+    it('shows identity unavailable when no public sign-in method is configured', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: false, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props.serviceUnavailable).toBe('identity');
+    });
 });

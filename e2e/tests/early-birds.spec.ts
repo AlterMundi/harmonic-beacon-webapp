@@ -1,23 +1,29 @@
 import { expect, test } from '@playwright/test';
 
-test.describe('EarlyBird Listener boundary', () => {
-    test('serves the bilingual public landing without exposing test access', async ({ page }) => {
-        await page.goto('/early-birds');
-        await expect(page.getByRole('heading', { name: 'El Beacon, siempre presente.' })).toBeVisible();
-        await expect(page.getByRole('button', { name: /Continuar con Google/ })).toBeVisible();
-        await expect(page.getByRole('button', { name: /Continuar con Apple/ })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Entrar con acceso de prueba' })).toHaveCount(0);
-    });
-
-    test('keeps the legacy private-home URL as a compatibility redirect', async ({ page }) => {
-        await page.goto('/early-birds/home');
-        await expect(page).toHaveURL(/\/early-birds$/);
-        await expect(page.getByRole('heading', { name: 'El Beacon, siempre presente.' })).toBeVisible();
-    });
-
-    test('shows the team form only on the exact HTTPS staging host and never persists its code', async ({ page }) => {
-        const accessCode = 'browser-entered-staging-code-000000000001';
+test.describe('Listener staging boundary', () => {
+    test.beforeEach(async ({ page }) => {
         await page.setExtraHTTPHeaders({ 'x-forwarded-proto': 'https' });
+    });
+
+    test('serves the current bilingual public journey with only configured entry methods', async ({ page }) => {
+        await page.goto('/listener');
+
+        await expect(page.getByRole('heading', { name: 'Recuerda tu centro armónico.' })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Entrar al Beacon' })).toBeVisible();
+        await expect(page.getByText('Acceso de equipo · staging')).toBeVisible();
+        await expect(page.getByRole('button', { name: /Continuar con Google|Continuar con Apple/ })).toHaveCount(0);
+        await expect(page.getByLabel('Correo electrónico')).toHaveCount(0);
+    });
+
+    test('keeps the legacy private-home URL as a canonical compatibility redirect', async ({ page }) => {
+        await page.goto('/early-birds/home');
+
+        await expect(page).toHaveURL(/\/listener$/);
+        await expect(page.getByRole('heading', { name: 'Recuerda tu centro armónico.' })).toBeVisible();
+    });
+
+    test('submits the staging team credential once and never persists it', async ({ page }) => {
+        const accessCode = 'browser-entered-staging-code-000000000001';
         let authorization = '';
         await page.route('**/api/early-birds/test-login', async (route) => {
             authorization = route.request().headers().authorization ?? '';
@@ -28,8 +34,7 @@ test.describe('EarlyBird Listener boundary', () => {
             });
         });
 
-        await page.goto('/early-birds');
-        await expect(page.getByText('Acceso de equipo · staging')).toBeVisible();
+        await page.goto('/listener');
         await page.getByLabel('Nombre de prueba').fill('Browser Team Listener');
         await page.getByLabel('Cuenta sintética').fill('browser.team@e2e.invalid');
         await page.getByLabel('Código de acceso temporal').fill(accessCode);
@@ -44,7 +49,7 @@ test.describe('EarlyBird Listener boundary', () => {
         }))).not.toContain(accessCode);
     });
 
-    test('creates an isolated synthetic session and reaches the private Listener home', async ({ page }) => {
+    test('creates an isolated synthetic session and reaches the current one-action Listener', async ({ page }) => {
         const response = await page.request.post('/api/early-birds/test-login', {
             headers: {
                 authorization: 'Bearer early-birds-e2e-login-secret-not-for-production',
@@ -61,11 +66,13 @@ test.describe('EarlyBird Listener boundary', () => {
             landing: '/early-birds',
         });
 
-        await page.goto('/early-birds');
-        await expect(page.getByText('Synthetic Listener')).toBeVisible();
+        await page.goto('/listener');
         await expect(page.getByRole('heading', { name: 'Beacon' })).toBeAttached();
-        await expect(page.getByText(/Membresía activa · TEST/)).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Play con intro' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Play · solo Beacon' })).toBeVisible();
+        await expect(page.getByRole('radio', { name: 'Con introducción' })).toBeVisible();
+        await expect(page.getByRole('radio', { name: 'Solo Beacon' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Escuchar' })).toBeVisible();
+        await page.locator('.listener-account > summary').click();
+        await expect(page.getByText('Synthetic Listener')).toBeVisible();
+        await expect(page.getByText('Acceso de prueba')).toBeVisible();
     });
 });

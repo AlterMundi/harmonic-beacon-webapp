@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Syne, Space_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { requestLocale } from "@/lib/i18n-server";
+import { isCanonicalListenerHost, listenerLocaleForHeaders } from "@/lib/listener/public-discovery";
 import "./globals.css";
 import { Toaster } from "sonner";
 
@@ -52,7 +54,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const locale = await requestLocale();
+  const incomingHeaders = await headers();
+  // Listener content and metadata use the browser's primary language. Bind
+  // that behavior to the exact public host so event-language defaults on the
+  // rest of the application remain untouched.
+  const locale = isCanonicalListenerHost(incomingHeaders)
+    ? listenerLocaleForHeaders(incomingHeaders)
+    : await requestLocale();
 
   return (
     <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${syne.variable} ${spaceMono.variable}`}>

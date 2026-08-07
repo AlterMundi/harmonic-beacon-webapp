@@ -15,14 +15,14 @@ import {
 } from '@/lib/early-birds/invitation-cookie';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
-import { freeWindowState, serializeFreeWindowState } from '@/lib/early-birds/free-window';
-import { serializeWelcomeAccessState, welcomeAccessState } from '@/lib/early-birds/welcome-access';
+import { serializeFreeWindowState } from '@/lib/early-birds/free-window';
+import { serializeWelcomeAccessState } from '@/lib/early-birds/welcome-access';
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
 import { listenerCampfirePrototypeConfig } from '@/lib/early-birds/campfire-prototype';
 import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
-import { localeForBrowserLanguage } from '@/lib/i18n';
 import {
     isCanonicalListenerHost,
+    listenerLocaleForHeaders,
     listenerPreviewMetadata,
     listenerPublicMetadata,
 } from '@/lib/listener/public-discovery';
@@ -34,7 +34,7 @@ export async function generateMetadata() {
     if (!isCanonicalListenerHost(incomingHeaders)) return listenerPreviewMetadata();
 
     return listenerPublicMetadata(
-        localeForBrowserLanguage(incomingHeaders.get('accept-language')),
+        listenerLocaleForHeaders(incomingHeaders),
     );
 }
 
@@ -66,10 +66,16 @@ export default async function EarlyBirdsPage({
     const serverNow = new Date().toISOString();
     const incomingHeaders = new Headers(await requestHeaders());
     const cookieStore = await cookies();
-    const session = await currentEarlyBirdSession().catch(() => null);
-    const access = session
-        ? await getEarlyBirdListeningAccess(session.user.id).catch(() => null)
-        : null;
+    const sessionResolution = await currentEarlyBirdSession()
+        .then((session) => ({ session, unavailable: false as const }))
+        .catch(() => ({ session: null, unavailable: true as const }));
+    const session = sessionResolution.session;
+    const accessResolution = session
+        ? await getEarlyBirdListeningAccess(session.user.id)
+            .then((access) => ({ access, unavailable: false as const }))
+            .catch(() => ({ access: null, unavailable: true as const }))
+        : { access: null, unavailable: false as const };
+    const access = accessResolution.access;
     const invitationAvailable = canonicalEarlyBirdInvitation(
         cookieStore.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
     ) !== null;
@@ -94,17 +100,29 @@ export default async function EarlyBirdsPage({
         );
     }
 
+    const providers = earlyBirdOAuthAvailability();
+    const emailMagicLinkAvailable = earlyBirdMagicLinkAvailable();
+    const syntheticTeamEntryAvailable = syntheticTeamEntryAllowed({ headers: incomingHeaders });
+    const identityUnavailable = sessionResolution.unavailable || (
+        !session
+        && !providers.google
+        && !providers.apple
+        && !emailMagicLinkAvailable
+        && !syntheticTeamEntryAvailable
+    );
+
     return (
         <EarlyBirdLanding
             signedIn={Boolean(session)}
             entitled={access?.membership.allowed === true}
+            serviceUnavailable={identityUnavailable ? 'identity' : accessResolution.unavailable ? 'access' : null}
             invitationAvailable={invitationAvailable}
             authError={params.authError === '1'}
-            providers={earlyBirdOAuthAvailability()}
-            emailMagicLinkAvailable={earlyBirdMagicLinkAvailable()}
-            syntheticTeamEntryAvailable={syntheticTeamEntryAllowed({ headers: incomingHeaders })}
-            freeWindow={serializeFreeWindowState(access?.freeWindow ?? freeWindowState(null))}
-            welcome={serializeWelcomeAccessState(access?.welcome ?? welcomeAccessState(null))}
+            providers={providers}
+            emailMagicLinkAvailable={emailMagicLinkAvailable}
+            syntheticTeamEntryAvailable={syntheticTeamEntryAvailable}
+            freeWindow={access ? serializeFreeWindowState(access.freeWindow) : null}
+            welcome={access ? serializeWelcomeAccessState(access.welcome) : null}
             membership={listenerMembershipPresentation(access?.membership.projection ?? null)}
             serverNow={serverNow}
         />

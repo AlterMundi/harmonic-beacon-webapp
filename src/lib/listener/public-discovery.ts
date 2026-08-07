@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import type { UiLocale } from '@/lib/i18n';
+import { localeForBrowserLanguage, type UiLocale } from '@/lib/i18n';
 
 export const LISTENER_PUBLIC_HOST = 'listen.harmonicbeacon.com';
 export const LISTENER_PUBLIC_ORIGIN = `https://${LISTENER_PUBLIC_HOST}`;
@@ -33,6 +33,10 @@ function normalizedHost(value: string | null): string | null {
  */
 export function isCanonicalListenerHost(headers: Pick<Headers, 'get'>): boolean {
     return normalizedHost(headers.get('host')) === LISTENER_PUBLIC_HOST;
+}
+
+export function listenerLocaleForHeaders(headers: Pick<Headers, 'get'>): UiLocale {
+    return localeForBrowserLanguage(headers.get('accept-language'));
 }
 
 export function listenerPublicMetadata(locale: UiLocale): Metadata {
