@@ -65,6 +65,9 @@ runtime code.
   limits no larger than the reviewed run.
 - `run.mjs`: one dry-run or network shard.
 - `aggregate.mjs`: verifies and combines one evidence file from every shard.
+- `verify-planned.mjs`: verifies a complete multi-generator dry-run set, including
+  shared plan hash, complete shard indices, exact client sum, distinct generator
+  fingerprints, redaction, zero network requests and mode `0600` sources.
 
 ## Tiny dry-run
 
@@ -84,6 +87,18 @@ node tools/early-birds-hls-load/run.mjs \
 Dry-run validates the complete plan, writes `PLANNED` evidence and prints the
 exact confirmation required by a network run. It does not read a signed URL or
 contact the target.
+
+Validate a complete distributed plan before requesting a network run:
+
+```bash
+node tools/early-birds-hls-load/verify-planned.mjs \
+  --min-generators 2 \
+  /secure/load-plan/shard-*.json
+```
+
+The verifier emits a redacted JSON summary. It refuses partial/duplicate shard
+sets, a mismatched plan or input hash, non-`0600` sources and any evidence that
+contains runtime measurements or claims a network request.
 
 See [`docs/ops/EARLY_BIRDS_HLS_LOAD_SOAK.md`](../../docs/ops/EARLY_BIRDS_HLS_LOAD_SOAK.md)
 for the distributed procedure, stop conditions and evidence interpretation.
