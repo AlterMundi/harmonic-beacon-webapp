@@ -174,8 +174,16 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(listener, /letsencrypt\/live\/listen\.harmonicbeacon\.com/);
   assert.match(app, /location \^~ \/api\/internal\//);
   assert.match(app, /location \^~ \/api\/early-birds\//);
-  assert.equal((combined.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length, 2);
-  assert.equal((listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length, 1);
+  assert.equal(
+    (app.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length,
+    6,
+    'server plus five sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
+  );
+  assert.equal(
+    (listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length,
+    6,
+    'server plus five sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
+  );
   assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
   assert.match(app, /location = \/early-birds\/home \{\s*return 302 \/;/);
   assert.match(app, /location \/ \{\s*return 404;/);
@@ -192,7 +200,7 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   }
   for (const path of ['early-birds/redeem', 'listener/redeem']) {
     assert.match(listener, new RegExp(
-      `location = /${path} \\{[^}]*access_log off;[^}]*Cache-Control "private, no-store"[^}]*Referrer-Policy "no-referrer"[^}]*return 302 /;`,
+      `location = /${path} \\{[^}]*access_log off;[^}]*Cache-Control "private, no-store"[^}]*Referrer-Policy "no-referrer"[^}]*proxy_pass http://127\\.0\\.0\\.1:13000;`,
       's',
     ));
   }
@@ -210,9 +218,26 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.equal((listener.match(/location = \/sitemap\.xml/g) ?? []).length, 1);
   assert.doesNotMatch(listener, /location \^~ \/api\/listener\/public-discovery\//);
   assert.doesNotMatch(listener, /location \^~ \/api\/listener\//);
-  assert.doesNotMatch(listener, /api\/early-birds\/(test-login|free\/|membership)/);
-  assert.doesNotMatch(listener, /api\/listener\/(test-login|free\/|membership)/);
+  assert.doesNotMatch(listener, /api\/early-birds\/(test-login|membership)/);
+  assert.doesNotMatch(listener, /api\/listener\/(test-login|membership)/);
   assert.doesNotMatch(listener, /location \^~ \/early-birds\//);
+
+  assert.match(listener, /limit_req_zone \$binary_remote_addr zone=listener_invitation_redeem:1m rate=30r\/m;/);
+  for (const path of ['api/listener/free/redeem', 'api/early-birds/free/redeem']) {
+    assert.match(listener, new RegExp(
+      `location = /${path} \\{[^}]*access_log off;[^}]*limit_req zone=listener_invitation_redeem burst=20 nodelay;[^}]*Cache-Control "private, no-store"[^}]*Referrer-Policy "no-referrer"[^}]*proxy_pass http://127\\.0\\.0\\.1:13000;`,
+      's',
+    ));
+  }
+  const magicVerificationLocations = [...listener.matchAll(
+    /location = \/api\/early-birds\/auth\/magic-link\/verify \{([^}]*)\}/g,
+  )];
+  assert.equal(magicVerificationLocations.length, 2, 'HTTP and HTTPS magic bearer entries must be exact');
+  assert.ok(magicVerificationLocations.every((match) => (
+    /access_log off;/.test(match[1])
+    && /Cache-Control "private, no-store"/.test(match[1])
+    && /Referrer-Policy "no-referrer"/.test(match[1])
+  )));
 
   const publicSensitiveEntries = [...listener.matchAll(
     /location = \/(?:listener(?:\/redeem)?|early-birds(?:\/redeem)?)? \{([^}]*)\}/g,
@@ -229,13 +254,54 @@ test('nginx templates isolate staging, stream and the constrained public Listene
     /location = \/(?:listener|early-birds)(?:\/redeem)? \{([^}]*)\}/g,
   )];
   assert.equal(invitationEntryLocations.length, 8, 'HTTP and HTTPS must protect canonical and legacy invitation entries');
-  assert.ok(invitationEntryLocations.every((match) => /access_log off;/.test(match[1])));
-  assert.equal((app.match(/add_header Referrer-Policy "no-referrer" always;/g) ?? []).length, 7);
-  assert.equal((app.match(/add_header Cache-Control "private, no-store" always;/g) ?? []).length, 7);
+  assert.ok(invitationEntryLocations.every((match) => (
+    /access_log off;/.test(match[1])
+    && /Cache-Control "private, no-store"/.test(match[1])
+    && /Referrer-Policy "no-referrer"/.test(match[1])
+  )));
+  for (const path of ['early-birds/redeem', 'listener/redeem']) {
+    const stagingRedeemPages = [...app.matchAll(new RegExp(
+      `location = /${path} \\{([^}]*)\\}`,
+      'g',
+    ))];
+    assert.equal(stagingRedeemPages.length, 2, `HTTP and HTTPS /${path} must be exact`);
+    assert.ok(stagingRedeemPages.every((match) => (
+      /access_log off;/.test(match[1])
+      && /Cache-Control "private, no-store"/.test(match[1])
+      && /Referrer-Policy "no-referrer"/.test(match[1])
+      && /return 302 https:\/\/listen\.harmonicbeacon\.com\/listener\/redeem\$is_args\$args;/.test(match[1])
+    )));
+  }
+
+  const stagingMagicVerificationLocations = [...app.matchAll(
+    /location = \/api\/early-birds\/auth\/magic-link\/verify \{([^}]*)\}/g,
+  )];
+  assert.equal(stagingMagicVerificationLocations.length, 2, 'staging HTTP and HTTPS magic bearer entries must be exact');
+  assert.ok(stagingMagicVerificationLocations.every((match) => (
+    /access_log off;/.test(match[1])
+    && /Cache-Control "private, no-store"/.test(match[1])
+    && /Referrer-Policy "no-referrer"/.test(match[1])
+    && /return 302 https:\/\/listen\.harmonicbeacon\.com\$request_uri;/.test(match[1])
+  )));
+
+  for (const path of ['api/listener/free/redeem', 'api/early-birds/free/redeem']) {
+    const closedStagingPosts = [...app.matchAll(new RegExp(
+      `location = /${path} \\{([^}]*)\\}`,
+      'g',
+    ))];
+    assert.equal(closedStagingPosts.length, 2, `HTTP and HTTPS /${path} must be exact`);
+    assert.ok(closedStagingPosts.every((match) => (
+      /access_log off;/.test(match[1])
+      && /Cache-Control "private, no-store"/.test(match[1])
+      && /Referrer-Policy "no-referrer"/.test(match[1])
+      && /return 404;/.test(match[1])
+      && !/proxy_pass/.test(match[1])
+    )), `staging /${path} must fail closed without reaching the application`);
+  }
   const stagingRoots = [...app.matchAll(/location = \/ \{([^}]*)\}/g)];
   assert.equal(stagingRoots.length, 2, 'HTTP and HTTPS staging roots must both be explicit');
   assert.ok(stagingRoots.every((match) => /access_log off;/.test(match[1])));
-  for (const path of ['access-state', 'free-window', 'free/redeem', 'welcome-access']) {
+  for (const path of ['access-state', 'free-window', 'welcome-access']) {
     assert.match(app, new RegExp(`location = /api/listener/${path.replace('/', '\\/')}`));
   }
   assert.doesNotMatch(app, /location \^~ \/api\/listener\//);

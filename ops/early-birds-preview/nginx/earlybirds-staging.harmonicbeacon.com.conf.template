@@ -29,7 +29,7 @@ server {
         access_log off;
         add_header Cache-Control "private, no-store" always;
         add_header Referrer-Policy "no-referrer" always;
-        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+        return 302 https://listen.harmonicbeacon.com/listener/redeem$is_args$args;
     }
 
     location = /listener {
@@ -43,7 +43,31 @@ server {
         access_log off;
         add_header Cache-Control "private, no-store" always;
         add_header Referrer-Policy "no-referrer" always;
-        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+        return 302 https://listen.harmonicbeacon.com/listener/redeem$is_args$args;
+    }
+
+    location = /api/early-birds/auth/magic-link/verify {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://listen.harmonicbeacon.com$request_uri;
+    }
+
+    # Redemption authority lives only on the canonical Listener origin. Keep
+    # both compatibility POST aliases dark on staging instead of forwarding a
+    # mutation (or allowing the legacy alias to fall through a broad prefix).
+    location = /api/listener/free/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 404;
+    }
+
+    location = /api/early-birds/free/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 404;
     }
 
     location / {
@@ -138,30 +162,62 @@ server {
 
     location = /early-birds/redeem {
         access_log off;
-        proxy_pass http://127.0.0.1:13000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_connect_timeout 10s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 302 https://listen.harmonicbeacon.com/listener/redeem$is_args$args;
     }
 
     location = /listener/redeem {
         access_log off;
-        proxy_pass http://127.0.0.1:13000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_connect_timeout 10s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 302 https://listen.harmonicbeacon.com/listener/redeem$is_args$args;
+    }
+
+    # The shared preview's auth/session origin is the canonical Listener host.
+    # Never let the one-use magic token fall through the logged broad API
+    # prefix; carry it once to the exact unlogged canonical verifier.
+    location = /api/early-birds/auth/magic-link/verify {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 302 https://listen.harmonicbeacon.com$request_uri;
+    }
+
+    # The canonical Listener host owns the session and invitation cookie. A
+    # POST cannot be safely redirected, so fail both staging aliases closed.
+    location = /api/listener/free/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 404;
+    }
+
+    location = /api/early-birds/free/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 404;
     }
 
     location = /api/listener/access-state {
@@ -178,19 +234,6 @@ server {
     }
 
     location = /api/listener/free-window {
-        proxy_pass http://127.0.0.1:13000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_connect_timeout 10s;
-        proxy_send_timeout 30s;
-        proxy_read_timeout 30s;
-    }
-
-    location = /api/listener/free/redeem {
         proxy_pass http://127.0.0.1:13000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

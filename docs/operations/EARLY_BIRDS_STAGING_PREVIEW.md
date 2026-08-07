@@ -356,10 +356,16 @@ and returns 404 for the image's weekend, staff, event and checkout surfaces.
 The `listen.harmonicbeacon.com` vhost is narrower: it exposes only `/`, Next
 static assets, health, the dedicated Listener OAuth/session namespace, the
 exact ordinary-Free schedule endpoint, stream leases/manifests and configured
-drop-ins. Synthetic login, invitation,
-membership projection and all other app routes remain unreachable from that
-host. The application additionally returns a hidden 404 for Better Auth's
-email/password endpoints, so the public namespace offers only configured
+drop-ins. Synthetic login, membership projection and all other app routes
+remain unreachable from that host. Public invitations use only the exact
+Listener and legacy entry/redeem pages plus their two exact POST aliases on
+`listen`; the edge applies no-store/no-referrer, suppresses bearer-path logs and
+rate-limits redemption at 30 requests/minute with a 20-request burst. Staging
+entry and magic-link bearer paths redirect once through exact unlogged
+no-store/no-referrer locations to the canonical host. Both staging redeem POST
+aliases return an unlogged, no-store 404 so neither can fall through the broad
+legacy prefix. The application additionally returns a hidden 404 for Better
+Auth's email/password endpoints, so the public namespace offers only configured
 Google and Apple social providers.
 
 A host operator must review certificate/DNS ownership, provision each named

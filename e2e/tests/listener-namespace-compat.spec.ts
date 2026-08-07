@@ -13,6 +13,55 @@ const INVITATION = `ebi_v1.${'a'.repeat(32)}.${'b'.repeat(32)}.${'c'.repeat(32)}
 test.use({ trace: 'off' });
 
 test.describe('Listener namespace compatibility', () => {
+    test('keeps a public invitation through a same-browser identity round trip', async ({ browser, request }, testInfo) => {
+        test.skip(testInfo.project.name !== 'chromium', 'one browser proves the provider-independent cookie contract');
+        requireDirectDb(testInfo);
+        const baseURL = new URL(String(testInfo.project.use.baseURL));
+        if (!['localhost', '127.0.0.1', '[::1]'].includes(baseURL.hostname)) {
+            throw new Error('refusing to run Listener namespace E2E against a non-local application');
+        }
+
+        const email = `invitation-roundtrip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@e2e.invalid`;
+        const context = await browser.newContext();
+        try {
+            // Middleware owns the public query-to-cookie exchange. The browser
+            // exercise starts immediately after that edge boundary and proves
+            // the host-only bearer survives identity session creation without
+            // ever becoming script-readable. Google and magic link use this
+            // same callback cookie contract; their exact callback is locked by
+            // the landing/auth route unit suites.
+            await context.addCookies([{
+                name: EARLY_BIRD_INVITATION_COOKIE,
+                value: INVITATION,
+                domain: baseURL.hostname,
+                path: '/',
+                httpOnly: true,
+                secure: true,
+                sameSite: 'Lax',
+            }]);
+            // A provider callback adds its session cookie to the returning
+            // browser; it does not forward the pre-existing invitation to the
+            // provider. Mint the synthetic session out of band, then apply its
+            // Set-Cookie result to model that exact boundary.
+            await signInSyntheticListener(request, email);
+            const identityState = await request.storageState();
+            await context.addCookies(identityState.cookies.filter((cookie) => cookie.name.includes('session')));
+
+            const cookiesAfterIdentity = await context.cookies();
+            expect(cookiesAfterIdentity.find((cookie) => cookie.name === EARLY_BIRD_INVITATION_COOKIE))
+                .toMatchObject({ value: INVITATION, httpOnly: true, secure: true, sameSite: 'Lax' });
+            expect(cookiesAfterIdentity.some((cookie) => cookie.name.includes('session'))).toBe(true);
+
+            const page = await context.newPage();
+            await page.goto('/listener/redeem');
+            await expect(page.getByRole('button', { name: /Activar invitación|Activate invitation/ }))
+                .toBeVisible();
+        } finally {
+            await context.close();
+            await deleteSyntheticListenerEmails(testInfo, [email]);
+        }
+    });
+
     test('keeps a legacy invitation cookie and Listener session through canonical refresh and redemption', async ({ browser }, testInfo) => {
         test.skip(testInfo.project.name !== 'chromium', 'one browser proves the namespace/session contract');
         requireDirectDb(testInfo);
