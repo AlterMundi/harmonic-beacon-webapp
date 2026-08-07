@@ -1,7 +1,7 @@
 # EarlyBirds: product and delivery plan
 
 > **Status:** Accepted implementation baseline
-> **Date:** 2026-08-06
+> **Date:** 2026-08-07
 > **Integration branch:** `early-birds`; merge current green `main` at controlled checkpoints
 > **Operational rule:** implementation and isolated staging are authorized. Production,
 > real charges and every audio encoding/content/signature choice still require the
@@ -14,15 +14,17 @@ the current repository.
 
 ## 1. Outcome
 
-EarlyBirds is a simple paid listening membership for people who want a private,
-continuous relationship with the Beacon outside scheduled events.
+EarlyBirds is the implementation codename for a registered Free and paid
+listening product for people who want a continuous relationship with the Beacon
+outside scheduled events.
 
 The first useful release lets a Listener:
 
 1. sign in with a configured Google/Apple provider or a passwordless email link;
-2. obtain one Free invitation grant or a valid paid EarlyBird membership through
-   the provider-neutral commerce authority;
-3. open a private, receive-only listening home;
+2. use one immediate 30-minute welcome listen, select a recurring two-hour daily
+   Free window, redeem a controlled invitation, or activate a valid paid
+   Founding Listener membership;
+3. open an authenticated, receive-only listening home;
 4. hear a continuous 24/7 Beacon stream;
 5. optionally begin with one reviewed private intro, using standard private
    playback controls before the continuous Beacon stream is revealed;
@@ -50,10 +52,11 @@ change has passed its own audio and operational acceptance.
 | Do not change the current event audio path before the next weekend | Accepted | Reuse by events is a post-weekend convergence card, not an EarlyBirds shortcut. |
 | Use Fast Forward development with risk-based checkpoints | Accepted | Small isolated changes do not run the whole production release ceremony. |
 | Preserve the audio guardrail | Accepted | No codec, rate, channel, gain, buffer, routing or player-path choice ships without Nico's audio approval. |
-| Use deterministic HLS over HTTP | Accepted | Every listener follows one UTC-derived live edge through immutable six-second segments; event WebRTC is untouched. |
+| Use deterministic HLS over HTTP | Accepted | Every listener follows one UTC-derived live edge through immutable six-second segments; the approved staging delivery is AAC-LC 320 kbps, 48 kHz stereo and event WebRTC is untouched. |
 | Favor continuity over low latency in the Listener | Accepted | Desktop HLS stays about five segments behind the edge with a 60-second target buffer; Stop and a later Listen rejoin the current configured edge. |
 | Keep intros private | Accepted | Intro progress is device-local. The live stream runs muted underneath and is revealed at the handoff; this is not a realtime mix or crossfader. |
-| Offer Free and paid access through one contract | Accepted | One-use signed invitations and PayPal/MercadoPago converge on the same revocable membership state machine. |
+| Separate ordinary Free from canonical membership | Accepted | Welcome access and recurring Free windows are server-authoritative access layers that never fabricate membership or Purchase; invitations and PayPal/MercadoPago converge on the revocable membership state machine. |
+| Preserve the Founder price for life | Accepted | First canonical paid activation grants the opaque account a lifetime right to the USD 2/month founder offer; cancellation ends access but not that price eligibility. |
 | Launch Free before paid providers | Accepted | Human acceptance of the complete Free flow is a hard gate before PayPal or MercadoPago can be enabled. Both providers remain disabled by default. |
 | Defer app-store distribution | Accepted | Google Play and Apple App Store wrappers and billing are post-MVP work; the provider-neutral membership authority must leave room for them without making them a launch dependency. |
 | Design for 3,000 concurrent listeners | Accepted | Expand at 4,000 and treat 5,000 as critical; alerts use measured network, CPU, memory, origin and canary health. |
@@ -112,26 +115,31 @@ steps are not safe to execute literally.
 5. They call a shared database, container, host and SFU "zero impact". Shared
    infrastructure is impact; the preview and media origin must be isolated and
    resource-bounded.
-6. They treat a boolean `isFounder` as a lifetime-price contract. Founder terms
-   require a versioned offer and durable commercial evidence.
+6. They treat a boolean `isFounder` as a lifetime-price contract. Founder-price
+   eligibility requires a versioned offer, first canonical paid activation and
+   durable account-bound commercial evidence separate from active membership.
 7. They place PWA, three identity providers, root redirects, post-event upsell
    and autonomous social publishing in the first slice. None is required to
    prove that a person can subscribe and listen reliably.
 8. They alternate between claiming an existing live 24/7 source and saying it
-   still needs to be built. The initial source is explicitly a continuous
-   recorded stream.
+   still needs to be built. The initial operational origin is explicit in the
+   runbook while the public product remains source-neutral.
 
 ## 5. MVP boundary
 
 ### Included
 
-- `/early-birds` unified entry: public sign-in without access, private Listener with a valid projection.
-- `/early-birds/home` compatibility redirect only. The dedicated staging hostname exposes the unified entry canonically at `/`.
+- The dedicated Listener hostname exposes the unified entry canonically at `/`:
+  public sign-in followed by registered Free, controlled invitation or
+  canonical Founder access.
+- `/early-birds` and `/early-birds/home` are compatibility redirects during the
+  namespace migration only.
 - Google and Apple sign-in plus an optional passwordless email fallback through
   an exact, stable Better Auth version and the existing private mail authority.
 - A separate EarlyBird account/session domain.
-- One-use, signed, auditable, revocable Free invitations and canonical paid
-  membership entitlements from the commerce service.
+- One explicit 30-minute welcome listen, a recurring two-hour daily Free window
+  locked for seven days, one-use signed invitations and canonical paid
+  membership entitlements.
 - A continuous, monitored stream from the approved long master.
 - One unified transport: Beacon-only or a selected private ES/EN intro followed automatically by the live handoff; Stop controls the whole sequence.
 - The Beacon fades in on every start/restart and stops over a short fade-out where the browser exposes media-element volume.
@@ -224,7 +232,7 @@ consumer.
 ### 7.1 Source and artifacts
 
 - The WAV master at
-  `/home/nicolas/Music/beacon/luz_de_manana_20260624-155633.wav` is immutable
+  `/home/nicolas/Music/beacon/luz_de_manana_20260624-155633_2hs.wav` is immutable
   and identified by a recorded SHA-256.
 - Conversion never overwrites the master.
 - A reproducible command creates a versioned delivery artifact.
@@ -240,12 +248,12 @@ than WebRTC for this one-way, long-running source. The working default is HLS:
 it is buffer-friendly, cacheable, scales independently of the event SFU and can
 later be consumed by both Listener and event clients.
 
-The delivery codec is deliberately **not chosen in this document**. Browser
-support and acoustic quality conflict here, especially on Safari/iOS. The spike
-must compare the original standard player, the encoded artifact, the streamed
-artifact in a standard player and the actual EarlyBird player. Selecting and
-deploying that encoding is an audio-touching decision requiring Nico's explicit
-approval.
+The current Listener delivery format was selected through the audio ladder and
+explicitly approved by Nico for this isolated product: AAC-LC 320 kbps, 48 kHz,
+stereo. The approved immutable Beacon and ES/EN intro artifacts and their
+checksums are recorded in the media-provenance runbook. Any future codec,
+bitrate, sample-rate, channel, gain or dynamics change remains an audio-touching
+decision requiring the same comparison and explicit approval.
 
 Encoding is deliberately excluded until Nico approves a candidate. Once an
 artifact is approved, the steady state is:
@@ -315,7 +323,8 @@ testing: native HLS on Safari and `hls.js` where Media Source Extensions are
 required. Web Audio, realtime mixing and a crossfader are outside this milestone.
 
 - Playback begins only after an explicit user gesture.
-- Beacon-only is the default and remains available if an intro fails.
+- First use defaults to the matching-language intro and remembers the person's
+  last local choice; Beacon-only remains available if an intro fails.
 - The Beacon source and lease are prepared before intro controls are enabled;
   the click starts both media elements inside the same user gesture for iOS.
 - Starting, pausing, seeking, restarting or finishing an intro does not
@@ -401,10 +410,13 @@ staging and production. Upgrading Free to paid consumes the free grant so two
 independent memberships cannot remain active.
 
 "Founder price locked for life" is not a boolean. It is a versioned USD 2/month
-offer grant recording amount/currency, acquisition time and continuity policy.
-Voluntary cancellation preserves access through paid-through time and then
-loses the founder offer. Involuntary payment failure receives 14 days of grace.
-Refund, dispute and administrative revocation remove access immediately.
+offer grant recording amount/currency, first canonical paid activation and the
+opaque account that owns the durable eligibility. Voluntary cancellation
+preserves access through paid-through time and then ends active access, but the
+same account retains the founder price for a later reactivation. Involuntary
+payment failure receives 14 days of grace. Refund, dispute and administrative
+revocation remove access immediately; they do not authorize the browser to
+invent or erase commercial evidence.
 
 PayPal and MercadoPago both implement the same contract. MercadoPago charges an
 ARS equivalent derived from the BCRA A3500 reference rate, locks the renewal
@@ -611,20 +623,20 @@ event sound and reliability are at least as good as the current path.
 
 | ID | Accepted decision |
 |---|---|
-| D1 | `EarlyBirds`; preview `earlybirds-staging.harmonicbeacon.com`; production route `/early-birds`; origin `stream.harmonicbeacon.com`. |
-| D2 | USD 2/month founder offer; 14-day involuntary grace; voluntary cancellation loses founder terms after paid-through; refund/dispute/admin revoke immediately. |
+| D1 | `EarlyBirds` remains the implementation branch/milestone; public Listener is `listen.harmonicbeacon.com/`, staging migrates to `listen-staging.harmonicbeacon.com`, legacy `/early-birds` paths redirect during cutover, and origin remains `stream.harmonicbeacon.com`. |
+| D2 | USD 2/month founder offer; first canonical paid activation grants lifetime account-bound price eligibility; voluntary cancellation ends access after paid-through but a later reactivation retains that price; 14-day involuntary grace; refund/dispute/admin revoke access immediately. |
 | D3 | Google and Apple through exact stable Better Auth, plus an optional passwordless email magic-link fallback through the existing private mail authority; no Facebook and no implicit account linking. |
 | D4 | Provider-neutral Free, PayPal and MercadoPago grants; Free is single-use, signed, auditable, revocable and consumed by paid upgrade. |
 | D5 | Source-neutral “continuous Beacon stream” wording; never claim whether the source is an instrument, a file or another origin. |
 | D6 | Each authored Amara Sol offline mix is immutable and separately approved; the English intro is the currently approved and published default. |
-| D7 | Deterministic UTC HLS, immutable six-second segments, signed paths, native Safari and `hls.js`; codec remains unselected. |
+| D7 | Deterministic UTC HLS, immutable six-second segments, signed paths, native Safari and `hls.js`; current approved delivery is AAC-LC 320 kbps, 48 kHz stereo and any later encoding change requires explicit audio approval. |
 | D8 | Two device leases; third device evicts oldest. |
 | D9 | Main app after final convergence; independently bounded stream origin; additive models and kill switch. |
 | D10 | One shared wall-clock Beacon timeline; every intro has private play/pause/seek/restart controls and hands off to the current live edge. |
 | D11 | Capacity targets 3k committed, 4k expansion and 5k critical at a 450 kbit/s planning budget with 40% headroom. |
 | D12 | All-audiences experience: an adult owns account/payment; no minor profile or minor data. |
 | D13 | Release sequence is Free acceptance first, then separately approved PayPal/MercadoPago activation; Google Play/App Store wrappers and billing are post-MVP. |
-| D14 | Ordinary Free requires Listener registration and grants one recurring two-hour daily wall-clock window, locked for rolling seven days; the server resolves IANA/DST boundaries and caps leases. Founder membership grants anytime access, while the operator Free for All override remains independent. |
+| D14 | Ordinary Free requires Listener registration, offers one explicit 30-minute first listen, then grants one recurring two-hour daily wall-clock window locked for rolling seven days; the server resolves IANA/DST boundaries and caps leases. Founder membership grants anytime access, while the operator Free for All override remains independent. |
 
 ## 16. Card map
 
