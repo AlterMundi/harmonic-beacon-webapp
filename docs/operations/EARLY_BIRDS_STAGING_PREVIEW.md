@@ -374,6 +374,36 @@ relaxation of production validation.
 
 ## Open, stop, and rollback
 
+The emergency public-entry switch is one reviewed command. Always preview the
+exact operation first; dry-run takes the same lock and validates the complete
+protected environment but writes no backup, changes no value and invokes no
+container or HTTP command:
+
+```bash
+sudo scripts/early-birds-preview/disable-public.sh --dry-run \
+  /etc/harmonic-beacon/earlybirds-preview.env
+sudo scripts/early-birds-preview/disable-public.sh --apply \
+  /etc/harmonic-beacon/earlybirds-preview.env
+```
+
+Apply requires root and a mode-`0600` environment. It takes an exclusive lock,
+refuses duplicate switch assignments, creates a timestamped mode-`0600` backup,
+atomically sets `EARLY_BIRDS_ENABLED`, `EARLY_BIRDS_FREE_FOR_ALL` and
+`EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED` to `0`, and recreates only Listener.
+It then requires liveness, readiness and an anonymous lease denial with HTTP
+503. PostgreSQL, origin, LiveKit, playlist-bot and the event project are not
+targeted. If recreation or smoke fails after the atomic replacement, the script
+keeps the flags disabled and stops only Listener rather than risking an older
+enabled process.
+
+The command prints the exact backup path. Keep public entry disabled while the
+incident is investigated. To roll back a mistaken operator invocation, under
+the same maintenance lock copy that exact backup to a new mode-`0600` candidate
+beside the env file, run `require_synthetic_env` against the candidate, replace
+the env atomically, recreate only Listener with `--no-deps --no-build`, and run
+the full preview health smoke plus the intended access-mode smoke. Never restore
+an arbitrary or older backup and never roll back the additive database.
+
 After migration, both liveness/readiness probes, nginx syntax, TLS, and
 synthetic negative-access checks pass, change only:
 
