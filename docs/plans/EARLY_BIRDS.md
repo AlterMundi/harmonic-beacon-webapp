@@ -86,9 +86,11 @@ the older Founders proposal alone.
   `BeaconDropIn-Amara-sol_r1_session.wav`, including its authored Beacon
   sidechain/effects and ending fade. Nico approved its authored gain without
   further normalization. Its AAC-LC 320 kbps, stereo, 48 kHz derivative
-  measures -11.2 LUFS with a decoded peak of -0.4 dBFS. No current-gain Spanish
-  artifact is approved, so ES remains honestly unavailable rather than serving
-  the obsolete -35.6 LUFS derivative.
+  measures -11.2 LUFS with a decoded peak of -0.4 dBFS. The separately approved
+  Spanish source is `BeaconDropIn-Amara-sol_ES_r1_session.wav` (2026-08-07),
+  SHA-256 `e59443ab765a4eb94c7d2ea96176647c5b0e5d2945966ea3de599270edec656b`;
+  its format-only AAC-LC derivative is 347.010 seconds, -11.3 LUFS and -0.4 dBFS
+  true peak.
 - No production `beacon-247` LiveKit room exists. The isolated staging HTTP
   origin is the current 24/7 implementation and remains separate from events.
 

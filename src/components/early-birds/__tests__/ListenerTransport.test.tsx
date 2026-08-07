@@ -82,6 +82,23 @@ describe('Listener one-action playlist transport', () => {
         expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
     });
 
+    it('plays only the explicitly selected Spanish introduction', async () => {
+        const { play } = prepareMedia();
+        renderPlayer({ es: '/api/drop-ins/es', en: '/api/drop-ins/en' });
+        const spanish = screen.getByLabelText('Warm-up · Spanish') as HTMLAudioElement;
+        const english = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
+        await waitForListen();
+
+        fireEvent.change(screen.getByRole('combobox', { name: 'Intro before the Beacon' }), {
+            target: { value: 'es' },
+        });
+        play.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+
+        await waitFor(() => expect(play.mock.instances).toContain(spanish));
+        expect(play.mock.instances).not.toContain(english);
+    });
+
     it('remembers the device mode without changing the stream contract', async () => {
         prepareMedia();
         const first = renderPlayer();

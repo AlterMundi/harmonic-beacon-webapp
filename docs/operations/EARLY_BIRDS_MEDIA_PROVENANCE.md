@@ -50,9 +50,11 @@ normalization, dynamics or other signal processing.
 |---|---|---|---|---|---:|---|
 | Continuous Beacon | `luz_de_manana_20260624-155633_2hs.wav` | `feb0cac547eee8a2012ede32f9358e1cad4b66f6aea3b1b839610e71fad42685` | `beacon-luz-20260624-2hs-aac320-v2` | recorded in its immutable `artifact.json` | 7,200 s | -14.2 LUFS, -0.2 dBFS true peak |
 | EN intro | `BeaconDropIn-Amara-sol_r1_session.wav`, mtime `2026-08-06 18:16:41 ART` | `aa519b117f885b5ec457dc1736e18175e6a307d301bd5c295b9c58ee85a01168` | `amara-sol-en-r1-approved-aac320-v3.m4a` | `a67068458f3d72dcd13be1e8dc753d21e238c270195f93e26599aa2910a181db` | 332.939 s | -11.3 LUFS, -0.5 dBFS true peak |
+| ES intro | `BeaconDropIn-Amara-sol_ES_r1_session.wav`, mtime `2026-08-07 02:21:48 ART` | `e59443ab765a4eb94c7d2ea96176647c5b0e5d2945966ea3de599270edec656b` | `amara-sol-es-r1-approved-aac320-v1.m4a` | `376b68eb485cb562e1ff2d702a23f05fdb67af76d619d26e839d077edc16a201` | 347.010 s | -11.3 LUFS, -0.4 dBFS true peak |
 
 The EN v3 source supersedes the earlier same-named exports by immutable hash and
 adds the approved long Beacon fade-in. Its opening five-second mean level rises
 from -17.1 dB through -15.2, -13.4 and -12.5 dB in consecutive windows. The v2
-artifact remains available only for rollback. ES remains disabled until a
-separately approved render exists.
+artifact remains available only for rollback. The ES v1 source is Nico's
+2026-08-07 approved current-gain Spanish mix. Its derivative likewise changes
+only codec/container and keeps the authored 48 kHz stereo signal unchanged.
