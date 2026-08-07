@@ -12,6 +12,11 @@ export const EARLY_BIRD_ORIGIN_MANIFEST_TTL_SECONDS = 60;
 export const EARLY_BIRD_LEASE_MANIFEST_PATH = '/api/early-birds/stream/manifest';
 export const EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID = 'early-birds-free-for-all';
 
+export type ListenerLeasePresence = {
+    state: 'IDLE' | 'LISTENING';
+    macroRegion: 'NORTH_AMERICA' | 'LATIN_AMERICA' | 'EUROPE' | 'AFRICA' | 'ASIA' | 'OCEANIA' | 'UNKNOWN';
+};
+
 const EARLY_BIRD_FREE_FOR_ALL_ACCOUNT = {
     id: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
     name: 'Public Listener',
@@ -306,10 +311,24 @@ export async function acquireEarlyBirdStreamLease(
         const current = previous
             ? await tx.earlyBirdStreamLease.update({
                 where: { id: previous.id },
-                data: { createdAt: now, lastSeenAt: prioritySeenAt, expiresAt: leaseExpiresAt, evictedAt: null },
+                data: {
+                    createdAt: now,
+                    lastSeenAt: prioritySeenAt,
+                    expiresAt: leaseExpiresAt,
+                    evictedAt: null,
+                    presence: 'IDLE',
+                    presenceUpdatedAt: now,
+                },
             })
             : await tx.earlyBirdStreamLease.create({
-                data: { accountId, deviceDigest, lastSeenAt: prioritySeenAt, expiresAt: leaseExpiresAt },
+                data: {
+                    accountId,
+                    deviceDigest,
+                    lastSeenAt: prioritySeenAt,
+                    expiresAt: leaseExpiresAt,
+                    presence: 'IDLE',
+                    presenceUpdatedAt: now,
+                },
             });
         return { current, evictedLeaseId: evicted[0]?.id ?? null, leaseExpiresAt };
     });
@@ -351,6 +370,7 @@ export async function heartbeatEarlyBirdStreamLease(
     now = new Date(),
     issuer = earlyBirdStreamUrlIssuer(),
     refreshPriority = true,
+    presence?: ListenerLeasePresence,
 ): Promise<{ leaseExpiresAt: Date; stream: StreamUrlGrant }> {
     const lease = await prisma.$transaction(async (tx) => {
         const [projection, schedule, welcome] = await Promise.all([
@@ -372,9 +392,15 @@ export async function heartbeatEarlyBirdStreamLease(
         if (current.expiresAt <= now) throw new EarlyBirdLeaseInactiveError('expired');
         const updated = await tx.earlyBirdStreamLease.update({
             where: { id: current.id },
-            data: refreshPriority
-                ? { lastSeenAt: now, expiresAt: leaseExpiresAt }
-                : { expiresAt: leaseExpiresAt },
+            data: {
+                ...(refreshPriority ? { lastSeenAt: now } : {}),
+                expiresAt: leaseExpiresAt,
+                ...(presence ? {
+                    presence: presence.state,
+                    macroRegion: presence.macroRegion,
+                    presenceUpdatedAt: now,
+                } : {}),
+            },
         });
         return { updated, leaseExpiresAt };
     });
@@ -425,6 +451,8 @@ export async function acquireFreeForAllStreamLease(
             lastSeenAt: now,
             expiresAt: leaseExpiresAt,
             evictedAt: null,
+            presence: 'IDLE',
+            presenceUpdatedAt: now,
         },
     });
 
@@ -467,12 +495,21 @@ export async function heartbeatFreeForAllStreamLease(
     leaseId: string,
     now = new Date(),
     issuer = earlyBirdStreamUrlIssuer(),
+    presence?: ListenerLeasePresence,
 ): Promise<{ leaseExpiresAt: Date; stream: StreamUrlGrant }> {
     const leaseExpiresAt = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
     const current = await authorizeFreeForAllStreamLease(leaseId, now);
     const lease = await prisma.earlyBirdStreamLease.update({
         where: { id: current.id },
-        data: { lastSeenAt: now, expiresAt: leaseExpiresAt },
+        data: {
+            lastSeenAt: now,
+            expiresAt: leaseExpiresAt,
+            ...(presence ? {
+                presence: presence.state,
+                macroRegion: presence.macroRegion,
+                presenceUpdatedAt: now,
+            } : {}),
+        },
     });
     const stream = await issuer.issue({
         accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
