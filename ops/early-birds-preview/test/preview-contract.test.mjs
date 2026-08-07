@@ -32,6 +32,7 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
     ['unsafe team-entry switch', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=true', /must be 0 or 1/],
     ['wrong team-entry host', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=staging.example.invalid', /must be earlybirds-staging/],
+    ['unreviewed GeoIP path', 'BEACON_LISTENER_GEOIP_HOST_PATH=/tmp/random.mmdb', /reviewed absolute July 2026/],
     ['non-synthetic secret', 'EARLY_BIRDS_AUTH_SECRET=not-a-real-but-long-enough-secret-value', /visibly synthetic/],
   ];
 
@@ -121,6 +122,8 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.doesNotMatch(postgresBlock, /ports:/, 'preview PostgreSQL must stay container-private');
   assert.match(postgresBlock, /earlybirds-preview-postgres/, 'preview PostgreSQL needs a collision-proof alias');
   assert.match(source, /@earlybirds-preview-postgres:5432/, 'database URLs must use the collision-proof alias');
+  assert.match(source, /BEACON_LISTENER_GEOIP_DB_PATH: \/data\/geoip\/dbip-country-lite\.mmdb/);
+  assert.match(source, /BEACON_LISTENER_GEOIP_HOST_PATH[^\n]*:\/data\/geoip\/dbip-country-lite\.mmdb:ro/);
 });
 
 test('optional authority overlay joins only the dedicated external private network', async () => {

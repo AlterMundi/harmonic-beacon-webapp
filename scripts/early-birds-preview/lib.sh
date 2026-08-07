@@ -87,6 +87,11 @@ require_synthetic_env() {
     *) preview_fail 'stream artifact is not approved for synthetic staging' ;;
   esac
   require_exact_preview_value EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS earlybirds-staging.harmonicbeacon.com "$env_file"
+  geoip_host_path=$(preview_env_value BEACON_LISTENER_GEOIP_HOST_PATH "$env_file")
+  case "$geoip_host_path" in
+    /*/dbip-country-lite-2026-07.mmdb) ;;
+    *) preview_fail 'BEACON_LISTENER_GEOIP_HOST_PATH must be the reviewed absolute July 2026 Country MMDB path' ;;
+  esac
 
   kill_switch=$(preview_env_value EARLY_BIRDS_ENABLED "$env_file")
   case "$kill_switch" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_ENABLED must be 0 or 1' ;; esac

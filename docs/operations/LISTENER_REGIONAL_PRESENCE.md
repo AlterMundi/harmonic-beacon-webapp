@@ -8,11 +8,13 @@ addresses, account IDs, or device IDs.
 
 ## Runtime configuration
 
-Set `BEACON_LISTENER_GEOIP_DB_PATH` to a local GeoIP2/GeoLite2 **Country** MMDB
-file readable by the Listener container. Keep the file on the secondary data
-volume and mount it read-only into the container; do not commit it to Git or
-download it during a request. A missing, unreadable, or unmatched database
-maps the request to `UNKNOWN` and never blocks listening.
+The reviewed data source is DB-IP Country Lite July 2026 in MMDB format,
+distributed under CC BY 4.0. Install it with
+`scripts/early-birds-preview/install-geoip-country.sh`, keep it on the
+secondary data volume, and mount it read-only into the container. The public
+response includes the required DB-IP attribution link. Do not commit the
+database to Git or download it during a request. A missing, unreadable, or
+unmatched database maps the request to `UNKNOWN` and never blocks listening.
 
 The application derives the client address only after the configured trusted
 proxy chain. Keep `TRUSTED_PROXY_HOPS` aligned with nginx/the edge topology.
