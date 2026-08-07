@@ -82,4 +82,32 @@ describe('EarlyBird Better Auth isolation', () => {
             expect(JSON.stringify(outcome)).not.toContain('identity-secret');
         }
     });
+
+    it('does not retain IP addresses or user agents in Listener sessions', async () => {
+        const hooks = earlyBirdAuth().options.databaseHooks?.session;
+        const sessionPayload = {
+            id: 'session-1',
+            token: 'opaque-session-token',
+            userId: 'listener-1',
+            expiresAt: new Date('2026-09-07T00:00:00.000Z'),
+            ipAddress: '203.0.113.42',
+            userAgent: 'Synthetic Browser/1.0',
+            createdAt: new Date('2026-08-07T00:00:00.000Z'),
+            updatedAt: new Date('2026-08-07T00:00:00.000Z'),
+        };
+
+        const created = await hooks?.create?.before?.(sessionPayload);
+        const updated = await hooks?.update?.before?.(sessionPayload);
+
+        for (const outcome of [created, updated]) {
+            expect(outcome).not.toBe(false);
+            expect(outcome && 'data' in outcome ? outcome.data : null).toMatchObject({
+                id: 'session-1',
+                ipAddress: null,
+                userAgent: null,
+            });
+            expect(JSON.stringify(outcome)).not.toContain('203.0.113.42');
+            expect(JSON.stringify(outcome)).not.toContain('Synthetic Browser');
+        }
+    });
 });

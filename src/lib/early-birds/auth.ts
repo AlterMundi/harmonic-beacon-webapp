@@ -82,6 +82,14 @@ function scrubOAuthTokens<T extends Record<string, unknown>>(account: T): T {
     };
 }
 
+function scrubSessionMetadata<T extends Record<string, unknown>>(session: T): T {
+    return {
+        ...session,
+        ipAddress: null,
+        userAgent: null,
+    };
+}
+
 function buildEarlyBirdAuth() {
     const testAuth = earlyBirdTestAuthEnabled();
     const baseURL = nonEmpty(process.env.EARLY_BIRDS_AUTH_BASE_URL);
@@ -134,6 +142,18 @@ function buildEarlyBirdAuth() {
                 update: {
                     async before(account) {
                         return { data: scrubOAuthTokens(account) };
+                    },
+                },
+            },
+            session: {
+                create: {
+                    async before(session) {
+                        return { data: scrubSessionMetadata(session) };
+                    },
+                },
+                update: {
+                    async before(session) {
+                        return { data: scrubSessionMetadata(session) };
                     },
                 },
             },

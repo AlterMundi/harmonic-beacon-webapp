@@ -11,7 +11,8 @@ Better Auth uses dedicated `early_bird_*` tables and the `hb_earlybird_session` 
 offers exactly Google and Apple. Account linking, implicit linking, unlinking and the account cookie
 are disabled. The adapter requires nullable OAuth token columns, but Better Auth database hooks scrub
 access, refresh and ID tokens, token expiries and scope to `null` before create/update reaches Prisma.
-The test suite locks this pre-adapter invariant.
+Listener session hooks likewise discard IP address and user-agent values before
+Prisma writes them. The test suite locks both pre-adapter invariants.
 
 Required OAuth callbacks are:
 
@@ -24,6 +25,13 @@ OAuth base URL. Provider credentials may remain unset during local testing; the
 corresponding provider is absent from the public UI and auth runtime. Public nginx exposes this dedicated
 auth namespace while continuing to block synthetic login, invitations and
 internal membership routes.
+
+Browser-initiated auth mutations require an exact configured Listener
+`Origin`. OAuth provider callbacks are the sole exception because Apple uses a
+cross-site `form_post`; those callbacks are bound instead by Better Auth's
+short-lived, one-use state cookie/database verifier and PKCE code verifier.
+Unknown, expired or cookie-mismatched state fails before account or session
+creation.
 
 ## Canonical membership boundary
 
@@ -125,8 +133,9 @@ HLS source and lease are prepared without autoplay. One click then starts the in
 Beacon element together, keeping the shared timeline muted underneath. Pausing the intro produces silence;
 its natural end reveals the still-running Beacon with a three-second element-volume fade where the browser
 supports writable volume. iOS does not, so it receives a non-overlapping native unmute rather than a false
-fade claim. The live pause control produces silence and its resume seeks to the current live edge. No
-AudioContext, LiveKit, chat or session-event behavior is changed, and the initial gain remains native 1.0.
+fade claim. Pause and Seek exist only for an active introduction; the Beacon is a live-edge source with
+Stop, and a later Listen obtains the current edge rather than resuming stale media. No AudioContext,
+LiveKit, chat or session-event behavior is changed, and the initial gain remains native 1.0.
 
 ## Dependency note
 
