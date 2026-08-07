@@ -9,9 +9,12 @@ on:
       - prisma/**
       - src/app/api/health/**
       - src/app/api/early-birds/**
+      - src/app/api/listener/**
       - src/app/early-birds/**
+      - src/app/listener/**
       - src/components/early-birds/**
       - src/lib/early-birds/**
+      - src/lib/listener/**
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
@@ -27,9 +30,12 @@ on:
       - prisma/**
       - src/app/api/health/**
       - src/app/api/early-birds/**
+      - src/app/api/listener/**
       - src/app/early-birds/**
+      - src/app/listener/**
       - src/components/early-birds/**
       - src/lib/early-birds/**
+      - src/lib/listener/**
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**

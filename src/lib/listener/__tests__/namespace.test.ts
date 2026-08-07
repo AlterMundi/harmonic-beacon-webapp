@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { LISTENER_NAMESPACE, listenerInvitationQuery } from '@/lib/listener/namespace';
@@ -30,5 +33,19 @@ describe('Listener namespace compatibility contract', () => {
     it('does not capture tokens on lookalike or nested routes', () => {
         expect(listenerInvitationQuery('/listener-other')).toBeNull();
         expect(listenerInvitationQuery('/listener/redeem/extra')).toBeNull();
+    });
+
+    it('keeps canonical Listener changes inside the Fast Forward CI gate', () => {
+        const workflow = readFileSync(
+            resolve(process.cwd(), '.github/workflows/early-birds-fast-forward.yml'),
+            'utf8',
+        );
+        for (const path of [
+            'src/app/api/listener/**',
+            'src/app/listener/**',
+            'src/lib/listener/**',
+        ]) {
+            expect(workflow.match(new RegExp(path.replaceAll('*', '\\*'), 'g'))).toHaveLength(2);
+        }
     });
 });
