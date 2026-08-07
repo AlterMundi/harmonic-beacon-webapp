@@ -221,16 +221,26 @@ describe('Listener one-action playlist transport', () => {
         const live = screen.getByLabelText('Beacon') as HTMLAudioElement;
         const intro = screen.getByLabelText('Warm-up · English') as HTMLAudioElement;
         await waitForListen();
+        play.mockClear();
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expectPhase('intro'));
+        // Safari authorizes each media element independently. The live element
+        // must begin muted in the original gesture; starting it only from the
+        // later ended event is rejected on physical iPhones.
+        expect(play.mock.instances).toContain(live);
+        expect(play.mock.instances).toContain(intro);
+        expect(live.muted).toBe(true);
+        Object.defineProperty(live, 'paused', { value: false, configurable: true });
+        fireEvent.playing(live);
+        expect(live.muted).toBe(true);
+        play.mockClear();
 
         Object.defineProperty(intro, 'ended', { value: true, configurable: true });
         fireEvent.ended(intro);
-        await waitFor(() => expect(play.mock.instances).toContain(live));
-        Object.defineProperty(live, 'paused', { value: false, configurable: true });
-        fireEvent.playing(live);
+        expect(play.mock.instances).not.toContain(live);
         frames.shift()?.(3_000);
         expect(live.volume).toBeCloseTo(1);
+        expect(live.muted).toBe(false);
         expectPhase('beacon');
     });
 
