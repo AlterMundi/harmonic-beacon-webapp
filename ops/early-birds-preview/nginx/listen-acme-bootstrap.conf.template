@@ -1,0 +1,16 @@
+# Temporary HTTP-only bootstrap for the first listen.harmonicbeacon.com
+# certificate. Replace this site atomically with the reviewed HTTPS template
+# after issuance.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name listen.harmonicbeacon.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 503;
+    }
+}

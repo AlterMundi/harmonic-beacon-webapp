@@ -180,6 +180,14 @@ test('ACME bootstrap serves only challenges and never proxies preview traffic', 
   assert.doesNotMatch(source, /listen 443|ssl_certificate|proxy_pass/);
 });
 
+test('public Listener certificate bootstrap is HTTP-only and fail closed', async () => {
+  const source = await readPreview('nginx/listen-acme-bootstrap.conf.template');
+  assert.match(source, /server_name listen\.harmonicbeacon\.com/);
+  assert.match(source, /location \/\.well-known\/acme-challenge\//);
+  assert.match(source, /location \/ \{\s*return 503;/);
+  assert.doesNotMatch(source, /listen 443|ssl_certificate|proxy_pass/);
+});
+
 test('production Listener HTTPS validation remains fail closed', async () => {
   const streamContract = await readRepository('src/lib/early-birds/stream.ts');
   assert.match(
