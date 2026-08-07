@@ -35,6 +35,10 @@ describe('Listener access boundary synchronization', () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(60_750); });
 
         expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock).toHaveBeenCalledWith('/api/listener/access-state', {
+            cache: 'no-store',
+            headers: { Accept: 'application/json' },
+        });
         expect(changed).toHaveBeenCalledTimes(1);
     });
 

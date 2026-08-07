@@ -1,8 +1,9 @@
 # EarlyBird to Listener namespace migration
 
-Status: phase 1 implemented on `feat/listener-namespace-compat`; later phases are
-design only. This migration is deliberately additive. `EarlyBird` is an offer
-and cohort name; `Listener` is the durable product and technical namespace.
+Status: phase 1 is integrated; phase 2A is an undeployed candidate on
+`feat/listener-namespace-runtime`. This migration is deliberately additive.
+`EarlyBird` is an offer and cohort name; `Listener` is the durable product and
+technical namespace.
 
 ## Invariants
 
@@ -55,7 +56,7 @@ rewrites `/` internally to that route, and redirecting it before nginx and clien
 callbacks move would create unnecessary hops and could expose deployment
 internals.
 
-## Phase 2: browser client cutover
+## Phase 2A: non-media browser and edge cutover
 
 1. Deploy phase 1 and record requests by route family without user identifiers.
 2. Change non-media fetches and navigation to `LISTENER_NAMESPACE.canonical`.
@@ -64,6 +65,31 @@ internals.
 4. Update nginx to serve `/listener` at `/`; keep exact legacy locations proxied.
 5. Add browser tests that start with a legacy invitation cookie, enter on the
    canonical URL, refresh and finish redemption without signing in again.
+
+The phase 2A candidate changes only account-local access-state, Free-window,
+welcome-access and staging invitation redemption. Better Auth continues to use
+its legacy base path and cookies. The public edge continues to exclude
+invitation redemption and synthetic entry: invitation queries are accepted only
+on the exact staging hostname, while the public edge suppresses access logs,
+scrubs the bearer with no-store/no-referrer and never mints its cookie. The
+staging edge exposes only the four exact canonical non-media APIs. Stream,
+heartbeat, manifest, drop-in and player storage paths remain on their accepted
+legacy URLs.
+
+Roll out the edge and application as a compatibility handoff, never as one
+blind replacement:
+
+1. install the additive exact nginx locations while `/` still rewrites to
+   `/early-birds`, run `nginx -t`, reload and confirm legacy smoke;
+2. deploy the application image containing both route families;
+3. smoke `/listener` and every canonical non-media API directly;
+4. change the internal `/` rewrite to `/listener`, run `nginx -t`, reload and
+   verify that the browser-visible URL remains `/`;
+5. retain legacy routes for the full measured support window.
+
+Rollback reverses that order: restore the `/early-birds` root rewrite first,
+then restore the previous image. The additive exact locations may remain dark;
+no database, cookie, environment or media rollback is required.
 
 Stream, heartbeat, manifest, drop-in and player storage paths are a separate
 audio-reviewed slice. Their aliasing must not modify response bytes, timing,

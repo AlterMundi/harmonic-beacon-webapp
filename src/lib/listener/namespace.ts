@@ -9,6 +9,7 @@ export const LISTENER_NAMESPACE = {
     canonical: {
         home: '/listener',
         redeem: '/listener/redeem',
+        authError: '/listener?authError=1',
         api: {
             accessState: '/api/listener/access-state',
             freeWindow: '/api/listener/free-window',
@@ -19,6 +20,7 @@ export const LISTENER_NAMESPACE = {
     legacy: {
         home: '/early-birds',
         redeem: '/early-birds/redeem',
+        authError: '/early-birds?authError=1',
         api: {
             accessState: '/api/early-birds/access-state',
             freeWindow: '/api/early-birds/free-window',

@@ -4,10 +4,11 @@ import { useState, type FormEvent } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdSyntheticEntryCopy } from '@/lib/early-birds/copy';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 export default function SyntheticTeamEntryForm({
     authOnly = false,
-    postLoginPath = '/early-birds',
+    postLoginPath = LISTENER_NAMESPACE.canonical.home,
 }: {
     authOnly?: boolean;
     postLoginPath?: string;

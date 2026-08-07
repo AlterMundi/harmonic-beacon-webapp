@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { LocaleProvider } from '@/context/LocaleContext';
 
-vi.mock('@/components/brand/BrandLockup', () => ({ default: () => <a href="/early-birds">Harmonic Beacon</a> }));
+vi.mock('@/components/brand/BrandLockup', () => ({ default: ({ href }: { href: string }) => <a href={href}>Harmonic Beacon</a> }));
 
 import FreeInvitationRedeemer from '../FreeInvitationRedeemer';
 
@@ -40,7 +40,8 @@ describe('EarlyBird free invitation redeemer', () => {
 
         expect(await screen.findByRole('alert')).toHaveTextContent('This invitation is unavailable.');
         expect(screen.getByRole('button', { name: 'Activate invitation' })).toBeEnabled();
-        expect(request).toHaveBeenCalledWith('/api/early-birds/free/redeem', { method: 'POST' });
+        expect(request).toHaveBeenCalledWith('/api/listener/free/redeem', { method: 'POST' });
+        expect(screen.getByRole('link', { name: 'Harmonic Beacon' })).toHaveAttribute('href', '/listener');
         expect(JSON.stringify(request.mock.calls)).not.toContain('invitation-token');
     });
 });

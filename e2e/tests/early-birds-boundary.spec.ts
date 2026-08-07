@@ -69,7 +69,7 @@ test.describe('Listener scheduled Free browser boundary', () => {
             let leavingStateRequests = 0;
             let enteringLeaseRequests = 0;
             let failEnteringOnce = true;
-            await enteringPage.route('**/api/early-birds/access-state', async (route) => {
+            await enteringPage.route('**/api/listener/access-state', async (route) => {
                 enteringStateRequests += 1;
                 if (failEnteringOnce) {
                     failEnteringOnce = false;
@@ -82,14 +82,14 @@ test.describe('Listener scheduled Free browser boundary', () => {
                 enteringLeaseRequests += 1;
                 await route.continue();
             });
-            await leavingPage.route('**/api/early-birds/access-state', async (route) => {
+            await leavingPage.route('**/api/listener/access-state', async (route) => {
                 leavingStateRequests += 1;
                 await route.continue();
             });
 
             await Promise.all([
-                enteringPage.goto('/early-birds'),
-                leavingPage.goto('/early-birds'),
+                enteringPage.goto('/listener'),
+                leavingPage.goto('/listener'),
             ]);
             await expect(enteringPage.locator('.listener-shell--public')).toBeVisible();
             await expect(enteringPage.locator('.listener-experience')).toHaveCount(0);
@@ -97,8 +97,8 @@ test.describe('Listener scheduled Free browser boundary', () => {
 
             const enteringEpoch = await documentEpoch(enteringPage);
             const leavingEpoch = await documentEpoch(leavingPage);
-            const enteringState = await enteringPage.request.get('/api/early-birds/access-state');
-            const leavingState = await leavingPage.request.get('/api/early-birds/access-state');
+            const enteringState = await enteringPage.request.get('/api/listener/access-state');
+            const leavingState = await leavingPage.request.get('/api/listener/access-state');
             const enteringPayload = await enteringState.json() as { serverNow: string; freeWindow: { nextStart: string } };
             const leavingPayload = await leavingState.json() as { serverNow: string; access: { allowedUntil: string } };
 

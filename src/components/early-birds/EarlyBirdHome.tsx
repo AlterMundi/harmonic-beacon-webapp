@@ -6,6 +6,7 @@ import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import type { ListenerCampfireFixture } from '@/lib/early-birds/campfire-prototype';
 import { earlyBirdCopy, earlyBirdHomeCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import ListenerPlayer from './ListenerPlayer';
 import AccessBoundarySync from './AccessBoundarySync';
@@ -38,7 +39,7 @@ export default function EarlyBirdHome({
 
     async function signOut() {
         await earlyBirdAuthClient.signOut();
-        window.location.assign('/early-birds');
+        window.location.assign(LISTENER_NAMESPACE.canonical.home);
     }
 
     return (
@@ -53,7 +54,7 @@ export default function EarlyBirdHome({
             )}
             <div className="listener-shell__frame">
                 <header className="listener-rail">
-                    <BrandLockup href="/early-birds" />
+                    <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
                     <div className="listener-rail__actions">
                         {!publicAccess && <details className="listener-account">
                             <summary aria-label={copy.account} title={copy.account}>

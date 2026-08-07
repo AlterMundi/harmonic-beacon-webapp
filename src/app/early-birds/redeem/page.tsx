@@ -8,20 +8,21 @@ import {
     canonicalEarlyBirdInvitation,
     EARLY_BIRD_INVITATION_COOKIE,
 } from '@/lib/early-birds/invitation-cookie';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 export const dynamic = 'force-dynamic';
 
 export default async function EarlyBirdRedeemPage() {
-    if (!earlyBirdsEnabled()) redirect('/early-birds');
+    if (!earlyBirdsEnabled()) redirect(LISTENER_NAMESPACE.canonical.home);
 
     const cookieStore = await cookies();
     const token = canonicalEarlyBirdInvitation(
         cookieStore.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
     );
-    if (!token) redirect('/early-birds');
+    if (!token) redirect(LISTENER_NAMESPACE.canonical.home);
 
     const session = await currentEarlyBirdSession().catch(() => null);
-    if (!session) redirect('/early-birds');
+    if (!session) redirect(LISTENER_NAMESPACE.canonical.home);
 
     return <FreeInvitationRedeemer />;
 }

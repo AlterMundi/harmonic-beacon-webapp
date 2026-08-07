@@ -66,7 +66,12 @@ describe('EarlyBird public auth route', () => {
         expect(handler).toHaveBeenCalledOnce();
     });
 
-    it('accepts only fixed Listener callbacks and constrained locale metadata for magic links', async () => {
+    it.each([
+        ['/listener', '/listener?authError=1'],
+        ['/listener/redeem', '/listener?authError=1'],
+        ['/early-birds', '/early-birds?authError=1'],
+        ['/early-birds/redeem', '/early-birds?authError=1'],
+    ])('accepts exact Listener callback %s with constrained locale metadata', async (callbackURL, errorCallbackURL) => {
         const request = new NextRequest(
             'https://listen.example.test/api/early-birds/auth/sign-in/magic-link',
             {
@@ -77,8 +82,8 @@ describe('EarlyBird public auth route', () => {
                 },
                 body: JSON.stringify({
                     email: 'listener@example.test',
-                    callbackURL: '/early-birds',
-                    errorCallbackURL: '/early-birds?authError=1',
+                    callbackURL,
+                    errorCallbackURL,
                     metadata: { locale: 'es' },
                 }),
             },
@@ -92,6 +97,9 @@ describe('EarlyBird public auth route', () => {
         {},
         { callbackURL: 'https://attacker.invalid/collect' },
         { callbackURL: '/ops' },
+        { callbackURL: '/listener-other' },
+        { callbackURL: '/listener/redeem/extra' },
+        { callbackURL: '/listener', errorCallbackURL: '/listener?authError=2' },
         { callbackURL: '/early-birds', metadata: { locale: 'en', token: 'leak' } },
     ])('rejects unsafe magic-link request fields: %j', async (body) => {
         const request = new NextRequest(

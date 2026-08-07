@@ -14,7 +14,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 vi.mock('@/lib/early-birds/auth-client', () => ({
     earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
 }));
-vi.mock('@/components/brand/BrandLockup', () => ({ default: () => <a href="/early-birds">Harmonic Beacon</a> }));
+vi.mock('@/components/brand/BrandLockup', () => ({ default: ({ href }: { href: string }) => <a href={href}>Harmonic Beacon</a> }));
 
 import EarlyBirdLanding from '../EarlyBirdLanding';
 
@@ -78,8 +78,8 @@ describe('EarlyBird public landing', () => {
         await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }));
         expect(signInSocial).toHaveBeenCalledWith({
             provider: 'google',
-            callbackURL: '/early-birds/redeem',
-            errorCallbackURL: '/early-birds?authError=1',
+            callbackURL: '/listener/redeem',
+            errorCallbackURL: '/listener?authError=1',
             requestSignUp: true,
         });
     });
@@ -124,8 +124,8 @@ describe('EarlyBird public landing', () => {
 
         expect(signInMagicLink).toHaveBeenCalledWith({
             email: 'listener@example.test',
-            callbackURL: '/early-birds',
-            errorCallbackURL: '/early-birds?authError=1',
+            callbackURL: '/listener',
+            errorCallbackURL: '/listener?authError=1',
             metadata: { locale: 'en' },
         });
         expect(screen.getByRole('status')).toHaveTextContent('If this email can be used for access');
@@ -152,7 +152,7 @@ describe('EarlyBird public landing', () => {
         renderLanding({ signedIn: true, entitled: true });
         expect(screen.getAllByRole('link', { name: 'Enter the Beacon' }))
             .toEqual(expect.arrayContaining([
-                expect.objectContaining({ href: expect.stringMatching(/\/early-birds$/) }),
+                expect.objectContaining({ href: expect.stringMatching(/\/listener$/) }),
             ]));
         expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
         expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
@@ -176,7 +176,7 @@ describe('EarlyBird public landing', () => {
         expect(screen.getByRole('heading', { name: 'Your daily time · 2 hours' })).toBeInTheDocument();
         await userEvent.click(screen.getByRole('button', { name: 'Listen now' }));
 
-        expect(fetchMock).toHaveBeenCalledWith('/api/early-birds/welcome-access', expect.objectContaining({
+        expect(fetchMock).toHaveBeenCalledWith('/api/listener/welcome-access', expect.objectContaining({
             method: 'POST',
         }));
         expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('activationRequestId');

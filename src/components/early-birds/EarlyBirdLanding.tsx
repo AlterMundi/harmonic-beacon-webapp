@@ -9,6 +9,7 @@ import { earlyBirdCopy, listenerMembershipPresentationCopy } from '@/lib/early-b
 import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-window';
 import type { SerializedEarlyBirdWelcomeAccessState } from '@/lib/early-birds/welcome-access';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import AccessBoundarySync from './AccessBoundarySync';
 import BeaconField from './BeaconField';
@@ -39,8 +40,8 @@ export default function EarlyBirdLanding(props: Props) {
     const [emailRequested, setEmailRequested] = useState(false);
     const membership = listenerMembershipPresentationCopy(copy, props.membership);
     const callbackURL = props.invitationAvailable
-        ? '/early-birds/redeem'
-        : '/early-birds';
+        ? LISTENER_NAMESPACE.canonical.redeem
+        : LISTENER_NAMESPACE.canonical.home;
 
     async function signIn(provider: 'google' | 'apple') {
         if (busy || !props.providers[provider]) return;
@@ -50,7 +51,7 @@ export default function EarlyBirdLanding(props: Props) {
             const result = await earlyBirdAuthClient.signIn.social({
                 provider,
                 callbackURL,
-                errorCallbackURL: '/early-birds?authError=1',
+                errorCallbackURL: LISTENER_NAMESPACE.canonical.authError,
                 requestSignUp: true,
             });
             if (!result.error) return;
@@ -61,7 +62,7 @@ export default function EarlyBirdLanding(props: Props) {
 
     async function signOut() {
         await earlyBirdAuthClient.signOut();
-        window.location.assign('/early-birds');
+        window.location.assign(LISTENER_NAMESPACE.canonical.home);
     }
 
     async function requestMagicLink(event: React.FormEvent<HTMLFormElement>) {
@@ -73,7 +74,7 @@ export default function EarlyBirdLanding(props: Props) {
             await earlyBirdAuthClient.signIn.magicLink({
                 email,
                 callbackURL,
-                errorCallbackURL: '/early-birds?authError=1',
+                errorCallbackURL: LISTENER_NAMESPACE.canonical.authError,
                 metadata: { locale },
             });
             // The same response is intentionally shown for unknown accounts,
@@ -99,7 +100,7 @@ export default function EarlyBirdLanding(props: Props) {
             )}
             <div className="listener-shell__frame">
                 <header className="listener-rail">
-                    <BrandLockup href="/early-birds" />
+                    <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
                 </header>
 
                 <section className="listener-public-hero">
@@ -139,7 +140,7 @@ export default function EarlyBirdLanding(props: Props) {
                             <div className="space-y-5">
                                 <p className="text-sm text-[var(--text-secondary)]">{copy.signedIn}</p>
                                 {props.entitled ? (
-                                    <a href="/early-birds" className="event-button event-button--primary inline-flex w-full">
+                                    <a href={LISTENER_NAMESPACE.canonical.home} className="event-button event-button--primary inline-flex w-full">
                                         {copy.enter}
                                     </a>
                                 ) : props.invitationAvailable ? (

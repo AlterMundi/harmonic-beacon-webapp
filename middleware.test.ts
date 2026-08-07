@@ -24,12 +24,18 @@ const INVITATION = `ebi_v1.${'a'.repeat(32)}.${'b'.repeat(32)}.${'c'.repeat(32)}
  * one that should make that obvious.
  */
 
-function request(pathname: string, cookie?: string): NextRequest {
+function request(
+    pathname: string,
+    cookie?: string,
+    hostname = 'live.harmonicbeacon.com',
+    extraHeaders: Record<string, string> = {},
+): NextRequest {
     const headers = new Headers();
     if (cookie) {
         headers.set('cookie', cookie);
     }
-    return new NextRequest(new URL(pathname, 'https://live.harmonicbeacon.com'), { headers });
+    for (const [name, value] of Object.entries(extraHeaders)) headers.set(name, value);
+    return new NextRequest(new URL(pathname, `https://${hostname}`), { headers });
 }
 
 function location(response: NextResponse): URL {
@@ -44,7 +50,11 @@ describe('middleware', () => {
             ['/early-birds', 'invite'],
             ['/early-birds/redeem', 'token'],
         ])('moves the canonical %s query token to a short HttpOnly cookie', (pathname, queryName) => {
-            const response = middleware(request(`${pathname}?${queryName}=${INVITATION}&locale=en`));
+            const response = middleware(request(
+                `${pathname}?${queryName}=${INVITATION}&locale=en`,
+                undefined,
+                'earlybirds-staging.harmonicbeacon.com',
+            ));
 
             expect(response.status).toBe(307);
             const target = location(response);
@@ -61,6 +71,38 @@ describe('middleware', () => {
                 path: '/',
                 maxAge: EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
             });
+        });
+
+        it.each([
+            ['listen.harmonicbeacon.com', '/listener', 'invite'],
+            ['listen.harmonicbeacon.com', '/listener/redeem', 'token'],
+            ['listen.harmonicbeacon.com', '/early-birds', 'invite'],
+            ['listen.harmonicbeacon.com', '/early-birds/redeem', 'token'],
+            ['live.harmonicbeacon.com', '/early-birds', 'invite'],
+        ])('scrubs but never persists %s%s invitation queries', (hostname, pathname, queryName) => {
+            const response = middleware(request(
+                `${pathname}?${queryName}=${INVITATION}&locale=en`,
+                undefined,
+                hostname,
+            ));
+
+            expect(response.status).toBe(307);
+            expect(location(response).searchParams.has(queryName)).toBe(false);
+            expect(location(response).searchParams.get('locale')).toBe('en');
+            expect(response.headers.get('cache-control')).toBe('private, no-store');
+            expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+            expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+        });
+
+        it('does not trust a forwarded staging host on the public Listener URL', () => {
+            const response = middleware(request(
+                `/listener?invite=${INVITATION}`,
+                undefined,
+                'listen.harmonicbeacon.com',
+                { 'x-forwarded-host': 'earlybirds-staging.harmonicbeacon.com' },
+            ));
+
+            expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
         });
 
         it('scrubs malformed or ambiguous query values without persisting them', () => {
