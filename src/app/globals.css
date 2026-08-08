@@ -1871,6 +1871,170 @@ body {
   line-height: 1.65;
 }
 
+/* --------------------------------------------
+   LISTENER PAGE SHELL / ACTIONS / ALERTS / FIELDS
+   Listener-scoped mirrors of the event visual
+   primitives so future event UI changes cannot
+   restyle Listener surfaces (issues #213, #198).
+   Event rules above remain untouched.
+   -------------------------------------------- */
+
+.listener-page-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--night);
+  position: relative;
+}
+
+.listener-page-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 15% 10%, rgba(158, 114, 255, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 80%, rgba(124, 234, 255, 0.04) 0%, transparent 50%);
+}
+
+.listener-page-shell::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image:
+    radial-gradient(circle at 15% 27%, var(--gold) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 72% 18%, var(--cyan) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 84% 76%, var(--pink) 0 1px, transparent 1.5px);
+  background-size: 270px 270px, 390px 390px, 330px 330px;
+}
+
+.listener-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: 999px;
+  font-family: var(--font-space-mono), monospace;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
+  border: 1px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.listener-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.listener-button--primary {
+  color: var(--night);
+  background: linear-gradient(105deg, var(--gold), var(--lime) 56%, var(--cyan));
+  box-shadow: 0 8px 28px rgba(124, 234, 255, 0.12), 0 0 20px rgba(255, 216, 117, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.listener-button--primary:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 36px rgba(124, 234, 255, 0.18), 0 0 28px rgba(255, 216, 117, 0.22);
+}
+
+.listener-button--primary:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.listener-button--secondary {
+  color: var(--cream);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border-subtle);
+}
+
+.listener-button--secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-strong);
+}
+
+.listener-button--ghost {
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: transparent;
+  /* Listener controls stay at the 44px touch floor; the event ghost is 36px. */
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.listener-button--ghost:hover {
+  color: var(--cream);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.listener-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.listener-alert {
+  padding: 14px 18px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid transparent;
+}
+
+.listener-alert--danger,
+.listener-alert--error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.listener-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: rgba(7, 18, 15, 0.6);
+  color: var(--paper);
+  font-size: 15px;
+  font-family: var(--font-syne), system-ui, sans-serif;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.listener-input::placeholder {
+  color: var(--muted);
+}
+
+.listener-input:focus {
+  outline: none;
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px rgba(255, 143, 200, 0.1), 0 0 16px rgba(255, 143, 200, 0.08);
+}
+
+.listener-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .listener-button {
+    min-height: 44px;
+    padding: 0 18px;
+    font-size: 12px;
+  }
+}
+
 @media (max-width: 760px) {
   .listener-campfire { opacity: 0.72; }
   .listener-shell__frame { padding-inline: 1rem; }
@@ -1911,4 +2075,9 @@ body {
   .listener-field__orbit,
   .listener-field__core,
   .listener-field__point { animation: none; }
+
+  .listener-button,
+  .listener-input { transition: none; }
+
+  .listener-button:hover { transform: none; }
 }

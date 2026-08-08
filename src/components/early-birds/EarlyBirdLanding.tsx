@@ -145,7 +145,7 @@ export default function EarlyBirdLanding(props: Props) {
                                     : copy.accessUnavailable}</p>
                                 <a
                                     href={LISTENER_NAMESPACE.canonical.home}
-                                    className="event-button event-button--secondary w-full"
+                                    className="listener-button listener-button--secondary w-full"
                                 >
                                     {copy.retryAccess}
                                 </a>
@@ -163,11 +163,11 @@ export default function EarlyBirdLanding(props: Props) {
                             <div className="space-y-5">
                                 <p className="text-sm text-[var(--text-secondary)]">{copy.signedIn}</p>
                                 {props.entitled ? (
-                                    <a href={LISTENER_NAMESPACE.canonical.home} className="event-button event-button--primary inline-flex w-full">
+                                    <a href={LISTENER_NAMESPACE.canonical.home} className="listener-button listener-button--primary inline-flex w-full">
                                         {copy.enter}
                                     </a>
                                 ) : props.invitationAvailable ? (
-                                    <a href={callbackURL} className="event-button event-button--primary inline-flex w-full">
+                                    <a href={callbackURL} className="listener-button listener-button--primary inline-flex w-full">
                                         {copy.redeem}
                                     </a>
                                 ) : (
@@ -198,7 +198,7 @@ export default function EarlyBirdLanding(props: Props) {
                                         type="button"
                                         onClick={() => signIn(provider)}
                                         disabled={busy !== null}
-                                        className="event-button event-button--secondary w-full"
+                                        className="listener-button listener-button--secondary w-full"
                                     >
                                         {busy === provider
                                             ? copy.signingIn
@@ -233,7 +233,7 @@ export default function EarlyBirdLanding(props: Props) {
                                                 <button
                                                     type="submit"
                                                     disabled={busy !== null}
-                                                    className="event-button event-button--secondary w-full"
+                                                    className="listener-button listener-button--secondary w-full"
                                                 >
                                                     {busy === 'email' ? copy.magicLinkSending : copy.magicLinkSend}
                                                 </button>

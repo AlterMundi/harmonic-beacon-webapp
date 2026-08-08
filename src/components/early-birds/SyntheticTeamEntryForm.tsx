@@ -65,7 +65,7 @@ export default function SyntheticTeamEntryForm({
                     autoComplete="off"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    className="event-field mt-1"
+                    className="listener-input mt-1"
                 />
             </label>
             <label className="block text-xs text-[var(--text-secondary)]">
@@ -79,7 +79,7 @@ export default function SyntheticTeamEntryForm({
                     placeholder="name@e2e.invalid"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    className="event-field mt-1"
+                    className="listener-input mt-1"
                 />
             </label>
             <label className="block text-xs text-[var(--text-secondary)]">
@@ -92,11 +92,11 @@ export default function SyntheticTeamEntryForm({
                     autoComplete="off"
                     value={accessCode}
                     onChange={(event) => setAccessCode(event.target.value)}
-                    className="event-field mt-1"
+                    className="listener-input mt-1"
                 />
             </label>
-            {failed && <p role="alert" className="event-alert event-alert--danger">{copy.failed}</p>}
-            <button type="submit" disabled={busy} className="event-button event-button--ghost w-full">
+            {failed && <p role="alert" className="listener-alert listener-alert--danger">{copy.failed}</p>}
+            <button type="submit" disabled={busy} className="listener-button listener-button--ghost w-full">
                 {busy ? copy.entering : copy.enter}
             </button>
         </form>

@@ -44,7 +44,7 @@ export default function FreeInvitationRedeemer() {
     }
 
     return (
-        <main className="event-shell">
+        <main className="listener-page-shell">
             <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center gap-8 px-6 py-12">
                 <header className="flex items-center justify-between gap-4">
                     <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
@@ -53,12 +53,12 @@ export default function FreeInvitationRedeemer() {
                     <p className="font-mono text-xs tracking-[0.22em] text-[var(--gold)]">{copy.eyebrow}</p>
                     <h1 className="font-serif text-4xl font-normal leading-tight">{copy.heading}</h1>
                     <p className="text-sm leading-6 text-[var(--text-secondary)]">{copy.body}</p>
-                    {error && <p role="alert" className="event-alert event-alert--danger">{copy.error}</p>}
+                    {error && <p role="alert" className="listener-alert listener-alert--danger">{copy.error}</p>}
                     <button
                         type="button"
                         disabled={busy}
                         onClick={redeem}
-                        className="event-button event-button--primary w-full"
+                        className="listener-button listener-button--primary w-full"
                     >
                         {busy ? copy.activating : copy.action}
                     </button>
