@@ -1,9 +1,17 @@
 import { headers as requestHeaders } from 'next/headers';
 import { betterAuth } from 'better-auth/minimal';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
+import { getCookies } from 'better-auth/cookies';
 import { magicLink } from 'better-auth/plugins';
 
 import { prisma } from '@/lib/db';
+import {
+    LISTENER_SESSION_COOKIE,
+    listenerSessionAuthHandler,
+    listenerSessionCookieNames,
+    resolveListenerSessionCookie,
+    type ListenerSessionCookieNames,
+} from '@/lib/listener/session-cookie-bridge';
 import {
     listenerRuntimeBundle,
     listenerRuntimeFlag,
@@ -21,6 +29,7 @@ import {
 export const EARLY_BIRD_AUTH_BASE_PATH = '/api/early-birds/auth';
 export const EARLY_BIRD_COOKIE_PREFIX = 'hb_earlybird';
 export const EARLY_BIRD_SESSION_COOKIE = 'hb_earlybird_session';
+export { LISTENER_SESSION_COOKIE };
 
 export function earlyBirdTestAuthEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
     return earlyBirdTestLoginSecret(environment) !== null;
@@ -235,6 +244,39 @@ export function earlyBirdAuth() {
     return singleton;
 }
 
+/**
+ * The session cookie pair as Better Auth actually resolved it, including its
+ * `__Secure-` convention, plus the canonical Listener mirror name and the
+ * resolved cookie scope. Passing the resolved attributes through keeps every
+ * bridge-side expiry on exactly the scope Better Auth minted into; Better
+ * Auth never resolves a Domain here, and the bridge never invents one.
+ */
+export function earlyBirdSessionCookieNames(): ListenerSessionCookieNames {
+    const sessionToken = getCookies(earlyBirdAuth().options).sessionToken;
+    return listenerSessionCookieNames(sessionToken.name, {
+        path: sessionToken.attributes.path,
+        httpOnly: sessionToken.attributes.httpOnly,
+        // Better Auth resolves lowercase; emit the canonical wire casing.
+        sameSite: sessionToken.attributes.sameSite.charAt(0).toUpperCase() +
+            sessionToken.attributes.sameSite.slice(1),
+        secure: sessionToken.attributes.secure,
+    });
+}
+
+/**
+ * Shared Better Auth route handler with the Listener session-cookie bridge:
+ * invalid inbound session-cookie states are rejected generically before
+ * Better Auth runs, and every emitted session cookie (sign-in, rotation,
+ * sign-out) is mirrored on the way out. Better Auth's own base path, cookie
+ * and verification are unchanged.
+ */
+export function earlyBirdAuthHandler(request: Request): Promise<Response> {
+    return listenerSessionAuthHandler(
+        (bridged) => earlyBirdAuth().handler(bridged),
+        earlyBirdSessionCookieNames(),
+    )(request);
+}
+
 export type EarlyBirdSession = {
     user: {
         id: string;
@@ -253,6 +295,13 @@ export async function currentEarlyBirdSession(
     suppliedHeaders?: Headers,
 ): Promise<EarlyBirdSession | null> {
     const resolvedHeaders = suppliedHeaders ?? new Headers(await requestHeaders());
+    // The same strict inbound policy as the route handler: ambiguous
+    // session-cookie states never reach Better Auth, they fail closed here.
+    const resolution = resolveListenerSessionCookie(
+        resolvedHeaders.get('cookie'),
+        earlyBirdSessionCookieNames(),
+    );
+    if (resolution.kind === 'reject') return null;
     const result = await earlyBirdAuth().api.getSession({ headers: resolvedHeaders });
     if (!result) return null;
 

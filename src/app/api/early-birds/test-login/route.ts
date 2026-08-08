@@ -4,13 +4,15 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
     EARLY_BIRD_AUTH_BASE_PATH,
-    earlyBirdAuth,
+    earlyBirdAuthHandler,
+    earlyBirdSessionCookieNames,
     earlyBirdTestAuthEnabled,
     earlyBirdTestLoginSecret,
 } from '@/lib/early-birds/auth';
 import { issueSyntheticMembership } from '@/lib/early-birds/membership';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
+import { listenerSessionClearCookies } from '@/lib/listener/session-cookie-bridge';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +42,25 @@ function testPassword(email: string): string {
         .digest('base64url');
 }
 
+/**
+ * Preserve only the bridge's exact, empty dual-cookie recovery response.
+ * Better Auth bodies, token values, unrelated cookies and other internal
+ * headers never cross the synthetic-login boundary.
+ */
+function recoveryHeaders(authResponse: Response): Headers {
+    const headers = new Headers({ 'cache-control': 'private, no-store' });
+    const expected = listenerSessionClearCookies(earlyBirdSessionCookieNames());
+    const actual = authResponse.headers.getSetCookie();
+    if (
+        actual.length !== expected.length ||
+        new Set(actual).size !== actual.length ||
+        !expected.every((entry) => actual.includes(entry))
+    ) return headers;
+
+    for (const entry of expected) headers.append('set-cookie', entry);
+    return headers;
+}
+
 async function authRequest(
     request: NextRequest,
     operation: 'sign-up' | 'sign-in',
@@ -51,7 +72,7 @@ async function authRequest(
     // of Better Auth's request and never enters a cookie or client response.
     headers.delete('authorization');
     headers.set('content-type', 'application/json');
-    return earlyBirdAuth().handler(new Request(url, {
+    return earlyBirdAuthHandler(new Request(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -99,7 +120,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
     }
     if (!authResponse.ok) {
-        return NextResponse.json({ error: 'Synthetic login failed.' }, { status: 503 });
+        return NextResponse.json(
+            { error: 'Synthetic login failed.' },
+            { status: 503, headers: recoveryHeaders(authResponse) },
+        );
     }
 
     const payload = await authResponse.clone().json() as { user?: { id?: unknown } };

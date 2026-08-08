@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 
-import { earlyBirdAuth } from '@/lib/early-birds/auth';
+import { earlyBirdAuthHandler } from '@/lib/early-birds/auth';
 import {
     EARLY_BIRD_MAGIC_LINK_PATH,
     EARLY_BIRD_MAGIC_LINK_VERIFY_PATH,
@@ -111,7 +111,7 @@ export function GET(request: NextRequest): Promise<Response> | Response {
         if (!earlyBirdMagicLinkAvailable()) return hiddenMagicLinkResponse();
         if (!safeMagicLinkVerification(request)) return invalidMagicLinkResponse();
     }
-    return earlyBirdAuth().handler(request);
+    return earlyBirdAuthHandler(request);
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -131,5 +131,5 @@ export async function POST(request: NextRequest): Promise<Response> {
             headers: { 'Cache-Control': 'private, no-store' },
         });
     }
-    return earlyBirdAuth().handler(request);
+    return earlyBirdAuthHandler(request);
 }
