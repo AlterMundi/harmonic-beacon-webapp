@@ -1,0 +1,7 @@
+{
+  "schema_version": "early-bird-authority.checkout-create.v1",
+  "account_id": "account_synthetic_0001",
+  "provider": "paypal",
+  "return_url": "https://example.invalid/membership/complete",
+  "cancel_url": "https://example.invalid/membership/cancel"
+}

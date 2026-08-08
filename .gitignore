@@ -16,6 +16,7 @@
 /playwright-report/
 /e2e/.auth/
 /artifacts/load-test/
+/artifacts/early-birds-hls-load/
 
 # next.js
 /.next/

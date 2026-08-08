@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "id": "listener-staging-smoke-10",
+      "environment": "staging",
+      "production": false,
+      "attestation": {
+        "header": "x-harmonic-beacon-environment",
+        "value": "early-birds-staging"
+      },
+      "origins": [
+        "https://stream.harmonicbeacon.com"
+      ],
+      "limits": {
+        "maxClients": 10,
+        "maxRampPerSecond": 2,
+        "maxSoakSeconds": 60,
+        "maxShardCount": 1,
+        "minManifestIntervalMs": 3000,
+        "maxInflightPerShard": 16,
+        "maxSegmentsPerPoll": 6,
+        "maxRequestsPerSecond": 28,
+        "maxManifestBytes": 262144,
+        "maxSegmentBytes": 4194304,
+        "maxClockOffsetMs": 100
+      }
+    }
+  ]
+}

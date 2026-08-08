@@ -1,0 +1,10 @@
+{
+  "schema_version": "early-bird-authority.checkout.v1",
+  "account_id": "account_synthetic_0001",
+  "provider": "paypal",
+  "external_subscription_id": "sandbox_paypal_0123456789abcdef01234567",
+  "approval_url": "https://sandbox.invalid/paypal/sandbox_paypal_0123456789abcdef01234567",
+  "currency": "USD",
+  "amount_minor": 200,
+  "sandbox": true
+}

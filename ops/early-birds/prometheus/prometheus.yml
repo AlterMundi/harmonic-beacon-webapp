@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    product: early-birds
+    environment: preview
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # This is the origin's separate internal listener, never its public endpoint.
+  - job_name: beacon-stream
+    static_configs:
+      - targets: [beacon-stream:9090]
+
+  - job_name: early-birds-canary
+    static_configs:
+      - targets: [canary-exporter:8081]
+
+  - job_name: node
+    static_configs:
+      - targets: [node-exporter:9100]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: [cadvisor:8080]

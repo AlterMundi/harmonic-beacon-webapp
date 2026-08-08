@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-06T00:00:00.000Z",
+  "master": {
+    "immutable": true,
+    "path": "/mnt/beacon-data/beacon-records/luz_de_manana_20260624-155633.wav",
+    "sha256": "RECORD_WITH_scripts/inventory.mjs_BEFORE_ANY_DERIVATIVE_WORK",
+    "bytes": 0
+  },
+  "notes": [
+    "This is an example, not a source of truth or an audio artifact.",
+    "The master is read only. It is never copied, encoded, renamed or overwritten by this service."
+  ]
+}

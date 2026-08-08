@@ -1,0 +1,14 @@
+# Optional handoff to an external, Free-only canonical membership authority.
+# Include this file only through the guarded lifecycle scripts by setting the
+# dedicated network name in preview.env. No paid-provider service is defined.
+services:
+  listener:
+    networks:
+      authority_private:
+        aliases:
+          - earlybirds-listener
+
+networks:
+  authority_private:
+    external: true
+    name: ${EARLYBIRDS_PREVIEW_AUTHORITY_NETWORK:?set_only_for_private_authority_handoff}

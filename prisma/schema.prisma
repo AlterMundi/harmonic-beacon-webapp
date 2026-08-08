@@ -83,6 +83,39 @@ enum ContributionState {
   WITHDRAWN
 }
 
+enum EarlyBirdMembershipState {
+  PENDING
+  ACTIVE
+  GRACE
+  CANCELLED_PENDING_END
+  EXPIRED
+  REFUNDED
+  REVOKED
+}
+
+enum EarlyBirdMembershipSource {
+  FREE
+  PAYPAL
+  MERCADO_PAGO
+}
+
+// Coarse, non-identifying regions used only for Listener presence. Exact
+// locations never enter the application database.
+enum ListenerMacroRegion {
+  NORTH_AMERICA
+  LATIN_AMERICA
+  EUROPE
+  AFRICA
+  ASIA
+  OCEANIA
+  UNKNOWN
+}
+
+enum ListenerPresenceState {
+  IDLE
+  LISTENING
+}
+
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String    @unique
@@ -396,4 +429,193 @@ model SessionContribution {
   @@unique([scheduledSessionId, authorParticipantId, idempotencyKey])
   @@index([scheduledSessionId, state, createdAt, id])
   @@map("session_contributions")
+}
+
+// EarlyBirds is a deliberately separate identity and entitlement domain. None
+// of these rows can authorize weekend event, staff, LiveKit, or chat surfaces.
+model EarlyBirdUser {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false) @map("email_verified")
+  image         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  identities         EarlyBirdIdentity[]
+  authSessions       EarlyBirdAuthSession[]
+  membership         EarlyBirdMembershipProjection?
+  founderEligibility EarlyBirdFounderEligibilityProjection?
+  freeSchedule       EarlyBirdFreeSchedule?
+  welcomeAccess      EarlyBirdWelcomeAccess?
+  streamLeases       EarlyBirdStreamLease[]
+
+  @@map("early_bird_users")
+}
+
+model EarlyBirdIdentity {
+  id                    String        @id
+  providerId            String        @map("provider_id")
+  accountId             String        @map("account_id")
+  userId                String        @map("user_id")
+  user                  EarlyBirdUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?       @map("access_token") @db.Text
+  refreshToken          String?       @map("refresh_token") @db.Text
+  idToken               String?       @map("id_token") @db.Text
+  accessTokenExpiresAt  DateTime?     @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime?     @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?       @db.Text
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("early_bird_identities")
+}
+
+model EarlyBirdAuthSession {
+  id        String        @id
+  userId    String        @map("user_id")
+  user      EarlyBirdUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String        @unique
+  expiresAt DateTime      @map("expires_at")
+  ipAddress String?       @map("ip_address")
+  userAgent String?       @map("user_agent")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("early_bird_auth_sessions")
+}
+
+model EarlyBirdVerification {
+  id         String   @id
+  identifier String
+  value      String   @db.Text
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@index([expiresAt])
+  @@map("early_bird_verifications")
+}
+
+// HMAC-keyed abuse buckets for the Listener email fallback. Neither raw email
+// addresses nor raw network addresses are persisted here.
+model EarlyBirdMagicLinkThrottle {
+  key             String   @id
+  kind            String
+  windowStartedAt DateTime @map("window_started_at")
+  attempts        Int      @default(0)
+  blockedUntil    DateTime? @map("blocked_until")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("early_bird_magic_link_throttles")
+}
+
+// Read-side projection of the canonical membership owned by
+// proyecciones-mito. The revision and hash make delivery monotonic and
+// idempotent; redirect URLs and local UI state are never authorization proof.
+model EarlyBirdMembershipProjection {
+  id            String                     @id @default(uuid()) @db.Uuid
+  accountId     String                     @unique @map("account_id")
+  account       EarlyBirdUser              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  revision      Int
+  commandHash   String                     @map("command_hash") @db.Char(64)
+  state         EarlyBirdMembershipState
+  source        EarlyBirdMembershipSource?
+  offerCode     String?                    @map("offer_code")
+  offerRevision Int?                       @map("offer_revision")
+  effectiveAt   DateTime                   @map("effective_at")
+  paidThrough   DateTime?                  @map("paid_through")
+  graceUntil    DateTime?                  @map("grace_until")
+  provider      String?
+  amountMinor   Int?                       @map("amount_minor")
+  currency      String?                    @db.VarChar(3)
+  reasonCode    String                     @map("reason_code") @db.VarChar(64)
+  synthetic     Boolean                    @default(false)
+  createdAt     DateTime                   @default(now()) @map("created_at")
+  updatedAt     DateTime                   @updatedAt @map("updated_at")
+
+  @@index([state, paidThrough])
+  @@map("early_bird_membership_projections")
+}
+
+// Positive-only projection of the canonical, lifetime Founder price evidence.
+// It is deliberately separate from membership/access revisions and authorizes
+// nothing by itself.
+model EarlyBirdFounderEligibilityProjection {
+  accountId       String        @id @map("account_id")
+  account         EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  offerCode       String        @map("offer_code") @db.VarChar(128)
+  offerRevision   Int           @map("offer_revision")
+  currency        String        @db.Char(3)
+  amountMinor     Int           @map("amount_minor")
+  billingPeriod   String        @map("billing_period") @db.VarChar(32)
+  grantedAt       DateTime      @map("granted_at")
+  eligibilityHash String        @map("eligibility_hash") @db.Char(64)
+  observedAt      DateTime      @map("observed_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([grantedAt])
+  @@map("early_bird_founder_eligibility_projections")
+}
+
+// Account-bound ordinary Free access. This is deliberately independent from
+// the canonical commerce membership projection: choosing a listening window
+// can never fabricate a purchase or a Founding Listener entitlement.
+model EarlyBirdFreeSchedule {
+  accountId          String        @id @map("account_id")
+  account            EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  timeZone           String        @map("time_zone") @db.VarChar(64)
+  localStartMinute   Int           @map("local_start_minute")
+  selectedAt         DateTime      @map("selected_at")
+  changeAllowedAt    DateTime      @map("change_allowed_at")
+  selectionRequestId String        @unique @map("selection_request_id") @db.VarChar(64)
+  revision           Int           @default(1)
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  @@index([changeAllowedAt])
+  @@map("early_bird_free_schedules")
+}
+
+// One explicit, account-bound first listen before a person commits to a daily
+// Free schedule. The row is the durable consumed marker; it is never created
+// by registration, Free for All, membership or a page view.
+model EarlyBirdWelcomeAccess {
+  accountId           String        @id @map("account_id")
+  account             EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  startedAt           DateTime      @map("started_at")
+  endsAt              DateTime      @map("ends_at")
+  activationRequestId String        @unique @map("activation_request_id") @db.VarChar(64)
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  @@index([endsAt])
+  @@map("early_bird_welcome_accesses")
+}
+
+model EarlyBirdStreamLease {
+  id                String                @id @default(uuid()) @db.Uuid
+  accountId         String                @map("account_id")
+  account           EarlyBirdUser         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deviceDigest      String                @map("device_digest") @db.Char(64)
+  presence          ListenerPresenceState @default(IDLE)
+  macroRegion       ListenerMacroRegion   @default(UNKNOWN) @map("macro_region")
+  presenceUpdatedAt DateTime?             @map("presence_updated_at")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  lastSeenAt        DateTime              @map("last_seen_at")
+  expiresAt         DateTime              @map("expires_at")
+  evictedAt         DateTime?             @map("evicted_at")
+
+  @@unique([accountId, deviceDigest])
+  @@index([accountId, evictedAt, expiresAt, lastSeenAt])
+  @@index([presence, presenceUpdatedAt, expiresAt])
+  @@map("early_bird_stream_leases")
 }

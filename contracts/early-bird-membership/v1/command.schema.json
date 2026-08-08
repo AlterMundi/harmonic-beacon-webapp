@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/early-bird-membership/v1/command.schema.json",
+  "title": "EarlyBird membership command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "account_id",
+    "membership_revision",
+    "state",
+    "source",
+    "offer",
+    "effective_at",
+    "paid_through",
+    "grace_until",
+    "provider",
+    "current_price",
+    "reason_code"
+  ],
+  "properties": {
+    "schema_version": {"const": "early-bird-membership.command.v1"},
+    "account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
+    "membership_revision": {"type": "integer", "minimum": 1},
+    "state": {
+      "enum": [
+        "PENDING",
+        "ACTIVE",
+        "GRACE",
+        "CANCELLED_PENDING_END",
+        "EXPIRED",
+        "REFUNDED",
+        "REVOKED"
+      ]
+    },
+    "source": {"type": ["string", "null"], "enum": ["FREE", "PAYPAL", "MERCADO_PAGO", null]},
+    "offer": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "revision"],
+          "properties": {
+            "code": {"const": "EARLY_BIRDS_FOUNDERS_V1"},
+            "revision": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    },
+    "effective_at": {"type": "string", "format": "date-time"},
+    "paid_through": {"type": ["string", "null"], "format": "date-time"},
+    "grace_until": {"type": ["string", "null"], "format": "date-time"},
+    "provider": {"type": ["string", "null"], "enum": ["paypal", "mercado_pago", null]},
+    "current_price": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["currency", "amount_minor"],
+          "properties": {
+            "currency": {"enum": ["USD", "ARS"]},
+            "amount_minor": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    },
+    "reason_code": {"type": "string", "minLength": 1, "maxLength": 64}
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/early-bird-authority/v1/checkout.schema.json",
+  "title": "EarlyBird internal checkout result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "account_id",
+    "provider",
+    "external_subscription_id",
+    "approval_url",
+    "currency",
+    "amount_minor",
+    "sandbox"
+  ],
+  "properties": {
+    "schema_version": {"const": "early-bird-authority.checkout.v1"},
+    "account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
+    "provider": {"enum": ["paypal", "mercado_pago"]},
+    "external_subscription_id": {"type": "string", "minLength": 1, "maxLength": 255},
+    "approval_url": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 9,
+      "maxLength": 2048,
+      "pattern": "^https://[^\\s/@]+(?:[/?#][^\\s]*)?$"
+    },
+    "currency": {"enum": ["USD", "ARS"]},
+    "amount_minor": {"type": "integer", "minimum": 1},
+    "sandbox": {"type": "boolean"}
+  }
+}

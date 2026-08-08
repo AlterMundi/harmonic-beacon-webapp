@@ -1,0 +1,3 @@
+{{ define "telegram.default.message" }}
+[EarlyBirds {{ .Status | toUpper }}] {{ range .Alerts }}{{ .Labels.alertname }} — {{ .Annotations.summary }} ({{ .Labels.service }}; runbook: {{ .Annotations.runbook }}){{ end }}
+{{ end }}

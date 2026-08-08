@@ -1,0 +1,232 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+import { LocaleProvider } from '@/context/LocaleContext';
+import { earlyBirdCopy } from '@/lib/early-birds/copy';
+
+const signInSocial = vi.hoisted(() => vi.fn());
+const signInMagicLink = vi.hoisted(() => vi.fn());
+const signOut = vi.hoisted(() => vi.fn());
+const refresh = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
+vi.mock('@/lib/early-birds/auth-client', () => ({
+    earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
+}));
+vi.mock('@/components/brand/BrandLockup', () => ({ default: ({ href }: { href: string }) => <a href={href}>Harmonic Beacon</a> }));
+
+import EarlyBirdLanding from '../EarlyBirdLanding';
+
+function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdLanding>> = {}) {
+    return render(
+        <LocaleProvider initialLocale="en">
+            <EarlyBirdLanding
+                signedIn={false}
+                entitled={false}
+                serviceUnavailable={null}
+                invitationAvailable={false}
+                authError={false}
+                providers={{ google: true, apple: true }}
+                emailMagicLinkAvailable={false}
+                syntheticTeamEntryAvailable={false}
+                freeWindow={{
+                    configured: false,
+                    active: false,
+                    timeZone: null,
+                    localStartMinute: null,
+                    selectedAt: null,
+                    changeAllowedAt: null,
+                    canChange: true,
+                    activeStart: null,
+                    activeEnd: null,
+                    nextStart: null,
+                    nextEnd: null,
+                }}
+                welcome={{
+                    available: false,
+                    active: false,
+                    used: false,
+                    startedAt: null,
+                    endsAt: null,
+                }}
+                membership={{ kind: 'none', state: 'none' }}
+                serverNow="2026-08-07T15:00:00.000Z"
+                {...overrides}
+            />
+        </LocaleProvider>,
+    );
+}
+
+describe('EarlyBird public landing', () => {
+    beforeEach(() => {
+        signInSocial.mockReset();
+        signInSocial.mockResolvedValue({ error: null });
+        signInMagicLink.mockReset();
+        signInMagicLink.mockResolvedValue({ data: { status: true }, error: null });
+        signOut.mockReset();
+        signOut.mockResolvedValue({ error: null });
+        refresh.mockReset();
+        window.localStorage.clear();
+    });
+    afterEach(() => cleanup());
+
+    it('offers exactly Google and Apple and preserves a cookie-backed invitation through OAuth', async () => {
+        renderLanding({ invitationAvailable: true });
+        expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }));
+        expect(signInSocial).toHaveBeenCalledWith({
+            provider: 'google',
+            callbackURL: '/listener/redeem',
+            errorCallbackURL: '/listener?authError=1',
+            requestSignUp: true,
+        });
+    });
+
+    it('uses audience-neutral account and privacy language in both locales', () => {
+        expect(earlyBirdCopy.es.privacy).toBe(
+            'Tu cuenta y membresía administran el acceso. Durante la escucha sólo compartimos una presencia regional amplia y efímera; nunca tu ubicación exacta ni un historial personal de escucha.',
+        );
+        expect(earlyBirdCopy.en.privacy).toBe(
+            'Your account and membership manage access. While you listen, we share only broad, ephemeral regional presence—never your exact location or a personal listening history.',
+        );
+        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
+            .not.toMatch(/adult|child|minor|menor|adulta/i);
+        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
+            .toMatch(/regional.*efímera|ephemeral regional/i);
+        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
+            .toMatch(/ubicación exacta|exact location/i);
+    });
+
+    it('hides an unconfigured provider from the public identity surface', () => {
+        renderLanding({ providers: { google: true, apple: false } });
+        expect(screen.queryByRole('button', { name: /Continue with Apple/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
+    });
+
+    it('reports a rejected social sign-in and re-enables the providers', async () => {
+        signInSocial.mockRejectedValueOnce(new Error('network unavailable'));
+        renderLanding();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(earlyBirdCopy.en.authError);
+        expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeEnabled();
+    });
+
+    it('offers an enumeration-resistant email fallback only when delivery is configured', async () => {
+        renderLanding({ providers: { google: true, apple: false }, emailMagicLinkAvailable: true });
+
+        await userEvent.type(screen.getByLabelText('Email address'), 'listener@example.test');
+        await userEvent.click(screen.getByRole('button', { name: 'Email me a sign-in link' }));
+
+        expect(signInMagicLink).toHaveBeenCalledWith({
+            email: 'listener@example.test',
+            callbackURL: '/listener',
+            errorCallbackURL: '/listener?authError=1',
+            metadata: { locale: 'en' },
+        });
+        expect(screen.getByRole('status')).toHaveTextContent('If this email can be used for access');
+        expect(screen.queryByDisplayValue('listener@example.test')).not.toBeInTheDocument();
+    });
+
+    it('shows the same generic response when the email request transport rejects', async () => {
+        signInMagicLink.mockRejectedValueOnce(new Error('provider unavailable'));
+        renderLanding({ emailMagicLinkAvailable: true });
+
+        await userEvent.type(screen.getByLabelText('Email address'), 'unknown@example.test');
+        await userEvent.click(screen.getByRole('button', { name: 'Email me a sign-in link' }));
+
+        expect(await screen.findByRole('status')).toHaveTextContent('If this email can be used for access');
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('hides email login when the delivery boundary is incomplete', () => {
+        renderLanding({ emailMagicLinkAvailable: false });
+        expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['identity', 'The identity service is not responding.'],
+        ['access', 'We could not check your schedule or membership.'],
+    ] as const)('fails truthfully and retryably when %s resolution is unavailable', (kind, detail) => {
+        renderLanding({
+            signedIn: kind === 'access',
+            serviceUnavailable: kind,
+            freeWindow: null,
+            welcome: null,
+        });
+
+        expect(screen.getByRole('alert')).toHaveTextContent(detail);
+        expect(screen.getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/listener');
+        expect(screen.queryByRole('heading', { name: 'Your first listen · 30 minutes' })).toBeNull();
+        expect(screen.queryByRole('heading', { name: 'Your daily time · 2 hours' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
+        expect(screen.queryByLabelText('Email address')).toBeNull();
+    });
+
+    it('takes an entitled signed-in listener directly to the private home', () => {
+        renderLanding({ signedIn: true, entitled: true });
+        expect(screen.getAllByRole('link', { name: 'Enter the Beacon' }))
+            .toEqual(expect.arrayContaining([
+                expect.objectContaining({ href: expect.stringMatching(/\/listener$/) }),
+            ]));
+        expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+    });
+
+    it('offers the one-time welcome listen without selecting a recurring schedule', async () => {
+        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('{}', { status: 409 }));
+        renderLanding({
+            signedIn: true,
+            providers: { google: true, apple: false },
+            welcome: {
+                available: true,
+                active: false,
+                used: false,
+                startedAt: null,
+                endsAt: null,
+            },
+        });
+
+        expect(screen.getByRole('heading', { name: 'Your first listen · 30 minutes' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Your daily time · 2 hours' })).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Listen now' }));
+
+        expect(fetchMock).toHaveBeenCalledWith('/api/listener/welcome-access', expect.objectContaining({
+            method: 'POST',
+        }));
+        expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('activationRequestId');
+        fetchMock.mockRestore();
+    });
+
+    it('explains terminal Founder access and returns the account to truthful Free choices', () => {
+        renderLanding({
+            signedIn: true,
+            membership: { kind: 'founder', provider: 'mercado-pago', state: 'refunded' },
+        });
+
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'The payment was refunded and Founder access has ended.',
+        );
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'You can continue with the Free listening available to your account.',
+        );
+        expect(screen.getByRole('heading', { name: 'Your daily time · 2 hours' })).toBeInTheDocument();
+        expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
+    });
+
+    it('uses neutral Listener positioning in both languages', () => {
+        expect(earlyBirdCopy.es.eyebrow).toBe('HARMONIC BEACON · LISTENER');
+        expect(earlyBirdCopy.en.eyebrow).toBe('HARMONIC BEACON · LISTENER');
+        expect(`${earlyBirdCopy.es.live} ${earlyBirdCopy.en.live}`)
+            .not.toMatch(/disponible siempre|available whenever/i);
+        expect(`${earlyBirdCopy.es.membership} ${earlyBirdCopy.en.membership}`)
+            .not.toMatch(/Founding Listener/i);
+        expect(Object.values(earlyBirdCopy.es).join(' '))
+            .not.toMatch(/\b(elegí|tocá|habilitá|querés)\b/i);
+    });
+});

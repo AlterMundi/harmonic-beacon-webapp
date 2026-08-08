@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { parseResponse } from '@/__tests__/helpers';
 
 describe('GET /api/health/ready', () => {
     beforeEach(() => {
         vi.resetModules();
     });
+    afterEach(() => vi.unstubAllEnvs());
 
     it('returns 200 when the database query succeeds', async () => {
         const mockPrisma = { $queryRaw: vi.fn().mockResolvedValue([{ '?column?': 1 }]) };
@@ -17,6 +18,37 @@ describe('GET /api/health/ready', () => {
         expect(status).toBe(200);
         expect(body).toEqual({ status: 'ok', checks: { database: 'ok' } });
         expect(response.headers.get('cache-control')).toBe('no-store');
+    });
+
+    it('fails readiness without leaking values when Listener aliases conflict', async () => {
+        const canonicalSecret = 'canonical-secret-that-must-not-leak';
+        const legacySecret = 'legacy-secret-that-must-not-leak';
+        vi.stubEnv('BEACON_LISTENER_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('BEACON_LISTENER_AUTH_BASE_URL', 'https://listen.example.test');
+        vi.stubEnv('EARLY_BIRDS_AUTH_BASE_URL', 'https://listen.example.test');
+        vi.stubEnv('BEACON_LISTENER_AUTH_SECRET', canonicalSecret);
+        vi.stubEnv('EARLY_BIRDS_AUTH_SECRET', legacySecret);
+        const mockPrisma = { $queryRaw: vi.fn() };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const { GET } = await import('../ready/route');
+            const response = await GET();
+            const { status, body } = await parseResponse(response);
+            expect(status).toBe(503);
+            expect(body).toEqual({
+                status: 'error',
+                checks: { database: 'unknown', listenerRuntime: 'invalid' },
+            });
+            expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+            const logged = errorSpy.mock.calls.flat().map(String).join(' ');
+            expect(logged).toContain('BEACON_LISTENER_AUTH_SECRET');
+            expect(logged).not.toContain(canonicalSecret);
+            expect(logged).not.toContain(legacySecret);
+        } finally {
+            errorSpy.mockRestore();
+        }
     });
 
     it('returns 503 when the database query rejects', async () => {

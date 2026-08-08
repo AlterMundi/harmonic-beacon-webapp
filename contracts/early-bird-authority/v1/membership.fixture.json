@@ -1,0 +1,19 @@
+{
+  "schema_version": "early-bird-authority.membership.v1",
+  "account_id": "account_synthetic_0001",
+  "membership_revision": 1,
+  "state": "ACTIVE",
+  "source": "FREE",
+  "access_allowed": true,
+  "effective_at": "2026-08-06T12:00:00Z",
+  "paid_through": null,
+  "grace_until": null,
+  "offer": {
+    "code": "EARLY_BIRDS_FOUNDERS_V1",
+    "revision": 1
+  },
+  "provider": null,
+  "current_price": null,
+  "free_entitlement_consumed": false,
+  "reason_code": "INVITATION_REDEEMED"
+}

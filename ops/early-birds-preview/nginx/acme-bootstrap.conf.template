@@ -1,0 +1,16 @@
+# Temporary certificate bootstrap for the two isolated EarlyBirds hosts.
+# Install only until both webroot certificates exist, then replace it with the
+# two HTTPS vhosts in this directory. It never proxies application traffic.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name earlybirds-staging.harmonicbeacon.com stream.harmonicbeacon.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 503;
+    }
+}
