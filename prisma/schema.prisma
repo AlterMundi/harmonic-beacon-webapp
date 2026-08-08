@@ -442,12 +442,13 @@ model EarlyBirdUser {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  identities   EarlyBirdIdentity[]
-  authSessions EarlyBirdAuthSession[]
-  membership   EarlyBirdMembershipProjection?
-  freeSchedule EarlyBirdFreeSchedule?
-  welcomeAccess EarlyBirdWelcomeAccess?
-  streamLeases EarlyBirdStreamLease[]
+  identities         EarlyBirdIdentity[]
+  authSessions       EarlyBirdAuthSession[]
+  membership         EarlyBirdMembershipProjection?
+  founderEligibility EarlyBirdFounderEligibilityProjection?
+  freeSchedule       EarlyBirdFreeSchedule?
+  welcomeAccess      EarlyBirdWelcomeAccess?
+  streamLeases       EarlyBirdStreamLease[]
 
   @@map("early_bird_users")
 }
@@ -542,6 +543,27 @@ model EarlyBirdMembershipProjection {
 
   @@index([state, paidThrough])
   @@map("early_bird_membership_projections")
+}
+
+// Positive-only projection of the canonical, lifetime Founder price evidence.
+// It is deliberately separate from membership/access revisions and authorizes
+// nothing by itself.
+model EarlyBirdFounderEligibilityProjection {
+  accountId       String        @id @map("account_id")
+  account         EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  offerCode       String        @map("offer_code") @db.VarChar(128)
+  offerRevision   Int           @map("offer_revision")
+  currency        String        @db.Char(3)
+  amountMinor     Int           @map("amount_minor")
+  billingPeriod   String        @map("billing_period") @db.VarChar(32)
+  grantedAt       DateTime      @map("granted_at")
+  eligibilityHash String        @map("eligibility_hash") @db.Char(64)
+  observedAt      DateTime      @map("observed_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([grantedAt])
+  @@map("early_bird_founder_eligibility_projections")
 }
 
 // Account-bound ordinary Free access. This is deliberately independent from

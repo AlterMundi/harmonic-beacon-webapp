@@ -4,6 +4,8 @@ import { isEarlyBirdAccountId } from './account-id';
 import {
     authorityMembershipCommand,
     parseCanonicalAuthorityMembership,
+    parseCanonicalAuthorityMembershipV2,
+    type CanonicalAuthorityMembershipV2,
 } from './membership-contract';
 import {
     applyMembershipProjection,
@@ -12,6 +14,52 @@ import {
 
 const INVITATION_TOKEN = /^ebi_v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const REQUEST_TIMEOUT_MS = 5_000;
+const MAX_AUTHORITY_RESPONSE_BYTES = 64 * 1024;
+
+async function cancelResponseBody(response: Response): Promise<void> {
+    await response.body?.cancel().catch(() => undefined);
+}
+
+async function boundedResponseText(response: Response): Promise<string> {
+    const declaredLength = response.headers.get('content-length');
+    if (declaredLength !== null) {
+        if (!/^\d+$/.test(declaredLength) || Number(declaredLength) > MAX_AUTHORITY_RESPONSE_BYTES) {
+            await cancelResponseBody(response);
+            throw new EarlyBirdMembershipGatewayUnavailableError();
+        }
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) return '';
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            totalBytes += value.byteLength;
+            if (totalBytes > MAX_AUTHORITY_RESPONSE_BYTES) {
+                await reader.cancel().catch(() => undefined);
+                throw new EarlyBirdMembershipGatewayUnavailableError();
+            }
+            chunks.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+
+    const body = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+        body.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(body);
+    } catch {
+        throw new EarlyBirdMembershipGatewayUnavailableError();
+    }
+}
 
 export type CanonicalFreeRedemptionResult =
     | {
@@ -27,6 +75,14 @@ export interface EarlyBirdMembershipGateway {
         accountId: string;
         opaqueInvitation: string;
     }): Promise<CanonicalFreeRedemptionResult>;
+}
+
+export type CanonicalMembershipReadResult =
+    | { ok: true; membership: CanonicalAuthorityMembershipV2 }
+    | { ok: false; reason: 'not-found' };
+
+export interface EarlyBirdMembershipReader {
+    readMembership(accountId: string): Promise<CanonicalMembershipReadResult>;
 }
 
 export class EarlyBirdMembershipGatewayUnavailableError extends Error {
@@ -62,7 +118,7 @@ function redemptionIdempotencyKey(accountId: string, invitation: string): string
     return `early-bird-invitation-redeem:${digest}`;
 }
 
-export class HttpEarlyBirdMembershipGateway implements EarlyBirdMembershipGateway {
+export class HttpEarlyBirdMembershipGateway implements EarlyBirdMembershipGateway, EarlyBirdMembershipReader {
     constructor(
         private readonly config: GatewayConfig = gatewayConfig(),
         private readonly request: typeof fetch = fetch,
@@ -117,16 +173,77 @@ export class HttpEarlyBirdMembershipGateway implements EarlyBirdMembershipGatewa
             clearTimeout(timeout);
         }
     }
+
+    async readMembership(accountId: string): Promise<CanonicalMembershipReadResult> {
+        if (!isEarlyBirdAccountId(accountId)) throw new EarlyBirdMembershipGatewayUnavailableError();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        try {
+            const response = await this.request(
+                `${this.config.baseUrl}/api/internal/v2/early-bird-memberships/${encodeURIComponent(accountId)}`,
+                {
+                    method: 'GET',
+                    redirect: 'error',
+                    cache: 'no-store',
+                    signal: controller.signal,
+                    headers: {
+                        accept: 'application/json',
+                        authorization: `Bearer ${this.config.token}`,
+                        'x-hb-service-key-id': this.config.keyId,
+                    },
+                },
+            );
+            if (response.status === 404) {
+                await cancelResponseBody(response);
+                return { ok: false, reason: 'not-found' };
+            }
+            if (!response.ok) {
+                await cancelResponseBody(response);
+                throw new EarlyBirdMembershipGatewayUnavailableError();
+            }
+            const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+            if (contentType !== 'application/json') {
+                await cancelResponseBody(response);
+                throw new EarlyBirdMembershipGatewayUnavailableError();
+            }
+            const raw = await boundedResponseText(response);
+            let body: unknown;
+            try {
+                body = JSON.parse(raw) as unknown;
+            } catch {
+                throw new EarlyBirdMembershipGatewayUnavailableError();
+            }
+            const membership = parseCanonicalAuthorityMembershipV2(body);
+            if (membership.account_id !== accountId) {
+                throw new EarlyBirdMembershipGatewayUnavailableError();
+            }
+            return { ok: true, membership };
+        } catch (error) {
+            if (error instanceof EarlyBirdMembershipGatewayUnavailableError) throw error;
+            throw new EarlyBirdMembershipGatewayUnavailableError();
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
 }
 
 let gatewayOverride: EarlyBirdMembershipGateway | null = null;
+let readerOverride: EarlyBirdMembershipReader | null = null;
 
 export function setEarlyBirdMembershipGatewayForTests(gateway: EarlyBirdMembershipGateway | null): void {
     gatewayOverride = gateway;
 }
 
+export function setEarlyBirdMembershipReaderForTests(reader: EarlyBirdMembershipReader | null): void {
+    readerOverride = reader;
+}
+
 export function earlyBirdMembershipGateway(): EarlyBirdMembershipGateway {
     return gatewayOverride ?? new HttpEarlyBirdMembershipGateway();
+}
+
+export function earlyBirdMembershipReader(): EarlyBirdMembershipReader {
+    return readerOverride ?? new HttpEarlyBirdMembershipGateway();
 }
 
 /** The browser's opaque invitation is consumed only by the canonical authority. */
