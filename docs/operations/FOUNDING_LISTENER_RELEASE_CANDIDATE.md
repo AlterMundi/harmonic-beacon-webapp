@@ -17,7 +17,7 @@ an event-stack deployment or an acoustic change.
 | Artifact | Exact value |
 |---|---|
 | Deployed Listener application | `b8a04fe94fb853a0276bb549773c74eb27e410d5` |
-| Branch/documentation head | `b8a04fe` (documentation may advance independently) |
+| Last runtime-changing branch head | `b8a04fe` (documentation may advance independently) |
 | Listener database schema | `20260807200000_listener_regional_presence` |
 | Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
 | Public mode | Free for All OFF during coordinated registered-Free acceptance |
