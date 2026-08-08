@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
     LISTENER_SESSION_COOKIE,
+    inspectListenerSessionCookie,
     listenerSessionAuthHandler,
     listenerSessionClearCookies,
     listenerSessionCookieNames,
@@ -9,6 +10,11 @@ import {
     mirrorListenerSessionResponse,
     resolveListenerSessionCookie,
 } from '@/lib/listener/session-cookie-bridge';
+import {
+    LISTENER_SESSION_COOKIE_STATES,
+    snapshotListenerSessionCookieObservations,
+} from '@/lib/listener/session-cookie-observability';
+import * as observability from '@/lib/listener/session-cookie-observability';
 
 const NAMES = listenerSessionCookieNames('hb_earlybird_session');
 const SECURE_NAMES = listenerSessionCookieNames('__Secure-hb_earlybird_session');
@@ -331,5 +337,156 @@ describe('listenerSessionAuthHandler', () => {
             ]);
         }
         expect(seenCookies).toEqual([null, `${NAMES.legacy}=${VALUE}`, dual]);
+    });
+});
+
+describe('inspectListenerSessionCookie', () => {
+    type Resolution = ReturnType<typeof resolveListenerSessionCookie>;
+    type State = ReturnType<typeof inspectListenerSessionCookie>['state'];
+    const oversizedValue = `${NAMES.legacy}=${'a'.repeat(513)}`;
+    const oversizedHeader = `${NAMES.legacy}=${VALUE}; filler=${'f'.repeat(9000)}`;
+
+    // The full state matrix: every inspection state with the exact resolution
+    // the bridge enforces for it.
+    const matrix: [string, string | null, Resolution][] = [
+        ['none', null, { kind: 'forward', header: null }],
+        ['none', 'cart=1; theme=dark', { kind: 'forward', header: 'cart=1; theme=dark' }],
+        ['legacy_only', `${NAMES.legacy}=${VALUE}`, { kind: 'forward', header: `${NAMES.legacy}=${VALUE}` }],
+        [
+            'dual_identical',
+            `${NAMES.canonical}=${VALUE}; ${NAMES.legacy}=${VALUE}`,
+            { kind: 'forward', header: `${NAMES.canonical}=${VALUE}; ${NAMES.legacy}=${VALUE}` },
+        ],
+        ['canonical_only', `${NAMES.canonical}=${VALUE}`, { kind: 'reject', status: 401 }],
+        [
+            'conflicting_pair',
+            `${NAMES.canonical}=${OTHER_VALUE}; ${NAMES.legacy}=${VALUE}`,
+            { kind: 'reject', status: 400 },
+        ],
+        ['duplicate_name', `${NAMES.legacy}=${VALUE}; ${NAMES.legacy}=${VALUE}`, { kind: 'reject', status: 400 }],
+        ['malformed_value', `${NAMES.legacy}=${VALUE.slice(0, 10)}%zz`, { kind: 'reject', status: 400 }],
+        ['oversized_value', oversizedValue, { kind: 'reject', status: 400 }],
+        ['oversized_header', oversizedHeader, { kind: 'reject', status: 400 }],
+    ];
+
+    it.each(matrix)('classifies %s with the exact bridge resolution', (state, header, resolution) => {
+        const inspection = inspectListenerSessionCookie(header, NAMES);
+        expect(inspection.state).toBe(state);
+        expect(inspection.resolution).toEqual(resolution);
+        // resolveListenerSessionCookie is a pure delegation to the inspector.
+        expect(resolveListenerSessionCookie(header, NAMES)).toEqual(resolution);
+    });
+
+    it('covers exactly the closed observability allowlist', () => {
+        const states = new Set(matrix.map(([state]) => state));
+        expect([...states].sort()).toEqual([...LISTENER_SESSION_COOKIE_STATES].sort());
+    });
+
+    it('applies the documented precedence when several states overlap', () => {
+        const cases: [string, string, State][] = [
+            // An oversized header wins over duplicates and malformed values.
+            ['oversized_header', `${oversizedHeader}; ${NAMES.legacy}=${VALUE}`, 'oversized_header'],
+            // A duplicate wins over an oversized or malformed value.
+            ['duplicate_name', `${NAMES.legacy}=${'a'.repeat(513)}; ${NAMES.legacy}=${VALUE.slice(0, 10)}%zz`, 'duplicate_name'],
+            // An oversized value wins over bad percent encoding.
+            ['oversized_value', `${NAMES.legacy}=${'a'.repeat(510)}%zz`, 'oversized_value'],
+            // A malformed value wins over the canonical-only policy state.
+            ['malformed_value', `${NAMES.canonical}=${VALUE.slice(0, 10)}%2g`, 'malformed_value'],
+            // A well-formed pair conflict outranks nothing else: it needs both names.
+            ['conflicting_pair', `${NAMES.legacy}=${VALUE}; ${NAMES.canonical}=${OTHER_VALUE}`, 'conflicting_pair'],
+        ];
+        for (const [expected, header] of cases) {
+            expect(inspectListenerSessionCookie(header, NAMES).state, header).toBe(expected);
+        }
+    });
+});
+
+describe('listenerSessionAuthHandler observability', () => {
+    it('records exactly one observation per invocation with the inspected state', async () => {
+        const before = snapshotListenerSessionCookieObservations();
+        const handler = listenerSessionAuthHandler(async () => new Response('ok'), NAMES);
+
+        await handler(new Request('https://listen.harmonicbeacon.com/x', {
+            headers: { host: 'listen.harmonicbeacon.com' },
+        }));
+        await handler(new Request('https://listen.harmonicbeacon.com/x', {
+            headers: { host: 'listen.harmonicbeacon.com', cookie: `${NAMES.legacy}=${VALUE}` },
+        }));
+        await handler(new Request('https://listen.harmonicbeacon.com/x', {
+            headers: { host: 'listen.harmonicbeacon.com', cookie: `${NAMES.canonical}=${VALUE}` },
+        }));
+
+        const after = snapshotListenerSessionCookieObservations();
+        expect(after.counts.none - before.counts.none).toBe(1);
+        expect(after.counts.legacy_only - before.counts.legacy_only).toBe(1);
+        expect(after.counts.canonical_only - before.counts.canonical_only).toBe(1);
+        expect(after.startedAtSeconds).toBe(before.startedAtSeconds);
+    });
+
+    it('does not mix staging or synthetic-host traffic into the support window', async () => {
+        const before = snapshotListenerSessionCookieObservations();
+        const handler = listenerSessionAuthHandler(async () => new Response('ok'), NAMES);
+        await handler(new Request('https://earlybirds-staging.harmonicbeacon.com/x', {
+            headers: {
+                host: 'earlybirds-staging.harmonicbeacon.com',
+                cookie: `${NAMES.legacy}=${VALUE}`,
+            },
+        }));
+        expect(snapshotListenerSessionCookieObservations().counts).toEqual(before.counts);
+    });
+
+    it('fails soft when the observer throws: rejections stay byte-identical', async () => {
+        const inner = vi.fn(async () => new Response('ok'));
+        const handler = listenerSessionAuthHandler(inner, NAMES);
+        const spy = vi
+            .spyOn(observability, 'recordListenerSessionCookieObservation')
+            .mockImplementation(() => {
+                throw new Error('observer down');
+            });
+        try {
+            const response = await handler(new Request('https://listen.example.test/x', {
+                headers: {
+                    host: 'listen.harmonicbeacon.com',
+                    cookie: `${NAMES.canonical}=${VALUE}`,
+                },
+            }));
+            expect(spy).toHaveBeenCalledOnce();
+            expect(response.status).toBe(401);
+            expect(setCookiesOf(response)).toEqual(listenerSessionClearCookies(NAMES));
+            await expect(response.json()).resolves.toEqual({ error: 'invalid session credentials' });
+            expect(inner).not.toHaveBeenCalled();
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('fails soft when the observer throws: accepted states still reach the handler', async () => {
+        const headers = new Headers();
+        headers.append('set-cookie', `${NAMES.legacy}=${VALUE}; Path=/; HttpOnly`);
+        const inner = vi.fn(async () => new Response('ok', { headers }));
+        const handler = listenerSessionAuthHandler(inner, NAMES);
+        const spy = vi
+            .spyOn(observability, 'recordListenerSessionCookieObservation')
+            .mockImplementation(() => {
+                throw new Error('observer down');
+            });
+        try {
+            const response = await handler(new Request('https://listen.example.test/x', {
+                headers: {
+                    host: 'listen.harmonicbeacon.com',
+                    cookie: `${NAMES.legacy}=${VALUE}`,
+                },
+            }));
+            expect(spy).toHaveBeenCalledOnce();
+            expect(response.status).toBe(200);
+            expect(setCookiesOf(response)).toEqual([
+                `${NAMES.legacy}=${VALUE}; Path=/; HttpOnly`,
+                `${NAMES.canonical}=${VALUE}; Path=/; HttpOnly`,
+            ]);
+            await expect(response.text()).resolves.toBe('ok');
+            expect(inner).toHaveBeenCalledOnce();
+        } finally {
+            spy.mockRestore();
+        }
     });
 });

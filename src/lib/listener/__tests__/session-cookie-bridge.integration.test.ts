@@ -9,6 +9,7 @@ import {
     listenerSessionCookieNames,
     type ListenerSessionCookieNames,
 } from '@/lib/listener/session-cookie-bridge';
+import { snapshotListenerSessionCookieObservations } from '@/lib/listener/session-cookie-observability';
 
 type MemoryRow = Record<string, unknown>;
 type BridgedHandler = (request: Request) => Promise<Response>;
@@ -55,13 +56,19 @@ function bridge(updateAge = 60 * 60 * 24) {
     };
 }
 
-function signUp(handler: BridgedHandler, email: string, cookie?: string): Promise<Response> {
+function signUp(
+    handler: BridgedHandler,
+    email: string,
+    cookie?: string,
+    host?: string,
+): Promise<Response> {
     return handler(new Request(`${BASE_URL}/api/early-birds/auth/sign-up/email`, {
         method: 'POST',
         headers: {
             origin: BASE_URL,
             'content-type': 'application/json',
             ...(cookie ? { cookie } : {}),
+            ...(host ? { host } : {}),
         },
         body: JSON.stringify({ email, name: 'Listener', password: 'listener-password-1' }),
     }));
@@ -91,9 +98,12 @@ function sessionCookieValue(response: Response, name: string): string {
     return entry.slice(name.length + 1, entry.indexOf(';'));
 }
 
-async function getSession(handler: BridgedHandler, cookie: string | null) {
+async function getSession(handler: BridgedHandler, cookie: string | null, host?: string) {
     const response = await handler(new Request(`${BASE_URL}/api/early-birds/auth/get-session`, {
-        headers: cookie ? { cookie } : {},
+        headers: {
+            ...(cookie ? { cookie } : {}),
+            ...(host ? { host } : {}),
+        },
     }));
     expect(response.status).toBe(200);
     return { response, body: await response.json() as { user?: { email?: string } } | null };
@@ -449,5 +459,48 @@ describe('Listener session-cookie bridge over a real Better Auth pipeline', () =
         // byte-identical and both cookies move together.
         expect(sessionCookieValue(rotated.response, state.names.legacy)).toBe(initial);
         expect(canonical).toBe(`${state.names.canonical}${legacy.slice(state.names.legacy.length)}`);
+    });
+});
+
+describe('Listener session-cookie observability over the real pipeline', () => {
+    it('the auth handler records exactly one observation per invocation', async () => {
+        const state = bridge();
+        const before = snapshotListenerSessionCookieObservations();
+
+        // Sign-up with no session cookie: one invocation, state `none`.
+        const response = await signUp(
+            state.handler,
+            'observed@example.test',
+            undefined,
+            'listen.harmonicbeacon.com',
+        );
+        expect(response.status).toBe(200);
+        const legacy = sessionCookieValue(response, state.names.legacy);
+
+        // One dual-pair get-session: one invocation, state `dual_identical`.
+        const dual = await getSession(
+            state.handler,
+            `${state.names.canonical}=${legacy}; ${state.names.legacy}=${legacy}`,
+            'listen.harmonicbeacon.com',
+        );
+        expect(dual.body?.user?.email).toBe('observed@example.test');
+
+        // One canonical-only rejection: one invocation, state `canonical_only`,
+        // with the dual-clear behavior unchanged.
+        const rejected = await state.handler(
+            new Request(`${BASE_URL}/api/early-birds/auth/get-session`, {
+                headers: {
+                    host: 'listen.harmonicbeacon.com',
+                    cookie: `${state.names.canonical}=${legacy}`,
+                },
+            }),
+        );
+        await expectBridgeRejection(rejected, 401, state.names);
+
+        const after = snapshotListenerSessionCookieObservations();
+        expect(after.counts.none - before.counts.none).toBe(1);
+        expect(after.counts.dual_identical - before.counts.dual_identical).toBe(1);
+        expect(after.counts.canonical_only - before.counts.canonical_only).toBe(1);
+        expect(after.startedAtSeconds).toBe(before.startedAtSeconds);
     });
 });
