@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
     canonicalEarlyBirdInvitation,
     clearedEarlyBirdInvitationCookie,
+    earlyBirdInvitationCookieHost,
+    earlyBirdInvitationHost,
     earlyBirdInvitationCookie,
+    earlyBirdInvitationStagingHost,
     EARLY_BIRD_INVITATION_COOKIE,
 } from '@/lib/early-birds/invitation-cookie';
 
@@ -32,5 +35,17 @@ describe('EarlyBird invitation handoff cookie', () => {
             maxAge: 0,
             path: '/',
         });
+    });
+
+    it('accepts invitation entry only on the exact Listener product and staging hosts', () => {
+        expect(earlyBirdInvitationHost('listen.harmonicbeacon.com')).toBe(true);
+        expect(earlyBirdInvitationHost('earlybirds-staging.harmonicbeacon.com')).toBe(true);
+        expect(earlyBirdInvitationHost('LISTEN.HARMONICBEACON.COM')).toBe(true);
+        expect(earlyBirdInvitationHost('live.harmonicbeacon.com')).toBe(false);
+        expect(earlyBirdInvitationHost('listen.harmonicbeacon.com.attacker.invalid')).toBe(false);
+        expect(earlyBirdInvitationCookieHost('listen.harmonicbeacon.com')).toBe(true);
+        expect(earlyBirdInvitationCookieHost('earlybirds-staging.harmonicbeacon.com')).toBe(false);
+        expect(earlyBirdInvitationStagingHost('earlybirds-staging.harmonicbeacon.com')).toBe(true);
+        expect(earlyBirdInvitationStagingHost('listen.harmonicbeacon.com')).toBe(false);
     });
 });

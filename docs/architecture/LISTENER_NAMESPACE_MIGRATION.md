@@ -45,9 +45,10 @@ Implemented in this branch:
   layout as their legacy counterparts.
 - Canonical non-media API aliases exist for access state, free-window selection,
   free invitation redemption and welcome access.
-- Invitation query tokens are scrubbed on both URL families and placed in the
-  existing HttpOnly cookie. The canonical route therefore accepts old cookies
-  without copying sensitive values into JavaScript-visible storage.
+- Invitation query tokens are scrubbed on both URL families. Only the canonical
+  `listen.harmonicbeacon.com` host places one in the existing HttpOnly cookie;
+  staging first redirects the bearer once to that host and cannot mint a
+  staging-scoped cookie that would be lost during OAuth.
 - `/early-birds` and every legacy API remain unchanged. Current clients continue
   using them, making rollback equivalent to removing the new aliases.
 
@@ -67,14 +68,14 @@ internals.
    canonical URL, refresh and finish redemption without signing in again.
 
 The phase 2A candidate changes only account-local access-state, Free-window,
-welcome-access and staging invitation redemption. Better Auth continues to use
-its legacy base path and cookies. The public edge continues to exclude
-invitation redemption and synthetic entry: invitation queries are accepted only
-on the exact staging hostname, while the public edge suppresses access logs,
-scrubs the bearer with no-store/no-referrer and never mints its cookie. The
-staging edge exposes only the four exact canonical non-media APIs. Stream,
-heartbeat, manifest, drop-in and player storage paths remain on their accepted
-legacy URLs.
+welcome-access and invitation redemption. Better Auth continues to use its
+legacy base path and cookies. The public `listen` edge exposes only the exact
+canonical and compatibility invitation pages and POSTs; synthetic entry remains
+staging only. Staging invitation pages and magic verification redirect through
+exact unlogged locations to `listen`, while both staging redeem POST aliases
+fail closed. Every non-Listener application host scrubs an invitation query but
+never mints its cookie. Stream, heartbeat, manifest, drop-in and player storage
+paths remain on their accepted legacy URLs.
 
 Roll out the edge and application as a compatibility handoff, never as one
 blind replacement:

@@ -3,7 +3,10 @@ import type { NextRequest } from 'next/server';
 
 import {
     canonicalEarlyBirdInvitation,
+    earlyBirdInvitationCookieHost,
     earlyBirdInvitationCookie,
+    earlyBirdInvitationStagingHost,
+    LISTENER_INVITATION_CANONICAL_ORIGIN,
 } from '@/lib/early-birds/invitation-cookie';
 import { listenerInvitationQuery } from '@/lib/listener/namespace';
 
@@ -16,8 +19,8 @@ import { listenerInvitationQuery } from '@/lib/listener/namespace';
  * as authorization would mean a revoked ticket kept its access simply because
  * the browser still held the cookie.
  *
- * It performs two edge-local navigation chores: on the exact invitation
- * staging host it exchanges a canonical Listener invitation query for a short
+ * It performs two edge-local navigation chores: staging forwards a canonical
+ * invitation once to the Listener product host, which exchanges it for a short
  * browser-inaccessible cookie, while every other host only scrubs the bearer;
  * it also sends visitors with no session cookie to the relevant login surface.
  * Every protected page and API route still resolves the principal itself
@@ -37,8 +40,6 @@ const ATTENDEE_PREFIXES = ['/session'];
 
 /** Staff surfaces: the operator console. */
 const STAFF_PREFIXES = ['/ops'];
-const LISTENER_INVITATION_HOST = 'earlybirds-staging.harmonicbeacon.com';
-
 function matches(pathname: string, prefixes: string[]): boolean {
     return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
@@ -51,15 +52,29 @@ function scrubEarlyBirdInvitation(request: NextRequest): NextResponse | null {
     const token = candidates.length === 1
         ? canonicalEarlyBirdInvitation(candidates[0])
         : null;
+    const hostname = request.nextUrl.hostname;
+    if (earlyBirdInvitationStagingHost(hostname)) {
+        // OAuth/session authority lives on the canonical Listener host. Carry
+        // the bearer through exactly one unlogged/no-store redirect so the
+        // canonical edge can scrub it into its own host-only __Host- cookie.
+        const canonical = new URL(
+            token ? '/listener/redeem' : '/listener',
+            LISTENER_INVITATION_CANONICAL_ORIGIN,
+        );
+        if (token) canonical.searchParams.set('token', token);
+        const response = NextResponse.redirect(canonical);
+        response.headers.set('Cache-Control', 'private, no-store');
+        response.headers.set('Referrer-Policy', 'no-referrer');
+        return response;
+    }
     const target = request.nextUrl.clone();
     target.searchParams.delete(queryName);
     const response = NextResponse.redirect(target);
     response.headers.set('Cache-Control', 'private, no-store');
     response.headers.set('Referrer-Policy', 'no-referrer');
-    // Invitation redemption remains a staging-only surface. The canonical
-    // public Listener edge must still remove a bearer query without turning it
-    // into a durable browser credential or a dead-end redemption state.
-    if (token && request.nextUrl.hostname === LISTENER_INVITATION_HOST) {
+    // Host is taken from the request URL populated by the exact nginx vhost;
+    // forwarded host headers are deliberately not trusted.
+    if (token && earlyBirdInvitationCookieHost(hostname)) {
         response.cookies.set(earlyBirdInvitationCookie(token));
     }
     return response;

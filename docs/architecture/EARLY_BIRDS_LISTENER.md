@@ -23,8 +23,8 @@ The staging callbacks with the same suffixes may be registered for isolated QA,
 but the shared preview runtime uses `listen.harmonicbeacon.com` as its canonical
 OAuth base URL. Provider credentials may remain unset during local testing; the
 corresponding provider is absent from the public UI and auth runtime. Public nginx exposes this dedicated
-auth namespace while continuing to block synthetic login, invitations and
-internal membership routes.
+auth namespace plus only the exact invitation entry/redeem routes. It continues
+to block synthetic login and internal membership routes.
 
 Browser-initiated auth mutations require an exact configured Listener
 `Origin`. OAuth provider callbacks are the sole exception because Apple uses a
@@ -77,6 +77,35 @@ Byte-exact copies live in `contracts/early-bird-authority/v1` and
   `STALE`, and equal revisions with different payloads conflict.
 - `ACTIVE`, time-valid `GRACE`, and time-valid `CANCELLED_PENDING_END` allow access. Every missing,
   expired, revoked, refunded or unavailable state fails closed.
+
+### Public invitation handoff
+
+An invitation link is accepted only on `listen.harmonicbeacon.com` or the
+isolated staging host. Staging carries the bearer in one unlogged,
+no-store/no-referrer redirect to the canonical
+`https://listen.harmonicbeacon.com/listener/redeem` page; it never mints an
+invitation cookie. Middleware on `listen` immediately removes the signed bearer
+query, places it in a 30-minute `__Host-`, Secure, HttpOnly, SameSite=Lax cookie
+and redirects to the clean URL. Neither the event host nor a forwarded-host
+header can mint this cookie.
+
+Google and configured magic-link callbacks return to the exact
+`/listener/redeem` allowlist. The cookie therefore survives an identity round
+trip in the same browser without entering JavaScript, OAuth state or email.
+Opening a magic link in another browser or device intentionally does not carry
+the invitation; a future cross-device flow needs an authority-mediated claim
+contract and must not place the invitation bearer in mail.
+
+The browser redeem POST is exposed only at the canonical and compatibility
+aliases on `listen`. It requires the exact Listener Host and same Origin, and
+nginx bounds each address to 30 requests per minute with a 20-request burst so
+a shared household/NAT cannot lock out independent one-use redemptions. Both
+POST aliases fail closed with an unlogged 404 on staging. A terminal authority
+rejection clears the cookie; a transient 503 preserves it for a safe retry. All
+responses and exact edge locations are no-store and no-referrer. The exact
+magic-link verification URL is excluded from HTTP and HTTPS access logs and
+staging redirects it once to the canonical host, because its query carries the
+one-use authentication token.
 
 ## Ordinary Free listening window
 

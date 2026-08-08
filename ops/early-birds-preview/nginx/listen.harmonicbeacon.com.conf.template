@@ -1,6 +1,9 @@
 # Public Listener edge. It shares the isolated Listener runtime and exposes the
-# Listener's dedicated OAuth/session boundary, but never staging synthetic
-# entry, invitations, membership projection, staff or event routes.
+# Listener's dedicated OAuth/session and exact invitation-redeem boundaries,
+# but never staging synthetic entry, membership projection, staff or event
+# routes.
+limit_req_zone $binary_remote_addr zone=listener_invitation_redeem:1m rate=30r/m;
+
 server {
     listen 80;
     listen [::]:80;
@@ -42,6 +45,15 @@ server {
     }
 
     location = /listener/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://listen.harmonicbeacon.com$request_uri;
+    }
+
+    # A magic-link bearer is valid only over HTTPS. Suppress accidental HTTP
+    # request logging before preserving the URI for the TLS endpoint.
+    location = /api/early-birds/auth/magic-link/verify {
         access_log off;
         add_header Cache-Control "private, no-store" always;
         add_header Referrer-Policy "no-referrer" always;
@@ -141,20 +153,47 @@ server {
         return 302 /$is_args$args;
     }
 
-    # Invitation redemption is staging-only. Clean either redeem alias without
-    # proxying or retaining its bearer query on the public Listener host.
+    # The exact invitation pages are safe to expose: middleware first moves a
+    # valid bearer query into a short HttpOnly host cookie and redirects to the
+    # clean URL. No prefix or internal membership route is opened here.
     location = /early-birds/redeem {
         access_log off;
         add_header Cache-Control "private, no-store" always;
         add_header Referrer-Policy "no-referrer" always;
-        return 302 /;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "listener-public-free" always;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
     }
 
     location = /listener/redeem {
         access_log off;
         add_header Cache-Control "private, no-store" always;
         add_header Referrer-Policy "no-referrer" always;
-        return 302 /;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "listener-public-free" always;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
     }
 
     location = / {
@@ -281,6 +320,76 @@ server {
         proxy_read_timeout 30s;
     }
 
+    # Invitation mutation stays exact, same-origin and rate bounded. The app
+    # independently verifies Host, Origin, Listener session and the one-use
+    # canonical authority token before changing access.
+    location = /api/listener/free/redeem {
+        access_log off;
+        limit_req zone=listener_invitation_redeem burst=20 nodelay;
+        limit_req_status 429;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "listener-public-free" always;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /api/early-birds/free/redeem {
+        access_log off;
+        limit_req zone=listener_invitation_redeem burst=20 nodelay;
+        limit_req_status 429;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "listener-public-free" always;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # Better Auth puts the one-use magic token in this exact query URL. Keep it
+    # out of edge logs even while the delivery backend and public control stay
+    # disabled. Exact matching still leaves every unrelated route fail closed.
+    location = /api/early-birds/auth/magic-link/verify {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "listener-public-free" always;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
     # Better Auth owns only this dedicated Listener namespace. The app itself
     # hides synthetic email sign-up/sign-in; nginx keeps every staging-only
     # entry and internal membership route outside the public edge.
@@ -297,7 +406,7 @@ server {
         proxy_read_timeout 60s;
     }
 
-    # Synthetic entry, invitations, projection, staff and event routes are
+    # Synthetic entry, membership projection, staff and event routes are
     # deliberately absent from the public Listener host.
     location / {
         return 404;
