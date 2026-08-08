@@ -218,6 +218,10 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.equal((listener.match(/location = \/sitemap\.xml/g) ?? []).length, 1);
   assert.doesNotMatch(listener, /location \^~ \/api\/listener\/public-discovery\//);
   assert.doesNotMatch(listener, /location \^~ \/api\/listener\//);
+  // The internal session-cookie observations exposition is loopback-only:
+  // the public Listener template must never expose or proxy it.
+  assert.doesNotMatch(listener, /session-cookie-observations/);
+  assert.doesNotMatch(listener, /location \^~ \/api\/internal\//);
   assert.doesNotMatch(listener, /api\/early-birds\/(test-login|membership)/);
   assert.doesNotMatch(listener, /api\/listener\/(test-login|membership)/);
   assert.doesNotMatch(listener, /location \^~ \/early-birds\//);
@@ -322,6 +326,7 @@ test('public Listener certificate bootstrap is HTTP-only and fail closed', async
   assert.match(source, /location \/\.well-known\/acme-challenge\//);
   assert.match(source, /location \/ \{\s*return 503;/);
   assert.doesNotMatch(source, /listen 443|ssl_certificate|proxy_pass/);
+  assert.doesNotMatch(source, /session-cookie-observations/);
 });
 
 test('production Listener HTTPS validation remains fail closed', async () => {

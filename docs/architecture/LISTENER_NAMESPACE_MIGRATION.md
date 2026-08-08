@@ -1,7 +1,10 @@
 # EarlyBird to Listener namespace migration
 
 Status: phases 1, 2A and the invitation-cookie phase 2B are integrated and
-deployed on the isolated Listener at `20406da`. This migration is deliberately additive.
+deployed on the isolated Listener at `20406da`. The Listener session-cookie
+bridge (PR #249, head `b6fbac3`) is integrated via `f665f58` but NOT deployed;
+its deploy, the session-cookie observation window and the dual-write support
+window have not started. This migration is deliberately additive.
 `EarlyBird` is an offer and cohort name; `Listener` is the durable product and
 technical namespace.
 
@@ -185,6 +188,80 @@ Rollback of the bridge itself removes only the wrapper: the legacy-only path
 is byte-identical to `20406`, no database, environment or cookie migration is
 required, and canonical cookies left behind are expired by the dual-clear on
 the next rejected request or sit harmlessly unread.
+
+### Session-cookie compatibility observability
+
+The bridge ships with an aggregate-only observation slice
+(`src/lib/listener/session-cookie-observability.ts`) that sizes the
+rollback-compatible support window. Both session resolvers — the auth-handler
+bridge wrapper and `currentEarlyBirdSession` — inspect every inbound Cookie
+header through the same pure `inspectListenerSessionCookie(header, names)`,
+which returns `{ state, resolution }`; the enforced resolution is
+byte-identical to the pre-observability bridge, and recording is fail-soft
+inside try/catch so an observer failure can never change an auth outcome.
+
+Metric contract (fixed, no external labels ever accepted):
+
+- `beacon_listener_session_cookie_observations_total{state="..."}` — counter
+  with exactly one label, `state`, over a closed allowlist of nine states;
+- `beacon_listener_session_cookie_observer_process_start_time_seconds` —
+  unlabeled gauge with the Unix epoch seconds at which this observer process
+  created its registry.
+
+Categories and classification precedence (first match wins):
+
+1. `none` — no relevant session cookie (or no Cookie header at all);
+2. `oversized_header` — the whole Cookie header exceeds 8192 characters;
+3. `duplicate_name` — either relevant name appears more than once;
+4. `oversized_value` — a relevant value exceeds 512 characters;
+5. `malformed_value` — a relevant value is empty, off the wire charset or
+   carries a bad percent escape;
+6. `canonical_only` — a well-formed canonical cookie without its legacy
+   counterpart (rejected 401 during this phase);
+7. `conflicting_pair` — canonical and legacy values differ (rejected 400);
+8. `legacy_only` — exactly one legacy cookie (forwarded; the rollback window);
+9. `dual_identical` — a byte-identical canonical/legacy pair (forwarded).
+
+Counters measure resolver INVOCATIONS, not unique users, browsers or
+sessions: one navigation may invoke a resolver several times and one session
+is observed on every request, so multiple observations per navigation are
+expected. Recording is limited to the exact canonical Listener Host so
+staging and synthetic rehearsals cannot contaminate the support-window
+series. Even on that host these are raw cookie-shape observations before
+cryptographic session verification: a public client can inflate them, so
+they are conservative migration safety signals and must never automatically
+permit or block a cutover without the correlated provider and rollback
+evidence required above. The registry is per process/replica, resets on process restart and
+saturates at `Number.MAX_SAFE_INTEGER`; the start-time gauge separates
+epochs. A current zero therefore cannot prove seven quiet days: snapshots
+must be archived externally per epoch, and any restart or gap without an
+archived snapshot invalidates window continuity.
+
+Privacy: only aggregate counts and the process-start epoch are stored or
+rendered. No cookie, header, user, session, account, IP or user-agent value
+ever reaches the registry or the exposition.
+
+Loopback runbook: the exposition is served GET-only by
+`/api/internal/v1/listener/session-cookie-observations`, which answers 404 on
+any request Host other than the canonical Listener host (the request Host
+header, never a forwarded one) and `Cache-Control: private, no-store`. The
+public Listener nginx templates deliberately do not expose or proxy this
+path; read it from the host with:
+
+```sh
+curl -fsS -H 'Host: listen.harmonicbeacon.com' \
+  http://127.0.0.1:13000/api/internal/v1/listener/session-cookie-observations
+```
+
+This source slice neither connects Prometheus nor starts or certifies the
+support window; scraping, alerting and window bookkeeping are private ops
+wiring reserved for a later, separately authorized slice.
+
+The accepted #210 policy remains in force: physical `early_bird_*` tables,
+applied migrations and v1 cross-repository wire identifiers are historical
+compatibility surfaces and must not be renamed, and the
+canonical-only/basePath/prefix cutover stays gated by a deployed support
+window, real Google and rollback acceptance, and the remaining callbacks.
 
 ## Phase 4: environment and operations
 

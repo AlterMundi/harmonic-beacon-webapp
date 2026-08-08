@@ -7,11 +7,13 @@ import { magicLink } from 'better-auth/plugins';
 import { prisma } from '@/lib/db';
 import {
     LISTENER_SESSION_COOKIE,
+    inspectListenerSessionCookie,
     listenerSessionAuthHandler,
     listenerSessionCookieNames,
-    resolveListenerSessionCookie,
     type ListenerSessionCookieNames,
 } from '@/lib/listener/session-cookie-bridge';
+import { recordListenerSessionCookieObservation } from '@/lib/listener/session-cookie-observability';
+import { isCanonicalListenerHost } from '@/lib/listener/public-discovery';
 import {
     listenerRuntimeBundle,
     listenerRuntimeFlag,
@@ -297,11 +299,20 @@ export async function currentEarlyBirdSession(
     const resolvedHeaders = suppliedHeaders ?? new Headers(await requestHeaders());
     // The same strict inbound policy as the route handler: ambiguous
     // session-cookie states never reach Better Auth, they fail closed here.
-    const resolution = resolveListenerSessionCookie(
+    // Exactly one aggregate observation is recorded per resolver invocation;
+    // the metric counts invocations, not unique users, browsers or sessions,
+    // so multiple observations per navigation are expected. Recording is
+    // fail-soft and can never change the fail-closed outcome below.
+    const inspection = inspectListenerSessionCookie(
         resolvedHeaders.get('cookie'),
         earlyBirdSessionCookieNames(),
     );
-    if (resolution.kind === 'reject') return null;
+    if (isCanonicalListenerHost(resolvedHeaders)) {
+        try {
+            recordListenerSessionCookieObservation(inspection.state);
+        } catch { /* Observation must never affect session resolution. */ }
+    }
+    if (inspection.resolution.kind === 'reject') return null;
     const result = await earlyBirdAuth().api.getSession({ headers: resolvedHeaders });
     if (!result) return null;
 

@@ -43,6 +43,12 @@
  * any other non-session cookies pass through untouched in both directions.
  */
 
+import {
+    recordListenerSessionCookieObservation,
+    type ListenerSessionCookieState,
+} from '@/lib/listener/session-cookie-observability';
+import { isCanonicalListenerHost } from '@/lib/listener/public-discovery';
+
 export const LISTENER_SESSION_COOKIE = 'hb_listener_session';
 
 const SECURE_COOKIE_PREFIX = '__Secure-';
@@ -162,43 +168,88 @@ function wellFormedSessionValue(value: string): boolean {
 }
 
 /**
- * Resolves whether an inbound Cookie header may reach Better Auth under the
- * bridge policy. Accepted states are forwarded byte-for-byte (Better Auth
- * ignores the canonical name and reads the legacy one); no state is ever
- * rewritten or stripped, because repairing an ambiguous header is exactly
- * what better-call's first-wins parser would do silently.
+ * Pure inbound inspection: the aggregate compatibility `state` observed for
+ * observability plus the strict `resolution` the bridge enforces. The state
+ * classification is closed and ordered by precedence:
+ *
+ * 1. no relevant session cookie (or no header at all) -> `none`;
+ * 2. oversized whole Cookie header -> `oversized_header`;
+ * 3. a duplicate of either relevant name -> `duplicate_name`;
+ * 4. a relevant value over 512 characters -> `oversized_value`;
+ * 5. an empty, non-wire-charset or bad-percent relevant value -> `malformed_value`;
+ * 6. a well-formed canonical cookie without its legacy counterpart -> `canonical_only`;
+ * 7. a canonical/legacy pair whose values differ -> `conflicting_pair`;
+ * 8. exactly one legacy cookie -> `legacy_only`;
+ * 9. a byte-identical canonical/legacy pair -> `dual_identical`.
+ *
+ * `resolveListenerSessionCookie` is exactly this inspection's `resolution`.
  */
-export function resolveListenerSessionCookie(
+export type ListenerSessionCookieInspection = {
+    readonly state: ListenerSessionCookieState;
+    readonly resolution: ListenerSessionCookieResolution;
+};
+
+/**
+ * Resolves whether an inbound Cookie header may reach Better Auth under the
+ * bridge policy, and classifies the aggregate compatibility state observed.
+ * Accepted states are forwarded byte-for-byte (Better Auth ignores the
+ * canonical name and reads the legacy one); no state is ever rewritten or
+ * stripped, because repairing an ambiguous header is exactly what
+ * better-call's first-wins parser would do silently.
+ */
+export function inspectListenerSessionCookie(
     header: string | null,
     names: ListenerSessionCookieNames,
-): ListenerSessionCookieResolution {
+): ListenerSessionCookieInspection {
     const forward: ListenerSessionCookieResolution = { kind: 'forward', header };
-    if (!header) return forward;
+    if (!header) return { state: 'none', resolution: forward };
 
     const parts = parseCookieParts(header);
     const legacyParts = parts.filter((part) => part.name === names.legacy);
     const canonicalParts = parts.filter((part) => part.name === names.canonical);
-    if (legacyParts.length === 0 && canonicalParts.length === 0) return forward;
+    if (legacyParts.length === 0 && canonicalParts.length === 0) {
+        return { state: 'none', resolution: forward };
+    }
 
     const reject = (status: 400 | 401): ListenerSessionCookieResolution =>
         ({ kind: 'reject', status });
 
-    if (
-        header.length > MAX_COOKIE_HEADER_LENGTH ||
-        legacyParts.length > 1 ||
-        canonicalParts.length > 1 ||
-        legacyParts.some((part) => !wellFormedSessionValue(part.value)) ||
-        canonicalParts.some((part) => !wellFormedSessionValue(part.value))
-    ) return reject(400);
+    if (header.length > MAX_COOKIE_HEADER_LENGTH) {
+        return { state: 'oversized_header', resolution: reject(400) };
+    }
+    if (legacyParts.length > 1 || canonicalParts.length > 1) {
+        return { state: 'duplicate_name', resolution: reject(400) };
+    }
+    const relevant = [...legacyParts, ...canonicalParts];
+    if (relevant.some((part) => part.value.length > MAX_SESSION_COOKIE_VALUE_LENGTH)) {
+        return { state: 'oversized_value', resolution: reject(400) };
+    }
+    if (relevant.some((part) => !wellFormedSessionValue(part.value))) {
+        return { state: 'malformed_value', resolution: reject(400) };
+    }
 
     const legacy = legacyParts[0];
     const canonical = canonicalParts[0];
     // A well-formed canonical credential without its legacy counterpart is
     // not accepted during the rollback-compatible phase.
-    if (!legacy) return reject(401);
+    if (!legacy) return { state: 'canonical_only', resolution: reject(401) };
     // Conflicting values are never arbitrated between.
-    if (canonical && canonical.value !== legacy.value) return reject(400);
-    return forward;
+    if (canonical && canonical.value !== legacy.value) {
+        return { state: 'conflicting_pair', resolution: reject(400) };
+    }
+    return { state: canonical ? 'dual_identical' : 'legacy_only', resolution: forward };
+}
+
+/**
+ * Resolves whether an inbound Cookie header may reach Better Auth under the
+ * bridge policy. Pure delegation to `inspectListenerSessionCookie`; the
+ * resolution behavior is byte-identical to the pre-observability bridge.
+ */
+export function resolveListenerSessionCookie(
+    header: string | null,
+    names: ListenerSessionCookieNames,
+): ListenerSessionCookieResolution {
+    return inspectListenerSessionCookie(header, names).resolution;
 }
 
 /**
@@ -299,15 +350,24 @@ export function mirrorListenerSessionResponse(
  * ambiguous request can mint, rotate or clear a session; ambiguous outbound
  * output fails closed with a generic 500 carrying no Set-Cookie at all. The
  * wrapped handler stays the only code that touches sessions.
+ *
+ * Each invocation also records the inspected aggregate compatibility state
+ * for observability. Recording is fail-soft: an observer failure can never
+ * change the resolution, the handler invocation, or the response.
  */
 export function listenerSessionAuthHandler(
     handler: (request: Request) => Promise<Response>,
     names: ListenerSessionCookieNames,
 ): (request: Request) => Promise<Response> {
     return async (request) => {
-        const resolution = resolveListenerSessionCookie(request.headers.get('cookie'), names);
-        if (resolution.kind === 'reject') {
-            return rejectionResponse(resolution.status, names);
+        const inspection = inspectListenerSessionCookie(request.headers.get('cookie'), names);
+        if (isCanonicalListenerHost(request.headers)) {
+            try {
+                recordListenerSessionCookieObservation(inspection.state);
+            } catch { /* Observation must never affect authentication. */ }
+        }
+        if (inspection.resolution.kind === 'reject') {
+            return rejectionResponse(inspection.resolution.status, names);
         }
         return mirrorListenerSessionResponse(await handler(request), names);
     };
