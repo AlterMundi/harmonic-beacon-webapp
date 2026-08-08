@@ -16,13 +16,13 @@ an event-stack deployment or an acoustic change.
 
 | Artifact | Exact value |
 |---|---|
-| Deployed Listener application | `b8a04fe94fb853a0276bb549773c74eb27e410d5` |
-| Last runtime-changing branch head | `b8a04fe` (documentation may advance independently) |
+| Deployed Listener application | `20406dae49e8cbabba38d0cb099d8f400276113e` |
+| Last runtime-changing branch head | `20406da` (documentation may advance independently) |
 | Listener database schema | `20260807200000_listener_regional_presence` |
 | Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
 | Public mode | Free for All OFF during coordinated registered-Free acceptance |
-| Immediate Listener rollback | `2344b10` |
-| Additional Listener rollback | `16a15d1` |
+| Immediate Listener rollback | `b8a04fe` |
+| Additional Listener rollback | `2344b10` |
 
 Health must attest the deployed application SHA, not the later documentation or
 test-only branch head.
@@ -74,6 +74,8 @@ test-only branch head.
 - `563bebf` / merge `67ceefc` — canonical, privacy-preserving public invitation redemption;
 - `c7145a1` / merge `2344b10` — bounded Listener runtime namespace compatibility;
 - `497772c` / merge `b8a04fe` — startup-tolerant public disable/kill-switch verification.
+- `200242d` / merge `20406da` — canonical-first invitation cookie with
+  rollback-compatible dual-write, conflict rejection and dual-clear.
 
 PR #203 remains draft and mergeable. The exact application SHA above is the
 deployed image; later documentation-only commits do not require rebuilding it.
@@ -87,7 +89,7 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - Listener health/readiness, origin, PostgreSQL and decoded canary are green.
 - Alertmanager has no active alert. A prior root-disk warning was real, then
   resolved after removing only old unreferenced Listener/authority image tags.
-- Current image `b8a04fe` and rollback images `2344b10` and `16a15d1`, every
+- Current image `20406da` and rollback images `b8a04fe` and `2344b10`, every
   active image, container, volume, database and approved media remain.
 - The fixed public-disable command was exercised after deployment. Its first
   health probe observed the normal Next.js startup connection reset, retried,
@@ -135,9 +137,10 @@ alter audio or merge/promote the branch as part of an automated test.
 
 ## Rollback
 
-Run the fixed disable command from release `b8a04fe` first. Restore the exact
-root-only environment/nginx backups created before `b8a04fe` (or the earlier
-`2344b10` deployment), select Listener image `2344b10` or `16a15d1`, retain the
+Run the fixed disable command from release `20406da` first. Restore the exact
+root-only environment backup `/etc/harmonic-beacon/earlybirds-preview.env.pre-20406da`,
+select Listener image `b8a04fe` (or `2344b10` for the preceding compatibility
+release), retain the
 preview database and origin media, recreate only the isolated Listener, run
 `nginx -t` before any reload and execute the complete preview health/access
 smoke. Do not roll back the additive database schema.
