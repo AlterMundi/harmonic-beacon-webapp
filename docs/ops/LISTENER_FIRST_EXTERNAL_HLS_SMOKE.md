@@ -1,5 +1,11 @@
 # First external Listener HLS smoke
 
+**Status: code-complete but runtime-blocked. This smoke is not ready to
+execute.** The fail-closed harness, monitor, canary and policy are complete and
+tested, but the restart/OOM preflight blocker below is unresolved on `mona`:
+no supported per-container restart/OOM observer exists yet. No monitored smoke
+may run until one is implemented and verified (see "Runtime blocker" below).
+
 This is the only approved first network step for Listener capacity evidence. It
 drives exactly ten media-plane clients from one external host for a sixty-second
 soak. It is media-plane evidence only: it is not end-to-end Listener capacity
@@ -86,59 +92,74 @@ monitor never infers Alertmanager health from Prometheus.
 
 ### Restart/OOM preflight blocker
 
-The restart/OOM baseline requires cAdvisor `container_start_time_seconds` and
-`container_oom_events_total` for exactly
+The restart/OOM baseline requires per-container `container_start_time_seconds`
+and `container_oom_events_total` series (currently expected from cAdvisor) for
+exactly
 `earlybirds-preview-listener-1` and `earlybirds-preview-beacon-stream-1`, each
 resolving to exactly one finite series. Before scheduling load, run the monitor
 with `--once` (it probes twice: baseline plus verification) and confirm a
 `PASS` status with `restartBaselineEstablished: true`,
 `containerRestartsObserved: 0` and `oomEventsDelta: 0`. If those container
 metrics are absent or ambiguous, the monitor keeps reporting `FAIL` — that is
-the exact preflight blocker. Resolve it on the observability stack first; the
-monitor never silently claims zero restarts. Because the baseline is
+the exact preflight blocker, and it is currently unresolved on `mona` (see
+"Runtime blocker" below). The monitor never silently claims zero restarts.
+Because the baseline is
 in-process, a restarted monitor reports `FAIL` again until it has re-established
 and verified a fresh baseline, and the wrapper rejects such a status.
 
-### Actual-mona preflight: per-container cAdvisor series
+### Runtime blocker: no supported per-container restart/OOM observer
 
 Verified on `mona` (read-only inspection): Prometheus currently exposes **only
 the root cgroup** for `container_start_time_seconds` and
 `container_oom_events_total`; the exact Listener/origin queries return empty
 vectors. cAdvisor logs repeatedly report that it cannot find
-`/rootfs/var/lib/docker/image/overlayfs/.../mount-id`. The cause is that the
-cAdvisor `/:/rootfs` bind lacked recursive slave propagation after the Docker
-storage topology changed, so storage-driver mounts never became visible inside
-the container. The checked-in fix mounts `/:/rootfs:ro,rslave` (the same
-propagation node-exporter already uses); it changes only the isolated
-observability cAdvisor container and no event or runtime container.
+`/rootfs/var/lib/docker/image/overlayfs/layerdb/mounts/.../mount-id`.
 
-Until that fix is running on `mona`, the ten-client smoke **cannot start**: the
+An earlier diagnosis blamed missing recursive slave propagation on the
+cAdvisor `/:/rootfs` bind. An independent audit **disproved** it:
+
+- the running cAdvisor container already has `/` -> `/rootfs` with
+  `Propagation=rslave` and still hits the `mount-id` errors;
+- Docker 29.6.2 on `mona` uses the containerd image store
+  (`driver-type=io.containerd.snapshotter.v1`, `Driver=overlayfs`);
+- `/var/lib/docker/image` has no legacy `layerdb`, and
+  `docker inspect .GraphDriver` is null.
+
+The actual cause is that the current cAdvisor is incompatible with Docker's
+containerd image store for these per-container series. Mount propagation was
+never the problem, and the incorrect checked-in rslave change has been
+reverted. **Recreating or restarting cAdvisor is not a fix and must never be
+treated as one** — with any mount propagation flag it keeps exposing only the
+root cgroup for these series.
+
+Therefore the ten-client smoke **cannot start** and stays blocked: the
 monitor's exact container queries return empty vectors, every probe reports
 `FAIL`, and the wrapper refuses the network run. There is no fallback — no
-Docker CLI/API read, no inferred zero, no weakened restart/OOM evidence.
+Docker CLI/API read, no inferred zero, no weakened restart/OOM evidence. No
+monitored smoke may run until a supported, read-only per-container
+restart/OOM observer is implemented and verified on `mona`. Candidate options
+are listed in `ops/early-birds/runbook/README.md` ("Per-container restart/OOM
+observability blocker"); none may be implemented, restarted or deployed
+without explicit operational approval.
 
-Before any load, the operator must:
+Only after such an observer is deployed and verified, the operator confirms —
+through the loopback SSH tunnel — that each of the four exact queries returns
+exactly one finite series, not an empty vector:
 
-1. Obtain explicit human approval and recreate **only** cAdvisor on `mona`
-   (see `ops/early-birds/runbook/README.md`, "cAdvisor mount propagation").
-   Do not recreate Prometheus, Alertmanager, node-exporter, the canary or any
-   event/runtime container.
-2. Through the loopback SSH tunnel, confirm each of the four exact queries
-   returns exactly one finite series, not an empty vector:
+```bash
+for query in \
+  'container_start_time_seconds{name="earlybirds-preview-listener-1"}' \
+  'container_start_time_seconds{name="earlybirds-preview-beacon-stream-1"}' \
+  'container_oom_events_total{name="earlybirds-preview-listener-1"}' \
+  'container_oom_events_total{name="earlybirds-preview-beacon-stream-1"}'
+do
+  curl -fsS 'http://127.0.0.1:19090/api/v1/query' --get --data-urlencode "query=$query"
+done
+```
 
-   ```bash
-   for query in \
-     'container_start_time_seconds{name="earlybirds-preview-listener-1"}' \
-     'container_start_time_seconds{name="earlybirds-preview-beacon-stream-1"}' \
-     'container_oom_events_total{name="earlybirds-preview-listener-1"}' \
-     'container_oom_events_total{name="earlybirds-preview-beacon-stream-1"}'
-   do
-     curl -fsS 'http://127.0.0.1:19090/api/v1/query' --get --data-urlencode "query=$query"
-   done
-   ```
-3. Only then run the monitor `--once` preflight above. An empty vector at any
-   step is a hard blocker: stop and resolve observability first; never treat
-   missing series as zero restarts or zero OOM events.
+Only then run the monitor `--once` preflight above. An empty vector at any
+step is a hard blocker: stop and resolve observability first; never treat
+missing series as zero restarts or zero OOM events.
 
 ## Five-minute baseline
 
@@ -201,6 +222,15 @@ node tools/early-birds-hls-load/run-staging-smoke.mjs \
 Copy the exact printed confirmation. Record the numeric UTC offset from
 `timedatectl timesync-status`; its absolute value must be at most 100 ms. Use a
 new evidence path for the network run:
+
+The network wrapper serializes runs for the same Unix account through the one
+non-configurable host path
+`/tmp/harmonic-beacon-listener-smoke-10-network-run.lock`. A present lock —
+active, stale or ambiguous — refuses the run before preflight or child spawn.
+After verifying that no wrapper is running, an operator may remove a stale
+lock before the rehearsal; never remove or replace it while a run is active.
+This is local coordination, not cross-host attestation: procedure must still
+authorize exactly one generator host.
 
 ```bash
 EARLY_BIRDS_GENERATOR_ROLE=external-load-generator \

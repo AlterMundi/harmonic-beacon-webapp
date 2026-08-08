@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildPlan, selectTarget } from './src/contracts.mjs';
+import { acquireNetworkRunLock, NETWORK_RUN_LOCK_PATH } from './src/network-run-lock.mjs';
 import { startStatusGuard } from './src/smoke-guard.mjs';
 import {
   SIGNED_MANIFEST_MAX_BYTES,
@@ -37,6 +38,12 @@ For the exact ten-client network smoke, remove --dry-run and add:
 
 This wrapper fixes the target, origin, profile and shard count. It cannot run
 more than ten clients or target any host other than the isolated stream origin.
+A network run first takes an exclusive local lock on this generator host, so two
+wrappers on the same host and Unix account cannot overlap. Its one absolute
+path is not configurable; the lock is refused — never deleted — when it is
+already held or stale. Do not manually remove or replace it during a run.
+The lock is local to one host: a single trusted authorized generator is an
+operational precondition that this code cannot enforce across hosts.
 `);
 }
 
@@ -121,48 +128,82 @@ async function main() {
     '--evidence', resolve(evidence),
   ];
   let guard = null;
-  let child;
-  if (dryRun) {
-    childArgs.push('--dry-run');
-  } else {
-    const manifestPath = option(args, '--manifest-url-file');
-    const canaryPath = option(args, '--canary-status-file');
-    const monitorPath = option(args, '--monitor-status-file');
-    const clockOffset = option(args, '--clock-offset-ms');
-    const confirmation = option(args, '--confirm');
-    if (!manifestPath || !canaryPath || !monitorPath || clockOffset === null || !confirmation) {
-      throw new Error('network smoke requires signed manifest, external canary, target monitor, clock offset and confirmation');
+  let child = null;
+  let lock = null;
+  let signalName = null;
+  const onSignal = (name) => {
+    if (signalName) return;
+    signalName = name;
+    // Stop the guard first so an in-flight status check can never abort or
+    // kill during shutdown; then forward the interrupt to the load child.
+    guard?.stop();
+    child?.kill('SIGINT');
+  };
+  try {
+    if (dryRun) {
+      childArgs.push('--dry-run');
+    } else {
+      const manifestPath = option(args, '--manifest-url-file');
+      const canaryPath = option(args, '--canary-status-file');
+      const monitorPath = option(args, '--monitor-status-file');
+      const clockOffset = option(args, '--clock-offset-ms');
+      const confirmation = option(args, '--confirm');
+      if (!manifestPath || !canaryPath || !monitorPath || clockOffset === null || !confirmation) {
+        throw new Error('network smoke requires signed manifest, external canary, target monitor, clock offset and confirmation');
+      }
+      // The exclusive local lock is taken before any precondition read or
+      // child spawn and is held through child exit and guard stop, so two
+      // wrappers on this host can never overlap a network run. A held, stale
+      // or ambiguous lock refuses the run; it is never deleted by a non-owner.
+      lock = await acquireNetworkRunLock({
+        path: NETWORK_RUN_LOCK_PATH,
+        runId,
+      });
+      process.on('SIGINT', onSignal);
+      process.on('SIGTERM', onSignal);
+      await readPreconditions({
+        manifestPath,
+        canaryPath,
+        monitorPath,
+        plan,
+        target,
+        checkFileFreshness: true,
+      });
+      childArgs.push(
+        '--manifest-url-file', resolve(manifestPath),
+        '--clock-offset-ms', clockOffset,
+        '--confirm', confirmation,
+        '--external-generator',
+      );
+      guard = startStatusGuard({
+        check: () => readPreconditions({ manifestPath, canaryPath, monitorPath, plan, target }),
+        onAbort: () => child?.kill('SIGINT'),
+      });
     }
-    await readPreconditions({
-      manifestPath,
-      canaryPath,
-      monitorPath,
-      plan,
-      target,
-      checkFileFreshness: true,
+    if (signalName) {
+      // Interrupted between lock acquisition and spawn: no load ever started.
+      process.exitCode = 130;
+      return;
+    }
+    child = spawn(process.execPath, childArgs, { stdio: 'inherit', env: process.env });
+    // A guard abort between precondition validation and spawn is delivered here,
+    // so the child can never run unguarded after a failed status.
+    if (guard?.aborted) child.kill('SIGINT');
+    const exitCode = await new Promise((resolveExit, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code, signal) => resolveExit(code ?? (signal ? 130 : 1)));
     });
-    childArgs.push(
-      '--manifest-url-file', resolve(manifestPath),
-      '--clock-offset-ms', clockOffset,
-      '--confirm', confirmation,
-      '--external-generator',
-    );
-    guard = startStatusGuard({
-      check: () => readPreconditions({ manifestPath, canaryPath, monitorPath, plan, target }),
-      onAbort: () => child?.kill('SIGINT'),
-    });
+    if (guard) guard.stop();
+    process.exitCode = signalName ? 130 : exitCode;
+  } finally {
+    // Deterministic cleanup on every path — validation error, spawn error,
+    // signal/abort and normal exit: park the guard, drop the signal handlers
+    // and release only the lock this process owns.
+    guard?.stop();
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
+    if (lock) await lock.release();
   }
-
-  child = spawn(process.execPath, childArgs, { stdio: 'inherit', env: process.env });
-  // A guard abort between precondition validation and spawn is delivered here,
-  // so the child can never run unguarded after a failed status.
-  if (guard?.aborted) child.kill('SIGINT');
-  const exitCode = await new Promise((resolveExit, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code, signal) => resolveExit(code ?? (signal ? 130 : 1)));
-  });
-  if (guard) guard.stop();
-  process.exitCode = exitCode;
 }
 
 main().catch((error) => {

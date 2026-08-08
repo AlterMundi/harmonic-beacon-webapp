@@ -86,4 +86,30 @@ test('passing checks never abort and stop() leaves the guard quiet', async () =>
   assert.equal(aborts, 0);
   assert.equal(checks, 2);
   assert.equal(guard.aborted, false);
+  assert.equal(guard.stopped, true);
+});
+
+test('an in-flight rejection after stop() emits no abort and never kills', async () => {
+  const timers = fakeTimer();
+  let aborts = 0;
+  let writes = 0;
+  let rejectCheck;
+  const guard = startStatusGuard({
+    check: () => new Promise((unused, reject) => { rejectCheck = reject; }),
+    onAbort: () => { aborts += 1; },
+    ...timers,
+    writeImpl: () => { writes += 1; },
+  });
+  timers.tick(); // Starts one check that is still in flight.
+  await new Promise((resolve) => setImmediate(resolve));
+  guard.stop(); // The load child has exited; the guard is parked.
+  rejectCheck(new Error('status failed after stop'));
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  timers.tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(aborts, 0);
+  assert.equal(writes, 0);
+  assert.equal(guard.aborted, false);
+  assert.equal(guard.stopped, true);
 });

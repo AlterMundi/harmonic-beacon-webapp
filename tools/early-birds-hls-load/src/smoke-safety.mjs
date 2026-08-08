@@ -214,6 +214,10 @@ export function validateNetworkSmokePreconditions({
   // The canary and monitor status files are read from local disk, so both
   // safety producers must be co-located with this wrapper on one external
   // host. Identical fingerprints on a second host would fail this check too.
+  // The fingerprint is a truncated hostname hash, not a cryptographic
+  // attestation: it catches misplaced producers but cannot prove topology, so
+  // the runbook still requires a trusted operator and external inspection of
+  // the generator host.
   assert(/^[a-f0-9]{12}$/.test(expectedHostHash), 'local host fingerprint is invalid');
   assert(canaryStatus.hostHash === expectedHostHash
     && monitorStatus.hostHash === expectedHostHash,
@@ -230,6 +234,12 @@ export async function readJsonStatus(path, label) {
 }
 
 export function assertExternalHost(host = hostname()) {
+  // Defense-in-depth only, NOT cryptographic topology proof: this rejects
+  // mona-like hostnames and derives a non-cryptographic hash of the local
+  // hostname. It cannot prove where a safety producer really ran — a renamed
+  // or misconfigured host passes silently. A trusted operator plus external
+  // inspection of the generator host (documented in the runbook) remains
+  // required; do not weaken the rejection below.
   const labels = String(host).trim().toLowerCase().replace(/\.+$/, '').split('.');
   assert(!labels.some((label) => label === 'mona' || label.startsWith('mona-')),
     'external safety process is forbidden from mona');
