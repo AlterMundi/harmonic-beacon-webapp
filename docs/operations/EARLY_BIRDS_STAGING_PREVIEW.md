@@ -1,8 +1,42 @@
 # EarlyBirds isolated staging runtime
 
-## 2026-08-07 first-listen access and boundary synchronization
+## 2026-08-08 public Listener convergence
 
 The isolated Listener runs application SHA
+`b8a04fe94fb853a0276bb549773c74eb27e410d5`, image
+`harmonic-beacon/earlybirds-preview-listener:b8a04fe` and schema
+`20260807200000_listener_regional_presence`. Free for All is OFF; ordinary
+public entry therefore requires canonical identity plus welcome, recurring
+Free, invitation or Founder authority.
+
+- Public invitation entry is canonicalized to `listen.harmonicbeacon.com` before
+  OAuth. Staging cannot mint the invitation cookie or accept redemption; exact
+  staging POST aliases return an unlogged, no-store 404. Only canonical HTTPS,
+  Host and trusted Origin may mutate redemption state.
+- Public bearer paths are no-store/no-referrer and suppressed from access logs.
+  Redemption is rate-limited and terminal outcomes clear the cookie; a
+  transient authority failure retains it for a safe retry.
+- Bounded runtime identity/access settings prefer `BEACON_LISTENER_*` and accept
+  legacy `EARLY_BIRDS_*` during the rollback window. Credential bundles cannot
+  mix generations, and conflicts or partial bundles fail readiness without
+  logging values. The current compose intentionally emits legacy keys until the
+  next coordinated rollout.
+- The public-disable command retries liveness/readiness during normal Next.js
+  startup. It was physically exercised after deployment: the first probe saw a
+  connection reset, later probes passed, readiness was green and anonymous
+  lease denial returned 503. A failed terminal denial still stops only Listener.
+- Final evidence: 1,222 tests with 19 standard skips, ESLint, TypeScript,
+  production build, Prisma, 26 nginx contract checks, preview/origin/
+  observability gates and public browser smoke are green. Listener and origin
+  have zero restarts; `live.harmonicbeacon.com` remains untouched.
+- Immediate rollback retains schema/media and selects image `2344b10`; image
+  `16a15d1` is the additional retained fallback. Use the exact root-only env and
+  nginx backups created by the deployment, and run `nginx -t` plus the complete
+  health/access smoke. Never roll back the additive schema.
+
+## 2026-08-07 first-listen access and boundary synchronization (historical)
+
+This historical candidate ran application SHA
 `dad29d4dc5010603a5bbc7ed309c8f78e7c0f384`, image
 `harmonic-beacon/earlybirds-preview-listener:dad29d4` and schema
 `20260807100000_early_bird_welcome_access`. Free for All remains OFF for the
