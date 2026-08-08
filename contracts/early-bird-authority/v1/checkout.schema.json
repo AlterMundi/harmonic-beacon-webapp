@@ -24,7 +24,13 @@
     },
     "provider": {"enum": ["paypal", "mercado_pago"]},
     "external_subscription_id": {"type": "string", "minLength": 1, "maxLength": 255},
-    "approval_url": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "approval_url": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 9,
+      "maxLength": 2048,
+      "pattern": "^https://[^\\s/@]+(?:[/?#][^\\s]*)?$"
+    },
     "currency": {"enum": ["USD", "ARS"]},
     "amount_minor": {"type": "integer", "minimum": 1},
     "sandbox": {"type": "boolean"}
