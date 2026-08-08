@@ -46,7 +46,8 @@ runtime code.
 - Whole-run request-error and fetch-miss tolerances cannot exceed 10%; derived
   rolling-window gates are capped at 20% and in-run circuit breakers at 25%,
   regardless of a custom profile.
-- The signed manifest URL lives only in a group/world-inaccessible file. That
+- The signed manifest URL lives only in a regular file at exactly mode `0600`
+  (never a symlink or device), bounded in size. That
   file is refreshed from disk at least once per second so a separate approved control
   plane can rotate short-lived URLs without giving the harness a signing key.
 - Every staging shard records an externally measured UTC clock offset within
@@ -103,6 +104,22 @@ contains runtime measurements or claims a network request.
 See [`docs/ops/EARLY_BIRDS_HLS_LOAD_SOAK.md`](../../docs/ops/EARLY_BIRDS_HLS_LOAD_SOAK.md)
 for the distributed procedure, stop conditions and evidence interpretation.
 
+The first real request is deliberately narrower than the general harness. Use
+`run-staging-smoke.mjs` and the checked-in `listener-staging-smoke-10` policy;
+that wrapper fixes the exact origin, ten clients, one shard and sixty-second
+soak. A staging network invocation also requires a fresh private signed
+manifest file plus continuously refreshed external decoded-canary and target
+monitor status files, all exactly mode `0600` regular files produced on the
+same external host as the wrapper. The target monitor queries Alertmanager
+(`--alertmanager-url`, default `http://127.0.0.1:19093`) and Prometheus
+(`--prometheus-url`, default `http://127.0.0.1:19090`) through separate
+uncredentialed loopback SSH tunnels, evaluates the immediate host thresholds
+directly and maintains an in-process restart/OOM baseline for the isolated
+Listener and origin containers. The wrapper polls both status files every two
+seconds and aborts the load child exactly once on the first failing or stale
+check. See
+[`LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md`](../../docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md).
+
 ## Development verification
 
 ```bash
@@ -115,5 +132,6 @@ ranges and declared gaps. It rejects master playlists, encrypted media and
 LL-HLS parts instead of silently undercounting them; this says nothing about the
 opaque media encoding.
 
-The test suite uses only a tiny loopback synthetic origin. It never contacts
-staging, production, DNS or external media.
+The test suite uses only a tiny loopback synthetic origin plus in-process fake
+HTTP responders for the Prometheus/Alertmanager monitor probes. It never
+contacts staging, production, DNS or external media.
