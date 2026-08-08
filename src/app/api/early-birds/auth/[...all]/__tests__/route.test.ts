@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const handler = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/early-birds/auth', () => ({ earlyBirdAuth: () => ({ handler }) }));
+vi.mock('@/lib/early-birds/auth', () => ({ earlyBirdAuthHandler: handler }));
 
 import { GET, POST } from '../route';
 

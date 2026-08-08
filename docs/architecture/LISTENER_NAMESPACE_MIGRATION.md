@@ -121,6 +121,71 @@ logout and two concurrent devices before clients change their callback URL. Do
 not run two independent auth stores or silently create a second account for the
 same identity.
 
+### Listener session-cookie bridge
+
+The first step of that checkpoint ships as a strict wrapper around the single
+Better Auth instance (`src/lib/listener/session-cookie-bridge.ts`). Better Auth
+stays the sole session authority on the legacy base path; its signed cookie
+value is opaque and its HMAC does not cover the cookie name, so the value is
+portable verbatim under a second name. The bridge never parses, decodes,
+re-signs or logs the value, and it never touches OAuth state, PKCE or any other
+non-session cookie.
+
+Outbound, every legacy session `Set-Cookie` Better Auth emits (mint, rotation,
+clear) is mirrored onto the canonical name byte-identically, so sign-in,
+refresh and sign-out always move both cookies together with one scope.
+Ambiguous output (repeated same-name mutations, mismatched pairs, canonical
+mutations without a legacy counterpart) is an internal failure: the response
+is replaced by a generic 500 carrying no `Set-Cookie` at all.
+
+Inbound, exactly three states may reach Better Auth:
+
+1. no session cookie;
+2. exactly one legacy-only session cookie (the rollback window);
+3. exactly one canonical plus one legacy cookie with byte-identical values.
+
+Everything else terminates with a generic 400/401 BEFORE Better Auth can mint,
+rotate or clear anything: canonical-only (401), duplicate same-name cookies,
+conflicting pairs, malformed percent encoding or control characters, oversized
+values, and oversized Cookie headers (all 400). The generic body carries no
+token or cookie detail and rejected values are never echoed.
+
+Every rejection also expires BOTH exact session cookie names with `Max-Age=0`
+and the scope Better Auth actually resolved (`Path=/`, `HttpOnly`,
+`SameSite=Lax`, `Secure` when the resolved names carry the `__Secure-` prefix;
+the scope is derived from `getCookies(auth.options)` and no `Domain` is ever
+invented). This dual-clear is what keeps a deploy → rollback to `20406` →
+redeploy sequence recoverable: the rollback image's sign-out clears only the
+legacy name, so a stale canonical cookie would otherwise 401 forever, and an
+old re-login can leave a stale canonical A plus a fresh legacy B that conflicts
+with 400 — while every auth mutation that could repair the jar stops before
+Better Auth. Expiring both names logs the client out but lets the next clean
+sign-in mint a fresh dual pair. Direct `getSession` paths apply the same
+inbound policy, fail closed to `null`, and cannot set response cookies.
+
+Canonical-only acceptance is deliberately deferred until every rollback image
+in the support window emits and accepts the canonical name; accepting it now
+would let a rollback image silently strand the session it cannot read. The
+401-plus-dual-clear state flips to accepted only after the dual-write bridge
+has been the oldest supported rollback image for a full support window.
+
+Browser-state matrix for the bridge image:
+
+| Browser jar on request | Bridge response | Client outcome |
+| --- | --- | --- |
+| No session cookie | Forwarded | Sign-in/OAuth mints the exact dual pair. |
+| Legacy only | Forwarded | Session valid; rotation and sign-out stay dual. Rollback-safe. |
+| Canonical + legacy, identical | Forwarded | Session valid; both cookies move together. |
+| Canonical only | 401 + dual expiry | Logged out; next clean sign-in recovers with a fresh dual pair. |
+| Canonical A + legacy B (conflict) | 400 + dual expiry | Logged out; next clean sign-in recovers. |
+| Duplicate of either name | 400 + dual expiry | Logged out; never silently selected first-wins. |
+| Malformed, oversized value or header | 400 + dual expiry | Logged out; no downgrade to an adjacent valid cookie. |
+
+Rollback of the bridge itself removes only the wrapper: the legacy-only path
+is byte-identical to `20406`, no database, environment or cookie migration is
+required, and canonical cookies left behind are expired by the dual-clear on
+the next rejected request or sit harmlessly unread.
+
 ## Phase 4: environment and operations
 
 Introduce a typed resolver for each bounded environment group:
