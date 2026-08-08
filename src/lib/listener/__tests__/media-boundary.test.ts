@@ -5,7 +5,9 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const MEDIA_FILE_SHA256 = {
-    'src/components/early-birds/ListenerPlayer.tsx': '7b0f6f4e75e6b1c84ad65bb3ccbb08c32759dd591bcc51048a0cfe3b71dd8b78',
+    // Re-pinned after the accepted radio-keyboard accessibility-only refactor
+    // in PR #252. Playback, media sources and signal processing were untouched.
+    'src/components/early-birds/ListenerPlayer.tsx': 'fdf787402e94cc97a3b29b9291dc63e52b7a859d1ff9e9c505c99fe3aba720b1',
     'src/lib/early-birds/stream.ts': 'e386413874e5ad799e17607e2b030851cc7baadea48161191c7daecb45183bea',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'd858affc655c6df6607e76470508a59c3ebd442744bc12e5da334729fcb5d660',
