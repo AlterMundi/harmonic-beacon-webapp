@@ -22,7 +22,7 @@ export default function EarlyBirdUnavailable() {
     const text = copy[locale];
 
     return (
-        <main className="event-shell">
+        <main className="listener-page-shell">
             <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
                 <header className="flex items-center justify-between gap-4">
                     <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />

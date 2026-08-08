@@ -119,7 +119,7 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
                 <div className="listener-free-window__actions">
                     <button
                         type="button"
-                        className="event-button event-button--primary w-full"
+                        className="listener-button listener-button--primary w-full"
                         disabled={!timeZone || busy !== null}
                         onClick={() => select('now')}
                     >
@@ -127,7 +127,7 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
                     </button>
                     <button
                         type="button"
-                        className="event-button event-button--secondary w-full"
+                        className="listener-button listener-button--secondary w-full"
                         disabled={!timeZone || busy !== null}
                         onClick={() => setChoosing(true)}
                     >
@@ -145,7 +145,7 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
                     <p><span>{copy.freeTimeZone}</span> · {timeZone}</p>
                     <button
                         type="button"
-                        className="event-button event-button--primary w-full"
+                        className="listener-button listener-button--primary w-full"
                         disabled={!timeZone || busy !== null || localStartMinute(time) === null}
                         onClick={() => select('custom')}
                     >
@@ -153,7 +153,7 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
                     </button>
                     <button
                         type="button"
-                        className="event-button event-button--secondary w-full"
+                        className="listener-button listener-button--secondary w-full"
                         disabled={busy !== null}
                         onClick={() => setChoosing(false)}
                     >
@@ -162,7 +162,7 @@ export default function FreeWindowSetup({ state }: { state: SerializedEarlyBirdF
                 </div>
             )}
 
-            {error && <p role="alert" className="event-alert event-alert--error">{copy.freeScheduleError}</p>}
+            {error && <p role="alert" className="listener-alert listener-alert--error">{copy.freeScheduleError}</p>}
         </div>
     );
 }

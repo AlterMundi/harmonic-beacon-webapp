@@ -39,13 +39,13 @@ export default function WelcomeAccessAction() {
             <p>{copy.welcomeDescription}</p>
             <button
                 type="button"
-                className="event-button event-button--primary w-full"
+                className="listener-button listener-button--primary w-full"
                 disabled={busy}
                 onClick={start}
             >
                 {busy ? copy.welcomeStarting : copy.welcomeListen}
             </button>
-            {error && <p role="alert" className="event-alert event-alert--error">{copy.welcomeError}</p>}
+            {error && <p role="alert" className="listener-alert listener-alert--error">{copy.welcomeError}</p>}
         </div>
     );
 }

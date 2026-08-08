@@ -355,6 +355,26 @@ The media test ladder is mandatory and intentionally incremental:
 
 A failure at one level is fixed there before testing the next.
 
+### 8.1 Listener presentation isolation
+
+Listener components never consume the event visual primitives
+(`event-shell`/`event-button`/`event-alert`/`event-field`); they use additive
+`.listener-*` mirrors in `src/app/globals.css` so future event UI changes
+cannot restyle Listener surfaces (issues #213, #198). The `.event-*` rules
+remain untouched for event pages. Automated evidence:
+
+- `src/components/early-birds/__tests__/listener-visual-isolation.test.tsx` —
+  representative public/access Listener branches render `.listener-*`
+  classes, error states use the styled
+  `listener-alert--danger`/`listener-alert--error` variants, and the access
+  card keeps one contextual primary action. Source inspection confirms no
+  borrowed event visual primitive remains in Listener components.
+- `e2e/tests/early-birds-responsive.spec.ts` — Spanish and explicit English
+  browser-language paths, ≥ 44 px touch targets on real Listener controls,
+  the reduced-motion path without nonessential looping animation, exactly one
+  enabled primary transport action in the ready state, and no media elements
+  or artifact requests on the public pre-access surface.
+
 ## 9. Identity and session contract
 
 EarlyBird identity is not staff identity and not an event ticket identity.
