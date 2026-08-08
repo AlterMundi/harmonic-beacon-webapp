@@ -5,12 +5,10 @@ const mocks = vi.hoisted(() => ({
     earlyBirdOAuthAvailability: vi.fn(),
     earlyBirdMagicLinkAvailable: vi.fn(),
     getEarlyBirdListeningAccess: vi.fn(),
-    cookies: vi.fn(),
     headers: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({
-    cookies: mocks.cookies,
     headers: mocks.headers,
 }));
 vi.mock('@/lib/early-birds/auth', () => ({
@@ -25,7 +23,13 @@ vi.mock('@/lib/early-birds/access', () => ({
 }));
 
 import EarlyBirdHome from '@/components/early-birds/EarlyBirdHome';
+import {
+    EARLY_BIRD_INVITATION_COOKIE,
+    LISTENER_INVITATION_COOKIE,
+} from '@/lib/early-birds/invitation-cookie';
 import EarlyBirdsPage from '../page';
+
+const INVITATION = `ebi_v1.${'a'.repeat(32)}.${'b'.repeat(32)}.${'c'.repeat(32)}`;
 
 afterEach(() => {
     vi.clearAllMocks();
@@ -91,7 +95,6 @@ describe('EarlyBird Listener page', () => {
     it('renders an authenticated Listener during an active Free window', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
-        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
         mocks.headers.mockResolvedValue(new Headers());
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
         mocks.getEarlyBirdListeningAccess.mockResolvedValue({
@@ -116,7 +119,6 @@ describe('EarlyBird Listener page', () => {
     it('derives a sanitized Founder presentation on the server', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
-        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
         mocks.headers.mockResolvedValue(new Headers());
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
         mocks.getEarlyBirdListeningAccess.mockResolvedValue({
@@ -152,7 +154,6 @@ describe('EarlyBird Listener page', () => {
     it('shows the saved schedule rather than fabricating membership outside the window', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
-        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
         mocks.headers.mockResolvedValue(new Headers());
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
         mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
@@ -184,7 +185,6 @@ describe('EarlyBird Listener page', () => {
     it('renders the Listener during the one-time welcome session', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
-        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
         mocks.headers.mockResolvedValue(new Headers());
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
         mocks.getEarlyBirdListeningAccess.mockResolvedValue({
@@ -214,7 +214,6 @@ describe('EarlyBird Listener page', () => {
     it('does not fabricate Free or welcome state when identity resolution fails', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
-        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
         mocks.headers.mockResolvedValue(new Headers());
         mocks.currentEarlyBirdSession.mockRejectedValue(new Error('identity unavailable'));
         mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
@@ -234,7 +233,6 @@ describe('EarlyBird Listener page', () => {
     it('does not fabricate Free or welcome state when access resolution fails', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
-        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
         mocks.headers.mockResolvedValue(new Headers());
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
         mocks.getEarlyBirdListeningAccess.mockRejectedValue(new Error('database unavailable'));
@@ -254,7 +252,6 @@ describe('EarlyBird Listener page', () => {
     it('shows identity unavailable when no public sign-in method is configured', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
-        mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) });
         mocks.headers.mockResolvedValue(new Headers());
         mocks.currentEarlyBirdSession.mockResolvedValue(null);
         mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: false, apple: false });
@@ -263,5 +260,38 @@ describe('EarlyBird Listener page', () => {
         const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
 
         expect(result.props.serviceUnavailable).toBe('identity');
+    });
+
+    it.each([
+        [LISTENER_INVITATION_COOKIE],
+        [EARLY_BIRD_INVITATION_COOKIE],
+    ])('recognizes a valid %s invitation cookie without exposing its value', async (name) => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.headers.mockResolvedValue(new Headers({ cookie: `${name}=${INVITATION}` }));
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props.invitationAvailable).toBe(true);
+        expect(JSON.stringify(result.props)).not.toContain(INVITATION);
+    });
+
+    it('fails closed when canonical and legacy invitation cookies conflict', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        const other = `ebi_v1.${'d'.repeat(32)}.${'e'.repeat(32)}.${'f'.repeat(32)}`;
+        mocks.headers.mockResolvedValue(new Headers({
+            cookie: `${LISTENER_INVITATION_COOKIE}=${other}; ${EARLY_BIRD_INVITATION_COOKIE}=${INVITATION}`,
+        }));
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props.invitationAvailable).toBe(false);
     });
 });

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 
 import {
     EARLY_BIRD_INVITATION_COOKIE,
+    LISTENER_INVITATION_COOKIE,
 } from '@/lib/early-birds/invitation-cookie';
 
 const currentEarlyBirdSession = vi.hoisted(() => vi.fn());
@@ -23,9 +24,11 @@ function request(
     namespace: 'legacy' | 'canonical' = 'legacy',
     origin = 'https://listen.harmonicbeacon.com',
     hostname = 'listen.harmonicbeacon.com',
+    cookieHeader?: string,
 ) {
     const headers = new Headers();
-    if (token) headers.set('cookie', `${EARLY_BIRD_INVITATION_COOKIE}=${token}`);
+    if (cookieHeader) headers.set('cookie', cookieHeader);
+    else if (token) headers.set('cookie', `${EARLY_BIRD_INVITATION_COOKIE}=${token}`);
     if (origin) headers.set('origin', origin);
     headers.set('host', hostname);
     headers.set('x-forwarded-proto', 'https');
@@ -131,8 +134,49 @@ describe('EarlyBird Free redemption boundary', () => {
             sameSite: 'lax',
             path: '/',
         });
+        expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toMatchObject({
+            value: '',
+            maxAge: 0,
+            path: '/',
+        });
         expect(response.headers.get('cache-control')).toBe('private, no-store');
         expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    });
+
+    it('redeems a canonical-only cookie during the compatibility window', async () => {
+        currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
+        redeemFreeThroughCanonicalGateway.mockResolvedValue({
+            ok: true,
+            replayed: false,
+            alreadyEntitled: false,
+        });
+        const response = await POST(request(
+            TOKEN,
+            'canonical',
+            undefined,
+            undefined,
+            `${LISTENER_INVITATION_COOKIE}=${TOKEN}`,
+        ));
+
+        expect(response.status).toBe(200);
+        expect(redeemFreeThroughCanonicalGateway).toHaveBeenCalledWith('listener-1', TOKEN);
+    });
+
+    it('fails closed and clears both generations when dual cookies conflict', async () => {
+        currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
+        const other = `ebi_v1.${'d'.repeat(32)}.${'e'.repeat(32)}.${'f'.repeat(32)}`;
+        const response = await POST(request(
+            TOKEN,
+            'canonical',
+            undefined,
+            undefined,
+            `${LISTENER_INVITATION_COOKIE}=${other}; ${EARLY_BIRD_INVITATION_COOKIE}=${TOKEN}`,
+        ));
+
+        expect(response.status).toBe(409);
+        expect(redeemFreeThroughCanonicalGateway).not.toHaveBeenCalled();
+        expect(response.cookies.get(LISTENER_INVITATION_COOKIE)?.maxAge).toBe(0);
+        expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)?.maxAge).toBe(0);
     });
 
     it('returns the canonical landing only to the canonical alias', async () => {
@@ -180,6 +224,10 @@ describe('EarlyBird Free redemption boundary', () => {
             value: '',
             maxAge: 0,
         });
+        expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toMatchObject({
+            value: '',
+            maxAge: 0,
+        });
     });
 
     it('retains the short invitation cookie when the canonical authority is unavailable', async () => {
@@ -190,6 +238,7 @@ describe('EarlyBird Free redemption boundary', () => {
 
         expect(response.status).toBe(503);
         expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+        expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
         expect(response.headers.get('cache-control')).toBe('private, no-store');
         expect(response.headers.get('referrer-policy')).toBe('no-referrer');
     });
