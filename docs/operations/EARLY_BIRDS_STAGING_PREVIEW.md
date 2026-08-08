@@ -3,8 +3,8 @@
 ## 2026-08-08 public Listener convergence
 
 The isolated Listener runs application SHA
-`b8a04fe94fb853a0276bb549773c74eb27e410d5`, image
-`harmonic-beacon/earlybirds-preview-listener:b8a04fe` and schema
+`20406dae49e8cbabba38d0cb099d8f400276113e`, image
+`harmonic-beacon/earlybirds-preview-listener:20406da` and schema
 `20260807200000_listener_regional_presence`. Free for All is OFF; ordinary
 public entry therefore requires canonical identity plus welcome, recurring
 Free, invitation or Founder authority.
@@ -21,6 +21,12 @@ Free, invitation or Founder authority.
   mix generations, and conflicts or partial bundles fail readiness without
   logging values. The current compose intentionally emits legacy keys until the
   next coordinated rollout.
+- Invitation-cookie phase 2B emits canonical
+  `__Host-hb_listener_invitation` and the rollback-compatible legacy cookie,
+  reads canonical-first, rejects duplicate or conflicting raw Cookie headers,
+  preserves both across 401/503 and clears both on success or terminal 409.
+  The deployed canonical redemption smoke passed against the isolated authority;
+  98 focused invitation/namespace tests and 32 preview tests are green.
 - The public-disable command retries liveness/readiness during normal Next.js
   startup. It was physically exercised after deployment: the first probe saw a
   connection reset, later probes passed, readiness was green and anonymous
@@ -29,8 +35,8 @@ Free, invitation or Founder authority.
   production build, Prisma, 26 nginx contract checks, preview/origin/
   observability gates and public browser smoke are green. Listener and origin
   have zero restarts; `live.harmonicbeacon.com` remains untouched.
-- Immediate rollback retains schema/media and selects image `2344b10`; image
-  `16a15d1` is the additional retained fallback. Use the exact root-only env and
+- Immediate rollback retains schema/media and selects image `b8a04fe`; image
+  `2344b10` is the additional retained fallback. Use the exact root-only env and
   nginx backups created by the deployment, and run `nginx -t` plus the complete
   health/access smoke. Never roll back the additive schema.
 

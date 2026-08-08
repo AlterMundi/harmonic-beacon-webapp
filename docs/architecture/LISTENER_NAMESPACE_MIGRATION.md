@@ -1,7 +1,7 @@
 # EarlyBird to Listener namespace migration
 
-Status: phase 1 is integrated; phase 2A is an undeployed candidate on
-`feat/listener-namespace-runtime`. This migration is deliberately additive.
+Status: phases 1, 2A and the invitation-cookie phase 2B are integrated and
+deployed on the isolated Listener at `20406da`. This migration is deliberately additive.
 `EarlyBird` is an offer and cohort name; `Listener` is the durable product and
 technical namespace.
 
