@@ -3,6 +3,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
+import { listenerRuntimeBundle } from '@/lib/listener/runtime-env';
 
 export const EARLY_BIRD_MAGIC_LINK_PATH = '/sign-in/magic-link';
 export const EARLY_BIRD_MAGIC_LINK_VERIFY_PATH = '/magic-link/verify';
@@ -30,18 +31,24 @@ type DeliveryConfiguration = {
 
 type ThrottleClient = Pick<typeof prisma, '$transaction'>;
 
-function nonEmpty(value: string | undefined): string | undefined {
-    const normalized = value?.trim();
-    return normalized ? normalized : undefined;
-}
-
 export function earlyBirdMagicLinkConfiguration(
     environment: MagicLinkEnvironment = process.env,
 ): DeliveryConfiguration | null {
-    const rawURL = nonEmpty(environment.EARLY_BIRDS_MAGIC_LINK_DELIVERY_URL);
-    const token = nonEmpty(environment.EARLY_BIRDS_MAGIC_LINK_DELIVERY_TOKEN);
-    const rateSecret = nonEmpty(environment.EARLY_BIRDS_MAGIC_LINK_RATE_SECRET);
-    if (!rawURL || !token || token.length < 32 || !rateSecret || rateSecret.length < 32) return null;
+    let configuration;
+    try {
+        configuration = listenerRuntimeBundle([
+            'MAGIC_LINK_DELIVERY_URL',
+            'MAGIC_LINK_DELIVERY_TOKEN',
+            'MAGIC_LINK_RATE_SECRET',
+        ], environment);
+    } catch {
+        return null;
+    }
+    if (!configuration) return null;
+    const rawURL = configuration.MAGIC_LINK_DELIVERY_URL;
+    const token = configuration.MAGIC_LINK_DELIVERY_TOKEN;
+    const rateSecret = configuration.MAGIC_LINK_RATE_SECRET;
+    if (token.length < 32 || rateSecret.length < 32) return null;
 
     try {
         const url = new URL(rawURL);

@@ -6,6 +6,7 @@ import {
     EARLY_BIRD_AUTH_BASE_PATH,
     earlyBirdAuth,
     earlyBirdTestAuthEnabled,
+    earlyBirdTestLoginSecret,
 } from '@/lib/early-birds/auth';
 import { issueSyntheticMembership } from '@/lib/early-birds/membership';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
@@ -22,17 +23,19 @@ function digest(value: string): Buffer {
 }
 
 function authorizedSyntheticLogin(request: NextRequest): boolean {
-    if (!earlyBirdTestAuthEnabled()) return false;
+    const expected = earlyBirdTestLoginSecret();
+    if (!expected || !earlyBirdTestAuthEnabled()) return false;
     const authorization = request.headers.get('authorization');
     const presented = authorization?.startsWith('Bearer ')
         ? authorization.slice('Bearer '.length)
         : '';
-    const expected = process.env.EARLY_BIRDS_TEST_LOGIN_SECRET ?? '';
     return timingSafeEqual(digest(presented), digest(expected));
 }
 
 function testPassword(email: string): string {
-    return createHmac('sha256', process.env.EARLY_BIRDS_TEST_LOGIN_SECRET!)
+    const secret = earlyBirdTestLoginSecret();
+    if (!secret) throw new Error('Listener synthetic login is not configured');
+    return createHmac('sha256', secret)
         .update(`early-birds-test-login:v1:${email}`)
         .digest('base64url');
 }

@@ -104,6 +104,21 @@ describe('EarlyBird email magic link', () => {
         })).toBe(false);
     });
 
+    it('accepts a complete canonical delivery bundle and rejects mixed generations', () => {
+        expect(earlyBirdMagicLinkAvailable({
+            BEACON_LISTENER_MAGIC_LINK_DELIVERY_URL:
+                `https://mail.example.test${EARLY_BIRD_MAGIC_LINK_DELIVERY_PATH}`,
+            BEACON_LISTENER_MAGIC_LINK_DELIVERY_TOKEN: 'canonical-token-with-at-least-32-characters',
+            BEACON_LISTENER_MAGIC_LINK_RATE_SECRET: 'canonical-rate-secret-with-at-least-32-characters',
+        })).toBe(true);
+        expect(earlyBirdMagicLinkAvailable({
+            BEACON_LISTENER_MAGIC_LINK_DELIVERY_URL:
+                `https://mail.example.test${EARLY_BIRD_MAGIC_LINK_DELIVERY_PATH}`,
+            EARLY_BIRDS_MAGIC_LINK_DELIVERY_TOKEN: 'legacy-token-with-at-least-32-characters',
+            EARLY_BIRDS_MAGIC_LINK_RATE_SECRET: 'legacy-rate-secret-with-at-least-32-characters',
+        })).toBe(false);
+    });
+
     it('stores a one-way verifier rather than the raw token', () => {
         const token = 'raw-token-that-must-not-be-persisted';
         const verifier = hashEarlyBirdMagicLinkToken(token);

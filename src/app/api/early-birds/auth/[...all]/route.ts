@@ -11,6 +11,7 @@ import {
     earlyBirdsUnavailableResponse,
 } from '@/lib/early-birds/enabled';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
+import { listenerRuntimeTrustedOrigins } from '@/lib/listener/runtime-env';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,14 +27,13 @@ function hiddenSyntheticEmailEndpoint(request: NextRequest): Response | null {
 function trustedMutationOrigin(request: NextRequest): boolean {
     const origin = request.headers.get('origin');
     if (!origin) return false;
-    const configured = [
-        process.env.EARLY_BIRDS_AUTH_BASE_URL,
-        ...(process.env.EARLY_BIRDS_TRUSTED_ORIGINS ?? '').split(','),
-    ]
-        .map((value) => value?.trim())
-        .filter((value): value is string => Boolean(value));
-    const allowed = configured.length > 0 ? configured : [request.nextUrl.origin];
-    return allowed.includes(origin);
+    try {
+        const configured = listenerRuntimeTrustedOrigins();
+        const allowed = configured.length > 0 ? configured : [request.nextUrl.origin];
+        return allowed.includes(origin);
+    } catch {
+        return false;
+    }
 }
 
 function oauthCallback(request: NextRequest): boolean {

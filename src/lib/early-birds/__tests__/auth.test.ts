@@ -5,6 +5,8 @@ import {
     earlyBirdAuth,
     earlyBirdOAuthAvailability,
     earlyBirdSocialProviders,
+    earlyBirdTestLoginSecret,
+    earlyBirdTrustedOrigins,
 } from '../auth';
 
 describe('EarlyBird Better Auth isolation', () => {
@@ -42,6 +44,40 @@ describe('EarlyBird Better Auth isolation', () => {
 
         expect(earlyBirdOAuthAvailability(environment)).toEqual({ google: true, apple: false });
         expect(Object.keys(earlyBirdSocialProviders(environment))).toEqual(['google']);
+    });
+
+    it('accepts canonical auth config without mixing credential generations', () => {
+        const canonical = {
+            BEACON_LISTENER_GOOGLE_CLIENT_ID: 'canonical-google-id',
+            BEACON_LISTENER_GOOGLE_CLIENT_SECRET: 'canonical-google-secret',
+            BEACON_LISTENER_AUTH_BASE_URL: 'https://listen.example.test',
+            BEACON_LISTENER_TRUSTED_ORIGINS: 'https://staging.example.test',
+        } as unknown as NodeJS.ProcessEnv;
+        expect(earlyBirdOAuthAvailability(canonical)).toEqual({ google: true, apple: false });
+        expect(earlyBirdSocialProviders(canonical)).toMatchObject({
+            google: { clientId: 'canonical-google-id', clientSecret: 'canonical-google-secret' },
+        });
+        expect(earlyBirdTrustedOrigins(canonical)).toEqual([
+            'https://listen.example.test',
+            'https://staging.example.test',
+        ]);
+
+        expect(earlyBirdOAuthAvailability({
+            BEACON_LISTENER_GOOGLE_CLIENT_ID: 'new-id',
+            EARLY_BIRDS_GOOGLE_CLIENT_SECRET: 'old-secret',
+        } as unknown as NodeJS.ProcessEnv).google).toBe(false);
+    });
+
+    it('keeps the synthetic-login gate and secret in one generation', () => {
+        const secret = 's'.repeat(32);
+        expect(earlyBirdTestLoginSecret({
+            BEACON_LISTENER_TEST_ACCESS_ENABLED: '1',
+            BEACON_LISTENER_TEST_LOGIN_SECRET: secret,
+        } as unknown as NodeJS.ProcessEnv)).toBe(secret);
+        expect(earlyBirdTestLoginSecret({
+            BEACON_LISTENER_TEST_ACCESS_ENABLED: '1',
+            EARLY_BIRDS_TEST_LOGIN_SECRET: secret,
+        } as unknown as NodeJS.ProcessEnv)).toBeNull();
     });
 
     it('scrubs provider token material before create and update reach Prisma', async () => {

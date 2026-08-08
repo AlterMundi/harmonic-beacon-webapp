@@ -57,6 +57,23 @@ describe('EarlyBird public auth route', () => {
         expect(handler).toHaveBeenCalledOnce();
     });
 
+    it('accepts canonical Listener origin config and rejects conflicting aliases', async () => {
+        vi.stubEnv('EARLY_BIRDS_AUTH_BASE_URL', '');
+        vi.stubEnv('EARLY_BIRDS_TRUSTED_ORIGINS', '');
+        vi.stubEnv('BEACON_LISTENER_AUTH_BASE_URL', 'https://listen.example.test');
+        vi.stubEnv('BEACON_LISTENER_TRUSTED_ORIGINS', 'https://listen.example.test');
+        const request = () => new NextRequest(
+            'https://listen.example.test/api/early-birds/auth/sign-in/social',
+            { method: 'POST', headers: { origin: 'https://listen.example.test' }, body: '{}' },
+        );
+        expect((await POST(request())).status).toBe(204);
+
+        handler.mockClear();
+        vi.stubEnv('EARLY_BIRDS_AUTH_BASE_URL', 'https://other.example.test');
+        expect((await POST(request())).status).toBe(403);
+        expect(handler).not.toHaveBeenCalled();
+    });
+
     it('lets the provider callback reach its one-time state verifier', async () => {
         const request = new NextRequest(
             'https://listen.example.test/api/early-birds/auth/callback/apple',
