@@ -130,6 +130,69 @@ describe('Listener one-action playlist transport', () => {
             .toHaveAttribute('aria-checked', 'true'));
     });
 
+    it('uses one roving tab stop and selects playback modes with arrow keys', async () => {
+        prepareMedia();
+        renderPlayer();
+        await waitForListen();
+        const intro = screen.getByRole('radio', { name: /With introduction/ });
+        const beacon = screen.getByRole('radio', { name: /Beacon only/ });
+
+        expect(intro).toHaveAttribute('tabindex', '0');
+        expect(beacon).toHaveAttribute('tabindex', '-1');
+        intro.focus();
+
+        fireEvent.keyDown(intro, { key: 'ArrowRight' });
+        expect(beacon).toHaveFocus();
+        expect(beacon).toHaveAttribute('aria-checked', 'true');
+        expect(beacon).toHaveAttribute('tabindex', '0');
+        expect(intro).toHaveAttribute('tabindex', '-1');
+
+        fireEvent.keyDown(beacon, { key: 'ArrowDown' });
+        expect(intro).toHaveFocus();
+        expect(intro).toHaveAttribute('aria-checked', 'true');
+
+        fireEvent.keyDown(intro, { key: 'ArrowLeft' });
+        expect(beacon).toHaveFocus();
+        expect(beacon).toHaveAttribute('aria-checked', 'true');
+
+        fireEvent.keyDown(beacon, { key: 'ArrowUp' });
+        expect(intro).toHaveFocus();
+        expect(intro).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('moves to the first and last playback mode with Home and End', async () => {
+        prepareMedia();
+        renderPlayer();
+        await waitForListen();
+        const intro = screen.getByRole('radio', { name: /With introduction/ });
+        const beacon = screen.getByRole('radio', { name: /Beacon only/ });
+
+        intro.focus();
+        fireEvent.keyDown(intro, { key: 'End' });
+        expect(beacon).toHaveFocus();
+        expect(beacon).toHaveAttribute('aria-checked', 'true');
+
+        fireEvent.keyDown(beacon, { key: 'Home' });
+        expect(intro).toHaveFocus();
+        expect(intro).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('keeps the available Beacon mode as the only tab stop when no intro exists', async () => {
+        prepareMedia();
+        renderPlayer({ es: null, en: null });
+        await waitForListen();
+        const intro = screen.getByRole('radio', { name: /With introduction/ });
+        const beacon = screen.getByRole('radio', { name: /Beacon only/ });
+
+        expect(intro).toBeDisabled();
+        expect(intro).toHaveAttribute('tabindex', '-1');
+        expect(beacon).toHaveAttribute('tabindex', '0');
+        beacon.focus();
+        fireEvent.keyDown(beacon, { key: 'ArrowRight' });
+        expect(beacon).toHaveFocus();
+        expect(beacon).toHaveAttribute('aria-checked', 'true');
+    });
+
     it('pauses and resumes the intro at the same position', async () => {
         const { play, pause } = prepareMedia();
         renderPlayer();
