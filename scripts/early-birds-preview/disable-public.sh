@@ -95,14 +95,26 @@ fail_closed() {
   exit 1
 }
 
+wait_for_http_success() {
+  wait_url=${1:?usage: wait_for_http_success URL}
+  wait_attempt=1
+  while test "$wait_attempt" -le 10; do
+    if curl --fail --silent --show-error --max-time 2 "$wait_url" >/dev/null; then
+      return 0
+    fi
+    test "$wait_attempt" -lt 10 || return 1
+    sleep 1
+    wait_attempt=$((wait_attempt + 1))
+  done
+  return 1
+}
+
 (preview_compose_command "$env_file" \
   up -d --no-deps --force-recreate --no-build listener) || fail_closed
 
 app_port=$(preview_env_value EARLYBIRDS_PREVIEW_APP_PORT "$env_file")
-curl --fail --silent --show-error --max-time 10 \
-  "http://127.0.0.1:${app_port}/api/health" >/dev/null || fail_closed
-curl --fail --silent --show-error --max-time 10 \
-  "http://127.0.0.1:${app_port}/api/health/ready" >/dev/null || fail_closed
+wait_for_http_success "http://127.0.0.1:${app_port}/api/health" || fail_closed
+wait_for_http_success "http://127.0.0.1:${app_port}/api/health/ready" || fail_closed
 denial_status=$(curl --silent --show-error --max-time 10 \
   --output /dev/null --write-out '%{http_code}' \
   --request POST --header 'content-type: application/json' \
