@@ -32,7 +32,7 @@ under preview operations, 14 documentation files, 14 contract files, 10 scripts,
 | Authentication | `/api/early-birds/auth`, `hb_earlybird`, `hb_earlybird_session` | BetterAuth base paths and cookie prefixes cannot be renamed with a simple redirect. Requires a tested dual-session bridge. |
 | Invitation cookie | `__Host-hb_early_bird_invitation` | Phase 1 continues to read and write it from both URL namespaces, so existing invitations survive. |
 | Browser storage | `hb_earlybird_device_id`, `hb_earlybird_drop_progress_*` | Dual-read legacy/canonical and canonical-write later. This is inside the player boundary and is not touched in phase 1. `hb_listener_playback_mode` is already canonical. |
-| Environment | 34 explicit `EARLY_BIRDS_*` names plus language-specific drop-in keys | Add `LISTENER_*`-first/legacy-fallback readers in bounded groups; never rename deployment configuration before the binary accepts both. |
+| Environment | 34 explicit `EARLY_BIRDS_*` names plus language-specific drop-in keys | Add `BEACON_LISTENER_*`-first/legacy-fallback readers in bounded groups; never rename deployment configuration before the binary accepts both. |
 | PostgreSQL | `early_bird_users`, identities, sessions, verifications, magic-link throttles, memberships, free schedules, welcome accesses and stream leases | Treat physical names as private persistence details during application cutover. Do not perform table renames with a web namespace rollout. |
 | Cross-repo contracts | `early-bird-authority.v1`, `early-bird-membership.command.v1`, internal EarlyBird membership/invitation paths | Versioned public wire identifiers. Preserve byte-for-byte until both repositories agree on a new contract version. |
 | Metrics/ops | Preview container, network, volume, nginx and script names use `earlybirds`; Listener presence is already canonical | Operational resource renames require side-by-side resources or a maintenance window. Labels should keep a stable legacy alias until dashboards and alerts move. |
@@ -114,12 +114,28 @@ same identity.
 
 Introduce a typed resolver for each bounded environment group:
 
-1. `LISTENER_*` preferred, `EARLY_BIRDS_*` fallback;
-2. fail startup when both are set to different values for security-sensitive
+1. `BEACON_LISTENER_*` preferred, `EARLY_BIRDS_*` fallback;
+2. fail readiness when both are set to different values for security-sensitive
    keys or origins;
 3. emit only the selected key name, never its value, in validation output;
 4. update staging configuration and validate; then update production separately;
 5. remove fallback only after all rollback images use canonical names.
+
+The first bounded slice covers identity and non-media access controls only:
+public enablement, Free For All, auth base/trusted origins/secret, Google and
+Apple credential pairs, the magic-link delivery trio, and synthetic staging
+entry. Credential bundles must be complete within one generation and a dual
+configuration must agree after normalization. Conflicts fail closed and error
+messages contain variable names only. The deployed preview compose continues
+to emit the legacy keys for the first support window, so its existing rollback
+image remains valid. Authority, service credentials, stream, drop-ins and
+device identifiers are explicitly deferred to separate reviewed slices.
+The auth singleton reads configuration once; every env transition therefore
+requires a Listener process restart and cannot be treated as a hot switch. The
+readiness endpoint validates this bounded configuration before reporting green;
+it reports only a generic public failure while the server diagnostic contains
+variable names and never their values. Processes without Listener configuration
+remain unaffected.
 
 Operational resource names can remain legacy until replacements are created
 side-by-side. Docker volumes and PostgreSQL identities must never be renamed as a

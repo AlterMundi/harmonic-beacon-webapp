@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
 
+import { listenerRuntimeFlag } from '@/lib/listener/runtime-env';
+
 /**
  * Public EarlyBird entry is fail-closed. Internal membership projection routes
  * deliberately do not use this switch so reconciliation can continue while
  * the customer-facing experience is paused.
  */
 export function earlyBirdsEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
-    return environment.EARLY_BIRDS_ENABLED === '1';
+    try {
+        return listenerRuntimeFlag('ENABLED', environment);
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -15,7 +21,11 @@ export function earlyBirdsEnabled(environment: NodeJS.ProcessEnv = process.env):
  * drop-in authorization stops on the next request/manifest refresh.
  */
 export function earlyBirdsFreeForAll(environment: NodeJS.ProcessEnv = process.env): boolean {
-    return environment.EARLY_BIRDS_FREE_FOR_ALL === '1';
+    try {
+        return listenerRuntimeFlag('FREE_FOR_ALL', environment);
+    } catch {
+        return false;
+    }
 }
 
 export function earlyBirdsUnavailableResponse(): NextResponse {

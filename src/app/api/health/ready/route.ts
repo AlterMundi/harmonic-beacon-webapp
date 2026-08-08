@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { redactError } from '@/lib/redact';
+import {
+    ListenerRuntimeEnvironmentError,
+    validateListenerRuntimeEnvironment,
+} from '@/lib/listener/runtime-env';
 import { OperationTimeoutError, withTimeout } from '@/lib/with-timeout';
 
 export const dynamic = 'force-dynamic';
@@ -17,10 +21,32 @@ const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
  * body distinguishes only 'timeout' from 'unreachable', nothing more.
  */
 export async function GET() {
+    let listenerRuntimeConfigured = false;
+    try {
+        listenerRuntimeConfigured = validateListenerRuntimeEnvironment();
+    } catch (error) {
+        const diagnostic = error instanceof ListenerRuntimeEnvironmentError
+            ? error.message
+            : 'unexpected validation failure';
+        console.error('Listener runtime configuration invalid:', diagnostic);
+        return NextResponse.json(
+            {
+                status: 'error',
+                checks: { database: 'unknown', listenerRuntime: 'invalid' },
+            },
+            { status: 503, headers: NO_STORE_HEADERS },
+        );
+    }
     try {
         await withTimeout(prisma.$queryRaw`SELECT 1`, DB_CHECK_TIMEOUT_MS, 'Database check');
         return NextResponse.json(
-            { status: 'ok', checks: { database: 'ok' } },
+            {
+                status: 'ok',
+                checks: {
+                    database: 'ok',
+                    ...(listenerRuntimeConfigured ? { listenerRuntime: 'ok' } : {}),
+                },
+            },
             { headers: NO_STORE_HEADERS },
         );
     } catch (error) {

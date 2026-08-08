@@ -47,4 +47,21 @@ describe('EarlyBird synthetic team entry staging gate', () => {
             EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS: 'earlybirds-staging.example.test,bad/value',
         })).toBe(false);
     });
+
+    it('accepts a complete canonical staging gate', () => {
+        const canonical = {
+            NODE_ENV: 'production',
+            BEACON_LISTENER_ENABLED: '1',
+            BEACON_LISTENER_TEST_ACCESS_ENABLED: '1',
+            BEACON_LISTENER_TEST_LOGIN_SECRET: 's'.repeat(32),
+            BEACON_LISTENER_STAGING_TEAM_ENTRY_ENABLED: '1',
+            BEACON_LISTENER_STAGING_TEAM_ENTRY_HOSTS: 'earlybirds-staging.example.test',
+        } as NodeJS.ProcessEnv;
+        expect(syntheticTeamEntryAllowed({
+            headers: new Headers({
+                host: 'earlybirds-staging.example.test',
+                'x-forwarded-proto': 'https',
+            }),
+        }, canonical)).toBe(true);
+    });
 });

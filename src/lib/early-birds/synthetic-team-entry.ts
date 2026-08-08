@@ -1,3 +1,5 @@
+import { listenerRuntimeBundle, listenerRuntimeFlag } from '@/lib/listener/runtime-env';
+
 import { earlyBirdTestAuthEnabled } from './auth';
 import { earlyBirdsEnabled } from './enabled';
 
@@ -15,7 +17,17 @@ function canonicalHost(value: string): string | null {
 }
 
 function allowedHosts(environment: NodeJS.ProcessEnv): string[] | null {
-    const raw = environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS ?? '';
+    let configuration;
+    try {
+        configuration = listenerRuntimeBundle([
+            'STAGING_TEAM_ENTRY_ENABLED',
+            'STAGING_TEAM_ENTRY_HOSTS',
+        ], environment);
+    } catch {
+        return null;
+    }
+    if (!configuration || !listenerRuntimeFlag('STAGING_TEAM_ENTRY_ENABLED', environment)) return null;
+    const raw = configuration.STAGING_TEAM_ENTRY_HOSTS;
     const entries = raw.split(',').map((entry) => canonicalHost(entry)).filter(Boolean);
     if (entries.length === 0 || entries.length !== raw.split(',').length) return null;
     return [...new Set(entries)] as string[];
@@ -31,8 +43,6 @@ export function syntheticTeamEntryAllowed(
 ): boolean {
     if (environment.NODE_ENV !== 'production') return false;
     if (!earlyBirdsEnabled(environment) || !earlyBirdTestAuthEnabled(environment)) return false;
-    if (environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED !== '1') return false;
-
     const host = canonicalHost(input.headers.get('host') ?? '');
     const hosts = allowedHosts(environment);
     if (!host || !hosts?.includes(host)) return false;

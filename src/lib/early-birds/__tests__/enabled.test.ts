@@ -24,6 +24,16 @@ describe('EarlyBird public kill switch', () => {
         expect(earlyBirdsEnabled()).toBe(true);
     });
 
+    it('prefers the canonical gate and fails closed when aliases disagree', () => {
+        expect(earlyBirdsEnabled({
+            BEACON_LISTENER_ENABLED: '1',
+        } as unknown as NodeJS.ProcessEnv)).toBe(true);
+        expect(earlyBirdsEnabled({
+            BEACON_LISTENER_ENABLED: '1',
+            EARLY_BIRDS_ENABLED: '0',
+        } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    });
+
     it('enables the Free for All override only for the explicit value 1', () => {
         for (const value of ['', 'true', 'yes', '0', ' 1 ']) {
             vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', value);

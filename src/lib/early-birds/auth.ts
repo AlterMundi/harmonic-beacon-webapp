@@ -5,6 +5,12 @@ import { magicLink } from 'better-auth/plugins';
 
 import { prisma } from '@/lib/db';
 import {
+    listenerRuntimeBundle,
+    listenerRuntimeFlag,
+    listenerRuntimeTrustedOrigins,
+    listenerRuntimeValue,
+} from '@/lib/listener/runtime-env';
+import {
     deliverEarlyBirdMagicLink,
     EARLY_BIRD_MAGIC_LINK_TTL_SECONDS,
     earlyBirdMagicLinkAvailable,
@@ -16,66 +22,96 @@ export const EARLY_BIRD_AUTH_BASE_PATH = '/api/early-birds/auth';
 export const EARLY_BIRD_COOKIE_PREFIX = 'hb_earlybird';
 export const EARLY_BIRD_SESSION_COOKIE = 'hb_earlybird_session';
 
-function nonEmpty(value: string | undefined): string | undefined {
-    const normalized = value?.trim();
-    return normalized ? normalized : undefined;
+export function earlyBirdTestAuthEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+    return earlyBirdTestLoginSecret(environment) !== null;
 }
 
-export function earlyBirdTestAuthEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
-    const secret = nonEmpty(environment.EARLY_BIRDS_TEST_LOGIN_SECRET);
-    return (
-        environment.EARLY_BIRDS_TEST_ACCESS_ENABLED === '1' &&
-        Boolean(secret && secret.length >= 32)
-    );
+export function earlyBirdTestLoginSecret(
+    environment: NodeJS.ProcessEnv = process.env,
+): string | null {
+    try {
+        const configuration = listenerRuntimeBundle(
+            ['TEST_ACCESS_ENABLED', 'TEST_LOGIN_SECRET'],
+            environment,
+        );
+        return configuration && listenerRuntimeFlag('TEST_ACCESS_ENABLED', environment) &&
+            configuration.TEST_LOGIN_SECRET.length >= 32
+            ? configuration.TEST_LOGIN_SECRET
+            : null;
+    } catch {
+        return null;
+    }
 }
 
 export function earlyBirdOAuthAvailability(environment: NodeJS.ProcessEnv = process.env) {
+    let google = null;
+    let apple = null;
+    try {
+        google = listenerRuntimeBundle(
+            ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+            environment,
+        );
+    } catch { /* An invalid pair is unavailable. */ }
+    try {
+        apple = listenerRuntimeBundle(
+            ['APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'],
+            environment,
+        );
+    } catch { /* An invalid pair is unavailable. */ }
     return {
-        google: Boolean(
-            nonEmpty(environment.EARLY_BIRDS_GOOGLE_CLIENT_ID) &&
-            nonEmpty(environment.EARLY_BIRDS_GOOGLE_CLIENT_SECRET),
-        ),
-        apple: Boolean(
-            nonEmpty(environment.EARLY_BIRDS_APPLE_CLIENT_ID) &&
-            nonEmpty(environment.EARLY_BIRDS_APPLE_CLIENT_SECRET),
-        ),
+        google: google !== null,
+        apple: apple !== null,
     } as const;
 }
 
 export function earlyBirdSocialProviders(environment: NodeJS.ProcessEnv = process.env) {
-    const googleId = nonEmpty(environment.EARLY_BIRDS_GOOGLE_CLIENT_ID);
-    const googleSecret = nonEmpty(environment.EARLY_BIRDS_GOOGLE_CLIENT_SECRET);
-    const appleId = nonEmpty(environment.EARLY_BIRDS_APPLE_CLIENT_ID);
-    const appleSecret = nonEmpty(environment.EARLY_BIRDS_APPLE_CLIENT_SECRET);
+    let google = null;
+    let apple = null;
+    try {
+        google = listenerRuntimeBundle(
+            ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+            environment,
+        );
+    } catch { /* Do not expose a provider with mixed credentials. */ }
+    try {
+        apple = listenerRuntimeBundle(
+            ['APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'],
+            environment,
+        );
+    } catch { /* Do not expose a provider with mixed credentials. */ }
     return {
-        ...(googleId && googleSecret ? {
-            google: { clientId: googleId, clientSecret: googleSecret, accessType: 'online' as const },
+        ...(google ? {
+            google: {
+                clientId: google.GOOGLE_CLIENT_ID,
+                clientSecret: google.GOOGLE_CLIENT_SECRET,
+                accessType: 'online' as const,
+            },
         } : {}),
-        ...(appleId && appleSecret ? {
-            apple: { clientId: appleId, clientSecret: appleSecret },
+        ...(apple ? {
+            apple: {
+                clientId: apple.APPLE_CLIENT_ID,
+                clientSecret: apple.APPLE_CLIENT_SECRET,
+            },
         } : {}),
     };
 }
 
 function authSecret(): string {
-    const configured = nonEmpty(process.env.EARLY_BIRDS_AUTH_SECRET);
+    const configured = listenerRuntimeValue('AUTH_SECRET');
     if (configured) return configured;
 
     if (process.env.NODE_ENV === 'production') {
-        throw new Error('EARLY_BIRDS_AUTH_SECRET is required at runtime');
+        throw new Error('BEACON_LISTENER_AUTH_SECRET or its legacy alias is required at runtime');
     }
 
     // Local/test fallback only. Production never reaches this value.
     return 'early-birds-local-only-secret-change-before-deploy';
 }
 
-function trustedOrigins(): string[] {
-    const configured = (process.env.EARLY_BIRDS_TRUSTED_ORIGINS ?? '')
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter(Boolean);
-    const baseURL = nonEmpty(process.env.EARLY_BIRDS_AUTH_BASE_URL);
-    return baseURL ? [...new Set([baseURL, ...configured])] : configured;
+export function earlyBirdTrustedOrigins(
+    environment: NodeJS.ProcessEnv = process.env,
+): string[] {
+    return listenerRuntimeTrustedOrigins(environment);
 }
 
 function scrubOAuthTokens<T extends Record<string, unknown>>(account: T): T {
@@ -100,7 +136,7 @@ function scrubSessionMetadata<T extends Record<string, unknown>>(session: T): T 
 
 function buildEarlyBirdAuth() {
     const testAuth = earlyBirdTestAuthEnabled();
-    const baseURL = nonEmpty(process.env.EARLY_BIRDS_AUTH_BASE_URL);
+    const baseURL = listenerRuntimeValue('AUTH_BASE_URL');
     const magicLinkEnabled = earlyBirdMagicLinkAvailable();
 
     return betterAuth({
@@ -108,7 +144,7 @@ function buildEarlyBirdAuth() {
         ...(baseURL ? { baseURL } : {}),
         basePath: EARLY_BIRD_AUTH_BASE_PATH,
         secret: authSecret(),
-        trustedOrigins: trustedOrigins(),
+        trustedOrigins: earlyBirdTrustedOrigins(),
         database: prismaAdapter(prisma, { provider: 'postgresql' }),
         socialProviders: earlyBirdSocialProviders(),
         plugins: magicLinkEnabled ? [magicLink({

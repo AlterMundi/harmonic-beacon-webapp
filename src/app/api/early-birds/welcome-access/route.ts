@@ -13,6 +13,7 @@ import {
     serializeWelcomeAccessState,
     startEarlyBirdWelcomeAccess,
 } from '@/lib/early-birds/welcome-access';
+import { listenerRuntimeTrustedOrigins } from '@/lib/listener/runtime-env';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,14 +22,13 @@ const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' };
 function sameOriginMutation(request: NextRequest): boolean {
     const origin = request.headers.get('origin');
     if (!origin) return false;
-    const configured = [
-        process.env.EARLY_BIRDS_AUTH_BASE_URL,
-        ...(process.env.EARLY_BIRDS_TRUSTED_ORIGINS ?? '').split(','),
-    ]
-        .map((value) => value?.trim())
-        .filter((value): value is string => Boolean(value));
-    const allowed = configured.length > 0 ? configured : [request.nextUrl.origin];
-    return allowed.includes(origin);
+    try {
+        const configured = listenerRuntimeTrustedOrigins();
+        const allowed = configured.length > 0 ? configured : [request.nextUrl.origin];
+        return allowed.includes(origin);
+    } catch {
+        return false;
+    }
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
