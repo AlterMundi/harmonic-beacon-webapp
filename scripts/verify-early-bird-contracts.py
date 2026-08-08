@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify byte-exact copies of both canonical EarlyBird v1 contracts."""
+"""Verify byte-exact copies of the canonical EarlyBird contracts."""
 
 import hashlib
 from pathlib import Path
@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = (
     ROOT / "contracts/early-bird-authority/v1",
+    ROOT / "contracts/early-bird-authority/v2",
     ROOT / "contracts/early-bird-membership/v1",
 )
 
