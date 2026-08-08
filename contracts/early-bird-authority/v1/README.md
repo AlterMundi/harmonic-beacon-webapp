@@ -17,7 +17,10 @@ Las llamadas son server-to-server por red privada. Exigen `Authorization: Bearer
 - `POST /api/internal/v1/early-bird-checkouts`
   - body: `checkout-create.schema.json`; resultado: `checkout.schema.json`;
   - exige el mismo auth interno e `Idempotency-Key`; no existe una variante pública;
-  - persiste la unión cuenta↔suscripción externa antes de devolver la URL sandbox;
+  - rechaza antes de llamar al proveedor si la cuenta ya tiene un checkout pendiente o una
+    continuidad paga elegible; una continuidad terminal permite un checkout realmente nuevo;
+  - persiste la unión cuenta↔suscripción externa antes de devolver una `approval_url` HTTPS,
+    acotada a 2048 caracteres y sin credenciales embebidas;
   - un webhook inicial sin esa unión falla cerrado y cualquier `account_id` del payload se trata
     sólo como comprobación defensiva, nunca como autoridad.
 - `GET /api/internal/v1/early-bird-memberships/{account_id}`
