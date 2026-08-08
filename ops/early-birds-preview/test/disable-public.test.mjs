@@ -16,7 +16,7 @@ async function executable(pathname, content) {
   await fs.chmod(pathname, 0o700);
 }
 
-async function fixture(t, { denialStatus = '503' } = {}) {
+async function fixture(t, { denialStatus = '503', healthFailures = 0 } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'listener-disable-public-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const envFile = path.join(directory, 'preview.env');
@@ -48,10 +48,15 @@ async function fixture(t, { denialStatus = '503' } = {}) {
     'printf "%s\\n" "$*" >> "$TEST_COMMAND_LOG"',
     'case "$*" in',
     `  *api/early-birds/stream/lease*) printf '${denialStatus}' ;;`,
+    '  *api/health*)',
+    '    attempts=$(grep -c "api/health" "$TEST_COMMAND_LOG" || true)',
+    '    test "$attempts" -le "$TEST_HEALTH_FAILURES" && exit 56',
+    '    ;;',
     'esac',
+    'exit 0',
     '',
   ].join('\n'));
-  return { directory, envFile, bin, commandLog, source };
+  return { directory, envFile, bin, commandLog, source, healthFailures };
 }
 
 function run(mode, current) {
@@ -61,6 +66,7 @@ function run(mode, current) {
       ...process.env,
       PATH: `${current.bin}:${process.env.PATH}`,
       TEST_COMMAND_LOG: current.commandLog,
+      TEST_HEALTH_FAILURES: String(current.healthFailures),
     },
   });
 }
@@ -141,4 +147,14 @@ test('failed denial smoke leaves flags disabled and stops only Listener', async 
   assert.match(commands, /ps -q --filter label=com\.docker\.compose\.project=earlybirds-preview --filter label=com\.docker\.compose\.service=listener/);
   assert.match(commands, /stop isolated-listener-id/);
   assert.doesNotMatch(commands, /stop (?:.* )?(postgres|beacon-stream|livekit|playlist-bot)/);
+});
+
+test('apply tolerates a healthy Listener that needs several startup probes', async (t) => {
+  const current = await fixture(t, { healthFailures: 2 });
+  const result = run('--apply', current);
+  assert.equal(result.status, 0, result.stderr);
+  const commands = await fs.readFile(current.commandLog, 'utf8');
+  const healthAttempts = commands.split('\n').filter((line) => /api\/health$/.test(line));
+  assert.equal(healthAttempts.length, 3);
+  assert.match(result.stdout, /denied with 503/);
 });
