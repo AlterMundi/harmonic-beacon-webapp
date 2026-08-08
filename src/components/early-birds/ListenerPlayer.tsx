@@ -98,6 +98,89 @@ function preferredDropLanguage(
     return englishDropIn ? 'en' : 'es';
 }
 
+function ListenerPlaybackModeSelector({
+    value,
+    introLabel,
+    beaconLabel,
+    groupLabel,
+    introDisabled,
+    beaconDisabled,
+    onChange,
+}: {
+    value: PlaybackMode;
+    introLabel: string;
+    beaconLabel: string;
+    groupLabel: string;
+    introDisabled: boolean;
+    beaconDisabled: boolean;
+    onChange: (mode: PlaybackMode) => void;
+}) {
+    const introButton = useRef<HTMLButtonElement>(null);
+    const beaconButton = useRef<HTMLButtonElement>(null);
+    const modes: PlaybackMode[] = ['intro', 'beacon'];
+    const disabled = { intro: introDisabled, beacon: beaconDisabled };
+    const buttons = { intro: introButton, beacon: beaconButton };
+    const enabledModes = modes.filter((mode) => !disabled[mode]);
+    const tabStop = enabledModes.includes(value) ? value : enabledModes[0];
+
+    function selectAndFocus(mode: PlaybackMode) {
+        if (disabled[mode]) return;
+        onChange(mode);
+        buttons[mode].current?.focus();
+    }
+
+    function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, current: PlaybackMode) {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        if (enabledModes.length === 0) return;
+
+        if (event.key === 'Home') {
+            selectAndFocus(enabledModes[0]);
+            return;
+        }
+        if (event.key === 'End') {
+            selectAndFocus(enabledModes[enabledModes.length - 1]);
+            return;
+        }
+
+        const currentIndex = enabledModes.indexOf(current);
+        const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+        const nextIndex = currentIndex < 0
+            ? 0
+            : (currentIndex + direction + enabledModes.length) % enabledModes.length;
+        selectAndFocus(enabledModes[nextIndex]);
+    }
+
+    return (
+        <div className="listener-mode" role="radiogroup" aria-label={groupLabel}>
+            <button
+                ref={introButton}
+                type="button"
+                role="radio"
+                aria-checked={value === 'intro'}
+                tabIndex={tabStop === 'intro' ? 0 : -1}
+                onClick={() => onChange('intro')}
+                onKeyDown={(event) => handleKeyDown(event, 'intro')}
+                disabled={introDisabled}
+            >
+                <span>{introLabel}</span>
+            </button>
+            <button
+                ref={beaconButton}
+                type="button"
+                role="radio"
+                aria-checked={value === 'beacon'}
+                tabIndex={tabStop === 'beacon' ? 0 : -1}
+                onClick={() => onChange('beacon')}
+                onKeyDown={(event) => handleKeyDown(event, 'beacon')}
+                disabled={beaconDisabled}
+            >
+                <span>{beaconLabel}</span>
+            </button>
+        </div>
+    );
+}
+
 export default function ListenerPlayer({
     dropIns,
 }: {
@@ -1079,26 +1162,15 @@ export default function ListenerPlayer({
                     {phaseLabel}
                 </p>}
 
-                <div className="listener-mode" role="radiogroup" aria-label={copy.mode}>
-                    <button
-                        type="button"
-                        role="radio"
-                        aria-checked={playbackMode === 'intro'}
-                        onClick={() => selectPlaybackMode('intro')}
-                        disabled={transportActive || transportBusy || !selectedDropAvailable}
-                    >
-                        <span>{copy.withIntro}</span>
-                    </button>
-                    <button
-                        type="button"
-                        role="radio"
-                        aria-checked={playbackMode === 'beacon'}
-                        onClick={() => selectPlaybackMode('beacon')}
-                        disabled={transportActive || transportBusy}
-                    >
-                        <span>{copy.beaconOnly}</span>
-                    </button>
-                </div>
+                <ListenerPlaybackModeSelector
+                    value={playbackMode}
+                    introLabel={copy.withIntro}
+                    beaconLabel={copy.beaconOnly}
+                    groupLabel={copy.mode}
+                    introDisabled={transportActive || transportBusy || !selectedDropAvailable}
+                    beaconDisabled={transportActive || transportBusy}
+                    onChange={selectPlaybackMode}
+                />
 
                 <div className="listener-details">
                     {availableDropCount > 1 && !transportActive && (
