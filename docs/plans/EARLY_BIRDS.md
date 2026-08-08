@@ -437,6 +437,22 @@ The product is for all audiences. The service requests only the account and
 payment information required for the selected access path and does not create
 age-specific profiles.
 
+### 10.1 Vendored contract status
+
+The webapp vendors byte-exact copies of the canonical backend contracts under
+`contracts/` and verifies them with `npm run contract:early-birds:verify`:
+
+- `contracts/early-bird-authority/v1` and `contracts/early-bird-membership/v1`:
+  the membership-read and redemption family.
+- `contracts/early-bird-checkout/v2`: the Mercado Pago checkout command for
+  `POST /api/internal/v2/early-bird-checkouts`, vendored byte-exact from
+  backend commit `f4b19a5dee8b2054a59284c719450f72d99af8aa` (draft PR
+  SairaAsua/proyecciones-mito#54). The provider remains TEST-only and disabled
+  by default; no public checkout UI or sales activation is part of this slice.
+  Mandatory external gate before any paid activation: real Mercado Pago TEST
+  proof that `/preapproval/search?q=hb_<external_reference>` returns the exact
+  created preapproval.
+
 ## 11. Fast Forward development lane
 
 The purpose of isolation is to make development fast, not to reproduce the

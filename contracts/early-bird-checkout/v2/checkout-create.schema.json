@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/early-bird-checkout/v2/checkout-create.schema.json",
+  "title": "EarlyBird Mercado Pago checkout creation command v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "account_id", "provider", "payer_email", "return_url", "cancel_url"],
+  "properties": {
+    "schema_version": {"const": "early-bird-checkout.checkout-create.v2"},
+    "account_id": {"type": "string", "pattern": "^acct_[A-Za-z0-9_-]{16,128}$"},
+    "provider": {"const": "mercado_pago"},
+    "payer_email": {"type": "string", "minLength": 3, "maxLength": 320, "pattern": "^[^@\\sA-Z]+@[^@\\sA-Z]+$"},
+    "return_url": {"type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048},
+    "cancel_url": {"type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048}
+  }
+}
