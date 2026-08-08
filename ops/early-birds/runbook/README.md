@@ -58,6 +58,63 @@ critical threshold, persistent 5xx/rebuffer evidence, retransmits ≥1%, or a
 healthy origin whose direct egress remains the bottleneck. It is not activated
 solely from an advertised NIC speed.
 
+## Per-container restart/OOM observability blocker
+
+Per-container `container_start_time_seconds` and `container_oom_events_total`
+series for the isolated Listener and origin containers are a hard prerequisite
+for the Listener external smoke (see
+`docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md`). On `mona`, Prometheus
+currently exposes only the root cgroup for these series and the exact
+per-container queries return empty vectors; cAdvisor logs that it cannot find
+`/rootfs/var/lib/docker/image/overlayfs/layerdb/mounts/.../mount-id`.
+
+An earlier change blamed missing recursive slave propagation on the cAdvisor
+`/:/rootfs` bind and was **reverted as incorrect**: an independent audit showed
+the running cAdvisor container already has `/` -> `/rootfs` with
+`Propagation=rslave` and still hits the same errors. Docker 29.6.2 on `mona`
+uses the containerd image store (`driver-type=io.containerd.snapshotter.v1`,
+`Driver=overlayfs`); `/var/lib/docker/image` has no legacy `layerdb` and
+`docker inspect .GraphDriver` is null. The real cause is that the current
+cAdvisor is incompatible with Docker's containerd image store for these
+per-container series.
+
+**Recreating or restarting cAdvisor is not a fix and must never be proposed or
+treated as one** — no mount propagation flag changes this. No monitored smoke
+may run until a supported, read-only per-container restart/OOM observer is
+implemented and verified on `mona`. Until then the smoke stays
+runtime-blocked (its harness is code-complete and fails closed on the missing
+series).
+
+Candidate future options, for evaluation only — none may be implemented,
+restarted or deployed without explicit operational approval:
+
+1. A minimal read-only Docker Engine observer that watches the Engine event
+   stream and container state (restart counts, OOM-killed status) for exactly
+   the isolated Listener and origin containers and exports the required
+   Prometheus series. This needs read-only access to the Docker socket, which
+   is root-equivalent on the host, so it is acceptable only with an explicit
+   threat model: dedicated least-privilege observer, read-only socket mount,
+   no write API calls.
+2. A proven containerd-compatible per-container collector — for example a
+   cAdvisor release verified against the containerd image store, or a
+   containerd-native metrics source — validated read-only in a throwaway
+   container on `mona` before any change to the checked-in observability
+   stack.
+3. Any other observer only if it keeps the same fail-closed contract: exactly
+   one finite series per exact container query, no inferred zeros, no
+   weakened restart/OOM evidence.
+
+Whatever is chosen, verification is unchanged: the four exact per-container
+queries must each return exactly one finite series before any load, and empty
+vectors remain a hard blocker, never a reason to proceed.
+
+The bounded ten-client wrapper also requires its fixed local lock at
+`/tmp/harmonic-beacon-listener-smoke-10-network-run.lock`. The path has no CLI
+or environment override. A pre-existing lock refuses the run; verify no
+wrapper is active before removing a stale one, and never manipulate it during
+a run. This serializes one trusted Unix account on one generator only; it does
+not enforce a global limit across hosts.
+
 ## Stop switch and rollback
 
 To stop only the EarlyBird stream origin:

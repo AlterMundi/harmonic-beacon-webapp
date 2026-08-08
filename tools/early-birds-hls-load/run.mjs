@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { constants } from 'node:fs';
-import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildPlan, selectTarget, sha256 } from './src/contracts.mjs';
 import { plannedEvidence, runShard } from './src/runner.mjs';
+import { SIGNED_MANIFEST_MAX_BYTES, readPrivateFile } from './src/smoke-safety.mjs';
 
 const toolRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -88,10 +89,8 @@ async function assertNewFile(path) {
 }
 
 async function readManifestUrl(path) {
-  const details = await stat(path);
-  if (!details.isFile()) throw new Error('manifest URL source must be a regular file');
-  if ((details.mode & 0o077) !== 0) throw new Error('manifest URL source must not be group/world accessible');
-  const value = (await readFile(path, 'utf8')).trim();
+  const { text } = await readPrivateFile(path, 'manifest URL source', SIGNED_MANIFEST_MAX_BYTES);
+  const value = text.trim();
   if (!value || value.includes('\n') || value.includes('\r')) {
     throw new Error('manifest URL source must contain exactly one URL');
   }

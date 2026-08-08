@@ -5,7 +5,7 @@
   "type": "module",
   "description": "External, bounded, format-neutral HLS load and soak evidence harness",
   "scripts": {
-    "check": "node --check run.mjs && node --check aggregate.mjs && node --check verify-planned.mjs && node --check src/contracts.mjs && node --check src/runner.mjs",
+    "check": "node --check run.mjs && node --check run-staging-smoke.mjs && node --check external-decoded-canary.mjs && node --check external-target-monitor.mjs && node --check aggregate.mjs && node --check verify-planned.mjs && node --check src/contracts.mjs && node --check src/runner.mjs && node --check src/smoke-safety.mjs && node --check src/target-probe.mjs && node --check src/smoke-guard.mjs && node --check src/network-run-lock.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {
