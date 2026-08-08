@@ -85,9 +85,14 @@ isolated staging host. Staging carries the bearer in one unlogged,
 no-store/no-referrer redirect to the canonical
 `https://listen.harmonicbeacon.com/listener/redeem` page; it never mints an
 invitation cookie. Middleware on `listen` immediately removes the signed bearer
-query, places it in a 30-minute `__Host-`, Secure, HttpOnly, SameSite=Lax cookie
-and redirects to the clean URL. Neither the event host nor a forwarded-host
-header can mint this cookie.
+query, dual-writes the canonical `__Host-hb_listener_invitation` and legacy
+`__Host-hb_early_bird_invitation` cookies with the same 30-minute value, and
+redirects to the clean URL. Both are host-only, Secure, HttpOnly, SameSite=Lax
+and Path=/; neither the event host nor a forwarded-host header can mint them.
+Readers require unambiguous same-name cookies, prefer the canonical generation
+and accept legacy-only state only when canonical state is absent. Conflicting or
+malformed overlap fails closed. Success and terminal rejection clear both;
+transient 503 and pre-redemption authentication retain both for a safe retry.
 
 Google and configured magic-link callbacks return to the exact
 `/listener/redeem` allowlist. The cookie therefore survives an identity round
@@ -100,8 +105,7 @@ The browser redeem POST is exposed only at the canonical and compatibility
 aliases on `listen`. It requires the exact Listener Host and same Origin, and
 nginx bounds each address to 30 requests per minute with a 20-request burst so
 a shared household/NAT cannot lock out independent one-use redemptions. Both
-POST aliases fail closed with an unlogged 404 on staging. A terminal authority
-rejection clears the cookie; a transient 503 preserves it for a safe retry. All
+POST aliases fail closed with an unlogged 404 on staging. All
 responses and exact edge locations are no-store and no-referrer. The exact
 magic-link verification URL is excluded from HTTP and HTTPS access logs and
 staging redirects it once to the canonical host, because its query carries the

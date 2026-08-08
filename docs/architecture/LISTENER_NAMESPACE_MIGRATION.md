@@ -30,7 +30,7 @@ under preview operations, 14 documentation files, 14 contract files, 10 scripts,
 | Public pages | `/early-birds`, `/early-birds/redeem` | Preserve both URLs while `/listener` becomes canonical. |
 | Browser APIs | `/api/early-birds/*` | Add aliases first; move clients only after aliases ship. Stream and drop-in paths are audio-sensitive and stay unchanged in phase 1. |
 | Authentication | `/api/early-birds/auth`, `hb_earlybird`, `hb_earlybird_session` | BetterAuth base paths and cookie prefixes cannot be renamed with a simple redirect. Requires a tested dual-session bridge. |
-| Invitation cookie | `__Host-hb_early_bird_invitation` | Phase 1 continues to read and write it from both URL namespaces, so existing invitations survive. |
+| Invitation cookie | `__Host-hb_early_bird_invitation` | Phase 2 emits canonical `__Host-hb_listener_invitation` first, reads canonical then legacy, and dual-writes/dual-clears during the rollback window so existing invitations and rollback images survive. |
 | Browser storage | `hb_earlybird_device_id`, `hb_earlybird_drop_progress_*` | Dual-read legacy/canonical and canonical-write later. This is inside the player boundary and is not touched in phase 1. `hb_listener_playback_mode` is already canonical. |
 | Environment | 34 explicit `EARLY_BIRDS_*` names plus language-specific drop-in keys | Add `BEACON_LISTENER_*`-first/legacy-fallback readers in bounded groups; never rename deployment configuration before the binary accepts both. |
 | PostgreSQL | `early_bird_users`, identities, sessions, verifications, magic-link throttles, memberships, free schedules, welcome accesses and stream leases | Treat physical names as private persistence details during application cutover. Do not perform table renames with a web namespace rollout. |
@@ -102,6 +102,17 @@ First introduce canonical invitation-cookie helpers that read canonical then
 legacy, write both during the overlap, and clear both on redemption. After at
 least one deployed support window, stop writing the legacy cookie but continue
 reading it for another window.
+
+The overlap is not retired by date alone. Keep dual-write for at least seven
+consecutive days after every Listener instance runs the compatibility image,
+one real Google invitation completes, rollback passes and no eligible rollback
+image depends on legacy-only state. Then keep canonical-write/dual-read for a
+second seven-day observation window with zero legacy-only/conflict observations
+(record presence only, never cookie values). A legacy-only or conflict
+observation resets that window. Remove the legacy read only afterward, and keep
+dual-clear for one additional release. The invitation TTL remains 30 minutes;
+the longer windows protect rollback and in-flight identity rather than extend
+the bearer lifetime.
 
 BetterAuth requires a separate design checkpoint. The canonical auth base path
 must accept sessions issued with the legacy cookie prefix. The migration must be

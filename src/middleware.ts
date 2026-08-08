@@ -4,8 +4,8 @@ import type { NextRequest } from 'next/server';
 import {
     canonicalEarlyBirdInvitation,
     earlyBirdInvitationCookieHost,
-    earlyBirdInvitationCookie,
     earlyBirdInvitationStagingHost,
+    listenerInvitationCookies,
     LISTENER_INVITATION_CANONICAL_ORIGIN,
 } from '@/lib/early-birds/invitation-cookie';
 import { listenerInvitationQuery } from '@/lib/listener/namespace';
@@ -75,7 +75,7 @@ function scrubEarlyBirdInvitation(request: NextRequest): NextResponse | null {
     // Host is taken from the request URL populated by the exact nginx vhost;
     // forwarded host headers are deliberately not trusted.
     if (token && earlyBirdInvitationCookieHost(hostname)) {
-        response.cookies.set(earlyBirdInvitationCookie(token));
+        for (const cookie of listenerInvitationCookies(token)) response.cookies.set(cookie);
     }
     return response;
 }

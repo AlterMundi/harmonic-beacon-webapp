@@ -5,6 +5,7 @@ import { SESSION_COOKIE_NAME } from './src/lib/session-auth';
 import {
     EARLY_BIRD_INVITATION_COOKIE,
     EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
+    LISTENER_INVITATION_COOKIE,
 } from './src/lib/early-birds/invitation-cookie';
 // `src/middleware.ts`, not the repository root: Next only loads the middleware
 // convention from inside `src` when the app lives there, and a root-level file is
@@ -66,6 +67,7 @@ describe('middleware', () => {
             expect(response.headers.get('cache-control')).toBe('private, no-store');
             expect(response.headers.get('referrer-policy')).toBe('no-referrer');
             expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
         });
 
         it.each([
@@ -88,6 +90,12 @@ describe('middleware', () => {
                 secure: true,
                 sameSite: 'lax',
             });
+            expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toMatchObject({
+                value: INVITATION,
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax',
+            });
         });
 
         it('completes the real staging-to-canonical scrub topology without a staging cookie', () => {
@@ -97,6 +105,7 @@ describe('middleware', () => {
                 'earlybirds-staging.harmonicbeacon.com',
             ));
             expect(staging.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            expect(staging.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
 
             const canonicalURL = location(staging);
             const canonical = middleware(request(
@@ -112,6 +121,11 @@ describe('middleware', () => {
                 httpOnly: true,
                 secure: true,
                 sameSite: 'lax',
+                path: '/',
+                maxAge: EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
+            });
+            expect(canonical.cookies.get(LISTENER_INVITATION_COOKIE)).toMatchObject({
+                value: INVITATION,
                 path: '/',
                 maxAge: EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
             });
@@ -133,6 +147,7 @@ describe('middleware', () => {
             expect(response.headers.get('cache-control')).toBe('private, no-store');
             expect(response.headers.get('referrer-policy')).toBe('no-referrer');
             expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
         });
 
         it('does not trust a forwarded Listener host on an off-surface URL', () => {
@@ -144,6 +159,7 @@ describe('middleware', () => {
             ));
 
             expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
         });
 
         it('scrubs malformed or ambiguous query values without persisting them', () => {

@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-import { EARLY_BIRD_INVITATION_COOKIE } from '../../src/lib/early-birds/invitation-cookie';
+import {
+    EARLY_BIRD_INVITATION_COOKIE,
+    LISTENER_INVITATION_COOKIE,
+} from '../../src/lib/early-birds/invitation-cookie';
 import {
     deleteSyntheticListenerEmails,
     signInSyntheticListener,
@@ -31,7 +34,7 @@ test.describe('Listener namespace compatibility', () => {
             // same callback cookie contract; their exact callback is locked by
             // the landing/auth route unit suites.
             await context.addCookies([{
-                name: EARLY_BIRD_INVITATION_COOKIE,
+                name: LISTENER_INVITATION_COOKIE,
                 value: INVITATION,
                 domain: baseURL.hostname,
                 path: '/',
@@ -48,7 +51,7 @@ test.describe('Listener namespace compatibility', () => {
             await context.addCookies(identityState.cookies.filter((cookie) => cookie.name.includes('session')));
 
             const cookiesAfterIdentity = await context.cookies();
-            expect(cookiesAfterIdentity.find((cookie) => cookie.name === EARLY_BIRD_INVITATION_COOKIE))
+            expect(cookiesAfterIdentity.find((cookie) => cookie.name === LISTENER_INVITATION_COOKIE))
                 .toMatchObject({ value: INVITATION, httpOnly: true, secure: true, sameSite: 'Lax' });
             expect(cookiesAfterIdentity.some((cookie) => cookie.name.includes('session'))).toBe(true);
 

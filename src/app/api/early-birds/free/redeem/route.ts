@@ -3,10 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
 import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
 import {
-    canonicalEarlyBirdInvitation,
-    clearedEarlyBirdInvitationCookie,
+    clearedListenerInvitationCookies,
     earlyBirdInvitationCookieHost,
-    EARLY_BIRD_INVITATION_COOKIE,
+    listenerInvitationFromCookieHeader,
 } from '@/lib/early-birds/invitation-cookie';
 import {
     EarlyBirdMembershipGatewayUnavailableError,
@@ -28,7 +27,7 @@ function json(body: Record<string, unknown>, status: number): NextResponse {
 
 function terminalInvitationUnavailable(): NextResponse {
     const response = json({ error: 'Invitation unavailable.' }, 409);
-    response.cookies.set(clearedEarlyBirdInvitationCookie());
+    for (const cookie of clearedListenerInvitationCookies()) response.cookies.set(cookie);
     return response;
 }
 
@@ -57,9 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const session = await currentEarlyBirdSession(request.headers).catch(() => null);
     if (!session) return json({ error: 'Sign in required.' }, 401);
 
-    const token = canonicalEarlyBirdInvitation(
-        request.cookies.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
-    );
+    const token = listenerInvitationFromCookieHeader(request.headers.get('cookie'));
     if (!token) {
         return terminalInvitationUnavailable();
     }
@@ -85,6 +82,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         replayed: result.replayed,
         alreadyEntitled: result.alreadyEntitled,
     }));
-    response.cookies.set(clearedEarlyBirdInvitationCookie());
+    for (const cookie of clearedListenerInvitationCookies()) response.cookies.set(cookie);
     return response;
 }

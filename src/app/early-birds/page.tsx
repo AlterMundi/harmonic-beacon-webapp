@@ -1,4 +1,4 @@
-import { cookies, headers as requestHeaders } from 'next/headers';
+import { headers as requestHeaders } from 'next/headers';
 
 import EarlyBirdLanding from '@/components/early-birds/EarlyBirdLanding';
 import EarlyBirdHome from '@/components/early-birds/EarlyBirdHome';
@@ -10,8 +10,7 @@ import {
 import { getEarlyBirdListeningAccess } from '@/lib/early-birds/access';
 import { earlyBirdsEnabled, earlyBirdsFreeForAll } from '@/lib/early-birds/enabled';
 import {
-    canonicalEarlyBirdInvitation,
-    EARLY_BIRD_INVITATION_COOKIE,
+    listenerInvitationFromCookieHeader,
 } from '@/lib/early-birds/invitation-cookie';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
@@ -65,7 +64,6 @@ export default async function EarlyBirdsPage({
     const params = await searchParams;
     const serverNow = new Date().toISOString();
     const incomingHeaders = new Headers(await requestHeaders());
-    const cookieStore = await cookies();
     const sessionResolution = await currentEarlyBirdSession()
         .then((session) => ({ session, unavailable: false as const }))
         .catch(() => ({ session: null, unavailable: true as const }));
@@ -76,8 +74,8 @@ export default async function EarlyBirdsPage({
             .catch(() => ({ access: null, unavailable: true as const }))
         : { access: null, unavailable: false as const };
     const access = accessResolution.access;
-    const invitationAvailable = canonicalEarlyBirdInvitation(
-        cookieStore.get(EARLY_BIRD_INVITATION_COOKIE)?.value,
+    const invitationAvailable = listenerInvitationFromCookieHeader(
+        incomingHeaders.get('cookie'),
     ) !== null;
 
     if (session && access?.allowed === true) {
