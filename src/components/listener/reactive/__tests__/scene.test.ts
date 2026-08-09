@@ -56,6 +56,7 @@ describe('reactive campfire scene', () => {
             density: 1,
             highDetail: 1,
             sensitivity: 3,
+            centerCutPercent: 16,
         });
         const strongLow = scene.rings.find((ring) => ring.harmonicIndex === 2);
         const quietHigh = scene.filaments.find((filament) => filament.harmonicIndex === 50);
@@ -101,6 +102,7 @@ describe('reactive campfire scene', () => {
             density: 1,
             highDetail: 1,
             trailSeconds: 2,
+            centerCutPercent: 20,
         }, history);
         const upper = scene.filaments.filter((filament) => filament.tier === 'high');
 
@@ -111,7 +113,11 @@ describe('reactive campfire scene', () => {
 
     it('bounds rendered entities even if a provider supplies a larger bank', () => {
         const frame = frameWith(Array.from({ length: 600 }, () => -40));
-        const scene = buildReactiveCampfireScene(frame, { density: 1, highDetail: 1 });
+        const scene = buildReactiveCampfireScene(frame, {
+            density: 1,
+            highDetail: 1,
+            centerCutPercent: 10,
+        });
 
         expect(scene.rings.length + scene.filaments.length).toBeLessThanOrEqual(MAX_RENDERED_HARMONICS);
         expect(Math.max(...scene.filaments.map((filament) => filament.harmonicIndex)))
@@ -145,11 +151,14 @@ describe('reactive campfire scene', () => {
             absoluteFloorDb: -120,
             baselineDurationSeconds: 24,
             attackMs: 20,
-            releaseMs: 4_000,
+            releaseMs: 140,
             trailSeconds: 4,
             density: 1,
-            highDetail: 0,
+            highDetail: 1,
+            centerCutPercent: 100,
+            ribbonWidth: 2.25,
             palette: 'ember',
+            visualizationMode: 'harmonic-radial-series',
             fftSize: 16_384,
         });
     });
@@ -159,16 +168,29 @@ describe('reactive campfire scene', () => {
         const first = buildReactiveCampfireScene(frameWith(absolute, undefined, {
             capturedAtMs: 10_000,
             stereoBalance: -1,
-        }));
+        }), { centerCutPercent: 20 });
         const second = buildReactiveCampfireScene(frameWith(absolute, undefined, {
             capturedAtMs: 10_020,
             stereoBalance: 1,
-        }));
+        }), { centerCutPercent: 20 });
 
         expect(first.core.stereoOffset).toBe(0);
         expect(second.core.stereoOffset).toBe(0);
         expect(second.filaments[0].angle).not.toBe(first.filaments[0].angle);
         expect(Math.abs(second.filaments[0].angle - first.filaments[0].angle)).toBeLessThan(0.01);
+    });
+
+    it('maps the complete radial series from the center beyond the short edge', () => {
+        const scene = buildReactiveCampfireScene(
+            frameWith(Array.from({ length: 496 }, () => -32)),
+            { density: 1, highDetail: 1 },
+        );
+
+        expect(scene.seriesRings).toHaveLength(MAX_RENDERED_HARMONICS);
+        expect(scene.seriesRings[0].tier).toBe('low');
+        expect(scene.seriesRings.at(-1)?.tier).toBe('high');
+        expect(scene.seriesRings.at(-1)?.radius).toBeGreaterThan(0.8);
+        expect(scene.seriesRings.at(-1)?.harmonicIndex).toBe(495);
     });
 
     it('uses a true percentage of the complete bank as the center / outer boundary', () => {

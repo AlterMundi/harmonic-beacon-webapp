@@ -90,7 +90,9 @@ export function ReactiveCampfireTuningPanel({
                         </span>
                         {field.key === 'centerCutPercent' && (
                             <span className={styles.hint}>
-                                {settings.centerCutPercent === 0
+                                {settings.visualizationMode === 'harmonic-radial-series'
+                                    ? 'Fixed · complete harmonic series'
+                                    : settings.centerCutPercent === 0
                                     ? 'All outer ribbons'
                                     : settings.centerCutPercent === 100
                                         ? 'All center field'
@@ -103,7 +105,9 @@ export function ReactiveCampfireTuningPanel({
                             max={field.max}
                             step={field.step}
                             value={settings[field.key]}
-                            disabled={analysisControlsLocked && field.key === 'baselineDurationSeconds'}
+                            disabled={(analysisControlsLocked && field.key === 'baselineDurationSeconds')
+                                || (settings.visualizationMode === 'harmonic-radial-series'
+                                    && field.key === 'centerCutPercent')}
                             onChange={(event) => update({
                                 [field.key]: Number(event.currentTarget.value),
                             })}
@@ -122,6 +126,7 @@ export function ReactiveCampfireTuningPanel({
                         {REACTIVE_VISUALIZATION_MODES.map((mode) => (
                             <option value={mode} key={mode}>
                                 {{
+                                    'harmonic-radial-series': 'Harmonic radial series',
                                     'radial-ribbons': 'Radial ribbons',
                                     'horizon-flow': 'Horizon flow',
                                 }[mode]}

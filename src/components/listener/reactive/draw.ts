@@ -348,6 +348,74 @@ function drawRadialField(
     }
 }
 
+function drawHarmonicRadialSeries(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    scene: ReactiveCampfireScene,
+    palette: Palette,
+    settings: ReactiveCampfireSettings,
+) {
+    const centerX = width * 0.5;
+    const centerY = height * 0.48;
+    const scale = Math.min(width, height) * 0.82;
+
+    const atmosphere = context.createRadialGradient(
+        centerX,
+        centerY,
+        0,
+        centerX,
+        centerY,
+        Math.min(width, height) * 0.72,
+    );
+    atmosphere.addColorStop(0, rgba(palette.low, scene.core.opacity * 0.075));
+    atmosphere.addColorStop(0.48, rgba(palette.mid, 0.025 * scene.confidence));
+    atmosphere.addColorStop(1, rgba(palette.high, 0));
+    context.fillStyle = atmosphere;
+    context.fillRect(0, 0, width, height);
+
+    for (const ring of scene.seriesRings) {
+        const color = ring.tier === 'low'
+            ? palette.low
+            : ring.tier === 'mid' ? palette.mid : palette.high;
+        const radiusX = ring.radius * scale;
+        const radiusY = radiusX * ring.eccentricity;
+        const glowStrength = Math.max(0, (ring.opacity - 0.38) / 0.4);
+        context.save();
+        context.shadowColor = rgba(color, Math.min(0.68, glowStrength * 0.62));
+        context.shadowBlur = glowStrength > 0.05 ? Math.min(18, glowStrength * 14) : 0;
+        context.strokeStyle = rgba(color, 0.018 + ring.opacity * 0.84);
+        context.lineWidth = Math.max(
+            0.9,
+            (0.7 + ring.weight * 1.45) * settings.ribbonWidth,
+        );
+        context.beginPath();
+        context.ellipse(
+            centerX,
+            centerY,
+            radiusX,
+            radiusY,
+            ring.rotation,
+            0,
+            Math.PI * 2,
+        );
+        context.stroke();
+        context.restore();
+    }
+
+    if (scene.core.opacity > 0) {
+        const radius = Math.max(12, scene.core.radius * scale * 2.2);
+        const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+        gradient.addColorStop(0, rgba(palette.core, scene.core.opacity * 0.82));
+        gradient.addColorStop(0.3, rgba(palette.low, scene.core.opacity * 0.52));
+        gradient.addColorStop(1, rgba(palette.mid, 0));
+        context.fillStyle = gradient;
+        context.beginPath();
+        context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        context.fill();
+    }
+}
+
 function drawHorizonField(
     context: CanvasRenderingContext2D,
     width: number,
@@ -454,7 +522,9 @@ export function drawReactiveCampfire(
     context.globalCompositeOperation = 'screen';
     context.lineCap = 'round';
     context.lineJoin = 'round';
-    if (settings.visualizationMode === 'horizon-flow') {
+    if (settings.visualizationMode === 'harmonic-radial-series') {
+        drawHarmonicRadialSeries(context, width, height, scene, palette, settings);
+    } else if (settings.visualizationMode === 'horizon-flow') {
         drawHorizonField(context, width, height, scene, palette, settings);
     } else {
         drawRadialField(context, width, height, scene, palette, settings);

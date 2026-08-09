@@ -41,7 +41,13 @@ and perspective-biased outer tips that broaden and brighten toward the camera.
 An activated harmonic increases its leaf's motion and local glow; it never
 moves the center or the camera.
 
-The laboratory currently offers two renderers over the same analysis frame:
+The laboratory currently offers three renderers over the same analysis frame:
+
+- **Harmonic radial series** is the default full-bank view. Every selected
+  harmonic is a concentric band at a position proportional to its identity in
+  the complete measurable series. Low, mid and high registers use the low,
+  mid and high palette colors; the highest rings reach or cross the short
+  viewport edge. It has no free ribbons and its center field is fixed at 100%.
 
 - **Radial ribbons** groups harmonics through a stable center. A true 0–100%
   Center field control divides the complete measurable bank: 0% places every
@@ -78,9 +84,9 @@ panel. Visual parameters can change while listening. FFT size and slow-baseline
 duration are locked during playback because they require a fresh analysis
 session. The FFT selector exposes both 8192 (lighter) and 16384 (more detail).
 Presets export as versioned JSON. The current default is the human-selected
-high-detail Ember preset: sensitivity 3, -120 dB floor, 24 s baseline, 20 ms
-attack, 4000 ms release, 4 s trails, density 1, upper-detail bias 0 and FFT
-16384.
+full-series Ember preset: sensitivity 3, -120 dB floor, 24 s baseline, 20 ms
+attack, 140 ms release, 4 s trails, density 1, upper-detail bias 1, center field
+100%, ribbon width 2.25 and FFT 16384.
 
 Apple/native-HLS clients remain direct-mode only. WebKit's analysed native-HLS
 path has not yet passed the acoustic, nonzero-signal, fade and handoff gates for

@@ -28,6 +28,10 @@ export type ReactiveRing = {
     weight: number;
 };
 
+export type ReactiveSeriesRing = ReactiveRing & {
+    tier: 'low' | 'mid' | 'high';
+};
+
 export type ReactiveFilament = {
     harmonicIndex: number;
     tier: 'mid' | 'high';
@@ -51,6 +55,7 @@ export type ReactiveCampfireScene = {
         stereoWidth: number;
     };
     rings: ReactiveRing[];
+    seriesRings: ReactiveSeriesRing[];
     filaments: ReactiveFilament[];
     veils: Array<{
         bandIndex: number;
@@ -199,6 +204,21 @@ export function buildReactiveCampfireScene(
     const centerMix = settings.centerCutPercent / 100;
     const outerMix = 1 - centerMix;
     const rings: ReactiveRing[] = [];
+    const seriesRings: ReactiveSeriesRing[] = indexes.map((index) => {
+        const progress = harmonics.length <= 1 ? 0 : index / (harmonics.length - 1);
+        const absolute = absoluteEnergy(harmonics[index], settings.absoluteFloorDb) * confidence;
+        return {
+            harmonicIndex: index,
+            // Linear harmonic identity across an expanded field. The highest
+            // measured ring crosses the short viewport edge by design.
+            radius: 0.055 + progress * 0.78,
+            eccentricity: 0.82 + progress * 0.14,
+            rotation: (seededUnit(index, 121) - 0.5) * 0.12,
+            opacity: absolute * 0.78,
+            weight: 0.6 + absolute * 2.4,
+            tier: progress < 0.16 ? 'low' : progress < 0.58 ? 'mid' : 'high',
+        };
+    });
     const filaments: ReactiveFilament[] = [];
     const envelope = frame?.spectralEnvelopeDb ?? new Float32Array();
     const veils = Array.from(
@@ -289,6 +309,7 @@ export function buildReactiveCampfireScene(
             stereoWidth: clamp(frame?.stereoWidth ?? 0),
         },
         rings,
+        seriesRings,
         filaments,
         veils,
         confidence,

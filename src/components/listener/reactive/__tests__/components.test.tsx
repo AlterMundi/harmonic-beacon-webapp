@@ -123,7 +123,7 @@ describe('reactive campfire components', () => {
         expect(window.AudioContext).toBeUndefined();
     });
 
-    it('offers both renderers, both FFT sizes and the harmonic cut control', () => {
+    it('offers all renderers, both FFT sizes and the harmonic cut control', () => {
         const onChange = vi.fn();
         render(
             <ReactiveCampfireTuningPanel
@@ -136,6 +136,7 @@ describe('reactive campfire components', () => {
         const fft = screen.getByLabelText('FFT size');
         expect(fft).toHaveTextContent('8192 · lighter');
         expect(fft).toHaveTextContent('16384 · more detail');
+        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Harmonic radial series');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Radial ribbons');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Horizon flow');
         fireEvent.change(screen.getByLabelText('Visualization'), {
@@ -144,6 +145,6 @@ describe('reactive campfire components', () => {
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
             visualizationMode: 'horizon-flow',
         }));
-        expect(screen.getByText(/20% center · 80% outer/)).toBeInTheDocument();
+        expect(screen.getByText(/Fixed · complete harmonic series/)).toBeInTheDocument();
     });
 });

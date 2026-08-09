@@ -1,5 +1,6 @@
 export const REACTIVE_PALETTES = ['ember', 'aurora', 'moon'] as const;
 export const REACTIVE_VISUALIZATION_MODES = [
+    'harmonic-radial-series',
     'radial-ribbons',
     'horizon-flow',
 ] as const;
@@ -28,14 +29,14 @@ export const DEFAULT_REACTIVE_CAMPFIRE_SETTINGS: Readonly<ReactiveCampfireSettin
     absoluteFloorDb: -120,
     baselineDurationSeconds: 24,
     attackMs: 20,
-    releaseMs: 4_000,
+    releaseMs: 140,
     trailSeconds: 4,
     density: 1,
-    highDetail: 0,
-    centerCutPercent: 20,
-    ribbonWidth: 1.6,
+    highDetail: 1,
+    centerCutPercent: 100,
+    ribbonWidth: 2.25,
     palette: 'ember',
-    visualizationMode: 'radial-ribbons',
+    visualizationMode: 'harmonic-radial-series',
     fftSize: 16_384,
 });
 
