@@ -9,7 +9,7 @@ const MEDIA_FILE_SHA256 = {
     // and re-pinned for personal quota enforcement. The Listener's initial
     // media-element volume was explicitly approved at 70%; sources and all
     // other signal processing remain independently pinned.
-    'src/components/early-birds/ListenerPlayer.tsx': '1a9400bbed3013095b207812bd70386930fa3f481d1122eb0229d1ccc3d4d77f',
+    'src/components/early-birds/ListenerPlayer.tsx': '33711a94f3d4c629dfc00a8bd5fc11564f363a049adaa450fa4f625cd6bc9cf6',
     'src/lib/early-birds/stream.ts': '96a2d9fe798591833327631b59a73a5b2fc5ca06be7081945a0b07450970da84',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',

@@ -60,8 +60,9 @@ async function waitForListen() {
 
 async function chooseBeaconOnly() {
     await waitForListen();
-    fireEvent.click(screen.getByRole('radio', { name: /Beacon only/ }));
-    expect(screen.getByRole('radio', { name: /Beacon only/ })).toHaveAttribute('aria-checked', 'true');
+    const intro = screen.getByRole('checkbox', { name: /Play introduction first/ });
+    fireEvent.click(intro);
+    expect(intro).not.toBeChecked();
 }
 
 function expectPhase(phase: string) {
@@ -81,7 +82,7 @@ describe('Listener one-action playlist transport', () => {
         prepareMedia();
         renderPlayer();
 
-        expect(screen.getByRole('radio', { name: /With introduction/ })).toHaveAttribute('aria-checked', 'true');
+        expect(screen.getByRole('checkbox', { name: /Play introduction first/ })).toBeChecked();
         expect(screen.queryByText('Amara Sol · English')).not.toBeInTheDocument();
         await waitForListen();
         expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
@@ -95,7 +96,7 @@ describe('Listener one-action playlist transport', () => {
         const english = screen.getByLabelText('Introducción · Inglés') as HTMLAudioElement;
         await waitForListen();
 
-        await waitFor(() => expect(screen.getByRole('combobox', { name: 'Intro antes del Beacon' }))
+        await waitFor(() => expect(screen.getByRole('combobox', { name: 'Idioma de la introducción' }))
             .toHaveValue('es'));
         play.mockClear();
         fireEvent.click(screen.getByRole('button', { name: 'Escuchar' }));
@@ -111,7 +112,7 @@ describe('Listener one-action playlist transport', () => {
         const english = screen.getByLabelText('Introducción · Inglés') as HTMLAudioElement;
         await waitForListen();
 
-        fireEvent.change(screen.getByRole('combobox', { name: 'Intro antes del Beacon' }), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Idioma de la introducción' }), {
             target: { value: 'en' },
         });
         play.mockClear();
@@ -121,6 +122,24 @@ describe('Listener one-action playlist transport', () => {
         expect(play.mock.instances).not.toContain(spanish);
     });
 
+    it('hides introduction setup while playback is active and restores it after Stop', async () => {
+        prepareMedia();
+        renderPlayer({ es: '/api/drop-ins/es', en: '/api/drop-ins/en' });
+        await waitForListen();
+
+        expect(screen.getByRole('checkbox', { name: /Play introduction first/ })).toBeChecked();
+        expect(screen.getByRole('combobox', { name: 'Introduction language' })).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled());
+        expect(screen.queryByRole('checkbox', { name: /Play introduction first/ })).toBeNull();
+        expect(screen.queryByRole('combobox', { name: 'Introduction language' })).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+        expect(screen.getByRole('checkbox', { name: /Play introduction first/ })).toBeChecked();
+        expect(screen.getByRole('combobox', { name: 'Introduction language' })).toBeVisible();
+    });
+
     it('remembers the device mode without changing the stream contract', async () => {
         prepareMedia();
         const first = renderPlayer();
@@ -128,71 +147,27 @@ describe('Listener one-action playlist transport', () => {
         first.unmount();
 
         renderPlayer();
-        await waitFor(() => expect(screen.getByRole('radio', { name: /Beacon only/ }))
-            .toHaveAttribute('aria-checked', 'true'));
+        await waitFor(() => expect(screen.getByRole('checkbox', { name: /Play introduction first/ }))
+            .not.toBeChecked());
     });
 
-    it('uses one roving tab stop and selects playback modes with arrow keys', async () => {
+    it('uses one native checkbox to choose whether the introduction plays first', async () => {
         prepareMedia();
         renderPlayer();
         await waitForListen();
-        const intro = screen.getByRole('radio', { name: /With introduction/ });
-        const beacon = screen.getByRole('radio', { name: /Beacon only/ });
-
-        expect(intro).toHaveAttribute('tabindex', '0');
-        expect(beacon).toHaveAttribute('tabindex', '-1');
-        intro.focus();
-
-        fireEvent.keyDown(intro, { key: 'ArrowRight' });
-        expect(beacon).toHaveFocus();
-        expect(beacon).toHaveAttribute('aria-checked', 'true');
-        expect(beacon).toHaveAttribute('tabindex', '0');
-        expect(intro).toHaveAttribute('tabindex', '-1');
-
-        fireEvent.keyDown(beacon, { key: 'ArrowDown' });
-        expect(intro).toHaveFocus();
-        expect(intro).toHaveAttribute('aria-checked', 'true');
-
-        fireEvent.keyDown(intro, { key: 'ArrowLeft' });
-        expect(beacon).toHaveFocus();
-        expect(beacon).toHaveAttribute('aria-checked', 'true');
-
-        fireEvent.keyDown(beacon, { key: 'ArrowUp' });
-        expect(intro).toHaveFocus();
-        expect(intro).toHaveAttribute('aria-checked', 'true');
+        const intro = screen.getByRole('checkbox', { name: /Play introduction first/ });
+        expect(intro).toBeChecked();
+        fireEvent.click(intro);
+        expect(intro).not.toBeChecked();
+        fireEvent.click(intro);
+        expect(intro).toBeChecked();
     });
 
-    it('moves to the first and last playback mode with Home and End', async () => {
-        prepareMedia();
-        renderPlayer();
-        await waitForListen();
-        const intro = screen.getByRole('radio', { name: /With introduction/ });
-        const beacon = screen.getByRole('radio', { name: /Beacon only/ });
-
-        intro.focus();
-        fireEvent.keyDown(intro, { key: 'End' });
-        expect(beacon).toHaveFocus();
-        expect(beacon).toHaveAttribute('aria-checked', 'true');
-
-        fireEvent.keyDown(beacon, { key: 'Home' });
-        expect(intro).toHaveFocus();
-        expect(intro).toHaveAttribute('aria-checked', 'true');
-    });
-
-    it('keeps the available Beacon mode as the only tab stop when no intro exists', async () => {
+    it('does not show an irrelevant introduction choice when no intro exists', async () => {
         prepareMedia();
         renderPlayer({ es: null, en: null });
         await waitForListen();
-        const intro = screen.getByRole('radio', { name: /With introduction/ });
-        const beacon = screen.getByRole('radio', { name: /Beacon only/ });
-
-        expect(intro).toBeDisabled();
-        expect(intro).toHaveAttribute('tabindex', '-1');
-        expect(beacon).toHaveAttribute('tabindex', '0');
-        beacon.focus();
-        fireEvent.keyDown(beacon, { key: 'ArrowRight' });
-        expect(beacon).toHaveFocus();
-        expect(beacon).toHaveAttribute('aria-checked', 'true');
+        expect(screen.queryByRole('checkbox', { name: /Play introduction first/ })).toBeNull();
     });
 
     it('pauses and resumes the intro at the same position', async () => {
