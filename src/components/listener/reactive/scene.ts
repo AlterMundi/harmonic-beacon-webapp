@@ -7,7 +7,7 @@ import {
 } from './settings';
 
 export const MAX_RENDERED_HARMONICS = 128;
-const LOW_HARMONIC_COUNT = 10;
+const GUARANTEED_LOW_HARMONIC_COUNT = 10;
 const MID_HARMONIC_COUNT = 38;
 const REFERENCE_CEILING_DB = -12;
 
@@ -59,6 +59,7 @@ export type ReactiveCampfireScene = {
         weight: number;
     }>;
     confidence: number;
+    centerCutHarmonic: number;
 };
 
 function clamp(value: number, min = 0, max = 1): number {
@@ -95,13 +96,13 @@ export function smoothVisualDb(
 
 export function selectHarmonicIndexes(length: number, density: number, highDetail: number): number[] {
     const safeLength = Math.max(0, Math.floor(length));
-    if (safeLength <= LOW_HARMONIC_COUNT) {
+    if (safeLength <= GUARANTEED_LOW_HARMONIC_COUNT) {
         return Array.from({ length: safeLength }, (_, index) => index);
     }
 
     const targetCount = Math.min(
         safeLength,
-        Math.max(LOW_HARMONIC_COUNT, Math.round(MAX_RENDERED_HARMONICS * clamp(density, 0.2, 1))),
+        Math.max(GUARANTEED_LOW_HARMONIC_COUNT, Math.round(MAX_RENDERED_HARMONICS * clamp(density, 0.2, 1))),
     );
     const selected = new Set<number>();
     const guaranteedLowAndMid = Math.min(safeLength, MID_HARMONIC_COUNT, targetCount);
@@ -126,6 +127,27 @@ export function selectHarmonicIndexes(length: number, density: number, highDetai
 function movementFor(deltaDb: number, absolute: number, sensitivity: number): number {
     if (!Number.isFinite(deltaDb) || absolute <= 0) return 0;
     return clamp(deltaDb / 9, -1, 1) * sensitivity * absolute;
+}
+
+function organicMotion(
+    index: number,
+    capturedAtMs: number,
+    absolute: number,
+    deltaDb: number,
+    sensitivity: number,
+): { lateral: number; radial: number } {
+    if (absolute <= 0 || !Number.isFinite(capturedAtMs)) return { lateral: 0, radial: 0 };
+    const seconds = capturedAtMs / 1_000;
+    const variation = Math.abs(movementFor(deltaDb, absolute, sensitivity));
+    const amplitude = absolute * (0.34 + variation * 0.32);
+    const lateralFrequency = 0.045 + seededUnit(index, 81) * 0.075;
+    const radialFrequency = 0.035 + seededUnit(index, 83) * 0.065;
+    const lateralPhase = seededUnit(index, 85) * Math.PI * 2;
+    const radialPhase = seededUnit(index, 87) * Math.PI * 2;
+    return {
+        lateral: Math.sin(seconds * Math.PI * 2 * lateralFrequency + lateralPhase) * amplitude,
+        radial: Math.sin(seconds * Math.PI * 2 * radialFrequency + radialPhase) * amplitude,
+    };
 }
 
 function trailFor(
@@ -188,10 +210,11 @@ export function buildReactiveCampfireScene(
 
     for (const index of indexes) {
         const absolute = absoluteEnergy(harmonics[index], settings.absoluteFloorDb) * confidence;
-        if (index < LOW_HARMONIC_COUNT) {
+        const harmonicNumber = index + 1;
+        if (harmonicNumber <= settings.centerCutHarmonic) {
             rings.push({
                 harmonicIndex: index,
-                radius: 0.09 + index * 0.024,
+                radius: 0.075 + (harmonicNumber / Math.max(1, settings.centerCutHarmonic)) * 0.24,
                 eccentricity: 0.7 + seededUnit(index, 4) * 0.18,
                 rotation: (seededUnit(index, 8) - 0.5) * 0.55,
                 opacity: absolute * 0.72,
@@ -209,19 +232,30 @@ export function buildReactiveCampfireScene(
             ? 0.38 + seededUnit(index, 11) * 0.25
             : 0.57 + seededUnit(index, 11) * 0.32;
         const movement = movementFor(deltas[index] ?? 0, absolute, settings.sensitivity);
+        const flow = organicMotion(
+            index,
+            capturedAtMs,
+            absolute,
+            deltas[index] ?? 0,
+            settings.sensitivity,
+        );
 
         filaments.push({
             harmonicIndex: index,
             tier,
-            angle: baseAngle + movement * (tier === 'high' ? 0.075 : 0.045),
+            // The field has a fixed point of view. Variation deforms each
+            // ribbon locally instead of rotating or zooming the whole scene.
+            angle: baseAngle + flow.lateral * (tier === 'high' ? 0.072 : 0.048),
             innerRadius,
-            outerRadius: baseOuterRadius + movement * (tier === 'high' ? 0.05 : 0.028),
-            bend: (seededUnit(index, 6) - 0.5) * 0.24 + movement * 0.035,
+            outerRadius: baseOuterRadius + flow.radial * (tier === 'high' ? 0.045 : 0.028),
+            bend: (seededUnit(index, 6) - 0.5) * 0.24
+                + flow.lateral * 0.055
+                + movement * 0.01,
             opacity: absolute * (tier === 'high' ? 0.62 : 0.7),
             weight: 0.35 + absolute * (tier === 'high' ? 1.05 : 1.5),
             // Delta never raises opacity or weight: it changes geometry and the
             // secondary highlight only, preserving truthful absolute hierarchy.
-            emphasis: clamp(Math.abs(movement)) * absolute,
+            emphasis: clamp(Math.abs(movement)) * absolute * 0.72,
             trail: tier === 'high'
                 ? trailFor(
                     index,
@@ -241,12 +275,13 @@ export function buildReactiveCampfireScene(
         core: {
             radius: (0.035 + overall * 0.055) * confidence,
             opacity: overall * 0.84 * confidence,
-            stereoOffset: clamp(frame?.stereoBalance ?? 0, -1, 1) * 0.026,
+            stereoOffset: 0,
             stereoWidth: clamp(frame?.stereoWidth ?? 0),
         },
         rings,
         filaments,
         veils,
         confidence,
+        centerCutHarmonic: settings.centerCutHarmonic,
     };
 }

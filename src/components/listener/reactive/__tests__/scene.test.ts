@@ -141,9 +141,44 @@ describe('reactive campfire scene', () => {
 
     it('retains stable defaults in the deterministic fixture', () => {
         expect(DEFAULT_REACTIVE_CAMPFIRE_SETTINGS).toMatchObject({
-            absoluteFloorDb: -92,
-            density: 0.72,
+            sensitivity: 3,
+            absoluteFloorDb: -120,
+            baselineDurationSeconds: 24,
+            attackMs: 20,
+            releaseMs: 4_000,
+            trailSeconds: 4,
+            density: 1,
+            highDetail: 0,
+            palette: 'ember',
             fftSize: 16_384,
         });
+    });
+
+    it('keeps the center invariant while endpoints move continuously', () => {
+        const absolute = Array.from({ length: 64 }, () => -36);
+        const first = buildReactiveCampfireScene(frameWith(absolute, undefined, {
+            capturedAtMs: 10_000,
+            stereoBalance: -1,
+        }));
+        const second = buildReactiveCampfireScene(frameWith(absolute, undefined, {
+            capturedAtMs: 10_020,
+            stereoBalance: 1,
+        }));
+
+        expect(first.core.stereoOffset).toBe(0);
+        expect(second.core.stereoOffset).toBe(0);
+        expect(second.filaments[0].angle).not.toBe(first.filaments[0].angle);
+        expect(Math.abs(second.filaments[0].angle - first.filaments[0].angle)).toBeLessThan(0.01);
+    });
+
+    it('uses the selected harmonic as the center / outer boundary', () => {
+        const scene = buildReactiveCampfireScene(
+            frameWith(Array.from({ length: 64 }, () => -32)),
+            { centerCutHarmonic: 24 },
+        );
+
+        expect(scene.rings.at(-1)?.harmonicIndex).toBe(23);
+        expect(scene.filaments[0]?.harmonicIndex).toBe(24);
+        expect(scene.centerCutHarmonic).toBe(24);
     });
 });

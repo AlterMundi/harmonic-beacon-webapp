@@ -5,6 +5,7 @@ import { useState } from 'react';
 import styles from './ReactiveCampfire.module.css';
 import {
     REACTIVE_PALETTES,
+    REACTIVE_VISUALIZATION_MODES,
     type ReactiveCampfireSettings,
     serializeReactiveCampfirePreset,
     validateReactiveCampfireSettings,
@@ -17,7 +18,10 @@ export type ReactiveCampfireTuningPanelProps = {
     analysisControlsLocked?: boolean;
 };
 
-type NumberField = Exclude<keyof ReactiveCampfireSettings, 'palette' | 'fftSize'>;
+type NumberField = Exclude<
+    keyof ReactiveCampfireSettings,
+    'palette' | 'visualizationMode' | 'fftSize'
+>;
 
 const NUMBER_FIELDS: Array<{
     key: NumberField;
@@ -35,6 +39,8 @@ const NUMBER_FIELDS: Array<{
     { key: 'trailSeconds', label: 'Upper trails', min: 0, max: 4, step: 0.1, suffix: ' s' },
     { key: 'density', label: 'Harmonic density', min: 0.2, max: 1, step: 0.05 },
     { key: 'highDetail', label: 'High detail', min: 0, max: 1, step: 0.05 },
+    { key: 'centerCutHarmonic', label: 'Center / outer cut', min: 1, max: 128, step: 1 },
+    { key: 'ribbonWidth', label: 'Ribbon width', min: 0.6, max: 3, step: 0.05 },
 ];
 
 function downloadPreset(serialized: string) {
@@ -82,6 +88,11 @@ export function ReactiveCampfireTuningPanel({
                                 {settings[field.key]}{field.suffix}
                             </span>
                         </span>
+                        {field.key === 'centerCutHarmonic' && (
+                            <span className={styles.hint}>
+                                H{settings.centerCutHarmonic} · {(settings.centerCutHarmonic * 40.4).toFixed(1)} Hz
+                            </span>
+                        )}
                         <input
                             type="range"
                             min={field.min}
@@ -96,8 +107,25 @@ export function ReactiveCampfireTuningPanel({
                     </label>
                 ))}
                 <label className={styles.field}>
+                    <span>Visualization</span>
+                    <select
+                        aria-label="Visualization"
+                        value={settings.visualizationMode}
+                        onChange={(event) => update({
+                            visualizationMode: event.currentTarget.value as ReactiveCampfireSettings['visualizationMode'],
+                        })}
+                    >
+                        {REACTIVE_VISUALIZATION_MODES.map((mode) => (
+                            <option value={mode} key={mode}>
+                                {mode === 'radial-ribbons' ? 'Radial ribbons' : 'Horizon flow'}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <label className={styles.field}>
                     <span>Palette</span>
                     <select
+                        aria-label="Palette"
                         value={settings.palette}
                         onChange={(event) => update({
                             palette: event.currentTarget.value as ReactiveCampfireSettings['palette'],
@@ -111,15 +139,19 @@ export function ReactiveCampfireTuningPanel({
                 <label className={styles.field}>
                     <span>FFT size</span>
                     <select
+                        aria-label="FFT size"
                         value={settings.fftSize}
                         disabled={analysisControlsLocked}
                         onChange={(event) => update({
                             fftSize: Number(event.currentTarget.value) as ReactiveCampfireSettings['fftSize'],
                         })}
                     >
-                        <option value={8_192}>8192</option>
-                        <option value={16_384}>16384</option>
+                        <option value={8_192}>8192 · lighter</option>
+                        <option value={16_384}>16384 · more detail</option>
                     </select>
+                    {analysisControlsLocked && (
+                        <span className={styles.hint}>Stop to change · 8192 / 16384 available</span>
+                    )}
                 </label>
                 <div className={styles.actions}>
                     <button className={styles.button} type="button" onClick={copyPreset}>

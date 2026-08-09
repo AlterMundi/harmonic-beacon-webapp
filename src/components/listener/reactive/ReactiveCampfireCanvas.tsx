@@ -139,7 +139,7 @@ export function ReactiveCampfireCanvas({
                 frameStateRef.current.history as ReactiveTrailHistory,
                 decay,
             );
-            drawReactiveCampfire(context, width, height, scene, settingsRef.current.palette);
+            drawReactiveCampfire(context, width, height, scene, settingsRef.current);
         };
 
         const tick = (now: number) => {

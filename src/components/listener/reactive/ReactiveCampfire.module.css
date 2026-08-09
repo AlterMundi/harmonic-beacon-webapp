@@ -72,8 +72,14 @@
 }
 
 .field option {
-    color: #181022;
-    background: #fff;
+    color: #f7f3ff;
+    background: #181022;
+}
+
+.hint {
+    color: rgb(255 255 255 / 48%);
+    font-size: 0.66rem;
+    font-variant-numeric: tabular-nums;
 }
 
 .value {

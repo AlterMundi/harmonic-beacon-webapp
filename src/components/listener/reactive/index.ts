@@ -8,4 +8,8 @@ export {
     serializeReactiveCampfirePreset,
     validateReactiveCampfireSettings,
 } from './settings';
-export type { ReactiveCampfireSettings, ReactivePalette } from './settings';
+export type {
+    ReactiveCampfireSettings,
+    ReactivePalette,
+    ReactiveVisualizationMode,
+} from './settings';

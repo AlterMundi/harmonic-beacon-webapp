@@ -20,6 +20,26 @@ experiment is not exposed by `listen.harmonicbeacon.com`.
 - `HarmonicAnalysisFrame` is renderer-neutral. A later server analyzer may emit
   the same schema without changing the Canvas renderer.
 
+## Visual language
+
+The point of view is fixed. Neither stereo balance nor aggregate energy moves
+the center or the horizon. Each audible harmonic follows a deterministic,
+continuous low-frequency dance whose amplitude is bounded by its measured
+absolute energy and softly modulated by its baseline variation. Silence never
+creates a ribbon.
+
+The laboratory currently offers two renderers over the same analysis frame:
+
+- **Radial ribbons** groups harmonics through a stable center and lets the
+  selected cut harmonic divide the inner field from the outer field.
+- **Horizon flow** pours broad harmonic ribbons from fixed positions on a
+  horizon. Harmonics below the cut stay closer to the center; upper harmonics
+  fan farther outward.
+
+Changing renderer, cut harmonic, width, palette or other visual controls never
+rebuilds the audio graph. FFT size and baseline duration remain analysis-session
+controls and therefore require Stop before changing them.
+
 ## Audio boundary
 
 Visual mode is selected while stopped. Enabling or disabling it remounts fresh
@@ -41,7 +61,11 @@ context resume also returns to a fresh direct player.
 The exact staging host exposes the opt-in control and a collapsible parameter
 panel. Visual parameters can change while listening. FFT size and slow-baseline
 duration are locked during playback because they require a fresh analysis
-session. Presets export as versioned JSON.
+session. The FFT selector exposes both 8192 (lighter) and 16384 (more detail).
+Presets export as versioned JSON. The current default is the human-selected
+high-detail Ember preset: sensitivity 3, -120 dB floor, 24 s baseline, 20 ms
+attack, 4000 ms release, 4 s trails, density 1, upper-detail bias 0 and FFT
+16384.
 
 Apple/native-HLS clients remain direct-mode only. WebKit's analysed native-HLS
 path has not yet passed the acoustic, nonzero-signal, fade and handoff gates for

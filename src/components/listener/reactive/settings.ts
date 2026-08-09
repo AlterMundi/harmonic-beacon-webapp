@@ -1,6 +1,8 @@
 export const REACTIVE_PALETTES = ['ember', 'aurora', 'moon'] as const;
+export const REACTIVE_VISUALIZATION_MODES = ['radial-ribbons', 'horizon-flow'] as const;
 
 export type ReactivePalette = typeof REACTIVE_PALETTES[number];
+export type ReactiveVisualizationMode = typeof REACTIVE_VISUALIZATION_MODES[number];
 
 export type ReactiveCampfireSettings = {
     sensitivity: number;
@@ -11,20 +13,26 @@ export type ReactiveCampfireSettings = {
     trailSeconds: number;
     density: number;
     highDetail: number;
+    centerCutHarmonic: number;
+    ribbonWidth: number;
     palette: ReactivePalette;
+    visualizationMode: ReactiveVisualizationMode;
     fftSize: 8_192 | 16_384;
 };
 
 export const DEFAULT_REACTIVE_CAMPFIRE_SETTINGS: Readonly<ReactiveCampfireSettings> = Object.freeze({
-    sensitivity: 1,
-    absoluteFloorDb: -92,
+    sensitivity: 3,
+    absoluteFloorDb: -120,
     baselineDurationSeconds: 24,
-    attackMs: 180,
-    releaseMs: 720,
-    trailSeconds: 1.4,
-    density: 0.72,
-    highDetail: 0.7,
+    attackMs: 20,
+    releaseMs: 4_000,
+    trailSeconds: 4,
+    density: 1,
+    highDetail: 0,
+    centerCutHarmonic: 16,
+    ribbonWidth: 1.6,
     palette: 'ember',
+    visualizationMode: 'radial-ribbons',
     fftSize: 16_384,
 });
 
@@ -37,6 +45,8 @@ const LIMITS = {
     trailSeconds: [0, 4],
     density: [0.2, 1],
     highDetail: [0, 1],
+    centerCutHarmonic: [1, 128],
+    ribbonWidth: [0.6, 3],
 } as const;
 
 function clampFinite(value: unknown, fallback: number, min: number, max: number): number {
@@ -51,6 +61,10 @@ export function validateReactiveCampfireSettings(
     const palette = candidate?.palette && REACTIVE_PALETTES.includes(candidate.palette)
         ? candidate.palette
         : fallback.palette;
+    const visualizationMode = candidate?.visualizationMode
+        && REACTIVE_VISUALIZATION_MODES.includes(candidate.visualizationMode)
+        ? candidate.visualizationMode
+        : fallback.visualizationMode;
     const fftSize = candidate?.fftSize === 8_192 || candidate?.fftSize === 16_384
         ? candidate.fftSize
         : fallback.fftSize;
@@ -84,7 +98,18 @@ export function validateReactiveCampfireSettings(
             fallback.highDetail,
             ...LIMITS.highDetail,
         ),
+        centerCutHarmonic: Math.round(clampFinite(
+            candidate?.centerCutHarmonic,
+            fallback.centerCutHarmonic,
+            ...LIMITS.centerCutHarmonic,
+        )),
+        ribbonWidth: clampFinite(
+            candidate?.ribbonWidth,
+            fallback.ribbonWidth,
+            ...LIMITS.ribbonWidth,
+        ),
         palette,
+        visualizationMode,
         fftSize,
     };
 }

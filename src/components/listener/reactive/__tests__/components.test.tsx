@@ -122,4 +122,26 @@ describe('reactive campfire components', () => {
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ sensitivity: 1.5 }));
         expect(window.AudioContext).toBeUndefined();
     });
+
+    it('offers both renderers, both FFT sizes and the harmonic cut control', () => {
+        const onChange = vi.fn();
+        render(
+            <ReactiveCampfireTuningPanel
+                enabled
+                settings={{ ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS }}
+                onChange={onChange}
+            />,
+        );
+
+        const fft = screen.getByLabelText('FFT size');
+        expect(fft).toHaveTextContent('8192 · lighter');
+        expect(fft).toHaveTextContent('16384 · more detail');
+        fireEvent.change(screen.getByLabelText('Visualization'), {
+            target: { value: 'horizon-flow' },
+        });
+        expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+            visualizationMode: 'horizon-flow',
+        }));
+        expect(screen.getByText(/H16 · 646.4 Hz/)).toBeInTheDocument();
+    });
 });
