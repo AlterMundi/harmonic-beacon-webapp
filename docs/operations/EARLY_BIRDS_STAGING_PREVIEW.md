@@ -1,5 +1,18 @@
 # EarlyBirds isolated staging runtime
 
+## 2026-08-09 public reactive field release
+
+The isolated public Listener runs application SHA
+`1f8368d2fda19b30b74c95af884d862838f73305`, image
+`harmonic-beacon/earlybirds-preview-listener:1f8368d` and unchanged schema
+`20260808160000_listener_weekly_quota`. The accepted Radial ribbons field uses
+server-side frames behind the active listening lease, so browser playback stays
+on the native HLS/HTML media path. The technical Reactive Field Lab is explicitly
+OFF and can be enabled only on the exact staging host with
+`BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED=1`. Recovery selects same-schema
+image `ae1d0ba` and restores the pre-release Listener nginx/env backups without
+changing PostgreSQL, origin media or event services.
+
 ## 2026-08-08 weekly-Free Listener release
 
 The isolated public Listener runs application SHA

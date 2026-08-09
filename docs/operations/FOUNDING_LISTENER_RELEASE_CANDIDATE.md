@@ -14,7 +14,7 @@ an event-stack deployment or an acoustic change.
 
 ## Status: weekly Free deployed for acceptance
 
-Release `ae1d0baa4527a74c2908f84692e677f5b96f615a` is deployed on the isolated
+Release `1f8368d2fda19b30b74c95af884d862838f73305` is deployed on the isolated
 Listener. The active policy is three hours per account per fixed seven-day cycle,
 anchored at first real authorized Free playback, with no base rollover and
 server-time metering. Two devices consume their listening union once; intro and
@@ -32,7 +32,7 @@ repair, never restoring daily/welcome authorization.
 
 | Artifact | Exact value |
 |---|---|
-| Deployed Listener application | `ae1d0baa4527a74c2908f84692e677f5b96f615a` |
+| Deployed Listener application | `1f8368d2fda19b30b74c95af884d862838f73305` |
 | Operational smoke/documentation head | `8444ed7d06b2764c519f65ce4d32932346a94fdd` |
 | Listener database schema | `20260808160000_listener_weekly_quota` |
 | Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
@@ -67,12 +67,13 @@ test-only branch head.
 | ES/EN and override | Proven | Locale default, explicit intro override, private byte ranges and distinct immutable assets pass tests/runtime. The deployed Free-account smoke proved Spanish returns authorized `206 audio/mp4` instead of a false membership denial under concurrent lease signaling. |
 | Intro to Beacon lifecycle | Automated/browser and iPhone human proven | Intro play/pause/seek, natural handoff, mutual exclusion, live-edge Stop/rejoin and duplicate guards pass. Nico confirmed the deployed iPhone flow worked correctly after the gesture-safe fix. |
 | Mobile one-screen interaction | Browser and iPhone proven; broader physical matrix pending | Chromium 390x844 has no overflow; mode targets are 52 px and primary action 56 px. iPhone playback passed; physical keyboard/screen-reader and Android/Firefox review remains. |
-| Audio guardrail | Proven | Frozen-audio gate is green; this registration slice changed no asset, codec, rate, channel, gain, fade, buffer, routing or event audio. |
+| Audio guardrail | Proven | Frozen-audio gate is green; the public field uses server-side analysis and changed no asset, codec, rate, channel, gain, fade, buffer, routing or event audio. |
+| Reactive harmonic field | Deployed; extended physical matrix pending | Nico accepted the selected Radial ribbons preset after confirming correct intro and Beacon audio. Public frames require the active listening lease; the technical Lab is default-off and staging-only. |
 | App/origin/DB/canary | Proven | Public readiness, exact schema/SHA, stream health and decoded canary are green. |
 | Telegram warning/critical/recovery | Proven | Dedicated delivery and recovery were exercised; Alertmanager currently has zero active alerts. |
 | Storage | Proven | Approved media is on `/mnt/beacon-data`; after the final image build root retained about 65 GB free and the secondary volume remained about 6% used/89 GB free. |
 | Capacity plan | Prepared, not measured | Deterministic external 3k/4k/5k shards are recorded. No same-host 150-client test or high-load claim was made. |
-| Full gates | Proven | 1,401 tests with 28 standard skips, ESLint, TypeScript, build, Prisma, real PostgreSQL, preview, origin, nginx and observability checks are green. |
+| Full gates | Proven | 1,461 tests with 28 standard skips, ESLint, TypeScript, build, Prisma, preview, origin and nginx checks are green for the deployed visual release. |
 
 ## Delivered commits
 
@@ -88,6 +89,8 @@ test-only branch head.
   unified control panel and bottom weekly status/membership action.
 - `ae1d0ba` — Free-authorized ES/EN intro range delivery under quota/heartbeat
   contention, with bounded serialization retry and recoverable UI failure.
+- `1f8368d` — accepted server-analyzed Radial ribbons field on the canonical
+  Listener, with the Reactive Field Lab default-off and staging-only.
 
 Historical pre-weekly experiments:
 
@@ -119,8 +122,9 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - Listener health/readiness, origin, PostgreSQL and decoded canary are green.
 - Alertmanager has no active alert. A prior root-disk warning was real, then
   resolved after removing only old unreferenced Listener/authority image tags.
-- Current image is `ae1d0ba`. Earlier policy images remain only as historical
-  artifacts and are not valid rollback targets.
+- Current image is `1f8368d`. Image `ae1d0ba` remains the same-schema recovery
+  target for this visual-only release; earlier policy images are historical and
+  are not valid rollback targets.
 - The fixed public-disable command was exercised after deployment. Its first
   health probe observed the normal Next.js startup connection reset, retried,
   then proved liveness, readiness and anonymous lease denial before exiting 0.
@@ -146,8 +150,8 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #210 remains open for the later auth/cookie and cross-repository namespace
   phases; runtime environment compatibility is merged and deployed.
 - #213 remains open for the final public-human invitation/experience evidence.
-- #211 is deployed; #212 remains feature-flagged pending visual acceptance and
-  does not block the minimal public Listener.
+- #211 is deployed. #212's accepted field is public; its technical laboratory
+  remains default-off and can be re-enabled only on staging for later variants.
 
 ## Remaining human sequence
 
