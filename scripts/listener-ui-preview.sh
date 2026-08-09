@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Fast, disposable Listener UI loop. Source stays on the workstation, is synced
+# to the secondary volume on mona, and is served by Next dev behind the existing
+# staging hostname. The persistent Listener release on port 13000 is untouched.
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PREVIEW_HOST="${LISTENER_UI_PREVIEW_HOST:-mona}"
+REMOTE_ROOT="${LISTENER_UI_PREVIEW_ROOT:-/mnt/beacon-data/listener-ui-dev}"
+REMOTE_SOURCE="${REMOTE_ROOT}/source"
+REMOTE_NEXT="${REMOTE_ROOT}/next"
+DEV_CONTAINER="listener-ui-dev"
+RELEASE_CONTAINER="earlybirds-preview-listener-1"
+
+usage() {
+    echo "Usage: $0 {start|sync|watch|status|stop|logs}" >&2
+}
+
+sync_source() {
+    ssh "$PREVIEW_HOST" "sudo install -d -m 0755 -o \"\$(id -un)\" -g \"\$(id -gn)\" '$REMOTE_ROOT' '$REMOTE_SOURCE' '$REMOTE_SOURCE/src' '$REMOTE_SOURCE/public'"
+    rsync -az --delete --chmod=D755,F644 "$ROOT_DIR/src/" "$PREVIEW_HOST:$REMOTE_SOURCE/src/"
+    rsync -az --delete --chmod=D755,F644 "$ROOT_DIR/public/" "$PREVIEW_HOST:$REMOTE_SOURCE/public/"
+    rsync -az --chmod=F644 \
+        "$ROOT_DIR/next.config.ts" \
+        "$ROOT_DIR/postcss.config.mjs" \
+        "$ROOT_DIR/tsconfig.json" \
+        "$PREVIEW_HOST:$REMOTE_SOURCE/"
+}
+
+start_remote() {
+    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' bash -s" <<'REMOTE'
+set -euo pipefail
+
+image="$(docker inspect "$RELEASE_CONTAINER" --format '{{.Config.Image}}')"
+env_file="$(mktemp /tmp/listener-ui-dev-env.XXXXXX)"
+cleanup() { rm -f "$env_file"; }
+trap cleanup EXIT
+umask 077
+docker inspect "$RELEASE_CONTAINER" | jq -r '.[0].Config.Env[]' > "$env_file"
+
+install -d -m 0755 "$REMOTE_NEXT"
+sudo chown 1001:1001 "$REMOTE_NEXT"
+sudo install -m 0644 -o 1001 -g 1001 /dev/null "$REMOTE_NEXT/next-env.d.ts"
+
+if docker container inspect "$DEV_CONTAINER" >/dev/null 2>&1; then
+    docker rm -f "$DEV_CONTAINER" >/dev/null
+fi
+
+docker run -d \
+    --name "$DEV_CONTAINER" \
+    --restart unless-stopped \
+    --init \
+    --env-file "$env_file" \
+    -e NODE_ENV=development \
+    -e NEXT_TELEMETRY_DISABLED=1 \
+    -e WATCHPACK_POLLING=true \
+    -e BEACON_GIT_SHA=ui-dev \
+    -e EARLY_BIRDS_ENABLED=1 \
+    -e BEACON_LISTENER_ENABLED=1 \
+    -e EARLY_BIRDS_FREE_FOR_ALL=1 \
+    -e BEACON_LISTENER_FREE_FOR_ALL=1 \
+    --network earlybirds_preview_db_internal \
+    -p 127.0.0.1:13001:3000 \
+    -v "$REMOTE_SOURCE/src:/app/src:ro" \
+    -v "$REMOTE_SOURCE/public:/app/public:ro" \
+    -v "$REMOTE_SOURCE/next.config.ts:/app/next.config.ts:ro" \
+    -v "$REMOTE_NEXT/next-env.d.ts:/app/next-env.d.ts" \
+    -v "$REMOTE_SOURCE/postcss.config.mjs:/app/postcss.config.mjs:ro" \
+    -v "$REMOTE_SOURCE/tsconfig.json:/app/tsconfig.json:ro" \
+    -v "$REMOTE_NEXT:/app/.next" \
+    --volumes-from "$RELEASE_CONTAINER:ro" \
+    "$image" \
+    npm run dev -- --hostname 0.0.0.0 --port 3000 >/dev/null
+
+docker network connect earlybirds_preview_listener_egress "$DEV_CONTAINER"
+docker network connect earlybirds_authority_private "$DEV_CONTAINER"
+
+for _ in $(seq 1 90); do
+    if curl --fail --silent --max-time 3 http://127.0.0.1:13001/api/health >/dev/null; then
+        exit 0
+    fi
+    sleep 1
+done
+
+docker logs --tail 80 "$DEV_CONTAINER" >&2
+exit 1
+REMOTE
+}
+
+case "${1:-}" in
+    start)
+        sync_source
+        start_remote
+        ;;
+    sync)
+        sync_source
+        ;;
+    watch)
+        sync_source
+        echo "Watching Listener UI sources; Ctrl-C stops only the sync loop."
+        while inotifywait -qq -r -e close_write,create,delete,move \
+            "$ROOT_DIR/src" "$ROOT_DIR/public" \
+            "$ROOT_DIR/next.config.ts" "$ROOT_DIR/postcss.config.mjs" "$ROOT_DIR/tsconfig.json"; do
+            sync_source
+        done
+        ;;
+    status)
+        ssh "$PREVIEW_HOST" "docker ps --filter name=^/${DEV_CONTAINER}$ --format '{{.Names}} {{.Image}} {{.Status}}'; curl --fail --silent http://127.0.0.1:13001/api/health; printf '\n'"
+        ;;
+    stop)
+        ssh "$PREVIEW_HOST" "docker rm -f '$DEV_CONTAINER' >/dev/null 2>&1 || true"
+        ;;
+    logs)
+        ssh "$PREVIEW_HOST" "docker logs --tail 120 -f '$DEV_CONTAINER'"
+        ;;
+    *)
+        usage
+        exit 2
+        ;;
+esac

@@ -100,16 +100,27 @@ server {
         return 404;
     }
 
+    # The staging hostname is the mutable UI workbench. It targets the
+    # disposable Next dev runtime on 13001; the accepted Listener release stays
+    # on 13000 behind listen.harmonicbeacon.com.
     location /_next/static/ {
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
+        add_header Cache-Control "private, no-store" always;
+    }
+
+    location /_next/webpack-hmr {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 1h;
     }
 
     location = /api/health {
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_connect_timeout 5s;
@@ -117,7 +128,7 @@ server {
     }
 
     location = /api/health/ready {
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_connect_timeout 5s;
@@ -144,7 +155,7 @@ server {
     location = / {
         access_log off;
         rewrite ^ /listener break;
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -221,7 +232,7 @@ server {
     }
 
     location = /api/listener/access-state {
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -234,7 +245,7 @@ server {
     }
 
     location = /api/listener/free-window {
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -247,7 +258,7 @@ server {
     }
 
     location = /api/listener/welcome-access {
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -260,7 +271,7 @@ server {
     }
 
     location ^~ /early-birds/ {
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -273,7 +284,7 @@ server {
     }
 
     location ^~ /api/early-birds/ {
-        proxy_pass http://127.0.0.1:13000;
+        proxy_pass http://127.0.0.1:13001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

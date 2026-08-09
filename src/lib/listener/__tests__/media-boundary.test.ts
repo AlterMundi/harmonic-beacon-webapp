@@ -47,13 +47,13 @@ describe('Listener namespace media boundary', () => {
             .toBe('6738ce8a66d53fab790452e1b62bd74a3ff9439d7addc5c2a739cef00f8c17d4');
     });
 
-    it('keeps the staging legacy API proxy block byte-identical', () => {
+    it('keeps the staging legacy API proxy block pinned to the disposable UI runtime', () => {
         const source = readFileSync(resolve(
             process.cwd(),
             'ops/early-birds-preview/nginx/earlybirds-staging.harmonicbeacon.com.conf.template',
         ), 'utf8');
 
         expect(sha256(nginxLocation(source, '/api/early-birds/')))
-            .toBe('31f610cfd1d4d5778d6d3a2c10879790a5c2dcb8e39563738b2b39aa9cdc14c8');
+            .toBe('bd3892abf554b29be74ac2524d5f0a7b8a1c0d64dc81d10353f3daa0193380b8');
     });
 });

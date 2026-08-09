@@ -167,7 +167,7 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   ]);
   const proxyTargets = [...combined.matchAll(/proxy_pass\s+([^;]+);/g)].map((match) => match[1]);
   assert.ok(proxyTargets.length >= 4);
-  assert.ok(proxyTargets.every((target) => /^http:\/\/127\.0\.0\.1:(13000|18080)$/.test(target)));
+  assert.ok(proxyTargets.every((target) => /^http:\/\/127\.0\.0\.1:(13000|13001|18080)$/.test(target)));
   assert.doesNotMatch(combined, /live\.harmonicbeacon\.com/);
   assert.match(app, /letsencrypt\/live\/earlybirds-staging\.harmonicbeacon\.com/);
   assert.match(stream, /letsencrypt\/live\/stream\.harmonicbeacon\.com/);
@@ -184,7 +184,10 @@ test('nginx templates isolate staging, stream and the constrained public Listene
     6,
     'server plus five sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
   );
-  assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
+  assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
+  assert.match(app, /location \/_next\/webpack-hmr \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Upgrade \$http_upgrade;[^}]*Connection "upgrade";/s);
+  assert.match(app, /location \/_next\/static\/ \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
+  assert.doesNotMatch(app, /proxy_pass http:\/\/127\.0\.0\.1:13000;/);
   assert.match(app, /location = \/early-birds\/home \{\s*return 302 \/;/);
   assert.match(app, /location \/ \{\s*return 404;/);
   assert.doesNotMatch(app, /location \^~ \/api\/(auth|ops)|location \^~ \/(login|ops|session)/);
