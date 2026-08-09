@@ -46,6 +46,14 @@ const NUMBER_FIELDS: Array<{
     { key: 'ribbonWidth', label: 'Ribbon width', min: 0.6, max: 3, step: 0.05 },
 ];
 
+const VISUALIZATION_LABELS: Record<ReactiveCampfireSettings['visualizationMode'], string> = {
+    'analysis-only': 'Analysis only · no Canvas',
+    'minimal-pulse': 'Minimal pulse · 2 fps',
+    'harmonic-radial-series': 'Harmonic radial series',
+    'radial-ribbons': 'Radial ribbons',
+    'horizon-flow': 'Horizon flow',
+};
+
 function downloadPreset(serialized: string) {
     const url = URL.createObjectURL(new Blob([serialized], { type: 'application/json' }));
     const anchor = document.createElement('a');
@@ -83,6 +91,10 @@ export function ReactiveCampfireTuningPanel({
         <details className={styles.panel} data-testid="reactive-campfire-tuning-panel">
             <summary className={styles.summary}>Reactive field lab</summary>
             <div className={styles.form}>
+                <p className={styles.guide}>
+                    Test: field off = direct baseline; Analysis only = analysis without Canvas;
+                    Minimal pulse = lowest visual workload; then compare a full field.
+                </p>
                 {NUMBER_FIELDS.map((field) => (
                     <label className={styles.field} key={field.key}>
                         <span>
@@ -130,14 +142,20 @@ export function ReactiveCampfireTuningPanel({
                     >
                         {REACTIVE_VISUALIZATION_MODES.map((mode) => (
                             <option value={mode} key={mode}>
-                                {{
-                                    'harmonic-radial-series': 'Harmonic radial series',
-                                    'radial-ribbons': 'Radial ribbons',
-                                    'horizon-flow': 'Horizon flow',
-                                }[mode]}
+                                {VISUALIZATION_LABELS[mode]}
                             </option>
                         ))}
                     </select>
+                    {settings.visualizationMode === 'analysis-only' && (
+                        <span className={styles.hint}>
+                            Full audio analysis stays active; scene calculation and Canvas are off.
+                        </span>
+                    )}
+                    {settings.visualizationMode === 'minimal-pulse' && (
+                        <span className={styles.hint}>
+                            One measured level halo at 2 fps; no harmonic scene or ribbons.
+                        </span>
+                    )}
                 </label>
                 <label className={styles.field}>
                     <span>Palette</span>

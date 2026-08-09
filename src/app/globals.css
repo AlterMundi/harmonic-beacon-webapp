@@ -1261,7 +1261,9 @@ body {
 
 .listener-experience {
   width: min(100%, 780px);
+  align-self: end;
   margin: clamp(0.65rem, 2vh, 1.5rem) auto 0;
+  padding-bottom: clamp(1.25rem, 6vh, 4rem);
   --listener-phase: var(--gold);
 }
 
@@ -2112,7 +2114,10 @@ body {
 @media (max-width: 760px) {
   .listener-shell__frame { padding-inline: 1rem; }
   .listener-rail .brand-lockup { font-size: 0.72rem; }
-  .listener-experience { margin-top: 0.55rem; }
+  .listener-experience {
+    margin-top: 0.55rem;
+    padding-bottom: max(1rem, var(--safe-bottom));
+  }
   .listener-field { width: min(100%, 28rem); aspect-ratio: 1.28; }
   .listener-experience .listener-field { width: min(100%, 25rem); aspect-ratio: 1.55; }
   .listener-intro-option { margin-top: 0.5rem; }

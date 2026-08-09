@@ -1,3 +1,5 @@
+import type { HarmonicAnalysisFrame } from '@/lib/listener/analysis/types';
+
 import type { ReactiveCampfireSettings, ReactivePalette } from './settings';
 import { seededUnit, type ReactiveCampfireScene, type ReactiveFilament } from './scene';
 
@@ -31,6 +33,42 @@ const PALETTES: Record<ReactivePalette, Palette> = {
 
 function rgba(color: readonly number[], alpha: number): string {
     return `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${Math.max(0, Math.min(1, alpha))})`;
+}
+
+/**
+ * Lowest-cost truthful renderer: one fixed halo driven only by measured
+ * overall level. It deliberately skips harmonic scene construction, trails,
+ * cloth geometry and animation. This is a diagnostic/product fallback, not a
+ * synthetic approximation of the harmonic field.
+ */
+export function drawMinimalReactivePulse(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    frame: HarmonicAnalysisFrame | null,
+    settings: ReactiveCampfireSettings,
+    decay = 1,
+) {
+    context.clearRect(0, 0, width, height);
+    if (!frame || frame.confidence <= 0 || !Number.isFinite(frame.overallDb) || decay <= 0) return;
+    const palette = PALETTES[settings.palette];
+    const normalized = Math.max(0, Math.min(
+        1,
+        (frame.overallDb - settings.absoluteFloorDb) / (-12 - settings.absoluteFloorDb),
+    ));
+    if (normalized <= 0) return;
+    const centerX = width * 0.5;
+    const centerY = height * 0.48;
+    const radius = Math.min(width, height)
+        * (0.09 + normalized * 0.2)
+        * (settings.zoomPercent / 100);
+    const alpha = normalized * frame.confidence * decay;
+    const glow = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+    glow.addColorStop(0, rgba(palette.core, alpha * 0.8));
+    glow.addColorStop(0.34, rgba(palette.low, alpha * 0.42));
+    glow.addColorStop(1, rgba(palette.mid, 0));
+    context.fillStyle = glow;
+    context.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
 }
 
 function endpoint(

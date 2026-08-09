@@ -46,9 +46,18 @@ and perspective-biased outer tips that broaden and brighten toward the camera.
 An activated harmonic increases its leaf's motion and local glow; it never
 moves the center or the camera.
 
-The laboratory currently offers three renderers over the same analysis frame:
+The laboratory offers diagnostic workloads and three full renderers over the
+same analysis frame:
 
-- **Harmonic radial series** is the default full-bank view. Every selected
+- **Analysis only** keeps the complete client audio-analysis workload active
+  while omitting scene calculation and Canvas entirely. If direct playback is
+  clean but this mode crackles, client analysis/rerouting is implicated and the
+  renderer is not the cause.
+- **Minimal pulse** draws one fixed measured-level halo at two analysis/render
+  frames per second. It skips harmonic scene construction, trails, cloth
+  geometry and ribbons. This is the lowest-cost client-reactive candidate.
+
+- **Harmonic radial series** is a full-bank view. Every selected
   harmonic is a concentric band at a position proportional to its identity in
   the complete measurable series. A convex radial projection keeps the low
   bank compact and progressively increases spacing through the upper bank.
@@ -72,6 +81,13 @@ visual controls never rebuilds the audio graph. Zoom ranges from a distant 50%
 view to a close 220% view around the fixed center. FFT size and baseline duration
 remain analysis-session controls and therefore require Stop before changing
 them.
+
+The staging diagnostic order is: reactive field off (native/direct baseline),
+Analysis only, Minimal pulse, then a full field. Analysis only staying clean
+while a drawn mode crackles points to scene/Canvas pressure. Analysis only
+crackling while direct mode stays clean points to the client Web Audio analysis
+path; that result is sufficient reason to evaluate the renderer-neutral frame
+contract with server-side analysis.
 
 ## Audio boundary
 

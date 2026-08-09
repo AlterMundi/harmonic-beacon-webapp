@@ -139,6 +139,8 @@ describe('reactive campfire components', () => {
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Harmonic radial series');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Radial ribbons');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Horizon flow');
+        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Analysis only · no Canvas');
+        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Minimal pulse · 2 fps');
         fireEvent.change(screen.getByLabelText('Visualization'), {
             target: { value: 'horizon-flow' },
         });

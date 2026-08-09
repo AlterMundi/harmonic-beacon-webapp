@@ -20,6 +20,7 @@ const analysisHarness = vi.hoisted(() => ({
         };
         start: ReturnType<typeof vi.fn>;
         setActiveSource: ReturnType<typeof vi.fn>;
+        setFramesPerSecond: ReturnType<typeof vi.fn>;
         pauseAnalysis: ReturnType<typeof vi.fn>;
         stop: ReturnType<typeof vi.fn>;
         emitAnalysisFailure(): void;
@@ -36,6 +37,7 @@ vi.mock('@/lib/listener/analysis', async (importOriginal) => {
         }) => void) | null = null;
         start = vi.fn().mockImplementation(() => Promise.resolve(analysisHarness.startResult));
         setActiveSource = vi.fn().mockReturnValue({ ok: true });
+        setFramesPerSecond = vi.fn().mockReturnValue({ ok: true });
         pauseAnalysis = vi.fn();
         resumeAnalysis = vi.fn().mockReturnValue({ ok: true });
         subscribe = vi.fn().mockReturnValue(() => undefined);
@@ -180,6 +182,57 @@ describe('EarlyBird Listener player', () => {
         Object.defineProperty(englishIntro, 'ended', { value: true, configurable: true });
         fireEvent.ended(englishIntro);
         expect(analysis.setActiveSource).toHaveBeenLastCalledWith('beacon');
+    });
+
+    it('isolates analysis from rendering and can reduce the running workload to a minimal pulse', async () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+            .mockReturnValue({} as CanvasRenderingContext2D);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=diagnostic&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        )));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Reactive field · experimental' }));
+        fireEvent.change(screen.getByLabelText('Visualization'), {
+            target: { value: 'analysis-only' },
+        });
+        expect(screen.queryByTestId('listener-reactive-field')).toBeNull();
+        expect(screen.getByText(/Full audio analysis stays active/)).toBeInTheDocument();
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(analysisHarness.instances).toHaveLength(1));
+        const provider = analysisHarness.instances[0];
+        expect(provider.options.framesPerSecond).toBe(30);
+
+        fireEvent.change(screen.getByLabelText('Visualization'), {
+            target: { value: 'minimal-pulse' },
+        });
+        await waitFor(() => expect(screen.getByTestId('listener-reactive-field')).toBeInTheDocument());
+        expect(screen.getByText(/One measured level halo at 2 fps/)).toBeInTheDocument();
+        expect(provider.setFramesPerSecond).toHaveBeenLastCalledWith(2);
     });
 
     it('remounts the untouched direct player when Canvas 2D is unavailable', async () => {

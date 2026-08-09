@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import type { HarmonicAnalysisFrame } from '@/lib/listener/analysis/types';
 
-import { drawReactiveCampfire } from './draw';
+import { drawMinimalReactivePulse, drawReactiveCampfire } from './draw';
 import {
     advanceReactiveFrame,
     createReactiveFrameState,
@@ -62,6 +62,11 @@ export function ReactiveCampfireCanvas({
     }, [onRendererError]);
 
     const recordFrame = useCallback((nextFrame: HarmonicAnalysisFrame | null) => {
+        if (settingsRef.current.visualizationMode === 'minimal-pulse') {
+            frameStateRef.current.currentFrame = nextFrame;
+            wakeRef.current?.();
+            return;
+        }
         recordReactiveFrame(frameStateRef.current, nextFrame, settingsRef.current);
         wakeRef.current?.();
     }, []);
@@ -107,7 +112,6 @@ export function ReactiveCampfireCanvas({
             && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const saveData = Boolean((navigator as NavigatorWithConnection).connection?.saveData);
         const policy = resolveReactiveRenderPolicy({ reducedMotion, saveData });
-        const intervalMs = policy.frameIntervalMs;
         if (modeRef.current === 'stopped') stoppedAtRef.current = performance.now();
         let animationFrame: number | null = null;
         let lastPaintAt = Number.NEGATIVE_INFINITY;
@@ -127,6 +131,18 @@ export function ReactiveCampfireCanvas({
             const decay = modeRef.current === 'active'
                 ? 1
                 : Math.max(0, 1 - stoppedFor / STOP_DECAY_MS);
+            if (settingsRef.current.visualizationMode === 'minimal-pulse') {
+                drawMinimalReactivePulse(
+                    context,
+                    width,
+                    height,
+                    frameStateRef.current.currentFrame,
+                    settingsRef.current,
+                    decay,
+                );
+                return;
+            }
+            const intervalMs = policy.frameIntervalMs;
             const renderingFrame = advanceReactiveFrame(
                 frameStateRef.current,
                 now,
@@ -146,6 +162,9 @@ export function ReactiveCampfireCanvas({
         const tick = (now: number) => {
             animationFrame = null;
             if (document.visibilityState === 'hidden' || rendererFailed) return;
+            const intervalMs = settingsRef.current.visualizationMode === 'minimal-pulse'
+                ? 500
+                : policy.frameIntervalMs;
             if (now - lastPaintAt >= intervalMs) {
                 lastPaintAt = now;
                 try {

@@ -1,5 +1,7 @@
 export const REACTIVE_PALETTES = ['ember', 'aurora', 'moon'] as const;
 export const REACTIVE_VISUALIZATION_MODES = [
+    'analysis-only',
+    'minimal-pulse',
     'harmonic-radial-series',
     'radial-ribbons',
     'horizon-flow',

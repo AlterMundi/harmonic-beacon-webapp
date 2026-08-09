@@ -65,10 +65,13 @@ export const LISTENER_PLAYBACK_PRESENCE_EVENT = 'listener:playback-presence';
 export function resolveListenerAnalysisFramesPerSecond({
     reducedMotion,
     saveData,
+    minimal = false,
 }: {
     reducedMotion: boolean;
     saveData: boolean;
+    minimal?: boolean;
 }): number {
+    if (minimal) return 2;
     return resolveReactiveRenderPolicy({ reducedMotion, saveData }).conservative ? 2 : 30;
 }
 
@@ -296,6 +299,7 @@ function ListenerPlayerController({
                     framesPerSecond: resolveListenerAnalysisFramesPerSecond({
                         reducedMotion,
                         saveData,
+                        minimal: reactiveSettings.visualizationMode === 'minimal-pulse',
                     }),
                 });
             } catch {
@@ -338,8 +342,24 @@ function ListenerPlayerController({
         reactiveRendererAvailable,
         reactiveSettings.baselineDurationSeconds,
         reactiveSettings.fftSize,
+        reactiveSettings.visualizationMode,
         reactiveVisualizationEnabled,
     ]);
+
+    useEffect(() => {
+        const provider = analysisProvider.current;
+        if (!provider) return;
+        const reducedMotion = typeof window.matchMedia === 'function'
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const saveData = Boolean((navigator as Navigator & {
+            connection?: { saveData?: boolean };
+        }).connection?.saveData);
+        provider.setFramesPerSecond(resolveListenerAnalysisFramesPerSecond({
+            reducedMotion,
+            saveData,
+            minimal: reactiveSettings.visualizationMode === 'minimal-pulse',
+        }));
+    }, [reactiveSettings.visualizationMode]);
 
     useEffect(() => () => {
         analysisFrameUnsubscribe.current?.();
@@ -1473,7 +1493,9 @@ function ListenerPlayerController({
 
     return (
         <div className="listener-experience" data-phase={phase}>
-            {reactiveVisualizationEnabled && reactiveRendererAvailable && (
+            {reactiveVisualizationEnabled
+                && reactiveRendererAvailable
+                && reactiveSettings.visualizationMode !== 'analysis-only' && (
                 <div className="listener-reactive-field" data-testid="listener-reactive-field">
                     <ReactiveCampfireCanvas
                         subscribeFrames={subscribeReactiveFrames}
