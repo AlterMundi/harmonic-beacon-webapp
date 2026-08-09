@@ -30,26 +30,6 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 providers={{ google: true, apple: true }}
                 emailMagicLinkAvailable={false}
                 syntheticTeamEntryAvailable={false}
-                freeWindow={{
-                    configured: false,
-                    active: false,
-                    timeZone: null,
-                    localStartMinute: null,
-                    selectedAt: null,
-                    changeAllowedAt: null,
-                    canChange: true,
-                    activeStart: null,
-                    activeEnd: null,
-                    nextStart: null,
-                    nextEnd: null,
-                }}
-                welcome={{
-                    available: false,
-                    active: false,
-                    used: false,
-                    startedAt: null,
-                    endsAt: null,
-                }}
                 membership={{ kind: 'none', state: 'none' }}
                 serverNow="2026-08-07T15:00:00.000Z"
                 {...overrides}
@@ -156,14 +136,11 @@ describe('EarlyBird public landing', () => {
         renderLanding({
             signedIn: kind === 'access',
             serviceUnavailable: kind,
-            freeWindow: null,
-            welcome: null,
         });
 
         expect(screen.getByRole('alert')).toHaveTextContent(detail);
         expect(screen.getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/listener');
-        expect(screen.queryByRole('heading', { name: 'Your first listen · 30 minutes' })).toBeNull();
-        expect(screen.queryByRole('heading', { name: 'Your daily time · 2 hours' })).toBeNull();
+        expect(screen.queryByText(/daily time|first listen/i)).toBeNull();
         expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
         expect(screen.queryByLabelText('Email address')).toBeNull();
     });
@@ -178,29 +155,27 @@ describe('EarlyBird public landing', () => {
         expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
     });
 
-    it('offers the one-time welcome listen without selecting a recurring schedule', async () => {
-        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('{}', { status: 409 }));
+    it('shows the server-supplied weekly quota without a schedule or welcome action', () => {
         renderLanding({
             signedIn: true,
             providers: { google: true, apple: false },
-            welcome: {
-                available: true,
-                active: false,
-                used: false,
-                startedAt: null,
-                endsAt: null,
+            quota: {
+                policy: 'personal-7-day-v1',
+                status: 'available',
+                cycleStartedAt: '2026-08-07T15:00:00.000Z',
+                cycleEndsAt: '2026-08-14T15:00:00.000Z',
+                baseAllowanceMs: 10_800_000,
+                bonusAllowanceMs: 0,
+                consumedMs: 1_140_000,
+                remainingMs: 9_660_000,
+                activelyConsuming: false,
+                exhaustsAt: '2026-08-07T17:41:00.000Z',
+                nextCycleAt: '2026-08-14T15:00:00.000Z',
             },
         });
 
-        expect(screen.getByRole('heading', { name: 'Your first listen · 30 minutes' })).toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: 'Your daily time · 2 hours' })).toBeInTheDocument();
-        await userEvent.click(screen.getByRole('button', { name: 'Listen now' }));
-
-        expect(fetchMock).toHaveBeenCalledWith('/api/listener/welcome-access', expect.objectContaining({
-            method: 'POST',
-        }));
-        expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('activationRequestId');
-        fetchMock.mockRestore();
+        expect(screen.getByText('You have 2h 41m left this week')).toBeInTheDocument();
+        expect(screen.queryByText(/daily time|first listen/i)).toBeNull();
     });
 
     it('explains terminal Founder access and returns the account to truthful Free choices', () => {
@@ -215,7 +190,7 @@ describe('EarlyBird public landing', () => {
         expect(screen.getByRole('status')).toHaveTextContent(
             'You can continue with the Free listening available to your account.',
         );
-        expect(screen.getByRole('heading', { name: 'Your daily time · 2 hours' })).toBeInTheDocument();
+        expect(screen.queryByText(/daily time|first listen/i)).toBeNull();
         expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
     });
 

@@ -9,29 +9,32 @@ import type { ListenerMembershipPresentation } from '@/lib/early-birds/membershi
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import ListenerPlayer from './ListenerPlayer';
-import AccessBoundarySync from './AccessBoundarySync';
 import CosmicCampfire from './CosmicCampfire';
+import FreeQuotaStatus from './FreeQuotaStatus';
+import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
 export default function EarlyBirdHome({
     displayName,
     membership,
     accessKind = 'membership',
-    accessUntil = null,
     serverNow = new Date(0).toISOString(),
     dropIns,
     publicAccess = false,
     campfirePrototype = false,
     campfireFixture = 'empty',
+    quota = null,
 }: {
     displayName: string;
     membership: ListenerMembershipPresentation;
-    accessKind?: 'membership' | 'free-window' | 'welcome';
+    accessKind?: 'membership' | 'free-quota' | 'free-window' | 'welcome';
+    /** Retained temporarily so this UI commit remains rebaseable over the legacy page. */
     accessUntil?: string | null;
     serverNow?: string;
     dropIns: { es: string | null; en: string | null };
     publicAccess?: boolean;
     campfirePrototype?: boolean;
     campfireFixture?: ListenerCampfireFixture;
+    quota?: SerializedEarlyBirdQuotaSnapshot | null;
 }) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
@@ -45,30 +48,29 @@ export default function EarlyBirdHome({
     return (
         <main className="listener-shell">
             {campfirePrototype && <CosmicCampfire fixture={campfireFixture} />}
-            {accessKind !== 'membership' && (
-                <AccessBoundarySync
-                    expectedKind={accessKind}
-                    boundaryAt={accessUntil}
-                    serverNow={serverNow}
-                />
-            )}
             <div className="listener-shell__frame">
                 <header className="listener-rail">
                     <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
                     <div className="listener-rail__actions">
+                        {publicAccess && (
+                            <FreeQuotaStatus serverNow={serverNow} unlimited="free-for-all" compact />
+                        )}
                         {!publicAccess && <details className="listener-account">
                             <summary aria-label={copy.account} title={copy.account}>
                                 {displayName.slice(0, 1).toUpperCase()}
                             </summary>
                             <div className="listener-account__menu">
                                 <p>{displayName}</p>
-                                <span>{accessKind === 'free-window'
-                                    ? copy.freeActive
-                                    : accessKind === 'welcome'
-                                        ? copy.welcomeActive
-                                        : membershipCopy?.title ?? copy.active}</span>
+                                {accessKind === 'free-quota' ? (
+                                    <FreeQuotaStatus snapshot={quota} serverNow={serverNow} compact />
+                                ) : (
+                                    <span>{membershipCopy?.title ?? copy.active}</span>
+                                )}
                                 {accessKind === 'membership' && membership.kind === 'founder' && membershipCopy?.detail && (
                                     <small>{membershipCopy.detail}</small>
+                                )}
+                                {accessKind === 'membership' && membership.kind === 'founder' && (
+                                    <FreeQuotaStatus serverNow={serverNow} unlimited="membership" compact />
                                 )}
                                 <button type="button" onClick={signOut}>{copy.signOut}</button>
                             </div>

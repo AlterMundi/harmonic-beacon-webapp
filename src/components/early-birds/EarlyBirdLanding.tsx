@@ -6,16 +6,13 @@ import BrandLockup from '@/components/brand/BrandLockup';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
-import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-window';
-import type { SerializedEarlyBirdWelcomeAccessState } from '@/lib/early-birds/welcome-access';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
-import AccessBoundarySync from './AccessBoundarySync';
 import BeaconField from './BeaconField';
-import FreeWindowSetup from './FreeWindowSetup';
+import FreeQuotaStatus from './FreeQuotaStatus';
 import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
-import WelcomeAccessAction from './WelcomeAccessAction';
+import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
 type Props = {
     signedIn: boolean;
@@ -26,8 +23,10 @@ type Props = {
     providers: { google: boolean; apple: boolean };
     emailMagicLinkAvailable: boolean;
     syntheticTeamEntryAvailable: boolean;
-    freeWindow: SerializedEarlyBirdFreeWindowState | null;
-    welcome: SerializedEarlyBirdWelcomeAccessState | null;
+    /** Legacy props are retained only until the quota backend lands. */
+    freeWindow?: unknown;
+    welcome?: unknown;
+    quota?: SerializedEarlyBirdQuotaSnapshot | null;
     membership: ListenerMembershipPresentation;
     serverNow: string;
 };
@@ -92,13 +91,6 @@ export default function EarlyBirdLanding(props: Props) {
 
     return (
         <main className="listener-shell listener-shell--public">
-            {props.signedIn && props.freeWindow?.nextStart && (
-                <AccessBoundarySync
-                    expectedKind="denied"
-                    boundaryAt={props.freeWindow.nextStart}
-                    serverNow={props.serverNow}
-                />
-            )}
             <div className="listener-shell__frame">
                 <header className="listener-rail">
                     <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
@@ -159,7 +151,7 @@ export default function EarlyBirdLanding(props: Props) {
                                     </button>
                                 )}
                             </div>
-                        ) : props.signedIn && props.freeWindow && props.welcome ? (
+                        ) : props.signedIn ? (
                             <div className="space-y-5">
                                 <p className="text-sm text-[var(--text-secondary)]">{copy.signedIn}</p>
                                 {props.entitled ? (
@@ -178,8 +170,10 @@ export default function EarlyBirdLanding(props: Props) {
                                                 {membership.detail && <p>{membership.detail}</p>}
                                             </div>
                                         )}
-                                        {props.welcome.available && <WelcomeAccessAction />}
-                                        <FreeWindowSetup state={props.freeWindow} />
+                                        <FreeQuotaStatus
+                                            snapshot={props.quota}
+                                            serverNow={props.serverNow}
+                                        />
                                     </>
                                 )}
                                 <button

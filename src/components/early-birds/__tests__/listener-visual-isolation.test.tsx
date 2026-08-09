@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LocaleProvider } from '@/context/LocaleContext';
-import type { SerializedEarlyBirdFreeWindowState } from '@/lib/early-birds/free-window';
 
 const refresh = vi.hoisted(() => vi.fn());
 const signInSocial = vi.hoisted(() => vi.fn());
@@ -23,25 +22,10 @@ vi.mock('@/components/brand/BrandLockup', () => ({
 import EarlyBirdLanding from '../EarlyBirdLanding';
 import EarlyBirdUnavailable from '../EarlyBirdUnavailable';
 import FreeInvitationRedeemer from '../FreeInvitationRedeemer';
-import FreeWindowSetup from '../FreeWindowSetup';
+import FreeQuotaStatus from '../FreeQuotaStatus';
 import SyntheticTeamEntryForm from '../SyntheticTeamEntryForm';
-import WelcomeAccessAction from '../WelcomeAccessAction';
 
 const EVENT_VISUAL_CLASS = /event-(shell|button|alert|field|card)/;
-
-const emptyFreeWindow: SerializedEarlyBirdFreeWindowState = {
-    configured: false,
-    active: false,
-    timeZone: null,
-    localStartMinute: null,
-    selectedAt: null,
-    changeAllowedAt: null,
-    canChange: true,
-    activeStart: null,
-    activeEnd: null,
-    nextStart: null,
-    nextEnd: null,
-};
 
 function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdLanding>> = {}) {
     return render(
@@ -55,8 +39,6 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 providers={{ google: true, apple: true }}
                 emailMagicLinkAvailable={false}
                 syntheticTeamEntryAvailable={false}
-                freeWindow={emptyFreeWindow}
-                welcome={{ available: false, active: false, used: false, startedAt: null, endsAt: null }}
                 membership={{ kind: 'none', state: 'none' }}
                 serverNow="2026-08-07T15:00:00.000Z"
                 {...overrides}
@@ -116,31 +98,29 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         expect(alert).toHaveClass('listener-alert', 'listener-alert--danger');
     });
 
-    it('Free schedule errors surface through the styled listener error alert variant', async () => {
+    it('weekly quota uses only listener-scoped presentation classes', () => {
         render(
-            <LocaleProvider initialLocale="en"><FreeWindowSetup state={emptyFreeWindow} /></LocaleProvider>,
+            <LocaleProvider initialLocale="en">
+                <FreeQuotaStatus
+                    serverNow="2026-08-07T15:00:00.000Z"
+                    snapshot={{
+                        policy: 'personal-7-day-v1',
+                        status: 'available',
+                        cycleStartedAt: '2026-08-07T15:00:00.000Z',
+                        cycleEndsAt: '2026-08-14T15:00:00.000Z',
+                        baseAllowanceMs: 10_800_000,
+                        bonusAllowanceMs: 0,
+                        consumedMs: 0,
+                        remainingMs: 10_800_000,
+                        activelyConsuming: false,
+                        exhaustsAt: null,
+                        nextCycleAt: '2026-08-14T15:00:00.000Z',
+                    }}
+                />
+            </LocaleProvider>,
         );
-
-        const primary = await waitFor(() => screen.getByRole('button', { name: 'Listen free now' }));
-        expect(primary).toHaveClass('listener-button', 'listener-button--primary');
-        expect(screen.getByRole('button', { name: 'Choose another time' }))
-            .toHaveClass('listener-button', 'listener-button--secondary');
-
-        await userEvent.click(primary);
-        const alert = await screen.findByRole('alert');
-        // `event-alert--error` never had a rule; the listener-scoped variant does.
-        expect(alert).toHaveClass('listener-alert', 'listener-alert--error');
-    });
-
-    it('welcome access errors surface through the styled listener error alert variant', async () => {
-        render(<LocaleProvider initialLocale="es"><WelcomeAccessAction /></LocaleProvider>);
-
-        const action = screen.getByRole('button', { name: 'Escuchar ahora' });
-        expect(action).toHaveClass('listener-button', 'listener-button--primary');
-
-        await userEvent.click(action);
-        const alert = await screen.findByRole('alert');
-        expect(alert).toHaveClass('listener-alert', 'listener-alert--error');
+        expect(screen.getByText('You have 3h left this week').parentElement)
+            .toHaveClass('listener-quota');
     });
 
     it('the staging team entry form uses listener fields, alert and button classes only', async () => {
