@@ -5,6 +5,6 @@
   "external_subscription_id": "sandbox_paypal_0123456789abcdef01234567",
   "approval_url": "https://sandbox.invalid/paypal/sandbox_paypal_0123456789abcdef01234567",
   "currency": "USD",
-  "amount_minor": 200,
+  "amount_minor": 500,
   "sandbox": true
 }

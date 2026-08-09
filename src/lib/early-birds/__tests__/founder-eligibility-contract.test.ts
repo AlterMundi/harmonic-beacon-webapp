@@ -59,7 +59,7 @@ describe('canonical Founder membership read v2', () => {
             ...active,
             founder_price_eligibility: {
                 ...(active.founder_price_eligibility as object),
-                canonical_price: { currency: 'ARS', amount_minor: 200 },
+                canonical_price: { currency: 'ARS', amount_minor: 500 },
             },
         }],
         ['wrong amount', {

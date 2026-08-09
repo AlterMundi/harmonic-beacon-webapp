@@ -12,7 +12,7 @@ const postgres = process.env.LISTENER_TEST_DATABASE_URL ? describe : describe.sk
 const accountIds = ['listener-founder-pg-identical', 'listener-founder-pg-conflict'];
 const eligibility: FounderPriceEligibility = {
     offer: { code: 'EARLY_BIRDS_FOUNDERS_V1', revision: 1 },
-    canonical_price: { currency: 'USD', amount_minor: 200 },
+    canonical_price: { currency: 'USD', amount_minor: 500 },
     billing_period: 'MONTHLY',
     granted_at: '2026-08-06T12:00:00Z',
 };

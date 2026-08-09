@@ -29,7 +29,7 @@ function result(provider: 'paypal' | 'mercado_pago', overrides: Record<string, u
             ? 'https://www.sandbox.paypal.com/checkoutnow?token=test'
             : 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=test',
         currency: provider === 'paypal' ? 'USD' : 'ARS',
-        amount_minor: provider === 'paypal' ? 200 : 250000,
+        amount_minor: provider === 'paypal' ? 500 : 250000,
         sandbox: true,
         ...overrides,
     };

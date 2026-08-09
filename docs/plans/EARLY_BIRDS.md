@@ -56,7 +56,7 @@ change has passed its own audio and operational acceptance.
 | Favor continuity over low latency in the Listener | Accepted | Desktop HLS stays about five segments behind the edge with a 60-second target buffer; Stop and a later Listen rejoin the current configured edge. |
 | Keep intros private | Accepted | Intro progress is device-local. The live stream runs muted underneath and is revealed at the handoff; this is not a realtime mix or crossfader. |
 | Separate ordinary Free from canonical membership | Accepted | Registered Free is a server-authoritative, metered weekly allowance that never fabricates membership or Purchase; canonical memberships/invitations and Free for All remain non-metered. |
-| Preserve the Founder price for life | Accepted | First canonical paid activation grants the opaque account a lifetime right to the USD 2/month founder offer; cancellation ends access but not that price eligibility. |
+| Preserve the Founder price for life | Accepted | First canonical paid activation grants the opaque account a lifetime right to the USD 5/month founder offer; cancellation ends access but not that price eligibility. |
 | Launch Free before paid providers | Accepted | Human acceptance of the complete Free flow is a hard gate before PayPal or MercadoPago can be enabled. Both providers remain disabled by default. |
 | Defer app-store distribution | Accepted | Google Play and Apple App Store wrappers and billing are post-MVP work; the provider-neutral membership authority must leave room for them without making them a launch dependency. |
 | Design for 3,000 concurrent listeners | Accepted | Expand at 4,000 and treat 5,000 as critical; alerts use measured network, CPU, memory, origin and canary health. |
@@ -428,7 +428,7 @@ revocable and valid indefinitely until consumed or revoked. They work in
 staging and production. Upgrading Free to paid consumes the free grant so two
 independent memberships cannot remain active.
 
-"Founder price locked for life" is not a boolean. It is a versioned USD 2/month
+"Founder price locked for life" is not a boolean. It is a versioned USD 5/month
 offer grant recording amount/currency, first canonical paid activation and the
 opaque account that owns the durable eligibility. Voluntary cancellation
 preserves access through paid-through time and then ends active access, but the
@@ -439,7 +439,7 @@ invent or erase commercial evidence.
 
 PayPal and MercadoPago both implement the same contract. MercadoPago charges an
 ARS equivalent derived from the BCRA A3500 reference rate, locks the renewal
-amount 72 hours before collection, displays both USD 2 and the locked ARS
+amount 72 hours before collection, displays both USD 5 and the locked ARS
 amount, and retains the previous valid amount when the rate source is
 unavailable. No provider is enabled for real EarlyBird charges until Nico
 approves the exact offer and its sandbox lifecycle passes end to end.
@@ -473,6 +473,8 @@ The webapp vendors byte-exact copies of the canonical backend contracts under
   runtime authority contract instead of requiring an unused prefix. The
   provider remains TEST-only and disabled by default; the checkout surface is
   exact-host staging-only and absent from the public Listener edge.
+  The canonical Founder price and all shared contract bytes advance to USD 5
+  in backend PR #59 / `cad4eded2e08ee46da49e54ee94e1ab8601d9495`.
   Mandatory external gate before any paid activation: real Mercado Pago TEST
   proof that `/preapproval/search?q=hb_<external_reference>` returns the exact
   created preapproval.
@@ -661,10 +663,15 @@ event sound and reliability are at least as good as the current path.
 
 ## 15. Frozen decisions
 
+The earlier USD 2 value was an unreleased experiment. There are no real subscribers to migrate or
+grandfather, so the USD 5 migration replaces it rather than introducing a second offer. After that
+forward-only migration is applied, operational rollback is provider kill-switch plus roll-forward;
+an older USD 2 binary is not a valid rollback target.
+
 | ID | Accepted decision |
 |---|---|
 | D1 | `EarlyBirds` remains the implementation branch/milestone; public Listener is `listen.harmonicbeacon.com/`, staging migrates to `listen-staging.harmonicbeacon.com`, legacy `/early-birds` paths redirect during cutover, and origin remains `stream.harmonicbeacon.com`. |
-| D2 | USD 2/month founder offer; first canonical paid activation grants lifetime account-bound price eligibility; voluntary cancellation ends access after paid-through but a later reactivation retains that price; 14-day involuntary grace; refund/dispute/admin revoke access immediately. |
+| D2 | USD 5/month founder offer; first canonical paid activation grants lifetime account-bound price eligibility; voluntary cancellation ends access after paid-through but a later reactivation retains that price; 14-day involuntary grace; refund/dispute/admin revoke access immediately. |
 | D3 | Google and Apple through exact stable Better Auth, plus an optional passwordless email magic-link fallback through the existing private mail authority; no Facebook and no implicit account linking. |
 | D4 | Provider-neutral Free, PayPal and MercadoPago grants; Free is single-use, signed, auditable, revocable and consumed by paid upgrade. |
 | D5 | Source-neutral “continuous Beacon stream” wording; never claim whether the source is an instrument, a file or another origin. |
