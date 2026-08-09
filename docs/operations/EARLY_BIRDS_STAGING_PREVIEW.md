@@ -1,21 +1,38 @@
 # EarlyBirds isolated staging runtime
 
-## Planned weekly-Free cutover — not yet deployed
+## 2026-08-08 weekly-Free Listener release
 
-The staging evidence below, including release `20406da`, records the prior
-daily-schedule and welcome-access policy. It does not prove or deploy the
-planned weekly-Free cutover.
+The isolated public Listener runs application SHA
+`808bf0e8fabfaec0b7ee6396fa078739f68f73d4`, image
+`harmonic-beacon/earlybirds-preview-listener:808bf0e` and schema
+`20260808160000_listener_weekly_quota`. Operational smoke head is `8444ed7`.
+Free for All is OFF.
 
-The planned policy is three hours per registered account in a fixed seven-day
-cycle, anchored at first real authorized playback, with no base rollover and
-server-time metering. Concurrent devices consume their listening union once;
-intro and Beacon count; Stop/disconnect are bounded by leases. Active canonical
-membership/invitation and FFA are unlimited/non-metered. Discretionary credit
-uses auditable, idempotent grants with immutable facts, monotonic consumed
-totals and optional expiry. Legacy schedule and
-welcome tables remain retained but retired from authorization. After migration,
-rollback is stop/kill-switch and a roll-forward repair, never activation of the
-old authorization rules.
+- Each registered Free account has three hours in a fixed seven-day cycle,
+  anchored at its first real authorized playback. There is no rollover,
+  separate welcome grant, daily schedule, timezone or DST authority.
+- Concurrent devices consume their listening union once. Intro and Beacon both
+  count. Generation-bound leases, monotonic presence sequence, Stop and bounded
+  expiry enforce the server-owned balance.
+- Active membership and FFA are unlimited/non-metered. Additional time uses
+  server-only, idempotent grants with immutable facts, monotonic consumed totals
+  and optional expiry.
+- Pre-release daily/welcome APIs are absent and return 404. Their old database
+  rows are inert migration history and are never read for authorization.
+- Existing accounts begin a fresh cycle only on their first Free playback after
+  this deployment; prior experimental usage is not deducted.
+- Local and CI gates passed: 1,396 tests with 28 standard skips, TypeScript,
+  ESLint, production build, Prisma, PostgreSQL transaction tests, preview,
+  origin and frozen-audio checks.
+- Runtime smoke proved a three-hour virgin balance, first-play anchor, exact
+  seven-day cycle, third-device eviction and a generation-bound manifest.
+- `beacon-app` remained on `64634e94f21a0a0d60d0f5745c159fe224f2895b`
+  with the same container ID and zero restarts. The stream origin also retained
+  the same container ID and zero restarts.
+
+This is an experimental pre-release: previous Free-policy clients and binaries
+are unsupported. Recovery is Listener stop/kill-switch plus roll-forward repair;
+never restore daily-schedule or welcome authorization.
 
 ## 2026-08-08 public Listener convergence (historical previous release)
 
