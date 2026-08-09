@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    buildClothRibbonPoints,
-    buildToroidParallel,
-    buildToroidStructuralMeridian,
-} from '../draw';
+import { buildClothRibbonPoints } from '../draw';
 
 const geometry = {
     start: [10, 20] as const,
@@ -65,87 +61,5 @@ describe('reactive cloth ribbons', () => {
 
         expect(quietDistance).toBeGreaterThan(0);
         expect(activeDistance).toBeGreaterThan(quietDistance * 3);
-    });
-});
-
-describe('toroid harmonic parallels', () => {
-    const toroid = {
-        centerY: 300,
-        innerRadius: 70,
-        outerRadius: 250,
-        harmonicIndex: 21,
-        harmonicCount: 96,
-    };
-
-    it('maps higher harmonics onto progressively outer fisheye parallels', () => {
-        const low = buildToroidParallel({
-            ...toroid,
-            harmonicIndex: 3,
-            timeSeconds: 12,
-        });
-        const high = buildToroidParallel({
-            ...toroid,
-            harmonicIndex: 90,
-            timeSeconds: 12,
-        });
-
-        expect(high.radiusX).toBeGreaterThan(low.radiusX);
-        expect(high.radiusY).toBeGreaterThan(low.radiusY);
-        expect(high.centerY).toBeGreaterThan(low.centerY);
-    });
-
-    it('keeps radius and illuminated segment phase fixed while brightness can pulse', () => {
-        const first = buildToroidParallel({
-            ...toroid,
-            timeSeconds: 12,
-        });
-        const later = buildToroidParallel({
-            ...toroid,
-            timeSeconds: 13,
-        });
-
-        expect(later.radiusX).toBe(first.radiusX);
-        expect(later.radiusY).toBe(first.radiusY);
-        expect(later.centerY).toBe(first.centerY);
-        expect(later.dashOffset).toBe(first.dashOffset);
-        expect(later.pulse).not.toBe(first.pulse);
-    });
-
-    it('changes continuously rather than jumping between analysis frames', () => {
-        const first = buildToroidParallel({
-            ...toroid,
-            timeSeconds: 30,
-        });
-        const next = buildToroidParallel({
-            ...toroid,
-            timeSeconds: 30.02,
-        });
-
-        expect(Math.abs(next.radiusX - first.radiusX)).toBeLessThan(2);
-        expect(Math.abs(next.radiusY - first.radiusY)).toBeLessThan(2);
-        expect(Math.abs(next.pulse - first.pulse)).toBeLessThan(0.1);
-    });
-
-    it('adds fixed fisheye meridians only as structural guides', () => {
-        const back = buildToroidStructuralMeridian({
-            centerX: 400,
-            centerY: 300,
-            innerRadius: 70,
-            outerRadius: 250,
-            index: 0,
-            count: 24,
-        });
-        const front = buildToroidStructuralMeridian({
-            centerX: 400,
-            centerY: 300,
-            innerRadius: 70,
-            outerRadius: 250,
-            index: 12,
-            count: 24,
-        });
-
-        expect(back.start).not.toEqual(back.end);
-        expect(front.start).not.toEqual(front.end);
-        expect(front.frontness).toBeGreaterThan(back.frontness);
     });
 });

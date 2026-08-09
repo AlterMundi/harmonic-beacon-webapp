@@ -2,7 +2,6 @@ export const REACTIVE_PALETTES = ['ember', 'aurora', 'moon'] as const;
 export const REACTIVE_VISUALIZATION_MODES = [
     'radial-ribbons',
     'horizon-flow',
-    'toroid-parallels',
 ] as const;
 
 export type ReactivePalette = typeof REACTIVE_PALETTES[number];
@@ -17,7 +16,7 @@ export type ReactiveCampfireSettings = {
     trailSeconds: number;
     density: number;
     highDetail: number;
-    centerCutHarmonic: number;
+    centerCutPercent: number;
     ribbonWidth: number;
     palette: ReactivePalette;
     visualizationMode: ReactiveVisualizationMode;
@@ -33,7 +32,7 @@ export const DEFAULT_REACTIVE_CAMPFIRE_SETTINGS: Readonly<ReactiveCampfireSettin
     trailSeconds: 4,
     density: 1,
     highDetail: 0,
-    centerCutHarmonic: 16,
+    centerCutPercent: 20,
     ribbonWidth: 1.6,
     palette: 'ember',
     visualizationMode: 'radial-ribbons',
@@ -49,7 +48,7 @@ const LIMITS = {
     trailSeconds: [0, 4],
     density: [0.2, 1],
     highDetail: [0, 1],
-    centerCutHarmonic: [1, 128],
+    centerCutPercent: [0, 100],
     ribbonWidth: [0.6, 3],
 } as const;
 
@@ -102,10 +101,10 @@ export function validateReactiveCampfireSettings(
             fallback.highDetail,
             ...LIMITS.highDetail,
         ),
-        centerCutHarmonic: Math.round(clampFinite(
-            candidate?.centerCutHarmonic,
-            fallback.centerCutHarmonic,
-            ...LIMITS.centerCutHarmonic,
+        centerCutPercent: Math.round(clampFinite(
+            candidate?.centerCutPercent,
+            fallback.centerCutPercent,
+            ...LIMITS.centerCutPercent,
         )),
         ribbonWidth: clampFinite(
             candidate?.ribbonWidth,

@@ -43,20 +43,13 @@ moves the center or the camera.
 
 The laboratory currently offers two renderers over the same analysis frame:
 
-- **Radial ribbons** groups harmonics through a stable center and lets the
-  selected cut harmonic divide the inner field from the outer field.
+- **Radial ribbons** groups harmonics through a stable center. A true 0–100%
+  Center field control divides the complete measurable bank: 0% places every
+  harmonic in the outer ribbon field and 100% places every harmonic in the
+  center field, with no forced mixture at either extreme.
 - **Horizon flow** pours broad harmonic ribbons from fixed positions on a
   horizon. Harmonics below the cut stay closer to the center; upper harmonics
   fan farther outward.
-- **Toroid parallels** looks down through a fisheye lens into an otherwise
-  invisible toroidal surface. Each harmonic owns one concentric parallel: low
-  harmonics occupy the inner surface and higher harmonics progressively draw
-  the outer surface around the observer. Moving illuminated arc segments reveal
-  depth without a central light disk. A faint fixed meridian grid makes the
-  fisheye surface legible but carries no harmonic meaning; the parallels remain
-  the only audio-mapped dimension. Parallel radii and segment positions are
-  fixed; activation changes brightness and pulse only, never radial position or
-  circumferential phase.
 
 Changing renderer, cut harmonic, width, palette or other visual controls never
 rebuilds the audio graph. FFT size and baseline duration remain analysis-session

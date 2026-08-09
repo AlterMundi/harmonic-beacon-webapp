@@ -136,13 +136,14 @@ describe('reactive campfire components', () => {
         const fft = screen.getByLabelText('FFT size');
         expect(fft).toHaveTextContent('8192 · lighter');
         expect(fft).toHaveTextContent('16384 · more detail');
-        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Toroid parallels');
+        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Radial ribbons');
+        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Horizon flow');
         fireEvent.change(screen.getByLabelText('Visualization'), {
             target: { value: 'horizon-flow' },
         });
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
             visualizationMode: 'horizon-flow',
         }));
-        expect(screen.getByText(/H16 · 646.4 Hz/)).toBeInTheDocument();
+        expect(screen.getByText(/20% center · 80% outer/)).toBeInTheDocument();
     });
 });

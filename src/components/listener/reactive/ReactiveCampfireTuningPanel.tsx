@@ -39,7 +39,7 @@ const NUMBER_FIELDS: Array<{
     { key: 'trailSeconds', label: 'Upper trails', min: 0, max: 4, step: 0.1, suffix: ' s' },
     { key: 'density', label: 'Harmonic density', min: 0.2, max: 1, step: 0.05 },
     { key: 'highDetail', label: 'High detail', min: 0, max: 1, step: 0.05 },
-    { key: 'centerCutHarmonic', label: 'Center / outer cut', min: 1, max: 128, step: 1 },
+    { key: 'centerCutPercent', label: 'Center field', min: 0, max: 100, step: 1, suffix: '%' },
     { key: 'ribbonWidth', label: 'Ribbon width', min: 0.6, max: 3, step: 0.05 },
 ];
 
@@ -88,9 +88,13 @@ export function ReactiveCampfireTuningPanel({
                                 {settings[field.key]}{field.suffix}
                             </span>
                         </span>
-                        {field.key === 'centerCutHarmonic' && (
+                        {field.key === 'centerCutPercent' && (
                             <span className={styles.hint}>
-                                H{settings.centerCutHarmonic} · {(settings.centerCutHarmonic * 40.4).toFixed(1)} Hz
+                                {settings.centerCutPercent === 0
+                                    ? 'All outer ribbons'
+                                    : settings.centerCutPercent === 100
+                                        ? 'All center field'
+                                        : `${settings.centerCutPercent}% center · ${100 - settings.centerCutPercent}% outer`}
                             </span>
                         )}
                         <input
@@ -120,7 +124,6 @@ export function ReactiveCampfireTuningPanel({
                                 {{
                                     'radial-ribbons': 'Radial ribbons',
                                     'horizon-flow': 'Horizon flow',
-                                    'toroid-parallels': 'Toroid parallels',
                                 }[mode]}
                             </option>
                         ))}

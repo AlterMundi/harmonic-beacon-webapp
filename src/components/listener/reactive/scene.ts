@@ -61,7 +61,7 @@ export type ReactiveCampfireScene = {
         weight: number;
     }>;
     confidence: number;
-    centerCutHarmonic: number;
+    centerCutIndex: number;
     flowTimeSeconds: number;
 };
 
@@ -193,6 +193,11 @@ export function buildReactiveCampfireScene(
     const deltas = frame?.harmonicDeltaDb ?? new Float32Array();
     const indexes = selectHarmonicIndexes(harmonics.length, settings.density, settings.highDetail);
     const capturedAtMs = frame?.capturedAtMs ?? 0;
+    const centerCutIndex = Math.round(
+        harmonics.length * settings.centerCutPercent / 100,
+    );
+    const centerMix = settings.centerCutPercent / 100;
+    const outerMix = 1 - centerMix;
     const rings: ReactiveRing[] = [];
     const filaments: ReactiveFilament[] = [];
     const envelope = frame?.spectralEnvelopeDb ?? new Float32Array();
@@ -205,7 +210,7 @@ export function buildReactiveCampfireScene(
                 radius: 0.2 + (bandIndex / Math.max(1, envelope.length - 1)) * 0.7,
                 startAngle: seededUnit(bandIndex, 41) * Math.PI * 2,
                 arcLength: 0.18 + seededUnit(bandIndex, 43) * 0.38,
-                opacity: absolute * 0.16,
+                opacity: absolute * 0.16 * outerMix,
                 weight: 0.3 + absolute * 0.65,
             };
         },
@@ -214,10 +219,10 @@ export function buildReactiveCampfireScene(
     for (const index of indexes) {
         const absolute = absoluteEnergy(harmonics[index], settings.absoluteFloorDb) * confidence;
         const harmonicNumber = index + 1;
-        if (harmonicNumber <= settings.centerCutHarmonic) {
+        if (index < centerCutIndex) {
             rings.push({
                 harmonicIndex: index,
-                radius: 0.075 + (harmonicNumber / Math.max(1, settings.centerCutHarmonic)) * 0.24,
+                radius: 0.075 + (harmonicNumber / Math.max(1, centerCutIndex)) * 0.24,
                 eccentricity: 0.7 + seededUnit(index, 4) * 0.18,
                 rotation: (seededUnit(index, 8) - 0.5) * 0.55,
                 opacity: absolute * 0.72,
@@ -278,8 +283,8 @@ export function buildReactiveCampfireScene(
 
     return {
         core: {
-            radius: (0.035 + overall * 0.055) * confidence,
-            opacity: overall * 0.84 * confidence,
+            radius: (0.035 + overall * 0.055) * confidence * centerMix,
+            opacity: overall * 0.84 * confidence * centerMix,
             stereoOffset: 0,
             stereoWidth: clamp(frame?.stereoWidth ?? 0),
         },
@@ -287,7 +292,7 @@ export function buildReactiveCampfireScene(
         filaments,
         veils,
         confidence,
-        centerCutHarmonic: settings.centerCutHarmonic,
+        centerCutIndex,
         flowTimeSeconds: capturedAtMs / 1_000,
     };
 }

@@ -171,14 +171,27 @@ describe('reactive campfire scene', () => {
         expect(Math.abs(second.filaments[0].angle - first.filaments[0].angle)).toBeLessThan(0.01);
     });
 
-    it('uses the selected harmonic as the center / outer boundary', () => {
+    it('uses a true percentage of the complete bank as the center / outer boundary', () => {
         const scene = buildReactiveCampfireScene(
             frameWith(Array.from({ length: 64 }, () => -32)),
-            { centerCutHarmonic: 24 },
+            { centerCutPercent: 25 },
         );
 
-        expect(scene.rings.at(-1)?.harmonicIndex).toBe(23);
-        expect(scene.filaments[0]?.harmonicIndex).toBe(24);
-        expect(scene.centerCutHarmonic).toBe(24);
+        expect(scene.rings.at(-1)?.harmonicIndex).toBe(15);
+        expect(scene.filaments[0]?.harmonicIndex).toBe(16);
+        expect(scene.centerCutIndex).toBe(16);
+    });
+
+    it('allows pure outer and pure center fields at the percentage extremes', () => {
+        const frame = frameWith(Array.from({ length: 64 }, () => -32));
+        const allOuter = buildReactiveCampfireScene(frame, { centerCutPercent: 0 });
+        const allCenter = buildReactiveCampfireScene(frame, { centerCutPercent: 100 });
+
+        expect(allOuter.rings).toHaveLength(0);
+        expect(allOuter.filaments.length).toBeGreaterThan(0);
+        expect(allOuter.core.opacity).toBe(0);
+        expect(allCenter.filaments).toHaveLength(0);
+        expect(allCenter.rings.length).toBeGreaterThan(0);
+        expect(allCenter.veils.every((veil) => veil.opacity === 0)).toBe(true);
     });
 });
