@@ -55,14 +55,34 @@ if docker container inspect "$DEV_CONTAINER" >/dev/null 2>&1; then
     docker rm -f "$DEV_CONTAINER" >/dev/null
 fi
 
+runtime_args=()
+command_args=()
+if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ]; then
+    # Synthetic team entry is deliberately unavailable under NODE_ENV=development.
+    # Payment rehearsal therefore runs the exact built release artifact.
+    runtime_args=(-e NODE_ENV=production)
+    command_args=(node server.js)
+else
+    runtime_args=(
+        -e NODE_ENV=development
+        -e WATCHPACK_POLLING=true
+        -v "$REMOTE_SOURCE/src:/app/src:ro"
+        -v "$REMOTE_SOURCE/public:/app/public:ro"
+        -v "$REMOTE_SOURCE/next.config.ts:/app/next.config.ts:ro"
+        -v "$REMOTE_NEXT/next-env.d.ts:/app/next-env.d.ts"
+        -v "$REMOTE_SOURCE/postcss.config.mjs:/app/postcss.config.mjs:ro"
+        -v "$REMOTE_SOURCE/tsconfig.json:/app/tsconfig.json:ro"
+        -v "$REMOTE_NEXT:/app/.next"
+    )
+    command_args=(npm run dev -- --hostname 0.0.0.0 --port 3000)
+fi
+
 docker run -d \
     --name "$DEV_CONTAINER" \
     --restart unless-stopped \
     --init \
     --env-file "$env_file" \
-    -e NODE_ENV=development \
     -e NEXT_TELEMETRY_DISABLED=1 \
-    -e WATCHPACK_POLLING=true \
     -e BEACON_GIT_SHA=ui-dev \
     -e EARLY_BIRDS_ENABLED=1 \
     -e BEACON_LISTENER_ENABLED=1 \
@@ -71,16 +91,10 @@ docker run -d \
     -e BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED="$PREVIEW_PAYPAL_CHECKOUT" \
     --network earlybirds_preview_db_internal \
     -p 127.0.0.1:13001:3000 \
-    -v "$REMOTE_SOURCE/src:/app/src:ro" \
-    -v "$REMOTE_SOURCE/public:/app/public:ro" \
-    -v "$REMOTE_SOURCE/next.config.ts:/app/next.config.ts:ro" \
-    -v "$REMOTE_NEXT/next-env.d.ts:/app/next-env.d.ts" \
-    -v "$REMOTE_SOURCE/postcss.config.mjs:/app/postcss.config.mjs:ro" \
-    -v "$REMOTE_SOURCE/tsconfig.json:/app/tsconfig.json:ro" \
-    -v "$REMOTE_NEXT:/app/.next" \
     --volumes-from "$RELEASE_CONTAINER:ro" \
+    "${runtime_args[@]}" \
     "$image" \
-    npm run dev -- --hostname 0.0.0.0 --port 3000 >/dev/null
+    "${command_args[@]}" >/dev/null
 
 docker network connect earlybirds_preview_listener_egress "$DEV_CONTAINER"
 docker network connect earlybirds_authority_private "$DEV_CONTAINER"
