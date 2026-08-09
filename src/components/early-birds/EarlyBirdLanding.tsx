@@ -11,6 +11,7 @@ import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import BeaconField from './BeaconField';
 import FreeQuotaStatus from './FreeQuotaStatus';
+import FoundingListenerCheckout from './FoundingListenerCheckout';
 import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
 import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
@@ -26,6 +27,7 @@ type Props = {
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
     membership: ListenerMembershipPresentation;
     serverNow: string;
+    checkoutAvailability?: { paypal: boolean; mercadoPago: boolean };
 };
 
 export default function EarlyBirdLanding(props: Props) {
@@ -170,7 +172,15 @@ export default function EarlyBirdLanding(props: Props) {
                                         <FreeQuotaStatus
                                             snapshot={props.quota}
                                             serverNow={props.serverNow}
+                                            showMembershipLink={
+                                                !props.checkoutAvailability?.paypal
+                                                && !props.checkoutAvailability?.mercadoPago
+                                            }
                                         />
+                                        <FoundingListenerCheckout available={props.checkoutAvailability ?? {
+                                            paypal: false,
+                                            mercadoPago: false,
+                                        }} />
                                     </>
                                 )}
                                 <button

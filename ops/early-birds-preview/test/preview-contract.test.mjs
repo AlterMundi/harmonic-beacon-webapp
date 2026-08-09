@@ -31,6 +31,8 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['unsafe kill switch value', 'EARLY_BIRDS_ENABLED=true', /must be 0 or 1/],
     ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
     ['unsafe team-entry switch', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=true', /must be 0 or 1/],
+    ['unsafe PayPal checkout switch', 'BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED=true', /must be 0 or 1/],
+    ['unsafe Mercado Pago checkout switch', 'BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED=true', /must be 0 or 1/],
     ['wrong team-entry host', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=staging.example.invalid', /must be earlybirds-staging/],
     ['unreviewed GeoIP path', 'BEACON_LISTENER_GEOIP_HOST_PATH=/tmp/random.mmdb', /reviewed absolute July 2026/],
     ['non-synthetic secret', 'EARLY_BIRDS_AUTH_SECRET=not-a-real-but-long-enough-secret-value', /visibly synthetic/],
@@ -113,11 +115,13 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /EARLY_BIRDS_FREE_FOR_ALL: \$\{EARLY_BIRDS_FREE_FOR_ALL:-0\}/);
   assert.match(source, /EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: \$\{EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED: \$\{BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED:-0\}/);
+  assert.match(source, /BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED:-0\}/);
+  assert.match(source, /BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED:-0\}/);
   assert.match(source, /NODE_ENV: production/);
   assert.match(source, /preview_db:[\s\S]*internal: true/);
   assert.match(source, /listener_egress:/);
   assert.doesNotMatch(source, /livekit:|playlist-bot:|tapestry:/i);
-  assert.doesNotMatch(source, /paypal|mercadopago|checkout/i);
+  assert.doesNotMatch(source, /PAYPAL_(?:CLIENT|SECRET|PRODUCT|PLAN|WEBHOOK)|MERCADO_PAGO_(?:ACCESS_TOKEN|WEBHOOK_SECRET)|PAID_CHECKOUT_ENABLED/);
 
   const postgresBlock = source.slice(source.indexOf('  postgres:'), source.indexOf('\n  # Forward-only'));
   assert.doesNotMatch(postgresBlock, /ports:/, 'preview PostgreSQL must stay container-private');
@@ -168,7 +172,7 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   ]);
   const proxyTargets = [...combined.matchAll(/proxy_pass\s+([^;]+);/g)].map((match) => match[1]);
   assert.ok(proxyTargets.length >= 4);
-  assert.ok(proxyTargets.every((target) => /^http:\/\/127\.0\.0\.1:(13000|13001|18080)$/.test(target)));
+  assert.ok(proxyTargets.every((target) => /^http:\/\/127\.0\.0\.1:(13000|13001|18080|18876)$/.test(target)));
   assert.doesNotMatch(combined, /live\.harmonicbeacon\.com/);
   assert.match(app, /letsencrypt\/live\/earlybirds-staging\.harmonicbeacon\.com/);
   assert.match(stream, /letsencrypt\/live\/stream\.harmonicbeacon\.com/);
@@ -177,8 +181,8 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \^~ \/api\/early-birds\//);
   assert.equal(
     (app.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length,
-    7,
-    'server plus six sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
+    8,
+    'server plus seven sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
   );
   assert.equal(
     (listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length,
@@ -189,7 +193,28 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \/_next\/webpack-hmr \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Upgrade \$http_upgrade;[^}]*Connection "upgrade";/s);
   assert.match(app, /location \/_next\/static\/ \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
   assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
+  assert.match(app, /location = \/api\/listener\/checkout \{[^}]*access_log off;[^}]*client_max_body_size 512;[^}]*limit_req zone=listener_checkout burst=4 nodelay;[^}]*limit_req_status 429;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
+  assert.doesNotMatch(listener, /location = \/api\/listener\/checkout/);
   assert.match(app, /limit_req_zone \$binary_remote_addr zone=listener_visual_analysis:1m rate=20r\/s;/);
+  assert.match(app, /limit_req_zone \$binary_remote_addr zone=listener_payment_webhooks:1m rate=60r\/m;/);
+  assert.match(app, /limit_req_zone \$binary_remote_addr zone=listener_checkout:1m rate=6r\/m;/);
+  assert.match(app, /log_format listener_payment_webhook '[^']*\$request_method \$uri \$status[^']*';/);
+  assert.doesNotMatch(app, /log_format listener_payment_webhook[^\n]*(\$request_uri|\$args|\$query_string)/);
+  for (const provider of ['paypal', 'mercado-pago']) {
+    const start = app.indexOf(`location = /v1/webhooks/early-birds/${provider} {`);
+    assert.notEqual(start, -1);
+    const nextLocation = app.indexOf('\n\n    location ', start + 1);
+    const block = app.slice(start, nextLocation === -1 ? undefined : nextLocation);
+    assert.match(block, /request_method != POST/);
+    assert.match(block, /return 405;/);
+    assert.match(block, /client_max_body_size 1m;/);
+    assert.match(block, /limit_req zone=listener_payment_webhooks burst=60 nodelay;/);
+    assert.match(block, /limit_req_status 429;/);
+    assert.match(block, /access_log \/var\/log\/nginx\/listener-payment-webhooks\.log listener_payment_webhook;/);
+    assert.match(block, /proxy_pass http:\/\/127\.0\.0\.1:18876;/);
+  }
+  assert.equal((app.match(/proxy_pass http:\/\/127\.0\.0\.1:18876;/g) ?? []).length, 2);
+  assert.doesNotMatch(listener, /127\.0\.0\.1:18876|\/v1\/webhooks\/early-birds\/(paypal|mercado-pago)/);
   assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*limit_req zone=listener_visual_analysis burst=40 nodelay;/s);
   assert.match(listener, /limit_req_zone \$binary_remote_addr zone=listener_public_visual_analysis:1m rate=20r\/s;/);
   assert.match(listener, /location = \/api\/listener\/analysis\/frame \{[^}]*limit_req zone=listener_public_visual_analysis burst=40 nodelay;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;[^}]*Cache-Control "private, no-store"/s);

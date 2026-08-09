@@ -16,6 +16,7 @@ import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entr
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
 import { serializeEarlyBirdQuotaSnapshot } from '@/lib/early-birds/quota';
+import { listenerCheckoutAvailability } from '@/lib/early-birds/checkout';
 import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import {
     isCanonicalListenerHost,
@@ -48,6 +49,9 @@ export default async function EarlyBirdsPage({
         || isCanonicalListenerHost(incomingHeaders);
     const reactiveFieldLabAvailable = listenerStagingHost
         && process.env.BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED === '1';
+    const checkoutAvailability = listenerStagingHost
+        ? listenerCheckoutAvailability()
+        : { paypal: false, mercadoPago: false };
 
     if (earlyBirdsFreeForAll()) {
         return (
@@ -89,6 +93,7 @@ export default async function EarlyBirdsPage({
                 membership={listenerMembershipPresentation(access.membership.projection)}
                 accessKind={access.kind === 'free-quota' ? 'free-quota' : 'membership'}
                 quota={access.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
+                checkoutAvailability={checkoutAvailability}
                 serverNow={access.serverNow.toISOString()}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
@@ -120,6 +125,7 @@ export default async function EarlyBirdsPage({
             emailMagicLinkAvailable={emailMagicLinkAvailable}
             syntheticTeamEntryAvailable={syntheticTeamEntryAvailable}
             quota={access?.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
+            checkoutAvailability={checkoutAvailability}
             membership={listenerMembershipPresentation(access?.membership.projection ?? null)}
             serverNow={access?.serverNow.toISOString() ?? new Date().toISOString()}
         />

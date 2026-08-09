@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const CONTRACT_DIRS = [
     'contracts/early-bird-authority/v1',
+    'contracts/early-bird-authority/v2',
+    'contracts/early-bird-checkout/v2',
     'contracts/early-bird-membership/v1',
 ] as const;
 const AUTHORITY_DIR = `${REPO_ROOT}${CONTRACT_DIRS[0]}`;
@@ -103,7 +105,7 @@ describe('early-bird-authority v1 checkout approval_url hardening', () => {
     });
 });
 
-describe('EarlyBird v1 contract manifests', () => {
+describe('Listener authority contract manifests', () => {
     it.each(CONTRACT_DIRS)('%s SHA256SUMS matches the shipped bytes', (dir) => {
         const manifest = readFileSync(`${REPO_ROOT}${dir}/SHA256SUMS`, 'utf8');
         for (const line of manifest.split('\n').filter(Boolean)) {
@@ -117,7 +119,7 @@ describe('EarlyBird v1 contract manifests', () => {
 });
 
 const BACKEND_REPO = process.env.EARLY_BIRDS_BACKEND_REPO ?? '/home/nicolas/Projects/proyecciones-mito';
-const BACKEND_COMMIT = 'f90ffb92bca34952f3bb41c835014783b6187162';
+const BACKEND_COMMIT = '4929b2463c5943d6705409f1e9391331be280f7b';
 const backendAvailable = existsSync(`${BACKEND_REPO}/.git`);
 
 // Git hooks (e.g. the pre-commit suite run) export GIT_DIR and friends, which
@@ -131,7 +133,7 @@ function canonicalGitEnv(): NodeJS.ProcessEnv {
     return env;
 }
 
-describe.skipIf(!backendAvailable)('byte-equivalence with canonical backend f90ffb9', () => {
+describe.skipIf(!backendAvailable)(`byte-equivalence with canonical backend ${BACKEND_COMMIT.slice(0, 7)}`, () => {
     for (const dir of CONTRACT_DIRS) {
         const files = readdirSync(`${REPO_ROOT}${dir}`).sort();
         it.each(files)(`${dir}/%s is byte-identical`, (filename) => {

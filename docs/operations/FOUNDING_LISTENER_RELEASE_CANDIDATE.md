@@ -137,8 +137,8 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #195 remains open: measured external load/CDN rehearsal.
 - #196 remains open only for Apple developer credentials and physical Apple
   acceptance; the real Google callback/logout/relogin passed.
-- #197 remains open: separately approved paid-provider rollout; canonical
-  membership consumption itself is complete.
+- #197 is closed: provider-neutral membership and Founder eligibility are
+  integrated. Provider acceptance remains separately tracked by #199/#200/#261.
 - #198 remains open: physical acoustic/accessibility and 60-minute acceptance.
 - #201 is In Progress: the human acceptance matrix.
 - #216's old daily-window acceptance is obsolete; weekly reset/countdown human
@@ -152,6 +152,12 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #213 remains open for the final public-human invitation/experience evidence.
 - #211 is deployed. #212's accepted field is public; its technical laboratory
   remains default-off and can be re-enabled only on staging for later variants.
+- #199/#200 remain open for real sandbox lifecycle evidence. Both adapters are
+  merged backend-side and default-off. Backend draft PR #57 and the paired
+  Beacon slice version isolated egress, exact staging webhook ingress and a
+  session-derived checkout that is visible only on staging when its provider
+  flag is explicitly enabled. No provider credential, checkout flag or sale is
+  active in the deployed Listener.
 
 ## Remaining human sequence
 

@@ -1829,6 +1829,36 @@ body {
   font-size: 0.7rem;
 }
 
+.listener-checkout {
+  margin-top: 0.65rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.listener-checkout summary {
+  width: fit-content;
+  margin-inline: auto;
+  color: var(--gold);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.24em;
+}
+
+.listener-checkout__options {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.8rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.9rem;
+  background: rgba(13, 33, 26, 0.88);
+}
+
+.listener-checkout__options strong { color: var(--paper); }
+.listener-checkout__options p { line-height: 1.45; }
+.listener-checkout__options [role="alert"] { color: #fecaca; }
+
 .listener-membership-status {
   display: grid;
   gap: 0.45rem;

@@ -1,6 +1,9 @@
 # Isolated EarlyBirds staging vhost. Review and install separately from every
 # live/event vhost only after the named certificate exists.
 limit_req_zone $binary_remote_addr zone=listener_visual_analysis:1m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=listener_payment_webhooks:1m rate=60r/m;
+limit_req_zone $binary_remote_addr zone=listener_checkout:1m rate=6r/m;
+log_format listener_payment_webhook '$remote_addr - $request_method $uri $status $body_bytes_sent';
 
 server {
     listen 80;
@@ -100,6 +103,45 @@ server {
 
     location ^~ /api/internal/ {
         return 404;
+    }
+
+    # Sandbox provider ingress is deliberately two exact POST endpoints. The
+    # authority API itself remains bound to host loopback; no readiness,
+    # internal action or checkout route is exposed through this vhost. The
+    # dedicated access format records only `$uri`, never query parameters,
+    # headers or request bodies.
+    location = /v1/webhooks/early-birds/paypal {
+        if ($request_method != POST) { return 405; }
+        client_max_body_size 1m;
+        limit_req zone=listener_payment_webhooks burst=60 nodelay;
+        limit_req_status 429;
+        access_log /var/log/nginx/listener-payment-webhooks.log listener_payment_webhook;
+        proxy_pass http://127.0.0.1:18876;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /v1/webhooks/early-birds/mercado-pago {
+        if ($request_method != POST) { return 405; }
+        client_max_body_size 1m;
+        limit_req zone=listener_payment_webhooks burst=60 nodelay;
+        limit_req_status 429;
+        access_log /var/log/nginx/listener-payment-webhooks.log listener_payment_webhook;
+        proxy_pass http://127.0.0.1:18876;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
     }
 
     # The staging hostname is the mutable UI workbench. It targets the
@@ -244,6 +286,30 @@ server {
         proxy_connect_timeout 10s;
         proxy_send_timeout 30s;
         proxy_read_timeout 30s;
+    }
+
+    # Authenticated browser checkout exists only in the sandbox workbench and
+    # is independently fail-closed inside the application. The public Listener
+    # vhost has no matching location until a separately approved sales cutover.
+    location = /api/listener/checkout {
+        access_log off;
+        client_max_body_size 512;
+        limit_req zone=listener_checkout burst=4 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
     }
 
     # Renderer-neutral frames for the disposable visual workbench. The public

@@ -9,6 +9,7 @@ import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import ListenerPlayer from './ListenerPlayer';
 import FreeQuotaStatus from './FreeQuotaStatus';
+import FoundingListenerCheckout from './FoundingListenerCheckout';
 import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
 export default function EarlyBirdHome({
@@ -21,6 +22,7 @@ export default function EarlyBirdHome({
     reactiveVisualizationAvailable = false,
     reactiveFieldLabAvailable = false,
     quota = null,
+    checkoutAvailability = { paypal: false, mercadoPago: false },
 }: {
     displayName: string;
     membership: ListenerMembershipPresentation;
@@ -31,6 +33,7 @@ export default function EarlyBirdHome({
     reactiveVisualizationAvailable?: boolean;
     reactiveFieldLabAvailable?: boolean;
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
+    checkoutAvailability?: { paypal: boolean; mercadoPago: boolean };
 }) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
@@ -78,7 +81,13 @@ export default function EarlyBirdHome({
                 />
                 {!publicAccess && accessKind === 'free-quota' && (
                     <footer className="listener-listening-status">
-                        <FreeQuotaStatus snapshot={quota} serverNow={serverNow} compact showMembershipLink />
+                        <FreeQuotaStatus
+                            snapshot={quota}
+                            serverNow={serverNow}
+                            compact
+                            showMembershipLink={!checkoutAvailability.paypal && !checkoutAvailability.mercadoPago}
+                        />
+                        <FoundingListenerCheckout available={checkoutAvailability} />
                     </footer>
                 )}
             </div>
