@@ -92,7 +92,7 @@ export default function EarlyBirdLanding(props: Props) {
         <main className="listener-shell listener-shell--public">
             <div className="listener-shell__frame">
                 <header className="listener-rail">
-                    <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
+                    <BrandLockup href={LISTENER_NAMESPACE.publicWebsite} />
                 </header>
 
                 <section className="listener-public-hero">

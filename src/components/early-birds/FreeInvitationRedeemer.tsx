@@ -47,7 +47,7 @@ export default function FreeInvitationRedeemer() {
         <main className="listener-page-shell">
             <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center gap-8 px-6 py-12">
                 <header className="flex items-center justify-between gap-4">
-                    <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
+                    <BrandLockup href={LISTENER_NAMESPACE.publicWebsite} />
                 </header>
                 <section className="space-y-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-7 shadow-[var(--shadow-deep)]">
                     <p className="font-mono text-xs tracking-[0.22em] text-[var(--gold)]">{copy.eyebrow}</p>
