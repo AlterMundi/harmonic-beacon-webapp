@@ -44,11 +44,11 @@ jq -e '
   .access.quota.remainingMs == 10800000
 ' "$temporary/initial.json" >/dev/null || preview_fail "initial weekly quota state is invalid"
 
-for retired in free-window welcome-access; do
-  retired_status=$(curl --silent --show-error --output "$temporary/$retired.json" \
+for removed in free-window welcome-access; do
+  removed_status=$(curl --silent --show-error --output "$temporary/$removed.json" \
     --write-out '%{http_code}' --cookie "$cookie_jar" \
-    "$base_url/api/listener/$retired")
-  test "$retired_status" = 410 || preview_fail "$retired legacy authority returned HTTP $retired_status"
+    "$base_url/api/listener/$removed")
+  test "$removed_status" = 404 || preview_fail "$removed legacy authority returned HTTP $removed_status"
 done
 
 for ordinal in 1 2 3; do
@@ -110,4 +110,4 @@ jq -e '
   (.access.quota.remainingMs > 0 and .access.quota.remainingMs <= 10800000)
 ' "$temporary/active.json" >/dev/null || preview_fail "active weekly quota state is invalid"
 
-echo "Registered Free smoke passed: weekly anchor, three-hour allowance, retired legacy APIs, two-device eviction, and generation-bound manifest."
+echo "Registered Free smoke passed: weekly anchor, three-hour allowance, removed legacy APIs, two-device eviction, and generation-bound manifest."

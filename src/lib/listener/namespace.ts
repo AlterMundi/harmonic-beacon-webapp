@@ -12,9 +12,7 @@ export const LISTENER_NAMESPACE = {
         authError: '/listener?authError=1',
         api: {
             accessState: '/api/listener/access-state',
-            freeWindow: '/api/listener/free-window',
             freeRedeem: '/api/listener/free/redeem',
-            welcomeAccess: '/api/listener/welcome-access',
         },
     },
     legacy: {
@@ -23,9 +21,7 @@ export const LISTENER_NAMESPACE = {
         authError: '/early-birds?authError=1',
         api: {
             accessState: '/api/early-birds/access-state',
-            freeWindow: '/api/early-birds/free-window',
             freeRedeem: '/api/early-birds/free/redeem',
-            welcomeAccess: '/api/early-birds/welcome-access',
         },
     },
 } as const;

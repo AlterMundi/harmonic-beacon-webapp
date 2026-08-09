@@ -16,14 +16,14 @@ type PlaybackMode = 'intro' | 'beacon';
 type LiveState = 'idle' | 'loading' | 'recovering' | 'playing' | 'paused' | 'error' | 'displaced';
 type LeasePayload = {
     leaseId: string;
-    leaseGeneration?: number;
-    presenceSequence?: number;
+    leaseGeneration: number;
+    presenceSequence: number;
     leaseExpiresAt: string;
     stream: { manifestUrl: string; expiresAt: string };
 };
 type HeartbeatPayload = Omit<LeasePayload, 'leaseId'> & {
-    leaseGeneration?: number;
-    presenceSequence?: number;
+    leaseGeneration: number;
+    presenceSequence: number;
 };
 type LeaseProbeResult =
     | { kind: 'active'; grant: HeartbeatPayload }
@@ -364,13 +364,14 @@ export default function ListenerPlayer({
         });
         if (!response.ok) throw new LeaseRequestError(response.status);
         const grant = await response.json() as LeasePayload;
-        // Generation/sequence are mandatory in the quota-aware API. Defaults
-        // keep a rolling deploy compatible with the immediately preceding
-        // Listener runtime until the server half is deployed.
+        if (!Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1
+            || !Number.isSafeInteger(grant.presenceSequence) || grant.presenceSequence < 0) {
+            throw new LeaseRequestError(409);
+        }
         const candidate = {
             leaseId: grant.leaseId,
-            leaseGeneration: Number.isSafeInteger(grant.leaseGeneration) ? grant.leaseGeneration! : 1,
-            presenceSequence: Number.isSafeInteger(grant.presenceSequence) ? grant.presenceSequence! : 0,
+            leaseGeneration: grant.leaseGeneration,
+            presenceSequence: grant.presenceSequence,
         };
         const current = leaseId.current && leaseGeneration.current !== null
             ? {
@@ -429,12 +430,12 @@ export default function ListenerPlayer({
             if (response.status === 401 || response.status === 403) return { kind: 'denied' };
             if (!response.ok) return { kind: 'retry' };
             const grant = await response.json() as HeartbeatPayload;
-            const returnedGeneration = Number.isSafeInteger(grant.leaseGeneration)
-                ? grant.leaseGeneration!
-                : currentGeneration;
-            const returnedSequence = Number.isSafeInteger(grant.presenceSequence)
-                ? grant.presenceSequence!
-                : sentSequence;
+            if (!Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1
+                || !Number.isSafeInteger(grant.presenceSequence) || grant.presenceSequence < 0) {
+                return { kind: 'refresh-required' };
+            }
+            const returnedGeneration = grant.leaseGeneration;
+            const returnedSequence = grant.presenceSequence;
             if (
                 leaseId.current !== currentLeaseId
                 || leaseGeneration.current !== currentGeneration
@@ -491,12 +492,21 @@ export default function ListenerPlayer({
 
                 if (response.ok) {
                     const grant = await response.json() as HeartbeatPayload;
-                    const returnedGeneration = Number.isSafeInteger(grant.leaseGeneration)
-                        ? grant.leaseGeneration!
-                        : currentGeneration;
-                    const returnedSequence = Number.isSafeInteger(grant.presenceSequence)
-                        ? grant.presenceSequence!
-                        : currentSequence;
+                    if (!Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1
+                        || !Number.isSafeInteger(grant.presenceSequence) || grant.presenceSequence < 0) {
+                        wantsLivePlayback.current = false;
+                        liveAudio.current?.pause();
+                        stopHls();
+                        clearLeaseCursor();
+                        livePreparedRef.current = false;
+                        setLivePrepared(false);
+                        setDevicePreparedByGesture(false);
+                        setPrepareFailure('unavailable');
+                        updateLiveState('error');
+                        return;
+                    }
+                    const returnedGeneration = grant.leaseGeneration;
+                    const returnedSequence = grant.presenceSequence;
                     // A heartbeat never replaces a manifest or generation.
                     // Ignore reordered data rather than moving the cursor back.
                     if (

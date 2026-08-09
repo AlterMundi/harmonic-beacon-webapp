@@ -5,17 +5,15 @@ import { describe, expect, it } from 'vitest';
 
 import { LISTENER_NAMESPACE, listenerInvitationQuery } from '@/lib/listener/namespace';
 
-describe('Listener namespace compatibility contract', () => {
-    it('publishes Listener routes without changing the EarlyBird aliases', () => {
+describe('Listener namespace contract', () => {
+    it('publishes only current Listener non-media API names', () => {
         expect(LISTENER_NAMESPACE.canonical).toEqual({
             home: '/listener',
             redeem: '/listener/redeem',
             authError: '/listener?authError=1',
             api: {
                 accessState: '/api/listener/access-state',
-                freeWindow: '/api/listener/free-window',
                 freeRedeem: '/api/listener/free/redeem',
-                welcomeAccess: '/api/listener/welcome-access',
             },
         });
         expect(LISTENER_NAMESPACE.legacy.home).toBe('/early-birds');

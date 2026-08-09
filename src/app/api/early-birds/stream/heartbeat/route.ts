@@ -46,13 +46,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         leaseGeneration = typeof body.leaseGeneration === 'number' ? body.leaseGeneration : 0;
         presenceSequence = typeof body.presenceSequence === 'number' ? body.presenceSequence : -1;
         intent = body.intent === 'prepare' ? 'prepare' : 'play';
-        presence = body.presence === 'idle'
-            ? 'IDLE'
-            : body.presence === 'listening'
-                ? 'LISTENING'
-                // Backward compatibility for a browser tab loaded before the
-                // presence-aware deploy. `play` was already its real intent.
-                : intent === 'play' ? 'LISTENING' : 'IDLE';
+        if (body.presence !== 'idle' && body.presence !== 'listening') {
+            return NextResponse.json({ error: 'Invalid presence.' }, { status: 400 });
+        }
+        presence = body.presence === 'idle' ? 'IDLE' : 'LISTENING';
     } catch {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }

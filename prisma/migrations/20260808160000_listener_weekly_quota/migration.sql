@@ -1,6 +1,6 @@
 -- personal-7-day-v1 is a forward-only authorization cutover. Legacy Free
--- schedule/welcome rows remain intact for historical audit and compatibility inspection,
--- but all extant stream leases are evicted so every client reauthorizes.
+-- schedule/welcome rows remain inert migration history, but no runtime reads
+-- them and all extant stream leases are evicted so every client reauthorizes.
 UPDATE "early_bird_listener_authority_policy"
 SET "policy_version" = 'personal-7-day-v1',
     "activated_at" = clock_timestamp()
@@ -12,7 +12,7 @@ BEGIN
         SELECT 1 FROM "early_bird_listener_authority_policy"
         WHERE "id" = 1 AND "policy_version" = 'personal-7-day-v1'
     ) THEN
-        RAISE EXCEPTION 'listener weekly policy bridge is missing or incompatible';
+        RAISE EXCEPTION 'listener weekly policy marker is missing or incompatible';
     END IF;
 END;
 $$;

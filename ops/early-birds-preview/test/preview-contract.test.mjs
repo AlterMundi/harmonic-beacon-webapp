@@ -391,7 +391,7 @@ test('registered Free smoke covers weekly quota and device boundaries without ex
   assert.match(source, /--config "\$temporary\/login\.curl"/);
   assert.match(source, /personal-7-day-v1/);
   assert.match(source, /baseAllowanceMs == 10800000/);
-  assert.match(source, /retired_status" = 410/);
+  assert.match(source, /removed_status" = 404/);
   assert.match(source, /for ordinal in 1 2 3/);
   assert.match(source, /evictedAnotherDevice/);
   assert.match(source, /\.reason == "displaced"/);

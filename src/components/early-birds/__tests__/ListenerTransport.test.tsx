@@ -22,9 +22,11 @@ import ListenerPlayer from '../ListenerPlayer';
 
 const GRANT = {
     leaseId: '00000000-0000-4000-8000-000000000003',
+    leaseGeneration: 1,
+    presenceSequence: 0,
     leaseExpiresAt: '2099-08-06T12:03:00.000Z',
     stream: {
-        manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+        manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003&leaseGeneration=1',
         expiresAt: '2099-08-06T12:03:00.000Z',
     },
 };

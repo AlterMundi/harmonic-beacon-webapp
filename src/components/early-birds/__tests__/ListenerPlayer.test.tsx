@@ -137,6 +137,8 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
         const grants = [3, 4].map((suffix) => ({
             leaseId: `00000000-0000-4000-8000-00000000000${suffix}`,
+            leaseGeneration: 1,
+            presenceSequence: 0,
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: `/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-00000000000${suffix}`,
@@ -145,9 +147,9 @@ describe('EarlyBird Listener player', () => {
         }));
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(grants[0]), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(grants[0]), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(grants[1]), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(grants[1]), { status: 200 }));
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[0], presenceSequence: 1 }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[1], presenceSequence: 1 }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[1], presenceSequence: 1 }), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
@@ -181,10 +183,14 @@ describe('EarlyBird Listener player', () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 leaseId: '00000000-0000-4000-8000-000000000003',
+                leaseGeneration: 1,
+                presenceSequence: 0,
                 leaseExpiresAt: '2099-08-06T12:03:00.000Z',
                 stream: { manifestUrl, expiresAt: '2099-08-06T12:03:00.000Z' },
             }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
+                leaseGeneration: 1,
+                presenceSequence: 0,
                 leaseExpiresAt: '2099-08-06T12:04:00.000Z',
                 stream: { manifestUrl, expiresAt: '2099-08-06T12:04:00.000Z' },
             }), { status: 200 }));
@@ -351,6 +357,8 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
         const grant = {
             leaseId: '00000000-0000-4000-8000-000000000005',
+            leaseGeneration: 1,
+            presenceSequence: 0,
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000005',
@@ -359,8 +367,8 @@ describe('EarlyBird Listener player', () => {
         };
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grant, presenceSequence: 1 }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grant, presenceSequence: 2 }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 error: 'Listening lease expired.',
                 reason: 'expired',
@@ -399,6 +407,8 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
         const initialGrant = {
             leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
@@ -407,7 +417,7 @@ describe('EarlyBird Listener player', () => {
         };
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...initialGrant, presenceSequence: 1 }), { status: 200 }))
             .mockRejectedValue(new Error('synthetic outage'));
         vi.stubGlobal('fetch', fetchMock);
         render(
@@ -438,10 +448,15 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
         let lease = 2;
-        const fetchMock = vi.fn().mockImplementation(() => {
+        const fetchMock = vi.fn().mockImplementation((url, init) => {
             lease += 1;
+            const presenceSequence = String(url).includes('/heartbeat')
+                ? JSON.parse(String(init?.body)).presenceSequence
+                : 0;
             return Promise.resolve(new Response(JSON.stringify({
                 leaseId: `00000000-0000-4000-8000-00000000000${lease}`,
+                leaseGeneration: 1,
+                presenceSequence,
                 leaseExpiresAt: '2099-08-06T12:03:00.000Z',
                 stream: {
                     manifestUrl: `/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-00000000000${lease}`,
@@ -479,6 +494,8 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
         const initialGrant = {
             leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
@@ -487,7 +504,7 @@ describe('EarlyBird Listener player', () => {
         };
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...initialGrant, presenceSequence: 1 }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 error: 'Device displaced.',
                 reason: 'displaced',
@@ -524,6 +541,8 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
         const initialGrant = {
             leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
@@ -532,6 +551,8 @@ describe('EarlyBird Listener player', () => {
         };
         const replacementGrant = {
             leaseId: '00000000-0000-4000-8000-000000000004',
+            leaseGeneration: 1,
+            presenceSequence: 0,
             leaseExpiresAt: '2099-08-06T12:04:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000004',
@@ -540,13 +561,13 @@ describe('EarlyBird Listener player', () => {
         };
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...initialGrant, presenceSequence: 1 }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
                 error: 'Listening lease expired.',
                 reason: 'expired',
             }), { status: 410 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(replacementGrant), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(replacementGrant), { status: 200 }));
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...replacementGrant, presenceSequence: 1 }), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
@@ -585,6 +606,8 @@ describe('EarlyBird Listener player', () => {
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
         const initialGrant = {
             leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
             leaseExpiresAt: '2099-08-06T12:03:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
@@ -592,6 +615,8 @@ describe('EarlyBird Listener player', () => {
             },
         };
         const refreshedGrant = {
+            leaseGeneration: 1,
+            presenceSequence: 1,
             leaseExpiresAt: '2099-08-06T12:04:00.000Z',
             stream: {
                 manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003&refresh=1',
@@ -600,7 +625,7 @@ describe('EarlyBird Listener player', () => {
         };
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify(initialGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...initialGrant, presenceSequence: 1 }), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(refreshedGrant), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
         render(

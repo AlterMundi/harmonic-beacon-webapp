@@ -32,7 +32,7 @@ import { POST } from '../route';
 
 const LEASE_ID = '00000000-0000-4000-8000-000000000003';
 
-function request(intent?: 'play' | 'prepare', presence?: 'idle' | 'listening') {
+function request(intent: 'play' | 'prepare' = 'play', presence: 'idle' | 'listening' = 'listening') {
     return new NextRequest('https://listener.example.test/api/early-birds/stream/heartbeat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -179,10 +179,7 @@ describe('EarlyBird stream heartbeat route', () => {
             },
         );
 
-        expect((await POST(malformedPresence)).status).toBe(200);
-        expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
-            'listener-1', LEASE_ID, 2, 3, undefined, undefined, false,
-            { state: 'IDLE', macroRegion: 'UNKNOWN' },
-        );
+        expect((await POST(malformedPresence)).status).toBe(400);
+        expect(mocks.heartbeatEarlyBirdStreamLease).not.toHaveBeenCalled();
     });
 });

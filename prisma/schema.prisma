@@ -668,9 +668,8 @@ model EarlyBirdListeningBonusGrant {
   @@map("early_bird_listening_bonus_grants")
 }
 
-// One-row database compatibility marker. Authorization code must recognize
-// this value before consulting any Free policy state, so a rollback bridge can
-// fail closed after the forward-only cutover.
+// One-row database policy marker. Authorization code must recognize this value
+// before consulting any Free policy state so an incompatible image fails closed.
 model EarlyBirdListenerAuthorityPolicy {
   id            Int      @id
   policyVersion String   @map("policy_version") @db.VarChar(32)
