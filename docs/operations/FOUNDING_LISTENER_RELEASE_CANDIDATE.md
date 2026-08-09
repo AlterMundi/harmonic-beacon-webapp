@@ -1,6 +1,6 @@
 # Founding Listener release-candidate handoff
 
-Date: 2026-08-07
+Date: 2026-08-09
 
 Public acceptance host: `https://listen.harmonicbeacon.com/`
 
@@ -14,7 +14,7 @@ an event-stack deployment or an acoustic change.
 
 ## Status: weekly Free deployed for acceptance
 
-Release `68b930ca86d8b13df2dd288199f04b47af1053fe` is deployed on the isolated
+Release `ae1d0baa4527a74c2908f84692e677f5b96f615a` is deployed on the isolated
 Listener. The active policy is three hours per account per fixed seven-day cycle,
 anchored at first real authorized Free playback, with no base rollover and
 server-time metering. Two devices consume their listening union once; intro and
@@ -32,7 +32,7 @@ repair, never restoring daily/welcome authorization.
 
 | Artifact | Exact value |
 |---|---|
-| Deployed Listener application | `68b930ca86d8b13df2dd288199f04b47af1053fe` |
+| Deployed Listener application | `ae1d0baa4527a74c2908f84692e677f5b96f615a` |
 | Operational smoke/documentation head | `8444ed7d06b2764c519f65ce4d32932346a94fdd` |
 | Listener database schema | `20260808160000_listener_weekly_quota` |
 | Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
@@ -64,7 +64,7 @@ test-only branch head.
 | Canonical Founder access anytime | Proven | Canonical projection is evaluated before Free; ACTIVE/GRACE/paid-through and terminal/refund boundaries are tested and deployed. |
 | Free/FFA never fabricate membership or Purchase | Proven | Separate schedule/technical-account tables and route-level override; no payment/Meta event is emitted by Listener paths. |
 | FFA reversible | Proven | OFF denied anonymous lease; ON restored anonymous lease 200 without schema or membership mutation. |
-| ES/EN and override | Proven | Locale default, explicit intro override, private byte ranges and distinct immutable assets pass tests/runtime. |
+| ES/EN and override | Proven | Locale default, explicit intro override, private byte ranges and distinct immutable assets pass tests/runtime. The deployed Free-account smoke proved Spanish returns authorized `206 audio/mp4` instead of a false membership denial under concurrent lease signaling. |
 | Intro to Beacon lifecycle | Automated/browser and iPhone human proven | Intro play/pause/seek, natural handoff, mutual exclusion, live-edge Stop/rejoin and duplicate guards pass. Nico confirmed the deployed iPhone flow worked correctly after the gesture-safe fix. |
 | Mobile one-screen interaction | Browser and iPhone proven; broader physical matrix pending | Chromium 390x844 has no overflow; mode targets are 52 px and primary action 56 px. iPhone playback passed; physical keyboard/screen-reader and Android/Firefox review remains. |
 | Audio guardrail | Proven | Frozen-audio gate is green; this registration slice changed no asset, codec, rate, channel, gain, fade, buffer, routing or event audio. |
@@ -72,7 +72,7 @@ test-only branch head.
 | Telegram warning/critical/recovery | Proven | Dedicated delivery and recovery were exercised; Alertmanager currently has zero active alerts. |
 | Storage | Proven | Approved media is on `/mnt/beacon-data`; after the final image build root retained about 65 GB free and the secondary volume remained about 6% used/89 GB free. |
 | Capacity plan | Prepared, not measured | Deterministic external 3k/4k/5k shards are recorded. No same-host 150-client test or high-load claim was made. |
-| Full gates | Proven | 1,396 tests with 28 standard skips, ESLint, TypeScript, build, Prisma, real PostgreSQL, preview, origin, nginx and observability checks are green. |
+| Full gates | Proven | 1,401 tests with 28 standard skips, ESLint, TypeScript, build, Prisma, real PostgreSQL, preview, origin, nginx and observability checks are green. |
 
 ## Delivered commits
 
@@ -84,6 +84,10 @@ test-only branch head.
 - `7036eb3` — human-readable renewal countdown in days and hours.
 - `6a5d4b6` — explicitly approved 70% initial Listener volume.
 - `68b930c` — one-checkbox introduction choice and readable dark select menu.
+- `49fd9c8` — truthful prepared-source lifecycle, coherent Pause/Stop layout,
+  unified control panel and bottom weekly status/membership action.
+- `ae1d0ba` — Free-authorized ES/EN intro range delivery under quota/heartbeat
+  contention, with bounded serialization retry and recoverable UI failure.
 
 Historical pre-weekly experiments:
 
@@ -115,7 +119,7 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - Listener health/readiness, origin, PostgreSQL and decoded canary are green.
 - Alertmanager has no active alert. A prior root-disk warning was real, then
   resolved after removing only old unreferenced Listener/authority image tags.
-- Current image is `68b930c`. Earlier policy images remain only as historical
+- Current image is `ae1d0ba`. Earlier policy images remain only as historical
   artifacts and are not valid rollback targets.
 - The fixed public-disable command was exercised after deployment. Its first
   health probe observed the normal Next.js startup connection reset, retried,
