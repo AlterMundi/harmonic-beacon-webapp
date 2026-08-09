@@ -49,6 +49,7 @@ class FakeAudioContext {
     readonly sampleRate = 48_000;
     state: AudioContextState = 'suspended';
     close = vi.fn(async () => undefined);
+    resumeCalls = 0;
     private resumeResolver: (() => void) | null = null;
     private readonly listeners = new Set<EventListenerOrEventListenerObject>();
 
@@ -73,6 +74,7 @@ class FakeAudioContext {
     }
 
     resume(): Promise<void> {
+        this.resumeCalls += 1;
         if (this.rejectResume) return Promise.reject(new Error('gesture rejected'));
         return new Promise((resolve) => {
             this.resumeResolver = () => {
@@ -133,12 +135,15 @@ describe('WebAudioHarmonicAnalysisProvider', () => {
         });
 
         const started = provider.start();
+        const concurrentStart = provider.start();
+        expect(concurrentStart).toBe(started);
         expect(context.sourceNodes).toHaveLength(2);
         expect(context.splitterNodes).toHaveLength(2);
         expect(context.analyserNodes).toHaveLength(4);
         expect(context.analyserNodes.every(({ fftSize }) => fftSize === 8192)).toBe(true);
         expect(context.analyserNodes.every(({ minDecibels }) => minDecibels === -120)).toBe(true);
         expect(context.analyserNodes.every(({ maxDecibels }) => maxDecibels === 0)).toBe(true);
+        expect(context.resumeCalls).toBe(1);
         for (let index = 0; index < context.sourceNodes.length; index += 1) {
             const source = context.sourceNodes[index];
             expect(source?.connections).toEqual([
@@ -154,8 +159,11 @@ describe('WebAudioHarmonicAnalysisProvider', () => {
 
         context.resolveResume();
         await expect(started).resolves.toEqual({ ok: true });
+        await expect(concurrentStart).resolves.toEqual({ ok: true });
         expect(provider.getStatus().phase).toBe('running');
         expect(frameScheduler.callbacks).toHaveLength(1);
+        expect(context.sourceNodes.every(({ disconnectCalls }) => disconnectCalls === 0)).toBe(true);
+        expect(context.close).not.toHaveBeenCalled();
     });
 
     it('switches observed source without reconnecting paths and emits the selected kind', async () => {

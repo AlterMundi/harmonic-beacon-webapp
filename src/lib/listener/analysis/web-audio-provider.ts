@@ -108,6 +108,7 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
     private lastFrameAtMs = Number.NEGATIVE_INFINITY;
     private status: HarmonicAnalysisProviderStatus;
     private ownsContext = false;
+    private startPromise: Promise<HarmonicAnalysisStartResult> | null = null;
 
     constructor(options: WebAudioHarmonicAnalysisOptions) {
         if (options.sources.length === 0) throw new Error('At least one analysis source is required');
@@ -153,36 +154,41 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
     }
 
     /** Graph attachment and context.resume() invocation happen before the first await. */
-    async start(): Promise<HarmonicAnalysisStartResult> {
+    start(): Promise<HarmonicAnalysisStartResult> {
         if (this.status.phase === 'stopped') {
-            return this.fail(publicError(
+            return Promise.resolve(this.fail(publicError(
                 'PROVIDER_STOPPED',
                 'A stopped analysis provider cannot be restarted',
                 false,
-            ));
+            )));
         }
-        if (this.status.phase === 'running') return { ok: true };
-        if (this.status.phase === 'paused') return this.resumeAnalysis();
+        if (this.startPromise) return this.startPromise;
+        if (this.status.phase === 'running') return Promise.resolve({ ok: true });
+        if (this.status.phase === 'paused') return Promise.resolve(this.resumeAnalysis());
         if (this.status.phase === 'suspended' && this.context) {
-            return this.resumeAttachedContext();
+            return this.trackStart(this.resumeAttachedContext());
         }
         if (this.status.phase === 'error' && this.terminalNodes.size > 0) {
-            return {
+            return Promise.resolve({
                 ok: false,
                 error: this.status.error ?? publicError(
                     'GRAPH_ATTACH_FAILED',
                     'The existing media graph cannot be attached again',
                     true,
                 ),
-            };
+            });
         }
         if (this.status.phase === 'starting') {
-            const error = publicError(
-                'INVALID_CONFIGURATION',
-                'Analysis startup is already in progress',
-                true,
-            );
-            return { ok: false, error };
+            // Defensive fallback: normal starts always publish startPromise
+            // before another browser event can run.
+            return Promise.resolve({
+                ok: false,
+                error: publicError(
+                    'ANALYSIS_FAILED',
+                    'Analysis startup state is inconsistent',
+                    true,
+                ),
+            });
         }
 
         this.setStatus({ ...this.status, phase: 'starting', error: null });
@@ -190,11 +196,11 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
             this.context = this.injectedContext ?? this.contextFactory();
             this.ownsContext = !this.injectedContext;
         } catch {
-            return this.fail(publicError(
+            return Promise.resolve(this.fail(publicError(
                 'AUDIO_CONTEXT_UNAVAILABLE',
                 'The browser could not create an audio analysis context',
                 true,
-            ));
+            )));
         }
 
         try {
@@ -204,11 +210,11 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
             // createMediaElementSource is irreversible for the lifetime of its
             // media element. Preserve every direct branch already attached;
             // integration can keep it audible or remount fresh media elements.
-            return this.fail(publicError(
+            return Promise.resolve(this.fail(publicError(
                 'GRAPH_ATTACH_FAILED',
                 'The media elements could not be attached for analysis',
                 true,
-            ));
+            )));
         }
 
         // Calling resume in this synchronous portion of start preserves the
@@ -216,9 +222,22 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
         const resumePromise = this.context.state === 'running'
             ? Promise.resolve()
             : this.context.resume();
+        return this.trackStart(this.completeStart(this.context, resumePromise));
+    }
+
+    private async completeStart(
+        context: AudioContext,
+        resumePromise: Promise<void>,
+    ): Promise<HarmonicAnalysisStartResult> {
         try {
             await resumePromise;
         } catch {
+            if (this.status.phase === 'stopped') {
+                return {
+                    ok: false,
+                    error: publicError('PROVIDER_STOPPED', 'Analysis was stopped during startup', false),
+                };
+            }
             return this.fail(publicError(
                 'AUDIO_CONTEXT_SUSPENDED',
                 'The audio analysis context could not be resumed',
@@ -226,7 +245,13 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
             ), 'suspended');
         }
 
-        if (this.context.state !== 'running') {
+        if (this.status.phase === 'stopped' || this.context !== context) {
+            return {
+                ok: false,
+                error: publicError('PROVIDER_STOPPED', 'Analysis was stopped during startup', false),
+            };
+        }
+        if (context.state !== 'running') {
             return this.fail(publicError(
                 'AUDIO_CONTEXT_SUSPENDED',
                 'The audio analysis context remains suspended',
@@ -236,6 +261,21 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
         this.setStatus({ ...this.status, phase: 'running', error: null });
         this.scheduleNextFrame();
         return { ok: true };
+    }
+
+    private trackStart(
+        promise: Promise<HarmonicAnalysisStartResult>,
+    ): Promise<HarmonicAnalysisStartResult> {
+        this.startPromise = promise;
+        void promise.then(
+            () => {
+                if (this.startPromise === promise) this.startPromise = null;
+            },
+            () => {
+                if (this.startPromise === promise) this.startPromise = null;
+            },
+        );
+        return promise;
     }
 
     setActiveSource(sourceId: string): HarmonicAnalysisStartResult {
