@@ -91,6 +91,7 @@ function membershipAllowed(
     now: Date,
 ): boolean {
     if (!projection) return false;
+    if (projection.effectiveAt > now) return false;
     if (projection.state === 'ACTIVE') return projection.paidThrough === null || projection.paidThrough > now;
     if (projection.state === 'GRACE') return projection.graceUntil !== null && projection.graceUntil > now;
     if (projection.state === 'CANCELLED_PENDING_END') {
@@ -454,25 +455,36 @@ export async function lockEarlyBirdQuotaAccount(
     if (rows.length !== 1) throw new Error('EarlyBird account does not exist');
 }
 
-function membershipFreeIntervals(
+export function membershipFreeIntervals(
     intervals: ListeningInterval[],
     projection: EarlyBirdMembershipProjection | null,
 ): ListeningInterval[] {
     if (!projection) return intervals;
-    if (projection.state === 'ACTIVE' && projection.paidThrough === null) return [];
-    let boundary: Date | null = null;
+    const exemptStart = projection.effectiveAt;
+    let exemptEnd: Date | null = null;
     if (projection.state === 'ACTIVE' || projection.state === 'CANCELLED_PENDING_END') {
-        boundary = projection.paidThrough;
+        exemptEnd = projection.paidThrough;
     } else if (projection.state === 'GRACE') {
-        boundary = projection.graceUntil;
+        exemptEnd = projection.graceUntil;
+    } else {
+        return intervals;
     }
-    if (!boundary) return intervals;
-    return intervals
-        .map((interval) => ({
-            startedAt: interval.startedAt < boundary ? boundary! : interval.startedAt,
-            endedAt: interval.endedAt,
-        }))
-        .filter((interval) => interval.endedAt > interval.startedAt);
+    return intervals.flatMap((interval) => {
+        const free: ListeningInterval[] = [];
+        if (interval.startedAt < exemptStart) {
+            free.push({
+                startedAt: interval.startedAt,
+                endedAt: interval.endedAt < exemptStart ? interval.endedAt : exemptStart,
+            });
+        }
+        if (exemptEnd && interval.endedAt > exemptEnd) {
+            free.push({
+                startedAt: interval.startedAt > exemptEnd ? interval.startedAt : exemptEnd,
+                endedAt: interval.endedAt,
+            });
+        }
+        return free.filter((segment) => segment.endedAt > segment.startedAt);
+    });
 }
 
 async function quotaBonuses(

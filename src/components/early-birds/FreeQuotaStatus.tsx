@@ -62,17 +62,22 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
         let retryTimer: number | null = null;
         let presenceRetryTimer: number | null = null;
 
-        const revalidate = async () => {
-            if (cancelled || inFlight) return;
+        const revalidate = async (): Promise<boolean> => {
+            if (cancelled || inFlight) return false;
             inFlight = true;
             try {
                 const response = await fetch(LISTENER_NAMESPACE.canonical.api.accessState, {
                     cache: 'no-store',
                     headers: { Accept: 'application/json' },
                 });
-                if (!response.ok) return;
+                if (!response.ok) {
+                    if (unlimited === 'free-for-all' && [401, 403, 503].includes(response.status)) {
+                        router.refresh();
+                    }
+                    return false;
+                }
                 const payload = await response.json();
-                if (cancelled) return;
+                if (cancelled) return false;
                 const next = quotaSnapshotFromAccessState(payload);
                 const previous = stateRef.current;
                 if (next && (!previous || isNewerQuotaSnapshot(next, previous))) {
@@ -84,10 +89,17 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
                     if (next.status === 'exhausted' || previous?.status === 'exhausted') router.refresh();
                 }
                 const nextKind = payload?.access?.kind;
+                if (unlimited === 'free-for-all') {
+                    if (nextKind !== 'free-for-all') router.refresh();
+                    return true;
+                }
+                if (nextKind === 'membership' && !unlimited) router.refresh();
                 if (nextKind && nextKind !== 'free-quota' && nextKind !== 'membership') router.refresh();
+                return true;
             } catch {
                 // A failed client revalidation never invents entitlement. Media
                 // authorization continues to fail closed at the server.
+                return false;
             } finally {
                 inFlight = false;
             }
@@ -104,7 +116,7 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
             if (presenceRetryTimer !== null) window.clearTimeout(presenceRetryTimer);
             presenceRetryTimer = window.setTimeout(() => void revalidate(), 750);
         };
-        const interval = state?.activelyConsuming && !unlimited
+        const interval = (state?.activelyConsuming && !unlimited) || unlimited === 'free-for-all'
             ? window.setInterval(() => void revalidate(), 30_000)
             : null;
         const boundaryAt = state?.exhaustsAt ?? state?.nextCycleAt;
@@ -112,7 +124,14 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
         const serverNowAt = state ? Date.parse(state.serverNow) : Number.NaN;
         if (Number.isFinite(boundaryAtMs) && Number.isFinite(serverNowAt)) {
             retryTimer = window.setTimeout(
-                () => void revalidate(),
+                () => {
+                    const retryBoundary = async (attempt: number) => {
+                        const refreshed = await revalidate();
+                        if (cancelled || refreshed || attempt >= 60) return;
+                        retryTimer = window.setTimeout(() => void retryBoundary(attempt + 1), 5_000);
+                    };
+                    void retryBoundary(0);
+                },
                 Math.max(0, boundaryAtMs - serverNowAt - serverElapsed(receivedAt, monotonicNow()) + 750),
             );
         }

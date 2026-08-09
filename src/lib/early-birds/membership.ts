@@ -118,6 +118,9 @@ export function membershipAccessDecision(
     now = new Date(),
 ): EarlyBirdAccessDecision {
     if (!projection) return { allowed: false, reason: 'missing', projection };
+    if (projection.effectiveAt > now) {
+        return { allowed: false, reason: 'pending', projection };
+    }
 
     if (projection.state === 'ACTIVE') {
         const allowed = projection.paidThrough === null || projection.paidThrough > now;

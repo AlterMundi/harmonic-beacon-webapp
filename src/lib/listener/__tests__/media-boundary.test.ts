@@ -5,9 +5,10 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const MEDIA_FILE_SHA256 = {
-    // Authorization handlers were re-pinned for personal quota enforcement;
-    // the player, media sources and signal processing remain independently pinned.
-    'src/components/early-birds/ListenerPlayer.tsx': 'fdf787402e94cc97a3b29b9291dc63e52b7a859d1ff9e9c505c99fe3aba720b1',
+    // Authorization handlers and non-acoustic lease signaling were reviewed
+    // and re-pinned for personal quota enforcement. Media sources and signal
+    // processing remain unchanged and independently pinned.
+    'src/components/early-birds/ListenerPlayer.tsx': '158b82119123f2b297b52f0aea751d63b439f9412722c4e5868b5d5c550a48a3',
     'src/lib/early-birds/stream.ts': '96a2d9fe798591833327631b59a73a5b2fc5ca06be7081945a0b07450970da84',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',
@@ -28,7 +29,7 @@ function nginxLocation(source: string, location: string): string {
 }
 
 describe('Listener namespace media boundary', () => {
-    it('keeps every player and media handler byte-identical to the accepted Phase 1 baseline', () => {
+    it('keeps every reviewed player and media handler byte-identical to the accepted quota baseline', () => {
         for (const [path, expected] of Object.entries(MEDIA_FILE_SHA256)) {
             expect(sha256(readFileSync(resolve(process.cwd(), path))), path).toBe(expected);
         }

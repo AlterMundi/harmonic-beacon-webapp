@@ -133,10 +133,15 @@ cooldown, scrubbed OAuth tokens and no stored session IP or user-agent.
 ## Free for All operator flow
 
 1. With the override OFF, verify an anonymous lease and manifest fail closed.
-2. Enable only the isolated Listener override and recreate only that app.
-3. Verify health, then confirm anonymous playback works without creating an
-   account, Free schedule, membership or Purchase.
-4. Disable it and verify denial again; re-enable it only if the current public
+2. Apply the Listener public-disable command so the kill switch is OFF and no
+   new personal lease can race the transition.
+3. Inside the disabled Listener container, run
+   `npx tsx scripts/listener-quiesce-for-free-for-all.ts`. It must converge and
+   report the aggregate accounts settled without identifiers.
+4. Only then set Listener enabled + FFA ON and recreate only Listener.
+5. Verify health, then confirm anonymous playback works without creating an
+   account, quota cycle, membership or Purchase.
+6. Disable it and verify denial again; re-enable it only if the current public
    demo decision requires it.
 
 Existing signed manifests or already buffered media may drain for the short
@@ -145,7 +150,7 @@ instant revocation.
 
 ## Physical acceptance matrix
 
-| Date/time | Device / OS | Browser | Locale | Google callback | Free schedule | Intro / handoff | Beacon live edge | 2→3 devices | Reconnect | Logout | Tester / notes |
+| Date/time | Device / OS | Browser | Locale | Google callback | Weekly quota | Intro / handoff | Beacon live edge | 2→3 devices | Reconnect | Logout | Tester / notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | _pending_ | Desktop | Chromium | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |
 | _pending_ | Desktop | Firefox | ES/EN | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | |

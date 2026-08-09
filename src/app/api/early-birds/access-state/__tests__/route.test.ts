@@ -54,4 +54,18 @@ describe('Listener access-state API', () => {
         expect((await GET(request)).status).toBe(401);
         expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
     });
+
+    it('reports anonymous Free for All mode without creating quota or membership state', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+
+        const response = await GET(request);
+        const payload = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('cache-control')).toContain('no-store');
+        expect(payload.access).toEqual({ kind: 'free-for-all', quota: null });
+        expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
+    });
 });

@@ -110,6 +110,84 @@ describe('Listener weekly quota presentation', () => {
         expect(screen.getByText('You have 3h left this week')).toBeInTheDocument();
     });
 
+    it('retries a transient failure at the weekly reset without requiring reload', async () => {
+        const accessFetch = vi.fn()
+            .mockResolvedValueOnce(new Response(null, { status: 503 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                serverNow: '2026-08-14T15:00:06.000Z',
+                access: {
+                    kind: 'free-quota',
+                    quota: {
+                        ...snapshot,
+                        status: 'available',
+                        activelyConsuming: false,
+                        remainingMs: 10_800_000,
+                        nextCycleAt: '2026-08-21T15:00:00.000Z',
+                    },
+                },
+            }), { status: 200 }));
+        vi.stubGlobal('fetch', accessFetch);
+        render(
+            <LocaleProvider initialLocale="en">
+                <FreeQuotaStatus snapshot={{
+                    ...snapshot,
+                    status: 'exhausted',
+                    activelyConsuming: false,
+                    remainingMs: 0,
+                    nextCycleAt: '2026-08-14T15:00:01.000Z',
+                }} serverNow="2026-08-14T15:00:00.000Z" />
+            </LocaleProvider>,
+        );
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+        expect(accessFetch).toHaveBeenCalledTimes(1);
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        expect(accessFetch).toHaveBeenCalledTimes(2);
+        expect(refresh).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('You have 3h left this week')).toBeInTheDocument();
+    });
+
+    it('refreshes an exhausted Free surface when canonical membership becomes active', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            serverNow: '2026-08-14T15:00:01.000Z',
+            access: { kind: 'membership', quota: null },
+        }), { status: 200 })));
+        render(
+            <LocaleProvider initialLocale="en">
+                <FreeQuotaStatus snapshot={{
+                    ...snapshot,
+                    status: 'exhausted',
+                    activelyConsuming: false,
+                    remainingMs: 0,
+                }} serverNow="2026-08-14T15:00:00.000Z" />
+            </LocaleProvider>,
+        );
+
+        window.dispatchEvent(new Event('listener:playback-presence'));
+        await act(async () => {});
+        expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps polling public mode and refreshes when Free for All is turned off', async () => {
+        const publicModeFetch = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                serverNow: '2026-08-14T15:00:30.000Z',
+                access: { kind: 'free-for-all', quota: null },
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(null, { status: 401 }));
+        vi.stubGlobal('fetch', publicModeFetch);
+        render(
+            <LocaleProvider initialLocale="en">
+                <FreeQuotaStatus serverNow="2026-08-14T15:00:00.000Z" unlimited="free-for-all" compact />
+            </LocaleProvider>,
+        );
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+        expect(refresh).not.toHaveBeenCalled();
+        await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+        expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
     it('uses a monotonic elapsed clock only while the server says consumption is active', async () => {
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
         render(

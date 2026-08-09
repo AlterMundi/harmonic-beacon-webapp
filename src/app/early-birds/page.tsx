@@ -14,9 +14,8 @@ import {
 } from '@/lib/early-birds/invitation-cookie';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
-import { serializeFreeWindowState } from '@/lib/early-birds/free-window';
-import { serializeWelcomeAccessState } from '@/lib/early-birds/welcome-access';
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
+import { serializeEarlyBirdQuotaSnapshot } from '@/lib/early-birds/quota';
 import { listenerCampfirePrototypeConfig } from '@/lib/early-birds/campfire-prototype';
 import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import {
@@ -62,7 +61,6 @@ export default async function EarlyBirdsPage({
     }
 
     const params = await searchParams;
-    const serverNow = new Date().toISOString();
     const incomingHeaders = new Headers(await requestHeaders());
     const sessionResolution = await currentEarlyBirdSession()
         .then((session) => ({ session, unavailable: false as const }))
@@ -85,11 +83,9 @@ export default async function EarlyBirdsPage({
                 campfirePrototype={campfire.enabled}
                 campfireFixture={campfire.fixture}
                 membership={listenerMembershipPresentation(access.membership.projection)}
-                accessKind={access.kind === 'free-window'
-                    ? 'free-window'
-                    : access.kind === 'welcome' ? 'welcome' : 'membership'}
-                accessUntil={access.allowedUntil?.toISOString() ?? null}
-                serverNow={serverNow}
+                accessKind={access.kind === 'free-quota' ? 'free-quota' : 'membership'}
+                quota={access.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
+                serverNow={access.serverNow.toISOString()}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
                     en: configuredEarlyBirdDropIn('en'),
@@ -119,10 +115,9 @@ export default async function EarlyBirdsPage({
             providers={providers}
             emailMagicLinkAvailable={emailMagicLinkAvailable}
             syntheticTeamEntryAvailable={syntheticTeamEntryAvailable}
-            freeWindow={access ? serializeFreeWindowState(access.freeWindow) : null}
-            welcome={access ? serializeWelcomeAccessState(access.welcome) : null}
+            quota={access?.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
             membership={listenerMembershipPresentation(access?.membership.projection ?? null)}
-            serverNow={serverNow}
+            serverNow={access?.serverNow.toISOString() ?? new Date().toISOString()}
         />
     );
 }

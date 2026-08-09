@@ -506,45 +506,32 @@ EARLY_BIRDS_MAGIC_LINK_RATE_SECRET=<independent-32-plus-character-secret>
 Partial or invalid configuration exposes neither the UI nor the auth endpoint.
 Rollback clears all three values and recreates only the isolated Listener.
 
-### Ordinary Free listening windows
+### Ordinary Free weekly allowance
 
-When Free for All is off, an authenticated account without a canonical Founder
-membership may select one recurring two-hour daily window. The selection is
-stored separately from commerce and membership state, is authorized from the
-server clock, and may be changed only after a rolling seven-day cooldown. The
-client supplies an IANA time zone and local wall-clock start; spring-forward
-gaps advance to the first valid local minute and fall-back ambiguity uses the
-first occurrence. Selecting “listen now” derives that wall-clock value from the
-server instant rather than trusting the browser clock.
-
-The exact public endpoint is `/api/early-birds/free-window`: `GET` returns the
-current window state for an authenticated session and `POST` requires an exact
-trusted `Origin`, a UUID idempotency key and either `now` or a validated local
-start minute. Active leases are capped at the end of the current window and a
-schedule change evicts existing leases. The global Free for All switch remains
-an independent operator override and never creates or edits this schedule.
-
-With Free for All temporarily disabled, the protected staging host can exercise
-the complete registered-Free boundary using only unique `@e2e.invalid`
-identities:
-
-```bash
-sudo scripts/early-birds-preview/registered-free-smoke.sh \
-  /etc/harmonic-beacon/earlybirds-preview.env
-```
-
-The smoke keeps the synthetic bearer in a mode-0600 curl config, selects a
-future schedule, proves idempotent replay and the seven-day cooldown, selects
-Listen now for a second account, verifies the exact two-hour lease cap, opens
-three devices, observes oldest-device displacement and fetches a valid signed
-manifest. It deliberately does not toggle Free for All itself; the operator
-must restore the configured public mode and rerun health after the test.
+When Free for All is off, a signed-in account without canonical membership gets
+three hours in its fixed personal seven-day cycle. The first real Free playback
+creates the anchor. Browser time, timezone and the retained legacy schedule and
+welcome rows never authorize access. The access, lease, heartbeat and manifest
+boundaries all reconcile the same server-owned quota; two simultaneous devices
+consume the union once.
 
 ### Operator-controlled Free for All
 
-`EARLY_BIRDS_FREE_FOR_ALL` is independent from the Listener kill switch. Set it
-to exactly `1` and recreate only the Listener to let anonymous visitors use the
-Listener and configured drop-ins without creating a membership:
+`EARLY_BIRDS_FREE_FOR_ALL` is independent from the Listener kill switch. Before
+turning it on, first use `disable-public.sh --apply` so no new personal lease can
+race the drain. Then settle and evict every extant personal lease inside the
+disabled Listener container:
+
+```bash
+docker compose --env-file /etc/harmonic-beacon/earlybirds-preview.env \
+  -f /opt/early-birds-preview/compose.yml exec -T listener \
+  npx tsx scripts/listener-quiesce-for-free-for-all.ts
+```
+
+The command must report convergence. It records only an aggregate account
+count and fails closed unless both public entry and FFA are OFF. After that,
+atomically update the protected environment to the values below and recreate
+only Listener to let anonymous visitors listen without creating a membership:
 
 ```dotenv
 EARLY_BIRDS_ENABLED=1

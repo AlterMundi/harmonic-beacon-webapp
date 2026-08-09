@@ -47,6 +47,34 @@ permissions:
   contents: read
 
 jobs:
+  quota-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: listener_test
+          POSTGRES_DB: listener_test
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d listener_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:listener_test@localhost:55433/listener_test
+      LISTENER_TEST_DATABASE_URL: postgresql://postgres:listener_test@localhost:55433/listener_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm test -- --run src/lib/early-birds/__tests__/founder-eligibility.postgres.test.ts src/lib/early-birds/__tests__/quota.postgres.test.ts
+
   stream-origin:
     runs-on: ubuntu-latest
     defaults:

@@ -85,6 +85,8 @@ describe('EarlyBird membership read model', () => {
     it('fails closed for missing/ended access and respects paid/grace horizons', () => {
         expect(membershipAccessDecision(null, NOW)).toMatchObject({ allowed: false, reason: 'missing' });
         expect(membershipAccessDecision(projection(), NOW)).toMatchObject({ allowed: true, reason: 'active' });
+        expect(membershipAccessDecision(projection({ effectiveAt: new Date(NOW.getTime() + 1) }), NOW))
+            .toMatchObject({ allowed: false, reason: 'pending' });
         expect(membershipAccessDecision(projection({ state: 'GRACE', graceUntil: new Date(NOW.getTime() + 1_000) }), NOW))
             .toMatchObject({ allowed: true, reason: 'grace' });
         expect(membershipAccessDecision(projection({ state: 'GRACE', graceUntil: NOW }), NOW))

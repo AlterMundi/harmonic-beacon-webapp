@@ -5,6 +5,7 @@ import {
     EARLY_BIRD_QUOTA_BASE_ALLOWANCE_MS,
     EARLY_BIRD_QUOTA_CYCLE_MS,
     continuousQuotaExhaustionAt,
+    membershipFreeIntervals,
     quotaCycleAt,
     unionListeningIntervals,
     unstartedQuotaSnapshot,
@@ -85,6 +86,28 @@ describe('personal seven-day Listener quota ledger', () => {
         });
         expect(result.baseConsumedMs).toBe(2_000);
         expect(result.usage.reduce((sum, row) => sum + row.amountMs, 0)).toBe(2_000);
+    });
+
+    it('charges only the spans outside a future-effective membership interval', () => {
+        const hour = 60 * 60 * 1_000;
+        const projection = {
+            state: 'ACTIVE',
+            effectiveAt: at(hour),
+            paidThrough: at(2 * hour),
+            graceUntil: null,
+        };
+
+        expect(membershipFreeIntervals([
+            { startedAt: ANCHOR, endedAt: at(3 * hour) },
+        ], projection as never)).toEqual([
+            { startedAt: ANCHOR, endedAt: at(hour) },
+            { startedAt: at(2 * hour), endedAt: at(3 * hour) },
+        ]);
+        expect(membershipFreeIntervals([
+            { startedAt: ANCHOR, endedAt: at(2 * hour) },
+        ], { ...projection, paidThrough: null } as never)).toEqual([
+            { startedAt: ANCHOR, endedAt: at(hour) },
+        ]);
     });
 
     it('splits at a cycle boundary and gives the new cycle a full base', () => {
