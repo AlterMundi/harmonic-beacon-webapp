@@ -1,7 +1,9 @@
 import type { HarmonicAnalysisFrame } from '@/lib/listener/analysis/types';
 
 import {
+    HARMONIC_ACTIVATION_THRESHOLD,
     type HarmonicTrailSample,
+    harmonicActivationStrength,
     selectHarmonicIndexes,
     smoothVisualDb,
 } from './scene';
@@ -16,6 +18,7 @@ export type ReactiveFrameState = {
     previousCaptureAtMs: number | null;
     sourceKind: HarmonicAnalysisFrame['sourceKind'] | null;
     history: Map<number, HarmonicTrailSample[]>;
+    lastActivatedAtMs: Map<number, number>;
 };
 
 export function createReactiveFrameState(): ReactiveFrameState {
@@ -26,6 +29,7 @@ export function createReactiveFrameState(): ReactiveFrameState {
         previousCaptureAtMs: null,
         sourceKind: null,
         history: new Map(),
+        lastActivatedAtMs: new Map(),
     };
 }
 
@@ -43,8 +47,19 @@ function appendFrameToHistory(
     for (const existing of state.history.keys()) {
         if (!retained.has(existing)) state.history.delete(existing);
     }
+    for (const existing of state.lastActivatedAtMs.keys()) {
+        if (!retained.has(existing)) state.lastActivatedAtMs.delete(existing);
+    }
     const maxAgeMs = Math.max(4_000, settings.trailSeconds * 1_000);
     for (const index of indexes) {
+        const activation = harmonicActivationStrength(
+            frame.harmonicAbsoluteDb[index],
+            frame.harmonicDeltaDb[index] ?? 0,
+            settings.absoluteFloorDb,
+        );
+        if (activation >= HARMONIC_ACTIVATION_THRESHOLD) {
+            state.lastActivatedAtMs.set(index, frame.capturedAtMs);
+        }
         if (index < 38) continue;
         const samples = state.history.get(index) ?? [];
         samples.push({
@@ -65,6 +80,7 @@ function resetSourceHistory(state: ReactiveFrameState) {
     state.smoothedFrame = null;
     state.lastSmoothAtMs = null;
     state.previousCaptureAtMs = null;
+    state.lastActivatedAtMs.clear();
 }
 
 export function recordReactiveFrame(

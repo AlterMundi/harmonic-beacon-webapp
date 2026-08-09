@@ -25,9 +25,12 @@ experiment is not exposed by `listen.harmonicbeacon.com`.
 The point of view is fixed. Neither stereo balance nor aggregate energy moves
 the center or the horizon. Each audible harmonic follows a deterministic,
 continuous low-frequency dance whose amplitude is bounded by its measured
-absolute energy and softly modulated by its baseline variation. Inactive bands
-remain only as a uniform, very faint structural weave; they cannot acquire the
-brightness, width emphasis or strong motion of measured energy.
+absolute energy and softly modulated by its baseline variation. The renderer
+keeps at most 128 stable harmonic identities per frame: every low harmonic is
+retained and the remaining slots sample progressively through the highest
+measurable harmonic. A band appears only after measured activation, glows in
+proportion to that activation, and then fades to invisibility over the
+configured activation TTL. The TTL is visual memory, not invented signal.
 
 Outer ribbons use a lightweight pinned-cloth model. Their inner edge remains
 anchored, a very gentle wave keeps the field alive, and measured harmonic
@@ -64,9 +67,11 @@ The laboratory currently offers three renderers over the same analysis frame:
   horizon. Harmonics below the cut stay closer to the center; upper harmonics
   fan farther outward.
 
-Changing renderer, cut harmonic, width, palette or other visual controls never
-rebuilds the audio graph. FFT size and baseline duration remain analysis-session
-controls and therefore require Stop before changing them.
+Changing renderer, cut harmonic, zoom, activation TTL, width, palette or other
+visual controls never rebuilds the audio graph. Zoom ranges from a distant 50%
+view to a close 220% view around the fixed center. FFT size and baseline duration
+remain analysis-session controls and therefore require Stop before changing
+them.
 
 ## Audio boundary
 
@@ -91,9 +96,10 @@ panel. Visual parameters can change while listening. FFT size and slow-baseline
 duration are locked during playback because they require a fresh analysis
 session. The FFT selector exposes both 8192 (lighter) and 16384 (more detail).
 Presets export as versioned JSON. The current default is the human-selected
-full-series Ember preset: sensitivity 3, -120 dB floor, 24 s baseline, 20 ms
-attack, 140 ms release, 4 s trails, density 1, upper-detail bias 1, center field
-100%, ribbon width 2.25 and FFT 16384.
+Radial ribbons Ember preset: sensitivity 3, -120 dB floor, 24 s baseline, 20 ms
+attack, 140 ms release, no movement trails, density 1, upper-detail bias 1,
+center field 4%, outer-spacing growth 65%, zoom 100%, activation TTL 8 seconds,
+ribbon width 3 and FFT 16384.
 
 Apple/native-HLS clients remain direct-mode only. WebKit's analysed native-HLS
 path has not yet passed the acoustic, nonzero-signal, fade and handoff gates for

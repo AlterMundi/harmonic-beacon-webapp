@@ -7,6 +7,7 @@ import {
 } from './settings';
 
 export const MAX_RENDERED_HARMONICS = 128;
+export const HARMONIC_ACTIVATION_THRESHOLD = 0.15;
 const GUARANTEED_LOW_HARMONIC_COUNT = 10;
 const MID_HARMONIC_COUNT = 38;
 const REFERENCE_CEILING_DB = -12;
@@ -26,6 +27,8 @@ export type ReactiveRing = {
     rotation: number;
     opacity: number;
     weight: number;
+    activation: number;
+    visibility: number;
 };
 
 export type ReactiveSeriesRing = ReactiveRing & {
@@ -44,6 +47,8 @@ export type ReactiveFilament = {
     emphasis: number;
     activity: number;
     wiggle: number;
+    activation: number;
+    visibility: number;
     trail: Array<{
         capturedAtMs: number;
         angle: number;
@@ -96,6 +101,30 @@ export function absoluteEnergy(
 ): number {
     if (!Number.isFinite(db)) return 0;
     return clamp((db - floorDb) / (REFERENCE_CEILING_DB - floorDb));
+}
+
+export function harmonicActivationStrength(
+    absoluteDb: number,
+    deltaDb: number,
+    floorDb = DEFAULT_REACTIVE_CAMPFIRE_SETTINGS.absoluteFloorDb,
+): number {
+    const absolute = absoluteEnergy(absoluteDb, floorDb);
+    const sustainedPresence = clamp((absolute - 0.52) / 0.3) * 0.7;
+    const risingPresence = clamp(Math.max(0, deltaDb) / 6) * absolute;
+    return Math.max(sustainedPresence, risingPresence);
+}
+
+function harmonicVisibility(
+    index: number,
+    activation: number,
+    capturedAtMs: number,
+    ttlSeconds: number,
+    lastActivatedAtMs: ReadonlyMap<number, number>,
+): number {
+    if (activation >= HARMONIC_ACTIVATION_THRESHOLD) return 1;
+    const lastActivated = lastActivatedAtMs.get(index);
+    if (lastActivated === undefined || ttlSeconds <= 0) return 0;
+    return clamp(1 - (capturedAtMs - lastActivated) / (ttlSeconds * 1_000));
 }
 
 export function smoothVisualDb(
@@ -225,6 +254,7 @@ export function buildReactiveCampfireScene(
     settingsCandidate: Partial<ReactiveCampfireSettings> = {},
     history: ReactiveTrailHistory = new Map(),
     decay = 1,
+    lastActivatedAtMs: ReadonlyMap<number, number> = new Map(),
 ): ReactiveCampfireScene {
     const settings = validateReactiveCampfireSettings(settingsCandidate);
     const confidence = clamp(frame?.confidence ?? 0) * clamp(decay);
@@ -245,6 +275,11 @@ export function buildReactiveCampfireScene(
             1 + settings.radialSpacingGrowthPercent / 100
         );
         const absolute = absoluteEnergy(harmonics[index], settings.absoluteFloorDb) * confidence;
+        const activation = harmonicActivationStrength(
+            harmonics[index],
+            deltas[index] ?? 0,
+            settings.absoluteFloorDb,
+        ) * confidence;
         return {
             harmonicIndex: index,
             // Linear harmonic identity across an expanded field. The highest
@@ -254,6 +289,14 @@ export function buildReactiveCampfireScene(
             rotation: (seededUnit(index, 121) - 0.5) * 0.12,
             opacity: absolute * 0.78,
             weight: 0.6 + absolute * 2.4,
+            activation,
+            visibility: harmonicVisibility(
+                index,
+                activation,
+                capturedAtMs,
+                settings.activationTtlSeconds,
+                lastActivatedAtMs,
+            ),
             tier: progress < 0.16 ? 'low' : progress < 0.58 ? 'mid' : 'high',
         };
     });
@@ -276,6 +319,18 @@ export function buildReactiveCampfireScene(
 
     for (const index of indexes) {
         const absolute = absoluteEnergy(harmonics[index], settings.absoluteFloorDb) * confidence;
+        const activation = harmonicActivationStrength(
+            harmonics[index],
+            deltas[index] ?? 0,
+            settings.absoluteFloorDb,
+        ) * confidence;
+        const visibility = harmonicVisibility(
+            index,
+            activation,
+            capturedAtMs,
+            settings.activationTtlSeconds,
+            lastActivatedAtMs,
+        );
         const harmonicNumber = index + 1;
         if (index < centerCutIndex) {
             rings.push({
@@ -285,6 +340,8 @@ export function buildReactiveCampfireScene(
                 rotation: (seededUnit(index, 8) - 0.5) * 0.55,
                 opacity: absolute * 0.72,
                 weight: 0.5 + absolute * 2.3,
+                activation,
+                visibility,
             });
             continue;
         }
@@ -324,6 +381,8 @@ export function buildReactiveCampfireScene(
             emphasis: clamp(Math.abs(movement)) * absolute * 0.72,
             activity: absolute,
             wiggle: clamp(Math.abs(deltas[index] ?? 0) / 9) * absolute,
+            activation,
+            visibility,
             trail: tier === 'high'
                 ? trailFor(
                     index,

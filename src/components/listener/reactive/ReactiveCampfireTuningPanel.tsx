@@ -36,11 +36,13 @@ const NUMBER_FIELDS: Array<{
     { key: 'baselineDurationSeconds', label: 'Slow baseline', min: 5, max: 120, step: 1, suffix: ' s' },
     { key: 'attackMs', label: 'Visual attack', min: 20, max: 1_000, step: 10, suffix: ' ms' },
     { key: 'releaseMs', label: 'Visual release', min: 80, max: 4_000, step: 20, suffix: ' ms' },
-    { key: 'trailSeconds', label: 'Upper trails', min: 0, max: 4, step: 0.1, suffix: ' s' },
+    { key: 'trailSeconds', label: 'Upper full-ribbon trails', min: 0, max: 4, step: 0.1, suffix: ' s' },
     { key: 'density', label: 'Harmonic density', min: 0.2, max: 1, step: 0.05 },
     { key: 'highDetail', label: 'High detail', min: 0, max: 1, step: 0.05 },
     { key: 'centerCutPercent', label: 'Center field', min: 0, max: 100, step: 1, suffix: '%' },
     { key: 'radialSpacingGrowthPercent', label: 'Outer spacing growth', min: 0, max: 250, step: 1, suffix: '%' },
+    { key: 'zoomPercent', label: 'Zoom', min: 50, max: 220, step: 1, suffix: '%' },
+    { key: 'activationTtlSeconds', label: 'Activation TTL', min: 0, max: 30, step: 0.5, suffix: ' s' },
     { key: 'ribbonWidth', label: 'Ribbon width', min: 0.6, max: 3, step: 0.05 },
 ];
 

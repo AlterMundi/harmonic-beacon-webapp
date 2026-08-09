@@ -17,6 +17,8 @@ describe('reactive campfire settings', () => {
             trailSeconds: 20,
             density: -4,
             highDetail: 8,
+            zoomPercent: 999,
+            activationTtlSeconds: -1,
             palette: 'unknown' as never,
             fftSize: 32_768 as never,
         });
@@ -29,6 +31,8 @@ describe('reactive campfire settings', () => {
             trailSeconds: 4,
             density: 0.2,
             highDetail: 1,
+            zoomPercent: 220,
+            activationTtlSeconds: 0,
         });
     });
 

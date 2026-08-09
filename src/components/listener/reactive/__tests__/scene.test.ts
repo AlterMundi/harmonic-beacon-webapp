@@ -5,6 +5,7 @@ import type { HarmonicAnalysisFrame } from '@/lib/listener/analysis/types';
 import {
     absoluteEnergy,
     buildReactiveCampfireScene,
+    HARMONIC_ACTIVATION_THRESHOLD,
     MAX_RENDERED_HARMONICS,
     seededUnit,
     smoothVisualDb,
@@ -159,14 +160,16 @@ describe('reactive campfire scene', () => {
             baselineDurationSeconds: 24,
             attackMs: 20,
             releaseMs: 140,
-            trailSeconds: 4,
+            trailSeconds: 0,
             density: 1,
             highDetail: 1,
-            centerCutPercent: 100,
+            centerCutPercent: 4,
             radialSpacingGrowthPercent: 65,
-            ribbonWidth: 2.25,
+            zoomPercent: 100,
+            activationTtlSeconds: 8,
+            ribbonWidth: 3,
             palette: 'ember',
-            visualizationMode: 'harmonic-radial-series',
+            visualizationMode: 'radial-ribbons',
             fftSize: 16_384,
         });
     });
@@ -246,5 +249,45 @@ describe('reactive campfire scene', () => {
         expect(allCenter.filaments).toHaveLength(0);
         expect(allCenter.rings.length).toBeGreaterThan(0);
         expect(allCenter.veils.every((veil) => veil.opacity === 0)).toBe(true);
+    });
+
+    it('glows on activation, then dims and disappears according to TTL', () => {
+        const activeFrame = frameWith(
+            Array.from({ length: 64 }, (_, index) => index === 50 ? -20 : -82),
+            Array.from({ length: 64 }, () => 0),
+            { capturedAtMs: 10_000 },
+        );
+        const frame = frameWith(
+            Array.from({ length: 64 }, () => -82),
+            Array.from({ length: 64 }, () => 0),
+            { capturedAtMs: 10_000 },
+        );
+        const active = buildReactiveCampfireScene(
+            activeFrame,
+            { centerCutPercent: 4, activationTtlSeconds: 8 },
+        );
+        const recentlyActive = buildReactiveCampfireScene(
+            frame,
+            { centerCutPercent: 4, activationTtlSeconds: 8 },
+            new Map(),
+            1,
+            new Map([[50, 6_000]]),
+        );
+        const expired = buildReactiveCampfireScene(
+            frame,
+            { centerCutPercent: 4, activationTtlSeconds: 8 },
+            new Map(),
+            1,
+            new Map([[50, 1_000]]),
+        );
+        const recentRibbon = recentlyActive.filaments.find(({ harmonicIndex }) => harmonicIndex === 50);
+        const expiredRibbon = expired.filaments.find(({ harmonicIndex }) => harmonicIndex === 50);
+        const activeRibbon = active.filaments.find(({ harmonicIndex }) => harmonicIndex === 50);
+
+        expect(activeRibbon?.activation).toBeGreaterThan(HARMONIC_ACTIVATION_THRESHOLD);
+        expect(activeRibbon?.visibility).toBe(1);
+        expect(recentRibbon?.activation).toBeLessThan(HARMONIC_ACTIVATION_THRESHOLD);
+        expect(recentRibbon?.visibility).toBeCloseTo(0.5);
+        expect(expiredRibbon?.visibility).toBe(0);
     });
 });

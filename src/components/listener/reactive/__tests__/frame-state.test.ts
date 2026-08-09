@@ -43,6 +43,7 @@ describe('reactive frame source boundaries', () => {
         const beacon = sourceFrame('beacon', 10_100, -82);
 
         recordReactiveFrame(state, intro, settings);
+        expect(state.lastActivatedAtMs.get(50)).toBe(10_000);
         expect(advanceReactiveFrame(state, 10_000, 100, settings)?.harmonicAbsoluteDb[50])
             .toBe(-20);
         expect(state.history.get(50)?.map((sample) => sample.absoluteDb)).toEqual([-20]);
@@ -50,6 +51,7 @@ describe('reactive frame source boundaries', () => {
         recordReactiveFrame(state, beacon, settings);
 
         expect(state.lastSmoothAtMs).toBeNull();
+        expect(state.lastActivatedAtMs.has(50)).toBe(false);
         expect(state.history.get(50)?.map((sample) => sample.absoluteDb)).toEqual([-82]);
         const firstBeaconRender = advanceReactiveFrame(state, 10_100, 100, settings);
         expect(firstBeaconRender?.harmonicAbsoluteDb[50]).toBe(-82);

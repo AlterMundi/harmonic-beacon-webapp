@@ -145,6 +145,8 @@ describe('reactive campfire components', () => {
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
             visualizationMode: 'horizon-flow',
         }));
-        expect(screen.getByText(/Fixed · complete harmonic series/)).toBeInTheDocument();
+        expect(screen.getByText(/4% center · 96% outer/)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Zoom/i)).toHaveValue('100');
+        expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('8');
     });
 });

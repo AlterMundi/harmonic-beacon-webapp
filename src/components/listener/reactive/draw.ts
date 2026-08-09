@@ -186,6 +186,7 @@ function drawRadialRibbon(
     ribbonScale: number,
     timeSeconds: number,
 ) {
+    if (filament.visibility <= 0) return;
     const color = filament.tier === 'high' ? palette.high : palette.mid;
     const start = endpoint(
         centerX,
@@ -226,7 +227,7 @@ function drawRadialRibbon(
             ghost.angle + ghost.bend,
         );
         const ghostWidth = (1.4 + ghost.weight * 2.6) * ribbonScale;
-        context.fillStyle = rgba(color, ghost.opacity);
+        context.fillStyle = rgba(color, ghost.opacity * filament.visibility);
         fillClothRibbon(
             context,
             ghostStart,
@@ -243,12 +244,21 @@ function drawRadialRibbon(
 
     const width = (1.8 + filament.weight * 3.2) * ribbonScale;
     const leafGradient = context.createLinearGradient(start[0], start[1], end[0], end[1]);
-    leafGradient.addColorStop(0, rgba(color, 0.018 + filament.opacity * 0.18));
-    leafGradient.addColorStop(0.58, rgba(color, 0.025 + filament.opacity * 0.62));
-    leafGradient.addColorStop(1, rgba(color, 0.035 + filament.opacity * 0.86));
+    leafGradient.addColorStop(0, rgba(
+        color,
+        (0.012 + filament.opacity * 0.18) * filament.visibility,
+    ));
+    leafGradient.addColorStop(0.58, rgba(
+        color,
+        (0.018 + filament.opacity * 0.62) * filament.visibility,
+    ));
+    leafGradient.addColorStop(1, rgba(
+        color,
+        (0.025 + filament.opacity * 0.86) * filament.visibility,
+    ));
     context.fillStyle = leafGradient;
     context.save();
-    const glowStrength = Math.max(0, (filament.activity - 0.68) / 0.32) + filament.wiggle;
+    const glowStrength = filament.activation * filament.visibility;
     context.shadowColor = rgba(color, Math.min(0.8, glowStrength * 0.72));
     context.shadowBlur = glowStrength > 0.08
         ? Math.min(22, glowStrength * 16 * ribbonScale)
@@ -267,8 +277,11 @@ function drawRadialRibbon(
     );
     context.restore();
 
-    if (filament.emphasis > 0.04) {
-        context.fillStyle = rgba(color, filament.emphasis * 0.42);
+    if (filament.emphasis > 0.04 && filament.visibility > 0) {
+        context.fillStyle = rgba(
+            color,
+            filament.emphasis * 0.42 * filament.visibility,
+        );
         context.beginPath();
         context.arc(end[0], end[1], width * (0.45 + filament.emphasis), 0, Math.PI * 2);
         context.fill();
@@ -303,7 +316,11 @@ function drawRadialField(
     context.fillRect(0, 0, width, height);
 
     for (const ring of scene.rings) {
-        context.strokeStyle = rgba(palette.low, ring.opacity * 0.72);
+        if (ring.visibility <= 0) continue;
+        context.save();
+        context.shadowColor = rgba(palette.low, ring.activation * 0.65);
+        context.shadowBlur = ring.activation > 0.08 ? Math.min(18, ring.activation * 16) : 0;
+        context.strokeStyle = rgba(palette.low, ring.opacity * 0.72 * ring.visibility);
         context.lineWidth = Math.max(2, (2 + ring.weight * 2.5) * settings.ribbonWidth);
         context.beginPath();
         context.ellipse(
@@ -316,6 +333,7 @@ function drawRadialField(
             Math.PI * 2,
         );
         context.stroke();
+        context.restore();
     }
 
     for (const filament of scene.filaments) {
@@ -401,16 +419,20 @@ function drawHarmonicRadialSeries(
     context.fillRect(0, 0, width, height);
 
     for (const ring of scene.seriesRings) {
+        if (ring.visibility <= 0) continue;
         const color = ring.tier === 'low'
             ? palette.low
             : ring.tier === 'mid' ? palette.mid : palette.high;
         const radiusX = ring.radius * scale;
         const radiusY = radiusX * ring.eccentricity;
-        const glowStrength = Math.max(0, (ring.opacity - 0.38) / 0.4);
+        const glowStrength = ring.activation * ring.visibility;
         context.save();
         context.shadowColor = rgba(color, Math.min(0.68, glowStrength * 0.62));
         context.shadowBlur = glowStrength > 0.05 ? Math.min(18, glowStrength * 14) : 0;
-        context.strokeStyle = rgba(color, 0.018 + ring.opacity * 0.84);
+        context.strokeStyle = rgba(
+            color,
+            (0.012 + ring.opacity * 0.84) * ring.visibility,
+        );
         context.lineWidth = Math.max(
             0.9,
             (0.7 + ring.weight * 1.45) * settings.ribbonWidth,
@@ -460,6 +482,8 @@ function drawHorizonField(
             bend: ring.rotation * 0.12,
             activity: ring.opacity,
             wiggle: 0,
+            activation: ring.activation,
+            visibility: ring.visibility,
             tier: 'low' as const,
         })),
         ...scene.filaments.map((filament) => ({
@@ -469,6 +493,8 @@ function drawHorizonField(
             bend: filament.bend,
             activity: filament.activity,
             wiggle: filament.wiggle,
+            activation: filament.activation,
+            visibility: filament.visibility,
             tier: filament.tier,
         })),
     ];
@@ -483,6 +509,7 @@ function drawHorizonField(
     context.stroke();
 
     for (const item of all) {
+        if (item.visibility <= 0) continue;
         const isCenter = item.harmonicIndex < scene.centerCutIndex;
         const seed = seededUnit(item.harmonicIndex, 71) * 2 - 1;
         const spread = isCenter ? 0.18 : 0.44;
@@ -497,12 +524,21 @@ function drawHorizonField(
             : item.tier === 'high' ? palette.high : palette.mid;
         const widthScale = (2.4 + item.weight * 3.8) * settings.ribbonWidth;
         const leafGradient = context.createLinearGradient(startX, startY, endX, endY);
-        leafGradient.addColorStop(0, rgba(color, 0.018 + item.opacity * 0.16));
-        leafGradient.addColorStop(0.58, rgba(color, 0.025 + item.opacity * 0.58));
-        leafGradient.addColorStop(1, rgba(color, 0.035 + item.opacity * 0.82));
+        leafGradient.addColorStop(0, rgba(
+            color,
+            (0.012 + item.opacity * 0.16) * item.visibility,
+        ));
+        leafGradient.addColorStop(0.58, rgba(
+            color,
+            (0.018 + item.opacity * 0.58) * item.visibility,
+        ));
+        leafGradient.addColorStop(1, rgba(
+            color,
+            (0.025 + item.opacity * 0.82) * item.visibility,
+        ));
         context.fillStyle = leafGradient;
         context.save();
-        const glowStrength = Math.max(0, (item.activity - 0.68) / 0.32) + item.wiggle;
+        const glowStrength = item.activation * item.visibility;
         context.shadowColor = rgba(color, Math.min(0.8, glowStrength * 0.7));
         context.shadowBlur = glowStrength > 0.08
             ? Math.min(22, glowStrength * 16 * settings.ribbonWidth)
@@ -548,6 +584,10 @@ export function drawReactiveCampfire(
     context.globalCompositeOperation = 'screen';
     context.lineCap = 'round';
     context.lineJoin = 'round';
+    const zoom = settings.zoomPercent / 100;
+    context.translate(width * 0.5, height * 0.5);
+    context.scale(zoom, zoom);
+    context.translate(-width * 0.5, -height * 0.5);
     if (settings.visualizationMode === 'harmonic-radial-series') {
         drawHarmonicRadialSeries(context, width, height, scene, palette, settings);
     } else if (settings.visualizationMode === 'horizon-flow') {

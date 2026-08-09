@@ -19,6 +19,8 @@ export type ReactiveCampfireSettings = {
     highDetail: number;
     centerCutPercent: number;
     radialSpacingGrowthPercent: number;
+    zoomPercent: number;
+    activationTtlSeconds: number;
     ribbonWidth: number;
     palette: ReactivePalette;
     visualizationMode: ReactiveVisualizationMode;
@@ -31,14 +33,16 @@ export const DEFAULT_REACTIVE_CAMPFIRE_SETTINGS: Readonly<ReactiveCampfireSettin
     baselineDurationSeconds: 24,
     attackMs: 20,
     releaseMs: 140,
-    trailSeconds: 4,
+    trailSeconds: 0,
     density: 1,
     highDetail: 1,
-    centerCutPercent: 100,
+    centerCutPercent: 4,
     radialSpacingGrowthPercent: 65,
-    ribbonWidth: 2.25,
+    zoomPercent: 100,
+    activationTtlSeconds: 8,
+    ribbonWidth: 3,
     palette: 'ember',
-    visualizationMode: 'harmonic-radial-series',
+    visualizationMode: 'radial-ribbons',
     fftSize: 16_384,
 });
 
@@ -53,6 +57,8 @@ const LIMITS = {
     highDetail: [0, 1],
     centerCutPercent: [0, 100],
     radialSpacingGrowthPercent: [0, 250],
+    zoomPercent: [50, 220],
+    activationTtlSeconds: [0, 30],
     ribbonWidth: [0.6, 3],
 } as const;
 
@@ -115,6 +121,16 @@ export function validateReactiveCampfireSettings(
             fallback.radialSpacingGrowthPercent,
             ...LIMITS.radialSpacingGrowthPercent,
         )),
+        zoomPercent: Math.round(clampFinite(
+            candidate?.zoomPercent,
+            fallback.zoomPercent,
+            ...LIMITS.zoomPercent,
+        )),
+        activationTtlSeconds: clampFinite(
+            candidate?.activationTtlSeconds,
+            fallback.activationTtlSeconds,
+            ...LIMITS.activationTtlSeconds,
+        ),
         ribbonWidth: clampFinite(
             candidate?.ribbonWidth,
             fallback.ribbonWidth,
