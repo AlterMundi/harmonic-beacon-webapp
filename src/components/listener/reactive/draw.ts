@@ -84,6 +84,7 @@ export function buildClothRibbonPoints({
     const livelyRate = 0.22 + seededUnit(harmonicIndex, 95) * 0.22;
     const ambientAmplitude = 0.65;
     const activeAmplitude = Math.max(0, activity) * 4.5 + Math.max(0, wiggle) * 8.5;
+    const perspective = 0.45 + seededUnit(harmonicIndex, 97) * 0.55;
     const segments = 12;
 
     for (let segment = 0; segment <= segments; segment += 1) {
@@ -110,10 +111,15 @@ export function buildClothRibbonPoints({
             phase * 0.63 + timeSeconds * Math.PI * 2 * livelyRate + t * Math.PI * 4.6,
         ) * activeAmplitude;
         const displacement = (ambientWave + activatedWave) * freeEdge;
+        const leafProfile = 0.32
+            + Math.sin(Math.PI * t) * 0.78
+            + perspective * t * t * 0.52;
         points.push({
             centerX: baseX + normalX * displacement,
             centerY: baseY + normalY * displacement,
-            halfWidth: startWidth + (endWidth - startWidth) * t,
+            // Narrow pinned stem, full body, then a perspective-biased free
+            // edge. Outer leaves therefore feel closer without camera motion.
+            halfWidth: (startWidth + (endWidth - startWidth) * t) * leafProfile,
         });
     }
     return points;
@@ -210,7 +216,17 @@ function drawRadialRibbon(
     }
 
     const width = (1.8 + filament.weight * 3.2) * ribbonScale;
-    context.fillStyle = rgba(color, 0.025 + filament.opacity * 0.75);
+    const leafGradient = context.createLinearGradient(start[0], start[1], end[0], end[1]);
+    leafGradient.addColorStop(0, rgba(color, 0.018 + filament.opacity * 0.18));
+    leafGradient.addColorStop(0.58, rgba(color, 0.025 + filament.opacity * 0.62));
+    leafGradient.addColorStop(1, rgba(color, 0.035 + filament.opacity * 0.86));
+    context.fillStyle = leafGradient;
+    context.save();
+    const glowStrength = Math.max(0, (filament.activity - 0.68) / 0.32) + filament.wiggle;
+    context.shadowColor = rgba(color, Math.min(0.8, glowStrength * 0.72));
+    context.shadowBlur = glowStrength > 0.08
+        ? Math.min(22, glowStrength * 16 * ribbonScale)
+        : 0;
     fillClothRibbon(
         context,
         start,
@@ -223,6 +239,7 @@ function drawRadialRibbon(
         filament.activity,
         filament.wiggle,
     );
+    context.restore();
 
     if (filament.emphasis > 0.04) {
         context.fillStyle = rgba(color, filament.emphasis * 0.42);
@@ -244,6 +261,20 @@ function drawRadialField(
     // Deliberately invariant: no audio measurement may translate this point.
     const centerX = width * 0.5;
     const centerY = height * 0.48;
+
+    const atmosphere = context.createRadialGradient(
+        centerX,
+        centerY,
+        0,
+        centerX,
+        centerY,
+        Math.max(width, height) * 0.72,
+    );
+    atmosphere.addColorStop(0, rgba(palette.low, 0.075 * scene.confidence));
+    atmosphere.addColorStop(0.34, 'rgba(19, 57, 78, 0.055)');
+    atmosphere.addColorStop(1, 'rgba(2, 8, 24, 0)');
+    context.fillStyle = atmosphere;
+    context.fillRect(0, 0, width, height);
 
     for (const ring of scene.rings) {
         context.strokeStyle = rgba(palette.low, ring.opacity * 0.72);
@@ -290,6 +321,22 @@ function drawRadialField(
 
     if (scene.core.radius > 0) {
         const radius = scene.core.radius * scale;
+        const auraRadius = Math.max(radius * 4.5, Math.min(width, height) * 0.16);
+        const aura = context.createRadialGradient(
+            centerX,
+            centerY,
+            0,
+            centerX,
+            centerY,
+            auraRadius,
+        );
+        aura.addColorStop(0, rgba(palette.core, scene.core.opacity * 0.32));
+        aura.addColorStop(0.3, rgba(palette.low, scene.core.opacity * 0.16));
+        aura.addColorStop(1, rgba(palette.high, 0));
+        context.fillStyle = aura;
+        context.beginPath();
+        context.arc(centerX, centerY, auraRadius, 0, Math.PI * 2);
+        context.fill();
         const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
         gradient.addColorStop(0, rgba(palette.core, scene.core.opacity));
         gradient.addColorStop(0.28, rgba(palette.low, scene.core.opacity * 0.8));
@@ -356,7 +403,17 @@ function drawHorizonField(
             ? palette.low
             : item.tier === 'high' ? palette.high : palette.mid;
         const widthScale = (2.4 + item.weight * 3.8) * settings.ribbonWidth;
-        context.fillStyle = rgba(color, 0.025 + item.opacity * 0.68);
+        const leafGradient = context.createLinearGradient(startX, startY, endX, endY);
+        leafGradient.addColorStop(0, rgba(color, 0.018 + item.opacity * 0.16));
+        leafGradient.addColorStop(0.58, rgba(color, 0.025 + item.opacity * 0.58));
+        leafGradient.addColorStop(1, rgba(color, 0.035 + item.opacity * 0.82));
+        context.fillStyle = leafGradient;
+        context.save();
+        const glowStrength = Math.max(0, (item.activity - 0.68) / 0.32) + item.wiggle;
+        context.shadowColor = rgba(color, Math.min(0.8, glowStrength * 0.7));
+        context.shadowBlur = glowStrength > 0.08
+            ? Math.min(22, glowStrength * 16 * settings.ribbonWidth)
+            : 0;
         fillClothRibbon(
             context,
             [startX, startY],
@@ -369,6 +426,7 @@ function drawHorizonField(
             item.activity,
             item.wiggle,
         );
+        context.restore();
     }
 
     if (scene.core.opacity > 0) {

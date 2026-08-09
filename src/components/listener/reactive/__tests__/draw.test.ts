@@ -26,7 +26,8 @@ describe('reactive cloth ribbons', () => {
             wiggle: 0.4,
         });
 
-        expect(first[0]).toEqual({ centerX: 10, centerY: 20, halfWidth: 2 });
+        expect(first[0]).toMatchObject({ centerX: 10, centerY: 20 });
+        expect(first[0].halfWidth).toBeGreaterThan(0);
         expect(next[0]).toEqual(first[0]);
         expect(next.at(-1)).not.toEqual(first.at(-1));
         expect(Math.hypot(

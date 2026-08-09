@@ -35,6 +35,12 @@ energy/variation increases the displacement toward the free edge. The waves
 are continuous and harmonic-specific, so analysis frames cannot make an end
 point jump.
 
+The radial interpretation is a magical underwater kelp viewed from above: a
+fixed luminous center below the observer, long leaves carried by a slow current,
+and perspective-biased outer tips that broaden and brighten toward the camera.
+An activated harmonic increases its leaf's motion and local glow; it never
+moves the center or the camera.
+
 The laboratory currently offers two renderers over the same analysis frame:
 
 - **Radial ribbons** groups harmonics through a stable center and lets the
