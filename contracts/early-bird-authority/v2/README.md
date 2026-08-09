@@ -12,7 +12,7 @@ Authentication, disabled-service and path-validation failures retain FastAPI's e
 error handling. The browser must never call this endpoint.
 
 `founder_price_eligibility: null` means that the existing account has not earned Founder pricing.
-A non-null object records the immutable canonical USD 2/month offer earned by a confirmed paid
+A non-null object records the immutable canonical USD 5/month offer earned by a confirmed paid
 activation. It does not mean that a membership is active, that a payment succeeded recently, or
 that access is allowed. Only `access_allowed` authorizes listening. Cancellation, expiry, refund or
 revocation can therefore coexist with retained Founder price eligibility.

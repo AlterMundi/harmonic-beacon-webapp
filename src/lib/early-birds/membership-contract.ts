@@ -32,7 +32,7 @@ export type CanonicalAuthorityMembership = Omit<EarlyBirdMembershipProjectionCom
 
 export type FounderPriceEligibility = {
     offer: { code: 'EARLY_BIRDS_FOUNDERS_V1'; revision: number };
-    canonical_price: { currency: 'USD'; amount_minor: 200 };
+    canonical_price: { currency: 'USD'; amount_minor: 500 };
     billing_period: 'MONTHLY';
     granted_at: string;
 };
@@ -149,7 +149,7 @@ function founderPriceEligibility(value: unknown): FounderPriceEligibility | null
     }
     const canonicalPrice = record(input.canonical_price, 'founder canonical_price');
     exactKeys(canonicalPrice, ['amount_minor', 'currency']);
-    if (canonicalPrice.currency !== 'USD' || canonicalPrice.amount_minor !== 200) {
+    if (canonicalPrice.currency !== 'USD' || canonicalPrice.amount_minor !== 500) {
         throw new EarlyBirdMembershipContractError('Founder canonical_price is invalid');
     }
     if (input.billing_period !== 'MONTHLY') {
@@ -158,7 +158,7 @@ function founderPriceEligibility(value: unknown): FounderPriceEligibility | null
     const grantedAt = canonicalRfc3339Instant(input.granted_at, 'Founder granted_at');
     return {
         offer: parsedOffer,
-        canonical_price: { currency: 'USD', amount_minor: 200 },
+        canonical_price: { currency: 'USD', amount_minor: 500 },
         billing_period: 'MONTHLY',
         granted_at: grantedAt,
     };

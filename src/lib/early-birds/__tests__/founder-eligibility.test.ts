@@ -24,7 +24,7 @@ import type { FounderPriceEligibility } from '../membership-contract';
 const NOW = new Date('2026-08-08T12:00:00Z');
 const eligibility: FounderPriceEligibility = {
     offer: { code: 'EARLY_BIRDS_FOUNDERS_V1', revision: 1 },
-    canonical_price: { currency: 'USD', amount_minor: 200 },
+    canonical_price: { currency: 'USD', amount_minor: 500 },
     billing_period: 'MONTHLY',
     granted_at: '2026-08-06T12:00:00Z',
 };
@@ -67,7 +67,7 @@ describe('positive-only Founder eligibility projection', () => {
             data: expect.objectContaining({
                 accountId: 'listener-1',
                 currency: 'USD',
-                amountMinor: 200,
+                amountMinor: 500,
                 billingPeriod: 'MONTHLY',
                 eligibilityHash: founderEligibilityHash(eligibility),
             }),

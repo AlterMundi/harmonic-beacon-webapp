@@ -100,7 +100,7 @@
               "required": ["currency", "amount_minor"],
               "properties": {
                 "currency": {"const": "USD"},
-                "amount_minor": {"const": 200}
+                "amount_minor": {"const": 500}
               }
             },
             "billing_period": {"const": "MONTHLY"},

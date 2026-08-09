@@ -32,7 +32,7 @@ const command = {
     paid_through: '2026-09-06T12:00:00Z',
     grace_until: null,
     provider: 'paypal',
-    current_price: { currency: 'USD', amount_minor: 200 },
+    current_price: { currency: 'USD', amount_minor: 500 },
     reason_code: 'PAYMENT_SUCCEEDED',
 };
 const projection = {

@@ -31,7 +31,7 @@ import { POST } from '../route';
 const ACCOUNT = 'listener-1';
 const eligibility = {
     offer: { code: 'EARLY_BIRDS_FOUNDERS_V1', revision: 1 },
-    canonical_price: { currency: 'USD', amount_minor: 200 },
+    canonical_price: { currency: 'USD', amount_minor: 500 },
     billing_period: 'MONTHLY',
     granted_at: '2026-08-06T12:00:00Z',
 };
@@ -47,7 +47,7 @@ const canonical = {
     grace_until: null,
     offer: { code: 'EARLY_BIRDS_FOUNDERS_V1', revision: 1 },
     provider: 'paypal',
-    current_price: { currency: 'USD', amount_minor: 200 },
+    current_price: { currency: 'USD', amount_minor: 500 },
     free_entitlement_consumed: true,
     reason_code: 'SUBSCRIPTION_CANCELLED',
     founder_price_eligibility: eligibility,

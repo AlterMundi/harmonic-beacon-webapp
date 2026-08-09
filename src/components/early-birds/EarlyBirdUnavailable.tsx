@@ -25,7 +25,7 @@ export default function EarlyBirdUnavailable() {
         <main className="listener-page-shell">
             <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
                 <header className="flex items-center justify-between gap-4">
-                    <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
+                    <BrandLockup href={LISTENER_NAMESPACE.publicWebsite} />
                 </header>
                 <section className="flex flex-1 items-center py-14">
                     <div className="max-w-2xl space-y-7">

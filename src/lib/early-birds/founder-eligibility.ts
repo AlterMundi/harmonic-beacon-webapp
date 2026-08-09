@@ -32,7 +32,7 @@ function normalizedEligibility(value: FounderPriceEligibility): FounderPriceElig
         || !Number.isSafeInteger(value.offer.revision)
         || value.offer.revision < 1
         || value.canonical_price.currency !== 'USD'
-        || value.canonical_price.amount_minor !== 200
+        || value.canonical_price.amount_minor !== 500
         || value.billing_period !== 'MONTHLY'
     ) {
         throw new FounderEligibilityConflictError();

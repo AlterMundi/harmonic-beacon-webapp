@@ -48,7 +48,7 @@ export default function EarlyBirdHome({
         <main className="listener-shell">
             <div className="listener-shell__frame listener-shell__frame--home">
                 <header className="listener-rail">
-                    <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
+                    <BrandLockup href={LISTENER_NAMESPACE.publicWebsite} />
                     <div className="listener-rail__actions">
                         {publicAccess && (
                             <FreeQuotaStatus serverNow={serverNow} unlimited="free-for-all" compact />

@@ -14,7 +14,7 @@
   "provider": "paypal",
   "current_price": {
     "currency": "USD",
-    "amount_minor": 200
+    "amount_minor": 500
   },
   "reason_code": "PAYMENT_SUCCEEDED"
 }

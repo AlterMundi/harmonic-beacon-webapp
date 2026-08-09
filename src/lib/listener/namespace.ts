@@ -6,6 +6,7 @@
  * migration step.
  */
 export const LISTENER_NAMESPACE = {
+    publicWebsite: 'https://harmonicbeacon.com/',
     canonical: {
         home: '/listener',
         redeem: '/listener/redeem',
