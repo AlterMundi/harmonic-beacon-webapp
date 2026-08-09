@@ -25,8 +25,15 @@ experiment is not exposed by `listen.harmonicbeacon.com`.
 The point of view is fixed. Neither stereo balance nor aggregate energy moves
 the center or the horizon. Each audible harmonic follows a deterministic,
 continuous low-frequency dance whose amplitude is bounded by its measured
-absolute energy and softly modulated by its baseline variation. Silence never
-creates a ribbon.
+absolute energy and softly modulated by its baseline variation. Inactive bands
+remain only as a uniform, very faint structural weave; they cannot acquire the
+brightness, width emphasis or strong motion of measured energy.
+
+Outer ribbons use a lightweight pinned-cloth model. Their inner edge remains
+anchored, a very gentle wave keeps the field alive, and measured harmonic
+energy/variation increases the displacement toward the free edge. The waves
+are continuous and harmonic-specific, so analysis frames cannot make an end
+point jump.
 
 The laboratory currently offers two renderers over the same analysis frame:
 

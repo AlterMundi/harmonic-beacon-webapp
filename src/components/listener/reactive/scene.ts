@@ -38,6 +38,8 @@ export type ReactiveFilament = {
     opacity: number;
     weight: number;
     emphasis: number;
+    activity: number;
+    wiggle: number;
     trail: Array<{ radius: number; angle: number; opacity: number }>;
 };
 
@@ -60,6 +62,7 @@ export type ReactiveCampfireScene = {
     }>;
     confidence: number;
     centerCutHarmonic: number;
+    flowTimeSeconds: number;
 };
 
 function clamp(value: number, min = 0, max = 1): number {
@@ -256,6 +259,8 @@ export function buildReactiveCampfireScene(
             // Delta never raises opacity or weight: it changes geometry and the
             // secondary highlight only, preserving truthful absolute hierarchy.
             emphasis: clamp(Math.abs(movement)) * absolute * 0.72,
+            activity: absolute,
+            wiggle: clamp(Math.abs(deltas[index] ?? 0) / 9) * absolute,
             trail: tier === 'high'
                 ? trailFor(
                     index,
@@ -283,5 +288,6 @@ export function buildReactiveCampfireScene(
         veils,
         confidence,
         centerCutHarmonic: settings.centerCutHarmonic,
+        flowTimeSeconds: capturedAtMs / 1_000,
     };
 }

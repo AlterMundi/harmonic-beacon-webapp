@@ -46,35 +46,126 @@ function endpoint(
     ];
 }
 
-/** Draws a closed quadratic band. Energy changes its body, never the camera. */
-function fillRibbon(
+export type ClothRibbonPoint = {
+    centerX: number;
+    centerY: number;
+    halfWidth: number;
+};
+
+/**
+ * A small deterministic cloth model: the inner edge is pinned and two slow
+ * waves travel toward the free edge. Absolute energy and measured variation
+ * amplify the motion without ever translating the camera.
+ */
+export function buildClothRibbonPoints({
+    start,
+    control,
+    end,
+    startWidth,
+    endWidth,
+    harmonicIndex,
+    timeSeconds,
+    activity,
+    wiggle,
+}: {
+    start: readonly [number, number];
+    control: readonly [number, number];
+    end: readonly [number, number];
+    startWidth: number;
+    endWidth: number;
+    harmonicIndex: number;
+    timeSeconds: number;
+    activity: number;
+    wiggle: number;
+}): ClothRibbonPoint[] {
+    const points: ClothRibbonPoint[] = [];
+    const phase = seededUnit(harmonicIndex, 91) * Math.PI * 2;
+    const slowRate = 0.12 + seededUnit(harmonicIndex, 93) * 0.12;
+    const livelyRate = 0.22 + seededUnit(harmonicIndex, 95) * 0.22;
+    const ambientAmplitude = 0.65;
+    const activeAmplitude = Math.max(0, activity) * 4.5 + Math.max(0, wiggle) * 8.5;
+    const segments = 12;
+
+    for (let segment = 0; segment <= segments; segment += 1) {
+        const t = segment / segments;
+        const oneMinusT = 1 - t;
+        const baseX = oneMinusT * oneMinusT * start[0]
+            + 2 * oneMinusT * t * control[0]
+            + t * t * end[0];
+        const baseY = oneMinusT * oneMinusT * start[1]
+            + 2 * oneMinusT * t * control[1]
+            + t * t * end[1];
+        const tangentX = 2 * oneMinusT * (control[0] - start[0])
+            + 2 * t * (end[0] - control[0]);
+        const tangentY = 2 * oneMinusT * (control[1] - start[1])
+            + 2 * t * (end[1] - control[1]);
+        const tangentLength = Math.max(1, Math.hypot(tangentX, tangentY));
+        const normalX = -tangentY / tangentLength;
+        const normalY = tangentX / tangentLength;
+        const freeEdge = t ** 1.65;
+        const ambientWave = Math.sin(
+            phase + timeSeconds * Math.PI * 2 * slowRate + t * Math.PI * 2.2,
+        ) * ambientAmplitude;
+        const activatedWave = Math.sin(
+            phase * 0.63 + timeSeconds * Math.PI * 2 * livelyRate + t * Math.PI * 4.6,
+        ) * activeAmplitude;
+        const displacement = (ambientWave + activatedWave) * freeEdge;
+        points.push({
+            centerX: baseX + normalX * displacement,
+            centerY: baseY + normalY * displacement,
+            halfWidth: startWidth + (endWidth - startWidth) * t,
+        });
+    }
+    return points;
+}
+
+function fillClothRibbon(
     context: CanvasRenderingContext2D,
     start: readonly [number, number],
     control: readonly [number, number],
     end: readonly [number, number],
     startWidth: number,
     endWidth: number,
+    harmonicIndex: number,
+    timeSeconds: number,
+    activity: number,
+    wiggle: number,
 ) {
-    const dx = end[0] - start[0];
-    const dy = end[1] - start[1];
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const normalX = -dy / length;
-    const normalY = dx / length;
+    const points = buildClothRibbonPoints({
+        start,
+        control,
+        end,
+        startWidth,
+        endWidth,
+        harmonicIndex,
+        timeSeconds,
+        activity,
+        wiggle,
+    });
     context.beginPath();
-    context.moveTo(start[0] + normalX * startWidth, start[1] + normalY * startWidth);
-    context.quadraticCurveTo(
-        control[0] + normalX * (startWidth + endWidth) * 0.45,
-        control[1] + normalY * (startWidth + endWidth) * 0.45,
-        end[0] + normalX * endWidth,
-        end[1] + normalY * endWidth,
-    );
-    context.lineTo(end[0] - normalX * endWidth, end[1] - normalY * endWidth);
-    context.quadraticCurveTo(
-        control[0] - normalX * (startWidth + endWidth) * 0.45,
-        control[1] - normalY * (startWidth + endWidth) * 0.45,
-        start[0] - normalX * startWidth,
-        start[1] - normalY * startWidth,
-    );
+    points.forEach((point, index) => {
+        const previous = points[Math.max(0, index - 1)];
+        const next = points[Math.min(points.length - 1, index + 1)];
+        const dx = next.centerX - previous.centerX;
+        const dy = next.centerY - previous.centerY;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        const x = point.centerX - (dy / length) * point.halfWidth;
+        const y = point.centerY + (dx / length) * point.halfWidth;
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+    });
+    [...points].reverse().forEach((point, reverseIndex) => {
+        const index = points.length - 1 - reverseIndex;
+        const previous = points[Math.max(0, index - 1)];
+        const next = points[Math.min(points.length - 1, index + 1)];
+        const dx = next.centerX - previous.centerX;
+        const dy = next.centerY - previous.centerY;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        context.lineTo(
+            point.centerX + (dy / length) * point.halfWidth,
+            point.centerY - (dx / length) * point.halfWidth,
+        );
+    });
     context.closePath();
     context.fill();
 }
@@ -87,6 +178,7 @@ function drawRadialRibbon(
     scale: number,
     palette: Palette,
     ribbonScale: number,
+    timeSeconds: number,
 ) {
     const color = filament.tier === 'high' ? palette.high : palette.mid;
     const start = endpoint(
@@ -118,8 +210,19 @@ function drawRadialRibbon(
     }
 
     const width = (1.8 + filament.weight * 3.2) * ribbonScale;
-    context.fillStyle = rgba(color, filament.opacity * 0.78);
-    fillRibbon(context, start, control, end, width * 0.42, width);
+    context.fillStyle = rgba(color, 0.025 + filament.opacity * 0.75);
+    fillClothRibbon(
+        context,
+        start,
+        control,
+        end,
+        width * 0.42,
+        width,
+        filament.harmonicIndex,
+        timeSeconds,
+        filament.activity,
+        filament.wiggle,
+    );
 
     if (filament.emphasis > 0.04) {
         context.fillStyle = rgba(color, filament.emphasis * 0.42);
@@ -167,6 +270,7 @@ function drawRadialField(
             scale,
             palette,
             settings.ribbonWidth,
+            scene.flowTimeSeconds,
         );
     }
 
@@ -213,6 +317,8 @@ function drawHorizonField(
             opacity: ring.opacity,
             weight: ring.weight,
             bend: ring.rotation * 0.12,
+            activity: ring.opacity,
+            wiggle: 0,
             tier: 'low' as const,
         })),
         ...scene.filaments.map((filament) => ({
@@ -220,6 +326,8 @@ function drawHorizonField(
             opacity: filament.opacity,
             weight: filament.weight,
             bend: filament.bend,
+            activity: filament.activity,
+            wiggle: filament.wiggle,
             tier: filament.tier,
         })),
     ];
@@ -248,14 +356,18 @@ function drawHorizonField(
             ? palette.low
             : item.tier === 'high' ? palette.high : palette.mid;
         const widthScale = (2.4 + item.weight * 3.8) * settings.ribbonWidth;
-        context.fillStyle = rgba(color, item.opacity * 0.7);
-        fillRibbon(
+        context.fillStyle = rgba(color, 0.025 + item.opacity * 0.68);
+        fillClothRibbon(
             context,
             [startX, startY],
             [controlX, controlY],
             [endX, endY],
             widthScale * 0.24,
             widthScale,
+            item.harmonicIndex,
+            scene.flowTimeSeconds,
+            item.activity,
+            item.wiggle,
         );
     }
 
