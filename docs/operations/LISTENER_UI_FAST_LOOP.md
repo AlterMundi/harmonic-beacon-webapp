@@ -16,6 +16,19 @@ Start or replace the workbench from the `early-birds` worktree:
 scripts/listener-ui-preview.sh start
 ```
 
+For the isolated PayPal sandbox checkout rehearsal, require an account instead
+of Free For All and expose only the PayPal sandbox action in this disposable
+process:
+
+```bash
+LISTENER_UI_PREVIEW_FREE_FOR_ALL=0 \
+LISTENER_UI_PREVIEW_PAYPAL_SANDBOX_CHECKOUT_ENABLED=1 \
+scripts/listener-ui-preview.sh start
+```
+
+The script refuses the ambiguous combination of checkout plus Free For All.
+Neither switch changes the persistent Listener release or event services.
+
 Keep local edits synchronized while iterating:
 
 ```bash
