@@ -153,7 +153,7 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #211 is deployed. #212's accepted field is public; its technical laboratory
   remains default-off and can be re-enabled only on staging for later variants.
 - #199/#200 remain open for real sandbox lifecycle evidence. Both adapters are
-  merged backend-side and default-off. Backend draft PR #57 and the paired
+  merged backend-side and default-off. Backend PR #57 and the paired
   Beacon slice version isolated egress, exact staging webhook ingress and a
   session-derived checkout that is visible only on staging when its provider
   flag is explicitly enabled. No provider credential, checkout flag or sale is
