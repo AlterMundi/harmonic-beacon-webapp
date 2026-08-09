@@ -1,5 +1,9 @@
 export const REACTIVE_PALETTES = ['ember', 'aurora', 'moon'] as const;
-export const REACTIVE_VISUALIZATION_MODES = ['radial-ribbons', 'horizon-flow'] as const;
+export const REACTIVE_VISUALIZATION_MODES = [
+    'radial-ribbons',
+    'horizon-flow',
+    'toroid-meridians',
+] as const;
 
 export type ReactivePalette = typeof REACTIVE_PALETTES[number];
 export type ReactiveVisualizationMode = typeof REACTIVE_VISUALIZATION_MODES[number];

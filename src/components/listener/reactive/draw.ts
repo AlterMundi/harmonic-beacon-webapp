@@ -440,6 +440,194 @@ function drawHorizonField(
     }
 }
 
+export type ToroidMeridianGeometry = {
+    start: readonly [number, number];
+    control: readonly [number, number];
+    end: readonly [number, number];
+    depth: number;
+    pulse: number;
+};
+
+export function buildToroidMeridian({
+    centerX,
+    centerY,
+    innerRadius,
+    outerRadius,
+    verticalScale,
+    harmonicIndex,
+    harmonicCount,
+    timeSeconds,
+    activity,
+    wiggle,
+}: {
+    centerX: number;
+    centerY: number;
+    innerRadius: number;
+    outerRadius: number;
+    verticalScale: number;
+    harmonicIndex: number;
+    harmonicCount: number;
+    timeSeconds: number;
+    activity: number;
+    wiggle: number;
+}): ToroidMeridianGeometry {
+    const angle = -Math.PI / 2
+        + (harmonicIndex / Math.max(1, harmonicCount - 1)) * Math.PI * 2;
+    const phase = seededUnit(harmonicIndex, 111) * Math.PI * 2;
+    const pulseRate = 0.16 + seededUnit(harmonicIndex, 113) * 0.24;
+    const pulse = 0.5 + 0.5 * Math.sin(timeSeconds * Math.PI * 2 * pulseRate + phase);
+    const fluctuation = Math.sin(
+        timeSeconds * Math.PI * 2 * (0.09 + seededUnit(harmonicIndex, 115) * 0.12)
+            + phase * 0.71,
+    );
+    const tangentX = -Math.sin(angle);
+    const tangentY = Math.cos(angle) * verticalScale;
+    const activation = Math.max(0, activity) * 0.25 + Math.max(0, wiggle) * 0.75;
+    const outerDrift = fluctuation * outerRadius * (0.004 + activation * 0.026);
+    const midRadius = innerRadius + (outerRadius - innerRadius) * 0.56;
+    const bend = fluctuation * outerRadius * (0.008 + activation * 0.055);
+    return {
+        start: [
+            centerX + Math.cos(angle) * innerRadius,
+            centerY + Math.sin(angle) * innerRadius * verticalScale,
+        ],
+        control: [
+            centerX + Math.cos(angle) * midRadius + tangentX * bend,
+            centerY + Math.sin(angle) * midRadius * verticalScale + tangentY * bend,
+        ],
+        end: [
+            centerX + Math.cos(angle) * outerRadius + tangentX * outerDrift,
+            centerY + Math.sin(angle) * outerRadius * verticalScale + tangentY * outerDrift,
+        ],
+        depth: 0.5 + Math.sin(angle) * 0.5,
+        pulse,
+    };
+}
+
+function drawToroidField(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    scene: ReactiveCampfireScene,
+    palette: Palette,
+    settings: ReactiveCampfireSettings,
+) {
+    const centerX = width * 0.5;
+    const centerY = height * 0.49;
+    const outerRadius = Math.min(width * 0.43, height * 0.47);
+    const innerRadius = outerRadius * 0.27;
+    const verticalScale = 0.62;
+    const all = [
+        ...scene.rings.map((ring) => ({
+            harmonicIndex: ring.harmonicIndex,
+            opacity: ring.opacity,
+            weight: ring.weight,
+            activity: Math.min(1, ring.opacity / 0.72),
+            wiggle: 0,
+            tier: 'low' as const,
+        })),
+        ...scene.filaments.map((filament) => ({
+            harmonicIndex: filament.harmonicIndex,
+            opacity: filament.opacity,
+            weight: filament.weight,
+            activity: filament.activity,
+            wiggle: filament.wiggle,
+            tier: filament.tier,
+        })),
+    ];
+    const harmonicCount = Math.max(2, ...all.map((item) => item.harmonicIndex + 1));
+    const lowEnergy = scene.rings.length === 0
+        ? 0
+        : scene.rings.reduce((sum, ring) => sum + ring.opacity, 0) / scene.rings.length;
+
+    const atmosphere = context.createRadialGradient(
+        centerX,
+        centerY,
+        0,
+        centerX,
+        centerY,
+        outerRadius * 1.35,
+    );
+    atmosphere.addColorStop(0, rgba(palette.low, 0.07 + lowEnergy * 0.12));
+    atmosphere.addColorStop(0.38, 'rgba(13, 34, 62, 0.045)');
+    atmosphere.addColorStop(1, 'rgba(2, 7, 22, 0)');
+    context.fillStyle = atmosphere;
+    context.fillRect(0, 0, width, height);
+
+    // The unenergized torus is barely present: active meridians reveal it.
+    context.strokeStyle = rgba(palette.high, 0.035 * scene.confidence);
+    context.lineWidth = Math.max(0.8, settings.ribbonWidth * 0.7);
+    context.beginPath();
+    context.ellipse(centerX, centerY, outerRadius, outerRadius * verticalScale, 0, 0, Math.PI * 2);
+    context.stroke();
+    context.strokeStyle = rgba(palette.low, 0.05 * scene.confidence);
+    context.beginPath();
+    context.ellipse(centerX, centerY, innerRadius, innerRadius * verticalScale, 0, 0, Math.PI * 2);
+    context.stroke();
+
+    const meridians = all.map((item) => ({
+        item,
+        geometry: buildToroidMeridian({
+            centerX,
+            centerY,
+            innerRadius,
+            outerRadius,
+            verticalScale,
+            harmonicIndex: item.harmonicIndex,
+            harmonicCount,
+            timeSeconds: scene.flowTimeSeconds,
+            activity: item.activity,
+            wiggle: item.wiggle,
+        }),
+    })).sort((a, b) => a.geometry.depth - b.geometry.depth);
+
+    for (const { item, geometry } of meridians) {
+        const color = item.tier === 'low'
+            ? palette.low
+            : item.tier === 'high' ? palette.high : palette.mid;
+        const depthLight = 0.5 + geometry.depth * 0.5;
+        const activation = item.opacity * (0.5 + geometry.pulse * 0.5);
+        const gradient = context.createLinearGradient(
+            geometry.start[0],
+            geometry.start[1],
+            geometry.end[0],
+            geometry.end[1],
+        );
+        gradient.addColorStop(0, rgba(palette.core, 0.012 + activation * 0.18));
+        gradient.addColorStop(0.48, rgba(color, 0.018 + activation * 0.52 * depthLight));
+        gradient.addColorStop(1, rgba(color, 0.025 + activation * 0.9 * depthLight));
+        context.fillStyle = gradient;
+        context.save();
+        const glow = Math.max(0, (item.activity - 0.58) / 0.42) + item.wiggle;
+        context.shadowColor = rgba(color, Math.min(0.85, glow * 0.7));
+        context.shadowBlur = glow > 0.08 ? Math.min(24, glow * 18) : 0;
+        const meridianWidth = (0.65 + item.weight * 1.75) * settings.ribbonWidth * depthLight;
+        fillClothRibbon(
+            context,
+            geometry.start,
+            geometry.control,
+            geometry.end,
+            meridianWidth * 0.18,
+            meridianWidth,
+            item.harmonicIndex,
+            scene.flowTimeSeconds,
+            item.activity * 0.35,
+            item.wiggle * 0.55,
+        );
+        context.restore();
+    }
+
+    const coreRadius = innerRadius * (0.72 + Math.min(0.28, lowEnergy * 0.4));
+    const core = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, coreRadius);
+    core.addColorStop(0, rgba(palette.core, Math.min(0.95, scene.core.opacity + lowEnergy * 0.65)));
+    core.addColorStop(0.28, rgba(palette.low, scene.core.opacity * 0.72 + lowEnergy * 0.28));
+    core.addColorStop(1, rgba(palette.mid, 0));
+    context.fillStyle = core;
+    context.beginPath();
+    context.ellipse(centerX, centerY, coreRadius, coreRadius * verticalScale, 0, 0, Math.PI * 2);
+    context.fill();
+}
+
 export function drawReactiveCampfire(
     context: CanvasRenderingContext2D,
     width: number,
@@ -457,6 +645,8 @@ export function drawReactiveCampfire(
     context.lineJoin = 'round';
     if (settings.visualizationMode === 'horizon-flow') {
         drawHorizonField(context, width, height, scene, palette, settings);
+    } else if (settings.visualizationMode === 'toroid-meridians') {
+        drawToroidField(context, width, height, scene, palette, settings);
     } else {
         drawRadialField(context, width, height, scene, palette, settings);
     }

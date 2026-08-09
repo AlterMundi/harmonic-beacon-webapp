@@ -136,6 +136,7 @@ describe('reactive campfire components', () => {
         const fft = screen.getByLabelText('FFT size');
         expect(fft).toHaveTextContent('8192 · lighter');
         expect(fft).toHaveTextContent('16384 · more detail');
+        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Toroid meridians');
         fireEvent.change(screen.getByLabelText('Visualization'), {
             target: { value: 'horizon-flow' },
         });

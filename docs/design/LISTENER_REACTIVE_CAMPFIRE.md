@@ -48,6 +48,11 @@ The laboratory currently offers two renderers over the same analysis frame:
 - **Horizon flow** pours broad harmonic ribbons from fixed positions on a
   horizon. Harmonics below the cut stay closer to the center; upper harmonics
   fan farther outward.
+- **Toroid meridians** looks axially into a nearly invisible torus. Low
+  harmonics feed its central light; every harmonic owns a stable meridian that
+  pulses from the inner rim outward and reveals the surface only as measured
+  energy activates it. Front/back depth changes projection and brightness,
+  never the camera.
 
 Changing renderer, cut harmonic, width, palette or other visual controls never
 rebuilds the audio graph. FFT size and baseline duration remain analysis-session

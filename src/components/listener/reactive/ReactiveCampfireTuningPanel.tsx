@@ -117,7 +117,11 @@ export function ReactiveCampfireTuningPanel({
                     >
                         {REACTIVE_VISUALIZATION_MODES.map((mode) => (
                             <option value={mode} key={mode}>
-                                {mode === 'radial-ribbons' ? 'Radial ribbons' : 'Horizon flow'}
+                                {{
+                                    'radial-ribbons': 'Radial ribbons',
+                                    'horizon-flow': 'Horizon flow',
+                                    'toroid-meridians': 'Toroid meridians',
+                                }[mode]}
                             </option>
                         ))}
                     </select>
