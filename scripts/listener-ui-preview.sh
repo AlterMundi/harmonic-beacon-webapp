@@ -12,6 +12,14 @@ REMOTE_SOURCE="${REMOTE_ROOT}/source"
 REMOTE_NEXT="${REMOTE_ROOT}/next"
 DEV_CONTAINER="listener-ui-dev"
 RELEASE_CONTAINER="earlybirds-preview-listener-1"
+PREVIEW_FREE_FOR_ALL="${LISTENER_UI_PREVIEW_FREE_FOR_ALL:-1}"
+PREVIEW_PAYPAL_CHECKOUT="${LISTENER_UI_PREVIEW_PAYPAL_SANDBOX_CHECKOUT_ENABLED:-0}"
+
+case "$PREVIEW_FREE_FOR_ALL:$PREVIEW_PAYPAL_CHECKOUT" in
+    0:0|0:1|1:0) ;;
+    1:1) echo "PayPal checkout requires Free For All to be disabled." >&2; exit 2 ;;
+    *) echo "Preview switches must be 0 or 1." >&2; exit 2 ;;
+esac
 
 usage() {
     echo "Usage: $0 {start|sync|watch|status|stop|logs}" >&2
@@ -29,7 +37,7 @@ sync_source() {
 }
 
 start_remote() {
-    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' bash -s" <<'REMOTE'
+    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' bash -s" <<'REMOTE'
 set -euo pipefail
 
 image="$(docker inspect "$RELEASE_CONTAINER" --format '{{.Config.Image}}')"
@@ -58,8 +66,9 @@ docker run -d \
     -e BEACON_GIT_SHA=ui-dev \
     -e EARLY_BIRDS_ENABLED=1 \
     -e BEACON_LISTENER_ENABLED=1 \
-    -e EARLY_BIRDS_FREE_FOR_ALL=1 \
-    -e BEACON_LISTENER_FREE_FOR_ALL=1 \
+    -e EARLY_BIRDS_FREE_FOR_ALL="$PREVIEW_FREE_FOR_ALL" \
+    -e BEACON_LISTENER_FREE_FOR_ALL="$PREVIEW_FREE_FOR_ALL" \
+    -e BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED="$PREVIEW_PAYPAL_CHECKOUT" \
     --network earlybirds_preview_db_internal \
     -p 127.0.0.1:13001:3000 \
     -v "$REMOTE_SOURCE/src:/app/src:ro" \
