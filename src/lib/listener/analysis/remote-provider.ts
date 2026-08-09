@@ -102,7 +102,7 @@ export class RemoteHarmonicAnalysisProvider implements HarmonicAnalysisProvider 
         this.framesPerSecond = this.validatedFramesPerSecond(options.framesPerSecond ?? 4);
         this.getPlaybackProgramTimeMs = options.getPlaybackProgramTimeMs;
         this.getLeaseCursor = options.getLeaseCursor;
-        this.fetcher = options.fetcher ?? fetch;
+        this.fetcher = options.fetcher ?? window.fetch.bind(window);
         this.setTimer = options.setTimer ?? window.setTimeout.bind(window);
         this.clearTimer = options.clearTimer ?? window.clearTimeout.bind(window);
         const active = this.sources.find(({ id }) => id === activeSourceId)!;

@@ -24,6 +24,7 @@ function wireFrame() {
 
 afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
 });
 
 describe('RemoteHarmonicAnalysisProvider', () => {
@@ -64,6 +65,33 @@ describe('RemoteHarmonicAnalysisProvider', () => {
             expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }),
         );
         expect(listener).toHaveBeenCalledWith(expect.objectContaining({ overallDb: -18 }));
+        provider.stop();
+    });
+
+    it('binds the browser native fetch receiver before requesting a frame', async () => {
+        vi.useFakeTimers();
+        const browserFetch = vi.fn(function browserFetch(this: unknown) {
+            if (this !== window) throw new TypeError('Illegal invocation');
+            return Promise.resolve(new Response(JSON.stringify(wireFrame())));
+        });
+        vi.stubGlobal('fetch', browserFetch);
+        const listener = vi.fn();
+        const provider = new RemoteHarmonicAnalysisProvider({
+            endpoint: '/api/listener/analysis/frame',
+            sources: [{ id: 'beacon', kind: 'beacon' }],
+            getPlaybackProgramTimeMs: () => 1_786_233_600_125,
+            getLeaseCursor: () => ({
+                leaseId: '00000000-0000-4000-8000-000000000003',
+                leaseGeneration: 7,
+            }),
+        });
+        provider.subscribe(listener);
+
+        await provider.start();
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(browserFetch).toHaveBeenCalledOnce();
+        expect(listener).toHaveBeenCalledOnce();
         provider.stop();
     });
 
