@@ -91,9 +91,15 @@ describe('RemoteHarmonicAnalysisProvider', () => {
         provider.stop();
     });
 
-    it('fails the visual provider closed after bounded server failures', async () => {
+    it('backs off through transient server failures and recovers without removing the field', async () => {
         vi.useFakeTimers();
-        const fetcher = vi.fn().mockRejectedValue(new Error('offline'));
+        const fetcher = vi.fn()
+            .mockRejectedValueOnce(new Error('offline'))
+            .mockRejectedValueOnce(new Error('offline'))
+            .mockRejectedValueOnce(new Error('offline'))
+            .mockRejectedValueOnce(new Error('offline'))
+            .mockResolvedValue(new Response(JSON.stringify(wireFrame())));
+        const listener = vi.fn();
         const provider = new RemoteHarmonicAnalysisProvider({
             endpoint: '/api/listener/analysis/frame',
             sources: [{ id: 'beacon', kind: 'beacon' }],
@@ -105,14 +111,21 @@ describe('RemoteHarmonicAnalysisProvider', () => {
             fetcher,
             framesPerSecond: 4,
         });
+        provider.subscribe(listener);
 
         await provider.start();
-        await vi.advanceTimersByTimeAsync(1_000);
+        await vi.advanceTimersByTimeAsync(2_000);
         expect(fetcher).toHaveBeenCalledTimes(4);
         expect(provider.getStatus()).toMatchObject({
-            phase: 'error',
+            phase: 'running',
             error: { code: 'ANALYSIS_FAILED' },
         });
+
+        await vi.advanceTimersByTimeAsync(1_751);
+        expect(fetcher).toHaveBeenCalledTimes(5);
+        expect(listener).toHaveBeenCalledOnce();
+        expect(provider.getStatus()).toMatchObject({ phase: 'running', error: null });
+        provider.stop();
     });
 
     it('never publishes a resolved Beacon frame after switching to an intro', async () => {

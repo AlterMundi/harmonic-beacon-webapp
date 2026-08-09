@@ -186,6 +186,7 @@ function preferredDropLanguage(
 type ListenerPlayerProps = {
     dropIns: { es: string | null; en: string | null };
     reactiveVisualizationAvailable?: boolean;
+    reactiveVisualizationInitiallyEnabled?: boolean;
 };
 
 type ListenerPlayerControllerProps = ListenerPlayerProps & {
@@ -334,7 +335,7 @@ function ListenerPlayerController({
                 }
             });
             analysisStatusUnsubscribe.current = provider.subscribeStatus((status) => {
-                if (status.error?.code === 'ANALYSIS_FAILED') {
+                if (status.phase === 'error' && status.error?.code === 'ANALYSIS_FAILED') {
                     provider?.pauseAnalysis();
                     setReactiveRendererAvailable(false);
                 }
@@ -1725,8 +1726,11 @@ function ListenerPlayerController({
 export default function ListenerPlayer({
     dropIns,
     reactiveVisualizationAvailable = false,
+    reactiveVisualizationInitiallyEnabled = false,
 }: ListenerPlayerProps) {
-    const [reactiveVisualizationEnabled, setReactiveVisualizationEnabled] = useState(false);
+    const [reactiveVisualizationEnabled, setReactiveVisualizationEnabled] = useState(
+        reactiveVisualizationAvailable && reactiveVisualizationInitiallyEnabled,
+    );
     const [reactiveFallbackNotice, setReactiveFallbackNotice] = useState(false);
     const [reactiveSettings, setReactiveSettings] = useState<ReactiveCampfireSettings>({
         ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,

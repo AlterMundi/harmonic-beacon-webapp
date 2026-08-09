@@ -64,7 +64,7 @@ vi.mock('@/lib/listener/analysis', async (importOriginal) => {
 
         emitAnalysisFailure() {
             this.statusListener?.({
-                phase: 'failed',
+                phase: 'error',
                 activeSourceId: 'beacon',
                 activeSourceKind: 'beacon',
                 error: { code: 'ANALYSIS_FAILED', message: 'synthetic' },
@@ -193,6 +193,30 @@ describe('EarlyBird Listener player', () => {
         Object.defineProperty(englishIntro, 'ended', { value: true, configurable: true });
         fireEvent.ended(englishIntro);
         expect(analysis.setActiveSource).toHaveBeenLastCalledWith('beacon');
+    });
+
+    it('starts with the reactive field visible when the staging surface requests the lab default', async () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+            .mockReturnValue({} as CanvasRenderingContext2D);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic offline')));
+
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    reactiveVisualizationInitiallyEnabled
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(await screen.findByRole('checkbox', {
+            name: 'Reactive field · experimental',
+        })).toBeChecked();
+        expect(screen.getByTestId('listener-reactive-field')).toBeInTheDocument();
+        expect(screen.getByTestId('reactive-campfire-tuning-panel')).toBeInTheDocument();
     });
 
     it('offers the minimal server-frame renderer without an analysis-only audio mode', async () => {

@@ -71,6 +71,7 @@ export default function EarlyBirdHome({
                 <ListenerPlayer
                     dropIns={dropIns}
                     reactiveVisualizationAvailable={reactiveVisualizationAvailable}
+                    reactiveVisualizationInitiallyEnabled={reactiveVisualizationAvailable}
                 />
                 {!publicAccess && accessKind === 'free-quota' && (
                     <footer className="listener-listening-status">

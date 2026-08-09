@@ -240,6 +240,7 @@ export class RemoteHarmonicAnalysisProvider implements HarmonicAnalysisProvider 
         const sourceId = this.activeSourceId;
         const controller = new AbortController();
         this.request = controller;
+        let nextDelayMs = 1_000 / this.framesPerSecond;
         try {
             const response = await this.fetcher(
                 `${this.endpoint}?at=${encodeURIComponent(Math.round(programTimeMs))}`
@@ -255,25 +256,29 @@ export class RemoteHarmonicAnalysisProvider implements HarmonicAnalysisProvider 
                 || this.status.phase !== 'running') return;
             const frame = parsed ? this.applySlowBaseline(parsed) : null;
             if (!frame) throw new Error('Invalid remote analysis frame');
+            const wasRecovering = this.failures > 0 || this.status.error !== null;
             this.failures = 0;
+            if (wasRecovering) {
+                this.setStatus({ ...this.status, phase: 'running', error: null });
+            }
             for (const listener of this.frameListeners) {
                 try { listener(frame); } catch { /* renderer isolation */ }
             }
         } catch {
             if (controller.signal.aborted || this.status.phase !== 'running') return;
             this.failures += 1;
+            nextDelayMs = Math.min(5_000, 250 * (2 ** Math.min(this.failures - 1, 4)));
             if (this.failures >= 4) {
                 this.setStatus({
                     ...this.status,
-                    phase: 'error',
+                    phase: 'running',
                     error: publicError('ANALYSIS_FAILED', 'Server analysis is temporarily unavailable'),
                 });
-                return;
             }
         } finally {
             if (this.request === controller) this.request = null;
         }
-        this.schedule(1_000 / this.framesPerSecond);
+        this.schedule(nextDelayMs);
     }
 
     private applySlowBaseline(frame: HarmonicAnalysisFrame): HarmonicAnalysisFrame {

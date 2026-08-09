@@ -5,10 +5,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/context/LocaleContext';
 
 vi.mock('../ListenerPlayer', () => ({
-    default: ({ reactiveVisualizationAvailable }: { reactiveVisualizationAvailable?: boolean }) => (
+    default: ({
+        reactiveVisualizationAvailable,
+        reactiveVisualizationInitiallyEnabled,
+    }: {
+        reactiveVisualizationAvailable?: boolean;
+        reactiveVisualizationInitiallyEnabled?: boolean;
+    }) => (
         <section
             aria-label="listener-player"
             data-reactive-available={String(Boolean(reactiveVisualizationAvailable))}
+            data-reactive-initially-enabled={String(Boolean(reactiveVisualizationInitiallyEnabled))}
         />
     ),
 }));
@@ -67,6 +74,7 @@ describe('EarlyBird Listener home access chrome', () => {
         );
 
         expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'false');
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-initially-enabled', 'false');
         view.rerender(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
@@ -79,6 +87,7 @@ describe('EarlyBird Listener home access chrome', () => {
         );
 
         expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'true');
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-initially-enabled', 'true');
     });
 
     it('presents a normalized Founder status and provider without raw membership source', () => {
