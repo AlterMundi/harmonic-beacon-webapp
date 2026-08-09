@@ -46,6 +46,7 @@ const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
 const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
 const TRANSPORT_FADE_OUT_MS = 650;
+const DEFAULT_LISTENER_VOLUME = 0.7;
 
 export const LISTENER_PLAYBACK_PRESENCE_EVENT = 'listener:playback-presence';
 
@@ -238,7 +239,7 @@ export default function ListenerPlayer({
     const pendingLiveFade = useRef(false);
     const activeDrop = useRef<DropLanguage | null>(null);
     const dropGeneration = useRef(0);
-    const volumeRef = useRef(1);
+    const volumeRef = useRef(DEFAULT_LISTENER_VOLUME);
     const livePreparedRef = useRef(false);
     const livePreparation = useRef<Promise<boolean> | null>(null);
     const manifestUrl = useRef<string | null>(null);

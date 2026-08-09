@@ -242,7 +242,7 @@ describe('Listener one-action playlist transport', () => {
         expect(await screen.findByRole('slider', { name: 'Seek' }))
             .toBeInTheDocument();
         expect(screen.queryByText('Amara Sol · English')).not.toBeInTheDocument();
-        expect(screen.getByRole('slider', { name: 'Volume' })).toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('0.7');
     });
 
     it('updates media-element volume directly without changing the live transport state', async () => {
@@ -304,7 +304,7 @@ describe('Listener one-action playlist transport', () => {
         fireEvent.ended(intro);
         expect(play.mock.instances).not.toContain(live);
         frames.shift()?.(3_000);
-        expect(live.volume).toBeCloseTo(1);
+        expect(live.volume).toBeCloseTo(0.7);
         expect(live.muted).toBe(false);
         expectPhase('beacon');
     });
