@@ -14,7 +14,7 @@ an event-stack deployment or an acoustic change.
 
 ## Status: weekly Free deployed for acceptance
 
-Release `6a5d4b6d3f228a2d88232415585c624fc81e78fd` is deployed on the isolated
+Release `68b930ca86d8b13df2dd288199f04b47af1053fe` is deployed on the isolated
 Listener. The active policy is three hours per account per fixed seven-day cycle,
 anchored at first real authorized Free playback, with no base rollover and
 server-time metering. Two devices consume their listening union once; intro and
@@ -32,7 +32,7 @@ repair, never restoring daily/welcome authorization.
 
 | Artifact | Exact value |
 |---|---|
-| Deployed Listener application | `6a5d4b6d3f228a2d88232415585c624fc81e78fd` |
+| Deployed Listener application | `68b930ca86d8b13df2dd288199f04b47af1053fe` |
 | Operational smoke/documentation head | `8444ed7d06b2764c519f65ce4d32932346a94fdd` |
 | Listener database schema | `20260808160000_listener_weekly_quota` |
 | Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
@@ -83,6 +83,7 @@ test-only branch head.
 - `8444ed7` — exact deployed weekly runtime smoke.
 - `7036eb3` — human-readable renewal countdown in days and hours.
 - `6a5d4b6` — explicitly approved 70% initial Listener volume.
+- `68b930c` — one-checkbox introduction choice and readable dark select menu.
 
 Historical pre-weekly experiments:
 
@@ -114,7 +115,7 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - Listener health/readiness, origin, PostgreSQL and decoded canary are green.
 - Alertmanager has no active alert. A prior root-disk warning was real, then
   resolved after removing only old unreferenced Listener/authority image tags.
-- Current image is `6a5d4b6`. Earlier policy images remain only as historical
+- Current image is `68b930c`. Earlier policy images remain only as historical
   artifacts and are not valid rollback targets.
 - The fixed public-disable command was exercised after deployment. Its first
   health probe observed the normal Next.js startup connection reset, retried,

@@ -3,11 +3,12 @@
 ## 2026-08-08 weekly-Free Listener release
 
 The isolated public Listener runs application SHA
-`6a5d4b6d3f228a2d88232415585c624fc81e78fd`, image
-`harmonic-beacon/earlybirds-preview-listener:6a5d4b6` and schema
+`68b930ca86d8b13df2dd288199f04b47af1053fe`, image
+`harmonic-beacon/earlybirds-preview-listener:68b930c` and schema
 `20260808160000_listener_weekly_quota`. Weekly policy smoke head is `8444ed7`;
-the later runtime changes renewal presentation to days/hours and, with Nico's
-explicit acoustic approval, sets new Listener sessions to 70% initial volume.
+the later runtime changes renewal presentation to days/hours, sets the
+explicitly approved 70% initial volume, and simplifies intro selection to one
+pre-play checkbox plus a styled language menu.
 Free for All is OFF.
 
 - Each registered Free account has three hours in a fixed seven-day cycle,
