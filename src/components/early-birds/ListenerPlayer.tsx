@@ -1,10 +1,22 @@
 'use client';
 
 import type Hls from 'hls.js';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
+import {
+    DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,
+    ReactiveCampfireCanvas,
+    ReactiveCampfireTuningPanel,
+    resolveReactiveRenderPolicy,
+    type ReactiveCampfireSettings,
+} from '@/components/listener/reactive';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
+import {
+    WebAudioHarmonicAnalysisProvider,
+    type HarmonicAnalysisFrame,
+    type HarmonicAnalysisProvider,
+} from '@/lib/listener/analysis';
 
 import { deriveListenerPresentationPhase } from './listener-presentation';
 import { ListenerTabIdentityCoordinator } from './listener-tab-identity';
@@ -49,6 +61,16 @@ const TRANSPORT_FADE_OUT_MS = 650;
 const DEFAULT_LISTENER_VOLUME = 0.7;
 
 export const LISTENER_PLAYBACK_PRESENCE_EVENT = 'listener:playback-presence';
+
+export function resolveListenerAnalysisFramesPerSecond({
+    reducedMotion,
+    saveData,
+}: {
+    reducedMotion: boolean;
+    saveData: boolean;
+}): number {
+    return resolveReactiveRenderPolicy({ reducedMotion, saveData }).conservative ? 2 : 30;
+}
 
 type LeaseCursor = {
     leaseId: string;
@@ -121,6 +143,15 @@ export function prefersNativeHls(
         && Boolean(audio.canPlayType('application/vnd.apple.mpegurl'));
 }
 
+export function supportsReactiveListenerVisualization(
+    browser: Pick<Navigator, 'vendor'>,
+): boolean {
+    // WebKit native HLS does not yet offer a sufficiently reliable analysed
+    // MediaElement source/fade path. Keep the established direct player there
+    // until the real-device acoustic acceptance gate is completed.
+    return browser.vendor !== 'Apple Computer, Inc.';
+}
+
 function formatTime(seconds: number): string {
     if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
     const rounded = Math.floor(seconds);
@@ -137,18 +168,45 @@ function preferredDropLanguage(
     return englishDropIn ? 'en' : 'es';
 }
 
-export default function ListenerPlayer({
-    dropIns,
-}: {
+type ListenerPlayerProps = {
     dropIns: { es: string | null; en: string | null };
-}) {
+    reactiveVisualizationAvailable?: boolean;
+};
+
+type ListenerPlayerControllerProps = ListenerPlayerProps & {
+    reactiveVisualizationEnabled: boolean;
+    reactiveSettings: ReactiveCampfireSettings;
+    onReactiveSettingsChange: (settings: ReactiveCampfireSettings) => void;
+    onReactiveVisualizationChange: (enabled: boolean) => void;
+    onReactiveVisualizationFailure: () => void;
+    reactiveFallbackNotice: boolean;
+};
+
+const subscribeRuntimeVisualizationCapability = () => () => undefined;
+
+function ListenerPlayerController({
+    dropIns,
+    reactiveVisualizationAvailable = false,
+    reactiveVisualizationEnabled,
+    reactiveSettings,
+    onReactiveSettingsChange,
+    onReactiveVisualizationChange,
+    onReactiveVisualizationFailure,
+    reactiveFallbackNotice,
+}: ListenerPlayerControllerProps) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
     const liveAudio = useRef<HTMLAudioElement>(null);
-    const dropAudio = {
-        es: useRef<HTMLAudioElement>(null),
-        en: useRef<HTMLAudioElement>(null),
-    };
+    const spanishDropAudio = useRef<HTMLAudioElement>(null);
+    const englishDropAudio = useRef<HTMLAudioElement>(null);
+    const dropAudio = useMemo(() => ({
+        es: spanishDropAudio,
+        en: englishDropAudio,
+    }), []);
+    const analysisProvider = useRef<HarmonicAnalysisProvider | null>(null);
+    const analysisFrameListeners = useRef(new Set<(frame: HarmonicAnalysisFrame | null) => void>());
+    const analysisFrameUnsubscribe = useRef<(() => void) | null>(null);
+    const analysisStatusUnsubscribe = useRef<(() => void) | null>(null);
     const hls = useRef<Hls | null>(null);
     const liveSuppressedForDrop = useRef(false);
     const liveFadeFrame = useRef<number | null>(null);
@@ -195,10 +253,102 @@ export default function ListenerPlayer({
     const [livePreparing, setLivePreparing] = useState(true);
     const [devicePreparedByGesture, setDevicePreparedByGesture] = useState(false);
     const [prepareFailure, setPrepareFailure] = useState<'capacity' | 'unavailable' | null>(null);
+    const [reactiveRendererAvailable, setReactiveRendererAvailable] = useState(true);
 
     const updateLiveState = useCallback((state: LiveState) => {
         liveStateRef.current = state;
         setLiveState(state);
+    }, []);
+
+    const subscribeReactiveFrames = useCallback((
+        listener: (frame: HarmonicAnalysisFrame | null) => void,
+    ) => {
+        analysisFrameListeners.current.add(listener);
+        return () => { analysisFrameListeners.current.delete(listener); };
+    }, []);
+
+    const startReactiveAnalysis = useCallback((sourceId: string) => {
+        if (!reactiveVisualizationEnabled || !reactiveRendererAvailable) return;
+        let provider = analysisProvider.current;
+        if (!provider) {
+            const live = liveAudio.current;
+            if (!live) return;
+            const sources = [
+                { id: 'beacon', kind: 'beacon' as const, element: live },
+                ...(['es', 'en'] as const).flatMap((language) => {
+                    const element = dropAudio[language].current;
+                    return element && dropIns[language]
+                        ? [{ id: `intro-${language}`, kind: 'intro' as const, element }]
+                        : [];
+                }),
+            ];
+            try {
+                const reducedMotion = typeof window.matchMedia === 'function'
+                    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                const saveData = Boolean((navigator as Navigator & {
+                    connection?: { saveData?: boolean };
+                }).connection?.saveData);
+                provider = new WebAudioHarmonicAnalysisProvider({
+                    sources,
+                    activeSourceId: sourceId,
+                    fftSize: reactiveSettings.fftSize,
+                    baselineSeconds: reactiveSettings.baselineDurationSeconds,
+                    framesPerSecond: resolveListenerAnalysisFramesPerSecond({
+                        reducedMotion,
+                        saveData,
+                    }),
+                });
+            } catch {
+                onReactiveVisualizationFailure();
+                return;
+            }
+            analysisProvider.current = provider;
+            analysisFrameUnsubscribe.current = provider.subscribe((frame) => {
+                for (const listener of analysisFrameListeners.current) {
+                    try { listener(frame); } catch { /* renderer isolation */ }
+                }
+            });
+            analysisStatusUnsubscribe.current = provider.subscribeStatus((status) => {
+                if (status.error?.code === 'ANALYSIS_FAILED') {
+                    provider?.pauseAnalysis();
+                    setReactiveRendererAvailable(false);
+                }
+            });
+        }
+
+        const selected = provider.setActiveSource(sourceId);
+        if (!selected.ok) {
+            onReactiveVisualizationFailure();
+            return;
+        }
+        // start() creates/resumes the complete graph synchronously until its
+        // first await. Do not await here: Safari must still receive play() for
+        // the intro and prepared Beacon inside this same trusted gesture.
+        void provider.start().then((result) => {
+            if (!result.ok) {
+                onReactiveVisualizationFailure();
+                return;
+            }
+            if (!wantsLivePlayback.current) provider?.pauseAnalysis();
+        }).catch(() => onReactiveVisualizationFailure());
+    }, [
+        dropAudio,
+        dropIns,
+        onReactiveVisualizationFailure,
+        reactiveRendererAvailable,
+        reactiveSettings.baselineDurationSeconds,
+        reactiveSettings.fftSize,
+        reactiveVisualizationEnabled,
+    ]);
+
+    useEffect(() => () => {
+        analysisFrameUnsubscribe.current?.();
+        analysisStatusUnsubscribe.current?.();
+        analysisFrameUnsubscribe.current = null;
+        analysisStatusUnsubscribe.current = null;
+        analysisProvider.current?.stop();
+        analysisProvider.current = null;
+        analysisFrameListeners.current.clear();
     }, []);
 
     const cancelRecovery = useCallback((resetAttempts = false) => {
@@ -903,6 +1053,7 @@ export default function ListenerPlayer({
     function playBeaconOnly() {
         dropGeneration.current += 1;
         if (!livePreparedRef.current) return;
+        startReactiveAnalysis('beacon');
         setHasStarted(true);
         setTransportStopped(false);
         setTransportPaused(false);
@@ -920,6 +1071,7 @@ export default function ListenerPlayer({
             const intro = dropAudio[language].current;
             if (!intro) return;
             try {
+                startReactiveAnalysis(`intro-${language}`);
                 await intro.play();
                 setTransportPaused(false);
                 reportPresence('listening');
@@ -932,6 +1084,7 @@ export default function ListenerPlayer({
         cancelDropFade();
         const intro = dropAudio[language].current;
         intro?.pause();
+        analysisProvider.current?.pauseAnalysis();
         storeProgress(language);
         setTransportPaused(true);
         reportPresence('idle');
@@ -943,6 +1096,7 @@ export default function ListenerPlayer({
         setTransportPaused(false);
         wantsLivePlayback.current = false;
         reportPresence('idle');
+        analysisProvider.current?.pauseAnalysis();
         cancelRecovery(true);
         pendingLiveFade.current = false;
         liveSuppressedForDrop.current = false;
@@ -1047,6 +1201,24 @@ export default function ListenerPlayer({
     }, [beginLiveFade, deferLiveFade, revalidateIdlePreparedSource, scheduleAutomaticRecovery]);
 
     useEffect(() => {
+        if (!reactiveVisualizationEnabled) return;
+        const resumeAnalysisAfterForeground = () => {
+            const provider = analysisProvider.current;
+            if (document.visibilityState !== 'visible' || !provider || !wantsLivePlayback.current) return;
+            if (provider.getStatus().phase !== 'suspended') return;
+            void provider.start().then((result) => {
+                if (!result.ok) onReactiveVisualizationFailure();
+            }).catch(() => onReactiveVisualizationFailure());
+        };
+        document.addEventListener('visibilitychange', resumeAnalysisAfterForeground);
+        window.addEventListener('pageshow', resumeAnalysisAfterForeground);
+        return () => {
+            document.removeEventListener('visibilitychange', resumeAnalysisAfterForeground);
+            window.removeEventListener('pageshow', resumeAnalysisAfterForeground);
+        };
+    }, [onReactiveVisualizationFailure, reactiveVisualizationEnabled]);
+
+    useEffect(() => {
         const interval = window.setInterval(async () => {
             // The native element is prepared before the first gesture for iOS,
             // so its lease must also remain current while playback is idle.
@@ -1135,6 +1307,7 @@ export default function ListenerPlayer({
     async function playWithIntro(language: DropLanguage) {
         const selected = dropAudio[language].current;
         if (!selected || !dropIns[language]) return;
+        startReactiveAnalysis(`intro-${language}`);
         // The intro already contains the Beacon, so the shared stream must stay
         // inaudible underneath it. Starting both prepared elements inside this
         // gesture preserves iOS authorization for the later automatic handoff.
@@ -1231,6 +1404,7 @@ export default function ListenerPlayer({
             [language]: { current: 0, duration: current[language].duration },
         }));
         audio!.currentTime = 0;
+        startReactiveAnalysis('beacon');
         if (liveAudio.current && !liveAudio.current.paused) {
             cancelRecovery(true);
             setTransportPaused(false);
@@ -1293,13 +1467,34 @@ export default function ListenerPlayer({
     function skipToBeacon() {
         dropGeneration.current += 1;
         setTransportPaused(false);
+        startReactiveAnalysis('beacon');
         void playLive(false, dropGeneration.current);
     }
 
     return (
         <div className="listener-experience" data-phase={phase}>
+            {reactiveVisualizationEnabled && reactiveRendererAvailable && (
+                <div className="listener-reactive-field" data-testid="listener-reactive-field">
+                    <ReactiveCampfireCanvas
+                        subscribeFrames={subscribeReactiveFrames}
+                        mode={transportActive && !transportPaused ? 'active' : 'stopped'}
+                        settings={reactiveSettings}
+                        onRendererError={() => {
+                            const provider = analysisProvider.current;
+                            provider?.pauseAnalysis();
+                            setReactiveRendererAvailable(false);
+                            // Before playback the visual graph is disposable,
+                            // so a fresh direct remount is safe. Once the graph
+                            // is audible, never interrupt media for a Canvas
+                            // failure; only stop analysis/rendering.
+                            if (!provider) onReactiveVisualizationFailure();
+                        }}
+                    />
+                </div>
+            )}
             <audio
                 ref={liveAudio}
+                crossOrigin={reactiveVisualizationEnabled ? 'anonymous' : undefined}
                 preload="auto"
                 aria-label={copy.heading}
                 onError={() => handleNativeInterruption('error')}
@@ -1319,6 +1514,33 @@ export default function ListenerPlayer({
                 </p>}
 
                 <div className="listener-control-panel">
+                    {reactiveFallbackNotice && (
+                        <p role="status" className="listener-stage__hint">
+                            {locale === 'es'
+                                ? 'El campo reactivo no pudo iniciarse. El reproductor directo está listo.'
+                                : 'The reactive field could not start. Direct playback is ready.'}
+                        </p>
+                    )}
+                    {reactiveVisualizationAvailable && !transportActive && (
+                        <label className="listener-reactive-option">
+                            <input
+                                type="checkbox"
+                                checked={reactiveVisualizationEnabled}
+                                disabled={transportBusy}
+                                onChange={(event) => onReactiveVisualizationChange(event.target.checked)}
+                            />
+                            <span>{locale === 'es' ? 'Campo reactivo · experimental' : 'Reactive field · experimental'}</span>
+                        </label>
+                    )}
+
+                    {reactiveVisualizationEnabled && !reactiveRendererAvailable && (
+                        <p role="status" className="listener-stage__hint">
+                            {locale === 'es'
+                                ? 'La visualización se detuvo; el audio continúa sin ella.'
+                                : 'The visualization stopped; audio continues without it.'}
+                        </p>
+                    )}
+
                     {availableDropCount > 0 && !transportActive && (
                         <label className="listener-intro-option">
                             <input
@@ -1434,6 +1656,7 @@ export default function ListenerPlayer({
                             <audio
                                 key={language}
                                 ref={dropAudio[language]}
+                                crossOrigin={reactiveVisualizationEnabled ? 'anonymous' : undefined}
                                 src={dropIns[language] ?? undefined}
                                 preload={language === selectedDrop ? 'auto' : 'metadata'}
                                 onLoadedMetadata={() => restoreProgress(language)}
@@ -1445,7 +1668,62 @@ export default function ListenerPlayer({
                     })}
                 </div>
 
+                <ReactiveCampfireTuningPanel
+                    enabled={reactiveVisualizationAvailable && reactiveVisualizationEnabled}
+                    settings={reactiveSettings}
+                    analysisControlsLocked={transportActive}
+                    onChange={(next) => onReactiveSettingsChange(transportActive ? {
+                        ...next,
+                        fftSize: reactiveSettings.fftSize,
+                        baselineDurationSeconds: reactiveSettings.baselineDurationSeconds,
+                    } : next)}
+                />
+
             </section>
         </div>
+    );
+}
+
+export default function ListenerPlayer({
+    dropIns,
+    reactiveVisualizationAvailable = false,
+}: ListenerPlayerProps) {
+    const [reactiveVisualizationEnabled, setReactiveVisualizationEnabled] = useState(false);
+    const [reactiveFallbackNotice, setReactiveFallbackNotice] = useState(false);
+    const [reactiveSettings, setReactiveSettings] = useState<ReactiveCampfireSettings>({
+        ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,
+    });
+    const runtimeVisualizationAvailable = useSyncExternalStore(
+        subscribeRuntimeVisualizationCapability,
+        () => (
+            reactiveVisualizationAvailable
+            && supportsReactiveListenerVisualization(navigator)
+        ),
+        () => false,
+    );
+    const analysisConfigurationKey = [
+        reactiveVisualizationEnabled ? 'visual' : 'direct',
+        reactiveSettings.fftSize,
+        reactiveSettings.baselineDurationSeconds,
+    ].join(':');
+
+    return (
+        <ListenerPlayerController
+            key={analysisConfigurationKey}
+            dropIns={dropIns}
+            reactiveVisualizationAvailable={runtimeVisualizationAvailable}
+            reactiveVisualizationEnabled={reactiveVisualizationEnabled}
+            reactiveSettings={reactiveSettings}
+            reactiveFallbackNotice={reactiveFallbackNotice}
+            onReactiveSettingsChange={setReactiveSettings}
+            onReactiveVisualizationChange={(enabled) => {
+                setReactiveFallbackNotice(false);
+                setReactiveVisualizationEnabled(enabled);
+            }}
+            onReactiveVisualizationFailure={() => {
+                setReactiveFallbackNotice(true);
+                setReactiveVisualizationEnabled(false);
+            }}
+        />
     );
 }

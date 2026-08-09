@@ -14,6 +14,7 @@ export type ReactiveCampfireTuningPanelProps = {
     enabled: boolean;
     settings: ReactiveCampfireSettings;
     onChange: (settings: ReactiveCampfireSettings) => void;
+    analysisControlsLocked?: boolean;
 };
 
 type NumberField = Exclude<keyof ReactiveCampfireSettings, 'palette' | 'fftSize'>;
@@ -49,6 +50,7 @@ export function ReactiveCampfireTuningPanel({
     enabled,
     settings,
     onChange,
+    analysisControlsLocked = false,
 }: ReactiveCampfireTuningPanelProps) {
     const [status, setStatus] = useState('');
     if (!enabled) return null;
@@ -86,6 +88,7 @@ export function ReactiveCampfireTuningPanel({
                             max={field.max}
                             step={field.step}
                             value={settings[field.key]}
+                            disabled={analysisControlsLocked && field.key === 'baselineDurationSeconds'}
                             onChange={(event) => update({
                                 [field.key]: Number(event.currentTarget.value),
                             })}
@@ -109,6 +112,7 @@ export function ReactiveCampfireTuningPanel({
                     <span>FFT size</span>
                     <select
                         value={settings.fftSize}
+                        disabled={analysisControlsLocked}
                         onChange={(event) => update({
                             fftSize: Number(event.currentTarget.value) as ReactiveCampfireSettings['fftSize'],
                         })}

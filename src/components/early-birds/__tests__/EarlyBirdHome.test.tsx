@@ -5,15 +5,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/context/LocaleContext';
 
 vi.mock('../ListenerPlayer', () => ({
-    default: () => <section aria-label="listener-player" />,
+    default: ({ reactiveVisualizationAvailable }: { reactiveVisualizationAvailable?: boolean }) => (
+        <section
+            aria-label="listener-player"
+            data-reactive-available={String(Boolean(reactiveVisualizationAvailable))}
+        />
+    ),
 }));
 vi.mock('next/navigation', () => ({
     useRouter: () => ({ refresh: vi.fn() }),
-}));
-vi.mock('../CosmicCampfire', () => ({
-    default: ({ fixture }: { fixture: string }) => (
-        <div data-testid="listener-campfire" data-fixture={fixture} aria-hidden="true" />
-    ),
 }));
 import EarlyBirdHome from '../EarlyBirdHome';
 
@@ -55,7 +55,7 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(screen.getByLabelText('listener-player')).toBeInTheDocument();
     });
 
-    it('keeps the campfire prototype absent unless its exact server flag is passed', () => {
+    it('passes the reactive experiment capability only to the isolated player', () => {
         const view = render(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
@@ -66,12 +66,11 @@ describe('EarlyBird Listener home access chrome', () => {
             </LocaleProvider>,
         );
 
-        expect(screen.queryByTestId('listener-campfire')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'false');
         view.rerender(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
-                    campfirePrototype
-                    campfireFixture="far"
+                    reactiveVisualizationAvailable
                     displayName="Nico"
                     membership={{ kind: 'invitation', state: 'active' }}
                     dropIns={{ es: null, en: null }}
@@ -79,8 +78,7 @@ describe('EarlyBird Listener home access chrome', () => {
             </LocaleProvider>,
         );
 
-        expect(screen.getByTestId('listener-campfire')).toHaveAttribute('data-fixture', 'far');
-        expect(screen.getByTestId('listener-campfire')).toHaveAttribute('aria-hidden', 'true');
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'true');
     });
 
     it('presents a normalized Founder status and provider without raw membership source', () => {

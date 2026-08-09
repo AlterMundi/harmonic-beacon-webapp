@@ -3,13 +3,11 @@
 import BrandLockup from '@/components/brand/BrandLockup';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
-import type { ListenerCampfireFixture } from '@/lib/early-birds/campfire-prototype';
 import { earlyBirdCopy, earlyBirdHomeCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import ListenerPlayer from './ListenerPlayer';
-import CosmicCampfire from './CosmicCampfire';
 import FreeQuotaStatus from './FreeQuotaStatus';
 import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
@@ -20,8 +18,7 @@ export default function EarlyBirdHome({
     serverNow = new Date(0).toISOString(),
     dropIns,
     publicAccess = false,
-    campfirePrototype = false,
-    campfireFixture = 'empty',
+    reactiveVisualizationAvailable = false,
     quota = null,
 }: {
     displayName: string;
@@ -30,8 +27,7 @@ export default function EarlyBirdHome({
     serverNow?: string;
     dropIns: { es: string | null; en: string | null };
     publicAccess?: boolean;
-    campfirePrototype?: boolean;
-    campfireFixture?: ListenerCampfireFixture;
+    reactiveVisualizationAvailable?: boolean;
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
 }) {
     const { locale } = useLocale();
@@ -45,7 +41,6 @@ export default function EarlyBirdHome({
 
     return (
         <main className="listener-shell">
-            {campfirePrototype && <CosmicCampfire fixture={campfireFixture} />}
             <div className="listener-shell__frame listener-shell__frame--home">
                 <header className="listener-rail">
                     <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
@@ -73,7 +68,10 @@ export default function EarlyBirdHome({
                         </details>}
                     </div>
                 </header>
-                <ListenerPlayer dropIns={dropIns} />
+                <ListenerPlayer
+                    dropIns={dropIns}
+                    reactiveVisualizationAvailable={reactiveVisualizationAvailable}
+                />
                 {!publicAccess && accessKind === 'free-quota' && (
                     <footer className="listener-listening-status">
                         <FreeQuotaStatus snapshot={quota} serverNow={serverNow} compact showMembershipLink />

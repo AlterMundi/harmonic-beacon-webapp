@@ -5,10 +5,11 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const MEDIA_FILE_SHA256 = {
-    // The non-acoustic prepared-source race fix and transport presentation
-    // were reviewed and re-pinned. Initial volume remains the explicitly
-    // approved 70%; sources and signal processing are unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': 'c0549198c599867c0b145c435d10fe6ec7816911a8b46ab0afc7717c6320be16',
+    // Reviewed and re-pinned for the staging-only, opt-in passive WebAudio
+    // analysis graph. Direct playback remains the default; HLS parameters,
+    // source URLs, media assets, element gain/fades and event audio are
+    // unchanged. Apple/native-HLS remains on the direct path.
+    'src/components/early-birds/ListenerPlayer.tsx': '02316384225f262a61f96f41664afd03ef88337e35d35e989f8ad332541176b5',
     'src/lib/early-birds/stream.ts': '96a2d9fe798591833327631b59a73a5b2fc5ca06be7081945a0b07450970da84',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',

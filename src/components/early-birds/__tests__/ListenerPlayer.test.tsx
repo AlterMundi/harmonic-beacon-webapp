@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { LocaleProvider } from '@/context/LocaleContext';
 
@@ -11,6 +11,60 @@ type HlsTestInstance = {
 };
 
 const hlsHarness = vi.hoisted(() => ({ instances: [] as HlsTestInstance[] }));
+const analysisHarness = vi.hoisted(() => ({
+    startResult: { ok: true } as { ok: boolean; error?: { code: string; message: string } },
+    instances: [] as Array<{
+        options: {
+            framesPerSecond?: number;
+            sources: Array<{ id: string; kind: string; element: HTMLMediaElement }>;
+        };
+        start: ReturnType<typeof vi.fn>;
+        setActiveSource: ReturnType<typeof vi.fn>;
+        pauseAnalysis: ReturnType<typeof vi.fn>;
+        stop: ReturnType<typeof vi.fn>;
+        emitAnalysisFailure(): void;
+    }>,
+}));
+vi.mock('@/lib/listener/analysis', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@/lib/listener/analysis')>();
+    class TestAnalysisProvider {
+        private statusListener: ((status: {
+            phase: string;
+            activeSourceId: string | null;
+            activeSourceKind: string | null;
+            error: { code: string; message: string } | null;
+        }) => void) | null = null;
+        start = vi.fn().mockImplementation(() => Promise.resolve(analysisHarness.startResult));
+        setActiveSource = vi.fn().mockReturnValue({ ok: true });
+        pauseAnalysis = vi.fn();
+        resumeAnalysis = vi.fn().mockReturnValue({ ok: true });
+        subscribe = vi.fn().mockReturnValue(() => undefined);
+        subscribeStatus = vi.fn().mockImplementation((listener: (status: unknown) => void) => {
+            this.statusListener = listener as typeof this.statusListener;
+            this.statusListener?.({ phase: 'idle', activeSourceId: null, activeSourceKind: null, error: null });
+            return () => { this.statusListener = null; };
+        });
+        stop = vi.fn();
+        getStatus = vi.fn().mockReturnValue({ phase: 'running', error: null });
+
+        constructor(readonly options: {
+            framesPerSecond?: number;
+            sources: Array<{ id: string; kind: string; element: HTMLMediaElement }>;
+        }) {
+            analysisHarness.instances.push(this);
+        }
+
+        emitAnalysisFailure() {
+            this.statusListener?.({
+                phase: 'failed',
+                activeSourceId: 'beacon',
+                activeSourceKind: 'beacon',
+                error: { code: 'ANALYSIS_FAILED', message: 'synthetic' },
+            });
+        }
+    }
+    return { ...actual, WebAudioHarmonicAnalysisProvider: TestAnalysisProvider };
+});
 vi.mock('hls.js', () => {
     class TestHls {
         static Events = { ERROR: 'error' };
@@ -49,7 +103,12 @@ import ListenerPlayer, {
     nextPresenceSequence,
     prefersNativeHls,
     seekNativeAudioToLiveEdge,
+    supportsReactiveListenerVisualization,
 } from '../ListenerPlayer';
+
+beforeEach(() => {
+    vi.spyOn(window.navigator, 'vendor', 'get').mockReturnValue('Google Inc.');
+});
 
 afterEach(() => {
     cleanup();
@@ -59,9 +118,304 @@ afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     hlsHarness.instances.length = 0;
+    analysisHarness.instances.length = 0;
+    analysisHarness.startResult = { ok: true };
 });
 
 describe('EarlyBird Listener player', () => {
+    it('keeps direct playback as the default and attaches the visual graph only after staging opt-in', async () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+            .mockReturnValue({} as CanvasRenderingContext2D);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=visual&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        ));
+        vi.stubGlobal('fetch', fetchMock);
+        const { container } = render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    dropIns={{ es: '/api/early-birds/drop-ins/es', en: '/api/early-birds/drop-ins/en' }}
+                />
+            </LocaleProvider>,
+        );
+
+        const toggle = await screen.findByRole('checkbox', { name: 'Reactive field · experimental' });
+        expect(toggle).not.toBeChecked();
+        expect(container.querySelector('audio[crossorigin]')).toBeNull();
+        expect(analysisHarness.instances).toHaveLength(0);
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+
+        fireEvent.click(toggle);
+        await waitFor(() => expect(screen.getByTestId('listener-reactive-field')).toBeInTheDocument());
+        expect(container.querySelectorAll('audio[crossorigin="anonymous"]')).toHaveLength(3);
+        expect(screen.getByTestId('reactive-campfire-tuning-panel')).toBeInTheDocument();
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(analysisHarness.instances).toHaveLength(1));
+        const analysis = analysisHarness.instances[0];
+        expect(analysis.options.sources.map(({ id }) => id)).toEqual(['beacon', 'intro-es', 'intro-en']);
+        expect(analysis.setActiveSource).toHaveBeenCalledWith('intro-en');
+        expect(analysis.start).toHaveBeenCalledOnce();
+        expect(analysis.options.framesPerSecond).toBe(30);
+        expect(screen.queryByRole('checkbox', { name: 'Reactive field · experimental' })).toBeNull();
+
+        const englishIntro = screen.getByLabelText('Warm-up · English');
+        Object.defineProperty(englishIntro, 'ended', { value: true, configurable: true });
+        fireEvent.ended(englishIntro);
+        expect(analysis.setActiveSource).toHaveBeenLastCalledWith('beacon');
+    });
+
+    it('remounts the untouched direct player when Canvas 2D is unavailable', async () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic offline')));
+        const { container } = render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Reactive field · experimental' }));
+
+        await waitFor(() => expect(screen.getByText(
+            'The reactive field could not start. Direct playback is ready.',
+        )).toBeInTheDocument());
+        expect(screen.queryByTestId('listener-reactive-field')).toBeNull();
+        expect(container.querySelector('audio[crossorigin]')).toBeNull();
+    });
+
+    it('uses the conservative analysis cadence for reduced motion', async () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+            .mockReturnValue({} as CanvasRenderingContext2D);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true } as MediaQueryList)));
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=visual&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        )));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Reactive field · experimental' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(analysisHarness.instances).toHaveLength(1));
+        expect(analysisHarness.instances[0].options.framesPerSecond).toBe(2);
+    });
+
+    it('falls back to a freshly mounted direct player when Web Audio startup fails', async () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+            .mockReturnValue({} as CanvasRenderingContext2D);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        analysisHarness.startResult = {
+            ok: false,
+            error: { code: 'CONTEXT_RESUME_FAILED', message: 'synthetic' },
+        };
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=visual&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        )));
+        const { container } = render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Reactive field · experimental' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+
+        await waitFor(() => expect(screen.getByText(
+            'The reactive field could not start. Direct playback is ready.',
+        )).toBeInTheDocument());
+        expect(container.querySelector('audio[crossorigin]')).toBeNull();
+    });
+
+    it('stops only analysis when a running visual frame fails', async () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+            .mockReturnValue({} as CanvasRenderingContext2D);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=visual&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        )));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Reactive field · experimental' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(analysisHarness.instances).toHaveLength(1));
+        const provider = analysisHarness.instances[0];
+        const audibleElement = screen.getByLabelText('Beacon');
+
+        provider.emitAnalysisFailure();
+
+        await waitFor(() => expect(screen.queryByTestId('listener-reactive-field')).toBeNull());
+        expect(screen.getByLabelText('Beacon')).toBe(audibleElement);
+        expect(provider.pauseAnalysis).toHaveBeenCalled();
+        expect(provider.stop).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+        expect(screen.queryByText(
+            'The reactive field could not start. Direct playback is ready.',
+        )).toBeNull();
+    });
+
+    it('keeps the same audible media when Canvas drawing fails after playback starts', async () => {
+        const animationFrames: FrameRequestCallback[] = [];
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+            .mockReturnValue({} as CanvasRenderingContext2D);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+            animationFrames.push(callback);
+            return animationFrames.length;
+        });
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=visual&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(
+            new Response(JSON.stringify(grant), { status: 200 }),
+        )));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Reactive field · experimental' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(analysisHarness.instances).toHaveLength(1));
+        const provider = analysisHarness.instances[0];
+        const audibleElement = screen.getByLabelText('Beacon');
+        expect(animationFrames.length).toBeGreaterThan(0);
+
+        await act(async () => { animationFrames[0](performance.now()); });
+
+        await waitFor(() => expect(screen.queryByTestId('listener-reactive-field')).toBeNull());
+        expect(screen.getByLabelText('Beacon')).toBe(audibleElement);
+        expect(provider.pauseAnalysis).toHaveBeenCalled();
+        expect(provider.stop).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    });
+
+    it('never exposes the experimental control outside the staging capability', () => {
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic offline')));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        expect(screen.queryByRole('checkbox', { name: 'Reactive field · experimental' })).toBeNull();
+        expect(screen.queryByTestId('listener-reactive-field')).toBeNull();
+    });
+
+    it('keeps the reactive experiment unavailable on Apple native-HLS clients', async () => {
+        vi.spyOn(window.navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic offline')));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer
+                    reactiveVisualizationAvailable
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        await waitFor(() => expect(
+            screen.queryByRole('checkbox', { name: 'Reactive field · experimental' }),
+        ).toBeNull());
+        expect(supportsReactiveListenerVisualization({ vendor: 'Apple Computer, Inc.' })).toBe(false);
+        expect(supportsReactiveListenerVisualization({ vendor: 'Google Inc.' })).toBe(true);
+    });
+
     it('keeps the connection identifier stable per tab without sharing it across tabs', () => {
         const first = getOrCreateEarlyBirdDeviceId(window.sessionStorage);
         const second = getOrCreateEarlyBirdDeviceId(window.sessionStorage);
@@ -148,8 +502,9 @@ describe('EarlyBird Listener player', () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(grants[0]), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[0], presenceSequence: 1 }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[1], presenceSequence: 1 }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[1], presenceSequence: 1 }), { status: 200 }));
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[0], presenceSequence: 2 }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[1], presenceSequence: 2 }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[1], presenceSequence: 3 }), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
@@ -163,9 +518,10 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
-        expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/early-birds/stream/heartbeat');
+        expect(fetchMock.mock.calls.filter(([url]) => (
+            url === '/api/early-birds/stream/heartbeat'
+        )).length).toBeGreaterThanOrEqual(2);
         expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
         expect(hlsHarness.instances[1].loadedSources).toEqual([grants[1].stream.manifestUrl]);
         expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();

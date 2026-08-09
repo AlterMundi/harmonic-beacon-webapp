@@ -16,10 +16,10 @@ import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entr
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
 import { serializeEarlyBirdQuotaSnapshot } from '@/lib/early-birds/quota';
-import { listenerCampfirePrototypeConfig } from '@/lib/early-birds/campfire-prototype';
 import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import {
     isCanonicalListenerHost,
+    isListenerStagingHost,
     listenerLocaleForHeaders,
     listenerPreviewMetadata,
     listenerPublicMetadata,
@@ -42,14 +42,14 @@ export default async function EarlyBirdsPage({
     searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
     if (!earlyBirdsEnabled()) return <EarlyBirdUnavailable />;
-    const campfire = listenerCampfirePrototypeConfig();
+    const incomingHeaders = new Headers(await requestHeaders());
+    const reactiveVisualizationAvailable = isListenerStagingHost(incomingHeaders);
 
     if (earlyBirdsFreeForAll()) {
         return (
             <EarlyBirdHome
                 publicAccess
-                campfirePrototype={campfire.enabled}
-                campfireFixture={campfire.fixture}
+                reactiveVisualizationAvailable={reactiveVisualizationAvailable}
                 displayName=""
                 membership={listenerMembershipPresentation(null)}
                 dropIns={{
@@ -61,7 +61,6 @@ export default async function EarlyBirdsPage({
     }
 
     const params = await searchParams;
-    const incomingHeaders = new Headers(await requestHeaders());
     const sessionResolution = await currentEarlyBirdSession()
         .then((session) => ({ session, unavailable: false as const }))
         .catch(() => ({ session: null, unavailable: true as const }));
@@ -80,8 +79,7 @@ export default async function EarlyBirdsPage({
         return (
             <EarlyBirdHome
                 displayName={session.user.name}
-                campfirePrototype={campfire.enabled}
-                campfireFixture={campfire.fixture}
+                reactiveVisualizationAvailable={reactiveVisualizationAvailable}
                 membership={listenerMembershipPresentation(access.membership.projection)}
                 accessKind={access.kind === 'free-quota' ? 'free-quota' : 'membership'}
                 quota={access.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}

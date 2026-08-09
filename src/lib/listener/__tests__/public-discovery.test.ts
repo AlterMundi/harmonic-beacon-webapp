@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     isCanonicalListenerHost,
+    isListenerStagingHost,
     LISTENER_CANONICAL_URL,
     listenerPreviewMetadata,
     listenerPublicMetadata,
@@ -26,6 +27,14 @@ describe('Listener public discovery', () => {
         expect(isCanonicalListenerHost(requestHeaders('live.harmonicbeacon.com@listen.harmonicbeacon.com'))).toBe(false);
         expect(isCanonicalListenerHost(requestHeaders('listen.harmonicbeacon.com:99999'))).toBe(false);
         expect(isCanonicalListenerHost(requestHeaders(null))).toBe(false);
+    });
+
+    it('binds experimental presentation controls to the exact staging host', () => {
+        expect(isListenerStagingHost(requestHeaders('earlybirds-staging.harmonicbeacon.com'))).toBe(true);
+        expect(isListenerStagingHost(requestHeaders('earlybirds-staging.harmonicbeacon.com:443'))).toBe(true);
+        expect(isListenerStagingHost(requestHeaders('listen.harmonicbeacon.com'))).toBe(false);
+        expect(isListenerStagingHost(requestHeaders('live.harmonicbeacon.com'))).toBe(false);
+        expect(isListenerStagingHost(requestHeaders('earlybirds-staging.harmonicbeacon.com.evil.test'))).toBe(false);
     });
 
     it('uses the same browser-language decision for public content and document metadata', () => {
