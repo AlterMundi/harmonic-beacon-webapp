@@ -67,6 +67,7 @@ export interface HarmonicAnalysisProvider {
     getStatus(): HarmonicAnalysisProviderStatus;
     start(): Promise<HarmonicAnalysisStartResult>;
     setActiveSource(sourceId: string): HarmonicAnalysisStartResult;
+    setFramesPerSecond(framesPerSecond: number): HarmonicAnalysisStartResult;
     pauseAnalysis(): void;
     resumeAnalysis(): HarmonicAnalysisStartResult;
     subscribe(listener: HarmonicAnalysisFrameListener): () => void;

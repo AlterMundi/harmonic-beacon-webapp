@@ -21,7 +21,7 @@ export type WebAudioAnalysisSource = {
 };
 
 export type HarmonicAnalysisScheduler = {
-    request(callback: FrameRequestCallback): number;
+    request(callback: FrameRequestCallback, delayMs: number): number;
     cancel(handle: number): void;
     now(): number;
 };
@@ -64,8 +64,11 @@ function defaultAudioContextFactory(): AudioContext {
 
 function defaultScheduler(): HarmonicAnalysisScheduler {
     return {
-        request: (callback) => window.requestAnimationFrame(callback),
-        cancel: (handle) => window.cancelAnimationFrame(handle),
+        request: (callback, delayMs) => window.setTimeout(
+            () => callback(performance.now()),
+            delayMs,
+        ),
+        cancel: (handle) => window.clearTimeout(handle),
         now: () => performance.now(),
     };
 }
@@ -263,6 +266,31 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
         return { ok: true };
     }
 
+    setFramesPerSecond(framesPerSecond: number): HarmonicAnalysisStartResult {
+        let validated: ValidatedHarmonicAnalysisConfig;
+        try {
+            validated = validateHarmonicAnalysisConfig({
+                ...this.config,
+                framesPerSecond,
+            });
+        } catch {
+            const error = publicError(
+                'INVALID_CONFIGURATION',
+                'Analysis cadence must be between 1 and 60 frames per second',
+                true,
+            );
+            this.setStatus({ ...this.status, error });
+            return { ok: false, error };
+        }
+        this.config.framesPerSecond = validated.framesPerSecond;
+        if (this.status.phase === 'running' && this.animationHandle !== null) {
+            try { this.scheduler.cancel(this.animationHandle); } catch { /* non-throwing reschedule */ }
+            this.animationHandle = null;
+            this.scheduleNextFrame();
+        }
+        return { ok: true };
+    }
+
     pauseAnalysis(): void {
         if (this.status.phase !== 'running') return;
         if (this.animationHandle !== null) {
@@ -347,6 +375,10 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
             const fftSize = this.config.fftSize;
             leftAnalyser.fftSize = fftSize;
             rightAnalyser.fftSize = fftSize;
+            leftAnalyser.minDecibels = -120;
+            rightAnalyser.minDecibels = -120;
+            leftAnalyser.maxDecibels = 0;
+            rightAnalyser.maxDecibels = 0;
             leftAnalyser.smoothingTimeConstant = 0;
             rightAnalyser.smoothingTimeConstant = 0;
 
@@ -392,7 +424,12 @@ export class WebAudioHarmonicAnalysisProvider implements HarmonicAnalysisProvide
 
     private scheduleNextFrame(): void {
         if (this.animationHandle !== null || this.status.phase !== 'running') return;
-        this.animationHandle = this.scheduler.request(this.captureFrame);
+        const intervalMs = 1000 / this.config.framesPerSecond;
+        const elapsedMs = this.scheduler.now() - this.lastFrameAtMs;
+        const delayMs = Number.isFinite(elapsedMs)
+            ? Math.max(0, intervalMs - elapsedMs)
+            : 0;
+        this.animationHandle = this.scheduler.request(this.captureFrame, delayMs);
     }
 
     private readonly captureFrame: FrameRequestCallback = (timestamp): void => {

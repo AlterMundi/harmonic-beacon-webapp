@@ -23,13 +23,17 @@ class FakeNode {
 class FakeAnalyser extends FakeNode {
     fftSize = 2048;
     smoothingTimeConstant = 0;
+    minDecibels = -100;
+    maxDecibels = -30;
 
     get frequencyBinCount(): number {
         return this.fftSize / 2;
     }
 
     getFloatFrequencyData(target: Float32Array): void {
-        target.fill(-80);
+        target.fill(-110);
+        const fundamentalBin = Math.round(40.4 / (48_000 / this.fftSize));
+        target[fundamentalBin] = -10;
     }
 
     getFloatTimeDomainData(target: Float32Array): void {
@@ -97,12 +101,16 @@ function media(currentTime: number): HTMLMediaElement {
 
 function scheduler(): HarmonicAnalysisScheduler & {
     callbacks: FrameRequestCallback[];
+    delays: number[];
 } {
     const callbacks: FrameRequestCallback[] = [];
+    const delays: number[] = [];
     return {
         callbacks,
-        request: (callback) => {
+        delays,
+        request: (callback, delayMs) => {
             callbacks.push(callback);
+            delays.push(delayMs);
             return callbacks.length;
         },
         cancel: vi.fn(),
@@ -129,6 +137,8 @@ describe('WebAudioHarmonicAnalysisProvider', () => {
         expect(context.splitterNodes).toHaveLength(2);
         expect(context.analyserNodes).toHaveLength(4);
         expect(context.analyserNodes.every(({ fftSize }) => fftSize === 8192)).toBe(true);
+        expect(context.analyserNodes.every(({ minDecibels }) => minDecibels === -120)).toBe(true);
+        expect(context.analyserNodes.every(({ maxDecibels }) => maxDecibels === 0)).toBe(true);
         for (let index = 0; index < context.sourceNodes.length; index += 1) {
             const source = context.sourceNodes[index];
             expect(source?.connections).toEqual([
@@ -174,6 +184,29 @@ describe('WebAudioHarmonicAnalysisProvider', () => {
         expect(frames.mock.calls[0]?.[0]).toMatchObject({
             sourceKind: 'beacon',
             sourceTimeSeconds: 240,
+        });
+        expect(frames.mock.calls[0]?.[0].harmonicAbsoluteDb[0]).toBeGreaterThan(-30);
+        expect(frames.mock.calls[0]?.[0].harmonicAbsoluteDb[10]).toBeLessThan(-100);
+    });
+
+    it('can lower live analysis cadence to 2 fps without running a 60 fps polling loop', async () => {
+        const context = new FakeAudioContext();
+        context.state = 'running';
+        const frameScheduler = scheduler();
+        const provider = new WebAudioHarmonicAnalysisProvider({
+            audioContext: context as unknown as AudioContext,
+            scheduler: frameScheduler,
+            sources: [{ id: 'beacon', kind: 'beacon', element: media(0) }],
+        });
+        await provider.start();
+        expect(frameScheduler.delays[0]).toBe(0);
+        frameScheduler.callbacks.shift()?.(1_000);
+
+        expect(provider.setFramesPerSecond(2)).toEqual({ ok: true });
+        expect(frameScheduler.delays.at(-1)).toBe(500);
+        expect(provider.setFramesPerSecond(0)).toMatchObject({
+            ok: false,
+            error: { code: 'INVALID_CONFIGURATION' },
         });
     });
 
