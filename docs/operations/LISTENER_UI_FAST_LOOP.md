@@ -33,6 +33,18 @@ separate production-mode container on the staging port. Ordinary UI iteration
 continues to use Next development mode. Neither path changes the persistent
 Listener release or event services.
 
+For the equivalent isolated Mercado Pago TEST rehearsal, select only Mercado
+Pago and keep Free For All disabled:
+
+```bash
+LISTENER_UI_PREVIEW_FREE_FOR_ALL=0 \
+LISTENER_UI_PREVIEW_MERCADO_PAGO_TEST_CHECKOUT_ENABLED=1 \
+scripts/listener-ui-preview.sh start
+```
+
+The workbench rejects enabling PayPal and Mercado Pago together so acceptance
+evidence always identifies one provider unambiguously.
+
 Keep local edits synchronized while iterating:
 
 ```bash
