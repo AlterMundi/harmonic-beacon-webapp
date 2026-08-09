@@ -45,11 +45,17 @@ async function serve(
             headers: { 'Cache-Control': 'private, no-store' },
         });
     }
-    const access = session
-        ? await getEarlyBirdListeningAccess(session.user.id).catch(() => null)
-        : null;
+    let access = null;
+    try {
+        access = session ? await getEarlyBirdListeningAccess(session.user.id) : null;
+    } catch {
+        return NextResponse.json({ error: 'Listener access unavailable.' }, {
+            status: 503,
+            headers: { 'Cache-Control': 'private, no-store' },
+        });
+    }
     if (!freeForAll && !access?.allowed) {
-        return NextResponse.json({ error: 'Membership inactive.' }, {
+        return NextResponse.json({ error: 'Listening access inactive.' }, {
             status: 403,
             headers: { 'Cache-Control': 'private, no-store' },
         });

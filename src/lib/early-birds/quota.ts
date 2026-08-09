@@ -620,6 +620,11 @@ export async function withQuotaTransaction<T>(
             const retryable = typeof error === 'object' && error !== null && 'code' in error
                 && (error as { code?: unknown }).code === 'P2034';
             if (!retryable || attempt === 2) throw error;
+            // Immediate retries can repeatedly collide with the short heartbeat
+            // transaction that just won. A tiny bounded backoff lets media
+            // authorization converge without turning transient contention into
+            // a false access denial.
+            await new Promise((resolve) => setTimeout(resolve, 8 * (attempt + 1)));
         }
     }
     throw new Error('Unreachable quota transaction retry state');

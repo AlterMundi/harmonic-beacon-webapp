@@ -51,6 +51,19 @@ describe('private EarlyBird drop-in media', () => {
         expect(mocks.open).not.toHaveBeenCalled();
     });
 
+    it('reports transient authority failure as unavailable rather than inactive access', async () => {
+        mocks.getEarlyBirdListeningAccess.mockRejectedValueOnce(new Error('serialization conflict'));
+
+        const response = await GET(
+            new NextRequest('https://listener.test/api/early-birds/drop-ins/es'),
+            context('es'),
+        );
+
+        expect(response.status).toBe(503);
+        await expect(response.json()).resolves.toEqual({ error: 'Listener access unavailable.' });
+        expect(mocks.stat).not.toHaveBeenCalled();
+    });
+
     it('serves the configured drop-in anonymously only in Free for All mode', async () => {
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
         mocks.currentEarlyBirdSession.mockResolvedValue(null);

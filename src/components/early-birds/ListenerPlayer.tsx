@@ -1149,6 +1149,7 @@ export default function ListenerPlayer({
         const other: DropLanguage = language === 'es' ? 'en' : 'es';
         dropAudio[other].current?.pause();
         cancelDropFade();
+        if (selected.error) selected.load();
         selected.currentTime = 0;
         selected.volume = volumeRef.current;
         const generation = dropGeneration.current + 1;
@@ -1203,6 +1204,8 @@ export default function ListenerPlayer({
             }
             liveSuppressedForDrop.current = false;
             reportPresence('idle');
+            setPrepareFailure('unavailable');
+            updateLiveState('idle');
         }
     }
 
