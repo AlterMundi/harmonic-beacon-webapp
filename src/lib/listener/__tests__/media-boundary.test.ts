@@ -10,7 +10,7 @@ const MEDIA_FILE_SHA256 = {
     // media when the field is toggled. The staging-only lab now starts visible;
     // HLS parameters, source URLs, media assets, element gain/fades and event
     // audio remain unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': '95fb0c835091c4e0d214c7c763ad2a0f50f4a85ccdf3e08f8ae258dfc32c3249',
+    'src/components/early-birds/ListenerPlayer.tsx': 'af5c3fcf3d860d015bfff5e7b523215d1751d61e71330ccf1ab908b53178858c',
     'src/lib/early-birds/stream.ts': '96a2d9fe798591833327631b59a73a5b2fc5ca06be7081945a0b07450970da84',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',

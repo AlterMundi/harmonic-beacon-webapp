@@ -167,6 +167,17 @@ export function nativeHlsProgramTimeMs(
     }
 }
 
+export function hlsFragmentProgramTimeMs(
+    mediaTimeSeconds: number,
+    anchor: { mediaStartSeconds: number; programStartMs: number } | null,
+): number | null {
+    if (!anchor
+        || !Number.isFinite(mediaTimeSeconds)
+        || !Number.isFinite(anchor.mediaStartSeconds)
+        || !Number.isFinite(anchor.programStartMs)) return null;
+    return anchor.programStartMs + (mediaTimeSeconds - anchor.mediaStartSeconds) * 1_000;
+}
+
 function formatTime(seconds: number): string {
     if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
     const rounded = Math.floor(seconds);
@@ -224,6 +235,10 @@ function ListenerPlayerController({
     const analysisFrameUnsubscribe = useRef<(() => void) | null>(null);
     const analysisStatusUnsubscribe = useRef<(() => void) | null>(null);
     const hls = useRef<Hls | null>(null);
+    const hlsProgramAnchor = useRef<{
+        mediaStartSeconds: number;
+        programStartMs: number;
+    } | null>(null);
     const liveSuppressedForDrop = useRef(false);
     const liveFadeFrame = useRef<number | null>(null);
     const dropFadeFrame = useRef<number | null>(null);
@@ -285,9 +300,17 @@ function ListenerPlayerController({
 
     const currentBeaconProgramTimeMs = useCallback((): number | null => {
         const playingDate = hls.current?.playingDate;
-        if (playingDate && Number.isFinite(playingDate.getTime())) return playingDate.getTime();
+        if (playingDate && Number.isFinite(playingDate.getTime())) {
+            return playingDate.getTime();
+        }
         const audio = liveAudio.current;
-        return audio ? nativeHlsProgramTimeMs(audio) : null;
+        if (!audio) return null;
+        const fragmentTime = hlsFragmentProgramTimeMs(audio.currentTime, hlsProgramAnchor.current);
+        if (fragmentTime !== null) {
+            return fragmentTime;
+        }
+        const nativeTime = nativeHlsProgramTimeMs(audio);
+        return nativeTime;
     }, []);
 
     const startReactiveAnalysis = useCallback((sourceId: string) => {
@@ -405,6 +428,7 @@ function ListenerPlayerController({
     const stopHls = useCallback(() => {
         hls.current?.destroy();
         hls.current = null;
+        hlsProgramAnchor.current = null;
     }, []);
 
     const attachManifest = useCallback(async (url: string) => {
@@ -439,6 +463,15 @@ function ListenerPlayerController({
             deferLiveFadeForRecovery.current();
             liveAudio.current?.pause();
             automaticRecovery.current(0);
+        });
+        instance.on(HlsConstructor.Events.FRAG_CHANGED, (_event, data) => {
+            const programStartMs = data.frag.programDateTime;
+            const mediaStartSeconds = data.frag.start;
+            hlsProgramAnchor.current = typeof programStartMs === 'number'
+                && Number.isFinite(programStartMs)
+                && Number.isFinite(mediaStartSeconds)
+                ? { programStartMs, mediaStartSeconds }
+                : null;
         });
         instance.loadSource(url);
         instance.attachMedia(audio);

@@ -8,6 +8,7 @@ type HlsTestInstance = {
     destroy: ReturnType<typeof vi.fn>;
     loadedSources: string[];
     emitFatal(): void;
+    emitFragChanged(programDateTime: number, start: number): void;
 };
 
 const hlsHarness = vi.hoisted(() => ({ instances: [] as HlsTestInstance[] }));
@@ -75,12 +76,15 @@ vi.mock('@/lib/listener/analysis', async (importOriginal) => {
 });
 vi.mock('hls.js', () => {
     class TestHls {
-        static Events = { ERROR: 'error' };
+        static Events = { ERROR: 'error', FRAG_CHANGED: 'fragChanged' };
         static isSupported = () => true;
         liveSyncPosition: number | null = null;
         destroy = vi.fn();
         loadedSources: string[] = [];
         private errorHandler: ((_event: string, data: { fatal: boolean }) => void) | null = null;
+        private fragChangedHandler: ((_event: string, data: {
+            frag: { programDateTime: number; start: number };
+        }) => void) | null = null;
 
         constructor() {
             hlsHarness.instances.push(this);
@@ -88,6 +92,9 @@ vi.mock('hls.js', () => {
 
         on(event: string, handler: (_event: string, data: { fatal: boolean }) => void) {
             if (event === TestHls.Events.ERROR) this.errorHandler = handler;
+            if (event === TestHls.Events.FRAG_CHANGED) {
+                this.fragChangedHandler = handler as unknown as typeof this.fragChangedHandler;
+            }
         }
 
         loadSource(url: string) {
@@ -99,6 +106,12 @@ vi.mock('hls.js', () => {
         emitFatal() {
             this.errorHandler?.('error', { fatal: true });
         }
+
+        emitFragChanged(programDateTime: number, start: number) {
+            this.fragChangedHandler?.('fragChanged', {
+                frag: { programDateTime, start },
+            });
+        }
     }
     return { default: TestHls };
 });
@@ -106,6 +119,7 @@ import ListenerPlayer, {
     acceptsLeaseCursor,
     earlyBirdLeaseRecoveryDisposition,
     getOrCreateEarlyBirdDeviceId,
+    hlsFragmentProgramTimeMs,
     LISTENER_HLS_BUFFER_CONFIG,
     LISTENER_PLAYBACK_PRESENCE_EVENT,
     nativeHlsProgramTimeMs,
@@ -188,6 +202,15 @@ describe('EarlyBird Listener player', () => {
         expect(analysis.start).toHaveBeenCalledOnce();
         expect(analysis.options.framesPerSecond).toBe(4);
         expect(screen.queryByRole('checkbox', { name: 'Reactive field · experimental' })).toBeNull();
+
+        const beaconAudio = screen.getByLabelText('Beacon');
+        Object.defineProperty(beaconAudio, 'currentTime', { value: 191.75, configurable: true });
+        hlsHarness.instances[0].emitFragChanged(
+            Date.parse('2026-08-09T11:35:17.282Z'),
+            186,
+        );
+        expect(analysis.options.getPlaybackProgramTimeMs())
+            .toBe(Date.parse('2026-08-09T11:35:23.032Z'));
 
         const englishIntro = screen.getByLabelText('Warm-up · English');
         Object.defineProperty(englishIntro, 'ended', { value: true, configurable: true });
@@ -504,6 +527,14 @@ describe('EarlyBird Listener player', () => {
             getStartDate: () => new Date('2026-08-09T10:00:00.000Z'),
         })).toBe(Date.parse('2026-08-09T10:00:12.250Z'));
         expect(nativeHlsProgramTimeMs({ currentTime: 12.25 })).toBeNull();
+    });
+
+    it('maps HLS media time from the exact audible fragment program date', () => {
+        expect(hlsFragmentProgramTimeMs(191.75, {
+            mediaStartSeconds: 186,
+            programStartMs: Date.parse('2026-08-09T11:35:17.282Z'),
+        })).toBe(Date.parse('2026-08-09T11:35:23.032Z'));
+        expect(hlsFragmentProgramTimeMs(191.75, null)).toBeNull();
     });
 
     it('keeps the connection identifier stable per tab without sharing it across tabs', () => {
