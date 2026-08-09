@@ -14,7 +14,7 @@ an event-stack deployment or an acoustic change.
 
 ## Status: weekly Free deployed for acceptance
 
-Release `808bf0e8fabfaec0b7ee6396fa078739f68f73d4` is deployed on the isolated
+Release `7036eb34a2cbed681b7e5230591ea14efeff10b5` is deployed on the isolated
 Listener. The active policy is three hours per account per fixed seven-day cycle,
 anchored at first real authorized Free playback, with no base rollover and
 server-time metering. Two devices consume their listening union once; intro and
@@ -32,7 +32,7 @@ repair, never restoring daily/welcome authorization.
 
 | Artifact | Exact value |
 |---|---|
-| Deployed Listener application | `808bf0e8fabfaec0b7ee6396fa078739f68f73d4` |
+| Deployed Listener application | `7036eb34a2cbed681b7e5230591ea14efeff10b5` |
 | Operational smoke/documentation head | `8444ed7d06b2764c519f65ce4d32932346a94fdd` |
 | Listener database schema | `20260808160000_listener_weekly_quota` |
 | Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
@@ -81,6 +81,7 @@ test-only branch head.
 - `407516d` — rollout, FFA quiescence, future-effective membership and operational hardening;
 - `808bf0e` — removal of pre-release daily/welcome APIs and implicit old-client defaults;
 - `8444ed7` — exact deployed weekly runtime smoke.
+- `7036eb3` — human-readable renewal countdown in days and hours.
 
 Historical pre-weekly experiments:
 
@@ -112,7 +113,7 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - Listener health/readiness, origin, PostgreSQL and decoded canary are green.
 - Alertmanager has no active alert. A prior root-disk warning was real, then
   resolved after removing only old unreferenced Listener/authority image tags.
-- Current image is `808bf0e`. Earlier policy images remain only as historical
+- Current image is `7036eb3`. Earlier policy images remain only as historical
   artifacts and are not valid rollback targets.
 - The fixed public-disable command was exercised after deployment. Its first
   health probe observed the normal Next.js startup connection reset, retried,
