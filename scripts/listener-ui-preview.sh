@@ -14,10 +14,12 @@ DEV_CONTAINER="listener-ui-dev"
 RELEASE_CONTAINER="earlybirds-preview-listener-1"
 PREVIEW_FREE_FOR_ALL="${LISTENER_UI_PREVIEW_FREE_FOR_ALL:-1}"
 PREVIEW_PAYPAL_CHECKOUT="${LISTENER_UI_PREVIEW_PAYPAL_SANDBOX_CHECKOUT_ENABLED:-0}"
+PREVIEW_MERCADO_PAGO_CHECKOUT="${LISTENER_UI_PREVIEW_MERCADO_PAGO_TEST_CHECKOUT_ENABLED:-0}"
 
-case "$PREVIEW_FREE_FOR_ALL:$PREVIEW_PAYPAL_CHECKOUT" in
-    0:0|0:1|1:0) ;;
-    1:1) echo "PayPal checkout requires Free For All to be disabled." >&2; exit 2 ;;
+case "$PREVIEW_FREE_FOR_ALL:$PREVIEW_PAYPAL_CHECKOUT:$PREVIEW_MERCADO_PAGO_CHECKOUT" in
+    0:0:0|0:1:0|0:0:1|1:0:0) ;;
+    1:1:0|1:0:1) echo "Payment checkout requires Free For All to be disabled." >&2; exit 2 ;;
+    0:1:1|1:1:1) echo "Select exactly one payment provider in the workbench." >&2; exit 2 ;;
     *) echo "Preview switches must be 0 or 1." >&2; exit 2 ;;
 esac
 
@@ -37,7 +39,7 @@ sync_source() {
 }
 
 start_remote() {
-    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' bash -s" <<'REMOTE'
+    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' PREVIEW_MERCADO_PAGO_CHECKOUT='$PREVIEW_MERCADO_PAGO_CHECKOUT' bash -s" <<'REMOTE'
 set -euo pipefail
 
 image="$(docker inspect "$RELEASE_CONTAINER" --format '{{.Config.Image}}')"
@@ -57,7 +59,7 @@ fi
 
 runtime_args=()
 command_args=()
-if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ]; then
+if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ] || [ "$PREVIEW_MERCADO_PAGO_CHECKOUT" = 1 ]; then
     # Synthetic team entry is deliberately unavailable under NODE_ENV=development.
     # Payment rehearsal therefore runs the exact built release artifact.
     runtime_args=(-e NODE_ENV=production)
@@ -89,6 +91,7 @@ docker run -d \
     -e EARLY_BIRDS_FREE_FOR_ALL="$PREVIEW_FREE_FOR_ALL" \
     -e BEACON_LISTENER_FREE_FOR_ALL="$PREVIEW_FREE_FOR_ALL" \
     -e BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED="$PREVIEW_PAYPAL_CHECKOUT" \
+    -e BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED="$PREVIEW_MERCADO_PAGO_CHECKOUT" \
     --network earlybirds_preview_db_internal \
     -p 127.0.0.1:13001:3000 \
     --volumes-from "$RELEASE_CONTAINER:ro" \
