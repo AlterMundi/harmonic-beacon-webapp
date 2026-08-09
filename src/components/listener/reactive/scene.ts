@@ -44,7 +44,17 @@ export type ReactiveFilament = {
     emphasis: number;
     activity: number;
     wiggle: number;
-    trail: Array<{ radius: number; angle: number; opacity: number }>;
+    trail: Array<{
+        capturedAtMs: number;
+        angle: number;
+        innerRadius: number;
+        outerRadius: number;
+        bend: number;
+        opacity: number;
+        weight: number;
+        activity: number;
+        wiggle: number;
+    }>;
 };
 
 export type ReactiveCampfireScene = {
@@ -166,21 +176,46 @@ function trailFor(
     absoluteFloorDb: number,
     sensitivity: number,
     baseAngle: number,
+    baseInnerRadius: number,
     baseOuterRadius: number,
+    tier: ReactiveFilament['tier'],
 ): ReactiveFilament['trail'] {
     if (!samples || trailSeconds <= 0) return [];
     const windowMs = trailSeconds * 1_000;
-    return samples
-        .filter((sample) => nowMs - sample.capturedAtMs >= 0 && nowMs - sample.capturedAtMs <= windowMs)
-        .slice(-18)
+    const eligible = samples.filter((sample) => (
+        nowMs - sample.capturedAtMs >= 0 && nowMs - sample.capturedAtMs <= windowMs
+    ));
+    const ghostCount = Math.min(5, eligible.length);
+    const selected = ghostCount === eligible.length
+        ? eligible
+        : Array.from({ length: ghostCount }, (_, slot) => (
+            eligible[Math.round(slot * (eligible.length - 1) / Math.max(1, ghostCount - 1))]
+        ));
+    return selected
         .map((sample) => {
             const absolute = absoluteEnergy(sample.absoluteDb, absoluteFloorDb);
             const movement = movementFor(sample.deltaDb, absolute, sensitivity);
+            const flow = organicMotion(
+                index,
+                sample.capturedAtMs,
+                absolute,
+                sample.deltaDb,
+                sensitivity,
+            );
             const age = clamp(1 - (nowMs - sample.capturedAtMs) / windowMs);
             return {
-                radius: baseOuterRadius + movement * 0.032,
-                angle: baseAngle + movement * 0.055,
-                opacity: absolute * age * 0.42,
+                capturedAtMs: sample.capturedAtMs,
+                angle: baseAngle + flow.lateral * (tier === 'high' ? 0.072 : 0.048),
+                innerRadius: baseInnerRadius,
+                outerRadius: baseOuterRadius
+                    + flow.radial * (tier === 'high' ? 0.045 : 0.028),
+                bend: (seededUnit(index, 6) - 0.5) * 0.24
+                    + flow.lateral * 0.055
+                    + movement * 0.01,
+                opacity: absolute * age * 0.18,
+                weight: 0.35 + absolute * (tier === 'high' ? 1.05 : 1.5),
+                activity: absolute,
+                wiggle: clamp(Math.abs(sample.deltaDb) / 9) * absolute,
             };
         });
 }
@@ -298,7 +333,9 @@ export function buildReactiveCampfireScene(
                     settings.absoluteFloorDb,
                     settings.sensitivity,
                     baseAngle,
+                    innerRadius,
                     baseOuterRadius,
+                    tier,
                 )
                 : [],
         });

@@ -203,16 +203,42 @@ function drawRadialRibbon(
         filament.angle + filament.bend,
     );
 
-    if (filament.trail.length > 1) {
-        context.strokeStyle = rgba(color, Math.max(...filament.trail.map((point) => point.opacity)));
-        context.lineWidth = Math.max(1.5, filament.weight * ribbonScale * 1.4);
-        context.beginPath();
-        filament.trail.forEach((point, index) => {
-            const [x, y] = endpoint(centerX, centerY, scale, point.radius, point.angle);
-            if (index === 0) context.moveTo(x, y);
-            else context.lineTo(x, y);
-        });
-        context.stroke();
+    for (const ghost of filament.trail) {
+        const ghostStart = endpoint(
+            centerX,
+            centerY,
+            scale,
+            ghost.innerRadius,
+            ghost.angle - ghost.bend * 0.35,
+        );
+        const ghostEnd = endpoint(
+            centerX,
+            centerY,
+            scale,
+            ghost.outerRadius,
+            ghost.angle,
+        );
+        const ghostControl = endpoint(
+            centerX,
+            centerY,
+            scale,
+            (ghost.innerRadius + ghost.outerRadius) * 0.54,
+            ghost.angle + ghost.bend,
+        );
+        const ghostWidth = (1.4 + ghost.weight * 2.6) * ribbonScale;
+        context.fillStyle = rgba(color, ghost.opacity);
+        fillClothRibbon(
+            context,
+            ghostStart,
+            ghostControl,
+            ghostEnd,
+            ghostWidth * 0.36,
+            ghostWidth,
+            filament.harmonicIndex,
+            ghost.capturedAtMs / 1_000,
+            ghost.activity,
+            ghost.wiggle,
+        );
     }
 
     const width = (1.8 + filament.weight * 3.2) * ribbonScale;

@@ -33,7 +33,9 @@ Outer ribbons use a lightweight pinned-cloth model. Their inner edge remains
 anchored, a very gentle wave keeps the field alive, and measured harmonic
 energy/variation increases the displacement toward the free edge. The waves
 are continuous and harmonic-specific, so analysis frames cannot make an end
-point jump.
+point jump. In the original Radial ribbons mode, upper-register history is
+rendered as a bounded set of complete translucent ribbon silhouettes rather
+than a separate endpoint line, leaving a ghostly trace of the whole movement.
 
 The radial interpretation is a magical underwater kelp viewed from above: a
 fixed luminous center below the observer, long leaves carried by a slow current,

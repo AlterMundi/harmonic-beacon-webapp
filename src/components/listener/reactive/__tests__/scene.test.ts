@@ -105,9 +105,16 @@ describe('reactive campfire scene', () => {
             centerCutPercent: 20,
         }, history);
         const upper = scene.filaments.filter((filament) => filament.tier === 'high');
+        const trail = upper.find((filament) => filament.harmonicIndex === 50)?.trail;
 
         expect(new Set(upper.map((filament) => filament.harmonicIndex)).size).toBe(upper.length);
-        expect(upper.find((filament) => filament.harmonicIndex === 50)?.trail).toHaveLength(3);
+        expect(trail).toHaveLength(3);
+        expect(trail?.every((ghost) => (
+            Number.isFinite(ghost.innerRadius)
+            && Number.isFinite(ghost.outerRadius)
+            && Number.isFinite(ghost.bend)
+            && ghost.opacity >= 0
+        ))).toBe(true);
         expect(upper.every((filament) => Number.isFinite(filament.angle))).toBe(true);
     });
 
