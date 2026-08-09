@@ -10,6 +10,30 @@ import { freeWindowState, type EarlyBirdFreeWindowState } from './free-window';
 import { membershipAccessDecision, type EarlyBirdAccessDecision } from './membership';
 import { welcomeAccessState, type EarlyBirdWelcomeAccessState } from './welcome-access';
 
+export const LEGACY_LISTENER_POLICY_VERSION = 'legacy-daily-v1' as const;
+
+export class EarlyBirdListenerPolicyMismatchError extends Error {
+    constructor() {
+        super('This Listener image is not compatible with the active access policy');
+        this.name = 'EarlyBirdListenerPolicyMismatchError';
+    }
+}
+
+export function legacyListenerPolicyCompatible(policyVersion: string | null): boolean {
+    return policyVersion === LEGACY_LISTENER_POLICY_VERSION;
+}
+
+async function assertLegacyListenerPolicyCompatible(): Promise<void> {
+    const rows = await prisma.$queryRaw<Array<{ policyVersion: string }>>`
+        SELECT "policy_version" AS "policyVersion"
+        FROM "early_bird_listener_authority_policy"
+        WHERE "id" = 1
+    `;
+    if (!legacyListenerPolicyCompatible(rows[0]?.policyVersion ?? null)) {
+        throw new EarlyBirdListenerPolicyMismatchError();
+    }
+}
+
 export type EarlyBirdListeningAccess = {
     allowed: boolean;
     kind: 'membership' | 'free-window' | 'welcome' | 'denied';
@@ -82,6 +106,12 @@ export async function getEarlyBirdListeningAccess(
     accountId: string,
     now = new Date(),
 ): Promise<EarlyBirdListeningAccess> {
+    // Unit tests exercise the pure legacy decision without a database marker.
+    // Every deployed Listener runs NODE_ENV=production and must prove its
+    // exact policy compatibility before reading legacy schedule/welcome state.
+    if (process.env.NODE_ENV === 'production') {
+        await assertLegacyListenerPolicyCompatible();
+    }
     const [projection, schedule, welcome] = await Promise.all([
         prisma.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
         prisma.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
