@@ -67,10 +67,10 @@ describe('EarlyBird public landing', () => {
 
     it('uses audience-neutral account and privacy language in both locales', () => {
         expect(earlyBirdCopy.es.privacy).toBe(
-            'Tu cuenta y membresía administran el acceso. Durante la escucha sólo compartimos una presencia regional amplia y efímera; nunca tu ubicación exacta ni un historial personal de escucha.',
+            'Tu cuenta y membresía administran el acceso. Guardamos únicamente tu ciclo y saldo de escucha, no una cronología de reproducciones. La presencia pública es regional, amplia y efímera; nunca revela tu ubicación exacta.',
         );
         expect(earlyBirdCopy.en.privacy).toBe(
-            'Your account and membership manage access. While you listen, we share only broad, ephemeral regional presence—never your exact location or a personal listening history.',
+            'Your account and membership manage access. We keep only your listening cycle and allowance, not a playback timeline. Public presence is broad, regional and ephemeral, and never reveals your exact location.',
         );
         expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
             .not.toMatch(/adult|child|minor|menor|adulta/i);
@@ -131,7 +131,7 @@ describe('EarlyBird public landing', () => {
 
     it.each([
         ['identity', 'The identity service is not responding.'],
-        ['access', 'We could not check your schedule or membership.'],
+        ['access', 'We could not check your access or membership.'],
     ] as const)('fails truthfully and retryably when %s resolution is unavailable', (kind, detail) => {
         renderLanding({
             signedIn: kind === 'access',

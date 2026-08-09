@@ -7,6 +7,9 @@ import { LocaleProvider } from '@/context/LocaleContext';
 vi.mock('../ListenerPlayer', () => ({
     default: () => <section aria-label="listener-player" />,
 }));
+vi.mock('next/navigation', () => ({
+    useRouter: () => ({ refresh: vi.fn() }),
+}));
 vi.mock('../CosmicCampfire', () => ({
     default: ({ fixture }: { fixture: string }) => (
         <div data-testid="listener-campfire" data-fixture={fixture} aria-hidden="true" />

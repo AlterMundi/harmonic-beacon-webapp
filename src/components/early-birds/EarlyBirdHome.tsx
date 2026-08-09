@@ -26,9 +26,7 @@ export default function EarlyBirdHome({
 }: {
     displayName: string;
     membership: ListenerMembershipPresentation;
-    accessKind?: 'membership' | 'free-quota' | 'free-window' | 'welcome';
-    /** Retained temporarily so this UI commit remains rebaseable over the legacy page. */
-    accessUntil?: string | null;
+    accessKind?: 'membership' | 'free-quota';
     serverNow?: string;
     dropIns: { es: string | null; en: string | null };
     publicAccess?: boolean;
@@ -55,15 +53,16 @@ export default function EarlyBirdHome({
                         {publicAccess && (
                             <FreeQuotaStatus serverNow={serverNow} unlimited="free-for-all" compact />
                         )}
+                        {!publicAccess && accessKind === 'free-quota' && (
+                            <FreeQuotaStatus snapshot={quota} serverNow={serverNow} compact />
+                        )}
                         {!publicAccess && <details className="listener-account">
                             <summary aria-label={copy.account} title={copy.account}>
                                 {displayName.slice(0, 1).toUpperCase()}
                             </summary>
                             <div className="listener-account__menu">
                                 <p>{displayName}</p>
-                                {accessKind === 'free-quota' ? (
-                                    <FreeQuotaStatus snapshot={quota} serverNow={serverNow} compact />
-                                ) : (
+                                {accessKind === 'membership' && (
                                     <span>{membershipCopy?.title ?? copy.active}</span>
                                 )}
                                 {accessKind === 'membership' && membership.kind === 'founder' && membershipCopy?.detail && (

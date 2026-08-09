@@ -145,11 +145,11 @@ allowance only for presentation; it may tick a display between revalidations but
 cannot authorize itself. Its active countdown is reconciled from server state on
 the bounded heartbeat/revalidation path and at exhaustion.
 
-Future discretionary Free credits are distinct append-only, idempotent grants.
-Each grant has an opaque idempotency identity, a fixed amount and an optional
-expiry; it is never a mutable replacement for the base cycle or membership.
-The policy for applying an unexpired grant is server-side and must be explicit
-when such grants are implemented.
+Discretionary Free credits use distinct, auditable and idempotent grants. Each
+grant has immutable account/source/reason/idempotency/amount/expiry facts and a
+server-owned monotonic consumed total; it is never a mutable replacement for
+the base cycle or membership. The server applies only unexpired credit and the
+browser cannot create or replenish a grant.
 
 `early_bird_free_schedules` and `early_bird_welcome_accesses` remain retained
 legacy tables for migration/audit history only. The weekly-cutover readers do

@@ -14,8 +14,8 @@ not roll over. The server owns time and remaining allowance; two devices meter
 the union of active listening once, and both private intros and Beacon count.
 Stop/idle presence stops metering, while an unreported disconnect is bounded by
 the lease horizon. Active canonical membership/invitation and Free for All are
-unlimited and non-metered. Future discretionary credits, if added, are
-append-only idempotent grants with optional expiry.
+unlimited and non-metered. Discretionary credits are auditable idempotent
+grants with immutable facts, a monotonic consumed total and optional expiry.
 
 The cutover retires schedule/timezone and welcome access from authorization and
 UI. Its additive migration retains the old tables for audit/history only. Once

@@ -23,9 +23,6 @@ type Props = {
     providers: { google: boolean; apple: boolean };
     emailMagicLinkAvailable: boolean;
     syntheticTeamEntryAvailable: boolean;
-    /** Legacy props are retained only until the quota backend lands. */
-    freeWindow?: unknown;
-    welcome?: unknown;
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
     membership: ListenerMembershipPresentation;
     serverNow: string;

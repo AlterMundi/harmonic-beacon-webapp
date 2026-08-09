@@ -27,7 +27,7 @@ function monotonicNow() {
 }
 
 function serverElapsed(receivedAt: number, now: number) {
-    // Date.now is used only as an elapsed-time clock after a server snapshot;
+    // performance.now is used only as an elapsed-time clock after a server snapshot;
     // browser wall time never authorizes or chooses a quota boundary.
     return Math.max(0, now - receivedAt);
 }
@@ -60,6 +60,7 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
         let cancelled = false;
         let inFlight = false;
         let retryTimer: number | null = null;
+        let presenceRetryTimer: number | null = null;
 
         const revalidate = async () => {
             if (cancelled || inFlight) return;
@@ -84,7 +85,6 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
                 }
                 const nextKind = payload?.access?.kind;
                 if (nextKind && nextKind !== 'free-quota' && nextKind !== 'membership') router.refresh();
-                if (next?.status === 'exhausted') router.refresh();
             } catch {
                 // A failed client revalidation never invents entitlement. Media
                 // authorization continues to fail closed at the server.
@@ -96,7 +96,14 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
         const onResume = () => {
             if (document.visibilityState !== 'hidden') void revalidate();
         };
-        const onPlaybackPresence = () => void revalidate();
+        const onPlaybackPresence = () => {
+            void revalidate();
+            // sendBeacon/presence activation and this presentation event are
+            // intentionally decoupled. Recheck once after the server has had a
+            // bounded opportunity to commit the authoritative transition.
+            if (presenceRetryTimer !== null) window.clearTimeout(presenceRetryTimer);
+            presenceRetryTimer = window.setTimeout(() => void revalidate(), 750);
+        };
         const interval = state?.activelyConsuming && !unlimited
             ? window.setInterval(() => void revalidate(), 30_000)
             : null;
@@ -116,6 +123,7 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
             cancelled = true;
             if (interval !== null) window.clearInterval(interval);
             if (retryTimer !== null) window.clearTimeout(retryTimer);
+            if (presenceRetryTimer !== null) window.clearTimeout(presenceRetryTimer);
             window.removeEventListener('pageshow', onResume);
             window.removeEventListener('listener:playback-presence', onPlaybackPresence);
             document.removeEventListener('visibilitychange', onResume);

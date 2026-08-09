@@ -22,8 +22,9 @@ The planned policy is three hours per account per fixed seven-day cycle,
 anchored at first real authorized Free playback, with no base rollover and
 server-time metering. Two devices consume their listening union once; intro and
 Beacon both count; Stop/disconnect are bounded by leases. Active canonical
-membership/invitation and FFA remain unlimited/non-metered. Optional future
-credits are append-only idempotent grants with optional expiry. No weekly
+membership/invitation and FFA remain unlimited/non-metered. Optional credits
+use auditable idempotent grants with immutable facts, a monotonic consumed
+total and optional expiry. No weekly
 cutover implementation, migration, validation or deployment is asserted here.
 
 After the additive weekly migration, rollback means stop/kill-switch and
@@ -39,8 +40,8 @@ authorization behavior.
 | Listener database schema | `20260807200000_listener_regional_presence` |
 | Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
 | Public mode | Free for All OFF during coordinated registered-Free acceptance |
-| Immediate Listener rollback | `b8a04fe` |
-| Additional Listener rollback | `2344b10` |
+| Historical pre-weekly Listener rollback | `b8a04fe` |
+| Historical additional pre-weekly rollback | `2344b10` |
 
 Health must attest the deployed application SHA, not the later documentation or
 test-only branch head.
@@ -153,7 +154,11 @@ worksheet.
 Do not select a user's Google account, provision Apple, charge a provider,
 alter audio or merge/promote the branch as part of an automated test.
 
-## Rollback
+## Historical rollback (valid only before the weekly migration)
+
+The following procedure is evidence for the pre-weekly release only. It becomes
+invalid as soon as the weekly policy marker is applied; after that cutover use
+stop/kill-switch and a forward repair.
 
 Run the fixed disable command from release `20406da` first. Restore the exact
 root-only environment backup `/etc/harmonic-beacon/earlybirds-preview.env.pre-20406da`,

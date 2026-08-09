@@ -39,7 +39,7 @@ function staffSession(overrides: Record<string, unknown> = {}) {
     return {
         id: 'web-session-staff',
         tokenDigest: digestSessionToken(TOKEN),
-        expiresAt: new Date('2026-08-09T00:00:00.000Z'),
+        expiresAt: new Date('2036-08-09T00:00:00.000Z'),
         revokedAt: null,
         staffUser: { id: 'user-facilitator', role: 'FACILITATOR', disabledAt: null },
         ticketEntitlement: null,
@@ -52,7 +52,7 @@ function attendeeSession(entitlement: Record<string, unknown> = {}) {
     return {
         id: 'web-session-attendee',
         tokenDigest: digestSessionToken(TOKEN),
-        expiresAt: new Date('2026-08-09T00:00:00.000Z'),
+        expiresAt: new Date('2036-08-09T00:00:00.000Z'),
         revokedAt: null,
         staffUser: null,
         ticketEntitlement: {

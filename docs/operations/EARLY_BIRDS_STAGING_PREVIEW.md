@@ -10,8 +10,9 @@ The planned policy is three hours per registered account in a fixed seven-day
 cycle, anchored at first real authorized playback, with no base rollover and
 server-time metering. Concurrent devices consume their listening union once;
 intro and Beacon count; Stop/disconnect are bounded by leases. Active canonical
-membership/invitation and FFA are unlimited/non-metered. Any future discretionary
-credit is append-only, idempotent and optionally expiring. Legacy schedule and
+membership/invitation and FFA are unlimited/non-metered. Discretionary credit
+uses auditable, idempotent grants with immutable facts, monotonic consumed
+totals and optional expiry. Legacy schedule and
 welcome tables remain retained but retired from authorization. After migration,
 rollback is stop/kill-switch and a roll-forward repair, never activation of the
 old authorization rules.
@@ -51,10 +52,12 @@ Free, invitation or Founder authority.
   production build, Prisma, 26 nginx contract checks, preview/origin/
   observability gates and public browser smoke are green. Listener and origin
   have zero restarts; `live.harmonicbeacon.com` remains untouched.
-- Immediate rollback retains schema/media and selects image `b8a04fe`; image
+- Historical pre-weekly rollback retains schema/media and selects image `b8a04fe`; image
   `2344b10` is the additional retained fallback. Use the exact root-only env and
   nginx backups created by the deployment, and run `nginx -t` plus the complete
-  health/access smoke. Never roll back the additive schema.
+  health/access smoke. This procedure becomes invalid after the weekly policy
+  marker is applied; then stop/kill-switch and roll forward. Never roll back the
+  additive schema.
 
 ## 2026-08-07 first-listen access and boundary synchronization (historical)
 
