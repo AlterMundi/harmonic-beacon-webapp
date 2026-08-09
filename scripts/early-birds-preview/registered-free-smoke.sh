@@ -57,7 +57,7 @@ for ordinal in 1 2 3; do
   lease_status=$(curl --silent --show-error --output "$temporary/lease-$ordinal.response" \
     --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' \
     --cookie "$cookie_jar" --data-binary @"$temporary/lease-$ordinal.json" \
-    "$base_url/api/listener/stream/lease")
+    "$base_url/api/early-birds/stream/lease")
   test "$lease_status" = 200 || preview_fail "device $ordinal lease returned HTTP $lease_status"
   jq -e '
     .accessKind == "free-quota" and
@@ -84,7 +84,7 @@ printf '{"leaseId":"%s","leaseGeneration":%s,"presenceSequence":%s,"intent":"pla
 heartbeat_status=$(curl --silent --show-error --output "$temporary/heartbeat.response" \
   --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' \
   --cookie "$cookie_jar" --data-binary @"$temporary/heartbeat.json" \
-  "$base_url/api/listener/stream/heartbeat")
+  "$base_url/api/early-birds/stream/heartbeat")
 test "$heartbeat_status" = 410 || preview_fail "displaced oldest device returned HTTP $heartbeat_status"
 jq -e '.reason == "displaced"' "$temporary/heartbeat.response" >/dev/null || \
   preview_fail "oldest device displacement response is invalid"
@@ -93,7 +93,7 @@ third_lease=$(jq -er '.leaseId' "$temporary/lease-3.response")
 third_generation=$(jq -er '.leaseGeneration' "$temporary/lease-3.response")
 manifest_status=$(curl --silent --show-error --output "$temporary/manifest.m3u8" \
   --write-out '%{http_code}' --cookie "$cookie_jar" \
-  "$base_url/api/listener/stream/manifest?leaseId=$third_lease&leaseGeneration=$third_generation")
+  "$base_url/api/early-birds/stream/manifest?leaseId=$third_lease&leaseGeneration=$third_generation")
 test "$manifest_status" = 200 || preview_fail "active Free manifest returned HTTP $manifest_status"
 grep -q '^#EXTM3U' "$temporary/manifest.m3u8" || preview_fail "active Free manifest is invalid"
 
