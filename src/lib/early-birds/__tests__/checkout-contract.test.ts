@@ -119,7 +119,7 @@ describe('Listener authority contract manifests', () => {
 });
 
 const BACKEND_REPO = process.env.EARLY_BIRDS_BACKEND_REPO ?? '/home/nicolas/Projects/proyecciones-mito';
-const BACKEND_COMMIT = '4929b2463c5943d6705409f1e9391331be280f7b';
+const BACKEND_COMMIT = 'e5e638a78d5e835bfb3cfa7be69740f0003ffb01';
 const backendAvailable = existsSync(`${BACKEND_REPO}/.git`);
 
 // Git hooks (e.g. the pre-commit suite run) export GIT_DIR and friends, which

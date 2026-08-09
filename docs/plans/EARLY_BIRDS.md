@@ -467,7 +467,7 @@ The webapp vendors byte-exact copies of the canonical backend contracts under
   the canonical founder membership reads.
 - `contracts/early-bird-checkout/v2`: the Mercado Pago checkout command for
   `POST /api/internal/v2/early-bird-checkouts`, vendored byte-exact from
-  reviewed backend draft `4929b2463c5943d6705409f1e9391331be280f7b`
+  reviewed backend draft `e5e638a78d5e835bfb3cfa7be69740f0003ffb01`
   (SairaAsua/proyecciones-mito#57). Its opaque account ID now matches the
   runtime authority contract instead of requiring an unused prefix. The
   provider remains TEST-only and disabled by default; the checkout surface is
