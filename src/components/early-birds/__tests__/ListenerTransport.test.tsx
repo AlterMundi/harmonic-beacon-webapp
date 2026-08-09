@@ -36,10 +36,10 @@ function prepareMedia() {
     const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(GRANT), {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(GRANT), {
         status: 200,
         headers: { 'content-type': 'application/json' },
-    })));
+    }))));
     return { play, pause };
 }
 
@@ -180,7 +180,13 @@ describe('Listener one-action playlist transport', () => {
         intro.currentTime = 42;
         pause.mockClear();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+        const pauseButton = screen.getByRole('button', { name: 'Pause' });
+        const stopButton = screen.getByRole('button', { name: 'Stop' });
+        expect(pauseButton).toHaveClass('listener-transport__primary');
+        expect(stopButton).toHaveClass('listener-transport__secondary');
+        expect(pauseButton.compareDocumentPosition(stopButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+        fireEvent.click(pauseButton);
         expect(pause.mock.instances).toContain(intro);
         expect(intro.currentTime).toBe(42);
         expectPhase('paused');
@@ -200,10 +206,38 @@ describe('Listener one-action playlist transport', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         Object.defineProperty(live, 'paused', { value: false, configurable: true });
         fireEvent.playing(live);
-        expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled();
+        const stop = screen.getByRole('button', { name: 'Stop' });
+        expect(stop).toBeEnabled();
+        expect(stop).toHaveClass('listener-transport__secondary');
+        expect(stop.parentElement).toHaveClass('listener-transport--stop-only');
         expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
         expect(screen.queryByRole('slider', { name: 'Seek' })).not.toBeInTheDocument();
+    });
+
+    it('labels a required device claim truthfully and waits for a second gesture before playback', async () => {
+        const { play } = prepareMedia();
+        const requests: string[] = [];
+        const fetchMock = vi.mocked(fetch);
+        fetchMock.mockImplementation(async (_input, init) => {
+            const intent = JSON.parse(String(init?.body ?? '{}')).intent as string | undefined;
+            if (intent) requests.push(intent);
+            if (intent === 'prepare') return new Response(null, { status: 409 });
+            return new Response(JSON.stringify(GRANT), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+            });
+        });
+        renderPlayer({ es: '/api/drop-ins/es', en: '/api/drop-ins/en' });
+
+        const enable = await screen.findByRole('button', { name: 'Enable this device' });
+        expect(screen.queryByRole('button', { name: 'Listen' })).toBeNull();
+        play.mockClear();
+        fireEvent.click(enable);
+
+        await waitForListen();
+        expect(requests).toEqual(['prepare', 'claim']);
+        expect(play).not.toHaveBeenCalled();
     });
 
     it('shows real intro progress only while the intro is active', async () => {

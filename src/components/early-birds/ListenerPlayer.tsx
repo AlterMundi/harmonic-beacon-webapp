@@ -706,36 +706,43 @@ export default function ListenerPlayer({
         return pending;
     }, [attachManifest, requestLease]);
 
-    const claimLiveSource = useCallback(async () => {
-        if (livePreparing) return;
+    const claimLiveSource = useCallback((): Promise<boolean> => {
+        if (livePreparation.current) return livePreparation.current;
         setLivePreparing(true);
         updateLiveState('loading');
-        try {
-            // An explicit claim may displace the account's oldest device.
-            // It deliberately prepares only: iOS needs a second gesture once the
-            // source exists so play() stays inside that gesture for every element.
-            const grant = await requestLease('claim');
-            manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
-            await attachManifest(grant.stream.manifestUrl);
-            setPrepareFailure(null);
-            setDevicePreparedByGesture(true);
-            updateLiveState('idle');
-        } catch {
-            livePreparedRef.current = false;
-            setLivePrepared(false);
-            setDevicePreparedByGesture(false);
-            updateLiveState('error');
-        } finally {
-            setLivePreparing(false);
-        }
-    }, [attachManifest, livePreparing, requestLease, updateLiveState]);
+        const pending = (async () => {
+            try {
+                // An explicit claim may displace the account's oldest device.
+                // It deliberately prepares only: iOS needs a second gesture once the
+                // source exists so play() stays inside that gesture for every element.
+                const grant = await requestLease('claim');
+                manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+                await attachManifest(grant.stream.manifestUrl);
+                setPrepareFailure(null);
+                setDevicePreparedByGesture(true);
+                updateLiveState('idle');
+                return true;
+            } catch {
+                livePreparedRef.current = false;
+                setLivePrepared(false);
+                setDevicePreparedByGesture(false);
+                updateLiveState('error');
+                return false;
+            } finally {
+                livePreparation.current = null;
+                setLivePreparing(false);
+            }
+        })();
+        livePreparation.current = pending;
+        return pending;
+    }, [attachManifest, requestLease, updateLiveState]);
 
     const revalidateIdlePreparedSource = useCallback(() => {
         if (!leaseId.current || livePreparation.current) return;
         setLivePreparing(true);
-        livePreparedRef.current = false;
-        setLivePrepared(false);
-        setDevicePreparedByGesture(false);
+        // Keep the already attached source usable while its lease is checked.
+        // Clearing it here created a narrow race where a visible Listen button
+        // performed only a claim and produced no sound.
         const pending = (async () => {
             try {
                 const probe = await probeExistingLease();
@@ -746,6 +753,9 @@ export default function ListenerPlayer({
                 ) {
                     stopHls();
                     clearLeaseCursor();
+                    livePreparedRef.current = false;
+                    setLivePrepared(false);
+                    setDevicePreparedByGesture(false);
                     setPrepareFailure(probe.kind === 'displaced' ? 'capacity' : 'unavailable');
                     if (probe.kind === 'denied') updateLiveState('error');
                     return false;
@@ -772,9 +782,13 @@ export default function ListenerPlayer({
                     return true;
                 }
 
+                stopHls();
                 clearLeaseCursor();
                 manifestUrl.current = null;
                 manifestExpiresAt.current = 0;
+                livePreparedRef.current = false;
+                setLivePrepared(false);
+                setDevicePreparedByGesture(false);
                 const grant = await requestLease('prepare');
                 manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
                 await attachManifest(grant.stream.manifestUrl);
@@ -888,10 +902,7 @@ export default function ListenerPlayer({
 
     function playBeaconOnly() {
         dropGeneration.current += 1;
-        if (!livePreparedRef.current) {
-            void claimLiveSource();
-            return;
-        }
+        if (!livePreparedRef.current) return;
         setHasStarted(true);
         setTransportStopped(false);
         setTransportPaused(false);
@@ -1268,9 +1279,9 @@ export default function ListenerPlayer({
     }
 
     function startSelectedMode() {
+        if (!livePreparedRef.current) return;
         if (playbackMode === 'intro') {
-            if (!livePreparedRef.current) void claimLiveSource();
-            else void playWithIntro(selectedDrop);
+            void playWithIntro(selectedDrop);
             return;
         }
         playBeaconOnly();
@@ -1304,108 +1315,115 @@ export default function ListenerPlayer({
                     {phaseLabel}
                 </p>}
 
-                {availableDropCount > 0 && !transportActive && (
-                    <label className="listener-intro-option">
-                        <input
-                            type="checkbox"
-                            checked={playbackMode === 'intro'}
-                            disabled={transportBusy || !selectedDropAvailable}
-                            onChange={(event) => selectPlaybackMode(event.target.checked ? 'intro' : 'beacon')}
-                        />
-                        <span>{copy.playIntroFirst}</span>
-                    </label>
-                )}
-
-                <div className="listener-details">
-                    {availableDropCount > 1 && playbackMode === 'intro' && !transportActive && (
-                        <label className="listener-details__selection">
-                            <span>{copy.introSelection}</span>
-                            <select
-                                value={selectedDrop}
-                                onChange={(event) => setSelectedDrop(event.target.value as DropLanguage)}
-                                aria-label={copy.introSelection}
-                            >
-                                {dropIns.en && <option value="en">{copy.english}</option>}
-                                {dropIns.es && <option value="es">{copy.spanish}</option>}
-                            </select>
-                        </label>
-                    )}
-
-                    {volumeSupported && (
-                        <label className="listener-details__control">
-                            <span>{copy.master}</span>
+                <div className="listener-control-panel">
+                    {availableDropCount > 0 && !transportActive && (
+                        <label className="listener-intro-option">
                             <input
-                                type="range"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={volumeRef.current}
-                                onChange={(event) => changeVolume(Number(event.target.value))}
+                                type="checkbox"
+                                checked={playbackMode === 'intro'}
+                                disabled={transportBusy || !selectedDropAvailable}
+                                onChange={(event) => selectPlaybackMode(event.target.checked ? 'intro' : 'beacon')}
                             />
+                            <span>{copy.playIntroFirst}</span>
                         </label>
                     )}
 
-                    {introProgressVisible && (
-                        <div className="listener-details__seek">
-                            <label>
-                                <span>{copy.seek}</span>
+                    <div className="listener-details">
+                        {availableDropCount > 1 && playbackMode === 'intro' && !transportActive && (
+                            <label className="listener-details__selection">
+                                <span>{copy.introSelection}</span>
+                                <select
+                                    value={selectedDrop}
+                                    onChange={(event) => setSelectedDrop(event.target.value as DropLanguage)}
+                                    aria-label={copy.introSelection}
+                                >
+                                    {dropIns.en && <option value="en">{copy.english}</option>}
+                                    {dropIns.es && <option value="es">{copy.spanish}</option>}
+                                </select>
+                            </label>
+                        )}
+
+                        {volumeSupported && (
+                            <label className="listener-details__control">
+                                <span>{copy.master}</span>
                                 <input
                                     type="range"
-                                    aria-label={copy.seek}
                                     min={0}
-                                    max={Math.max(selectedProgress.duration, 0)}
-                                    step={0.1}
-                                    value={Math.min(selectedProgress.current, selectedProgress.duration || 0)}
-                                    onChange={(event) => seekDropIn(selectedDrop, Number(event.target.value))}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={volumeRef.current}
+                                    onChange={(event) => changeVolume(Number(event.target.value))}
                                 />
-                                <span className="listener-details__time">
-                                    <span>{formatTime(selectedProgress.current)}</span>
-                                    <span>{formatTime(selectedProgress.duration)}</span>
-                                </span>
                             </label>
-                            <button type="button" onClick={skipToBeacon}>{copy.skipToBeacon}</button>
-                        </div>
+                        )}
+
+                        {introProgressVisible && (
+                            <div className="listener-details__seek">
+                                <label>
+                                    <span>{copy.seek}</span>
+                                    <input
+                                        type="range"
+                                        aria-label={copy.seek}
+                                        min={0}
+                                        max={Math.max(selectedProgress.duration, 0)}
+                                        step={0.1}
+                                        value={Math.min(selectedProgress.current, selectedProgress.duration || 0)}
+                                        onChange={(event) => seekDropIn(selectedDrop, Number(event.target.value))}
+                                    />
+                                    <span className="listener-details__time">
+                                        <span>{formatTime(selectedProgress.current)}</span>
+                                        <span>{formatTime(selectedProgress.duration)}</span>
+                                    </span>
+                                </label>
+                                <button type="button" onClick={skipToBeacon}>{copy.skipToBeacon}</button>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className={`listener-transport${transportActive ? ' listener-transport--active' : ''}${transportActive && playingDrop === null ? ' listener-transport--stop-only' : ''}`}>
+                        {!transportActive && (
+                            <button
+                                type="button"
+                                onClick={livePrepared ? startSelectedMode : () => void claimLiveSource()}
+                                disabled={transportBusy || (livePrepared && playbackMode === 'intro' && !selectedDropAvailable)}
+                                className="listener-transport__primary"
+                            >
+                                <span aria-hidden="true">▶</span>
+                                {transportBusy ? copy.loading : livePrepared ? copy.listen : copy.prepareDevice}
+                            </button>
+                        )}
+                        {playingDrop !== null && transportActive && (
+                            <button
+                                type="button"
+                                onClick={() => void toggleTransportPause()}
+                                disabled={transportBusy}
+                                className="listener-transport__primary"
+                            >
+                                {transportPaused ? copy.resume : copy.pause}
+                            </button>
+                        )}
+                        {transportActive && (
+                            <button
+                                type="button"
+                                onClick={stopTransport}
+                                className="listener-transport__secondary"
+                            >
+                                {copy.stop}
+                            </button>
+                        )}
+                    </div>
+
+                    {devicePreparedByGesture && liveState === 'idle' && (
+                        <p role="status" className="listener-stage__hint">
+                            {copy.deviceReady}
+                        </p>
+                    )}
+                    {!livePreparing && !livePrepared && liveState !== 'error' && (
+                        <p role="status" className="listener-stage__hint">
+                            {prepareFailure === 'capacity' ? copy.deviceLimitClaim : copy.prepareHelp}
+                        </p>
                     )}
                 </div>
-
-                <div className="listener-transport">
-                    <button
-                        type="button"
-                        onClick={transportActive ? stopTransport : startSelectedMode}
-                        disabled={transportBusy || (!transportActive && playbackMode === 'intro' && !selectedDropAvailable)}
-                        className="listener-transport__primary"
-                    >
-                        <span aria-hidden="true">{transportActive ? '■' : '▶'}</span>
-                        {transportActive ? copy.stop : transportBusy ? copy.loading : copy.listen}
-                    </button>
-                    {playingDrop !== null && transportActive && (
-                        <button
-                            type="button"
-                            onClick={() => void toggleTransportPause()}
-                            disabled={transportBusy}
-                            aria-pressed={transportPaused}
-                            className="listener-transport__secondary"
-                        >
-                            {transportPaused ? copy.resume : copy.pause}
-                        </button>
-                    )}
-                </div>
-
-                {(liveState === 'error' || liveState === 'displaced') && (
-                    <button type="button" onClick={() => void claimLiveSource()} className="listener-retry">
-                        {copy.prepareDevice}
-                    </button>
-                )}
-                {devicePreparedByGesture && liveState === 'idle' && (
-                    <p role="status" className="listener-stage__hint">
-                        {copy.deviceReady}
-                    </p>
-                )}
-                {!livePreparing && !livePrepared && liveState !== 'error' && (
-                    <p role="status" className="listener-stage__hint">
-                        {prepareFailure === 'capacity' ? copy.deviceLimitClaim : copy.prepareHelp}
-                    </p>
-                )}
                 <div className="hidden">
                     {(['es', 'en'] as const).map((language) => {
                         const title = language === 'es' ? copy.spanish : copy.english;

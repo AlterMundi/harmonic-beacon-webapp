@@ -334,7 +334,7 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByText(
             'Two devices are already active. Enabling this one will stop playback on the least recent device.',
         )).toBeInTheDocument());
-        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Enable this device' }));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({ intent: 'claim' });
         expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -396,7 +396,8 @@ describe('EarlyBird Listener player', () => {
         fireEvent(document, new Event('visibilitychange'));
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
-        expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Enable this device' })).toBeEnabled();
+        expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
         expect(screen.getByText('Two devices are already active. Enabling this one will stop playback on the least recent device.'))
             .toBeInTheDocument();
     });

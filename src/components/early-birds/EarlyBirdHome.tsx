@@ -46,15 +46,12 @@ export default function EarlyBirdHome({
     return (
         <main className="listener-shell">
             {campfirePrototype && <CosmicCampfire fixture={campfireFixture} />}
-            <div className="listener-shell__frame">
+            <div className="listener-shell__frame listener-shell__frame--home">
                 <header className="listener-rail">
                     <BrandLockup href={LISTENER_NAMESPACE.canonical.home} />
                     <div className="listener-rail__actions">
                         {publicAccess && (
                             <FreeQuotaStatus serverNow={serverNow} unlimited="free-for-all" compact />
-                        )}
-                        {!publicAccess && accessKind === 'free-quota' && (
-                            <FreeQuotaStatus snapshot={quota} serverNow={serverNow} compact />
                         )}
                         {!publicAccess && <details className="listener-account">
                             <summary aria-label={copy.account} title={copy.account}>
@@ -77,6 +74,11 @@ export default function EarlyBirdHome({
                     </div>
                 </header>
                 <ListenerPlayer dropIns={dropIns} />
+                {!publicAccess && accessKind === 'free-quota' && (
+                    <footer className="listener-listening-status">
+                        <FreeQuotaStatus snapshot={quota} serverNow={serverNow} compact showMembershipLink />
+                    </footer>
+                )}
             </div>
         </main>
     );

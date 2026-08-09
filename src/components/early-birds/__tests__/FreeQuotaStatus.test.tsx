@@ -63,6 +63,22 @@ describe('Listener weekly quota presentation', () => {
         expect(screen.queryByText(/167h/)).toBeNull();
     });
 
+    it('offers an honest membership contact action when requested by the Free surface', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <FreeQuotaStatus
+                    snapshot={snapshot}
+                    serverNow="2026-08-07T15:00:00.000Z"
+                    compact
+                    showMembershipLink
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByRole('link', { name: 'Become a member for full access' }))
+            .toHaveAttribute('href', 'mailto:projection@harmonicbeacon.com?subject=Founding%20Listener');
+    });
+
     it('never fabricates an allowance from an incomplete snapshot', () => {
         render(
             <LocaleProvider initialLocale="en">
