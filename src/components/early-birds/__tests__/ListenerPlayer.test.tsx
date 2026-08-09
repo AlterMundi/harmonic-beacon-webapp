@@ -15,8 +15,11 @@ const analysisHarness = vi.hoisted(() => ({
     startResult: { ok: true } as { ok: boolean; error?: { code: string; message: string } },
     instances: [] as Array<{
         options: {
+            endpoint: string;
             framesPerSecond?: number;
-            sources: Array<{ id: string; kind: string; element: HTMLMediaElement }>;
+            sources: Array<{ id: string; kind: string }>;
+            getPlaybackProgramTimeMs: () => number | null;
+            getLeaseCursor: () => { leaseId: string; leaseGeneration: number } | null;
         };
         start: ReturnType<typeof vi.fn>;
         setActiveSource: ReturnType<typeof vi.fn>;
@@ -50,8 +53,11 @@ vi.mock('@/lib/listener/analysis', async (importOriginal) => {
         getStatus = vi.fn().mockReturnValue({ phase: 'running', error: null });
 
         constructor(readonly options: {
+            endpoint: string;
             framesPerSecond?: number;
-            sources: Array<{ id: string; kind: string; element: HTMLMediaElement }>;
+            sources: Array<{ id: string; kind: string }>;
+            getPlaybackProgramTimeMs: () => number | null;
+            getLeaseCursor: () => { leaseId: string; leaseGeneration: number } | null;
         }) {
             analysisHarness.instances.push(this);
         }
@@ -65,7 +71,7 @@ vi.mock('@/lib/listener/analysis', async (importOriginal) => {
             });
         }
     }
-    return { ...actual, WebAudioHarmonicAnalysisProvider: TestAnalysisProvider };
+    return { ...actual, RemoteHarmonicAnalysisProvider: TestAnalysisProvider };
 });
 vi.mock('hls.js', () => {
     class TestHls {
@@ -102,6 +108,7 @@ import ListenerPlayer, {
     getOrCreateEarlyBirdDeviceId,
     LISTENER_HLS_BUFFER_CONFIG,
     LISTENER_PLAYBACK_PRESENCE_EVENT,
+    nativeHlsProgramTimeMs,
     nextPresenceSequence,
     prefersNativeHls,
     seekNativeAudioToLiveEdge,
@@ -125,7 +132,7 @@ afterEach(() => {
 });
 
 describe('EarlyBird Listener player', () => {
-    it('keeps direct playback as the default and attaches the visual graph only after staging opt-in', async () => {
+    it('keeps native playback intact and starts remote visual frames only after staging opt-in', async () => {
         vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
             .mockReturnValue({} as CanvasRenderingContext2D);
         vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
@@ -160,12 +167,14 @@ describe('EarlyBird Listener player', () => {
         expect(toggle).not.toBeChecked();
         expect(container.querySelector('audio[crossorigin]')).toBeNull();
         expect(analysisHarness.instances).toHaveLength(0);
+        const originalAudio = container.querySelector('audio');
 
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
 
         fireEvent.click(toggle);
         await waitFor(() => expect(screen.getByTestId('listener-reactive-field')).toBeInTheDocument());
-        expect(container.querySelectorAll('audio[crossorigin="anonymous"]')).toHaveLength(3);
+        expect(container.querySelector('audio')).toBe(originalAudio);
+        expect(container.querySelector('audio[crossorigin]')).toBeNull();
         expect(screen.getByTestId('reactive-campfire-tuning-panel')).toBeInTheDocument();
 
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
@@ -173,9 +182,11 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(analysisHarness.instances).toHaveLength(1));
         const analysis = analysisHarness.instances[0];
         expect(analysis.options.sources.map(({ id }) => id)).toEqual(['beacon', 'intro-es', 'intro-en']);
+        expect(analysis.options.sources.every((source) => !('element' in source))).toBe(true);
+        expect(analysis.options.endpoint).toBe('/api/listener/analysis/frame');
         expect(analysis.setActiveSource).toHaveBeenCalledWith('intro-en');
         expect(analysis.start).toHaveBeenCalledOnce();
-        expect(analysis.options.framesPerSecond).toBe(30);
+        expect(analysis.options.framesPerSecond).toBe(4);
         expect(screen.queryByRole('checkbox', { name: 'Reactive field · experimental' })).toBeNull();
 
         const englishIntro = screen.getByLabelText('Warm-up · English');
@@ -184,7 +195,7 @@ describe('EarlyBird Listener player', () => {
         expect(analysis.setActiveSource).toHaveBeenLastCalledWith('beacon');
     });
 
-    it('isolates analysis from rendering and can reduce the running workload to a minimal pulse', async () => {
+    it('offers the minimal server-frame renderer without an analysis-only audio mode', async () => {
         vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
             .mockReturnValue({} as CanvasRenderingContext2D);
         vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
@@ -216,23 +227,17 @@ describe('EarlyBird Listener player', () => {
 
         fireEvent.click(await screen.findByRole('checkbox', { name: 'Reactive field · experimental' }));
         fireEvent.change(screen.getByLabelText('Visualization'), {
-            target: { value: 'analysis-only' },
+            target: { value: 'minimal-pulse' },
         });
-        expect(screen.queryByTestId('listener-reactive-field')).toBeNull();
-        expect(screen.getByText(/Full audio analysis stays active/)).toBeInTheDocument();
+        expect(screen.getByTestId('listener-reactive-field')).toBeInTheDocument();
+        expect(screen.getByText(/One measured level halo at 2 fps/)).toBeInTheDocument();
+        expect(screen.queryByText(/Analysis only/)).toBeNull();
 
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(analysisHarness.instances).toHaveLength(1));
         const provider = analysisHarness.instances[0];
-        expect(provider.options.framesPerSecond).toBe(30);
-
-        fireEvent.change(screen.getByLabelText('Visualization'), {
-            target: { value: 'minimal-pulse' },
-        });
-        await waitFor(() => expect(screen.getByTestId('listener-reactive-field')).toBeInTheDocument());
-        expect(screen.getByText(/One measured level halo at 2 fps/)).toBeInTheDocument();
-        expect(provider.setFramesPerSecond).toHaveBeenLastCalledWith(2);
+        expect(provider.options.framesPerSecond).toBe(2);
     });
 
     it('remounts the untouched direct player when Canvas 2D is unavailable', async () => {
@@ -450,7 +455,7 @@ describe('EarlyBird Listener player', () => {
         expect(screen.queryByTestId('listener-reactive-field')).toBeNull();
     });
 
-    it('keeps the reactive experiment unavailable on Apple native-HLS clients', async () => {
+    it('offers remote visualization on Apple without attaching native HLS to Web Audio', async () => {
         vi.spyOn(window.navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic offline')));
         render(
@@ -463,10 +468,18 @@ describe('EarlyBird Listener player', () => {
         );
 
         await waitFor(() => expect(
-            screen.queryByRole('checkbox', { name: 'Reactive field · experimental' }),
-        ).toBeNull());
-        expect(supportsReactiveListenerVisualization({ vendor: 'Apple Computer, Inc.' })).toBe(false);
+            screen.getByRole('checkbox', { name: 'Reactive field · experimental' }),
+        ).toBeInTheDocument());
+        expect(supportsReactiveListenerVisualization({ vendor: 'Apple Computer, Inc.' })).toBe(true);
         expect(supportsReactiveListenerVisualization({ vendor: 'Google Inc.' })).toBe(true);
+    });
+
+    it('uses native HLS program date without inferring wall time from the live edge', () => {
+        expect(nativeHlsProgramTimeMs({
+            currentTime: 12.25,
+            getStartDate: () => new Date('2026-08-09T10:00:00.000Z'),
+        })).toBe(Date.parse('2026-08-09T10:00:12.250Z'));
+        expect(nativeHlsProgramTimeMs({ currentTime: 12.25 })).toBeNull();
     });
 
     it('keeps the connection identifier stable per tab without sharing it across tabs', () => {

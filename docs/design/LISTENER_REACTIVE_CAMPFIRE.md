@@ -1,138 +1,96 @@
-# Listener reactive campfire
+# Listener reactive field
 
-The Listener staging workbench can opt into a client-side visualization of the
-source that is actually audible. Direct playback remains the default and the
-experiment is not exposed by `listen.harmonicbeacon.com`.
+The disposable Listener staging workbench can opt into a visualization of the
+source that is actually audible. Playback stays on the browser's native HLS and
+HTML media path. The experiment is not exposed by `listen.harmonicbeacon.com`.
 
 ## Signal contract
 
 - The Beacon fundamental is exactly **40.4 Hz**.
-- Harmonic identity is stable through the measurable bank up to 20 kHz or the
-  browser Nyquist limit.
+- Harmonic identity is stable through the measurable bank up to 20 kHz.
 - Absolute dB determines visual existence and weight. Deviation from a slow
   baseline determines motion and trail only; it never promotes a quiet upper
   harmonic above a stronger low harmonic.
-- Introductions add a broadband envelope so voice and non-harmonic material are
-  represented instead of being forced into the Beacon series.
-- The analyser reads the declared `-120..0 dB` range. Reduced-motion and
-  Save-Data clients reduce both rendering and FFT analysis to 2 fps; the normal
-  workbench runs at 30 fps.
-- `HarmonicAnalysisFrame` is renderer-neutral. A later server analyzer may emit
-  the same schema without changing the Canvas renderer.
+- `HarmonicAnalysisFrame` is renderer-neutral. Canvas does not know whether a
+  frame originated beside a file-backed or future live stream.
+- The current server analyzer uses stereo 48 kHz PCM, FFT 16384 and a declared
+  `-120..0 dB` range. The ordered remote-frame provider keeps the 24-second slow
+  baseline across segment boundaries. Normal cadence is four frames per second;
+  Reduced-motion, Save-Data and Minimal pulse request two.
+
+## Server-side analysis boundary
+
+The browser never creates an `AudioContext`, `MediaElementAudioSourceNode` or
+second media element for visualization. It never changes `crossOrigin`, volume,
+fades, buffer policy, source attachment or routing. Enabling or disabling the
+field does not remount the player.
+
+For the current file-backed Beacon, the server decodes the exact AAC/fMP4 HLS
+fragment that the origin delivers, computes bounded harmonic frames and caches
+them by segment. It does **not** analyze the source WAV ahead of time. The client
+sends the `PROGRAM-DATE-TIME` corresponding to its audible HLS position; native
+HLS maps that position from its seekable live edge. The response contains only
+bounded numeric analysis arrays and no account, cookie, media URL, IP or other
+identity data.
+
+The analysis endpoint exists only on the exact staging host, requires the same
+active lease authority as the HLS manifest, accepts only the bounded audible
+latency window, is edge-rate-limited, returns `no-store`, and is absent from the
+public Listener nginx surface. Decode concurrency is globally bounded and the
+cache retains the complete accepted timestamp window. Failure is visual-only:
+after four bounded failures the provider hides the field while native playback
+continues. Intro playback clears the frame because a synchronized intro analysis
+stream is not implemented yet; frames resume at the Beacon handoff.
+
+The same transport boundary can later receive frames produced beside a live
+encoder. The renderer and playback controller do not change. Polling is adequate
+for this one-user workbench; public scale should replace it with a shared retained
+transport such as SSE or WebSocket rather than decoding separately per process.
 
 ## Visual language
 
 The point of view is fixed. Neither stereo balance nor aggregate energy moves
-the center or the horizon. Each audible harmonic follows a deterministic,
-continuous low-frequency dance whose amplitude is bounded by its measured
-absolute energy and softly modulated by its baseline variation. The renderer
-keeps at most 128 stable harmonic identities per frame: every low harmonic is
-retained and the remaining slots sample progressively through the highest
-measurable harmonic. A band appears only after measured activation, glows in
-proportion to that activation, and then fades to invisibility over the
-configured activation TTL. The TTL is visual memory, not invented signal.
+the center or camera. Each audible harmonic follows deterministic continuous
+motion whose amplitude is bounded by measured energy and softly modulated by its
+baseline variation. A band appears only after measured activation, glows in
+proportion to activation, and fades over the configured TTL. TTL is visual
+memory, not invented signal.
 
 Outer ribbons use a lightweight pinned-cloth model. Their inner edge remains
-anchored, a very gentle wave keeps the field alive, and measured harmonic
-energy/variation increases the displacement toward the free edge. The waves
-are continuous and harmonic-specific, so analysis frames cannot make an end
-point jump. In the original Radial ribbons mode, upper-register history is
-rendered as a bounded set of complete translucent ribbon silhouettes rather
-than a separate endpoint line, leaving a ghostly trace of the whole movement.
+anchored, a gentle wave keeps the field alive, and measured harmonic activity
+increases displacement toward the free edge. The original Radial ribbons mode
+can render bounded translucent whole-ribbon history, leaving a ghostly trace of
+the movement.
 
-The radial interpretation is a magical underwater kelp viewed from above: a
-fixed luminous center below the observer, long leaves carried by a slow current,
-and perspective-biased outer tips that broaden and brighten toward the camera.
-An activated harmonic increases its leaf's motion and local glow; it never
-moves the center or the camera.
+The laboratory offers one low-cost and three full renderers over the same frame:
 
-The laboratory offers diagnostic workloads and three full renderers over the
-same analysis frame:
+- **Minimal pulse** draws one fixed measured-level halo at two frames per second.
+- **Harmonic radial series** places the complete selected harmonic bank in
+  concentric bands; outer-spacing growth expands upper harmonic separation.
+- **Radial ribbons** divides the complete bank between center and outer ribbons
+  using a true 0–100% Center field control.
+- **Horizon flow** pours broad harmonic ribbons from fixed horizon positions.
 
-- **Analysis only** keeps the complete client audio-analysis workload active
-  while omitting scene calculation and Canvas entirely. If direct playback is
-  clean but this mode crackles, client analysis/rerouting is implicated and the
-  renderer is not the cause.
-- **Minimal pulse** draws one fixed measured-level halo at two analysis/render
-  frames per second. It skips harmonic scene construction, trails, cloth
-  geometry and ribbons. This is the lowest-cost client-reactive candidate.
+Changing renderer, cut, zoom, activation TTL, width, palette or other visual
+controls never affects playback. FFT size and baseline are fixed server analysis
+parameters in this build and remain visibly read-only in the laboratory.
 
-- **Harmonic radial series** is a full-bank view. Every selected
-  harmonic is a concentric band at a position proportional to its identity in
-  the complete measurable series. A convex radial projection keeps the low
-  bank compact and progressively increases spacing through the upper bank.
-  `Outer spacing growth` exposes that projection as a percentage: 0% is linear,
-  while higher values increasingly compact the inner bank and expand outer
-  steps without moving the final ring.
-  Low, mid and high registers use the low, mid and high palette colors; the
-  highest rings reach or cross the short viewport edge. It has no free ribbons
-  and its center field is fixed at 100%.
+## Staging and acceptance
 
-- **Radial ribbons** groups harmonics through a stable center. A true 0–100%
-  Center field control divides the complete measurable bank: 0% places every
-  harmonic in the outer ribbon field and 100% places every harmonic in the
-  center field, with no forced mixture at either extreme.
-- **Horizon flow** pours broad harmonic ribbons from fixed positions on a
-  horizon. Harmonics below the cut stay closer to the center; upper harmonics
-  fan farther outward.
+The exact staging host exposes the opt-in and parameter panel. Presets export as
+versioned JSON. The current default is the human-selected Radial ribbons Ember
+preset: sensitivity 3, -120 dB floor, 24 s baseline, 20 ms attack, 140 ms release,
+no movement trails, density 1, upper-detail bias 1, center field 4%, outer-spacing
+growth 65%, zoom 100%, activation TTL 8 seconds, ribbon width 3 and FFT 16384.
 
-Changing renderer, cut harmonic, zoom, activation TTL, width, palette or other
-visual controls never rebuilds the audio graph. Zoom ranges from a distant 50%
-view to a close 220% view around the fixed center. FFT size and baseline duration
-remain analysis-session controls and therefore require Stop before changing
-them.
+The retired client Web Audio diagnostic mode and the older regional fixture have
+no runtime compatibility promise: this is an experimental product before public
+release.
 
-The staging diagnostic order is: reactive field off (native/direct baseline),
-Analysis only, Minimal pulse, then a full field. Analysis only staying clean
-while a drawn mode crackles points to scene/Canvas pressure. Analysis only
-crackling while direct mode stays clean points to the client Web Audio analysis
-path; that result is sufficient reason to evaluate the renderer-neutral frame
-contract with server-side analysis.
-
-## Audio boundary
-
-Visual mode is selected while stopped. Enabling or disabling it remounts fresh
-media elements before the next Listen because a `MediaElementAudioSourceNode`
-cannot be detached back into native playback.
-
-The visual graph has one unprocessed `source → destination` branch and passive
-splitter/analyser branches. There are no gain, filter, compressor or destination
-branches in the analysis path. The existing element volume, fades, transport,
-HLS buffer and stereo source remain authoritative.
-
-If graph startup fails, the experimental controller is discarded and a fresh
-direct player is presented. A Canvas or frame-analysis failure stops rendering
-while retaining the direct graph. Background resume is best effort; a failed
-context resume also returns to a fresh direct player.
-
-## Staging laboratory
-
-The exact staging host exposes the opt-in control and a collapsible parameter
-panel. Visual parameters can change while listening. FFT size and slow-baseline
-duration are locked during playback because they require a fresh analysis
-session. The FFT selector exposes both 8192 (lighter) and 16384 (more detail).
-Presets export as versioned JSON. The current default is the human-selected
-Radial ribbons Ember preset: sensitivity 3, -120 dB floor, 24 s baseline, 20 ms
-attack, 140 ms release, no movement trails, density 1, upper-detail bias 1,
-center field 4%, outer-spacing growth 65%, zoom 100%, activation TTL 8 seconds,
-ribbon width 3 and FFT 16384.
-
-Apple/native-HLS clients remain direct-mode only. WebKit's analysed native-HLS
-path has not yet passed the acoustic, nonzero-signal, fade and handoff gates for
-this product. Removing that gate requires a separately controlled laboratory
-build or harness and physical-device evidence; there is no public query-string
-override.
-
-The retired regional fixture prototype and its environment flags are removed;
-this experimental product has no compatibility promise before a public release.
-
-## Acceptance before public exposure
-
-Compare direct and visual modes on Chrome, Firefox and Android, including ES/EN
-introduction handoff, Beacon-only, Stop, reconnect, headphones, Bluetooth and a
-60-minute listen. Physical iPhone remains a direct-mode regression gate while
-Apple is disabled. Before enabling visual mode there, use a controlled lab
-harness to demonstrate audible glitch-free playback, nonzero analyser signal,
-an inaudible Beacon beneath the intro, correct master/fades and natural handoff.
-Record CPU, memory and frame pacing. The public Listener stays unchanged until
-Nico accepts both the visual result and the absence of acoustic degradation.
+Before public exposure, compare direct and visual modes on Chrome, Firefox,
+Android and iPhone, including ES/EN introduction handoff, Beacon-only, Stop,
+reconnect, headphones, Bluetooth and a 60-minute listen. Confirm that toggling
+and renderer failure preserve the same audio element and audible stream. Record
+server decode latency/cache behavior, client network cadence, CPU, memory and
+frame pacing. `listen.harmonicbeacon.com` remains unchanged until Nico accepts
+both the visual result and absence of acoustic degradation.

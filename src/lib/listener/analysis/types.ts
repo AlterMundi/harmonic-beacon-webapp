@@ -26,9 +26,6 @@ export type HarmonicAnalysisFrame = {
 };
 
 export type HarmonicAnalysisErrorCode =
-    | 'AUDIO_CONTEXT_UNAVAILABLE'
-    | 'AUDIO_CONTEXT_SUSPENDED'
-    | 'GRAPH_ATTACH_FAILED'
     | 'INVALID_CONFIGURATION'
     | 'NO_ACTIVE_SOURCE'
     | 'PROVIDER_STOPPED'

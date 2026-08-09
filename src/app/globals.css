@@ -1165,6 +1165,10 @@ body {
   overflow: hidden;
   pointer-events: none;
   contain: strict;
+  /* The field is atmospheric rather than UI: keep it softly out of focus
+     everywhere, while the control panel's backdrop blur remains deeper. */
+  filter: blur(3px);
+  transform: scale(1.012);
 }
 
 .listener-reactive-field::after {

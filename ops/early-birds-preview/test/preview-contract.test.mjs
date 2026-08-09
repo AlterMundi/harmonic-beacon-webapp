@@ -176,8 +176,8 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \^~ \/api\/early-birds\//);
   assert.equal(
     (app.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length,
-    6,
-    'server plus five sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
+    7,
+    'server plus six sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
   );
   assert.equal(
     (listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length,
@@ -187,6 +187,10 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location \/_next\/webpack-hmr \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Upgrade \$http_upgrade;[^}]*Connection "upgrade";/s);
   assert.match(app, /location \/_next\/static\/ \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
+  assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
+  assert.match(app, /limit_req_zone \$binary_remote_addr zone=listener_visual_analysis:1m rate=20r\/s;/);
+  assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*limit_req zone=listener_visual_analysis burst=40 nodelay;/s);
+  assert.doesNotMatch(listener, /location = \/api\/listener\/analysis\/frame/);
   assert.doesNotMatch(app, /proxy_pass http:\/\/127\.0\.0\.1:13000;/);
   assert.match(app, /location = \/early-birds\/home \{\s*return 302 \/;/);
   assert.match(app, /location \/ \{\s*return 404;/);

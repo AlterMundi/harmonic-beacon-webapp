@@ -139,7 +139,7 @@ describe('reactive campfire components', () => {
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Harmonic radial series');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Radial ribbons');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Horizon flow');
-        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Analysis only · no Canvas');
+        expect(screen.getByLabelText('Visualization')).not.toHaveTextContent('Analysis only');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Minimal pulse · 2 fps');
         fireEvent.change(screen.getByLabelText('Visualization'), {
             target: { value: 'horizon-flow' },
@@ -150,5 +150,20 @@ describe('reactive campfire components', () => {
         expect(screen.getByText(/4% center · 96% outer/)).toBeInTheDocument();
         expect(screen.getByLabelText(/Zoom/i)).toHaveValue('100');
         expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('8');
+    });
+
+    it('makes server-owned analysis parameters explicit and read-only', () => {
+        render(
+            <ReactiveCampfireTuningPanel
+                enabled
+                settings={{ ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS }}
+                analysisSource="server"
+                onChange={vi.fn()}
+            />,
+        );
+
+        expect(screen.getByLabelText('FFT size')).toBeDisabled();
+        expect(screen.getByLabelText(/Slow baseline/i)).toBeDisabled();
+        expect(screen.getByText('Server analysis · fixed at 16384')).toBeInTheDocument();
     });
 });

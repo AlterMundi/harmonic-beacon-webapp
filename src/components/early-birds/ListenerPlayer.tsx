@@ -13,7 +13,7 @@ import {
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
 import {
-    WebAudioHarmonicAnalysisProvider,
+    RemoteHarmonicAnalysisProvider,
     type HarmonicAnalysisFrame,
     type HarmonicAnalysisProvider,
 } from '@/lib/listener/analysis';
@@ -72,7 +72,7 @@ export function resolveListenerAnalysisFramesPerSecond({
     minimal?: boolean;
 }): number {
     if (minimal) return 2;
-    return resolveReactiveRenderPolicy({ reducedMotion, saveData }).conservative ? 2 : 30;
+    return resolveReactiveRenderPolicy({ reducedMotion, saveData }).conservative ? 2 : 4;
 }
 
 type LeaseCursor = {
@@ -149,10 +149,22 @@ export function prefersNativeHls(
 export function supportsReactiveListenerVisualization(
     browser: Pick<Navigator, 'vendor'>,
 ): boolean {
-    // WebKit native HLS does not yet offer a sufficiently reliable analysed
-    // MediaElement source/fade path. Keep the established direct player there
-    // until the real-device acoustic acceptance gate is completed.
-    return browser.vendor !== 'Apple Computer, Inc.';
+    // Remote frames never attach the media element to Web Audio. The argument
+    // remains for a stable test seam while the staging experiment is open.
+    return typeof browser.vendor === 'string';
+}
+
+export function nativeHlsProgramTimeMs(
+    audio: Pick<HTMLMediaElement, 'currentTime'> & { getStartDate?: () => Date },
+): number | null {
+    if (!Number.isFinite(audio.currentTime) || typeof audio.getStartDate !== 'function') return null;
+    try {
+        const startDate = audio.getStartDate();
+        const startMs = startDate?.getTime();
+        return Number.isFinite(startMs) ? startMs + audio.currentTime * 1_000 : null;
+    } catch {
+        return null;
+    }
 }
 
 function formatTime(seconds: number): string {
@@ -270,18 +282,22 @@ function ListenerPlayerController({
         return () => { analysisFrameListeners.current.delete(listener); };
     }, []);
 
+    const currentBeaconProgramTimeMs = useCallback((): number | null => {
+        const playingDate = hls.current?.playingDate;
+        if (playingDate && Number.isFinite(playingDate.getTime())) return playingDate.getTime();
+        const audio = liveAudio.current;
+        return audio ? nativeHlsProgramTimeMs(audio) : null;
+    }, []);
+
     const startReactiveAnalysis = useCallback((sourceId: string) => {
         if (!reactiveVisualizationEnabled || !reactiveRendererAvailable) return;
         let provider = analysisProvider.current;
         if (!provider) {
-            const live = liveAudio.current;
-            if (!live) return;
             const sources = [
-                { id: 'beacon', kind: 'beacon' as const, element: live },
+                { id: 'beacon', kind: 'beacon' as const },
                 ...(['es', 'en'] as const).flatMap((language) => {
-                    const element = dropAudio[language].current;
-                    return element && dropIns[language]
-                        ? [{ id: `intro-${language}`, kind: 'intro' as const, element }]
+                    return dropIns[language]
+                        ? [{ id: `intro-${language}`, kind: 'intro' as const }]
                         : [];
                 }),
             ];
@@ -291,11 +307,16 @@ function ListenerPlayerController({
                 const saveData = Boolean((navigator as Navigator & {
                     connection?: { saveData?: boolean };
                 }).connection?.saveData);
-                provider = new WebAudioHarmonicAnalysisProvider({
+                provider = new RemoteHarmonicAnalysisProvider({
+                    endpoint: '/api/listener/analysis/frame',
                     sources,
                     activeSourceId: sourceId,
-                    fftSize: reactiveSettings.fftSize,
-                    baselineSeconds: reactiveSettings.baselineDurationSeconds,
+                    getPlaybackProgramTimeMs: currentBeaconProgramTimeMs,
+                    getLeaseCursor: () => (
+                        leaseId.current && leaseGeneration.current !== null
+                            ? { leaseId: leaseId.current, leaseGeneration: leaseGeneration.current }
+                            : null
+                    ),
                     framesPerSecond: resolveListenerAnalysisFramesPerSecond({
                         reducedMotion,
                         saveData,
@@ -325,9 +346,11 @@ function ListenerPlayerController({
             onReactiveVisualizationFailure();
             return;
         }
-        // start() creates/resumes the complete graph synchronously until its
-        // first await. Do not await here: Safari must still receive play() for
-        // the intro and prepared Beacon inside this same trusted gesture.
+        if (sourceId !== 'beacon') {
+            for (const listener of analysisFrameListeners.current) {
+                try { listener(null); } catch { /* renderer isolation */ }
+            }
+        }
         void provider.start().then((result) => {
             if (!result.ok) {
                 onReactiveVisualizationFailure();
@@ -336,12 +359,10 @@ function ListenerPlayerController({
             if (!wantsLivePlayback.current) provider?.pauseAnalysis();
         }).catch(() => onReactiveVisualizationFailure());
     }, [
-        dropAudio,
+        currentBeaconProgramTimeMs,
         dropIns,
         onReactiveVisualizationFailure,
         reactiveRendererAvailable,
-        reactiveSettings.baselineDurationSeconds,
-        reactiveSettings.fftSize,
         reactiveSettings.visualizationMode,
         reactiveVisualizationEnabled,
     ]);
@@ -1493,9 +1514,7 @@ function ListenerPlayerController({
 
     return (
         <div className="listener-experience" data-phase={phase}>
-            {reactiveVisualizationEnabled
-                && reactiveRendererAvailable
-                && reactiveSettings.visualizationMode !== 'analysis-only' && (
+            {reactiveVisualizationEnabled && reactiveRendererAvailable && (
                 <div className="listener-reactive-field" data-testid="listener-reactive-field">
                     <ReactiveCampfireCanvas
                         subscribeFrames={subscribeReactiveFrames}
@@ -1505,10 +1524,8 @@ function ListenerPlayerController({
                             const provider = analysisProvider.current;
                             provider?.pauseAnalysis();
                             setReactiveRendererAvailable(false);
-                            // Before playback the visual graph is disposable,
-                            // so a fresh direct remount is safe. Once the graph
-                            // is audible, never interrupt media for a Canvas
-                            // failure; only stop analysis/rendering.
+                            // Rendering is disposable. Remote analysis never
+                            // owns or reroutes the audible media element.
                             if (!provider) onReactiveVisualizationFailure();
                         }}
                     />
@@ -1516,7 +1533,6 @@ function ListenerPlayerController({
             )}
             <audio
                 ref={liveAudio}
-                crossOrigin={reactiveVisualizationEnabled ? 'anonymous' : undefined}
                 preload="auto"
                 aria-label={copy.heading}
                 onError={() => handleNativeInterruption('error')}
@@ -1678,7 +1694,6 @@ function ListenerPlayerController({
                             <audio
                                 key={language}
                                 ref={dropAudio[language]}
-                                crossOrigin={reactiveVisualizationEnabled ? 'anonymous' : undefined}
                                 src={dropIns[language] ?? undefined}
                                 preload={language === selectedDrop ? 'auto' : 'metadata'}
                                 onLoadedMetadata={() => restoreProgress(language)}
@@ -1693,12 +1708,13 @@ function ListenerPlayerController({
                 <ReactiveCampfireTuningPanel
                     enabled={reactiveVisualizationAvailable && reactiveVisualizationEnabled}
                     settings={reactiveSettings}
-                    analysisControlsLocked={transportActive}
-                    onChange={(next) => onReactiveSettingsChange(transportActive ? {
+                    analysisControlsLocked
+                    analysisSource="server"
+                    onChange={(next) => onReactiveSettingsChange({
                         ...next,
                         fftSize: reactiveSettings.fftSize,
                         baselineDurationSeconds: reactiveSettings.baselineDurationSeconds,
-                    } : next)}
+                    })}
                 />
 
             </section>
@@ -1723,15 +1739,8 @@ export default function ListenerPlayer({
         ),
         () => false,
     );
-    const analysisConfigurationKey = [
-        reactiveVisualizationEnabled ? 'visual' : 'direct',
-        reactiveSettings.fftSize,
-        reactiveSettings.baselineDurationSeconds,
-    ].join(':');
-
     return (
         <ListenerPlayerController
-            key={analysisConfigurationKey}
             dropIns={dropIns}
             reactiveVisualizationAvailable={runtimeVisualizationAvailable}
             reactiveVisualizationEnabled={reactiveVisualizationEnabled}

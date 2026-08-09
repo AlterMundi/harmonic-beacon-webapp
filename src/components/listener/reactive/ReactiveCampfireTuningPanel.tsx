@@ -16,6 +16,7 @@ export type ReactiveCampfireTuningPanelProps = {
     settings: ReactiveCampfireSettings;
     onChange: (settings: ReactiveCampfireSettings) => void;
     analysisControlsLocked?: boolean;
+    analysisSource?: 'client' | 'server';
 };
 
 type NumberField = Exclude<
@@ -47,7 +48,6 @@ const NUMBER_FIELDS: Array<{
 ];
 
 const VISUALIZATION_LABELS: Record<ReactiveCampfireSettings['visualizationMode'], string> = {
-    'analysis-only': 'Analysis only · no Canvas',
     'minimal-pulse': 'Minimal pulse · 2 fps',
     'harmonic-radial-series': 'Harmonic radial series',
     'radial-ribbons': 'Radial ribbons',
@@ -68,6 +68,7 @@ export function ReactiveCampfireTuningPanel({
     settings,
     onChange,
     analysisControlsLocked = false,
+    analysisSource = 'client',
 }: ReactiveCampfireTuningPanelProps) {
     const [status, setStatus] = useState('');
     if (!enabled) return null;
@@ -92,8 +93,8 @@ export function ReactiveCampfireTuningPanel({
             <summary className={styles.summary}>Reactive field lab</summary>
             <div className={styles.form}>
                 <p className={styles.guide}>
-                    Test: field off = direct baseline; Analysis only = analysis without Canvas;
-                    Minimal pulse = lowest visual workload; then compare a full field.
+                    Audio stays native. Visual frames come from the server; Minimal pulse is the
+                    lowest rendering workload before comparing a full field.
                 </p>
                 {NUMBER_FIELDS.map((field) => (
                     <label className={styles.field} key={field.key}>
@@ -120,7 +121,8 @@ export function ReactiveCampfireTuningPanel({
                             max={field.max}
                             step={field.step}
                             value={settings[field.key]}
-                            disabled={(analysisControlsLocked && field.key === 'baselineDurationSeconds')
+                            disabled={((analysisControlsLocked || analysisSource === 'server')
+                                && field.key === 'baselineDurationSeconds')
                                 || (settings.visualizationMode === 'harmonic-radial-series'
                                     && field.key === 'centerCutPercent')
                                 || (settings.visualizationMode !== 'harmonic-radial-series'
@@ -146,11 +148,6 @@ export function ReactiveCampfireTuningPanel({
                             </option>
                         ))}
                     </select>
-                    {settings.visualizationMode === 'analysis-only' && (
-                        <span className={styles.hint}>
-                            Full audio analysis stays active; scene calculation and Canvas are off.
-                        </span>
-                    )}
                     {settings.visualizationMode === 'minimal-pulse' && (
                         <span className={styles.hint}>
                             One measured level halo at 2 fps; no harmonic scene or ribbons.
@@ -176,7 +173,7 @@ export function ReactiveCampfireTuningPanel({
                     <select
                         aria-label="FFT size"
                         value={settings.fftSize}
-                        disabled={analysisControlsLocked}
+                        disabled={analysisControlsLocked || analysisSource === 'server'}
                         onChange={(event) => update({
                             fftSize: Number(event.currentTarget.value) as ReactiveCampfireSettings['fftSize'],
                         })}
@@ -184,7 +181,9 @@ export function ReactiveCampfireTuningPanel({
                         <option value={8_192}>8192 · lighter</option>
                         <option value={16_384}>16384 · more detail</option>
                     </select>
-                    {analysisControlsLocked && (
+                    {analysisSource === 'server' ? (
+                        <span className={styles.hint}>Server analysis · fixed at 16384</span>
+                    ) : analysisControlsLocked && (
                         <span className={styles.hint}>Stop to change · 8192 / 16384 available</span>
                     )}
                 </label>

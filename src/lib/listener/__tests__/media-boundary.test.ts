@@ -5,13 +5,11 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const MEDIA_FILE_SHA256 = {
-    // Reviewed and re-pinned for the staging-only, opt-in passive WebAudio
-    // analysis graph and its diagnostic workload selector. Analysis-only
-    // suppresses Canvas; minimal-pulse changes analysis cadence without
-    // reconnecting media. Direct playback remains the default; HLS parameters,
-    // source URLs, media assets, element gain/fades and event audio are
-    // unchanged. Apple/native-HLS remains on the direct path.
-    'src/components/early-birds/ListenerPlayer.tsx': '8e7b0d7fe30b8d3ed67a080b9bdacf829facb70782177ab05f36c9c74301cde6',
+    // Reviewed and re-pinned for staging-only remote harmonic frames. The
+    // browser no longer creates Web Audio nodes, adds crossOrigin or remounts
+    // media when the field is toggled. HLS parameters, source URLs, media
+    // assets, element gain/fades and event audio remain unchanged.
+    'src/components/early-birds/ListenerPlayer.tsx': '18d8274f3078a85a743485168c7309278701467f1967dc1890e3232e4e919042',
     'src/lib/early-birds/stream.ts': '96a2d9fe798591833327631b59a73a5b2fc5ca06be7081945a0b07450970da84',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',

@@ -1,5 +1,7 @@
 # Isolated EarlyBirds staging vhost. Review and install separately from every
 # live/event vhost only after the named certificate exists.
+limit_req_zone $binary_remote_addr zone=listener_visual_analysis:1m rate=20r/s;
+
 server {
     listen 80;
     listen [::]:80;
@@ -242,6 +244,27 @@ server {
         proxy_connect_timeout 10s;
         proxy_send_timeout 30s;
         proxy_read_timeout 30s;
+    }
+
+    # Renderer-neutral frames for the disposable visual workbench. The public
+    # Listener edge intentionally has no matching location.
+    location = /api/listener/analysis/frame {
+        access_log off;
+        limit_req zone=listener_visual_analysis burst=40 nodelay;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 15s;
+        proxy_read_timeout 15s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
     }
 
     location = /api/listener/free-window {
