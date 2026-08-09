@@ -7,6 +7,9 @@ import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
 
 import { deriveListenerPresentationPhase } from './listener-presentation';
+import { ListenerTabIdentityCoordinator } from './listener-tab-identity';
+
+export { getOrCreateEarlyBirdDeviceId } from './listener-tab-identity';
 
 type DropLanguage = 'es' | 'en';
 type PlaybackMode = 'intro' | 'beacon';
@@ -37,7 +40,6 @@ class LeaseRequestError extends Error {
     }
 }
 
-const DEVICE_STORAGE_KEY = 'hb_earlybird_device_id';
 const DROP_PROGRESS_PREFIX = 'hb_earlybird_drop_progress_';
 const PLAYBACK_MODE_STORAGE_KEY = 'hb_listener_playback_mode';
 const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
@@ -96,16 +98,6 @@ export const LISTENER_HLS_BUFFER_CONFIG = {
     maxMaxBufferLength: 90,
     backBufferLength: 0,
 } as const;
-
-export function getOrCreateEarlyBirdDeviceId(storage: Storage): string {
-    const existing = storage.getItem(DEVICE_STORAGE_KEY);
-    if (existing && /^[A-Za-z0-9_-]{16,200}$/.test(existing)) return existing;
-    const generated = typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
-    storage.setItem(DEVICE_STORAGE_KEY, generated);
-    return generated;
-}
 
 export function seekNativeAudioToLiveEdge(audio: HTMLAudioElement): boolean {
     if (audio.seekable.length < 1) return false;
@@ -256,6 +248,7 @@ export default function ListenerPlayer({
     const presenceSequence = useRef(0);
     const leaseRequestOrder = useRef(0);
     const appliedLeaseRequestOrder = useRef(0);
+    const tabIdentity = useRef<ListenerTabIdentityCoordinator | null>(null);
     const liveStateRef = useRef<LiveState>('idle');
     const wantsLivePlayback = useRef(false);
     const playbackAttemptRunning = useRef(false);
@@ -350,13 +343,20 @@ export default function ListenerPlayer({
         presenceSequence.current = 0;
     }, []);
 
+    const resolveTabIdentity = useCallback(() => {
+        if (!tabIdentity.current) {
+            tabIdentity.current = new ListenerTabIdentityCoordinator(window.sessionStorage);
+        }
+        return tabIdentity.current.resolve();
+    }, []);
+
     const requestLease = useCallback(async (
         intent: 'play' | 'prepare' | 'claim' = 'play',
     ): Promise<LeasePayload> => {
         const requestOrder = ++leaseRequestOrder.current;
         // A tab is one connection. sessionStorage survives reload in that tab
         // without making two tabs collapse onto the same server-side lease.
-        const deviceId = getOrCreateEarlyBirdDeviceId(window.sessionStorage);
+        const deviceId = await resolveTabIdentity();
         const response = await fetch('/api/early-birds/stream/lease', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -393,6 +393,11 @@ export default function ListenerPlayer({
         presenceSequence.current = candidate.presenceSequence;
         listenerPresence.current = intent === 'play' ? 'listening' : 'idle';
         return grant;
+    }, [resolveTabIdentity]);
+
+    useEffect(() => () => {
+        tabIdentity.current?.close();
+        tabIdentity.current = null;
     }, []);
 
     const probeExistingLease = useCallback(async (
