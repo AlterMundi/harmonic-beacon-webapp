@@ -9,6 +9,7 @@ import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import {
     formatQuotaDuration,
+    formatQuotaRenewalDuration,
     isNewerQuotaSnapshot,
     listenerQuotaSnapshot,
     quotaSnapshotFromAccessState,
@@ -155,7 +156,6 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
     const untilRenewal = state && renewalAt
         ? Math.max(0, Date.parse(renewalAt) - Date.parse(state.serverNow) - serverElapsed(receivedAt, tickNow))
         : null;
-
     let title = copy.freeQuotaTitle;
     let detail = copy.freeQuotaNotStarted;
     if (unlimited === 'membership') {
@@ -183,7 +183,7 @@ export default function FreeQuotaStatus({ snapshot, serverNow, compact = false, 
                 <small>{copy.freeQuotaExtra.replace('{time}', formatQuotaDuration(state?.bonusAllowanceMs ?? 0, locale))}</small>
             )}
             {!unlimited && untilRenewal !== null && (
-                <small>{copy.freeQuotaResetsIn.replace('{time}', formatQuotaDuration(untilRenewal, locale))}</small>
+                <small>{copy.freeQuotaResetsIn.replace('{time}', formatQuotaRenewalDuration(untilRenewal, locale))}</small>
             )}
         </section>
     );

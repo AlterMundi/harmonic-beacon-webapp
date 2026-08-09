@@ -49,7 +49,18 @@ describe('Listener weekly quota presentation', () => {
 
         expect(screen.getByText('You have 3h left this week')).toBeInTheDocument();
         expect(screen.getByText('Includes 30m of extra credit.')).toBeInTheDocument();
-        expect(screen.getByText('Renews in 168h')).toBeInTheDocument();
+        expect(screen.getByText('Renews in 7d')).toBeInTheDocument();
+    });
+
+    it('expresses renewal time in days and hours instead of a large hour count', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <FreeQuotaStatus snapshot={snapshot} serverNow="2026-08-07T16:00:00.000Z" />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByText('Renews in 6d 23h')).toBeInTheDocument();
+        expect(screen.queryByText(/167h/)).toBeNull();
     });
 
     it('never fabricates an allowance from an incomplete snapshot', () => {

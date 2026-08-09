@@ -96,4 +96,16 @@ export function formatQuotaDuration(milliseconds: number, locale: 'es' | 'en') {
     return locale === 'es' ? `${hours} h ${remainder} min` : `${hours}h ${remainder}m`;
 }
 
+export function formatQuotaRenewalDuration(milliseconds: number, locale: 'es' | 'en') {
+    const totalMinutes = Math.max(0, Math.ceil(milliseconds / 60_000));
+    if (totalMinutes < 60) return locale === 'es' ? `${totalMinutes} min` : `${totalMinutes}m`;
+
+    const totalHours = Math.ceil(totalMinutes / 60);
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    if (days === 0) return locale === 'es' ? `${hours} h` : `${hours}h`;
+    if (hours === 0) return locale === 'es' ? `${days} d` : `${days}d`;
+    return locale === 'es' ? `${days} d ${hours} h` : `${days}d ${hours}h`;
+}
+
 export const LISTENER_WEEKLY_FREE_MS = WEEKLY_FREE_MS;
