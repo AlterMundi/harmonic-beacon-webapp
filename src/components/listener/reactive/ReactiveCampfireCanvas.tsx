@@ -185,7 +185,10 @@ export function ReactiveCampfireCanvas({
             onRendererErrorRef.current?.(error);
             return;
         }
-        if (!context) return;
+        if (!context) {
+            onRendererErrorRef.current?.(new Error('Canvas 2D context unavailable'));
+            return;
+        }
 
         const reducedMotion = typeof window.matchMedia === 'function'
             && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

@@ -62,6 +62,32 @@ describe('reactive campfire components', () => {
         }));
     });
 
+    it('requests direct fallback once when the browser returns no 2D context', () => {
+        const onRendererError = vi.fn();
+        vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(null);
+
+        const { rerender } = render(
+            <ReactiveCampfireCanvas
+                frame={null}
+                mode="active"
+                onRendererError={onRendererError}
+            />,
+        );
+        rerender(
+            <ReactiveCampfireCanvas
+                frame={null}
+                mode="stopped"
+                onRendererError={onRendererError}
+            />,
+        );
+
+        expect(onRendererError).toHaveBeenCalledTimes(1);
+        expect(onRendererError).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Canvas 2D context unavailable',
+        }));
+        expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+    });
+
     it('does not expose the laboratory when its staging feature gate is off', () => {
         const { rerender } = render(
             <ReactiveCampfireTuningPanel
