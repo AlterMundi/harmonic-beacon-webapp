@@ -18,6 +18,7 @@ export type ReactiveCampfireSettings = {
     density: number;
     highDetail: number;
     centerCutPercent: number;
+    radialSpacingGrowthPercent: number;
     ribbonWidth: number;
     palette: ReactivePalette;
     visualizationMode: ReactiveVisualizationMode;
@@ -34,6 +35,7 @@ export const DEFAULT_REACTIVE_CAMPFIRE_SETTINGS: Readonly<ReactiveCampfireSettin
     density: 1,
     highDetail: 1,
     centerCutPercent: 100,
+    radialSpacingGrowthPercent: 65,
     ribbonWidth: 2.25,
     palette: 'ember',
     visualizationMode: 'harmonic-radial-series',
@@ -50,6 +52,7 @@ const LIMITS = {
     density: [0.2, 1],
     highDetail: [0, 1],
     centerCutPercent: [0, 100],
+    radialSpacingGrowthPercent: [0, 250],
     ribbonWidth: [0.6, 3],
 } as const;
 
@@ -106,6 +109,11 @@ export function validateReactiveCampfireSettings(
             candidate?.centerCutPercent,
             fallback.centerCutPercent,
             ...LIMITS.centerCutPercent,
+        )),
+        radialSpacingGrowthPercent: Math.round(clampFinite(
+            candidate?.radialSpacingGrowthPercent,
+            fallback.radialSpacingGrowthPercent,
+            ...LIMITS.radialSpacingGrowthPercent,
         )),
         ribbonWidth: clampFinite(
             candidate?.ribbonWidth,

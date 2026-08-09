@@ -45,9 +45,14 @@ The laboratory currently offers three renderers over the same analysis frame:
 
 - **Harmonic radial series** is the default full-bank view. Every selected
   harmonic is a concentric band at a position proportional to its identity in
-  the complete measurable series. Low, mid and high registers use the low,
-  mid and high palette colors; the highest rings reach or cross the short
-  viewport edge. It has no free ribbons and its center field is fixed at 100%.
+  the complete measurable series. A convex radial projection keeps the low
+  bank compact and progressively increases spacing through the upper bank.
+  `Outer spacing growth` exposes that projection as a percentage: 0% is linear,
+  while higher values increasingly compact the inner bank and expand outer
+  steps without moving the final ring.
+  Low, mid and high registers use the low, mid and high palette colors; the
+  highest rings reach or cross the short viewport edge. It has no free ribbons
+  and its center field is fixed at 100%.
 
 - **Radial ribbons** groups harmonics through a stable center. A true 0–100%
   Center field control divides the complete measurable bank: 0% places every

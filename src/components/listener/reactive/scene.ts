@@ -206,13 +206,16 @@ export function buildReactiveCampfireScene(
     const rings: ReactiveRing[] = [];
     const seriesRings: ReactiveSeriesRing[] = indexes.map((index) => {
         const progress = harmonics.length <= 1 ? 0 : index / (harmonics.length - 1);
+        const expandedProgress = progress ** (
+            1 + settings.radialSpacingGrowthPercent / 100
+        );
         const absolute = absoluteEnergy(harmonics[index], settings.absoluteFloorDb) * confidence;
         return {
             harmonicIndex: index,
             // Linear harmonic identity across an expanded field. The highest
             // measured ring crosses the short viewport edge by design.
-            radius: 0.055 + progress * 0.78,
-            eccentricity: 0.82 + progress * 0.14,
+            radius: 0.055 + expandedProgress * 0.78,
+            eccentricity: 0.82 + expandedProgress * 0.14,
             rotation: (seededUnit(index, 121) - 0.5) * 0.12,
             opacity: absolute * 0.78,
             weight: 0.6 + absolute * 2.4,

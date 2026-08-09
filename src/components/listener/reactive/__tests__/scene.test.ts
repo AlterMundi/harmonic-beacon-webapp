@@ -156,6 +156,7 @@ describe('reactive campfire scene', () => {
             density: 1,
             highDetail: 1,
             centerCutPercent: 100,
+            radialSpacingGrowthPercent: 65,
             ribbonWidth: 2.25,
             palette: 'ember',
             visualizationMode: 'harmonic-radial-series',
@@ -191,6 +192,29 @@ describe('reactive campfire scene', () => {
         expect(scene.seriesRings.at(-1)?.tier).toBe('high');
         expect(scene.seriesRings.at(-1)?.radius).toBeGreaterThan(0.8);
         expect(scene.seriesRings.at(-1)?.harmonicIndex).toBe(495);
+        const innerGap = scene.seriesRings[20].radius - scene.seriesRings[19].radius;
+        const outerGap = scene.seriesRings.at(-1)!.radius - scene.seriesRings.at(-2)!.radius;
+        expect(outerGap).toBeGreaterThan(innerGap * 2);
+    });
+
+    it('makes radial spacing growth controllable from linear to strongly expanded', () => {
+        const frame = frameWith(Array.from({ length: 496 }, () => -32));
+        const linear = buildReactiveCampfireScene(frame, {
+            density: 1,
+            highDetail: 1,
+            radialSpacingGrowthPercent: 0,
+        });
+        const expanded = buildReactiveCampfireScene(frame, {
+            density: 1,
+            highDetail: 1,
+            radialSpacingGrowthPercent: 150,
+        });
+        const gap = (scene: ReturnType<typeof buildReactiveCampfireScene>) => (
+            scene.seriesRings.at(-1)!.radius - scene.seriesRings.at(-2)!.radius
+        );
+
+        expect(gap(expanded)).toBeGreaterThan(gap(linear) * 2);
+        expect(expanded.seriesRings.at(-1)?.radius).toBe(linear.seriesRings.at(-1)?.radius);
     });
 
     it('uses a true percentage of the complete bank as the center / outer boundary', () => {

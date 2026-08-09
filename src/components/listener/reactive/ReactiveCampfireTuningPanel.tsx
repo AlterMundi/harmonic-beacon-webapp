@@ -40,6 +40,7 @@ const NUMBER_FIELDS: Array<{
     { key: 'density', label: 'Harmonic density', min: 0.2, max: 1, step: 0.05 },
     { key: 'highDetail', label: 'High detail', min: 0, max: 1, step: 0.05 },
     { key: 'centerCutPercent', label: 'Center field', min: 0, max: 100, step: 1, suffix: '%' },
+    { key: 'radialSpacingGrowthPercent', label: 'Outer spacing growth', min: 0, max: 250, step: 1, suffix: '%' },
     { key: 'ribbonWidth', label: 'Ribbon width', min: 0.6, max: 3, step: 0.05 },
 ];
 
@@ -107,7 +108,9 @@ export function ReactiveCampfireTuningPanel({
                             value={settings[field.key]}
                             disabled={(analysisControlsLocked && field.key === 'baselineDurationSeconds')
                                 || (settings.visualizationMode === 'harmonic-radial-series'
-                                    && field.key === 'centerCutPercent')}
+                                    && field.key === 'centerCutPercent')
+                                || (settings.visualizationMode !== 'harmonic-radial-series'
+                                    && field.key === 'radialSpacingGrowthPercent')}
                             onChange={(event) => update({
                                 [field.key]: Number(event.currentTarget.value),
                             })}
