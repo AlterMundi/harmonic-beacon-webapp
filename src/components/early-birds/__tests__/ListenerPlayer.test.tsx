@@ -172,6 +172,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: '/api/early-birds/drop-ins/es', en: '/api/early-birds/drop-ins/en' }}
                 />
             </LocaleProvider>,
@@ -229,6 +230,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     reactiveVisualizationInitiallyEnabled
                     dropIns={{ es: null, en: null }}
                 />
@@ -267,6 +269,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -294,6 +297,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -334,6 +338,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -375,6 +380,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -415,6 +421,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -468,6 +475,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -509,6 +517,7 @@ describe('EarlyBird Listener player', () => {
             <LocaleProvider initialLocale="en">
                 <ListenerPlayer
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,

@@ -8,14 +8,17 @@ vi.mock('../ListenerPlayer', () => ({
     default: ({
         reactiveVisualizationAvailable,
         reactiveVisualizationInitiallyEnabled,
+        reactiveFieldLabAvailable,
     }: {
         reactiveVisualizationAvailable?: boolean;
         reactiveVisualizationInitiallyEnabled?: boolean;
+        reactiveFieldLabAvailable?: boolean;
     }) => (
         <section
             aria-label="listener-player"
             data-reactive-available={String(Boolean(reactiveVisualizationAvailable))}
             data-reactive-initially-enabled={String(Boolean(reactiveVisualizationInitiallyEnabled))}
+            data-reactive-lab={String(Boolean(reactiveFieldLabAvailable))}
         />
     ),
 }));
@@ -79,6 +82,7 @@ describe('EarlyBird Listener home access chrome', () => {
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
                     reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     displayName="Nico"
                     membership={{ kind: 'invitation', state: 'active' }}
                     dropIns={{ es: null, en: null }}
@@ -88,6 +92,7 @@ describe('EarlyBird Listener home access chrome', () => {
 
         expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'true');
         expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-initially-enabled', 'true');
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-lab', 'true');
     });
 
     it('presents a normalized Founder status and provider without raw membership source', () => {

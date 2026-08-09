@@ -69,7 +69,7 @@ describe('EarlyBird Listener page', () => {
         expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
     });
 
-    it('exposes the reactive experiment only on the exact staging hostname', async () => {
+    it('exposes the field on exact Listener hosts while keeping the lab default-off', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
         mocks.headers.mockResolvedValue(new Headers({
@@ -81,6 +81,29 @@ describe('EarlyBird Listener page', () => {
         expect(result.type).toBe(EarlyBirdHome);
         expect(result.props).toMatchObject({
             reactiveVisualizationAvailable: true,
+            reactiveFieldLabAvailable: false,
+        });
+
+        mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
+        const publicResult = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+        expect(publicResult.props).toMatchObject({
+            reactiveVisualizationAvailable: true,
+            reactiveFieldLabAvailable: false,
+        });
+    });
+
+    it('enables the lab only by explicit flag on the exact staging hostname', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        vi.stubEnv('BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED', '1');
+        mocks.headers.mockResolvedValue(new Headers({
+            host: 'earlybirds-staging.harmonicbeacon.com',
+        }));
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+        expect(result.props).toMatchObject({
+            reactiveVisualizationAvailable: true,
+            reactiveFieldLabAvailable: true,
         });
     });
 

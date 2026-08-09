@@ -147,9 +147,9 @@ describe('reactive campfire components', () => {
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
             visualizationMode: 'horizon-flow',
         }));
-        expect(screen.getByText(/4% center · 96% outer/)).toBeInTheDocument();
-        expect(screen.getByLabelText(/Zoom/i)).toHaveValue('100');
-        expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('8');
+        expect(screen.getByText(/7% center · 93% outer/)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Zoom/i)).toHaveValue('165');
+        expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('30');
     });
 
     it('makes server-owned analysis parameters explicit and read-only', () => {

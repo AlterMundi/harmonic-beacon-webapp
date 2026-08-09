@@ -43,13 +43,18 @@ export default async function EarlyBirdsPage({
 }) {
     if (!earlyBirdsEnabled()) return <EarlyBirdUnavailable />;
     const incomingHeaders = new Headers(await requestHeaders());
-    const reactiveVisualizationAvailable = isListenerStagingHost(incomingHeaders);
+    const listenerStagingHost = isListenerStagingHost(incomingHeaders);
+    const reactiveVisualizationAvailable = listenerStagingHost
+        || isCanonicalListenerHost(incomingHeaders);
+    const reactiveFieldLabAvailable = listenerStagingHost
+        && process.env.BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED === '1';
 
     if (earlyBirdsFreeForAll()) {
         return (
             <EarlyBirdHome
                 publicAccess
                 reactiveVisualizationAvailable={reactiveVisualizationAvailable}
+                reactiveFieldLabAvailable={reactiveFieldLabAvailable}
                 displayName=""
                 membership={listenerMembershipPresentation(null)}
                 dropIns={{
@@ -80,6 +85,7 @@ export default async function EarlyBirdsPage({
             <EarlyBirdHome
                 displayName={session.user.name}
                 reactiveVisualizationAvailable={reactiveVisualizationAvailable}
+                reactiveFieldLabAvailable={reactiveFieldLabAvailable}
                 membership={listenerMembershipPresentation(access.membership.projection)}
                 accessKind={access.kind === 'free-quota' ? 'free-quota' : 'membership'}
                 quota={access.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}

@@ -7,6 +7,30 @@ import {
 } from '../settings';
 
 describe('reactive campfire settings', () => {
+    it('uses the accepted public radial-ribbons preset exactly', () => {
+        expect(JSON.parse(serializeReactiveCampfirePreset(
+            DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,
+        ))).toEqual({
+            schemaVersion: 1,
+            sensitivity: 3,
+            absoluteFloorDb: -70,
+            baselineDurationSeconds: 24,
+            attackMs: 20,
+            releaseMs: 220,
+            trailSeconds: 4,
+            density: 1,
+            highDetail: 0.7,
+            centerCutPercent: 7,
+            radialSpacingGrowthPercent: 65,
+            zoomPercent: 165,
+            activationTtlSeconds: 30,
+            ribbonWidth: 2.45,
+            palette: 'ember',
+            visualizationMode: 'radial-ribbons',
+            fftSize: 16_384,
+        });
+    });
+
     it('clamps unsafe numeric input and rejects unknown enumerations', () => {
         const settings = validateReactiveCampfireSettings({
             sensitivity: Number.NaN,

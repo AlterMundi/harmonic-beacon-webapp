@@ -19,6 +19,7 @@ export default function EarlyBirdHome({
     dropIns,
     publicAccess = false,
     reactiveVisualizationAvailable = false,
+    reactiveFieldLabAvailable = false,
     quota = null,
 }: {
     displayName: string;
@@ -28,6 +29,7 @@ export default function EarlyBirdHome({
     dropIns: { es: string | null; en: string | null };
     publicAccess?: boolean;
     reactiveVisualizationAvailable?: boolean;
+    reactiveFieldLabAvailable?: boolean;
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
 }) {
     const { locale } = useLocale();
@@ -72,6 +74,7 @@ export default function EarlyBirdHome({
                     dropIns={dropIns}
                     reactiveVisualizationAvailable={reactiveVisualizationAvailable}
                     reactiveVisualizationInitiallyEnabled={reactiveVisualizationAvailable}
+                    reactiveFieldLabAvailable={reactiveFieldLabAvailable}
                 />
                 {!publicAccess && accessKind === 'free-quota' && (
                     <footer className="listener-listening-status">

@@ -58,7 +58,7 @@ describe('GET /api/listener/analysis/frame', () => {
         });
     });
 
-    it('serves no-store frames only on the exact staging host', async () => {
+    it('serves no-store frames only on the exact Listener hosts', async () => {
         const response = await GET(request('earlybirds-staging.harmonicbeacon.com'));
         expect(response.status).toBe(200);
         expect(response.headers.get('Cache-Control')).toBe('private, no-store');
@@ -70,8 +70,9 @@ describe('GET /api/listener/analysis/frame', () => {
         );
         expect(analyzer.frameAt).toHaveBeenCalledOnce();
 
+        expect((await GET(request('listen.harmonicbeacon.com'))).status).toBe(200);
+
         for (const host of [
-            'listen.harmonicbeacon.com',
             'live.harmonicbeacon.com',
             'earlybirds-staging.harmonicbeacon.com.evil.test',
         ]) {

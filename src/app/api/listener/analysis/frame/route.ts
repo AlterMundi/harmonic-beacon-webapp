@@ -1,4 +1,7 @@
-import { isListenerStagingHost } from '@/lib/listener/public-discovery';
+import {
+    isCanonicalListenerHost,
+    isListenerStagingHost,
+} from '@/lib/listener/public-discovery';
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
 import { earlyBirdsEnabled, earlyBirdsFreeForAll } from '@/lib/early-birds/enabled';
 import {
@@ -22,7 +25,7 @@ const MAX_AUDIBLE_LATENCY_MS = 90_000;
 const MAX_FUTURE_SKEW_MS = 5_000;
 
 export async function GET(request: Request) {
-    if (!isListenerStagingHost(request.headers)) {
+    if (!isCanonicalListenerHost(request.headers) && !isListenerStagingHost(request.headers)) {
         return new Response('not found\n', { status: 404, headers: NO_STORE_HEADERS });
     }
     if (!earlyBirdsEnabled()) {

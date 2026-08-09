@@ -5,12 +5,13 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const MEDIA_FILE_SHA256 = {
-    // Reviewed and re-pinned for staging-only remote harmonic frames. The
+    // Reviewed and re-pinned for the public server-side harmonic field. The
     // browser no longer creates Web Audio nodes, adds crossOrigin or remounts
-    // media when the field is toggled. The staging-only lab now starts visible;
+    // media for analysis. This change only hides the tuning lab behind a
+    // server-side staging flag while leaving the accepted field enabled;
     // HLS parameters, source URLs, media assets, element gain/fades and event
     // audio remain unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': 'af5c3fcf3d860d015bfff5e7b523215d1751d61e71330ccf1ab908b53178858c',
+    'src/components/early-birds/ListenerPlayer.tsx': 'fd80bb558317c78c983e1ae623b7697bb778b44def0bafe0d0b4ca4e421cd358',
     'src/lib/early-birds/stream.ts': '96a2d9fe798591833327631b59a73a5b2fc5ca06be7081945a0b07450970da84',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',

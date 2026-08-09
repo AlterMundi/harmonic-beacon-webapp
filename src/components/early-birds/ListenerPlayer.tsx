@@ -198,6 +198,7 @@ type ListenerPlayerProps = {
     dropIns: { es: string | null; en: string | null };
     reactiveVisualizationAvailable?: boolean;
     reactiveVisualizationInitiallyEnabled?: boolean;
+    reactiveFieldLabAvailable?: boolean;
 };
 
 type ListenerPlayerControllerProps = ListenerPlayerProps & {
@@ -214,6 +215,7 @@ const subscribeRuntimeVisualizationCapability = () => () => undefined;
 function ListenerPlayerController({
     dropIns,
     reactiveVisualizationAvailable = false,
+    reactiveFieldLabAvailable = false,
     reactiveVisualizationEnabled,
     reactiveSettings,
     onReactiveSettingsChange,
@@ -1586,14 +1588,14 @@ function ListenerPlayerController({
                 </p>}
 
                 <div className="listener-control-panel">
-                    {reactiveFallbackNotice && (
+                    {reactiveFieldLabAvailable && reactiveFallbackNotice && (
                         <p role="status" className="listener-stage__hint">
                             {locale === 'es'
                                 ? 'El campo reactivo no pudo iniciarse. El reproductor directo está listo.'
                                 : 'The reactive field could not start. Direct playback is ready.'}
                         </p>
                     )}
-                    {reactiveVisualizationAvailable && !transportActive && (
+                    {reactiveFieldLabAvailable && reactiveVisualizationAvailable && !transportActive && (
                         <label className="listener-reactive-option">
                             <input
                                 type="checkbox"
@@ -1605,7 +1607,7 @@ function ListenerPlayerController({
                         </label>
                     )}
 
-                    {reactiveVisualizationEnabled && !reactiveRendererAvailable && (
+                    {reactiveFieldLabAvailable && reactiveVisualizationEnabled && !reactiveRendererAvailable && (
                         <p role="status" className="listener-stage__hint">
                             {locale === 'es'
                                 ? 'La visualización se detuvo; el audio continúa sin ella.'
@@ -1739,17 +1741,19 @@ function ListenerPlayerController({
                     })}
                 </div>
 
-                <ReactiveCampfireTuningPanel
-                    enabled={reactiveVisualizationAvailable && reactiveVisualizationEnabled}
-                    settings={reactiveSettings}
-                    analysisControlsLocked
-                    analysisSource="server"
-                    onChange={(next) => onReactiveSettingsChange({
-                        ...next,
-                        fftSize: reactiveSettings.fftSize,
-                        baselineDurationSeconds: reactiveSettings.baselineDurationSeconds,
-                    })}
-                />
+                {reactiveFieldLabAvailable && (
+                    <ReactiveCampfireTuningPanel
+                        enabled={reactiveVisualizationAvailable && reactiveVisualizationEnabled}
+                        settings={reactiveSettings}
+                        analysisControlsLocked
+                        analysisSource="server"
+                        onChange={(next) => onReactiveSettingsChange({
+                            ...next,
+                            fftSize: reactiveSettings.fftSize,
+                            baselineDurationSeconds: reactiveSettings.baselineDurationSeconds,
+                        })}
+                    />
+                )}
 
             </section>
         </div>
@@ -1760,6 +1764,7 @@ export default function ListenerPlayer({
     dropIns,
     reactiveVisualizationAvailable = false,
     reactiveVisualizationInitiallyEnabled = false,
+    reactiveFieldLabAvailable = false,
 }: ListenerPlayerProps) {
     const [reactiveVisualizationEnabled, setReactiveVisualizationEnabled] = useState(
         reactiveVisualizationAvailable && reactiveVisualizationInitiallyEnabled,
@@ -1780,6 +1785,7 @@ export default function ListenerPlayer({
         <ListenerPlayerController
             dropIns={dropIns}
             reactiveVisualizationAvailable={runtimeVisualizationAvailable}
+            reactiveFieldLabAvailable={reactiveFieldLabAvailable}
             reactiveVisualizationEnabled={reactiveVisualizationEnabled}
             reactiveSettings={reactiveSettings}
             reactiveFallbackNotice={reactiveFallbackNotice}

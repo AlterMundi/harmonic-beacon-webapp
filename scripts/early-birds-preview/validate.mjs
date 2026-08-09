@@ -32,6 +32,7 @@ const syntheticEnv = [
   'EARLY_BIRDS_TEST_ACCESS_ENABLED=1',
   'EARLY_BIRDS_TEST_LOGIN_SECRET=synthetic-preview-login-secret-at-least-32-characters',
   'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=0',
+  'BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED=0',
   'EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=earlybirds-staging.harmonicbeacon.com',
   'BEACON_LISTENER_GEOIP_HOST_PATH=.',
   'EARLY_BIRDS_AUTHORITY_BASE_URL=https://authority.example.invalid',
@@ -102,6 +103,7 @@ try {
   assert.equal(listener.environment.EARLY_BIRDS_ENABLED, '0');
   assert.equal(listener.environment.EARLY_BIRDS_FREE_FOR_ALL, '0');
   assert.equal(listener.environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED, '0');
+  assert.equal(listener.environment.BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED, '0');
   assert.equal(
     listener.environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS,
     'earlybirds-staging.harmonicbeacon.com',

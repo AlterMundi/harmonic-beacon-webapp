@@ -112,6 +112,7 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /EARLY_BIRDS_ENABLED: \$\{EARLY_BIRDS_ENABLED:-0\}/);
   assert.match(source, /EARLY_BIRDS_FREE_FOR_ALL: \$\{EARLY_BIRDS_FREE_FOR_ALL:-0\}/);
   assert.match(source, /EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: \$\{EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED:-0\}/);
+  assert.match(source, /BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED: \$\{BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED:-0\}/);
   assert.match(source, /NODE_ENV: production/);
   assert.match(source, /preview_db:[\s\S]*internal: true/);
   assert.match(source, /listener_egress:/);
@@ -181,8 +182,8 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   );
   assert.equal(
     (listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length,
-    6,
-    'server plus five sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
+    7,
+    'server plus six sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
   );
   assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location \/_next\/webpack-hmr \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Upgrade \$http_upgrade;[^}]*Connection "upgrade";/s);
@@ -190,7 +191,8 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
   assert.match(app, /limit_req_zone \$binary_remote_addr zone=listener_visual_analysis:1m rate=20r\/s;/);
   assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*limit_req zone=listener_visual_analysis burst=40 nodelay;/s);
-  assert.doesNotMatch(listener, /location = \/api\/listener\/analysis\/frame/);
+  assert.match(listener, /limit_req_zone \$binary_remote_addr zone=listener_public_visual_analysis:1m rate=20r\/s;/);
+  assert.match(listener, /location = \/api\/listener\/analysis\/frame \{[^}]*limit_req zone=listener_public_visual_analysis burst=40 nodelay;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;[^}]*Cache-Control "private, no-store"/s);
   assert.doesNotMatch(app, /proxy_pass http:\/\/127\.0\.0\.1:13000;/);
   assert.match(app, /location = \/early-birds\/home \{\s*return 302 \/;/);
   assert.match(app, /location \/ \{\s*return 404;/);

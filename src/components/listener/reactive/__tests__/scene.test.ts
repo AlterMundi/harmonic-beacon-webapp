@@ -57,6 +57,7 @@ describe('reactive campfire scene', () => {
             density: 1,
             highDetail: 1,
             sensitivity: 3,
+            absoluteFloorDb: -120,
             centerCutPercent: 16,
         });
         const strongLow = scene.rings.find((ring) => ring.harmonicIndex === 2);
@@ -66,7 +67,7 @@ describe('reactive campfire scene', () => {
         expect(quietHigh).toBeDefined();
         expect(quietHigh!.opacity).toBeLessThan(strongLow!.opacity);
         expect(quietHigh!.weight).toBeLessThan(strongLow!.weight);
-        expect(quietHigh!.emphasis).toBeLessThan(absoluteEnergy(absolute[50]));
+        expect(quietHigh!.emphasis).toBeLessThan(absoluteEnergy(absolute[50], -120));
     });
 
     it('settles to a truthful rest state for silence or a fully decayed stop', () => {
@@ -156,18 +157,18 @@ describe('reactive campfire scene', () => {
     it('retains stable defaults in the deterministic fixture', () => {
         expect(DEFAULT_REACTIVE_CAMPFIRE_SETTINGS).toMatchObject({
             sensitivity: 3,
-            absoluteFloorDb: -120,
+            absoluteFloorDb: -70,
             baselineDurationSeconds: 24,
             attackMs: 20,
-            releaseMs: 140,
-            trailSeconds: 0,
+            releaseMs: 220,
+            trailSeconds: 4,
             density: 1,
-            highDetail: 1,
-            centerCutPercent: 4,
+            highDetail: 0.7,
+            centerCutPercent: 7,
             radialSpacingGrowthPercent: 65,
-            zoomPercent: 100,
-            activationTtlSeconds: 8,
-            ribbonWidth: 3,
+            zoomPercent: 165,
+            activationTtlSeconds: 30,
+            ribbonWidth: 2.45,
             palette: 'ember',
             visualizationMode: 'radial-ribbons',
             fftSize: 16_384,

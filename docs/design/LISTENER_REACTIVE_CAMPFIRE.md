@@ -1,8 +1,9 @@
 # Listener reactive field
 
-The disposable Listener staging workbench can opt into a visualization of the
-source that is actually audible. Playback stays on the browser's native HLS and
-HTML media path. The experiment is not exposed by `listen.harmonicbeacon.com`.
+Listener renders a visualization of the source that is actually audible.
+Playback stays on the browser's native HLS and HTML media path. The accepted
+field is enabled on `listen.harmonicbeacon.com`; its technical tuning laboratory
+is hidden by default.
 
 ## Signal contract
 
@@ -33,11 +34,11 @@ HLS maps that position from its seekable live edge. The response contains only
 bounded numeric analysis arrays and no account, cookie, media URL, IP or other
 identity data.
 
-The analysis endpoint exists only on the exact staging host, requires the same
-active lease authority as the HLS manifest, accepts only the bounded audible
-latency window, is edge-rate-limited, returns `no-store`, and is absent from the
-public Listener nginx surface. Decode concurrency is globally bounded and the
-cache retains the complete accepted timestamp window. Failure is visual-only:
+The analysis endpoint exists only on the exact staging and canonical Listener
+hosts, requires the same active lease authority as the HLS manifest, accepts
+only the bounded audible latency window, is independently edge-rate-limited and
+returns `no-store`. Decode concurrency is globally bounded and the cache retains
+the complete accepted timestamp window. Failure is visual-only:
 after four bounded failures the provider hides the field while native playback
 continues. Intro playback clears the frame because a synchronized intro analysis
 stream is not implemented yet; frames resume at the Beacon handoff.
@@ -77,20 +78,22 @@ parameters in this build and remain visibly read-only in the laboratory.
 
 ## Staging and acceptance
 
-The exact staging host exposes the opt-in and parameter panel. Presets export as
-versioned JSON. The current default is the human-selected Radial ribbons Ember
-preset: sensitivity 3, -120 dB floor, 24 s baseline, 20 ms attack, 140 ms release,
-no movement trails, density 1, upper-detail bias 1, center field 4%, outer-spacing
-growth 65%, zoom 100%, activation TTL 8 seconds, ribbon width 3 and FFT 16384.
+The field is on by default. The checkbox and parameter panel are off by default
+on every host. Operators can restore them only on the exact staging host with
+`BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED=1`; the canonical public host never
+exposes them. Presets export as versioned JSON. The accepted Radial ribbons Ember
+default is: sensitivity 3, -70 dB floor, 24 s baseline, 20 ms attack, 220 ms
+release, 4 s whole-ribbon trail, density 1, upper-detail bias 0.7, center field
+7%, outer-spacing growth 65%, zoom 165%, activation TTL 30 seconds, ribbon width
+2.45 and FFT 16384.
 
 The retired client Web Audio diagnostic mode and the older regional fixture have
 no runtime compatibility promise: this is an experimental product before public
 release.
 
-Before public exposure, compare direct and visual modes on Chrome, Firefox,
-Android and iPhone, including ES/EN introduction handoff, Beacon-only, Stop,
-reconnect, headphones, Bluetooth and a 60-minute listen. Confirm that toggling
-and renderer failure preserve the same audio element and audible stream. Record
-server decode latency/cache behavior, client network cadence, CPU, memory and
-frame pacing. `listen.harmonicbeacon.com` remains unchanged until Nico accepts
-both the visual result and absence of acoustic degradation.
+Nico accepted the field and confirmed that intro and Beacon audio remained
+correct before public deployment. Continue the physical matrix on Chrome,
+Firefox, Android and iPhone, including ES/EN introduction handoff, Beacon-only,
+Stop, reconnect, headphones, Bluetooth and a 60-minute listen. Record server
+decode latency/cache behavior, client network cadence, CPU, memory and frame
+pacing.
