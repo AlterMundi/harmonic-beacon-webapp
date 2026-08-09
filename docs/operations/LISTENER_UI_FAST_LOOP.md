@@ -27,7 +27,11 @@ scripts/listener-ui-preview.sh start
 ```
 
 The script refuses the ambiguous combination of checkout plus Free For All.
-Neither switch changes the persistent Listener release or event services.
+Because synthetic login is intentionally disabled under `NODE_ENV=development`,
+this payment rehearsal runs the persistent Listener's exact built image in a
+separate production-mode container on the staging port. Ordinary UI iteration
+continues to use Next development mode. Neither path changes the persistent
+Listener release or event services.
 
 Keep local edits synchronized while iterating:
 
