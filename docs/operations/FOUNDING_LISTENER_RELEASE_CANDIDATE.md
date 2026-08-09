@@ -12,6 +12,24 @@ This is the handoff for a bounded real public test. It does not authorize a
 merge to `main`, a worldwide campaign, paid-provider activation, real charges,
 an event-stack deployment or an acoustic change.
 
+## Status: previous release policy; weekly cutover not yet deployed
+
+Release `20406da` is retained as historical evidence for the prior daily Free
+schedule and one-time welcome policy. It is not an authorization rollback
+target for the planned weekly-Free cutover.
+
+The planned policy is three hours per account per fixed seven-day cycle,
+anchored at first real authorized Free playback, with no base rollover and
+server-time metering. Two devices consume their listening union once; intro and
+Beacon both count; Stop/disconnect are bounded by leases. Active canonical
+membership/invitation and FFA remain unlimited/non-metered. Optional future
+credits are append-only idempotent grants with optional expiry. No weekly
+cutover implementation, migration, validation or deployment is asserted here.
+
+After the additive weekly migration, rollback means stop/kill-switch and
+roll-forward repair. It must never restore the `20406da` daily/welcome
+authorization behavior.
+
 ## Candidate identity
 
 | Artifact | Exact value |

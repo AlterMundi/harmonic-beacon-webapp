@@ -21,9 +21,9 @@ outside scheduled events.
 The first useful release lets a Listener:
 
 1. sign in with a configured Google/Apple provider or a passwordless email link;
-2. use one immediate 30-minute welcome listen, select a recurring two-hour daily
-   Free window, redeem a controlled invitation, or activate a valid paid
-   Founding Listener membership;
+2. use a registered-Free allowance of three hours in a personal, fixed
+   seven-day cycle anchored at the first real Free playback, redeem a controlled
+   invitation, or activate a valid paid Founding Listener membership;
 3. open an authenticated, receive-only listening home;
 4. hear a continuous 24/7 Beacon stream;
 5. optionally begin with one reviewed private intro, using standard private
@@ -55,7 +55,7 @@ change has passed its own audio and operational acceptance.
 | Use deterministic HLS over HTTP | Accepted | Every listener follows one UTC-derived live edge through immutable six-second segments; the approved staging delivery is AAC-LC 320 kbps, 48 kHz stereo and event WebRTC is untouched. |
 | Favor continuity over low latency in the Listener | Accepted | Desktop HLS stays about five segments behind the edge with a 60-second target buffer; Stop and a later Listen rejoin the current configured edge. |
 | Keep intros private | Accepted | Intro progress is device-local. The live stream runs muted underneath and is revealed at the handoff; this is not a realtime mix or crossfader. |
-| Separate ordinary Free from canonical membership | Accepted | Welcome access and recurring Free windows are server-authoritative access layers that never fabricate membership or Purchase; invitations and PayPal/MercadoPago converge on the revocable membership state machine. |
+| Separate ordinary Free from canonical membership | Accepted | Registered Free is a server-authoritative, metered weekly allowance that never fabricates membership or Purchase; canonical memberships/invitations and Free for All remain non-metered. |
 | Preserve the Founder price for life | Accepted | First canonical paid activation grants the opaque account a lifetime right to the USD 2/month founder offer; cancellation ends access but not that price eligibility. |
 | Launch Free before paid providers | Accepted | Human acceptance of the complete Free flow is a hard gate before PayPal or MercadoPago can be enabled. Both providers remain disabled by default. |
 | Defer app-store distribution | Accepted | Google Play and Apple App Store wrappers and billing are post-MVP work; the provider-neutral membership authority must leave room for them without making them a launch dependency. |
@@ -137,9 +137,8 @@ steps are not safe to execute literally.
 - Google and Apple sign-in plus an optional passwordless email fallback through
   an exact, stable Better Auth version and the existing private mail authority.
 - A separate EarlyBird account/session domain.
-- One explicit 30-minute welcome listen, a recurring two-hour daily Free window
-  locked for seven days, one-use signed invitations and canonical paid
-  membership entitlements.
+- Three hours of registered Free listening per personal fixed seven-day cycle,
+  one-use signed invitations and canonical paid membership entitlements.
 - A continuous, monitored stream from the approved long master.
 - One unified transport: Beacon-only or a selected private ES/EN intro followed automatically by the live handoff; Stop controls the whole sequence.
 - The Beacon fades in on every start/restart and stops over a short fade-out where the browser exposes media-element volume.
@@ -675,7 +674,7 @@ event sound and reliability are at least as good as the current path.
 | D11 | Capacity targets 3k committed, 4k expansion and 5k critical at a 450 kbit/s planning budget with 40% headroom. |
 | D12 | All-audiences experience: an adult owns account/payment; no minor profile or minor data. |
 | D13 | Release sequence is Free acceptance first, then separately approved PayPal/MercadoPago activation; Google Play/App Store wrappers and billing are post-MVP. |
-| D14 | Ordinary Free requires Listener registration, offers one explicit 30-minute first listen, then grants one recurring two-hour daily wall-clock window locked for rolling seven days; the server resolves IANA/DST boundaries and caps leases. Founder membership grants anytime access, while the operator Free for All override remains independent. |
+| D14 | Ordinary Free requires Listener registration and grants three hours per personal fixed seven-day cycle. The cycle begins at the first real authorized Free playback, has no base rollover, is calculated from server time, and meters the union of the account's active listening leases once. Intros and Beacon count; Stop, disconnect and lease expiry bound consumption. Active canonical membership/invitation and the Free for All override are unlimited and non-metered. |
 
 ## 16. Card map
 
@@ -710,6 +709,10 @@ its own explicit approval.
   page without affecting event login.
 - Membership denial fails closed when canonical commerce state is missing or
   invalid; existing healthy playback gets only the explicitly agreed grace.
+- The weekly-Free cutover is forward-only after its additive migration: an
+  incident response stops Listener/uses the kill switch and rolls forward a
+  repair. It never restores the retired daily-schedule or welcome-access
+  authorization rules.
 - No secret, provider token, raw webhook payload with PII or customer record is
   committed or logged publicly.
 - No synthetic test writes to real participant or payment data.

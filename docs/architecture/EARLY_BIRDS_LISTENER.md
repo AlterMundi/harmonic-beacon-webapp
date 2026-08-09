@@ -111,53 +111,52 @@ magic-link verification URL is excluded from HTTP and HTTPS access logs and
 staging redirects it once to the canonical host, because its query carries the
 one-use authentication token.
 
-## Ordinary Free listening window
+## Registered Free weekly allowance
 
-Registration does not fabricate a commerce membership. A signed-in account
-without current canonical membership and without a previously selected Free
-schedule may explicitly start one 30-minute first listen. Registration, OAuth
-callback, page view, Free for All and canonical membership never create or
-consume it. Its durable one-row marker is account-bound and cannot be reset by
-retry, refresh or a second device; leases and manifests are capped at the exact
-server-side end.
+Registration does not fabricate a commerce membership, but it makes a signed-in
+account eligible for the base Free allowance: **three hours in a personal fixed
+seven-day cycle**. The cycle is created only by the first real, server-authorized
+Free playback. Registration, OAuth callback, page view, lease preparation and a
+second device never start it. The cycle does not follow a timezone or wall-clock
+schedule.
 
-The same account may instead select one recurring local
-wall-clock start and listen for two real hours each day. The first selection is
-either **Listen free now**, derived from server time in the validated browser
-IANA zone, or an explicit local time. The selection is account-bound and may be
-changed again at or after `selected_at + 7 days`.
-
-`early_bird_free_schedules` is a separate access layer from
-`early_bird_membership_projections`. It stores only account ID, canonical IANA
-zone, local start minute, selection/cooldown instants, idempotency request ID and
-revision. It never writes provider, offer, price, Purchase or membership state.
+The server is the sole clock and meter. A cycle records its start/end, the base
+allowance and metered use; it begins at first playback and ends exactly seven
+days later. Unused base time never rolls into the next cycle. While at least one
+account lease is genuinely listening, the account consumes one shared timeline,
+not one allowance per device: two simultaneous devices consume the union once.
+A selected private intro and the Beacon both count, because both are part of
+listening. Stop and explicit idle presence stop metering; an unreported
+disconnect can consume only through the bounded active-lease horizon.
 
 Authorization resolves in this order:
 
-1. a time-valid canonical membership grants its canonical boundary or anytime
-   access;
-2. otherwise the current recurring Free window grants access until its exact
-   end;
-3. otherwise an already-started first listen grants access until its exact
-   30-minute end;
-4. otherwise access fails closed.
+1. Free for All is anonymous, unlimited and non-metered while its route-level
+   override is enabled;
+2. a time-valid canonical membership or invitation is unlimited and non-metered;
+3. otherwise a registered account may start or resume its current Free cycle
+   while server-calculated time remains;
+4. an exhausted cycle fails closed until its exact seven-day end, when a new
+   first real playback may start the next cycle.
 
-Starting the first listen requires a same-origin authenticated idempotent POST.
-It is available only before a recurring schedule exists. Selecting the schedule
-first does not create or consume the first-listen row. The operational Free for
-All override rejects first-listen activation, so public access never spends an
-account's welcome session.
+Lease issuance, heartbeat and manifest authorization calculate/cap the same
+server-side remaining time. A browser receives a server timestamp and remaining
+allowance only for presentation; it may tick a display between revalidations but
+cannot authorize itself. Its active countdown is reconciled from server state on
+the bounded heartbeat/revalidation path and at exhaustion.
 
-The server resolves wall-clock dates with `Intl` timezone data. A fall-back
-ambiguity uses the first occurrence; a spring-forward nonexistent minute moves
-to the first real local minute after it. Window duration is always 120 real
-minutes. Stream leases, signed manifests and segment signatures are capped at
-the resulting boundary. Changing an unlocked schedule evicts existing leases
-so every device must reauthorize. Browser time is presentation/input only and
-never authorizes a request.
+Future discretionary Free credits are distinct append-only, idempotent grants.
+Each grant has an opaque idempotency identity, a fixed amount and an optional
+expiry; it is never a mutable replacement for the base cycle or membership.
+The policy for applying an unexpired grant is server-side and must be explicit
+when such grants are implemented.
 
-The operator `EARLY_BIRDS_FREE_FOR_ALL=1` override remains route-level,
-anonymous and independent. It creates neither a Free schedule nor membership.
+`early_bird_free_schedules` and `early_bird_welcome_accesses` remain retained
+legacy tables for migration/audit history only. The weekly-cutover readers do
+not authorize them, do not create new rows in them, and do not expose their
+schedule, timezone or welcome concepts in the Listener UI. The cutover is
+forward-only: after its additive migration, rollback is stop/kill-switch and a
+roll-forward repair, never re-enabling those retired authorization paths.
 
 The optional synthetic-login API creates a clearly marked, source-null local projection only when
 both `EARLY_BIRDS_TEST_ACCESS_ENABLED=1` and a separate 32+ character secret are configured. Every

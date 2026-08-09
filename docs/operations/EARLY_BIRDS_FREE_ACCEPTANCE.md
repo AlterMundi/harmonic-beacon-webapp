@@ -5,11 +5,31 @@ public test at `https://listen.harmonicbeacon.com/`. It does not authorize paid
 checkout, a worldwide campaign, an app-store release, a merge to `main`, an
 event-stack change or an acoustic change.
 
+## Planned weekly-Free cutover — not yet deployed
+
+This is the authoritative planned policy, not evidence of a release, test or
+deployment. A registered Free account receives three hours per personal fixed
+seven-day cycle, anchored at its first real authorized playback. Base time does
+not roll over. The server owns time and remaining allowance; two devices meter
+the union of active listening once, and both private intros and Beacon count.
+Stop/idle presence stops metering, while an unreported disconnect is bounded by
+the lease horizon. Active canonical membership/invitation and Free for All are
+unlimited and non-metered. Future discretionary credits, if added, are
+append-only idempotent grants with optional expiry.
+
+The cutover retires schedule/timezone and welcome access from authorization and
+UI. Its additive migration retains the old tables for audit/history only. Once
+migrated, rollback is stop/kill-switch followed by a roll-forward repair; it
+must never reactivate the older daily-window or welcome authorization.
+
+No weekly-Free acceptance has been recorded yet. The remainder of this document
+is retained historical evidence for the previous release policy.
+
 Do not paste account details, OAuth material, invitation tokens, cookies or
 temporary operator values into GitHub or test notes. Record only the tester,
 device/browser, result and a non-sensitive symptom.
 
-## Fixed candidate
+## Historical fixed candidate — previous daily/welcome policy
 
 - Listener application: `dad29d4dc5010603a5bbc7ed309c8f78e7c0f384`
 - Listener schema: `20260807100000_early_bird_welcome_access`

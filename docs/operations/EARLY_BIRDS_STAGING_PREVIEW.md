@@ -1,6 +1,22 @@
 # EarlyBirds isolated staging runtime
 
-## 2026-08-08 public Listener convergence
+## Planned weekly-Free cutover — not yet deployed
+
+The staging evidence below, including release `20406da`, records the prior
+daily-schedule and welcome-access policy. It does not prove or deploy the
+planned weekly-Free cutover.
+
+The planned policy is three hours per registered account in a fixed seven-day
+cycle, anchored at first real authorized playback, with no base rollover and
+server-time metering. Concurrent devices consume their listening union once;
+intro and Beacon count; Stop/disconnect are bounded by leases. Active canonical
+membership/invitation and FFA are unlimited/non-metered. Any future discretionary
+credit is append-only, idempotent and optionally expiring. Legacy schedule and
+welcome tables remain retained but retired from authorization. After migration,
+rollback is stop/kill-switch and a roll-forward repair, never activation of the
+old authorization rules.
+
+## 2026-08-08 public Listener convergence (historical previous release)
 
 The isolated Listener runs application SHA
 `20406dae49e8cbabba38d0cb099d8f400276113e`, image
