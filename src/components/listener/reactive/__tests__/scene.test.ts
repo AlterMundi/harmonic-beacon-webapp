@@ -1,0 +1,149 @@
+import { describe, expect, it } from 'vitest';
+
+import type { HarmonicAnalysisFrame } from '@/lib/listener/analysis/types';
+
+import {
+    absoluteEnergy,
+    buildReactiveCampfireScene,
+    MAX_RENDERED_HARMONICS,
+    seededUnit,
+    smoothVisualDb,
+    type ReactiveTrailHistory,
+} from '../scene';
+import { DEFAULT_REACTIVE_CAMPFIRE_SETTINGS } from '../settings';
+
+function frameWith(
+    absolute: number[],
+    delta: number[] = absolute.map(() => 0),
+    patch: Partial<HarmonicAnalysisFrame> = {},
+): HarmonicAnalysisFrame {
+    return {
+        schemaVersion: 1,
+        capturedAtMs: 10_000,
+        sourceTimeSeconds: 10,
+        overallDb: -26,
+        harmonicAbsoluteDb: Float32Array.from(absolute),
+        harmonicDeltaDb: Float32Array.from(delta),
+        spectralEnvelopeDb: new Float32Array(24),
+        stereoBalance: 0,
+        stereoWidth: 0.5,
+        confidence: 1,
+        sourceKind: 'beacon',
+        ...patch,
+    } as HarmonicAnalysisFrame;
+}
+
+describe('reactive campfire scene', () => {
+    it('is deterministic and derives geometry only from the measured frame and settings', () => {
+        const absolute = Array.from({ length: 80 }, (_, index) => -24 - index * 0.7);
+        const delta = Array.from({ length: 80 }, (_, index) => Math.sin(index) * 3);
+        const input = frameWith(absolute, delta);
+
+        expect(buildReactiveCampfireScene(input)).toEqual(buildReactiveCampfireScene(input));
+        expect(seededUnit(42, 7)).toBe(seededUnit(42, 7));
+        expect(seededUnit(42, 7)).not.toBe(seededUnit(43, 7));
+    });
+
+    it('keeps absolute energy authoritative when a quiet high harmonic varies strongly', () => {
+        const absolute = Array.from({ length: 64 }, () => -60);
+        const delta = Array.from({ length: 64 }, () => 0);
+        absolute[2] = -24;
+        absolute[50] = -82;
+        delta[2] = 0;
+        delta[50] = 9;
+
+        const scene = buildReactiveCampfireScene(frameWith(absolute, delta), {
+            density: 1,
+            highDetail: 1,
+            sensitivity: 3,
+        });
+        const strongLow = scene.rings.find((ring) => ring.harmonicIndex === 2);
+        const quietHigh = scene.filaments.find((filament) => filament.harmonicIndex === 50);
+
+        expect(strongLow).toBeDefined();
+        expect(quietHigh).toBeDefined();
+        expect(quietHigh!.opacity).toBeLessThan(strongLow!.opacity);
+        expect(quietHigh!.weight).toBeLessThan(strongLow!.weight);
+        expect(quietHigh!.emphasis).toBeLessThan(absoluteEnergy(absolute[50]));
+    });
+
+    it('settles to a truthful rest state for silence or a fully decayed stop', () => {
+        const silence = frameWith(
+            Array.from({ length: 64 }, () => Number.NEGATIVE_INFINITY),
+            undefined,
+            { overallDb: Number.NEGATIVE_INFINITY, confidence: 0 },
+        );
+        const silentScene = buildReactiveCampfireScene(silence);
+        const stoppedScene = buildReactiveCampfireScene(
+            frameWith(Array.from({ length: 64 }, () => -24)),
+            {},
+            new Map(),
+            0,
+        );
+
+        expect(silentScene.core.opacity).toBe(0);
+        expect(silentScene.rings.every((ring) => ring.opacity === 0)).toBe(true);
+        expect(silentScene.filaments.every((filament) => filament.opacity === 0)).toBe(true);
+        expect(stoppedScene.confidence).toBe(0);
+        expect(stoppedScene.core.radius).toBe(0);
+    });
+
+    it('keeps upper harmonics individually addressable with short measured trails', () => {
+        const absolute = Array.from({ length: 72 }, () => -48);
+        const history = new Map([
+            [50, [
+                { capturedAtMs: 9_000, absoluteDb: -54, deltaDb: -2 },
+                { capturedAtMs: 9_500, absoluteDb: -49, deltaDb: 1 },
+                { capturedAtMs: 10_000, absoluteDb: -44, deltaDb: 4 },
+            ]],
+        ]) as ReactiveTrailHistory;
+        const scene = buildReactiveCampfireScene(frameWith(absolute), {
+            density: 1,
+            highDetail: 1,
+            trailSeconds: 2,
+        }, history);
+        const upper = scene.filaments.filter((filament) => filament.tier === 'high');
+
+        expect(new Set(upper.map((filament) => filament.harmonicIndex)).size).toBe(upper.length);
+        expect(upper.find((filament) => filament.harmonicIndex === 50)?.trail).toHaveLength(3);
+        expect(upper.every((filament) => Number.isFinite(filament.angle))).toBe(true);
+    });
+
+    it('bounds rendered entities even if a provider supplies a larger bank', () => {
+        const frame = frameWith(Array.from({ length: 600 }, () => -40));
+        const scene = buildReactiveCampfireScene(frame, { density: 1, highDetail: 1 });
+
+        expect(scene.rings.length + scene.filaments.length).toBeLessThanOrEqual(MAX_RENDERED_HARMONICS);
+        expect(Math.max(...scene.filaments.map((filament) => filament.harmonicIndex)))
+            .toBe(599);
+    });
+
+    it('applies visual attack and release without changing the measured frame', () => {
+        const attack = smoothVisualDb(-80, -20, 100, 100, 1_000);
+        const release = smoothVisualDb(-20, -80, 100, 100, 1_000);
+
+        expect(attack).toBeGreaterThan(-43);
+        expect(release).toBeGreaterThan(-30);
+        expect(smoothVisualDb(-20, Number.NEGATIVE_INFINITY, 100, 100, 1_000))
+            .toBe(Number.NEGATIVE_INFINITY);
+    });
+
+    it('uses the approved 30 fps ceiling and a static low-rate accessibility policy', async () => {
+        const { resolveReactiveRenderPolicy } = await import('../render-policy');
+
+        expect(resolveReactiveRenderPolicy({ reducedMotion: false, saveData: false }))
+            .toMatchObject({ conservative: false, frameIntervalMs: 1_000 / 30, maxDevicePixelRatio: 1.5 });
+        expect(resolveReactiveRenderPolicy({ reducedMotion: true, saveData: false }))
+            .toMatchObject({ conservative: true, frameIntervalMs: 500 });
+        expect(resolveReactiveRenderPolicy({ reducedMotion: false, saveData: true }))
+            .toMatchObject({ conservative: true, frameIntervalMs: 500 });
+    });
+
+    it('retains stable defaults in the deterministic fixture', () => {
+        expect(DEFAULT_REACTIVE_CAMPFIRE_SETTINGS).toMatchObject({
+            absoluteFloorDb: -92,
+            density: 0.72,
+            fftSize: 16_384,
+        });
+    });
+});
