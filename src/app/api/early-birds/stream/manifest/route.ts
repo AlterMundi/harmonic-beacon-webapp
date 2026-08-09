@@ -38,23 +38,32 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         });
     }
     const leaseId = request.nextUrl.searchParams.get('leaseId') ?? '';
+    const leaseGeneration = Number(request.nextUrl.searchParams.get('leaseGeneration'));
     if (!/^[0-9a-f-]{36}$/i.test(leaseId)) {
         return NextResponse.json({ error: 'Invalid lease.' }, {
             status: 400,
             headers: { 'Cache-Control': 'private, no-store' },
         });
     }
+    if (!Number.isSafeInteger(leaseGeneration) || leaseGeneration < 1) {
+        return NextResponse.json({ error: 'Invalid lease generation.' }, {
+            status: 400,
+            headers: { 'Cache-Control': 'private, no-store' },
+        });
+    }
 
     try {
-        const now = new Date();
-        const lease = freeForAll
-            ? await authorizeFreeForAllStreamLease(leaseId, now)
-            : await authorizeEarlyBirdStreamLease(session!.user.id, leaseId, now);
+        const freeForAllLease = freeForAll
+            ? await authorizeFreeForAllStreamLease(leaseId, leaseGeneration)
+            : null;
+        const authorization = freeForAll
+            ? { lease: freeForAllLease!, serverNow: new Date() }
+            : await authorizeEarlyBirdStreamLease(session!.user.id, leaseId, leaseGeneration);
         const config = earlyBirdOriginConfig();
         const upstreamUrl = signedEarlyBirdOriginManifestUrl({
             config,
-            leaseExpiresAt: lease.expiresAt,
-            now,
+            leaseExpiresAt: authorization.lease.expiresAt,
+            now: authorization.serverNow,
         });
         const upstream = await fetch(upstreamUrl, {
             method: 'GET',

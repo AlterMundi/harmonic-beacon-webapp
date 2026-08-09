@@ -5,14 +5,14 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const MEDIA_FILE_SHA256 = {
-    // Re-pinned after the accepted radio-keyboard accessibility-only refactor
-    // in PR #252. Playback, media sources and signal processing were untouched.
+    // Authorization handlers were re-pinned for personal quota enforcement;
+    // the player, media sources and signal processing remain independently pinned.
     'src/components/early-birds/ListenerPlayer.tsx': 'fdf787402e94cc97a3b29b9291dc63e52b7a859d1ff9e9c505c99fe3aba720b1',
-    'src/lib/early-birds/stream.ts': 'e386413874e5ad799e17607e2b030851cc7baadea48161191c7daecb45183bea',
+    'src/lib/early-birds/stream.ts': '96a2d9fe798591833327631b59a73a5b2fc5ca06be7081945a0b07450970da84',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
-    'src/app/api/early-birds/stream/lease/route.ts': 'd858affc655c6df6607e76470508a59c3ebd442744bc12e5da334729fcb5d660',
-    'src/app/api/early-birds/stream/manifest/route.ts': 'f149e9ed081579d75c0d588f7e6a75663b449c4baf28658418014a8e0c87a0de',
-    'src/app/api/early-birds/stream/heartbeat/route.ts': '316a2690db50472b67bd0251d995e6d3375c710030ccf30e460e92d9ade1a407',
+    'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',
+    'src/app/api/early-birds/stream/manifest/route.ts': '56d8266fd8144c1e3ee13b168115f0a814a1da9f0a9f2db8b33e33facbba094e',
+    'src/app/api/early-birds/stream/heartbeat/route.ts': '7fb7dfce9b35f42ce77da14e2f5247b13d2c170bc946afa293df4405805d7680',
     'src/app/api/early-birds/drop-ins/[language]/route.ts': 'c905ba0ce68aa22448a2f41c9ed9563473dc097f0284e245421dae787cd30d94',
 } as const;
 

@@ -13,8 +13,14 @@ const prisma = vi.hoisted(() => ({
     $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     earlyBirdMembershipProjection: { findUnique: vi.fn() },
 }));
+const quota = vi.hoisted(() => ({
+    assertListenerQuotaPolicyCompatible: vi.fn(),
+    listenerQuotaDatabaseNow: vi.fn(),
+    settleLockedEarlyBirdQuota: vi.fn(),
+}));
 
 vi.mock('@/lib/db', () => ({ prisma }));
+vi.mock('../quota', () => quota);
 
 import {
     applyMembershipProjection,
@@ -72,6 +78,8 @@ describe('EarlyBird membership read model', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         tx.$queryRaw.mockResolvedValue([{ id: 'listener-1' }]);
+        quota.listenerQuotaDatabaseNow.mockResolvedValue(NOW);
+        quota.settleLockedEarlyBirdQuota.mockResolvedValue({});
     });
 
     it('fails closed for missing/ended access and respects paid/grace horizons', () => {

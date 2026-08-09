@@ -1,71 +1,61 @@
-import type {
-    EarlyBirdFreeSchedule,
-    EarlyBirdMembershipProjection,
-    EarlyBirdWelcomeAccess,
-} from '@prisma/client';
+import type { EarlyBirdMembershipProjection } from '@prisma/client';
 
-import { prisma } from '@/lib/db';
-
-import { freeWindowState, type EarlyBirdFreeWindowState } from './free-window';
 import { membershipAccessDecision, type EarlyBirdAccessDecision } from './membership';
-import { welcomeAccessState, type EarlyBirdWelcomeAccessState } from './welcome-access';
+import {
+    serializeEarlyBirdQuotaSnapshot,
+    settleLockedEarlyBirdQuota,
+    type EarlyBirdQuotaSnapshot,
+    type SerializedEarlyBirdQuotaSnapshot,
+    withLockedQuotaTransaction,
+} from './quota';
 
 export type EarlyBirdListeningAccess = {
     allowed: boolean;
-    kind: 'membership' | 'free-window' | 'welcome' | 'denied';
+    kind: 'membership' | 'free-quota' | 'denied';
     allowedUntil: Date | null;
     membership: EarlyBirdAccessDecision;
-    freeWindow: EarlyBirdFreeWindowState;
-    welcome: EarlyBirdWelcomeAccessState;
+    quota: EarlyBirdQuotaSnapshot | null;
+    serverNow: Date;
+};
+
+export type SerializedEarlyBirdListeningAccess = {
+    allowed: boolean;
+    kind: EarlyBirdListeningAccess['kind'];
+    allowedUntil: string | null;
+    quota: SerializedEarlyBirdQuotaSnapshot | null;
 };
 
 function membershipBoundary(projection: EarlyBirdMembershipProjection): Date | null {
     if (projection.state === 'GRACE') return projection.graceUntil;
-    if (projection.state === 'CANCELLED_PENDING_END') return projection.paidThrough;
     return projection.paidThrough;
 }
 
 export function listeningAccessDecision(
     projection: EarlyBirdMembershipProjection | null,
-    schedule: EarlyBirdFreeSchedule | null,
+    quota: EarlyBirdQuotaSnapshot,
     now = new Date(),
-    welcomeAccess: EarlyBirdWelcomeAccess | null = null,
 ): EarlyBirdListeningAccess {
     const membership = membershipAccessDecision(projection, now);
-    const freeWindow = freeWindowState(schedule, now);
-    const welcome = welcomeAccessState(
-        welcomeAccess,
-        now,
-        !membership.allowed && schedule === null,
-    );
     if (membership.allowed && membership.projection) {
         return {
             allowed: true,
             kind: 'membership',
             allowedUntil: membershipBoundary(membership.projection),
             membership,
-            freeWindow,
-            welcome,
+            quota: null,
+            serverNow: now,
         };
     }
-    if (freeWindow.active && freeWindow.activeEnd) {
+    if (quota.remainingMs > 0) {
         return {
             allowed: true,
-            kind: 'free-window',
-            allowedUntil: freeWindow.activeEnd,
+            kind: 'free-quota',
+            // Predicted exhaustion is truthful only while the union meter is
+            // active. An idle account has quota, not a wall-clock window.
+            allowedUntil: quota.activelyConsuming ? quota.exhaustsAt : null,
             membership,
-            freeWindow,
-            welcome,
-        };
-    }
-    if (welcome.active && welcome.endsAt) {
-        return {
-            allowed: true,
-            kind: 'welcome',
-            allowedUntil: welcome.endsAt,
-            membership,
-            freeWindow,
-            welcome,
+            quota,
+            serverNow: now,
         };
     }
     return {
@@ -73,19 +63,33 @@ export function listeningAccessDecision(
         kind: 'denied',
         allowedUntil: null,
         membership,
-        freeWindow,
-        welcome,
+        quota,
+        serverNow: now,
     };
 }
 
+export function serializeEarlyBirdListeningAccess(
+    access: EarlyBirdListeningAccess,
+): SerializedEarlyBirdListeningAccess {
+    return {
+        allowed: access.allowed,
+        kind: access.kind,
+        allowedUntil: access.allowedUntil?.toISOString() ?? null,
+        quota: access.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null,
+    };
+}
+
+/**
+ * Access reconciliation is serialized with lease presence changes. Production
+ * callers always use PostgreSQL time through withQuotaTransaction; fake time
+ * remains confined to the pure decision/ledger functions.
+ */
 export async function getEarlyBirdListeningAccess(
     accountId: string,
-    now = new Date(),
 ): Promise<EarlyBirdListeningAccess> {
-    const [projection, schedule, welcome] = await Promise.all([
-        prisma.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
-        prisma.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
-        prisma.earlyBirdWelcomeAccess.findUnique({ where: { accountId } }),
-    ]);
-    return listeningAccessDecision(projection, schedule, now, welcome);
+    return withLockedQuotaTransaction(accountId, async (tx, now) => {
+        const projection = await tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } });
+        const quota = await settleLockedEarlyBirdQuota({ tx, accountId, projection, now });
+        return listeningAccessDecision(projection, quota, now);
+    });
 }

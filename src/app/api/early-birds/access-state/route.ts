@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getEarlyBirdListeningAccess } from '@/lib/early-birds/access';
+import {
+    getEarlyBirdListeningAccess,
+    serializeEarlyBirdListeningAccess,
+} from '@/lib/early-birds/access';
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
 import { earlyBirdsEnabled, earlyBirdsUnavailableResponse } from '@/lib/early-birds/enabled';
-import { serializeFreeWindowState } from '@/lib/early-birds/free-window';
-import { serializeWelcomeAccessState } from '@/lib/early-birds/welcome-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,14 +20,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     try {
         const access = await getEarlyBirdListeningAccess(session.user.id);
         return NextResponse.json({
-            serverNow: new Date().toISOString(),
-            access: {
-                allowed: access.allowed,
-                kind: access.kind,
-                allowedUntil: access.allowedUntil?.toISOString() ?? null,
-            },
-            freeWindow: serializeFreeWindowState(access.freeWindow),
-            welcome: serializeWelcomeAccessState(access.welcome),
+            serverNow: access.serverNow.toISOString(),
+            access: serializeEarlyBirdListeningAccess(access),
         }, { headers: PRIVATE_HEADERS });
     } catch {
         return NextResponse.json({ error: 'Listener access unavailable.' }, {

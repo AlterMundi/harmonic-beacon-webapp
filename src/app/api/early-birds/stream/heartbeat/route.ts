@@ -10,6 +10,7 @@ import {
 import {
     EarlyBirdAccessDeniedError,
     EarlyBirdLeaseInactiveError,
+    EarlyBirdLeaseRefreshRequiredError,
     heartbeatFreeForAllStreamLease,
     heartbeatEarlyBirdStreamLease,
 } from '@/lib/early-birds/stream';
@@ -29,6 +30,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     let leaseId: string;
+    let leaseGeneration: number;
+    let presenceSequence: number;
     let intent: 'play' | 'prepare';
     let presence: 'IDLE' | 'LISTENING';
     try {
@@ -36,8 +39,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             leaseId?: unknown;
             intent?: unknown;
             presence?: unknown;
+            leaseGeneration?: unknown;
+            presenceSequence?: unknown;
         };
         leaseId = typeof body.leaseId === 'string' ? body.leaseId : '';
+        leaseGeneration = typeof body.leaseGeneration === 'number' ? body.leaseGeneration : 0;
+        presenceSequence = typeof body.presenceSequence === 'number' ? body.presenceSequence : -1;
         intent = body.intent === 'prepare' ? 'prepare' : 'play';
         presence = body.presence === 'idle'
             ? 'IDLE'
@@ -52,6 +59,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!/^[0-9a-f-]{36}$/i.test(leaseId)) {
         return NextResponse.json({ error: 'Invalid lease.' }, { status: 400 });
     }
+    if (!Number.isSafeInteger(leaseGeneration) || leaseGeneration < 1
+        || !Number.isSafeInteger(presenceSequence) || presenceSequence < 0) {
+        return NextResponse.json({
+            error: 'Lease refresh required.',
+            reason: 'refresh_required',
+        }, { status: 409 });
+    }
 
     try {
         const macroRegion = await resolveListenerMacroRegion(clientAddress(request.headers));
@@ -59,6 +73,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const grant = freeForAll
             ? await heartbeatFreeForAllStreamLease(
                 leaseId,
+                leaseGeneration,
+                presenceSequence,
                 undefined,
                 undefined,
                 reportedPresence,
@@ -66,12 +82,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             : await heartbeatEarlyBirdStreamLease(
                 session!.user.id,
                 leaseId,
+                leaseGeneration,
+                presenceSequence,
                 undefined,
                 undefined,
                 intent === 'play',
                 reportedPresence,
             );
         return NextResponse.json({
+            serverNow: grant.serverNow.toISOString(),
+            accessKind: grant.accessKind,
+            quota: grant.quota,
+            leaseGeneration: grant.leaseGeneration,
+            presenceSequence: grant.presenceSequence,
             leaseExpiresAt: grant.leaseExpiresAt.toISOString(),
             stream: {
                 manifestUrl: grant.stream.manifestUrl,
@@ -79,6 +102,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             },
         });
     } catch (error) {
+        if (error instanceof EarlyBirdLeaseRefreshRequiredError) {
+            return NextResponse.json({
+                error: 'Lease refresh required.',
+                reason: 'refresh_required',
+            }, { status: 409 });
+        }
         if (error instanceof EarlyBirdLeaseInactiveError) {
             const reason = error.reason === 'evicted'
                 ? 'displaced'

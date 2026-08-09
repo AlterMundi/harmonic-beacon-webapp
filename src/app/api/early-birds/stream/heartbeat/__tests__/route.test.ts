@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
         }
     },
     AccessDenied: class extends Error {},
+    RefreshRequired: class extends Error {},
 }));
 
 vi.mock('@/lib/early-birds/auth', () => ({
@@ -21,6 +22,10 @@ vi.mock('@/lib/early-birds/stream', () => ({
     heartbeatFreeForAllStreamLease: mocks.heartbeatFreeForAllStreamLease,
     EarlyBirdLeaseInactiveError: mocks.LeaseInactive,
     EarlyBirdAccessDeniedError: mocks.AccessDenied,
+    EarlyBirdLeaseRefreshRequiredError: mocks.RefreshRequired,
+}));
+vi.mock('@/lib/listener/presence', () => ({
+    resolveListenerMacroRegion: vi.fn().mockResolvedValue('UNKNOWN'),
 }));
 
 import { POST } from '../route';
@@ -31,7 +36,13 @@ function request(intent?: 'play' | 'prepare', presence?: 'idle' | 'listening') {
     return new NextRequest('https://listener.example.test/api/early-birds/stream/heartbeat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ leaseId: LEASE_ID, intent, presence }),
+        body: JSON.stringify({
+            leaseId: LEASE_ID,
+            leaseGeneration: 2,
+            presenceSequence: 3,
+            intent,
+            presence,
+        }),
     });
 }
 
@@ -68,6 +79,11 @@ describe('EarlyBird stream heartbeat route', () => {
 
     it('returns a renewed same-origin grant for an active lease', async () => {
         mocks.heartbeatEarlyBirdStreamLease.mockResolvedValue({
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
+            accessKind: 'free-quota',
+            quota: { policy: 'personal-7-day-v1', status: 'listening' },
+            leaseGeneration: 2,
+            presenceSequence: 3,
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             stream: {
                 manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`,
@@ -80,7 +96,7 @@ describe('EarlyBird stream heartbeat route', () => {
             stream: { manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}` },
         });
         expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
-            'listener-1', LEASE_ID, undefined, undefined, true,
+            'listener-1', LEASE_ID, 2, 3, undefined, undefined, true,
             { state: 'LISTENING', macroRegion: 'UNKNOWN' },
         );
     });
@@ -89,6 +105,11 @@ describe('EarlyBird stream heartbeat route', () => {
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
         mocks.currentEarlyBirdSession.mockResolvedValue(null);
         mocks.heartbeatFreeForAllStreamLease.mockResolvedValue({
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
+            accessKind: 'free-for-all',
+            quota: null,
+            leaseGeneration: 2,
+            presenceSequence: 3,
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             stream: {
                 manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`,
@@ -99,6 +120,8 @@ describe('EarlyBird stream heartbeat route', () => {
         expect((await POST(request())).status).toBe(200);
         expect(mocks.heartbeatFreeForAllStreamLease).toHaveBeenCalledWith(
             LEASE_ID,
+            2,
+            3,
             undefined,
             undefined,
             { state: 'LISTENING', macroRegion: 'UNKNOWN' },
@@ -109,6 +132,11 @@ describe('EarlyBird stream heartbeat route', () => {
 
     it('renews a prepared source without promoting its eviction priority', async () => {
         mocks.heartbeatEarlyBirdStreamLease.mockResolvedValue({
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
+            accessKind: 'free-quota',
+            quota: { policy: 'personal-7-day-v1', status: 'available' },
+            leaseGeneration: 2,
+            presenceSequence: 3,
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             stream: {
                 manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`,
@@ -118,13 +146,18 @@ describe('EarlyBird stream heartbeat route', () => {
 
         expect((await POST(request('prepare', 'idle'))).status).toBe(200);
         expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
-            'listener-1', LEASE_ID, undefined, undefined, false,
+            'listener-1', LEASE_ID, 2, 3, undefined, undefined, false,
             { state: 'IDLE', macroRegion: 'UNKNOWN' },
         );
     });
 
     it('does not let an unknown presence value manufacture listening state', async () => {
         mocks.heartbeatEarlyBirdStreamLease.mockResolvedValue({
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
+            accessKind: 'free-quota',
+            quota: { policy: 'personal-7-day-v1', status: 'available' },
+            leaseGeneration: 2,
+            presenceSequence: 3,
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             stream: {
                 manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`,
@@ -138,6 +171,8 @@ describe('EarlyBird stream heartbeat route', () => {
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({
                     leaseId: LEASE_ID,
+                    leaseGeneration: 2,
+                    presenceSequence: 3,
                     intent: 'prepare',
                     presence: 'radiant',
                 }),
@@ -146,7 +181,7 @@ describe('EarlyBird stream heartbeat route', () => {
 
         expect((await POST(malformedPresence)).status).toBe(200);
         expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
-            'listener-1', LEASE_ID, undefined, undefined, false,
+            'listener-1', LEASE_ID, 2, 3, undefined, undefined, false,
             { state: 'IDLE', macroRegion: 'UNKNOWN' },
         );
     });

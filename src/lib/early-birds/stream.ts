@@ -1,9 +1,20 @@
 import { createHmac } from 'node:crypto';
 
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import { listeningAccessDecision } from './access';
+import {
+    listeningAccessDecision,
+    type EarlyBirdListeningAccess,
+} from './access';
+import {
+    lockEarlyBirdQuotaAccount,
+    serializeEarlyBirdQuotaSnapshot,
+    settleLockedEarlyBirdQuota,
+    withQuotaTransaction,
+    withLockedQuotaTransaction,
+    type SerializedEarlyBirdQuotaSnapshot,
+} from './quota';
 
 export const EARLY_BIRD_MAX_STREAM_DEVICES = 2;
 export const EARLY_BIRD_LEASE_TTL_MS = 3 * 60 * 1000;
@@ -27,6 +38,7 @@ const EARLY_BIRD_FREE_FOR_ALL_ACCOUNT = {
 export type StreamUrlIssueRequest = {
     accountId: string;
     leaseId: string;
+    leaseGeneration: number;
     issuedAt: Date;
     leaseExpiresAt: Date;
 };
@@ -54,7 +66,10 @@ class EnvironmentManifestIssuer implements EarlyBirdStreamUrlIssuer {
         // stable same-origin URL to the browser. The route signs and refreshes
         // the upstream manifest on every HLS poll.
         earlyBirdOriginConfig();
-        const query = new URLSearchParams({ leaseId: request.leaseId });
+        const query = new URLSearchParams({
+            leaseId: request.leaseId,
+            leaseGeneration: String(request.leaseGeneration),
+        });
         return {
             manifestUrl: `${EARLY_BIRD_LEASE_MANIFEST_PATH}?${query}`,
             expiresAt: request.leaseExpiresAt,
@@ -93,9 +108,14 @@ export function earlyBirdDeviceDigest(deviceId: string, pepper = devicePepper())
 
 export type LeaseAcquisition = {
     leaseId: string;
+    leaseGeneration: number;
+    presenceSequence: number;
     leaseExpiresAt: Date;
     evictedLeaseId: string | null;
     stream: StreamUrlGrant;
+    serverNow: Date;
+    accessKind: EarlyBirdListeningAccess['kind'] | 'free-for-all';
+    quota: SerializedEarlyBirdQuotaSnapshot | null;
 };
 
 export class EarlyBirdAccessDeniedError extends Error {
@@ -122,9 +142,32 @@ export class EarlyBirdLeaseInactiveError extends Error {
     }
 }
 
+export class EarlyBirdLeaseRefreshRequiredError extends Error {
+    constructor() {
+        super('The stream lease generation or presence sequence is stale');
+        this.name = 'EarlyBirdLeaseRefreshRequiredError';
+    }
+}
+
 function cappedLeaseExpiry(now: Date, allowedUntil: Date | null): Date {
     const ttlExpiry = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
     return allowedUntil && allowedUntil < ttlExpiry ? allowedUntil : ttlExpiry;
+}
+
+type StreamTransactionClient = Prisma.TransactionClient;
+
+async function streamTransaction<T>(
+    accountId: string,
+    explicitNow: Date | undefined,
+    callback: (tx: StreamTransactionClient, now: Date) => Promise<T>,
+): Promise<T> {
+    if (explicitNow) {
+        return withQuotaTransaction(async (tx) => {
+            await lockEarlyBirdQuotaAccount(tx, accountId);
+            return callback(tx, explicitNow);
+        });
+    }
+    return withLockedQuotaTransaction(accountId, callback);
 }
 
 export type EarlyBirdOriginConfig = {
@@ -237,49 +280,47 @@ export function validSignedOriginManifest(
 export async function authorizeEarlyBirdStreamLease(
     accountId: string,
     leaseId: string,
-    now = new Date(),
+    leaseGeneration: number,
+    explicitNow?: Date,
 ) {
-    const [projection, schedule, welcome, lease] = await Promise.all([
-        prisma.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
-        prisma.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
-        prisma.earlyBirdWelcomeAccess.findUnique({ where: { accountId } }),
-        prisma.earlyBirdStreamLease.findFirst({ where: { id: leaseId, accountId } }),
-    ]);
-    if (!listeningAccessDecision(projection, schedule, now, welcome).allowed) {
-        throw new EarlyBirdAccessDeniedError();
-    }
-    if (!lease) throw new EarlyBirdLeaseInactiveError('missing');
-    if (lease.evictedAt !== null) throw new EarlyBirdLeaseInactiveError('evicted');
-    if (lease.expiresAt <= now) throw new EarlyBirdLeaseInactiveError('expired');
-    return lease;
+    const outcome = await streamTransaction(accountId, explicitNow, async (tx, now) => {
+        const projection = await tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } });
+        const quota = await settleLockedEarlyBirdQuota({ tx, accountId, projection, now });
+        const access = listeningAccessDecision(projection, quota, now);
+        if (!access.allowed) return { kind: 'denied' as const };
+        const lease = await tx.earlyBirdStreamLease.findFirst({
+            where: { id: leaseId, accountId, generation: leaseGeneration },
+        });
+        if (!lease) return { kind: 'inactive' as const, reason: 'missing' as const };
+        if (lease.evictedAt !== null) return { kind: 'inactive' as const, reason: 'evicted' as const };
+        if (lease.expiresAt <= now) return { kind: 'inactive' as const, reason: 'expired' as const };
+        return { kind: 'ok' as const, lease, serverNow: now };
+    });
+    if (outcome.kind === 'denied') throw new EarlyBirdAccessDeniedError();
+    if (outcome.kind === 'inactive') throw new EarlyBirdLeaseInactiveError(outcome.reason);
+    return { lease: outcome.lease, serverNow: outcome.serverNow };
 }
 
-export async function acquireEarlyBirdStreamLease(
+async function acquireEarlyBirdStreamLeaseWithMode(
     accountId: string,
     deviceId: string,
-    now = new Date(),
+    explicitNow?: Date,
     issuer = earlyBirdStreamUrlIssuer(),
-    evictOldest = true,
+    mode: 'prepare' | 'claim' | 'play' = 'play',
 ): Promise<LeaseAcquisition> {
     const deviceDigest = earlyBirdDeviceDigest(deviceId);
+    const evictOldest = mode !== 'prepare';
+    const startListening = mode === 'play';
 
-    const lease = await prisma.$transaction(async (tx) => {
-        const accountRows = await tx.$queryRaw<Array<{ id: string }>>(
-            Prisma.sql`SELECT "id" FROM "early_bird_users" WHERE "id" = ${accountId} FOR UPDATE`,
-        );
-        if (accountRows.length !== 1) throw new EarlyBirdAccessDeniedError();
-
-        const [projection, schedule, welcome] = await Promise.all([
-            tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
-            tx.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
-            tx.earlyBirdWelcomeAccess.findUnique({ where: { accountId } }),
-        ]);
-        const access = listeningAccessDecision(projection, schedule, now, welcome);
+    const lease = await streamTransaction(accountId, explicitNow, async (tx, now) => {
+        const projection = await tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } });
+        const quota = await settleLockedEarlyBirdQuota({ tx, accountId, projection, now });
+        const access = listeningAccessDecision(projection, quota, now);
         if (!access.allowed) {
-            throw new EarlyBirdAccessDeniedError();
+            return { kind: 'denied' as const };
         }
-        const leaseExpiresAt = cappedLeaseExpiry(now, access.allowedUntil);
-        if (leaseExpiresAt <= now) throw new EarlyBirdAccessDeniedError();
+        let leaseExpiresAt = cappedLeaseExpiry(now, access.allowedUntil);
+        if (leaseExpiresAt <= now) return { kind: 'denied' as const };
 
         const previous = await tx.earlyBirdStreamLease.findUnique({
             where: { accountId_deviceDigest: { accountId, deviceDigest } },
@@ -296,19 +337,19 @@ export async function acquireEarlyBirdStreamLease(
         });
 
         const overflow = Math.max(0, active.length - (EARLY_BIRD_MAX_STREAM_DEVICES - 1));
-        if (!evictOldest && overflow > 0) throw new EarlyBirdDeviceCapacityError();
+        if (!evictOldest && overflow > 0) return { kind: 'capacity' as const };
         const evicted = active.slice(0, overflow);
         if (evicted.length > 0) {
             await tx.earlyBirdStreamLease.updateMany({
                 where: { id: { in: evicted.map(({ id }) => id) } },
-                data: { evictedAt: now },
+                data: { evictedAt: now, presence: 'IDLE', presenceUpdatedAt: now },
             });
         }
 
         // A prepare lease may decode/prefetch for iOS, but it must always lose
         // an eviction contest against a device on which the person pressed play.
         const prioritySeenAt = evictOldest ? now : new Date(0);
-        const current = previous
+        let current = previous
             ? await tx.earlyBirdStreamLease.update({
                 where: { id: previous.id },
                 data: {
@@ -316,8 +357,10 @@ export async function acquireEarlyBirdStreamLease(
                     lastSeenAt: prioritySeenAt,
                     expiresAt: leaseExpiresAt,
                     evictedAt: null,
-                    presence: 'IDLE',
+                    presence: startListening ? 'LISTENING' : 'IDLE',
                     presenceUpdatedAt: now,
+                    generation: { increment: 1 },
+                    presenceSequence: 0,
                 },
             })
             : await tx.earlyBirdStreamLease.create({
@@ -326,92 +369,216 @@ export async function acquireEarlyBirdStreamLease(
                     deviceDigest,
                     lastSeenAt: prioritySeenAt,
                     expiresAt: leaseExpiresAt,
-                    presence: 'IDLE',
+                    presence: startListening ? 'LISTENING' : 'IDLE',
                     presenceUpdatedAt: now,
+                    generation: 1,
+                    presenceSequence: 0,
                 },
             });
-        return { current, evictedLeaseId: evicted[0]?.id ?? null, leaseExpiresAt };
-    });
-
-    try {
+        const quotaAfter = await settleLockedEarlyBirdQuota({
+            tx,
+            accountId,
+            projection,
+            now,
+            observeFreeListening: startListening,
+        });
+        const accessAfter = listeningAccessDecision(projection, quotaAfter, now);
+        if (!accessAfter.allowed) {
+            await tx.earlyBirdStreamLease.update({
+                where: { id: current.id },
+                data: { presence: 'IDLE', presenceUpdatedAt: now, expiresAt: now },
+            });
+            return { kind: 'denied' as const };
+        }
+        const finalExpiry = cappedLeaseExpiry(now, accessAfter.allowedUntil);
+        if (finalExpiry.getTime() !== leaseExpiresAt.getTime()) {
+            leaseExpiresAt = finalExpiry;
+            current = await tx.earlyBirdStreamLease.update({
+                where: { id: current.id },
+                data: { expiresAt: leaseExpiresAt },
+            });
+        }
         const stream = await issuer.issue({
             accountId,
-            leaseId: lease.current.id,
+            leaseId: current.id,
+            leaseGeneration: current.generation,
             issuedAt: now,
-            leaseExpiresAt: lease.leaseExpiresAt,
+            leaseExpiresAt,
         });
         return {
-            leaseId: lease.current.id,
-            leaseExpiresAt: lease.leaseExpiresAt,
-            evictedLeaseId: lease.evictedLeaseId,
+            kind: 'ok' as const,
+            current,
+            evictedLeaseId: evicted[0]?.id ?? null,
+            leaseExpiresAt,
+            serverNow: now,
+            access: accessAfter,
             stream,
         };
-    } catch (error) {
-        await prisma.earlyBirdStreamLease.updateMany({
-            where: { id: lease.current.id, accountId },
-            data: { evictedAt: now },
-        });
-        throw error;
-    }
+    });
+
+    if (lease.kind === 'denied') throw new EarlyBirdAccessDeniedError();
+    if (lease.kind === 'capacity') throw new EarlyBirdDeviceCapacityError();
+
+    return {
+        leaseId: lease.current.id,
+        leaseGeneration: lease.current.generation,
+        presenceSequence: lease.current.presenceSequence,
+        leaseExpiresAt: lease.leaseExpiresAt,
+        evictedLeaseId: lease.evictedLeaseId,
+        stream: lease.stream,
+        serverNow: lease.serverNow,
+        accessKind: lease.access.kind,
+        quota: lease.access.quota ? serializeEarlyBirdQuotaSnapshot(lease.access.quota) : null,
+    };
+}
+
+/** Real playback: eviction-capable and immediately observed as LISTENING. */
+export function acquireEarlyBirdStreamLease(
+    accountId: string,
+    deviceId: string,
+    explicitNow?: Date,
+    issuer = earlyBirdStreamUrlIssuer(),
+): Promise<LeaseAcquisition> {
+    return acquireEarlyBirdStreamLeaseWithMode(accountId, deviceId, explicitNow, issuer, 'play');
+}
+
+/** Eviction-capable source claim that remains IDLE and never creates an anchor. */
+export function claimEarlyBirdStreamLease(
+    accountId: string,
+    deviceId: string,
+    explicitNow?: Date,
+    issuer = earlyBirdStreamUrlIssuer(),
+): Promise<LeaseAcquisition> {
+    return acquireEarlyBirdStreamLeaseWithMode(accountId, deviceId, explicitNow, issuer, 'claim');
 }
 
 export function prepareEarlyBirdStreamLease(
     accountId: string,
     deviceId: string,
-    now = new Date(),
+    explicitNow?: Date,
     issuer = earlyBirdStreamUrlIssuer(),
 ): Promise<LeaseAcquisition> {
-    return acquireEarlyBirdStreamLease(accountId, deviceId, now, issuer, false);
+    return acquireEarlyBirdStreamLeaseWithMode(accountId, deviceId, explicitNow, issuer, 'prepare');
 }
 
 export async function heartbeatEarlyBirdStreamLease(
     accountId: string,
     leaseId: string,
-    now = new Date(),
+    leaseGeneration: number,
+    presenceSequence: number,
+    explicitNow?: Date,
     issuer = earlyBirdStreamUrlIssuer(),
     refreshPriority = true,
     presence?: ListenerLeasePresence,
-): Promise<{ leaseExpiresAt: Date; stream: StreamUrlGrant }> {
-    const lease = await prisma.$transaction(async (tx) => {
-        const [projection, schedule, welcome] = await Promise.all([
-            tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } }),
-            tx.earlyBirdFreeSchedule.findUnique({ where: { accountId } }),
-            tx.earlyBirdWelcomeAccess.findUnique({ where: { accountId } }),
-        ]);
-        const access = listeningAccessDecision(projection, schedule, now, welcome);
-        if (!access.allowed) {
-            throw new EarlyBirdAccessDeniedError();
-        }
-        const leaseExpiresAt = cappedLeaseExpiry(now, access.allowedUntil);
-        if (leaseExpiresAt <= now) throw new EarlyBirdAccessDeniedError();
+): Promise<{
+    leaseExpiresAt: Date;
+    stream: StreamUrlGrant;
+    serverNow: Date;
+    accessKind: EarlyBirdListeningAccess['kind'];
+    quota: SerializedEarlyBirdQuotaSnapshot | null;
+    leaseGeneration: number;
+    presenceSequence: number;
+}> {
+    const outcome = await streamTransaction(accountId, explicitNow, async (tx, now) => {
+        const projection = await tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } });
+        const quotaBefore = await settleLockedEarlyBirdQuota({
+            tx,
+            accountId,
+            projection,
+            now,
+        });
         const current = await tx.earlyBirdStreamLease.findFirst({
             where: { id: leaseId, accountId },
         });
-        if (!current) throw new EarlyBirdLeaseInactiveError('missing');
-        if (current.evictedAt !== null) throw new EarlyBirdLeaseInactiveError('evicted');
-        if (current.expiresAt <= now) throw new EarlyBirdLeaseInactiveError('expired');
+        if (!current) return { kind: 'inactive' as const, reason: 'missing' as const };
+        if (current.evictedAt !== null) return { kind: 'inactive' as const, reason: 'evicted' as const };
+        if (current.expiresAt <= now) return { kind: 'inactive' as const, reason: 'expired' as const };
+        const nextPresence = presence?.state ?? current.presence;
+        if (
+            current.generation !== leaseGeneration
+            || presenceSequence < current.presenceSequence
+            || (presenceSequence === current.presenceSequence && nextPresence !== current.presence)
+        ) {
+            return { kind: 'refresh' as const };
+        }
+        const observedQuota = nextPresence === 'LISTENING'
+            ? await settleLockedEarlyBirdQuota({
+                tx,
+                accountId,
+                projection,
+                now,
+                observeFreeListening: true,
+            })
+            : quotaBefore;
+        const accessBefore = listeningAccessDecision(projection, observedQuota, now);
+        if (nextPresence === 'LISTENING' && !accessBefore.allowed) {
+            await tx.earlyBirdStreamLease.update({
+                where: { id: current.id },
+                data: {
+                    presence: 'IDLE',
+                    presenceUpdatedAt: now,
+                    presenceSequence: Math.max(current.presenceSequence, presenceSequence),
+                    expiresAt: now,
+                },
+            });
+            return { kind: 'denied' as const };
+        }
+        const provisionalExpiry = cappedLeaseExpiry(
+            now,
+            nextPresence === 'IDLE' ? null : accessBefore.allowedUntil,
+        );
         const updated = await tx.earlyBirdStreamLease.update({
             where: { id: current.id },
             data: {
                 ...(refreshPriority ? { lastSeenAt: now } : {}),
-                expiresAt: leaseExpiresAt,
-                ...(presence ? {
-                    presence: presence.state,
+                expiresAt: provisionalExpiry,
+                ...(presence && presenceSequence > current.presenceSequence ? {
+                    presence: nextPresence,
                     macroRegion: presence.macroRegion,
                     presenceUpdatedAt: now,
+                    presenceSequence,
                 } : {}),
             },
         });
-        return { updated, leaseExpiresAt };
+        const quotaAfter = await settleLockedEarlyBirdQuota({ tx, accountId, projection, now });
+        const access = listeningAccessDecision(projection, quotaAfter, now);
+        if (!access.allowed) {
+            await tx.earlyBirdStreamLease.update({
+                where: { id: current.id },
+                data: { presence: 'IDLE', presenceUpdatedAt: now, expiresAt: now },
+            });
+            return { kind: 'denied' as const };
+        }
+        const leaseExpiresAt = cappedLeaseExpiry(now, access.allowedUntil);
+        if (leaseExpiresAt.getTime() !== provisionalExpiry.getTime()) {
+            await tx.earlyBirdStreamLease.update({
+                where: { id: current.id },
+                data: { expiresAt: leaseExpiresAt },
+            });
+        }
+        return { kind: 'ok' as const, updated, leaseExpiresAt, serverNow: now, access };
     });
+
+    if (outcome.kind === 'inactive') throw new EarlyBirdLeaseInactiveError(outcome.reason);
+    if (outcome.kind === 'refresh') throw new EarlyBirdLeaseRefreshRequiredError();
+    if (outcome.kind === 'denied') throw new EarlyBirdAccessDeniedError();
 
     const stream = await issuer.issue({
         accountId,
-        leaseId: lease.updated.id,
-        issuedAt: now,
-        leaseExpiresAt: lease.leaseExpiresAt,
+        leaseId: outcome.updated.id,
+        leaseGeneration: outcome.updated.generation,
+        issuedAt: outcome.serverNow,
+        leaseExpiresAt: outcome.leaseExpiresAt,
     });
-    return { leaseExpiresAt: lease.leaseExpiresAt, stream };
+    return {
+        leaseExpiresAt: outcome.leaseExpiresAt,
+        stream,
+        serverNow: outcome.serverNow,
+        accessKind: outcome.access.kind,
+        quota: outcome.access.quota ? serializeEarlyBirdQuotaSnapshot(outcome.access.quota) : null,
+        leaseGeneration: outcome.updated.generation,
+        presenceSequence: outcome.updated.presenceSequence,
+    };
 }
 
 /**
@@ -445,6 +612,8 @@ export async function acquireFreeForAllStreamLease(
             deviceDigest,
             lastSeenAt: now,
             expiresAt: leaseExpiresAt,
+            generation: 1,
+            presenceSequence: 0,
         },
         update: {
             createdAt: now,
@@ -453,6 +622,8 @@ export async function acquireFreeForAllStreamLease(
             evictedAt: null,
             presence: 'IDLE',
             presenceUpdatedAt: now,
+            generation: { increment: 1 },
+            presenceSequence: 0,
         },
     });
 
@@ -460,18 +631,28 @@ export async function acquireFreeForAllStreamLease(
         const stream = await issuer.issue({
             accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
             leaseId: lease.id,
+            leaseGeneration: lease.generation,
             issuedAt: now,
             leaseExpiresAt,
         });
         return {
             leaseId: lease.id,
+            leaseGeneration: lease.generation,
+            presenceSequence: lease.presenceSequence,
             leaseExpiresAt,
             evictedLeaseId: null,
             stream,
+            serverNow: now,
+            accessKind: 'free-for-all',
+            quota: null,
         };
     } catch (error) {
         await prisma.earlyBirdStreamLease.updateMany({
-            where: { id: lease.id, accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID },
+            where: {
+                id: lease.id,
+                accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+                generation: lease.generation,
+            },
             data: { evictedAt: now },
         });
         throw error;
@@ -480,10 +661,15 @@ export async function acquireFreeForAllStreamLease(
 
 export async function authorizeFreeForAllStreamLease(
     leaseId: string,
+    leaseGeneration: number,
     now = new Date(),
 ) {
     const lease = await prisma.earlyBirdStreamLease.findFirst({
-        where: { id: leaseId, accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID },
+        where: {
+            id: leaseId,
+            accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+            generation: leaseGeneration,
+        },
     });
     if (!lease) throw new EarlyBirdLeaseInactiveError('missing');
     if (lease.evictedAt !== null) throw new EarlyBirdLeaseInactiveError('evicted');
@@ -493,29 +679,91 @@ export async function authorizeFreeForAllStreamLease(
 
 export async function heartbeatFreeForAllStreamLease(
     leaseId: string,
+    leaseGeneration: number,
+    presenceSequence: number,
     now = new Date(),
     issuer = earlyBirdStreamUrlIssuer(),
     presence?: ListenerLeasePresence,
-): Promise<{ leaseExpiresAt: Date; stream: StreamUrlGrant }> {
+): Promise<{
+    leaseExpiresAt: Date;
+    stream: StreamUrlGrant;
+    serverNow: Date;
+    accessKind: 'free-for-all';
+    quota: null;
+    leaseGeneration: number;
+    presenceSequence: number;
+}> {
     const leaseExpiresAt = new Date(now.getTime() + EARLY_BIRD_LEASE_TTL_MS);
-    const current = await authorizeFreeForAllStreamLease(leaseId, now);
+    const current = await authorizeFreeForAllStreamLease(leaseId, leaseGeneration, now);
+    const nextPresence = presence?.state ?? current.presence;
+    if (
+        presenceSequence < current.presenceSequence
+        || (presenceSequence === current.presenceSequence && nextPresence !== current.presence)
+    ) throw new EarlyBirdLeaseRefreshRequiredError();
     const lease = await prisma.earlyBirdStreamLease.update({
         where: { id: current.id },
         data: {
             lastSeenAt: now,
             expiresAt: leaseExpiresAt,
-            ...(presence ? {
-                presence: presence.state,
+            ...(presence && presenceSequence > current.presenceSequence ? {
+                presence: nextPresence,
                 macroRegion: presence.macroRegion,
                 presenceUpdatedAt: now,
+                presenceSequence,
             } : {}),
         },
     });
     const stream = await issuer.issue({
         accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
         leaseId: lease.id,
+        leaseGeneration: lease.generation,
         issuedAt: now,
         leaseExpiresAt,
     });
-    return { leaseExpiresAt, stream };
+    return {
+        leaseExpiresAt,
+        stream,
+        serverNow: now,
+        accessKind: 'free-for-all',
+        quota: null,
+        leaseGeneration: lease.generation,
+        presenceSequence: lease.presenceSequence,
+    };
+}
+
+/**
+ * Server-only preflight for an operator-controlled Free-for-All transition.
+ * It settles each personal account before evicting its active leases. Run in
+ * bounded batches immediately before enabling the external FFA switch.
+ */
+export async function quiescePersonalListenerLeasesForFreeForAll(
+    limit = 1_000,
+): Promise<{ accountsSettled: number }> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000) {
+        throw new Error('limit is invalid');
+    }
+    const accounts = await prisma.$queryRaw<Array<{ accountId: string }>>`
+        SELECT DISTINCT "account_id" AS "accountId"
+        FROM "early_bird_stream_leases"
+        WHERE "account_id" <> ${EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID}
+          AND "evicted_at" IS NULL
+          AND "expires_at" > clock_timestamp()
+        ORDER BY "account_id"
+        LIMIT ${limit}
+    `;
+    for (const { accountId } of accounts) {
+        await withLockedQuotaTransaction(accountId, async (tx, now) => {
+            const projection = await tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } });
+            await settleLockedEarlyBirdQuota({ tx, accountId, projection, now });
+            await tx.earlyBirdStreamLease.updateMany({
+                where: { accountId, evictedAt: null, expiresAt: { gt: now } },
+                data: {
+                    presence: 'IDLE',
+                    presenceUpdatedAt: now,
+                    evictedAt: now,
+                },
+            });
+        });
+    }
+    return { accountsSettled: accounts.length };
 }

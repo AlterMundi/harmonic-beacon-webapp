@@ -10,6 +10,11 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 
 import { isEarlyBirdAccountId } from './account-id';
+import {
+    assertListenerQuotaPolicyCompatible,
+    listenerQuotaDatabaseNow,
+    settleLockedEarlyBirdQuota,
+} from './quota';
 
 export const EARLY_BIRDS_FOUNDERS_OFFER = 'EARLY_BIRDS_FOUNDERS_V1' as const;
 
@@ -152,8 +157,19 @@ export async function applyMembershipProjection(
         );
         if (accountRows.length !== 1) throw new Error('EarlyBird account does not exist');
 
+        await assertListenerQuotaPolicyCompatible(tx);
+        // The account lock must be acquired before observing authoritative time;
+        // otherwise lock contention could make the settlement clock stale.
+        const observedAt = await listenerQuotaDatabaseNow(tx);
+
         const existing = await tx.earlyBirdMembershipProjection.findUnique({
             where: { accountId: command.account_id },
+        });
+        await settleLockedEarlyBirdQuota({
+            tx,
+            accountId: command.account_id,
+            projection: existing,
+            now: observedAt,
         });
         if (synthetic && existing && !existing.synthetic) {
             throw new Error('Synthetic access cannot replace a canonical membership');
@@ -191,6 +207,14 @@ export async function applyMembershipProjection(
             : await tx.earlyBirdMembershipProjection.create({
                 data: { accountId: command.account_id, ...data },
             });
+        // If this command removes unlimited access while a lease is already
+        // LISTENING, that server-observed transition is the first legal anchor.
+        await settleLockedEarlyBirdQuota({
+            tx,
+            accountId: command.account_id,
+            projection,
+            now: observedAt,
+        });
         return { projection, outcome: 'APPLIED' };
     });
 }

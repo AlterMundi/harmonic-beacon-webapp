@@ -1,13 +1,13 @@
-import type {
-    EarlyBirdFreeSchedule,
-    EarlyBirdMembershipProjection,
-    EarlyBirdWelcomeAccess,
-} from '@prisma/client';
+import type { EarlyBirdMembershipProjection } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
-import { listeningAccessDecision } from '../access';
+import { listeningAccessDecision, serializeEarlyBirdListeningAccess } from '../access';
+import {
+    EARLY_BIRD_QUOTA_BASE_ALLOWANCE_MS,
+    type EarlyBirdQuotaSnapshot,
+} from '../quota';
 
-const NOW = new Date('2026-08-07T15:30:00.000Z');
+const NOW = new Date('2026-08-08T12:00:00.000Z');
 
 function membership(overrides: Partial<EarlyBirdMembershipProjection> = {}): EarlyBirdMembershipProjection {
     return {
@@ -33,77 +33,88 @@ function membership(overrides: Partial<EarlyBirdMembershipProjection> = {}): Ear
     };
 }
 
-function schedule(): EarlyBirdFreeSchedule {
+function quota(overrides: Partial<EarlyBirdQuotaSnapshot> = {}): EarlyBirdQuotaSnapshot {
     return {
-        accountId: 'listener-1',
-        timeZone: 'America/Argentina/Cordoba',
-        localStartMinute: 750,
-        selectedAt: new Date('2026-08-01T12:00:00.000Z'),
-        changeAllowedAt: new Date('2026-08-08T12:00:00.000Z'),
-        selectionRequestId: '00000000-0000-4000-8000-000000000001',
-        revision: 1,
-        createdAt: NOW,
-        updatedAt: NOW,
-    };
-}
-
-function welcome(overrides: Partial<EarlyBirdWelcomeAccess> = {}): EarlyBirdWelcomeAccess {
-    return {
-        accountId: 'listener-1',
-        startedAt: new Date('2026-08-07T15:30:00.000Z'),
-        endsAt: new Date('2026-08-07T16:00:00.000Z'),
-        activationRequestId: '00000000-0000-4000-8000-000000000002',
-        createdAt: NOW,
-        updatedAt: NOW,
+        policy: 'personal-7-day-v1',
+        status: 'available',
+        cycleStartedAt: NOW,
+        cycleEndsAt: new Date(NOW.getTime() + 604_800_000),
+        baseAllowanceMs: EARLY_BIRD_QUOTA_BASE_ALLOWANCE_MS,
+        bonusAllowanceMs: 0,
+        consumedMs: 0,
+        remainingMs: EARLY_BIRD_QUOTA_BASE_ALLOWANCE_MS,
+        activelyConsuming: false,
+        exhaustsAt: null,
+        nextCycleAt: new Date(NOW.getTime() + 604_800_000),
         ...overrides,
     };
 }
 
-describe('combined Listener access authority', () => {
-    it('gives an active canonical membership unrestricted priority over Free', () => {
-        expect(listeningAccessDecision(membership(), schedule(), NOW)).toMatchObject({
+describe('Listener access contract', () => {
+    it('gives active canonical membership priority and never exposes a consuming quota', () => {
+        expect(listeningAccessDecision(membership(), quota(), NOW)).toMatchObject({
             allowed: true,
             kind: 'membership',
             allowedUntil: null,
+            quota: null,
+            serverNow: NOW,
         });
     });
 
-    it('allows an active Free window without fabricating a membership', () => {
-        const decision = listeningAccessDecision(null, schedule(), NOW);
-        expect(decision).toMatchObject({
+    it('allows registered ordinary Free before the anchor without predicting a boundary', () => {
+        const unstarted = quota({
+            status: 'not-started',
+            cycleStartedAt: null,
+            cycleEndsAt: null,
+            nextCycleAt: null,
+        });
+        expect(listeningAccessDecision(null, unstarted, NOW)).toMatchObject({
             allowed: true,
-            kind: 'free-window',
-            allowedUntil: new Date('2026-08-07T17:30:00.000Z'),
-        });
-        expect(decision.membership.projection).toBeNull();
-    });
-
-    it('fails closed outside Free and preserves a canonical paid-through boundary', () => {
-        expect(listeningAccessDecision(null, schedule(), new Date('2026-08-07T18:00:00.000Z')).allowed)
-            .toBe(false);
-        const paidThrough = new Date('2026-08-07T16:00:00.000Z');
-        expect(listeningAccessDecision(membership({ paidThrough }), null, NOW)).toMatchObject({
-            kind: 'membership',
-            allowedUntil: paidThrough,
+            kind: 'free-quota',
+            allowedUntil: null,
+            quota: unstarted,
         });
     });
 
-    it('allows an active welcome listen only until its exact durable boundary', () => {
-        expect(listeningAccessDecision(null, null, NOW, welcome())).toMatchObject({
+    it('reports predicted exhaustion only while actively metering', () => {
+        const exhaustsAt = new Date(NOW.getTime() + 500);
+        expect(listeningAccessDecision(null, quota({
+            status: 'listening',
+            remainingMs: 500,
+            activelyConsuming: true,
+            exhaustsAt,
+        }), NOW)).toMatchObject({
             allowed: true,
-            kind: 'welcome',
-            allowedUntil: new Date('2026-08-07T16:00:00.000Z'),
+            kind: 'free-quota',
+            allowedUntil: exhaustsAt,
         });
-        expect(listeningAccessDecision(
-            null,
-            null,
-            new Date('2026-08-07T16:00:00.000Z'),
-            welcome(),
-        )).toMatchObject({ allowed: false, kind: 'denied' });
+        expect(listeningAccessDecision(null, quota({ remainingMs: 500 }), NOW).allowedUntil).toBeNull();
     });
 
-    it('does not let welcome access override membership or an active Free window', () => {
-        expect(listeningAccessDecision(membership(), null, NOW, welcome()).kind).toBe('membership');
-        expect(listeningAccessDecision(null, schedule(), NOW, welcome()).kind).toBe('free-window');
+    it('denies exhausted Free and serializes the exact frozen wire fields', () => {
+        const access = listeningAccessDecision(null, quota({
+            status: 'exhausted',
+            consumedMs: EARLY_BIRD_QUOTA_BASE_ALLOWANCE_MS,
+            remainingMs: 0,
+        }), NOW);
+        expect(access).toMatchObject({ allowed: false, kind: 'denied', allowedUntil: null });
+        expect(serializeEarlyBirdListeningAccess(access)).toEqual({
+            allowed: false,
+            kind: 'denied',
+            allowedUntil: null,
+            quota: {
+                policy: 'personal-7-day-v1',
+                status: 'exhausted',
+                cycleStartedAt: NOW.toISOString(),
+                cycleEndsAt: new Date(NOW.getTime() + 604_800_000).toISOString(),
+                baseAllowanceMs: EARLY_BIRD_QUOTA_BASE_ALLOWANCE_MS,
+                bonusAllowanceMs: 0,
+                consumedMs: EARLY_BIRD_QUOTA_BASE_ALLOWANCE_MS,
+                remainingMs: 0,
+                activelyConsuming: false,
+                exhaustsAt: null,
+                nextCycleAt: new Date(NOW.getTime() + 604_800_000).toISOString(),
+            },
+        });
     });
 });

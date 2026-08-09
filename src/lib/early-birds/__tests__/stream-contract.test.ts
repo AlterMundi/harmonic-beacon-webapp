@@ -91,10 +91,11 @@ describe('Beacon origin signing contract', () => {
         const grant = await earlyBirdStreamUrlIssuer().issue({
             accountId: 'listener-1',
             leaseId: '00000000-0000-4000-8000-000000000111',
+            leaseGeneration: 7,
             issuedAt: new Date(),
             leaseExpiresAt: new Date(Date.now() + 60_000),
         });
-        expect(grant.manifestUrl).toBe(`${EARLY_BIRD_LEASE_MANIFEST_PATH}?leaseId=00000000-0000-4000-8000-000000000111`);
+        expect(grant.manifestUrl).toBe(`${EARLY_BIRD_LEASE_MANIFEST_PATH}?leaseId=00000000-0000-4000-8000-000000000111&leaseGeneration=7`);
         expect(grant.manifestUrl).not.toContain('sig=');
         expect(grant.manifestUrl).not.toContain('stream.example.test');
     });

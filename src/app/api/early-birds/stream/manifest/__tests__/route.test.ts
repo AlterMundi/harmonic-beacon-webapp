@@ -41,7 +41,7 @@ import { GET } from '../route';
 const LEASE_ID = '00000000-0000-4000-8000-000000000003';
 
 function request() {
-    return new NextRequest(`https://live.example.test/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`);
+    return new NextRequest(`https://live.example.test/api/early-birds/stream/manifest?leaseId=${LEASE_ID}&leaseGeneration=2`);
 }
 
 beforeEach(() => vi.stubEnv('EARLY_BIRDS_ENABLED', '1'));
@@ -65,8 +65,8 @@ describe('stable EarlyBird lease manifest', () => {
     it('proxies only a validated signed-segment manifest with no-store', async () => {
         currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
         authorizeEarlyBirdStreamLease.mockResolvedValue({
-            id: LEASE_ID,
-            expiresAt: new Date(Date.now() + 120_000),
+            lease: { id: LEASE_ID, expiresAt: new Date(Date.now() + 120_000) },
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
         });
         earlyBirdOriginConfig.mockReturnValue({ origin: 'https://stream.example.test' });
         signedEarlyBirdOriginManifestUrl.mockReturnValue('https://stream.example.test/live.m3u8?exp=1&sig=secret-url');
@@ -80,7 +80,7 @@ describe('stable EarlyBird lease manifest', () => {
         expect(response.headers.get('cache-control')).toContain('no-store');
         expect(response.headers.get('content-type')).toContain('application/vnd.apple.mpegurl');
         await expect(response.text()).resolves.toBe(manifest);
-        expect(authorizeEarlyBirdStreamLease).toHaveBeenCalledWith('listener-1', LEASE_ID, expect.any(Date));
+        expect(authorizeEarlyBirdStreamLease).toHaveBeenCalledWith('listener-1', LEASE_ID, 2);
         expect(fetchMock).toHaveBeenCalledOnce();
     });
 
@@ -100,7 +100,7 @@ describe('stable EarlyBird lease manifest', () => {
         )));
 
         expect((await GET(request())).status).toBe(200);
-        expect(mocks.authorizeFreeForAllStreamLease).toHaveBeenCalledWith(LEASE_ID, expect.any(Date));
+        expect(mocks.authorizeFreeForAllStreamLease).toHaveBeenCalledWith(LEASE_ID, 2);
         expect(currentEarlyBirdSession).not.toHaveBeenCalled();
         expect(authorizeEarlyBirdStreamLease).not.toHaveBeenCalled();
     });

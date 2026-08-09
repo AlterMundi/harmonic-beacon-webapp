@@ -5,6 +5,7 @@ const currentEarlyBirdSession = vi.hoisted(() => vi.fn());
 const acquireEarlyBirdStreamLease = vi.hoisted(() => vi.fn());
 const acquireFreeForAllStreamLease = vi.hoisted(() => vi.fn());
 const prepareEarlyBirdStreamLease = vi.hoisted(() => vi.fn());
+const claimEarlyBirdStreamLease = vi.hoisted(() => vi.fn());
 const EarlyBirdDeviceCapacityError = vi.hoisted(() => class extends Error {});
 
 vi.mock('@/lib/early-birds/auth', () => ({ currentEarlyBirdSession }));
@@ -12,6 +13,7 @@ vi.mock('@/lib/early-birds/stream', () => ({
     acquireEarlyBirdStreamLease,
     acquireFreeForAllStreamLease,
     prepareEarlyBirdStreamLease,
+    claimEarlyBirdStreamLease,
     EarlyBirdAccessDeniedError: class extends Error {},
     EarlyBirdDeviceCapacityError,
     EarlyBirdStreamIssuerUnavailableError: class extends Error {},
@@ -19,7 +21,7 @@ vi.mock('@/lib/early-birds/stream', () => ({
 
 import { POST } from '../route';
 
-function request(deviceId = 'device_abcdefghijklmnopqrstuvwxyz', intent?: 'play' | 'prepare') {
+function request(deviceId = 'device_abcdefghijklmnopqrstuvwxyz', intent?: 'play' | 'prepare' | 'claim') {
     return new NextRequest('https://live.example.test/api/early-birds/stream/lease', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -45,6 +47,11 @@ describe('EarlyBird stream lease route', () => {
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
         currentEarlyBirdSession.mockResolvedValue(null);
         acquireFreeForAllStreamLease.mockResolvedValue({
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
+            accessKind: 'free-for-all',
+            quota: null,
+            leaseGeneration: 1,
+            presenceSequence: 0,
             leaseId: '00000000-0000-4000-8000-000000000003',
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             evictedLeaseId: null,
@@ -65,6 +72,11 @@ describe('EarlyBird stream lease route', () => {
     it('returns only the stable same-origin manifest grant', async () => {
         currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
         acquireEarlyBirdStreamLease.mockResolvedValue({
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
+            accessKind: 'free-quota',
+            quota: { policy: 'personal-7-day-v1', status: 'available' },
+            leaseGeneration: 2,
+            presenceSequence: 0,
             leaseId: '00000000-0000-4000-8000-000000000003',
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             evictedLeaseId: '00000000-0000-4000-8000-000000000001',
@@ -84,6 +96,11 @@ describe('EarlyBird stream lease route', () => {
     it('prepares playback without using the eviction-capable lease path', async () => {
         currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
         prepareEarlyBirdStreamLease.mockResolvedValue({
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
+            accessKind: 'free-quota',
+            quota: { policy: 'personal-7-day-v1', status: 'not-started' },
+            leaseGeneration: 3,
+            presenceSequence: 0,
             leaseId: '00000000-0000-4000-8000-000000000003',
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             evictedLeaseId: null,
@@ -101,6 +118,34 @@ describe('EarlyBird stream lease route', () => {
             'device_abcdefghijklmnopqrstuvwxyz',
         );
         expect(acquireEarlyBirdStreamLease).not.toHaveBeenCalled();
+    });
+
+    it('claims eviction priority while preserving IDLE/unmetered semantics in the core', async () => {
+        currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
+        claimEarlyBirdStreamLease.mockResolvedValue({
+            serverNow: new Date('2026-08-06T12:00:00.000Z'),
+            accessKind: 'free-quota',
+            quota: { policy: 'personal-7-day-v1', status: 'not-started' },
+            leaseGeneration: 4,
+            presenceSequence: 0,
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            evictedLeaseId: '00000000-0000-4000-8000-000000000001',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003&leaseGeneration=4',
+                expiresAt: new Date('2026-08-06T12:03:00.000Z'),
+            },
+        });
+        const response = await POST(request('device_abcdefghijklmnopqrstuvwxyz', 'claim'));
+        expect(response.status).toBe(200);
+        expect(claimEarlyBirdStreamLease).toHaveBeenCalledWith(
+            'listener-1', 'device_abcdefghijklmnopqrstuvwxyz',
+        );
+        await expect(response.json()).resolves.toMatchObject({
+            leaseGeneration: 4,
+            presenceSequence: 0,
+            evictedAnotherDevice: true,
+        });
     });
 
     it('reports device capacity instead of evicting during preparation', async () => {

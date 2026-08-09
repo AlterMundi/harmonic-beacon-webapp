@@ -9,6 +9,7 @@ import {
 import {
     acquireEarlyBirdStreamLease,
     acquireFreeForAllStreamLease,
+    claimEarlyBirdStreamLease,
     EarlyBirdAccessDeniedError,
     EarlyBirdDeviceCapacityError,
     EarlyBirdStreamIssuerUnavailableError,
@@ -29,11 +30,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     let deviceId: string;
-    let intent: 'play' | 'prepare';
+    let intent: 'play' | 'prepare' | 'claim';
     try {
         const body = await request.json() as { deviceId?: unknown; intent?: unknown };
         deviceId = typeof body.deviceId === 'string' ? body.deviceId : '';
-        intent = body.intent === 'prepare' ? 'prepare' : 'play';
+        intent = body.intent === 'prepare'
+            ? 'prepare'
+            : body.intent === 'claim' ? 'claim' : 'play';
     } catch {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }
@@ -43,9 +46,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             ? await acquireFreeForAllStreamLease(deviceId)
             : intent === 'prepare'
                 ? await prepareEarlyBirdStreamLease(session!.user.id, deviceId)
+                : intent === 'claim'
+                    ? await claimEarlyBirdStreamLease(session!.user.id, deviceId)
                 : await acquireEarlyBirdStreamLease(session!.user.id, deviceId);
         return NextResponse.json({
+            serverNow: grant.serverNow.toISOString(),
+            accessKind: grant.accessKind,
+            quota: grant.quota,
             leaseId: grant.leaseId,
+            leaseGeneration: grant.leaseGeneration,
+            presenceSequence: grant.presenceSequence,
             leaseExpiresAt: grant.leaseExpiresAt.toISOString(),
             evictedAnotherDevice: grant.evictedLeaseId !== null,
             stream: {

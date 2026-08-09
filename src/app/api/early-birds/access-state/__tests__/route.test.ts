@@ -8,10 +8,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/early-birds/auth', () => ({ currentEarlyBirdSession: mocks.currentEarlyBirdSession }));
 vi.mock('@/lib/early-birds/access', () => ({
     getEarlyBirdListeningAccess: mocks.getEarlyBirdListeningAccess,
+    serializeEarlyBirdListeningAccess: (access: Record<string, unknown>) => ({
+        allowed: access.allowed,
+        kind: access.kind,
+        allowedUntil: (access.allowedUntil as Date | null)?.toISOString() ?? null,
+        quota: access.quota,
+    }),
 }));
-
-import { freeWindowState } from '@/lib/early-birds/free-window';
-import { welcomeAccessState } from '@/lib/early-birds/welcome-access';
 import { GET } from '../route';
 
 const request = new NextRequest('https://listen.harmonicbeacon.com/api/early-birds/access-state');
@@ -27,18 +30,11 @@ describe('Listener access-state API', () => {
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
         mocks.getEarlyBirdListeningAccess.mockResolvedValue({
             allowed: true,
-            kind: 'welcome',
-            allowedUntil: new Date('2026-08-07T16:00:00.000Z'),
+            kind: 'free-quota',
+            allowedUntil: null,
             membership: { allowed: false, projection: null },
-            freeWindow: freeWindowState(null),
-            welcome: welcomeAccessState({
-                accountId: 'listener-1',
-                startedAt: new Date('2026-08-07T15:30:00.000Z'),
-                endsAt: new Date('2026-08-07T16:00:00.000Z'),
-                activationRequestId: crypto.randomUUID(),
-                createdAt: new Date('2026-08-07T15:30:00.000Z'),
-                updatedAt: new Date('2026-08-07T15:30:00.000Z'),
-            }, new Date('2026-08-07T15:31:00.000Z')),
+            quota: { policy: 'personal-7-day-v1', status: 'not-started' },
+            serverNow: new Date('2026-08-07T15:31:00.000Z'),
         });
 
         const response = await GET(request);
@@ -46,8 +42,8 @@ describe('Listener access-state API', () => {
 
         expect(response.headers.get('cache-control')).toContain('no-store');
         expect(payload).toMatchObject({
-            access: { kind: 'welcome', allowedUntil: '2026-08-07T16:00:00.000Z' },
-            welcome: { active: true },
+            serverNow: '2026-08-07T15:31:00.000Z',
+            access: { kind: 'free-quota', allowedUntil: null },
         });
         expect(JSON.stringify(payload)).not.toContain('listener-1');
     });
