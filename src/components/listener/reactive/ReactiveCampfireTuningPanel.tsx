@@ -120,7 +120,7 @@ export function ReactiveCampfireTuningPanel({
                                 {{
                                     'radial-ribbons': 'Radial ribbons',
                                     'horizon-flow': 'Horizon flow',
-                                    'toroid-meridians': 'Toroid meridians',
+                                    'toroid-parallels': 'Toroid parallels',
                                 }[mode]}
                             </option>
                         ))}

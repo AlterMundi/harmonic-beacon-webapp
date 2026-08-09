@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildClothRibbonPoints, buildToroidMeridian } from '../draw';
+import { buildClothRibbonPoints, buildToroidParallel } from '../draw';
 
 const geometry = {
     start: [10, 20] as const,
@@ -64,55 +64,71 @@ describe('reactive cloth ribbons', () => {
     });
 });
 
-describe('toroid harmonic meridians', () => {
+describe('toroid harmonic parallels', () => {
     const toroid = {
-        centerX: 400,
         centerY: 300,
         innerRadius: 70,
         outerRadius: 250,
-        verticalScale: 0.62,
         harmonicIndex: 21,
         harmonicCount: 96,
     };
 
-    it('keeps the inner anchor and camera fixed while activation fluctuates outward', () => {
-        const quiet = buildToroidMeridian({
+    it('maps higher harmonics onto progressively outer fisheye parallels', () => {
+        const low = buildToroidParallel({
+            ...toroid,
+            harmonicIndex: 3,
+            timeSeconds: 12,
+            activity: 0.5,
+            wiggle: 0.2,
+        });
+        const high = buildToroidParallel({
+            ...toroid,
+            harmonicIndex: 90,
+            timeSeconds: 12,
+            activity: 0.5,
+            wiggle: 0.2,
+        });
+
+        expect(high.radiusX).toBeGreaterThan(low.radiusX);
+        expect(high.radiusY).toBeGreaterThan(low.radiusY);
+        expect(high.centerY).toBeGreaterThan(low.centerY);
+    });
+
+    it('lets activation fluctuate a parallel without changing its harmonic identity', () => {
+        const quiet = buildToroidParallel({
             ...toroid,
             timeSeconds: 12,
             activity: 0,
             wiggle: 0,
         });
-        const active = buildToroidMeridian({
+        const active = buildToroidParallel({
             ...toroid,
             timeSeconds: 12,
             activity: 1,
             wiggle: 1,
         });
 
-        expect(active.start).toEqual(quiet.start);
-        expect(active.depth).toBe(quiet.depth);
-        expect(active.end).not.toEqual(quiet.end);
-        expect(active.control).not.toEqual(quiet.control);
+        expect(active.centerY).toBe(quiet.centerY);
+        expect(active.pulse).toBe(quiet.pulse);
+        expect(active.radiusX).not.toBe(quiet.radiusX);
     });
 
     it('changes continuously rather than jumping between analysis frames', () => {
-        const first = buildToroidMeridian({
+        const first = buildToroidParallel({
             ...toroid,
             timeSeconds: 30,
             activity: 0.8,
             wiggle: 0.7,
         });
-        const next = buildToroidMeridian({
+        const next = buildToroidParallel({
             ...toroid,
             timeSeconds: 30.02,
             activity: 0.8,
             wiggle: 0.7,
         });
 
-        expect(Math.hypot(
-            next.end[0] - first.end[0],
-            next.end[1] - first.end[1],
-        )).toBeLessThan(2);
+        expect(Math.abs(next.radiusX - first.radiusX)).toBeLessThan(2);
+        expect(Math.abs(next.radiusY - first.radiusY)).toBeLessThan(2);
         expect(Math.abs(next.pulse - first.pulse)).toBeLessThan(0.1);
     });
 });

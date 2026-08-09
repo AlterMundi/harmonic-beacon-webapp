@@ -440,39 +440,36 @@ function drawHorizonField(
     }
 }
 
-export type ToroidMeridianGeometry = {
-    start: readonly [number, number];
-    control: readonly [number, number];
-    end: readonly [number, number];
-    depth: number;
+export type ToroidParallelGeometry = {
+    radiusX: number;
+    radiusY: number;
+    centerY: number;
     pulse: number;
+    dashOffset: number;
 };
 
-export function buildToroidMeridian({
-    centerX,
+export function buildToroidParallel({
     centerY,
     innerRadius,
     outerRadius,
-    verticalScale,
     harmonicIndex,
     harmonicCount,
     timeSeconds,
     activity,
     wiggle,
 }: {
-    centerX: number;
     centerY: number;
     innerRadius: number;
     outerRadius: number;
-    verticalScale: number;
     harmonicIndex: number;
     harmonicCount: number;
     timeSeconds: number;
     activity: number;
     wiggle: number;
-}): ToroidMeridianGeometry {
-    const angle = -Math.PI / 2
-        + (harmonicIndex / Math.max(1, harmonicCount - 1)) * Math.PI * 2;
+}): ToroidParallelGeometry {
+    const harmonicProgress = harmonicIndex / Math.max(1, harmonicCount - 1);
+    // Fisheye spacing dedicates more visible surface to upper harmonics.
+    const lensProgress = harmonicProgress ** 0.72;
     const phase = seededUnit(harmonicIndex, 111) * Math.PI * 2;
     const pulseRate = 0.16 + seededUnit(harmonicIndex, 113) * 0.24;
     const pulse = 0.5 + 0.5 * Math.sin(timeSeconds * Math.PI * 2 * pulseRate + phase);
@@ -480,27 +477,16 @@ export function buildToroidMeridian({
         timeSeconds * Math.PI * 2 * (0.09 + seededUnit(harmonicIndex, 115) * 0.12)
             + phase * 0.71,
     );
-    const tangentX = -Math.sin(angle);
-    const tangentY = Math.cos(angle) * verticalScale;
     const activation = Math.max(0, activity) * 0.25 + Math.max(0, wiggle) * 0.75;
-    const outerDrift = fluctuation * outerRadius * (0.004 + activation * 0.026);
-    const midRadius = innerRadius + (outerRadius - innerRadius) * 0.56;
-    const bend = fluctuation * outerRadius * (0.008 + activation * 0.055);
+    const baseRadius = innerRadius + (outerRadius - innerRadius) * lensProgress;
+    const breathing = fluctuation * outerRadius * (0.0015 + activation * 0.012);
+    const lensDepth = lensProgress ** 1.8;
     return {
-        start: [
-            centerX + Math.cos(angle) * innerRadius,
-            centerY + Math.sin(angle) * innerRadius * verticalScale,
-        ],
-        control: [
-            centerX + Math.cos(angle) * midRadius + tangentX * bend,
-            centerY + Math.sin(angle) * midRadius * verticalScale + tangentY * bend,
-        ],
-        end: [
-            centerX + Math.cos(angle) * outerRadius + tangentX * outerDrift,
-            centerY + Math.sin(angle) * outerRadius * verticalScale + tangentY * outerDrift,
-        ],
-        depth: 0.5 + Math.sin(angle) * 0.5,
+        radiusX: baseRadius + breathing,
+        radiusY: (baseRadius + breathing * 0.45) * (0.58 + lensDepth * 0.26),
+        centerY: centerY + lensDepth * outerRadius * 0.035,
         pulse,
+        dashOffset: -timeSeconds * (9 + seededUnit(harmonicIndex, 117) * 17),
     };
 }
 
@@ -514,9 +500,8 @@ function drawToroidField(
 ) {
     const centerX = width * 0.5;
     const centerY = height * 0.49;
-    const outerRadius = Math.min(width * 0.43, height * 0.47);
-    const innerRadius = outerRadius * 0.27;
-    const verticalScale = 0.62;
+    const outerRadius = Math.min(width * 0.52, height * 0.64);
+    const innerRadius = outerRadius * 0.18;
     const all = [
         ...scene.rings.map((ring) => ({
             harmonicIndex: ring.harmonicIndex,
@@ -536,96 +521,90 @@ function drawToroidField(
         })),
     ];
     const harmonicCount = Math.max(2, ...all.map((item) => item.harmonicIndex + 1));
-    const lowEnergy = scene.rings.length === 0
-        ? 0
-        : scene.rings.reduce((sum, ring) => sum + ring.opacity, 0) / scene.rings.length;
-
-    const atmosphere = context.createRadialGradient(
-        centerX,
-        centerY,
-        0,
-        centerX,
-        centerY,
-        outerRadius * 1.35,
-    );
-    atmosphere.addColorStop(0, rgba(palette.low, 0.07 + lowEnergy * 0.12));
-    atmosphere.addColorStop(0.38, 'rgba(13, 34, 62, 0.045)');
-    atmosphere.addColorStop(1, 'rgba(2, 7, 22, 0)');
-    context.fillStyle = atmosphere;
-    context.fillRect(0, 0, width, height);
-
-    // The unenergized torus is barely present: active meridians reveal it.
-    context.strokeStyle = rgba(palette.high, 0.035 * scene.confidence);
-    context.lineWidth = Math.max(0.8, settings.ribbonWidth * 0.7);
-    context.beginPath();
-    context.ellipse(centerX, centerY, outerRadius, outerRadius * verticalScale, 0, 0, Math.PI * 2);
-    context.stroke();
-    context.strokeStyle = rgba(palette.low, 0.05 * scene.confidence);
-    context.beginPath();
-    context.ellipse(centerX, centerY, innerRadius, innerRadius * verticalScale, 0, 0, Math.PI * 2);
-    context.stroke();
-
-    const meridians = all.map((item) => ({
+    const parallels = all.map((item) => ({
         item,
-        geometry: buildToroidMeridian({
-            centerX,
+        geometry: buildToroidParallel({
             centerY,
             innerRadius,
             outerRadius,
-            verticalScale,
             harmonicIndex: item.harmonicIndex,
             harmonicCount,
             timeSeconds: scene.flowTimeSeconds,
             activity: item.activity,
             wiggle: item.wiggle,
         }),
-    })).sort((a, b) => a.geometry.depth - b.geometry.depth);
+    })).sort((a, b) => a.geometry.radiusX - b.geometry.radiusX);
 
-    for (const { item, geometry } of meridians) {
+    for (const { item, geometry } of parallels) {
         const color = item.tier === 'low'
             ? palette.low
             : item.tier === 'high' ? palette.high : palette.mid;
-        const depthLight = 0.5 + geometry.depth * 0.5;
-        const activation = item.opacity * (0.5 + geometry.pulse * 0.5);
-        const gradient = context.createLinearGradient(
-            geometry.start[0],
-            geometry.start[1],
-            geometry.end[0],
-            geometry.end[1],
+        const radialProgress = (geometry.radiusX - innerRadius) / Math.max(1, outerRadius - innerRadius);
+        const fisheyeDepth = 0.42 + radialProgress * 0.58;
+        const activation = item.opacity * (0.42 + geometry.pulse * 0.58);
+
+        // Almost-invisible complete parallel: energy draws brighter moving
+        // segments over it. This mode intentionally contains no filled ribbon.
+        context.setLineDash([]);
+        context.shadowBlur = 0;
+        context.strokeStyle = rgba(color, 0.006 + item.opacity * 0.035);
+        context.lineWidth = Math.max(0.35, settings.ribbonWidth * 0.38 * fisheyeDepth);
+        context.beginPath();
+        context.ellipse(
+            centerX,
+            geometry.centerY,
+            geometry.radiusX,
+            geometry.radiusY,
+            0,
+            0,
+            Math.PI * 2,
         );
-        gradient.addColorStop(0, rgba(palette.core, 0.012 + activation * 0.18));
-        gradient.addColorStop(0.48, rgba(color, 0.018 + activation * 0.52 * depthLight));
-        gradient.addColorStop(1, rgba(color, 0.025 + activation * 0.9 * depthLight));
-        context.fillStyle = gradient;
+        context.stroke();
+
         context.save();
         const glow = Math.max(0, (item.activity - 0.58) / 0.42) + item.wiggle;
         context.shadowColor = rgba(color, Math.min(0.85, glow * 0.7));
         context.shadowBlur = glow > 0.08 ? Math.min(24, glow * 18) : 0;
-        const meridianWidth = (0.65 + item.weight * 1.75) * settings.ribbonWidth * depthLight;
-        fillClothRibbon(
-            context,
-            geometry.start,
-            geometry.control,
-            geometry.end,
-            meridianWidth * 0.18,
-            meridianWidth,
-            item.harmonicIndex,
-            scene.flowTimeSeconds,
-            item.activity * 0.35,
-            item.wiggle * 0.55,
+        context.setLineDash([
+            Math.max(5, geometry.radiusX * (0.09 + geometry.pulse * 0.08)),
+            Math.max(4, geometry.radiusX * 0.055),
+        ]);
+        context.lineDashOffset = geometry.dashOffset;
+        context.strokeStyle = rgba(color, 0.012 + activation * 0.9 * fisheyeDepth);
+        context.lineWidth = Math.max(
+            0.6,
+            (0.55 + item.weight * 1.35) * settings.ribbonWidth * fisheyeDepth,
         );
+        context.beginPath();
+        // Back half is more distant through the lens.
+        context.ellipse(
+            centerX,
+            geometry.centerY,
+            geometry.radiusX,
+            geometry.radiusY,
+            0,
+            Math.PI,
+            Math.PI * 2,
+        );
+        context.stroke();
+        context.strokeStyle = rgba(color, 0.018 + activation * fisheyeDepth);
+        context.lineWidth *= 1.45;
+        context.beginPath();
+        // Front half grows toward and around the observer.
+        context.ellipse(
+            centerX,
+            geometry.centerY,
+            geometry.radiusX,
+            geometry.radiusY,
+            0,
+            0,
+            Math.PI,
+        );
+        context.stroke();
         context.restore();
     }
-
-    const coreRadius = innerRadius * (0.72 + Math.min(0.28, lowEnergy * 0.4));
-    const core = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, coreRadius);
-    core.addColorStop(0, rgba(palette.core, Math.min(0.95, scene.core.opacity + lowEnergy * 0.65)));
-    core.addColorStop(0.28, rgba(palette.low, scene.core.opacity * 0.72 + lowEnergy * 0.28));
-    core.addColorStop(1, rgba(palette.mid, 0));
-    context.fillStyle = core;
-    context.beginPath();
-    context.ellipse(centerX, centerY, coreRadius, coreRadius * verticalScale, 0, 0, Math.PI * 2);
-    context.fill();
+    context.setLineDash([]);
+    context.lineDashOffset = 0;
 }
 
 export function drawReactiveCampfire(
@@ -645,7 +624,7 @@ export function drawReactiveCampfire(
     context.lineJoin = 'round';
     if (settings.visualizationMode === 'horizon-flow') {
         drawHorizonField(context, width, height, scene, palette, settings);
-    } else if (settings.visualizationMode === 'toroid-meridians') {
+    } else if (settings.visualizationMode === 'toroid-parallels') {
         drawToroidField(context, width, height, scene, palette, settings);
     } else {
         drawRadialField(context, width, height, scene, palette, settings);
