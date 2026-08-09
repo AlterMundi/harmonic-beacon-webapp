@@ -455,8 +455,6 @@ export function buildToroidParallel({
     harmonicIndex,
     harmonicCount,
     timeSeconds,
-    activity,
-    wiggle,
 }: {
     centerY: number;
     innerRadius: number;
@@ -464,8 +462,6 @@ export function buildToroidParallel({
     harmonicIndex: number;
     harmonicCount: number;
     timeSeconds: number;
-    activity: number;
-    wiggle: number;
 }): ToroidParallelGeometry {
     const harmonicProgress = harmonicIndex / Math.max(1, harmonicCount - 1);
     // Fisheye spacing dedicates more visible surface to upper harmonics.
@@ -473,20 +469,60 @@ export function buildToroidParallel({
     const phase = seededUnit(harmonicIndex, 111) * Math.PI * 2;
     const pulseRate = 0.16 + seededUnit(harmonicIndex, 113) * 0.24;
     const pulse = 0.5 + 0.5 * Math.sin(timeSeconds * Math.PI * 2 * pulseRate + phase);
-    const fluctuation = Math.sin(
-        timeSeconds * Math.PI * 2 * (0.09 + seededUnit(harmonicIndex, 115) * 0.12)
-            + phase * 0.71,
-    );
-    const activation = Math.max(0, activity) * 0.25 + Math.max(0, wiggle) * 0.75;
     const baseRadius = innerRadius + (outerRadius - innerRadius) * lensProgress;
-    const breathing = fluctuation * outerRadius * (0.0015 + activation * 0.012);
     const lensDepth = lensProgress ** 1.8;
     return {
-        radiusX: baseRadius + breathing,
-        radiusY: (baseRadius + breathing * 0.45) * (0.58 + lensDepth * 0.26),
+        radiusX: baseRadius,
+        radiusY: baseRadius * (0.58 + lensDepth * 0.26),
         centerY: centerY + lensDepth * outerRadius * 0.035,
         pulse,
-        dashOffset: -timeSeconds * (9 + seededUnit(harmonicIndex, 117) * 17),
+        dashOffset: seededUnit(harmonicIndex, 117) * baseRadius,
+    };
+}
+
+export type ToroidStructuralMeridian = {
+    start: readonly [number, number];
+    control: readonly [number, number];
+    end: readonly [number, number];
+    frontness: number;
+};
+
+export function buildToroidStructuralMeridian({
+    centerX,
+    centerY,
+    innerRadius,
+    outerRadius,
+    index,
+    count,
+}: {
+    centerX: number;
+    centerY: number;
+    innerRadius: number;
+    outerRadius: number;
+    index: number;
+    count: number;
+}): ToroidStructuralMeridian {
+    const angle = -Math.PI / 2 + (index / Math.max(1, count)) * Math.PI * 2;
+    const innerVerticalScale = 0.58;
+    const outerVerticalScale = 0.84;
+    const outerCenterY = centerY + outerRadius * 0.035;
+    const midRadius = innerRadius + (outerRadius - innerRadius) * 0.54;
+    const midVerticalScale = (innerVerticalScale + outerVerticalScale) * 0.5;
+    const lensBend = Math.sin(angle * 2) * outerRadius * 0.018;
+    return {
+        start: [
+            centerX + Math.cos(angle) * innerRadius,
+            centerY + Math.sin(angle) * innerRadius * innerVerticalScale,
+        ],
+        control: [
+            centerX + Math.cos(angle) * midRadius - Math.sin(angle) * lensBend,
+            centerY + Math.sin(angle) * midRadius * midVerticalScale,
+        ],
+        end: [
+            centerX + Math.cos(angle) * outerRadius,
+            outerCenterY + Math.sin(angle) * outerRadius * outerVerticalScale,
+        ],
+        frontness: 0.5 + Math.sin(angle) * 0.5,
     };
 }
 
@@ -521,6 +557,52 @@ function drawToroidField(
         })),
     ];
     const harmonicCount = Math.max(2, ...all.map((item) => item.harmonicIndex + 1));
+    const fieldEnergy = all.length === 0
+        ? 0
+        : all.reduce((sum, item) => sum + item.activity, 0) / all.length;
+
+    // Meridians are a non-semantic reference grid. They reveal the fisheye
+    // surface while the concentric parallels remain the harmonic carriers.
+    const structuralMeridianCount = 24;
+    for (let index = 0; index < structuralMeridianCount; index += 1) {
+        const meridian = buildToroidStructuralMeridian({
+            centerX,
+            centerY,
+            innerRadius,
+            outerRadius,
+            index,
+            count: structuralMeridianCount,
+        });
+        const meridianGradient = context.createLinearGradient(
+            meridian.start[0],
+            meridian.start[1],
+            meridian.end[0],
+            meridian.end[1],
+        );
+        const visibility = (0.022 + meridian.frontness * 0.052)
+            * scene.confidence
+            * (0.72 + fieldEnergy * 0.55);
+        meridianGradient.addColorStop(0, rgba(palette.low, visibility * 0.52));
+        meridianGradient.addColorStop(0.55, rgba(palette.mid, visibility * 0.78));
+        meridianGradient.addColorStop(1, rgba(palette.high, visibility));
+        context.setLineDash([]);
+        context.shadowBlur = 0;
+        context.strokeStyle = meridianGradient;
+        context.lineWidth = Math.max(
+            0.45,
+            settings.ribbonWidth * (0.42 + meridian.frontness * 0.42),
+        );
+        context.beginPath();
+        context.moveTo(meridian.start[0], meridian.start[1]);
+        context.quadraticCurveTo(
+            meridian.control[0],
+            meridian.control[1],
+            meridian.end[0],
+            meridian.end[1],
+        );
+        context.stroke();
+    }
+
     const parallels = all.map((item) => ({
         item,
         geometry: buildToroidParallel({
@@ -530,8 +612,6 @@ function drawToroidField(
             harmonicIndex: item.harmonicIndex,
             harmonicCount,
             timeSeconds: scene.flowTimeSeconds,
-            activity: item.activity,
-            wiggle: item.wiggle,
         }),
     })).sort((a, b) => a.geometry.radiusX - b.geometry.radiusX);
 
