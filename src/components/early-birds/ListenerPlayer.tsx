@@ -13,13 +13,20 @@ type PlaybackMode = 'intro' | 'beacon';
 type LiveState = 'idle' | 'loading' | 'recovering' | 'playing' | 'paused' | 'error' | 'displaced';
 type LeasePayload = {
     leaseId: string;
+    leaseGeneration?: number;
+    presenceSequence?: number;
     leaseExpiresAt: string;
     stream: { manifestUrl: string; expiresAt: string };
 };
-type HeartbeatPayload = Omit<LeasePayload, 'leaseId'>;
+type HeartbeatPayload = Omit<LeasePayload, 'leaseId'> & {
+    leaseGeneration?: number;
+    presenceSequence?: number;
+};
 type LeaseProbeResult =
     | { kind: 'active'; grant: HeartbeatPayload }
+    | { kind: 'superseded' }
     | { kind: 'reacquire' }
+    | { kind: 'refresh-required' }
     | { kind: 'displaced' }
     | { kind: 'denied' }
     | { kind: 'retry' };
@@ -37,6 +44,45 @@ const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
 const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
 const TRANSPORT_FADE_OUT_MS = 650;
+
+export const LISTENER_PLAYBACK_PRESENCE_EVENT = 'listener:playback-presence';
+
+type LeaseCursor = {
+    leaseId: string;
+    leaseGeneration: number;
+    presenceSequence: number;
+};
+
+/**
+ * Lease responses can race recovery, page-resume and the initial prewarm.
+ * A response is usable only when it cannot move either the request order or
+ * the server-issued generation/sequence backwards.
+ */
+export function acceptsLeaseCursor(
+    current: LeaseCursor | null,
+    candidate: LeaseCursor,
+    appliedRequestOrder: number,
+    candidateRequestOrder: number,
+): boolean {
+    if (!current || current.leaseId !== candidate.leaseId) {
+        return candidateRequestOrder >= appliedRequestOrder;
+    }
+    if (candidate.leaseGeneration !== current.leaseGeneration) {
+        return candidate.leaseGeneration > current.leaseGeneration;
+    }
+    if (candidate.presenceSequence !== current.presenceSequence) {
+        return candidate.presenceSequence > current.presenceSequence;
+    }
+    return candidateRequestOrder >= appliedRequestOrder;
+}
+
+export function nextPresenceSequence(
+    currentPresence: 'idle' | 'listening',
+    nextPresence: 'idle' | 'listening',
+    currentSequence: number,
+): number {
+    return nextPresence === currentPresence ? currentSequence : currentSequence + 1;
+}
 
 // The Listener does not need low latency. Holding roughly five six-second HLS
 // segments behind the edge gives desktop browsers useful network headroom
@@ -206,6 +252,10 @@ export default function ListenerPlayer({
     const manifestUrl = useRef<string | null>(null);
     const manifestExpiresAt = useRef(0);
     const leaseId = useRef<string | null>(null);
+    const leaseGeneration = useRef<number | null>(null);
+    const presenceSequence = useRef(0);
+    const leaseRequestOrder = useRef(0);
+    const appliedLeaseRequestOrder = useRef(0);
     const liveStateRef = useRef<LiveState>('idle');
     const wantsLivePlayback = useRef(false);
     const playbackAttemptRunning = useRef(false);
@@ -294,27 +344,72 @@ export default function ListenerPlayer({
         setLivePrepared(true);
     }, [stopHls]);
 
-    const requestLease = useCallback(async (intent: 'play' | 'prepare' = 'play'): Promise<LeasePayload> => {
-        const deviceId = getOrCreateEarlyBirdDeviceId(window.localStorage);
+    const clearLeaseCursor = useCallback(() => {
+        leaseId.current = null;
+        leaseGeneration.current = null;
+        presenceSequence.current = 0;
+    }, []);
+
+    const requestLease = useCallback(async (
+        intent: 'play' | 'prepare' | 'claim' = 'play',
+    ): Promise<LeasePayload> => {
+        const requestOrder = ++leaseRequestOrder.current;
+        // A tab is one connection. sessionStorage survives reload in that tab
+        // without making two tabs collapse onto the same server-side lease.
+        const deviceId = getOrCreateEarlyBirdDeviceId(window.sessionStorage);
         const response = await fetch('/api/early-birds/stream/lease', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ deviceId, intent }),
         });
         if (!response.ok) throw new LeaseRequestError(response.status);
-        return response.json() as Promise<LeasePayload>;
+        const grant = await response.json() as LeasePayload;
+        // Generation/sequence are mandatory in the quota-aware API. Defaults
+        // keep a rolling deploy compatible with the immediately preceding
+        // Listener runtime until the server half is deployed.
+        const candidate = {
+            leaseId: grant.leaseId,
+            leaseGeneration: Number.isSafeInteger(grant.leaseGeneration) ? grant.leaseGeneration! : 1,
+            presenceSequence: Number.isSafeInteger(grant.presenceSequence) ? grant.presenceSequence! : 0,
+        };
+        const current = leaseId.current && leaseGeneration.current !== null
+            ? {
+                leaseId: leaseId.current,
+                leaseGeneration: leaseGeneration.current,
+                presenceSequence: presenceSequence.current,
+            }
+            : null;
+        if (!acceptsLeaseCursor(
+            current,
+            candidate,
+            appliedLeaseRequestOrder.current,
+            requestOrder,
+        )) {
+            throw new LeaseRequestError(409);
+        }
+        appliedLeaseRequestOrder.current = Math.max(appliedLeaseRequestOrder.current, requestOrder);
+        leaseId.current = candidate.leaseId;
+        leaseGeneration.current = candidate.leaseGeneration;
+        presenceSequence.current = candidate.presenceSequence;
+        listenerPresence.current = intent === 'play' ? 'listening' : 'idle';
+        return grant;
     }, []);
 
     const probeExistingLease = useCallback(async (
         presence = listenerPresence.current,
     ): Promise<LeaseProbeResult> => {
-        if (!leaseId.current) return { kind: 'reacquire' };
+        const currentLeaseId = leaseId.current;
+        const currentGeneration = leaseGeneration.current;
+        if (!currentLeaseId || currentGeneration === null) return { kind: 'reacquire' };
+        const sentSequence = presenceSequence.current;
         try {
             const response = await fetch('/api/early-birds/stream/heartbeat', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({
-                    leaseId: leaseId.current,
+                    leaseId: currentLeaseId,
+                    leaseGeneration: currentGeneration,
+                    presenceSequence: sentSequence,
                     intent: wantsLivePlayback.current ? 'play' : 'prepare',
                     presence,
                 }),
@@ -325,29 +420,114 @@ export default function ListenerPlayer({
                     ? { kind: 'displaced' }
                     : { kind: 'reacquire' };
             }
+            if (response.status === 409) return { kind: 'refresh-required' };
             if (response.status === 401 || response.status === 403) return { kind: 'denied' };
             if (!response.ok) return { kind: 'retry' };
-            return { kind: 'active', grant: await response.json() as HeartbeatPayload };
+            const grant = await response.json() as HeartbeatPayload;
+            const returnedGeneration = Number.isSafeInteger(grant.leaseGeneration)
+                ? grant.leaseGeneration!
+                : currentGeneration;
+            const returnedSequence = Number.isSafeInteger(grant.presenceSequence)
+                ? grant.presenceSequence!
+                : sentSequence;
+            if (
+                leaseId.current !== currentLeaseId
+                || leaseGeneration.current !== currentGeneration
+                || returnedGeneration !== currentGeneration
+                || returnedSequence < presenceSequence.current
+            ) {
+                return { kind: 'superseded' };
+            }
+            presenceSequence.current = returnedSequence;
+            return { kind: 'active', grant };
         } catch {
             return { kind: 'retry' };
         }
     }, []);
 
     const reportPresence = useCallback((presence: 'idle' | 'listening') => {
+        const previousPresence = listenerPresence.current;
+        presenceSequence.current = nextPresenceSequence(
+            previousPresence,
+            presence,
+            presenceSequence.current,
+        );
         listenerPresence.current = presence;
         const currentLeaseId = leaseId.current;
-        if (!currentLeaseId || typeof navigator.sendBeacon !== 'function') return;
-        const body = new Blob([
-            JSON.stringify({
+        const currentGeneration = leaseGeneration.current;
+        const currentSequence = presenceSequence.current;
+        if (currentLeaseId && currentGeneration !== null) {
+            const serialized = JSON.stringify({
                 leaseId: currentLeaseId,
+                leaseGeneration: currentGeneration,
+                presenceSequence: currentSequence,
                 intent: wantsLivePlayback.current ? 'play' : 'prepare',
                 presence,
-            }),
-        ], { type: 'application/json' });
-        // sendBeacon survives pagehide and does not compete with playback or
-        // recovery fetches. The ordinary heartbeat remains the reliable retry.
-        navigator.sendBeacon('/api/early-birds/stream/heartbeat', body);
-    }, []);
+            });
+            const body = new Blob([serialized], { type: 'application/json' });
+            // sendBeacon survives pagehide and does not compete with playback or
+            // recovery fetches. The duplicate ordinary heartbeat below is
+            // idempotent and gives us an authoritative response immediately.
+            navigator.sendBeacon?.('/api/early-birds/stream/heartbeat', body);
+
+            void Promise.resolve(fetch('/api/early-birds/stream/heartbeat', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: serialized,
+                keepalive: true,
+            })).then(async (response) => {
+                if (!response) return;
+                // A later transition or replacement lease won this race.
+                if (
+                    leaseId.current !== currentLeaseId
+                    || leaseGeneration.current !== currentGeneration
+                    || presenceSequence.current !== currentSequence
+                ) return;
+
+                if (response.ok) {
+                    const grant = await response.json() as HeartbeatPayload;
+                    const returnedGeneration = Number.isSafeInteger(grant.leaseGeneration)
+                        ? grant.leaseGeneration!
+                        : currentGeneration;
+                    const returnedSequence = Number.isSafeInteger(grant.presenceSequence)
+                        ? grant.presenceSequence!
+                        : currentSequence;
+                    // A heartbeat never replaces a manifest or generation.
+                    // Ignore reordered data rather than moving the cursor back.
+                    if (
+                        returnedGeneration === currentGeneration
+                        && returnedSequence >= presenceSequence.current
+                    ) {
+                        presenceSequence.current = returnedSequence;
+                        manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
+                    }
+                    return;
+                }
+
+                if (![401, 403, 409, 410].includes(response.status)) return;
+                const payload = await response.json().catch(() => null) as { reason?: unknown } | null;
+                const displaced = response.status === 410
+                    && earlyBirdLeaseRecoveryDisposition(payload) === 'displaced';
+                // The server rejected the exact cursor we still hold. Stop
+                // immediately; a stale tab must not destructively reacquire.
+                wantsLivePlayback.current = false;
+                liveAudio.current?.pause();
+                stopHls();
+                clearLeaseCursor();
+                livePreparedRef.current = false;
+                setLivePrepared(false);
+                setDevicePreparedByGesture(false);
+                setPrepareFailure(displaced ? 'capacity' : 'unavailable');
+                updateLiveState(displaced ? 'displaced' : 'error');
+            }).catch(() => {
+                // The beacon copy remains the best-effort pagehide delivery.
+                // Periodic recovery is the bounded reliable retry.
+            });
+        }
+        window.dispatchEvent(new CustomEvent(LISTENER_PLAYBACK_PRESENCE_EVENT, {
+            detail: { presence },
+        }));
+    }, [clearLeaseCursor, stopHls, updateLiveState]);
 
     const cancelLiveFade = useCallback(() => {
         if (liveFadeFrame.current !== null) {
@@ -473,30 +653,65 @@ export default function ListenerPlayer({
         if (!audio || playbackAttemptRunning.current) return false;
         playbackAttemptRunning.current = true;
         try {
-            let priorityRefreshed = false;
             // Reuse the source preparation started on mount instead of racing
             // it with a second lease request when a tester clicks immediately.
             if (!forceRefresh && livePreparation.current) await livePreparation.current;
             if (verifyExistingLease && leaseId.current) {
                 const probe = await probeExistingLease();
-                if (probe.kind === 'displaced' || probe.kind === 'denied') {
+                if (
+                    probe.kind === 'displaced'
+                    || probe.kind === 'denied'
+                    || probe.kind === 'refresh-required'
+                ) {
                     wantsLivePlayback.current = false;
                     audio.pause();
                     stopHls();
-                    leaseId.current = null;
+                    clearLeaseCursor();
                     updateLiveState(probe.kind === 'displaced' ? 'displaced' : 'error');
                     return false;
                 }
                 if (probe.kind === 'retry') return false;
                 if (probe.kind === 'reacquire') {
-                    leaseId.current = null;
+                    clearLeaseCursor();
                     manifestUrl.current = null;
                     manifestExpiresAt.current = 0;
-                } else {
+                } else if (probe.kind === 'active') {
                     manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
-                    await attachManifest(probe.grant.stream.manifestUrl);
+                    if (probe.grant.stream.manifestUrl !== manifestUrl.current) {
+                        await attachManifest(probe.grant.stream.manifestUrl);
+                    }
                     forceRefresh = false;
-                    priorityRefreshed = true;
+                } else {
+                    // A newer request/presence report won the race. Keep its
+                    // already attached source and do not apply the old reply.
+                    forceRefresh = false;
+                }
+            }
+
+            if (
+                leaseId.current
+                && !forceRefresh
+                && manifestExpiresAt.current <= Date.now() + 30_000
+            ) {
+                const probe = await probeExistingLease();
+                if (probe.kind === 'active') {
+                    manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
+                    if (probe.grant.stream.manifestUrl !== manifestUrl.current) {
+                        await attachManifest(probe.grant.stream.manifestUrl);
+                    }
+                } else if (probe.kind === 'reacquire') {
+                    clearLeaseCursor();
+                    manifestUrl.current = null;
+                    manifestExpiresAt.current = 0;
+                } else if (probe.kind === 'displaced' || probe.kind === 'refresh-required') {
+                    wantsLivePlayback.current = false;
+                    audio.pause();
+                    stopHls();
+                    clearLeaseCursor();
+                    updateLiveState(probe.kind === 'displaced' ? 'displaced' : 'error');
+                    return false;
+                } else if (probe.kind === 'denied' || probe.kind === 'retry') {
+                    return false;
                 }
             }
             if (
@@ -506,22 +721,10 @@ export default function ListenerPlayer({
                 manifestExpiresAt.current <= Date.now() + 30_000
             ) {
                 const grant = await requestLease('play');
-                leaseId.current = grant.leaseId;
                 manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
                 if (forceRefresh || grant.stream.manifestUrl !== manifestUrl.current) {
                     await attachManifest(grant.stream.manifestUrl);
                 }
-                priorityRefreshed = true;
-            } else if (!priorityRefreshed) {
-                // Promote an iOS prewarm lease without delaying play() beyond
-                // the user gesture. The stable same-device lease keeps the URL.
-                void requestLease('play').then((grant) => {
-                    leaseId.current = grant.leaseId;
-                    manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
-                }).catch(() => {
-                    // The already-authorized source remains usable. Its active
-                    // heartbeat retries priority promotion without interrupting audio.
-                });
             }
 
             const liveSyncPosition = hls.current?.liveSyncPosition;
@@ -538,7 +741,7 @@ export default function ListenerPlayer({
         } finally {
             playbackAttemptRunning.current = false;
         }
-    }, [attachManifest, probeExistingLease, requestLease, stopHls, updateLiveState]);
+    }, [attachManifest, clearLeaseCursor, probeExistingLease, requestLease, stopHls, updateLiveState]);
 
     const prepareLiveSource = useCallback((forceRefresh = false): Promise<boolean> => {
         if (!forceRefresh && livePreparedRef.current && manifestExpiresAt.current > Date.now() + 30_000) {
@@ -549,7 +752,6 @@ export default function ListenerPlayer({
         const pending = (async () => {
             try {
                 const grant = await requestLease('prepare');
-                leaseId.current = grant.leaseId;
                 manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
                 await attachManifest(grant.stream.manifestUrl);
                 setPrepareFailure(null);
@@ -576,11 +778,10 @@ export default function ListenerPlayer({
         setLivePreparing(true);
         updateLiveState('loading');
         try {
-            // An explicit play intent may displace the account's oldest device.
+            // An explicit claim may displace the account's oldest device.
             // It deliberately prepares only: iOS needs a second gesture once the
             // source exists so play() stays inside that gesture for every element.
-            const grant = await requestLease('play');
-            leaseId.current = grant.leaseId;
+            const grant = await requestLease('claim');
             manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
             await attachManifest(grant.stream.manifestUrl);
             setPrepareFailure(null);
@@ -605,9 +806,13 @@ export default function ListenerPlayer({
         const pending = (async () => {
             try {
                 const probe = await probeExistingLease();
-                if (probe.kind === 'displaced' || probe.kind === 'denied') {
+                if (
+                    probe.kind === 'displaced'
+                    || probe.kind === 'denied'
+                    || probe.kind === 'refresh-required'
+                ) {
                     stopHls();
-                    leaseId.current = null;
+                    clearLeaseCursor();
                     setPrepareFailure(probe.kind === 'displaced' ? 'capacity' : 'unavailable');
                     if (probe.kind === 'denied') updateLiveState('error');
                     return false;
@@ -627,12 +832,17 @@ export default function ListenerPlayer({
                     setPrepareFailure(null);
                     return true;
                 }
+                if (probe.kind === 'superseded') {
+                    livePreparedRef.current = true;
+                    setLivePrepared(true);
+                    setPrepareFailure(null);
+                    return true;
+                }
 
-                leaseId.current = null;
+                clearLeaseCursor();
                 manifestUrl.current = null;
                 manifestExpiresAt.current = 0;
                 const grant = await requestLease('prepare');
-                leaseId.current = grant.leaseId;
                 manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
                 await attachManifest(grant.stream.manifestUrl);
                 setPrepareFailure(null);
@@ -648,7 +858,7 @@ export default function ListenerPlayer({
             }
         })();
         livePreparation.current = pending;
-    }, [attachManifest, probeExistingLease, requestLease, stopHls, updateLiveState]);
+    }, [attachManifest, clearLeaseCursor, probeExistingLease, requestLease, stopHls, updateLiveState]);
 
     useEffect(() => {
         // Preparing (but not playing) the native element lets an intro click
@@ -702,6 +912,7 @@ export default function ListenerPlayer({
                 }
                 if (recovered) {
                     recoveryAttempts.current = 0;
+                    reportPresence('listening');
                     updateLiveState('playing');
                     return;
                 }
@@ -897,13 +1108,17 @@ export default function ListenerPlayer({
             // so its lease must also remain current while playback is idle.
             if (!leaseId.current) return;
             const probe = await probeExistingLease();
-            if (probe.kind === 'displaced' || probe.kind === 'denied') {
+            if (
+                probe.kind === 'displaced'
+                || probe.kind === 'denied'
+                || probe.kind === 'refresh-required'
+            ) {
                 wantsLivePlayback.current = false;
                 reportPresence('idle');
                 cancelRecovery(true);
                 liveAudio.current?.pause();
                 stopHls();
-                leaseId.current = null;
+                clearLeaseCursor();
                 livePreparedRef.current = false;
                 setLivePrepared(false);
                 setDevicePreparedByGesture(false);
@@ -912,7 +1127,7 @@ export default function ListenerPlayer({
                 return;
             }
             if (probe.kind === 'reacquire') {
-                leaseId.current = null;
+                clearLeaseCursor();
                 livePreparedRef.current = false;
                 setLivePrepared(false);
                 setDevicePreparedByGesture(false);
@@ -927,7 +1142,7 @@ export default function ListenerPlayer({
             }
         }, 60_000);
         return () => window.clearInterval(interval);
-    }, [cancelRecovery, prepareLiveSource, probeExistingLease, reportPresence, scheduleAutomaticRecovery, stopHls, updateLiveState]);
+    }, [cancelRecovery, clearLeaseCursor, prepareLiveSource, probeExistingLease, reportPresence, scheduleAutomaticRecovery, stopHls, updateLiveState]);
 
     useEffect(() => () => {
         wantsLivePlayback.current = false;
@@ -1003,15 +1218,9 @@ export default function ListenerPlayer({
                 cancelRecovery(true);
                 updateLiveState('loading');
                 seekNativeAudioToLiveEdge(liveAudio.current);
-                // Promote the already prepared same-device lease without
-                // delaying either media play() call beyond this user gesture.
-                void requestLease('play').then((grant) => {
-                    leaseId.current = grant.leaseId;
-                    manifestExpiresAt.current = Date.parse(grant.stream.expiresAt);
-                }).catch(() => {
-                    // The prepared source remains authorized. Heartbeat/recovery
-                    // will retry without interrupting the introduction.
-                });
+                // Keep the exact prepared lease and manifest. Once media starts,
+                // the sequenced LISTENING heartbeat promotes this lease without
+                // replacing the source or leaving the Safari user gesture.
                 liveStarted = liveAudio.current.play();
             }
             const introStarted = selected.play();

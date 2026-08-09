@@ -41,9 +41,12 @@ vi.mock('hls.js', () => {
     return { default: TestHls };
 });
 import ListenerPlayer, {
+    acceptsLeaseCursor,
     earlyBirdLeaseRecoveryDisposition,
     getOrCreateEarlyBirdDeviceId,
     LISTENER_HLS_BUFFER_CONFIG,
+    LISTENER_PLAYBACK_PRESENCE_EVENT,
+    nextPresenceSequence,
     prefersNativeHls,
     seekNativeAudioToLiveEdge,
 } from '../ListenerPlayer';
@@ -52,17 +55,45 @@ afterEach(() => {
     cleanup();
     vi.useRealTimers();
     window.localStorage.clear();
+    window.sessionStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     hlsHarness.instances.length = 0;
 });
 
 describe('EarlyBird Listener player', () => {
-    it('keeps the device identifier stable and device-local', () => {
-        const first = getOrCreateEarlyBirdDeviceId(window.localStorage);
-        const second = getOrCreateEarlyBirdDeviceId(window.localStorage);
+    it('keeps the connection identifier stable per tab without sharing it across tabs', () => {
+        const first = getOrCreateEarlyBirdDeviceId(window.sessionStorage);
+        const second = getOrCreateEarlyBirdDeviceId(window.sessionStorage);
         expect(second).toBe(first);
         expect(first.length).toBeGreaterThanOrEqual(16);
+
+        const otherTab = new Map<string, string>();
+        const otherTabStorage = {
+            getItem: (key: string) => otherTab.get(key) ?? null,
+            setItem: (key: string, value: string) => { otherTab.set(key, value); },
+        } as Storage;
+        expect(getOrCreateEarlyBirdDeviceId(otherTabStorage)).not.toBe(first);
+        expect(window.localStorage.getItem('hb_earlybird_device_id')).toBeNull();
+    });
+
+    it('never accepts a reordered lease generation or presence sequence', () => {
+        const current = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 4,
+            presenceSequence: 7,
+        };
+        expect(acceptsLeaseCursor(current, { ...current, presenceSequence: 6 }, 3, 4)).toBe(false);
+        expect(acceptsLeaseCursor(current, { ...current, leaseGeneration: 3 }, 3, 4)).toBe(false);
+        expect(acceptsLeaseCursor(current, { ...current, presenceSequence: 8 }, 3, 4)).toBe(true);
+        expect(acceptsLeaseCursor(current, { ...current, leaseGeneration: 5, presenceSequence: 0 }, 3, 4)).toBe(true);
+        // Server generation is authoritative even if the corresponding HTTP
+        // request started earlier and its response arrived last.
+        expect(acceptsLeaseCursor(current, { ...current, leaseGeneration: 5 }, 5, 4)).toBe(true);
+        expect(acceptsLeaseCursor(current, { ...current }, 5, 4)).toBe(false);
+        expect(nextPresenceSequence('idle', 'listening', 7)).toBe(8);
+        expect(nextPresenceSequence('listening', 'listening', 8)).toBe(8);
+        expect(nextPresenceSequence('listening', 'idle', 8)).toBe(9);
     });
 
     it('resumes a native HLS element at the current live edge', () => {
@@ -115,6 +146,7 @@ describe('EarlyBird Listener player', () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(new Response(JSON.stringify(grants[0]), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(grants[0]), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(grants[1]), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(grants[1]), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
         render(
@@ -129,7 +161,7 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
         expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/early-birds/stream/heartbeat');
         expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
@@ -172,6 +204,146 @@ describe('EarlyBird Listener player', () => {
         expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
     });
 
+    it('promotes a prepared generation by heartbeat and stops it with the next sequence', async () => {
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const manifestUrl = '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003&leaseGeneration=1';
+        const leaseGrant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: { manifestUrl, expiresAt: '2099-08-06T12:03:00.000Z' },
+        };
+        const heartbeat = (presenceSequence: number) => ({
+            leaseGeneration: 1,
+            presenceSequence,
+            leaseExpiresAt: '2099-08-06T12:04:00.000Z',
+            stream: { manifestUrl, expiresAt: '2099-08-06T12:04:00.000Z' },
+        });
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(leaseGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(heartbeat(1)), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(heartbeat(2)), { status: 200 }));
+        vi.stubGlobal('fetch', fetchMock);
+        const presenceEvents: string[] = [];
+        const capturePresence = ((event: CustomEvent) => {
+            presenceEvents.push(event.detail.presence);
+        }) as EventListener;
+        window.addEventListener(LISTENER_PLAYBACK_PRESENCE_EVENT, capturePresence);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ intent: 'prepare' });
+        expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+            leaseGeneration: 1,
+            presenceSequence: 1,
+            presence: 'listening',
+        });
+        expect(hlsHarness.instances).toHaveLength(1);
+        expect(hlsHarness.instances[0].loadedSources).toEqual([manifestUrl]);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+        expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
+            leaseGeneration: 1,
+            presenceSequence: 2,
+            presence: 'idle',
+        });
+        expect(presenceEvents).toEqual(['listening', 'idle']);
+        window.removeEventListener(LISTENER_PLAYBACK_PRESENCE_EVENT, capturePresence);
+    });
+
+    it('fails closed on an immediate stale-cursor response without destructive reacquisition', async () => {
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const manifestUrl = '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003&leaseGeneration=1';
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: { manifestUrl, expiresAt: '2099-08-06T12:03:00.000Z' },
+        };
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                error: 'Lease refresh required.',
+                reason: 'refresh_required',
+            }), { status: 409 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+            'The Beacon is unavailable right now.',
+        ));
+        expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+            '/api/early-birds/stream/lease',
+            '/api/early-birds/stream/heartbeat',
+        ]);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('claims capacity without starting quota and activates the same claimed generation', async () => {
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const manifestUrl = '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003&leaseGeneration=2';
+        const claimGrant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 2,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: { manifestUrl, expiresAt: '2099-08-06T12:03:00.000Z' },
+        };
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({ reason: 'device_limit' }), { status: 409 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(claimGrant), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                ...claimGrant,
+                presenceSequence: 1,
+            }), { status: 200 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        await waitFor(() => expect(screen.getByText(
+            'Two devices are already active. Enabling this one will stop playback on the least recent device.',
+        )).toBeInTheDocument());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({ intent: 'claim' });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+        expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
+            leaseGeneration: 2,
+            presenceSequence: 1,
+            presence: 'listening',
+        });
+        expect(hlsHarness.instances).toHaveLength(1);
+        expect(hlsHarness.instances[0].loadedSources).toEqual([manifestUrl]);
+    });
+
     it('does not offer resume after a paused source loses preparation', async () => {
         vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
@@ -186,6 +358,7 @@ describe('EarlyBird Listener player', () => {
             },
         };
         const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(grant), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -214,7 +387,7 @@ describe('EarlyBird Listener player', () => {
         Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
         fireEvent(document, new Event('visibilitychange'));
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
         expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled();
         expect(screen.getByText('Two devices are already active. Enabling this one will stop playback on the least recent device.'))
             .toBeInTheDocument();
@@ -247,12 +420,16 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         hlsHarness.instances[0].emitFatal();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5), { timeout: 5_500 });
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+            'The Beacon is unavailable right now.',
+        ), { timeout: 5_500 });
+        const boundedCallCount = fetchMock.mock.calls.length;
+        expect(boundedCallCount).toBeLessThanOrEqual(6);
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
             'The Beacon is unavailable right now.',
         ));
         await new Promise((resolve) => setTimeout(resolve, 100));
-        expect(fetchMock).toHaveBeenCalledTimes(5);
+        expect(fetchMock).toHaveBeenCalledTimes(boundedCallCount);
     }, 7_000);
 
     it('does not churn a healthy native stream on suspend and refreshes it after an error', async () => {
@@ -334,7 +511,7 @@ describe('EarlyBird Listener player', () => {
         expect(fetchMock).toHaveBeenCalledTimes(3);
         expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
             '/api/early-birds/stream/lease',
-            '/api/early-birds/stream/lease',
+            '/api/early-birds/stream/heartbeat',
             '/api/early-birds/stream/heartbeat',
         ]);
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -368,6 +545,7 @@ describe('EarlyBird Listener player', () => {
                 error: 'Listening lease expired.',
                 reason: 'expired',
             }), { status: 410 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify(replacementGrant), { status: 200 }))
             .mockResolvedValueOnce(new Response(JSON.stringify(replacementGrant), { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);
         render(
@@ -382,12 +560,13 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
         hlsHarness.instances[0].emitFatal();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
         expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
             '/api/early-birds/stream/lease',
-            '/api/early-birds/stream/lease',
+            '/api/early-birds/stream/heartbeat',
             '/api/early-birds/stream/heartbeat',
             '/api/early-birds/stream/lease',
+            '/api/early-birds/stream/heartbeat',
         ]);
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
         expect(hlsHarness.instances[1].loadedSources).toEqual([replacementGrant.stream.manifestUrl]);
@@ -437,9 +616,11 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByText('Restoring connection…')).toBeInTheDocument());
         finishFirstPlay?.();
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-        await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3), { timeout: 3_000 });
+        // Presence promotion/refresh never replaces the prepared generation or
+        // creates a second audio pipeline.
+        expect(hlsHarness.instances).toHaveLength(1);
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
-        expect(hlsHarness.instances[1].loadedSources).toEqual([refreshedGrant.stream.manifestUrl]);
+        expect(hlsHarness.instances[0].loadedSources).toEqual([initialGrant.stream.manifestUrl]);
     });
 });
