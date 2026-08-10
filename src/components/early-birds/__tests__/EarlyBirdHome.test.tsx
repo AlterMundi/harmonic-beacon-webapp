@@ -111,6 +111,21 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
     });
 
+    it('labels a canonically active paid membership as Founding Listener', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'founder', provider: 'paypal', state: 'active' }}
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByText('Founding Listener')).toBeInTheDocument();
+        expect(screen.queryByText('Preview access')).not.toBeInTheDocument();
+    });
+
     it('places Free allowance and membership action below the listening surface', () => {
         render(
             <LocaleProvider initialLocale="en">

@@ -1,4 +1,5 @@
 import { headers as requestHeaders } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 import EarlyBirdLanding from '@/components/early-birds/EarlyBirdLanding';
 import EarlyBirdHome from '@/components/early-birds/EarlyBirdHome';
@@ -52,6 +53,20 @@ export default async function EarlyBirdsPage({
     const checkoutAvailability = listenerStagingHost
         ? listenerCheckoutAvailability()
         : { paypal: false, mercadoPago: false };
+    const params = await searchParams;
+    const paypalReturn = params.paypal;
+    const checkoutReturn = params.checkout;
+    if (listenerStagingHost && (
+        paypalReturn === 'success'
+        || paypalReturn === 'cancel'
+        || checkoutReturn === 'returned'
+        || checkoutReturn === 'cancelled'
+    )) {
+        // Provider redirects are never membership authority. Remove their opaque
+        // browser parameters before rendering; the clean request will read the
+        // canonical server-side membership projection instead.
+        redirect('/');
+    }
 
     if (earlyBirdsFreeForAll()) {
         return (
@@ -69,7 +84,6 @@ export default async function EarlyBirdsPage({
         );
     }
 
-    const params = await searchParams;
     const sessionResolution = await currentEarlyBirdSession()
         .then((session) => ({ session, unavailable: false as const }))
         .catch(() => ({ session: null, unavailable: true as const }));
