@@ -1,0 +1,26 @@
+{
+  "schema_version": "early-bird-membership.command.v2",
+  "account_id": "account_synthetic_0001",
+  "membership_revision": 3,
+  "state": "ACTIVE",
+  "source": "PAYPAL",
+  "offer": {"code": "EARLY_BIRDS_FOUNDERS_V1", "revision": 1},
+  "effective_at": "2026-08-06T12:00:00Z",
+  "paid_through": "2026-09-06T12:00:00Z",
+  "grace_until": null,
+  "provider": "paypal",
+  "current_price": {"currency": "USD", "amount_minor": 500},
+  "reason_code": "PAYMENT_SUCCEEDED",
+  "founder_continuity": {
+    "episode_id": "eb300000-0000-4000-8000-000000000001",
+    "revision": 2,
+    "state": "ACTIVE",
+    "offer": {"code": "EARLY_BIRDS_FOUNDERS_V1", "revision": 1},
+    "canonical_price": {"currency": "USD", "amount_minor": 500},
+    "billing_period": "MONTHLY",
+    "activated_at": "2026-08-06T12:00:00Z",
+    "service_through": "2026-09-06T12:00:00Z",
+    "ended_at": null,
+    "terminal_reason": null
+  }
+}

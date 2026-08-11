@@ -1,16 +1,18 @@
-import type { EarlyBirdMembershipProjectionCommand } from './membership';
+import type {
+    EarlyBirdFounderContinuity,
+    EarlyBirdMembershipProjectionCommand,
+} from './membership';
 import { isEarlyBirdAccountId } from './account-id';
 
 const COMMAND_KEYS = [
     'account_id', 'current_price', 'effective_at', 'grace_until', 'membership_revision', 'offer',
-    'paid_through', 'provider', 'reason_code', 'schema_version', 'source', 'state',
+    'paid_through', 'provider', 'reason_code', 'schema_version', 'source', 'state', 'founder_continuity',
 ] as const;
 const AUTHORITY_KEYS = [
     'access_allowed', 'account_id', 'current_price', 'effective_at', 'free_entitlement_consumed',
     'grace_until', 'membership_revision', 'offer', 'paid_through', 'provider', 'reason_code',
-    'schema_version', 'source', 'state',
+    'schema_version', 'source', 'state', 'founder_continuity',
 ] as const;
-const AUTHORITY_V2_KEYS = [...AUTHORITY_KEYS, 'founder_price_eligibility'] as const;
 const STATES = [
     'PENDING', 'ACTIVE', 'GRACE', 'CANCELLED_PENDING_END', 'EXPIRED', 'REFUNDED', 'REVOKED',
 ] as const;
@@ -24,24 +26,11 @@ export class EarlyBirdMembershipContractError extends Error {
     }
 }
 
-export type CanonicalAuthorityMembership = Omit<EarlyBirdMembershipProjectionCommand, 'schema_version'> & {
-    schema_version: 'early-bird-authority.membership.v1';
+export type CanonicalAuthorityMembershipV3 = Omit<EarlyBirdMembershipProjectionCommand, 'schema_version'> & {
+    schema_version: 'early-bird-authority.membership.v3';
     access_allowed: boolean;
     free_entitlement_consumed: boolean;
 };
-
-export type FounderPriceEligibility = {
-    offer: { code: 'EARLY_BIRDS_FOUNDERS_V1'; revision: number };
-    canonical_price: { currency: 'USD'; amount_minor: 500 };
-    billing_period: 'MONTHLY';
-    granted_at: string;
-};
-
-export type CanonicalAuthorityMembershipV2 =
-    Omit<CanonicalAuthorityMembership, 'schema_version'> & {
-        schema_version: 'early-bird-authority.membership.v2';
-        founder_price_eligibility: FounderPriceEligibility | null;
-    };
 
 function record(value: unknown, label: string): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -138,14 +127,28 @@ function price(value: unknown): EarlyBirdMembershipProjectionCommand['current_pr
     };
 }
 
-function founderPriceEligibility(value: unknown): FounderPriceEligibility | null {
+function founderContinuity(value: unknown): EarlyBirdFounderContinuity | null {
     if (value === null) return null;
-    const input = record(value, 'founder_price_eligibility');
-    exactKeys(input, ['billing_period', 'canonical_price', 'granted_at', 'offer']);
+    const input = record(value, 'founder_continuity');
+    exactKeys(input, [
+        'activated_at', 'billing_period', 'canonical_price', 'ended_at', 'episode_id',
+        'offer', 'revision', 'service_through', 'state', 'terminal_reason',
+    ]);
+
+    if (typeof input.episode_id !== 'string'
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.episode_id)) {
+        throw new EarlyBirdMembershipContractError('Founder continuity episode_id is invalid');
+    }
+    if (!Number.isSafeInteger(input.revision) || (input.revision as number) < 1) {
+        throw new EarlyBirdMembershipContractError('Founder continuity revision is invalid');
+    }
+    if (!['ACTIVE', 'CANCELLED_PENDING_END', 'GRACE', 'ENDED'].includes(String(input.state))) {
+        throw new EarlyBirdMembershipContractError('Founder continuity state is invalid');
+    }
 
     const parsedOffer = offer(input.offer);
     if (parsedOffer === null) {
-        throw new EarlyBirdMembershipContractError('Founder price eligibility offer is invalid');
+        throw new EarlyBirdMembershipContractError('Founder continuity offer is invalid');
     }
     const canonicalPrice = record(input.canonical_price, 'founder canonical_price');
     exactKeys(canonicalPrice, ['amount_minor', 'currency']);
@@ -155,12 +158,30 @@ function founderPriceEligibility(value: unknown): FounderPriceEligibility | null
     if (input.billing_period !== 'MONTHLY') {
         throw new EarlyBirdMembershipContractError('Founder billing_period is invalid');
     }
-    const grantedAt = canonicalRfc3339Instant(input.granted_at, 'Founder granted_at');
+    const state = input.state as EarlyBirdFounderContinuity['state'];
+    const endedAt = canonicalNullableRfc3339Instant(input.ended_at, 'Founder ended_at');
+    const terminalReason = input.terminal_reason;
+    if (state === 'ENDED') {
+        if (endedAt === null || typeof terminalReason !== 'string'
+            || terminalReason.length < 1 || terminalReason.length > 64) {
+            throw new EarlyBirdMembershipContractError('Ended Founder continuity lacks terminal evidence');
+        }
+    } else if (endedAt !== null || terminalReason !== null) {
+        throw new EarlyBirdMembershipContractError('Current Founder continuity carries terminal evidence');
+    } else if (input.service_through === null) {
+        throw new EarlyBirdMembershipContractError('Current Founder continuity lacks a service boundary');
+    }
     return {
+        episode_id: input.episode_id,
+        revision: input.revision as number,
+        state,
         offer: parsedOffer,
         canonical_price: { currency: 'USD', amount_minor: 500 },
         billing_period: 'MONTHLY',
-        granted_at: grantedAt,
+        activated_at: canonicalRfc3339Instant(input.activated_at, 'Founder activated_at'),
+        service_through: canonicalNullableRfc3339Instant(input.service_through, 'Founder service_through'),
+        ended_at: endedAt,
+        terminal_reason: terminalReason as string | null,
     };
 }
 
@@ -193,7 +214,7 @@ function common(input: Record<string, unknown>) {
 }
 
 function canonicalAccessAllowed(
-    membership: Pick<CanonicalAuthorityMembership, 'state' | 'paid_through' | 'grace_until'>,
+    membership: Pick<CanonicalAuthorityMembershipV3, 'state' | 'paid_through' | 'grace_until'>,
     now = new Date(),
 ): boolean {
     if (membership.state === 'ACTIVE') {
@@ -208,50 +229,91 @@ function canonicalAccessAllowed(
     return false;
 }
 
+function assertFounderContinuityConsistent(
+    membership: ReturnType<typeof common>,
+    continuity: EarlyBirdFounderContinuity | null,
+): void {
+    if (
+        (membership.source === 'PAYPAL' && membership.provider !== 'paypal')
+        || (membership.source === 'MERCADO_PAGO' && membership.provider !== 'mercado_pago')
+        || ((membership.source === 'FREE' || membership.source === null)
+            && membership.provider !== null)
+    ) {
+        throw new EarlyBirdMembershipContractError('Membership source contradicts provider');
+    }
+    const paid = membership.source === 'PAYPAL' || membership.source === 'MERCADO_PAGO';
+    const currentlyServing = membership.state === 'ACTIVE'
+        || membership.state === 'GRACE'
+        || membership.state === 'CANCELLED_PENDING_END';
+    if (continuity === null) {
+        if (paid && currentlyServing) {
+            throw new EarlyBirdMembershipContractError('Paid service is missing canonical Founder continuity');
+        }
+        return;
+    }
+    if (!paid || membership.offer === null
+        || membership.offer.code !== continuity.offer.code
+        || membership.offer.revision !== continuity.offer.revision) {
+        throw new EarlyBirdMembershipContractError('Founder continuity contradicts current membership');
+    }
+    if (membership.source === 'PAYPAL' && (
+        membership.current_price === null
+        || membership.current_price.currency !== continuity.canonical_price.currency
+        || membership.current_price.amount_minor !== continuity.canonical_price.amount_minor
+    )) {
+        throw new EarlyBirdMembershipContractError('PayPal current price contradicts Founder continuity');
+    }
+    if (membership.source === 'MERCADO_PAGO'
+        && membership.current_price?.currency !== 'ARS') {
+        throw new EarlyBirdMembershipContractError('Mercado Pago current price must be positive ARS');
+    }
+    if (continuity.state === 'ENDED') {
+        if (currentlyServing) {
+            throw new EarlyBirdMembershipContractError('Ended Founder continuity cannot accompany current service');
+        }
+        return;
+    }
+    if (membership.state !== continuity.state) {
+        throw new EarlyBirdMembershipContractError('Current Founder continuity contradicts membership state');
+    }
+    const expectedThrough = continuity.state === 'GRACE'
+        ? membership.grace_until
+        : membership.paid_through;
+    if (continuity.service_through === null || expectedThrough === null
+        || Date.parse(continuity.service_through) !== Date.parse(expectedThrough)) {
+        throw new EarlyBirdMembershipContractError('Founder continuity boundary contradicts membership');
+    }
+}
+
 export function parseMembershipProjectionCommand(value: unknown): EarlyBirdMembershipProjectionCommand {
     const input = record(value, 'membership command');
     exactKeys(input, COMMAND_KEYS);
-    if (input.schema_version !== 'early-bird-membership.command.v1') {
+    if (input.schema_version !== 'early-bird-membership.command.v2') {
         throw new EarlyBirdMembershipContractError('Unsupported membership command schema');
     }
-    return { schema_version: input.schema_version, ...common(input) };
-}
-
-export function parseCanonicalAuthorityMembership(value: unknown): CanonicalAuthorityMembership {
-    const input = record(value, 'authority membership');
-    exactKeys(input, AUTHORITY_KEYS);
-    if (input.schema_version !== 'early-bird-authority.membership.v1') {
-        throw new EarlyBirdMembershipContractError('Unsupported authority membership schema');
-    }
-    if (typeof input.access_allowed !== 'boolean' || typeof input.free_entitlement_consumed !== 'boolean') {
-        throw new EarlyBirdMembershipContractError('Authority membership booleans are invalid');
-    }
-    const membership: CanonicalAuthorityMembership = {
-        schema_version: input.schema_version,
-        ...common(input),
-        access_allowed: input.access_allowed,
-        free_entitlement_consumed: input.free_entitlement_consumed,
-    };
-    if (membership.access_allowed !== canonicalAccessAllowed(membership)) {
-        throw new EarlyBirdMembershipContractError(
-            'Authority access decision contradicts membership state or time bounds',
-        );
-    }
-    return membership;
-}
-
-export function parseCanonicalAuthorityMembershipV2(value: unknown): CanonicalAuthorityMembershipV2 {
-    const input = record(value, 'authority membership v2');
-    exactKeys(input, AUTHORITY_V2_KEYS);
-    if (input.schema_version !== 'early-bird-authority.membership.v2') {
-        throw new EarlyBirdMembershipContractError('Unsupported authority membership schema');
-    }
-    if (typeof input.access_allowed !== 'boolean' || typeof input.free_entitlement_consumed !== 'boolean') {
-        throw new EarlyBirdMembershipContractError('Authority membership booleans are invalid');
-    }
-    const eligibility = founderPriceEligibility(input.founder_price_eligibility);
     const shared = common(input);
-    const membership: CanonicalAuthorityMembershipV2 = {
+    const continuity = founderContinuity(input.founder_continuity);
+    assertFounderContinuityConsistent(shared, continuity);
+    return {
+        schema_version: input.schema_version,
+        ...shared,
+        founder_continuity: continuity,
+    };
+}
+
+export function parseCanonicalAuthorityMembershipV3(value: unknown): CanonicalAuthorityMembershipV3 {
+    const input = record(value, 'authority membership v3');
+    exactKeys(input, AUTHORITY_KEYS);
+    if (input.schema_version !== 'early-bird-authority.membership.v3') {
+        throw new EarlyBirdMembershipContractError('Unsupported authority membership schema');
+    }
+    if (typeof input.access_allowed !== 'boolean' || typeof input.free_entitlement_consumed !== 'boolean') {
+        throw new EarlyBirdMembershipContractError('Authority membership booleans are invalid');
+    }
+    const continuity = founderContinuity(input.founder_continuity);
+    const shared = common(input);
+    assertFounderContinuityConsistent(shared, continuity);
+    const membership: CanonicalAuthorityMembershipV3 = {
         schema_version: input.schema_version,
         ...shared,
         effective_at: canonicalRfc3339Instant(input.effective_at, 'effective_at'),
@@ -259,30 +321,32 @@ export function parseCanonicalAuthorityMembershipV2(value: unknown): CanonicalAu
         grace_until: canonicalNullableRfc3339Instant(input.grace_until, 'grace_until'),
         access_allowed: input.access_allowed,
         free_entitlement_consumed: input.free_entitlement_consumed,
-        founder_price_eligibility: eligibility,
+        founder_continuity: continuity,
     };
     if (membership.access_allowed !== canonicalAccessAllowed(membership)) {
         throw new EarlyBirdMembershipContractError(
             'Authority access decision contradicts membership state or time bounds',
         );
     }
-    if (
-        membership.access_allowed
-        && (membership.source === 'PAYPAL' || membership.source === 'MERCADO_PAGO')
-        && eligibility === null
-    ) {
-        throw new EarlyBirdMembershipContractError(
-            'Paid access is missing canonical Founder price eligibility',
-        );
+    if (continuity !== null) {
+        if (continuity.state === 'ENDED') {
+            if (membership.access_allowed) {
+                throw new EarlyBirdMembershipContractError('Ended Founder continuity cannot authorize access');
+            }
+        } else {
+            if (!membership.access_allowed) {
+                throw new EarlyBirdMembershipContractError('Current Founder continuity contradicts access state');
+            }
+        }
     }
     return membership;
 }
 
 export function authorityMembershipCommand(
-    membership: CanonicalAuthorityMembership,
+    membership: CanonicalAuthorityMembershipV3,
 ): EarlyBirdMembershipProjectionCommand {
     return {
-        schema_version: 'early-bird-membership.command.v1',
+        schema_version: 'early-bird-membership.command.v2',
         account_id: membership.account_id,
         membership_revision: membership.membership_revision,
         state: membership.state,
@@ -294,5 +358,6 @@ export function authorityMembershipCommand(
         provider: membership.provider,
         current_price: membership.current_price,
         reason_code: membership.reason_code,
+        founder_continuity: membership.founder_continuity,
     };
 }

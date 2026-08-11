@@ -14,7 +14,7 @@ import {
 
 const TOKEN = 'ebi_v1.AAAAAAAAAAAAAAAAAAAAAA.synthetic_nonce_00000000000000000000.synthetic_signature_0000000000000000000000000000000';
 const authorityMembership = {
-    schema_version: 'early-bird-authority.membership.v1',
+    schema_version: 'early-bird-authority.membership.v3',
     account_id: 'listener-1',
     membership_revision: 1,
     state: 'ACTIVE',
@@ -28,6 +28,7 @@ const authorityMembership = {
     current_price: null,
     free_entitlement_consumed: false,
     reason_code: 'INVITATION_REDEEMED',
+    founder_continuity: null,
 };
 
 afterEach(() => vi.restoreAllMocks());
@@ -67,7 +68,7 @@ describe('canonical EarlyBird membership HTTP gateway', () => {
             invitation_token: TOKEN,
         });
         expect(applyMembershipProjection).toHaveBeenCalledWith(expect.objectContaining({
-            schema_version: 'early-bird-membership.command.v1',
+            schema_version: 'early-bird-membership.command.v2',
             account_id: 'listener-1',
             membership_revision: 1,
         }));

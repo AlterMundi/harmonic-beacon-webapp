@@ -30,6 +30,21 @@ import EarlyBirdHome from '../EarlyBirdHome';
 afterEach(cleanup);
 
 describe('EarlyBird Listener home access chrome', () => {
+    it('labels a canonically active paid membership as Founding Listener', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'founder', provider: 'paypal', state: 'active' }}
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByText('Founding Listener · USD 5/month')).toBeInTheDocument();
+        expect(screen.queryByText('Preview access')).not.toBeInTheDocument();
+    });
+
     it('keeps account controls for a membership-backed Listener', () => {
         render(
             <LocaleProvider initialLocale="en">
@@ -106,7 +121,7 @@ describe('EarlyBird Listener home access chrome', () => {
             </LocaleProvider>,
         );
 
-        expect(screen.getByText('Founder · active until the end of the period')).toBeInTheDocument();
+        expect(screen.getByText('Founding Listener · USD 5/month · active through period end')).toBeInTheDocument();
         expect(screen.getByText('Mercado Pago')).toBeInTheDocument();
         expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
     });

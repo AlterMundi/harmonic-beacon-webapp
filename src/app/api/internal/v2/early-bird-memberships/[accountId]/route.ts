@@ -7,6 +7,7 @@ import {
 } from '@/lib/early-birds/membership-contract';
 import {
     applyMembershipProjection,
+    EarlyBirdProjectionAccountMissingError,
     EarlyBirdProjectionConflictError,
     membershipAccessDecision,
     type EarlyBirdProjectionOutcome,
@@ -29,6 +30,8 @@ function authorized(request: NextRequest): boolean {
     );
 }
 
+// The acknowledgement shape did not change with command v2. It deliberately
+// exposes only the applied revision and effective access decision.
 function result(
     projection: NonNullable<ReturnType<typeof membershipAccessDecision>['projection']>,
     outcome: EarlyBirdProjectionOutcome,
@@ -84,6 +87,9 @@ export async function PUT(
         if (error instanceof EarlyBirdMembershipContractError) return response({ error: error.message }, 422);
         if (error instanceof EarlyBirdProjectionConflictError) {
             return response({ error: 'Revision conflicts with the existing command.' }, 409);
+        }
+        if (error instanceof EarlyBirdProjectionAccountMissingError) {
+            return response({ error: 'Resource not found.' }, 404);
         }
         console.error('[early-bird-membership] apply failed without request material');
         return response({ error: 'Membership projection unavailable.' }, 500);

@@ -19,10 +19,23 @@ vi.mock('@/lib/db', () => ({
 }));
 
 import { GET, PUT } from '../route';
+import { EarlyBirdProjectionAccountMissingError } from '@/lib/early-birds/membership';
 
 const ACCOUNT = 'listener-1';
+const continuity = {
+    episode_id: '00000000-0000-4000-8000-000000000101',
+    revision: 2,
+    state: 'ACTIVE',
+    offer: { code: 'EARLY_BIRDS_FOUNDERS_V1', revision: 1 },
+    canonical_price: { currency: 'USD', amount_minor: 500 },
+    billing_period: 'MONTHLY',
+    activated_at: '2026-08-06T12:00:00Z',
+    service_through: '2026-09-06T12:00:00Z',
+    ended_at: null,
+    terminal_reason: null,
+};
 const command = {
-    schema_version: 'early-bird-membership.command.v1',
+    schema_version: 'early-bird-membership.command.v2',
     account_id: ACCOUNT,
     membership_revision: 3,
     state: 'ACTIVE',
@@ -34,6 +47,7 @@ const command = {
     provider: 'paypal',
     current_price: { currency: 'USD', amount_minor: 500 },
     reason_code: 'PAYMENT_SUCCEEDED',
+    founder_continuity: continuity,
 };
 const projection = {
     id: 'eb100000-0000-4000-8000-000000000001',
@@ -48,16 +62,28 @@ const projection = {
     paidThrough: new Date('2026-09-06T12:00:00Z'),
     graceUntil: null,
     provider: 'paypal',
-    amountMinor: 200,
+    amountMinor: 500,
     currency: 'USD',
     reasonCode: 'PAYMENT_SUCCEEDED',
     synthetic: false,
+    founderContinuityEpisodeId: continuity.episode_id,
+    founderContinuityRevision: continuity.revision,
+    founderContinuityState: 'ACTIVE',
+    founderContinuityOfferCode: 'EARLY_BIRDS_FOUNDERS_V1',
+    founderContinuityOfferRevision: 1,
+    founderContinuityCurrency: 'USD',
+    founderContinuityAmountMinor: 500,
+    founderContinuityBillingPeriod: 'MONTHLY',
+    founderContinuityActivatedAt: new Date(continuity.activated_at),
+    founderContinuityServiceThrough: new Date(continuity.service_through),
+    founderContinuityEndedAt: null,
+    founderContinuityTerminalReason: null,
     createdAt: new Date('2026-08-06T12:00:00Z'),
     updatedAt: new Date('2026-08-06T12:00:00Z'),
 };
 
 function put(body: unknown = command, headers: Record<string, string> = {}) {
-    return new NextRequest(`http://beacon-app:3000/api/internal/v1/early-bird-memberships/${ACCOUNT}`, {
+    return new NextRequest(`http://beacon-app:3000/api/internal/v2/early-bird-memberships/${ACCOUNT}`, {
         method: 'PUT',
         headers: {
             authorization: 'Bearer secret-not-logged',
@@ -72,7 +98,7 @@ function put(body: unknown = command, headers: Record<string, string> = {}) {
 
 const params = { params: Promise.resolve({ accountId: ACCOUNT }) };
 
-describe('private EarlyBird membership projection route', () => {
+describe('private EarlyBird membership projection v2 route', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.authorize.mockReturnValue(true);
@@ -97,22 +123,22 @@ describe('private EarlyBird membership projection route', () => {
         });
     });
 
-    it('authenticates before parsing and enforces exact fields and idempotency', async () => {
+    it('authenticates before parsing and rejects v1, extra fields and wrong idempotency', async () => {
         mocks.authorize.mockReturnValue(false);
         const unauthorized = await PUT(put({ secret_material: 'not-read' }), params);
         expect(unauthorized.status).toBe(401);
         expect(mocks.apply).not.toHaveBeenCalled();
 
         mocks.authorize.mockReturnValue(true);
-        const unknown = await PUT(put({ ...command, unexpected: true }), params);
-        expect(unknown.status).toBe(422);
-        const idempotency = await PUT(put(command, { 'idempotency-key': 'wrong' }), params);
-        expect(idempotency.status).toBe(422);
+        expect((await PUT(put({ ...command, schema_version: 'early-bird-membership.command.v1' }), params)).status)
+            .toBe(422);
+        expect((await PUT(put({ ...command, unexpected: true }), params)).status).toBe(422);
+        expect((await PUT(put(command, { 'idempotency-key': 'wrong' }), params)).status).toBe(422);
     });
 
-    it('returns the non-secret current projection for reconciliation', async () => {
+    it('returns the non-secret current projection acknowledgement', async () => {
         const request = new NextRequest(
-            `http://beacon-app:3000/api/internal/v1/early-bird-memberships/${ACCOUNT}`,
+            `http://beacon-app:3000/api/internal/v2/early-bird-memberships/${ACCOUNT}`,
             { headers: { authorization: 'Bearer hidden', 'x-hb-service-key-id': 'current' } },
         );
         const response = await GET(request, params);
@@ -122,5 +148,15 @@ describe('private EarlyBird membership projection route', () => {
             account_id: ACCOUNT,
             outcome: 'REPLAYED',
         });
+    });
+
+    it('fails a canonical projection permanently when its Listener account does not exist', async () => {
+        mocks.apply.mockRejectedValue(new EarlyBirdProjectionAccountMissingError());
+
+        const response = await PUT(put(), params);
+
+        expect(response.status).toBe(404);
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
+        await expect(response.json()).resolves.toEqual({ error: 'Resource not found.' });
     });
 });

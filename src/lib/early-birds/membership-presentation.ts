@@ -1,6 +1,6 @@
 import type { EarlyBirdMembershipProjection } from '@prisma/client';
 
-import { EARLY_BIRDS_FOUNDERS_OFFER } from './membership';
+import { EARLY_BIRDS_FOUNDERS_OFFER, membershipAccessDecision } from './membership';
 
 export type ListenerMembershipPresentationState =
     | 'pending'
@@ -42,20 +42,33 @@ function presentationState(
  */
 export function listenerMembershipPresentation(
     projection: EarlyBirdMembershipProjection | null,
+    now = new Date(),
 ): ListenerMembershipPresentation {
     if (!projection) return { kind: 'none', state: 'none' };
 
     const state = presentationState(projection.state);
-    if (projection.synthetic) return { kind: 'preview', state };
-    if (projection.source === 'FREE') return { kind: 'invitation', state };
+    const accessAllowed = membershipAccessDecision(projection, now).allowed;
+    if (projection.synthetic) return accessAllowed ? { kind: 'preview', state } : { kind: 'none', state: 'none' };
+    if (projection.source === 'FREE') {
+        return accessAllowed ? { kind: 'invitation', state } : { kind: 'none', state: 'none' };
+    }
+    const continuityCurrent = projection.founderContinuityState === 'ACTIVE'
+        || projection.founderContinuityState === 'CANCELLED_PENDING_END'
+        || projection.founderContinuityState === 'GRACE';
     if (
-        projection.offerCode === EARLY_BIRDS_FOUNDERS_OFFER
+        accessAllowed
+        && continuityCurrent
+        && projection.founderContinuityOfferCode === EARLY_BIRDS_FOUNDERS_OFFER
+        && projection.offerCode === EARLY_BIRDS_FOUNDERS_OFFER
         && projection.source === 'PAYPAL'
     ) {
         return { kind: 'founder', provider: 'paypal', state };
     }
     if (
-        projection.offerCode === EARLY_BIRDS_FOUNDERS_OFFER
+        accessAllowed
+        && continuityCurrent
+        && projection.founderContinuityOfferCode === EARLY_BIRDS_FOUNDERS_OFFER
+        && projection.offerCode === EARLY_BIRDS_FOUNDERS_OFFER
         && projection.source === 'MERCADO_PAGO'
     ) {
         return { kind: 'founder', provider: 'mercado-pago', state };

@@ -9,8 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = (
     ROOT / "contracts/early-bird-authority/v1",
     ROOT / "contracts/early-bird-authority/v2",
+    ROOT / "contracts/early-bird-authority/v3",
     ROOT / "contracts/early-bird-checkout/v2",
     ROOT / "contracts/early-bird-membership/v1",
+    ROOT / "contracts/early-bird-membership/v2",
 )
 
 

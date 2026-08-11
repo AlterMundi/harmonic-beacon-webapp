@@ -18,8 +18,21 @@ import {
 
 export const EARLY_BIRDS_FOUNDERS_OFFER = 'EARLY_BIRDS_FOUNDERS_V1' as const;
 
+export type EarlyBirdFounderContinuity = {
+    episode_id: string;
+    revision: number;
+    state: 'ACTIVE' | 'CANCELLED_PENDING_END' | 'GRACE' | 'ENDED';
+    offer: { code: typeof EARLY_BIRDS_FOUNDERS_OFFER; revision: number };
+    canonical_price: { currency: 'USD'; amount_minor: 500 };
+    billing_period: 'MONTHLY';
+    activated_at: string;
+    service_through: string | null;
+    ended_at: string | null;
+    terminal_reason: string | null;
+};
+
 export type EarlyBirdMembershipProjectionCommand = {
-    schema_version: 'early-bird-membership.command.v1';
+    schema_version: 'early-bird-membership.command.v2';
     account_id: string;
     membership_revision: number;
     state: EarlyBirdMembershipState;
@@ -31,6 +44,7 @@ export type EarlyBirdMembershipProjectionCommand = {
     provider: 'paypal' | 'mercado_pago' | null;
     current_price: { currency: 'USD' | 'ARS'; amount_minor: number } | null;
     reason_code: string;
+    founder_continuity: EarlyBirdFounderContinuity | null;
 };
 
 export type EarlyBirdProjectionOutcome = 'APPLIED' | 'REPLAYED' | 'STALE';
@@ -48,6 +62,54 @@ export class EarlyBirdProjectionConflictError extends Error {
     }
 }
 
+export class EarlyBirdProjectionAccountMissingError extends Error {
+    constructor() {
+        super('EarlyBird account does not exist');
+        this.name = 'EarlyBirdProjectionAccountMissingError';
+    }
+}
+
+function assertFounderContinuityTransition(
+    existing: EarlyBirdMembershipProjection,
+    next: EarlyBirdFounderContinuity | null,
+): void {
+    if (existing.founderContinuityEpisodeId === null) return;
+    if (next === null || next.episode_id !== existing.founderContinuityEpisodeId
+        || existing.founderContinuityRevision === null
+        || next.revision < existing.founderContinuityRevision) {
+        throw new EarlyBirdProjectionConflictError();
+    }
+    const sameInstant = (stored: Date | null, wire: string | null) => (
+        stored === null ? wire === null : wire !== null && stored.toISOString() === new Date(wire).toISOString()
+    );
+    const immutableEpisodeFacts = existing.founderContinuityOfferCode === next.offer.code
+        && existing.founderContinuityOfferRevision === next.offer.revision
+        && existing.founderContinuityCurrency === next.canonical_price.currency
+        && existing.founderContinuityAmountMinor === next.canonical_price.amount_minor
+        && existing.founderContinuityBillingPeriod === next.billing_period
+        && sameInstant(existing.founderContinuityActivatedAt, next.activated_at);
+    if (!immutableEpisodeFacts) throw new EarlyBirdProjectionConflictError();
+
+    if (existing.founderContinuityState === 'ENDED') {
+        const exactTombstone = next.state === 'ENDED'
+            && sameInstant(existing.founderContinuityServiceThrough, next.service_through)
+            && sameInstant(existing.founderContinuityEndedAt, next.ended_at)
+            && existing.founderContinuityTerminalReason === next.terminal_reason;
+        if (!exactTombstone) throw new EarlyBirdProjectionConflictError();
+        return;
+    }
+    if (next.state === 'ENDED' && next.revision === existing.founderContinuityRevision) {
+        throw new EarlyBirdProjectionConflictError();
+    }
+    if (next.revision === existing.founderContinuityRevision) {
+        const exact = existing.founderContinuityState === next.state
+            && sameInstant(existing.founderContinuityServiceThrough, next.service_through)
+            && sameInstant(existing.founderContinuityEndedAt, next.ended_at)
+            && existing.founderContinuityTerminalReason === next.terminal_reason;
+        if (!exact) throw new EarlyBirdProjectionConflictError();
+    }
+}
+
 function normalizedInstant(value: string, field: string): string {
     if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value)) {
         throw new Error(`${field} must be an RFC 3339 date-time`);
@@ -60,7 +122,7 @@ function normalizedInstant(value: string, field: string): string {
 }
 
 function normalizedCommand(command: EarlyBirdMembershipProjectionCommand): EarlyBirdMembershipProjectionCommand {
-    if (command.schema_version !== 'early-bird-membership.command.v1') {
+    if (command.schema_version !== 'early-bird-membership.command.v2') {
         throw new Error('Unsupported membership command schema');
     }
     if (!isEarlyBirdAccountId(command.account_id)) throw new Error('account_id is invalid');
@@ -78,7 +140,40 @@ function normalizedCommand(command: EarlyBirdMembershipProjectionCommand): Early
     )) throw new Error('current_price is invalid');
     if (!command.reason_code || command.reason_code.length > 64) throw new Error('reason_code is invalid');
 
-    return {
+    const continuity = command.founder_continuity;
+    if (continuity !== null) {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(continuity.episode_id)) {
+            throw new Error('founder_continuity.episode_id is invalid');
+        }
+        if (!Number.isSafeInteger(continuity.revision) || continuity.revision < 1) {
+            throw new Error('founder_continuity.revision is invalid');
+        }
+        if (!['ACTIVE', 'CANCELLED_PENDING_END', 'GRACE', 'ENDED'].includes(continuity.state)) {
+            throw new Error('founder_continuity.state is invalid');
+        }
+        if (
+            continuity.offer.code !== EARLY_BIRDS_FOUNDERS_OFFER
+            || !Number.isSafeInteger(continuity.offer.revision)
+            || continuity.offer.revision < 1
+            || continuity.canonical_price.currency !== 'USD'
+            || continuity.canonical_price.amount_minor !== 500
+            || continuity.billing_period !== 'MONTHLY'
+        ) {
+            throw new Error('founder_continuity offer is invalid');
+        }
+        if (continuity.state === 'ENDED') {
+            if (continuity.ended_at === null || continuity.terminal_reason === null
+                || continuity.terminal_reason.length < 1 || continuity.terminal_reason.length > 64) {
+                throw new Error('ended founder_continuity is incomplete');
+            }
+        } else if (continuity.ended_at !== null || continuity.terminal_reason !== null) {
+            throw new Error('current founder_continuity cannot carry terminal evidence');
+        } else if (continuity.service_through === null) {
+            throw new Error('current founder_continuity lacks a service boundary');
+        }
+    }
+
+    const normalized: EarlyBirdMembershipProjectionCommand = {
         ...command,
         effective_at: normalizedInstant(command.effective_at, 'effective_at'),
         paid_through: command.paid_through === null
@@ -87,7 +182,64 @@ function normalizedCommand(command: EarlyBirdMembershipProjectionCommand): Early
         grace_until: command.grace_until === null
             ? null
             : normalizedInstant(command.grace_until, 'grace_until'),
+        founder_continuity: continuity === null ? null : {
+            ...continuity,
+            activated_at: normalizedInstant(continuity.activated_at, 'founder_continuity.activated_at'),
+            service_through: continuity.service_through === null
+                ? null
+                : normalizedInstant(continuity.service_through, 'founder_continuity.service_through'),
+            ended_at: continuity.ended_at === null
+                ? null
+                : normalizedInstant(continuity.ended_at, 'founder_continuity.ended_at'),
+        },
     };
+    const paid = normalized.source === 'PAYPAL' || normalized.source === 'MERCADO_PAGO';
+    const current = normalized.state === 'ACTIVE'
+        || normalized.state === 'GRACE'
+        || normalized.state === 'CANCELLED_PENDING_END';
+    if (
+        (normalized.source === 'PAYPAL' && normalized.provider !== 'paypal')
+        || (normalized.source === 'MERCADO_PAGO' && normalized.provider !== 'mercado_pago')
+        || ((normalized.source === 'FREE' || normalized.source === null)
+            && normalized.provider !== null)
+    ) {
+        throw new Error('Membership source contradicts provider');
+    }
+    if (normalized.founder_continuity === null) {
+        if (paid && current) throw new Error('Paid service is missing canonical Founder continuity');
+        return normalized;
+    }
+    if (!paid || normalized.offer === null
+        || normalized.offer.code !== normalized.founder_continuity.offer.code
+        || normalized.offer.revision !== normalized.founder_continuity.offer.revision) {
+        throw new Error('Founder continuity contradicts current membership');
+    }
+    if (normalized.source === 'PAYPAL' && (
+        normalized.current_price === null
+        || normalized.current_price.currency !== normalized.founder_continuity.canonical_price.currency
+        || normalized.current_price.amount_minor !== normalized.founder_continuity.canonical_price.amount_minor
+    )) {
+        throw new Error('PayPal current price contradicts Founder continuity');
+    }
+    if (normalized.source === 'MERCADO_PAGO'
+        && normalized.current_price?.currency !== 'ARS') {
+        throw new Error('Mercado Pago current price must be positive ARS');
+    }
+    if (normalized.founder_continuity.state === 'ENDED') {
+        if (current) throw new Error('Ended Founder continuity cannot accompany current service');
+        return normalized;
+    }
+    if (normalized.state !== normalized.founder_continuity.state) {
+        throw new Error('Current Founder continuity contradicts membership state');
+    }
+    const boundary = normalized.founder_continuity.state === 'GRACE'
+        ? normalized.grace_until
+        : normalized.paid_through;
+    if (normalized.founder_continuity.service_through === null || boundary === null
+        || Date.parse(normalized.founder_continuity.service_through) !== Date.parse(boundary)) {
+        throw new Error('Founder continuity boundary contradicts membership');
+    }
+    return normalized;
 }
 
 /** RFC 8785 is intentionally small here: the contract contains only objects, strings, nulls and integers. */
@@ -120,6 +272,24 @@ export function membershipAccessDecision(
     if (!projection) return { allowed: false, reason: 'missing', projection };
     if (projection.effectiveAt > now) {
         return { allowed: false, reason: 'pending', projection };
+    }
+
+    const paid = projection.source === 'PAYPAL' || projection.source === 'MERCADO_PAGO';
+    if (paid) {
+        const currentContinuity = projection.founderContinuityState === projection.state
+            && projection.founderContinuityEpisodeId !== null
+            && projection.founderContinuityOfferCode === EARLY_BIRDS_FOUNDERS_OFFER
+            && projection.founderContinuityOfferCode === projection.offerCode
+            && projection.founderContinuityOfferRevision === projection.offerRevision
+            && projection.founderContinuityCurrency === 'USD'
+            && projection.founderContinuityAmountMinor === 500
+            && projection.founderContinuityBillingPeriod === 'MONTHLY'
+            && projection.founderContinuityActivatedAt !== null;
+        if (!currentContinuity) return { allowed: false, reason: 'ended', projection };
+        const boundary = projection.state === 'GRACE' ? projection.graceUntil : projection.paidThrough;
+        if (projection.founderContinuityServiceThrough?.getTime() !== boundary?.getTime()) {
+            return { allowed: false, reason: 'ended', projection };
+        }
     }
 
     if (projection.state === 'ACTIVE') {
@@ -158,7 +328,7 @@ export async function applyMembershipProjection(
         const accountRows = await tx.$queryRaw<Array<{ id: string }>>(
             Prisma.sql`SELECT "id" FROM "early_bird_users" WHERE "id" = ${command.account_id} FOR UPDATE`,
         );
-        if (accountRows.length !== 1) throw new Error('EarlyBird account does not exist');
+        if (accountRows.length !== 1) throw new EarlyBirdProjectionAccountMissingError();
 
         await assertListenerQuotaPolicyCompatible(tx);
         // The account lock must be acquired before observing authoritative time;
@@ -185,6 +355,9 @@ export async function applyMembershipProjection(
             if (existing.commandHash !== commandHash) throw new EarlyBirdProjectionConflictError();
             return { projection: existing, outcome: 'REPLAYED' };
         }
+        if (existing && !existing.synthetic) {
+            assertFounderContinuityTransition(existing, command.founder_continuity);
+        }
 
         const data = {
             revision: command.membership_revision,
@@ -200,6 +373,24 @@ export async function applyMembershipProjection(
             amountMinor: command.current_price?.amount_minor ?? null,
             currency: command.current_price?.currency ?? null,
             reasonCode: command.reason_code,
+            founderContinuityEpisodeId: command.founder_continuity?.episode_id ?? null,
+            founderContinuityRevision: command.founder_continuity?.revision ?? null,
+            founderContinuityState: command.founder_continuity?.state ?? null,
+            founderContinuityOfferCode: command.founder_continuity?.offer.code ?? null,
+            founderContinuityOfferRevision: command.founder_continuity?.offer.revision ?? null,
+            founderContinuityCurrency: command.founder_continuity?.canonical_price.currency ?? null,
+            founderContinuityAmountMinor: command.founder_continuity?.canonical_price.amount_minor ?? null,
+            founderContinuityBillingPeriod: command.founder_continuity?.billing_period ?? null,
+            founderContinuityActivatedAt: command.founder_continuity
+                ? new Date(command.founder_continuity.activated_at)
+                : null,
+            founderContinuityServiceThrough: command.founder_continuity?.service_through
+                ? new Date(command.founder_continuity.service_through)
+                : null,
+            founderContinuityEndedAt: command.founder_continuity?.ended_at
+                ? new Date(command.founder_continuity.ended_at)
+                : null,
+            founderContinuityTerminalReason: command.founder_continuity?.terminal_reason ?? null,
             synthetic,
         };
         const projection = existing
@@ -230,7 +421,7 @@ export async function issueSyntheticMembership(accountId: string, now = new Date
     });
     if (existing && !existing.synthetic) throw new Error('Synthetic access cannot replace a canonical membership');
     return applyMembershipProjection({
-        schema_version: 'early-bird-membership.command.v1',
+        schema_version: 'early-bird-membership.command.v2',
         account_id: accountId,
         membership_revision: (existing?.revision ?? 0) + 1,
         state: 'ACTIVE',
@@ -242,5 +433,6 @@ export async function issueSyntheticMembership(accountId: string, now = new Date
         provider: null,
         current_price: null,
         reason_code: 'SYNTHETIC_TEST_ACCESS',
+        founder_continuity: null,
     }, { synthetic: true });
 }

@@ -1,0 +1,10 @@
+{
+  "schema_version": "early-bird-membership.result.v1",
+  "membership_id": "eb100000-0000-4000-8000-000000000001",
+  "account_id": "account_synthetic_0001",
+  "outcome": "APPLIED",
+  "applied_revision": 3,
+  "effective_state": "ACTIVE",
+  "access_allowed": true,
+  "reconciliation_required": false
+}

@@ -464,10 +464,11 @@ age-specific profiles.
 The webapp vendors byte-exact copies of the canonical backend contracts under
 `contracts/` and verifies them with `npm run contract:early-birds:verify`:
 
-- `contracts/early-bird-authority/v1`: the checkout, invitation-redeem and
-  membership authority family.
-- `contracts/early-bird-authority/v2` and `contracts/early-bird-membership/v1`:
-  the canonical founder membership reads.
+- `contracts/early-bird-authority/v3` and `contracts/early-bird-membership/v2`:
+  the current atomic membership plus Founder-continuity read/push contracts.
+- `contracts/early-bird-authority/v1`, `contracts/early-bird-authority/v2` and
+  `contracts/early-bird-membership/v1`: historical artifacts only; runtime does
+  not dual-read or dual-write the retired positive-only semantics.
 - `contracts/early-bird-checkout/v2`: the Mercado Pago checkout command for
   `POST /api/internal/v2/early-bird-checkouts`, vendored byte-exact from
   backend implementation `e5e638a78d5e835bfb3cfa7be69740f0003ffb01`, merged
