@@ -1,5 +1,45 @@
 # EarlyBirds isolated staging runtime
 
+## 2026-08-11 Founder continuity cutover
+
+The isolated Listener runs runtime SHA
+`0e8ae6678f10ff3b48a0ff24d2257415a62e956b`, image
+`harmonic-beacon/earlybirds-preview-listener:0e8ae66` and Prisma head
+`20260810223000_listener_founder_continuity`. The isolated authority runs image
+`harmonic-beacon/earlybirds-authority:ec532198dd45175812be66ac91fdae414d40f9c1`
+at Alembic head `7b4c1e9a2d60`. Webapp head
+`20d8eaedbee6efddb0d31ba982c10b84eddc805b` adds only preview tooling and
+release-provenance corrections after the runtime commit.
+
+- Founder is USD 5/month only while service is uninterrupted. A real lapse or
+  terminal refund, chargeback, dispute, fraud or administrative revocation
+  closes the continuity episode irreversibly. No pre-release eligibility,
+  subscription, checkout or projection was grandfathered.
+- The guarded command-v2 sweep completed with 19 projections and three retired
+  command-v1 jobs. Seventeen Listener accounts converged. Two synthetic
+  authority-only accounts are terminal, audited 404 failures rather than retry
+  loops; the queue has no pending, retrying or running jobs.
+- Authority and Listener contracts are byte-identical at authority v3 and
+  membership command v2. PayPal and Mercado Pago lifecycle adapters remain
+  sandbox/test-only. Persistent Listener checkout is OFF for both providers;
+  the staging workbench enables only Mercado Pago TEST. Free for All is OFF.
+- Health, readiness, weekly-Free authorization, first-play quota anchoring,
+  exact seven-day renewal, two-device eviction and generation-bound manifest
+  smokes passed. Public Listener and staging internal routes remain 404,
+  anonymous lease acquisition remains 401, and provider webhook GETs remain
+  405. `live.harmonicbeacon.com` stayed healthy and unchanged throughout.
+- The pre-cutover database dumps and exact root-owned environments are retained
+  with mode 0600 at
+  `/mnt/beacon-data/staging-backups/founder-continuity-20260811T032400Z`.
+  They are root-only, not encrypted. Recovery is the Listener/authority stop
+  switch followed by either restoring that matched database+environment set or
+  rolling forward. Do not run a pre-continuity binary against the migrated
+  databases: the retired positive-only eligibility model is not a valid
+  rollback authority.
+- A fresh supervised PayPal and Mercado Pago sandbox lifecycle remains the
+  human acceptance gate before enabling checkout or closing the payment and
+  continuity umbrellas. No production provider flag or real charge is enabled.
+
 ## 2026-08-09 public reactive field release
 
 The isolated public Listener runs application SHA
