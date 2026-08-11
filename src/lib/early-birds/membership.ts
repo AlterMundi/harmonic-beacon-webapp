@@ -190,6 +190,14 @@ function normalizedCommand(command: EarlyBirdMembershipProjectionCommand): Early
     const current = normalized.state === 'ACTIVE'
         || normalized.state === 'GRACE'
         || normalized.state === 'CANCELLED_PENDING_END';
+    if (
+        (normalized.source === 'PAYPAL' && normalized.provider !== 'paypal')
+        || (normalized.source === 'MERCADO_PAGO' && normalized.provider !== 'mercado_pago')
+        || ((normalized.source === 'FREE' || normalized.source === null)
+            && normalized.provider !== null)
+    ) {
+        throw new Error('Membership source contradicts provider');
+    }
     if (normalized.founder_continuity === null) {
         if (paid && current) throw new Error('Paid service is missing canonical Founder continuity');
         return normalized;
@@ -198,6 +206,17 @@ function normalizedCommand(command: EarlyBirdMembershipProjectionCommand): Early
         || normalized.offer.code !== normalized.founder_continuity.offer.code
         || normalized.offer.revision !== normalized.founder_continuity.offer.revision) {
         throw new Error('Founder continuity contradicts current membership');
+    }
+    if (normalized.source === 'PAYPAL' && (
+        normalized.current_price === null
+        || normalized.current_price.currency !== normalized.founder_continuity.canonical_price.currency
+        || normalized.current_price.amount_minor !== normalized.founder_continuity.canonical_price.amount_minor
+    )) {
+        throw new Error('PayPal current price contradicts Founder continuity');
+    }
+    if (normalized.source === 'MERCADO_PAGO'
+        && normalized.current_price?.currency !== 'ARS') {
+        throw new Error('Mercado Pago current price must be positive ARS');
     }
     if (normalized.founder_continuity.state === 'ENDED') {
         if (current) throw new Error('Ended Founder continuity cannot accompany current service');

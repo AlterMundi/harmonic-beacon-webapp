@@ -92,6 +92,17 @@ describe('canonical Founder continuity contracts', () => {
             current_price: null,
             founder_continuity: null,
         }).founder_continuity).toBeNull();
+
+        expect(parseCanonicalAuthorityMembershipV3({
+            ...active,
+            source: 'MERCADO_PAGO',
+            provider: 'mercado_pago',
+            current_price: { currency: 'ARS', amount_minor: 7_250 },
+        })).toMatchObject({
+            source: 'MERCADO_PAGO',
+            current_price: { currency: 'ARS', amount_minor: 7_250 },
+            founder_continuity: { canonical_price: { currency: 'USD', amount_minor: 500 } },
+        });
     });
 
     it.each([
@@ -102,6 +113,11 @@ describe('canonical Founder continuity contracts', () => {
         ['ended without tombstone', { ...active, state: 'EXPIRED', access_allowed: false, founder_continuity: { ...continuity, state: 'ENDED' } }],
         ['current with terminal evidence', { ...active, founder_continuity: { ...continuity, ended_at: '2026-08-09T12:00:00Z', terminal_reason: 'ENDED' } }],
         ['paid access without continuity', { ...active, founder_continuity: null }],
+        ['PayPal price mismatch', { ...active, current_price: { currency: 'USD', amount_minor: 200 } }],
+        ['Mercado Pago currency mismatch', { ...active, source: 'MERCADO_PAGO', provider: 'mercado_pago' }],
+        ['paid provider mismatch', { ...active, provider: 'mercado_pago' }],
+        ['Free provider mismatch', { ...active, source: 'FREE', provider: 'paypal', current_price: null, founder_continuity: null }],
+        ['null source provider mismatch', { ...active, source: null, provider: 'paypal', current_price: null, founder_continuity: null }],
         ['continuity on Free', { ...active, source: 'FREE', provider: null }],
         ['state mismatch', { ...active, state: 'GRACE', grace_until: '2027-08-08T12:00:00Z' }],
         ['boundary mismatch', { ...active, paid_through: '2027-09-08T12:00:00Z' }],
@@ -122,6 +138,22 @@ describe('canonical Founder continuity contracts', () => {
             ...command,
             schema_version: 'early-bird-membership.command.v1',
         })).toThrow(EarlyBirdMembershipContractError);
+        expect(() => parseMembershipProjectionCommand({
+            ...command,
+            current_price: { currency: 'USD', amount_minor: 200 },
+        })).toThrow('PayPal current price contradicts Founder continuity');
+
+        const mercadoPago = authorityMembershipCommand(parseCanonicalAuthorityMembershipV3({
+            ...active,
+            source: 'MERCADO_PAGO',
+            provider: 'mercado_pago',
+            current_price: { currency: 'ARS', amount_minor: 7_250 },
+        }));
+        expect(parseMembershipProjectionCommand(mercadoPago)).toEqual(mercadoPago);
+        expect(() => parseMembershipProjectionCommand({
+            ...mercadoPago,
+            current_price: { currency: 'USD', amount_minor: 500 },
+        })).toThrow('Mercado Pago current price must be positive ARS');
     });
 
     it('uses the exact private v3 GET and rejects mismatches or oversized bodies', async () => {

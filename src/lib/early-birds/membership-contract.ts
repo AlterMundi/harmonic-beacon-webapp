@@ -233,6 +233,14 @@ function assertFounderContinuityConsistent(
     membership: ReturnType<typeof common>,
     continuity: EarlyBirdFounderContinuity | null,
 ): void {
+    if (
+        (membership.source === 'PAYPAL' && membership.provider !== 'paypal')
+        || (membership.source === 'MERCADO_PAGO' && membership.provider !== 'mercado_pago')
+        || ((membership.source === 'FREE' || membership.source === null)
+            && membership.provider !== null)
+    ) {
+        throw new EarlyBirdMembershipContractError('Membership source contradicts provider');
+    }
     const paid = membership.source === 'PAYPAL' || membership.source === 'MERCADO_PAGO';
     const currentlyServing = membership.state === 'ACTIVE'
         || membership.state === 'GRACE'
@@ -247,6 +255,17 @@ function assertFounderContinuityConsistent(
         || membership.offer.code !== continuity.offer.code
         || membership.offer.revision !== continuity.offer.revision) {
         throw new EarlyBirdMembershipContractError('Founder continuity contradicts current membership');
+    }
+    if (membership.source === 'PAYPAL' && (
+        membership.current_price === null
+        || membership.current_price.currency !== continuity.canonical_price.currency
+        || membership.current_price.amount_minor !== continuity.canonical_price.amount_minor
+    )) {
+        throw new EarlyBirdMembershipContractError('PayPal current price contradicts Founder continuity');
+    }
+    if (membership.source === 'MERCADO_PAGO'
+        && membership.current_price?.currency !== 'ARS') {
+        throw new EarlyBirdMembershipContractError('Mercado Pago current price must be positive ARS');
     }
     if (continuity.state === 'ENDED') {
         if (currentlyServing) {

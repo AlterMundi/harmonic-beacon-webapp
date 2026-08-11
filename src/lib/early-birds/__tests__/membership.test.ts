@@ -134,6 +134,49 @@ describe('EarlyBird membership read model', () => {
             .not.toBe(membershipCommandHash(command()));
     });
 
+    it('enforces provider-specific Founder prices before persistence', () => {
+        const serviceThrough = '2026-09-06T12:00:00.000Z';
+        const founderContinuity = {
+            episode_id: '00000000-0000-4000-8000-000000000101',
+            revision: 1,
+            state: 'ACTIVE' as const,
+            offer: { code: 'EARLY_BIRDS_FOUNDERS_V1' as const, revision: 1 },
+            canonical_price: { currency: 'USD' as const, amount_minor: 500 as const },
+            billing_period: 'MONTHLY' as const,
+            activated_at: NOW.toISOString(),
+            service_through: serviceThrough,
+            ended_at: null,
+            terminal_reason: null,
+        };
+        const paypal = command({
+            source: 'PAYPAL',
+            provider: 'paypal',
+            paid_through: serviceThrough,
+            current_price: { currency: 'USD', amount_minor: 500 },
+            reason_code: 'PAYMENT_SUCCEEDED',
+            founder_continuity: founderContinuity,
+        });
+        expect(() => membershipCommandHash(paypal)).not.toThrow();
+        expect(() => membershipCommandHash({
+            ...paypal,
+            current_price: { currency: 'USD', amount_minor: 200 },
+        })).toThrow('PayPal current price contradicts Founder continuity');
+
+        const mercadoPago = {
+            ...paypal,
+            source: 'MERCADO_PAGO' as const,
+            provider: 'mercado_pago' as const,
+            current_price: { currency: 'ARS' as const, amount_minor: 7_250 },
+        };
+        expect(() => membershipCommandHash(mercadoPago)).not.toThrow();
+        expect(() => membershipCommandHash({
+            ...mercadoPago,
+            current_price: { currency: 'USD', amount_minor: 500 },
+        })).toThrow('Mercado Pago current price must be positive ARS');
+        expect(() => membershipCommandHash({ ...paypal, provider: 'mercado_pago' }))
+            .toThrow('Membership source contradicts provider');
+    });
+
     it.each([
         'listener/1',
         '-listener',
