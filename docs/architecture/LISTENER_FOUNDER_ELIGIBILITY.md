@@ -1,12 +1,21 @@
-# Listener Founder price eligibility projection
+# Listener Founder price continuity projection
+
+> **Product amendment — 2026-08-10:** the positive-only lifetime eligibility
+> implementation described below is superseded and must not be enabled for
+> production commerce. "Lifetime" now means only the uninterrupted lifetime of
+> an active Founder subscription. Once paid-through/grace continuity ends,
+> Founder status and USD 5 eligibility end; later signup uses the current public
+> offer. This document retains the deployed design history so migration and
+> rollback can be reviewed, but the authority and Listener projections require
+> a coordinated forward-only correction before provider activation.
 
 ## Boundary
 
-PMP Myth Bot is the only authority that can grant the lifetime Founding Listener price. Its private
+PMP Myth Bot is the only authority that can project Founding Listener price continuity. Its private
 membership read v2 is versioned in `contracts/early-bird-authority/v2` and was introduced by backend
 merge `3febc1d525adf150bfdd75fd2b98b04771cb79b7`.
 
-Listener stores a positive-only projection of that evidence in
+The historical implementation stores a positive-only projection of that evidence in
 `early_bird_founder_eligibility_projections`. This row is deliberately separate from the v1
 membership projection:
 
