@@ -62,6 +62,13 @@ export class EarlyBirdProjectionConflictError extends Error {
     }
 }
 
+export class EarlyBirdProjectionAccountMissingError extends Error {
+    constructor() {
+        super('EarlyBird account does not exist');
+        this.name = 'EarlyBirdProjectionAccountMissingError';
+    }
+}
+
 function assertFounderContinuityTransition(
     existing: EarlyBirdMembershipProjection,
     next: EarlyBirdFounderContinuity | null,
@@ -321,7 +328,7 @@ export async function applyMembershipProjection(
         const accountRows = await tx.$queryRaw<Array<{ id: string }>>(
             Prisma.sql`SELECT "id" FROM "early_bird_users" WHERE "id" = ${command.account_id} FOR UPDATE`,
         );
-        if (accountRows.length !== 1) throw new Error('EarlyBird account does not exist');
+        if (accountRows.length !== 1) throw new EarlyBirdProjectionAccountMissingError();
 
         await assertListenerQuotaPolicyCompatible(tx);
         // The account lock must be acquired before observing authoritative time;

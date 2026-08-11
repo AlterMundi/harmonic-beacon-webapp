@@ -19,6 +19,7 @@ vi.mock('@/lib/db', () => ({
 }));
 
 import { GET, PUT } from '../route';
+import { EarlyBirdProjectionAccountMissingError } from '@/lib/early-birds/membership';
 
 const ACCOUNT = 'listener-1';
 const continuity = {
@@ -147,5 +148,15 @@ describe('private EarlyBird membership projection v2 route', () => {
             account_id: ACCOUNT,
             outcome: 'REPLAYED',
         });
+    });
+
+    it('fails a canonical projection permanently when its Listener account does not exist', async () => {
+        mocks.apply.mockRejectedValue(new EarlyBirdProjectionAccountMissingError());
+
+        const response = await PUT(put(), params);
+
+        expect(response.status).toBe(404);
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
+        await expect(response.json()).resolves.toEqual({ error: 'Resource not found.' });
     });
 });

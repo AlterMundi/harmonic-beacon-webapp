@@ -7,6 +7,7 @@ import {
 } from '@/lib/early-birds/membership-contract';
 import {
     applyMembershipProjection,
+    EarlyBirdProjectionAccountMissingError,
     EarlyBirdProjectionConflictError,
     membershipAccessDecision,
     type EarlyBirdProjectionOutcome,
@@ -86,6 +87,9 @@ export async function PUT(
         if (error instanceof EarlyBirdMembershipContractError) return response({ error: error.message }, 422);
         if (error instanceof EarlyBirdProjectionConflictError) {
             return response({ error: 'Revision conflicts with the existing command.' }, 409);
+        }
+        if (error instanceof EarlyBirdProjectionAccountMissingError) {
+            return response({ error: 'Resource not found.' }, 404);
         }
         console.error('[early-bird-membership] apply failed without request material');
         return response({ error: 'Membership projection unavailable.' }, 500);
