@@ -93,6 +93,15 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
   });
 });
 
+test('payment workbench keeps OAuth state and callback on the staging origin', async () => {
+  const source = await readRepository('scripts/listener-ui-preview.sh');
+  assert.match(source, /PREVIEW_ORIGIN="https:\/\/earlybirds-staging\.harmonicbeacon\.com"/);
+  assert.match(source, /set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "\$PREVIEW_ORIGIN"/);
+  assert.match(source, /set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "\$PREVIEW_ORIGIN"/);
+  assert.match(source, /if \[ "\$PREVIEW_PAYPAL_CHECKOUT" = 1 \] \|\| \[ "\$PREVIEW_MERCADO_PAGO_CHECKOUT" = 1 \]/);
+  assert.doesNotMatch(source, /PREVIEW_ORIGIN="https:\/\/listen\.harmonicbeacon\.com"/);
+});
+
 test('compose gates the loopback Listener on a forward-only isolated database migration', async () => {
   const source = await readPreview('compose.yml');
   const env = await readPreview('preview.env.synthetic.example');

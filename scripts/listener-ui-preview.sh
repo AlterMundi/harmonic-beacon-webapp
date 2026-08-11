@@ -15,6 +15,7 @@ RELEASE_CONTAINER="earlybirds-preview-listener-1"
 PREVIEW_FREE_FOR_ALL="${LISTENER_UI_PREVIEW_FREE_FOR_ALL:-1}"
 PREVIEW_PAYPAL_CHECKOUT="${LISTENER_UI_PREVIEW_PAYPAL_SANDBOX_CHECKOUT_ENABLED:-0}"
 PREVIEW_MERCADO_PAGO_CHECKOUT="${LISTENER_UI_PREVIEW_MERCADO_PAGO_TEST_CHECKOUT_ENABLED:-0}"
+PREVIEW_ORIGIN="https://earlybirds-staging.harmonicbeacon.com"
 
 case "$PREVIEW_FREE_FOR_ALL:$PREVIEW_PAYPAL_CHECKOUT:$PREVIEW_MERCADO_PAGO_CHECKOUT" in
     0:0:0|0:1:0|0:0:1|1:0:0) ;;
@@ -39,7 +40,7 @@ sync_source() {
 }
 
 start_remote() {
-    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' PREVIEW_MERCADO_PAGO_CHECKOUT='$PREVIEW_MERCADO_PAGO_CHECKOUT' bash -s" <<'REMOTE'
+    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' PREVIEW_MERCADO_PAGO_CHECKOUT='$PREVIEW_MERCADO_PAGO_CHECKOUT' PREVIEW_ORIGIN='$PREVIEW_ORIGIN' bash -s" <<'REMOTE'
 set -euo pipefail
 
 image="$(docker inspect "$RELEASE_CONTAINER" --format '{{.Config.Image}}')"
@@ -48,6 +49,13 @@ cleanup() { rm -f "$env_file"; }
 trap cleanup EXIT
 umask 077
 docker inspect "$RELEASE_CONTAINER" | jq -r '.[0].Config.Env[]' > "$env_file"
+
+set_env_file_value() {
+    key="$1"
+    value="$2"
+    sed -i "/^${key}=/d" "$env_file"
+    printf '%s=%s\n' "$key" "$value" >> "$env_file"
+}
 
 install -d -m 0755 "$REMOTE_NEXT"
 sudo chown 1001:1001 "$REMOTE_NEXT"
@@ -62,6 +70,12 @@ command_args=()
 if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ] || [ "$PREVIEW_MERCADO_PAGO_CHECKOUT" = 1 ]; then
     # Synthetic team entry is deliberately unavailable under NODE_ENV=development.
     # Payment rehearsal therefore runs the exact built release artifact.
+    # OAuth state and session cookies are host-only. The workbench must initiate
+    # and receive the callback on its own origin; inheriting the persistent
+    # Listener base URL sends Google back to listen.harmonicbeacon.com, where
+    # the staging state cookie is absent and Better Auth correctly rejects it.
+    set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "$PREVIEW_ORIGIN"
+    set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "$PREVIEW_ORIGIN"
     runtime_args=(-e NODE_ENV=production)
     command_args=(node server.js)
 else

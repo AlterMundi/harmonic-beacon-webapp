@@ -33,6 +33,14 @@ separate production-mode container on the staging port. Ordinary UI iteration
 continues to use Next development mode. Neither path changes the persistent
 Listener release or event services.
 
+The payment workbench overrides both accepted Listener auth-base aliases to
+`https://earlybirds-staging.harmonicbeacon.com`. OAuth state and session cookies
+are host-only, so login must begin and finish on staging. Inheriting the public
+Listener auth base would redirect Google to `listen.harmonicbeacon.com`, where
+the staging state cookie is deliberately unavailable and the callback fails
+closed with `state_mismatch`. The Google OAuth application must therefore keep
+the exact staging callback registered alongside the public Listener callback.
+
 For the equivalent isolated Mercado Pago TEST rehearsal, select only Mercado
 Pago and keep Free For All disabled:
 
