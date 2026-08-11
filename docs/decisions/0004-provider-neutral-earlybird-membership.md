@@ -1,6 +1,6 @@
 # Provider-neutral EarlyBird membership
 
-*Accepted 2026-08-06 for the EarlyBirds milestone.*
+*Accepted 2026-08-06 and amended 2026-08-10 for the EarlyBirds milestone.*
 
 ## Decision
 
@@ -9,19 +9,22 @@ MercadoPago and future app-store providers emit one ordered, idempotent
 membership projection. The web app never trusts a success redirect or provider
 payload as access truth.
 
-The founder offer is an immutable USD 5/month offer revision. The right to that
-price is granted only after the first canonical paid activation and remains
-attached for life to the opaque Listener account, independently of email or
-identity provider. Voluntary cancellation ends active access after paid-through
-time but does not remove the account's founder-price eligibility; a later
-reactivation uses the founder offer again. Involuntary payment failure receives
-14 days of grace. Refund, dispute and administrative revoke end access
-immediately without using a browser redirect as commercial truth.
+The founder offer is an immutable USD 5/month offer revision. "Lifetime" means
+that price remains guaranteed only while the canonical Founder subscription is
+active and uninterrupted; it is not a permanent account entitlement. A pending
+cancellation keeps access and Founder status through paid-through time and may
+be reversed before service ends without breaking continuity. Once service
+actually ends, Founder status and price eligibility end. Any later signup uses
+the then-current public offer. Involuntary payment failure receives the approved
+grace period, but terminal failure, refund, chargeback, dispute, fraud or
+administrative termination does not preserve Founder status. Browser redirects
+remain incapable of creating or erasing commercial truth.
 
-Founder-price eligibility, active membership, current listening authorization
-and payment/reconciliation history are separate durable concepts. A checkout
-start, success redirect, failed attempt or unconfirmed provider event grants
-none of them.
+Founder pricing, active membership, current listening authorization and
+payment/reconciliation history remain separate canonical concepts, but Founder
+pricing is continuity-bound rather than an immutable positive-only account
+grant. A checkout start, success redirect, failed attempt or unconfirmed
+provider event grants none of them.
 
 Free invitations are signed, single-use, EarlyBird-scoped, auditable, revocable
 and indefinite until used or revoked. They work in staging and production. A

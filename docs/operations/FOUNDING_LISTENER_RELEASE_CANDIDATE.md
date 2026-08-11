@@ -137,8 +137,10 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #195 remains open: measured external load/CDN rehearsal.
 - #196 remains open only for Apple developer credentials and physical Apple
   acceptance; the real Google callback/logout/relogin passed.
-- #197 is closed: provider-neutral membership and Founder eligibility are
-  integrated. Provider acceptance remains separately tracked by #199/#200/#261.
+- #197 was reopened after the 2026-08-10 product amendment: the former
+  positive-only lifetime eligibility must become continuity-bound before any
+  production provider is enabled. Provider acceptance remains separately
+  tracked by #199/#200/#261.
 - #198 remains open: physical acoustic/accessibility and 60-minute acceptance.
 - #201 is In Progress: the human acceptance matrix.
 - #216's old daily-window acceptance is obsolete; weekly reset/countdown human

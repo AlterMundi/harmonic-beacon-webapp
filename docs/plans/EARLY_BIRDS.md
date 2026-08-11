@@ -56,7 +56,7 @@ change has passed its own audio and operational acceptance.
 | Favor continuity over low latency in the Listener | Accepted | Desktop HLS stays about five segments behind the edge with a 60-second target buffer; Stop and a later Listen rejoin the current configured edge. |
 | Keep intros private | Accepted | Intro progress is device-local. The live stream runs muted underneath and is revealed at the handoff; this is not a realtime mix or crossfader. |
 | Separate ordinary Free from canonical membership | Accepted | Registered Free is a server-authoritative, metered weekly allowance that never fabricates membership or Purchase; canonical memberships/invitations and Free for All remain non-metered. |
-| Preserve the Founder price for life | Accepted | First canonical paid activation grants the opaque account a lifetime right to the USD 5/month founder offer; cancellation ends access but not that price eligibility. |
+| Preserve the Founder price while service remains uninterrupted | Accepted | USD 5/month remains guaranteed only while the canonical Founder subscription stays active or inside its approved grace/paid-through continuity; once service ends, Founder status and pricing end and a later signup uses the current public offer. |
 | Launch Free before paid providers | Accepted | Human acceptance of the complete Free flow is a hard gate before PayPal or MercadoPago can be enabled. Both providers remain disabled by default. |
 | Defer app-store distribution | Accepted | Google Play and Apple App Store wrappers and billing are post-MVP work; the provider-neutral membership authority must leave room for them without making them a launch dependency. |
 | Design for 3,000 concurrent listeners | Accepted | Expand at 4,000 and treat 5,000 as critical; alerts use measured network, CPU, memory, origin and canary health. |
@@ -115,9 +115,10 @@ steps are not safe to execute literally.
 5. They call a shared database, container, host and SFU "zero impact". Shared
    infrastructure is impact; the preview and media origin must be isolated and
    resource-bounded.
-6. They treat a boolean `isFounder` as a lifetime-price contract. Founder-price
-   eligibility requires a versioned offer, first canonical paid activation and
-   durable account-bound commercial evidence separate from active membership.
+6. They treat a boolean `isFounder` as a complete pricing contract. Founder
+   continuity requires a versioned offer, canonical paid activation and
+   ordered paid-through/grace/termination evidence separate from current
+   listening authorization.
 7. They place PWA, three identity providers, root redirects, post-event upsell
    and autonomous social publishing in the first slice. None is required to
    prove that a person can subscribe and listen reliably.
@@ -428,14 +429,16 @@ revocable and valid indefinitely until consumed or revoked. They work in
 staging and production. Upgrading Free to paid consumes the free grant so two
 independent memberships cannot remain active.
 
-"Founder price locked for life" is not a boolean. It is a versioned USD 5/month
-offer grant recording amount/currency, first canonical paid activation and the
-opaque account that owns the durable eligibility. Voluntary cancellation
-preserves access through paid-through time and then ends active access, but the
-same account retains the founder price for a later reactivation. Involuntary
-payment failure receives 14 days of grace. Refund, dispute and administrative
-revocation remove access immediately; they do not authorize the browser to
-invent or erase commercial evidence.
+"Founder price locked for life" means for the uninterrupted lifetime of the
+Founder service, not for the lifetime of the account. It is a versioned USD
+5/month continuity state recording amount/currency, canonical activation and
+the current paid/grace boundary. A pending voluntary cancellation preserves
+access through paid-through time and may be reversed before that boundary
+without losing Founder status. Once service ends, eligibility ends permanently
+and a later signup uses the current public offer. Involuntary payment failure
+receives 14 days of grace. Terminal failure, refund, chargeback, dispute, fraud
+or administrative termination removes access and Founder status; the browser
+cannot invent or erase that commercial evidence.
 
 PayPal and MercadoPago both implement the same contract. MercadoPago charges an
 ARS equivalent derived from the BCRA A3500 reference rate, locks the renewal
@@ -671,7 +674,7 @@ an older USD 2 binary is not a valid rollback target.
 | ID | Accepted decision |
 |---|---|
 | D1 | `EarlyBirds` remains the implementation branch/milestone; public Listener is `listen.harmonicbeacon.com/`, staging migrates to `listen-staging.harmonicbeacon.com`, legacy `/early-birds` paths redirect during cutover, and origin remains `stream.harmonicbeacon.com`. |
-| D2 | USD 5/month founder offer; first canonical paid activation grants lifetime account-bound price eligibility; voluntary cancellation ends access after paid-through but a later reactivation retains that price; 14-day involuntary grace; refund/dispute/admin revoke access immediately. |
+| D2 | USD 5/month founder offer while service remains uninterrupted; pending cancellation retains access and price only through paid-through and can be reversed before service ends; once service ends, later signup uses the then-current public price; 14-day involuntary grace; terminal failure/refund/chargeback/dispute/fraud/admin termination removes access and Founder status. |
 | D3 | Google and Apple through exact stable Better Auth, plus an optional passwordless email magic-link fallback through the existing private mail authority; no Facebook and no implicit account linking. |
 | D4 | Provider-neutral Free, PayPal and MercadoPago grants; Free is single-use, signed, auditable, revocable and consumed by paid upgrade. |
 | D5 | Source-neutral “continuous Beacon stream” wording; never claim whether the source is an instrument, a file or another origin. |
