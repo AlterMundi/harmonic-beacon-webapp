@@ -67,6 +67,7 @@ if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ] || [ "$PREVIEW_MERCADO_PAGO_CHECKOUT" = 1 
 else
     runtime_args=(
         -e NODE_ENV=development
+        -e BEACON_GIT_SHA=ui-dev
         -e WATCHPACK_POLLING=true
         -v "$REMOTE_SOURCE/src:/app/src:ro"
         -v "$REMOTE_SOURCE/public:/app/public:ro"
@@ -85,7 +86,6 @@ docker run -d \
     --init \
     --env-file "$env_file" \
     -e NEXT_TELEMETRY_DISABLED=1 \
-    -e BEACON_GIT_SHA=ui-dev \
     -e EARLY_BIRDS_ENABLED=1 \
     -e BEACON_LISTENER_ENABLED=1 \
     -e EARLY_BIRDS_FREE_FOR_ALL="$PREVIEW_FREE_FOR_ALL" \
