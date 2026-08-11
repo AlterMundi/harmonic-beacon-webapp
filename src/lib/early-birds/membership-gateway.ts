@@ -3,9 +3,8 @@ import { createHash } from 'node:crypto';
 import { isEarlyBirdAccountId } from './account-id';
 import {
     authorityMembershipCommand,
-    parseCanonicalAuthorityMembership,
-    parseCanonicalAuthorityMembershipV2,
-    type CanonicalAuthorityMembershipV2,
+    parseCanonicalAuthorityMembershipV3,
+    type CanonicalAuthorityMembershipV3,
 } from './membership-contract';
 import {
     applyMembershipProjection,
@@ -78,7 +77,7 @@ export interface EarlyBirdMembershipGateway {
 }
 
 export type CanonicalMembershipReadResult =
-    | { ok: true; membership: CanonicalAuthorityMembershipV2 }
+    | { ok: true; membership: CanonicalAuthorityMembershipV3 }
     | { ok: false; reason: 'not-found' };
 
 export interface EarlyBirdMembershipReader {
@@ -157,7 +156,7 @@ export class HttpEarlyBirdMembershipGateway implements EarlyBirdMembershipGatewa
                 if (response.status === 409) return { ok: false, reason: 'unavailable' };
                 throw new EarlyBirdMembershipGatewayUnavailableError();
             }
-            const membership = parseCanonicalAuthorityMembership(await response.json());
+            const membership = parseCanonicalAuthorityMembershipV3(await response.json());
             if (membership.account_id !== accountId) throw new EarlyBirdMembershipGatewayUnavailableError();
             const projection = authorityMembershipCommand(membership);
             return {
@@ -180,7 +179,7 @@ export class HttpEarlyBirdMembershipGateway implements EarlyBirdMembershipGatewa
         const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
         try {
             const response = await this.request(
-                `${this.config.baseUrl}/api/internal/v2/early-bird-memberships/${encodeURIComponent(accountId)}`,
+                `${this.config.baseUrl}/api/internal/v3/early-bird-memberships/${encodeURIComponent(accountId)}`,
                 {
                     method: 'GET',
                     redirect: 'error',
@@ -213,7 +212,7 @@ export class HttpEarlyBirdMembershipGateway implements EarlyBirdMembershipGatewa
             } catch {
                 throw new EarlyBirdMembershipGatewayUnavailableError();
             }
-            const membership = parseCanonicalAuthorityMembershipV2(body);
+            const membership = parseCanonicalAuthorityMembershipV3(body);
             if (membership.account_id !== accountId) {
                 throw new EarlyBirdMembershipGatewayUnavailableError();
             }

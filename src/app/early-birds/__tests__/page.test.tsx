@@ -6,10 +6,14 @@ const mocks = vi.hoisted(() => ({
     earlyBirdMagicLinkAvailable: vi.fn(),
     getEarlyBirdListeningAccess: vi.fn(),
     headers: vi.fn(),
+    redirect: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({
     headers: mocks.headers,
+}));
+vi.mock('next/navigation', () => ({
+    redirect: mocks.redirect,
 }));
 vi.mock('@/lib/early-birds/auth', () => ({
     currentEarlyBirdSession: mocks.currentEarlyBirdSession,
@@ -51,6 +55,28 @@ const availableQuota = {
 };
 
 describe('EarlyBird Listener page', () => {
+    it('cleans provider return parameters without treating them as payment authority', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        mocks.headers.mockResolvedValue(new Headers({
+            host: 'earlybirds-staging.harmonicbeacon.com',
+        }));
+        const redirected = new Error('redirected');
+        mocks.redirect.mockImplementation(() => { throw redirected; });
+
+        await expect(EarlyBirdsPage({
+            searchParams: Promise.resolve({
+                paypal: 'success',
+                subscription_id: 'opaque-provider-value',
+                ba_token: 'opaque-provider-value',
+                token: 'opaque-provider-value',
+            }),
+        })).rejects.toBe(redirected);
+
+        expect(mocks.redirect).toHaveBeenCalledWith('/');
+        expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
+    });
+
     it('renders the Listener directly without auth or membership in Free for All mode', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
@@ -147,7 +173,20 @@ describe('EarlyBird Listener page', () => {
                     state: 'CANCELLED_PENDING_END',
                     source: 'MERCADO_PAGO',
                     offerCode: 'EARLY_BIRDS_FOUNDERS_V1',
+                    offerRevision: 1,
+                    effectiveAt: new Date('2026-08-01T00:00:00.000Z'),
+                    paidThrough: new Date('2026-08-31T00:00:00.000Z'),
+                    graceUntil: null,
                     synthetic: false,
+                    founderContinuityEpisodeId: '00000000-0000-4000-8000-000000000101',
+                    founderContinuityState: 'CANCELLED_PENDING_END',
+                    founderContinuityOfferCode: 'EARLY_BIRDS_FOUNDERS_V1',
+                    founderContinuityOfferRevision: 1,
+                    founderContinuityCurrency: 'USD',
+                    founderContinuityAmountMinor: 500,
+                    founderContinuityBillingPeriod: 'MONTHLY',
+                    founderContinuityActivatedAt: new Date('2026-08-01T00:00:00.000Z'),
+                    founderContinuityServiceThrough: new Date('2026-08-31T00:00:00.000Z'),
                     provider: 'internal-provider-value',
                     reasonCode: 'PRIVATE_REASON',
                 },

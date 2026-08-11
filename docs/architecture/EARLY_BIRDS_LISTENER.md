@@ -63,20 +63,24 @@ auth plugin stay hidden and fail closed.
 
 ## Canonical membership boundary
 
-Byte-exact copies live in `contracts/early-bird-authority/v1` and
-`contracts/early-bird-membership/v1`. Verify them with `npm run contract:early-birds:verify`.
+The current byte-exact snapshots live in `contracts/early-bird-authority/v3`
+and `contracts/early-bird-membership/v2`. Verify them with
+`npm run contract:early-birds:verify`. Older versions remain historical
+artifacts only and are not accepted by runtime parsers or projection routes.
 
 - Free redemption authenticates the EarlyBird session first and sends the opaque invitation only to
   `POST /api/internal/v1/early-bird-invitations/redeem` on the authority. Beacon never consumes or
   stores the invitation.
-- The authority can push revisions to
-  `PUT /api/internal/v1/early-bird-memberships/{account_id}`. Beacon requires rotating Bearer/key-id
+- The authority can push membership plus Founder-continuity revisions to
+  `PUT /api/internal/v2/early-bird-memberships/{account_id}`. Beacon requires rotating Bearer/key-id
   credentials and `Idempotency-Key: early-bird-membership:{account_id}:{membership_revision}`.
-- Commands are hashed with SHA-256 over RFC 8785/JCS canonical JSON for exactly the twelve required
-  fields. Higher revisions are `APPLIED`, byte-semantic repeats are `REPLAYED`, lower revisions are
+- Commands are hashed with SHA-256 over RFC 8785/JCS canonical JSON, including
+  the complete `founder_continuity` snapshot. Higher revisions are `APPLIED`, byte-semantic repeats are `REPLAYED`, lower revisions are
   `STALE`, and equal revisions with different payloads conflict.
-- `ACTIVE`, time-valid `GRACE`, and time-valid `CANCELLED_PENDING_END` allow access. Every missing,
-  expired, revoked, refunded or unavailable state fails closed.
+- Paid `ACTIVE`, time-valid `GRACE`, and time-valid
+  `CANCELLED_PENDING_END` allow access only with a matching current continuity
+  episode and boundary. `ENDED`, missing, expired, revoked, refunded,
+  contradictory or unavailable state fails closed.
 
 ### Public invitation handoff
 

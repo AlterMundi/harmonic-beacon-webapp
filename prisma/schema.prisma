@@ -99,6 +99,13 @@ enum EarlyBirdMembershipSource {
   MERCADO_PAGO
 }
 
+enum EarlyBirdFounderContinuityState {
+  ACTIVE
+  CANCELLED_PENDING_END
+  GRACE
+  ENDED
+}
+
 // Coarse, non-identifying regions used only for Listener presence. Exact
 // locations never enter the application database.
 enum ListenerMacroRegion {
@@ -445,7 +452,6 @@ model EarlyBirdUser {
   identities         EarlyBirdIdentity[]
   authSessions       EarlyBirdAuthSession[]
   membership         EarlyBirdMembershipProjection?
-  founderEligibility EarlyBirdFounderEligibilityProjection?
   freeSchedule       EarlyBirdFreeSchedule?
   welcomeAccess      EarlyBirdWelcomeAccess?
   streamLeases       EarlyBirdStreamLease[]
@@ -523,49 +529,41 @@ model EarlyBirdMagicLinkThrottle {
 // proyecciones-mito. The revision and hash make delivery monotonic and
 // idempotent; redirect URLs and local UI state are never authorization proof.
 model EarlyBirdMembershipProjection {
-  id            String                     @id @default(uuid()) @db.Uuid
-  accountId     String                     @unique @map("account_id")
-  account       EarlyBirdUser              @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  revision      Int
-  commandHash   String                     @map("command_hash") @db.Char(64)
-  state         EarlyBirdMembershipState
-  source        EarlyBirdMembershipSource?
-  offerCode     String?                    @map("offer_code")
-  offerRevision Int?                       @map("offer_revision")
-  effectiveAt   DateTime                   @map("effective_at")
-  paidThrough   DateTime?                  @map("paid_through")
-  graceUntil    DateTime?                  @map("grace_until")
-  provider      String?
-  amountMinor   Int?                       @map("amount_minor")
-  currency      String?                    @db.VarChar(3)
-  reasonCode    String                     @map("reason_code") @db.VarChar(64)
-  synthetic     Boolean                    @default(false)
-  createdAt     DateTime                   @default(now()) @map("created_at")
-  updatedAt     DateTime                   @updatedAt @map("updated_at")
+  id                              String                           @id @default(uuid()) @db.Uuid
+  accountId                       String                           @unique @map("account_id")
+  account                         EarlyBirdUser                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  revision                        Int
+  commandHash                     String                           @map("command_hash") @db.Char(64)
+  state                           EarlyBirdMembershipState
+  source                          EarlyBirdMembershipSource?
+  offerCode                       String?                          @map("offer_code")
+  offerRevision                   Int?                             @map("offer_revision")
+  effectiveAt                     DateTime                         @map("effective_at")
+  paidThrough                     DateTime?                        @map("paid_through")
+  graceUntil                      DateTime?                        @map("grace_until")
+  provider                        String?
+  amountMinor                     Int?                             @map("amount_minor")
+  currency                        String?                          @db.VarChar(3)
+  reasonCode                      String                           @map("reason_code") @db.VarChar(64)
+  synthetic                       Boolean                          @default(false)
+  founderContinuityEpisodeId      String?                          @map("founder_continuity_episode_id") @db.Uuid
+  founderContinuityRevision       Int?                             @map("founder_continuity_revision")
+  founderContinuityState          EarlyBirdFounderContinuityState? @map("founder_continuity_state")
+  founderContinuityOfferCode      String?                          @map("founder_continuity_offer_code") @db.VarChar(128)
+  founderContinuityOfferRevision  Int?                             @map("founder_continuity_offer_revision")
+  founderContinuityCurrency       String?                          @map("founder_continuity_currency") @db.Char(3)
+  founderContinuityAmountMinor    Int?                             @map("founder_continuity_amount_minor")
+  founderContinuityBillingPeriod  String?                          @map("founder_continuity_billing_period") @db.VarChar(32)
+  founderContinuityActivatedAt    DateTime?                        @map("founder_continuity_activated_at")
+  founderContinuityServiceThrough DateTime?                        @map("founder_continuity_service_through")
+  founderContinuityEndedAt        DateTime?                        @map("founder_continuity_ended_at")
+  founderContinuityTerminalReason String?                          @map("founder_continuity_terminal_reason") @db.VarChar(64)
+  createdAt                       DateTime                         @default(now()) @map("created_at")
+  updatedAt                       DateTime                         @updatedAt @map("updated_at")
 
   @@index([state, paidThrough])
+  @@index([founderContinuityState, founderContinuityServiceThrough])
   @@map("early_bird_membership_projections")
-}
-
-// Positive-only projection of the canonical, lifetime Founder price evidence.
-// It is deliberately separate from membership/access revisions and authorizes
-// nothing by itself.
-model EarlyBirdFounderEligibilityProjection {
-  accountId       String        @id @map("account_id")
-  account         EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  offerCode       String        @map("offer_code") @db.VarChar(128)
-  offerRevision   Int           @map("offer_revision")
-  currency        String        @db.Char(3)
-  amountMinor     Int           @map("amount_minor")
-  billingPeriod   String        @map("billing_period") @db.VarChar(32)
-  grantedAt       DateTime      @map("granted_at")
-  eligibilityHash String        @map("eligibility_hash") @db.Char(64)
-  observedAt      DateTime      @map("observed_at")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
-
-  @@index([grantedAt])
-  @@map("early_bird_founder_eligibility_projections")
 }
 
 // Account-bound ordinary Free access. This is deliberately independent from

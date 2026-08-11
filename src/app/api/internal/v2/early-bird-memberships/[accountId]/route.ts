@@ -29,6 +29,8 @@ function authorized(request: NextRequest): boolean {
     );
 }
 
+// The acknowledgement shape did not change with command v2. It deliberately
+// exposes only the applied revision and effective access decision.
 function result(
     projection: NonNullable<ReturnType<typeof membershipAccessDecision>['projection']>,
     outcome: EarlyBirdProjectionOutcome,
