@@ -17,6 +17,24 @@ LiveKit, Ticket Tailor, playlist-bot, tapestry, event audio or `live.harmonicbea
 Public terms and privacy are published at `/listener/terms` and `/listener/privacy`. They are a
 truthful launch baseline, not a substitute for counsel review. Human owner: Nico/AlterMundi.
 
+## Verified pre-release evidence — 2026-08-12
+
+- Mercado Pago TEST completed checkout, canonical activation, pause, reactivation and a fresh
+  reconciliation using synthetic buyer/card data.
+- PayPal Sandbox completed a fresh USD 5 activation, pending cancellation, reversal before the
+  boundary and a full refund. The refund terminalized continuity, removed the Founder profile and
+  returned the account to Free.
+- Private paid-lifecycle metrics and Telegram warning/critical/recovery rules are deployed. A
+  database backup was restored into an isolated rehearsal database and verified.
+- Production provider and new-sales flags remain OFF. No real payment was attempted.
+
+Backend magic-link delivery is merged at `c443a7ec9b387fa54ff16904e1a5d561613ec102` but remains
+inert until an event-safe PMP maintenance window. The other remaining gates are human/external:
+final legal/copy acceptance, protected Live credentials, Google OAuth secret rotation (#328), one
+supervised low-value Live lifecycle per enabled provider and explicit approval to open public
+checkout. Production font builds must also be made hermetic under #327; retries against Google
+Fonts are evidence of a release defect, not a durable build strategy.
+
 ## Independent switches
 
 Listener app, all default OFF:
@@ -88,5 +106,6 @@ converted back into a reversible action.
 - PayPal Live Business account/app/product/plan/webhook and root-only Live secrets.
 - Mercado Pago productive merchant credentials/webhook and root-only Live secrets.
 - Counsel/merchant review of public terms, privacy, refund and tax/invoicing obligations.
+- Hermetic production fonts (#327) and controlled Google OAuth secret rotation (#328).
 - One supervised real purchase and cancellation per provider.
 - Explicit approval to turn on real sales. The checked-in defaults remain OFF.

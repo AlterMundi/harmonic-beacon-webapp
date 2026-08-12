@@ -12,6 +12,23 @@ This is the handoff for a bounded real public test. It does not authorize a
 merge to `main`, a worldwide campaign, paid-provider activation, real charges,
 an event-stack deployment or an acoustic change.
 
+## Current commercial checkpoint — 2026-08-12
+
+The weekly-Free candidate has advanced to a complete Founding Listener pre-release lane:
+
+- canonical uninterrupted Founder continuity and USD 5/month offer;
+- PayPal Sandbox and Mercado Pago TEST browser acceptance;
+- self-service cancel/reactivate and terminal Free fallback;
+- private paid-operation metrics, alerts, backup/restore and sales kill switches;
+- production provider adapters and public checkout present but fail-closed/default-off.
+
+The release is not yet authorized for real sales. Backend magic-link delivery is merged at
+`SairaAsua/proyecciones-mito@c443a7ec9b387fa54ff16904e1a5d561613ec102` but still needs an event-safe
+runtime rollout. Remaining gates also include final ES/EN legal/copy review, controlled rotation of the exposed Google OAuth
+client secret, protected PayPal/MP Live credentials, one supervised low-value Live lifecycle per
+provider, a hermetic font build and explicit main/public-sales approval. See
+`docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and issue #315 for the current checklist.
+
 ## Status: weekly Free deployed for acceptance
 
 Release `1f8368d2fda19b30b74c95af884d862838f73305` is deployed on the isolated
@@ -137,16 +154,17 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #195 remains open: measured external load/CDN rehearsal.
 - #196 remains open only for Apple developer credentials and physical Apple
   acceptance; the real Google callback/logout/relogin passed.
-- #197 was reopened after the 2026-08-10 product amendment. The continuity-bound
-  authority/Listener correction is implemented in coordinated review branches;
-  production providers remain disabled until both sides merge and staging proves
-  activation, paid-through/grace and terminal badge removal. Provider acceptance
-  remains separately tracked by #199/#200/#261.
+- #197's continuity-bound authority/Listener correction is merged and deployed to
+  isolated staging. Byte-exact contracts, terminal tombstones, uninterrupted
+  Founder semantics and synthetic pre-release retirement are proven. The card can
+  close independently of provider activation.
 - #198 remains open: physical acoustic/accessibility and 60-minute acceptance.
 - #201 is In Progress: the human acceptance matrix.
 - #216's old daily-window acceptance is obsolete; weekly reset/countdown human
   acceptance replaces it.
-- #217 remains open on the external Gmail delivery endpoint #44.
+- #217 remains open while backend #44 is merged but not yet deployed to the
+  shared PMP email runtime. Its rollout needs an event-safe maintenance window,
+  a dedicated service token and one controlled Gmail callback smoke.
 - #218 is closed/Done with deployed runtime evidence.
 - #219 is closed/Done after positive physical iPhone acceptance of the deployed
   gesture-safe handoff.
@@ -155,26 +173,28 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #213 remains open for the final public-human invitation/experience evidence.
 - #211 is deployed. #212's accepted field is public; its technical laboratory
   remains default-off and can be re-enabled only on staging for later variants.
-- #199/#200 remain open for real sandbox lifecycle evidence. Both adapters are
-  merged backend-side and default-off. Backend PR #57 and the paired
-  Beacon slice version isolated egress, exact staging webhook ingress and a
-  session-derived checkout that is visible only on staging when its provider
-  flag is explicitly enabled. No provider credential, checkout flag or sale is
-  active in the deployed Listener.
+- #199/#200 have fresh provider evidence: PayPal Sandbox completed USD 5
+  activation, cancel-pending-end, reversal and terminal refund; Mercado Pago TEST
+  completed checkout, pause, reactivation and reconciliation. Both adapters and
+  their production lanes remain default-off. No Live credential, public checkout
+  flag or real sale is active.
 
 ## Remaining human sequence
 
 Use `docs/operations/EARLY_BIRDS_FREE_ACCEPTANCE.md` as the authoritative
 worksheet.
 
-1. Complete one real Google sign-in through a valid synthetic invitation.
-2. Confirm Stop halts the visible balance and a simulated/real cycle boundary
-   updates without reload.
-3. Complete the remaining physical Chrome, Firefox and Android Chrome rows;
-   retain the accepted iPhone result.
-4. Run one 60-minute physical listen with intro, handoff, background/foreground,
-   network transition and Stop/rejoin.
-5. Run stepwise load from external generators before claiming measured scale.
+1. Review and accept the final ES/EN offer, seller, cancellation/refund, privacy
+   and support copy.
+2. Rotate the exposed Google OAuth client secret through the protected store and
+   re-run callback/logout without printing it.
+3. Self-host the approved fonts so the release build has no Google Fonts network dependency (#327).
+4. Deploy backend #44 in an event-safe maintenance window and prove one controlled
+   magic-link request, email, callback and Free entry.
+5. Install protected PayPal and Mercado Pago Live credentials with all sales
+   flags still OFF, then run one explicitly approved low-value lifecycle per provider.
+6. Approve merge to `main` and public checkout separately; retain the immediate
+   new-sales kill switch throughout launch.
 
 Do not select a user's Google account, provision Apple, charge a provider,
 alter audio or merge/promote the branch as part of an automated test.
