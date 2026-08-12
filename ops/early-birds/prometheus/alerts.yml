@@ -1,4 +1,56 @@
 groups:
+  - name: listener-paid-authority
+    rules:
+      - alert: ListenerAuthorityUnreachable
+        expr: up{job="listener-authority"} == 0
+        for: 2m
+        labels: { severity: critical, service: listener-payments }
+        annotations: { summary: "Listener membership authority is unreachable", runbook: "listener-paid-authority" }
+      - alert: ListenerSandboxProviderUnavailable
+        expr: pmp_listener_provider_ready{environment=~"sandbox|test"} == 0
+        for: 5m
+        labels: { severity: warning, service: listener-payments }
+        annotations: { summary: "A Listener sandbox/test provider is unavailable", runbook: "listener-paid-provider" }
+      - alert: ListenerLiveProviderUnavailableDuringSales
+        expr: pmp_listener_new_sales_enabled == 1 and on() sum(pmp_listener_provider_ready{environment="live"}) < 2
+        for: 2m
+        labels: { severity: critical, service: listener-payments }
+        annotations: { summary: "New sales are enabled while a Live provider is unavailable", runbook: "listener-paid-provider" }
+      - alert: ListenerPaidQueueDelayed
+        expr: pmp_listener_paid_queue_oldest_age_seconds > 120
+        for: 5m
+        labels: { severity: warning, service: listener-payments }
+        annotations: { summary: "Listener paid lifecycle queue is more than two minutes old", runbook: "listener-paid-queue" }
+      - alert: ListenerPaidQueueCritical
+        expr: pmp_listener_paid_queue_oldest_age_seconds > 600
+        for: 2m
+        labels: { severity: critical, service: listener-payments }
+        annotations: { summary: "Listener paid lifecycle queue is more than ten minutes old", runbook: "listener-paid-queue" }
+      - alert: ListenerPaidJobFailed
+        expr: sum(pmp_listener_paid_jobs{status="failed"}) > 0
+        for: 2m
+        labels: { severity: critical, service: listener-payments }
+        annotations: { summary: "A durable Listener paid lifecycle job failed", runbook: "listener-paid-queue" }
+      - alert: ListenerProjectionFailed
+        expr: pmp_listener_paid_jobs{kind="early_birds.beacon.project",status="failed"} > 0
+        for: 1m
+        labels: { severity: critical, service: listener-payments }
+        annotations: { summary: "A canonical Listener membership projection failed", runbook: "listener-paid-projection" }
+      - alert: ListenerWebhookSignatureFailures
+        expr: sum(increase(pmp_listener_paid_requests_total{operation="webhook",outcome="invalid_signature"}[5m])) > 5
+        for: 2m
+        labels: { severity: warning, service: listener-payments }
+        annotations: { summary: "Listener webhook signature failures exceed the warning threshold", runbook: "listener-paid-webhook" }
+      - alert: ListenerWebhookSignatureFailuresCritical
+        expr: sum(increase(pmp_listener_paid_requests_total{operation="webhook",outcome="invalid_signature"}[5m])) > 20
+        for: 1m
+        labels: { severity: critical, service: listener-payments }
+        annotations: { summary: "Listener webhook signature failures exceed the critical threshold", runbook: "listener-paid-webhook" }
+      - alert: ListenerCheckoutProviderErrors
+        expr: sum(increase(pmp_listener_paid_requests_total{operation="checkout",outcome="provider_error"}[5m])) > 0
+        for: 2m
+        labels: { severity: warning, service: listener-payments }
+        annotations: { summary: "Listener checkout provider errors were observed", runbook: "listener-paid-provider" }
   - name: early-birds-origin
     rules:
       - alert: EarlyBirdsOriginUnreachable

@@ -23,6 +23,13 @@ scrape_configs:
     static_configs:
       - targets: [canary-exporter:8081]
 
+  # The membership authority exposes aggregate, label-bounded metrics only on
+  # its internal Compose network. No nginx/public route reaches this target.
+  - job_name: listener-authority
+    metrics_path: /metrics
+    static_configs:
+      - targets: [pmp-myth-api:8765]
+
   - job_name: node
     static_configs:
       - targets: [node-exporter:9100]

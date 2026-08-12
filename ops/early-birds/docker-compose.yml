@@ -44,7 +44,7 @@ services:
       - ./prometheus/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
       - prometheus-data:/prometheus
     ports: [127.0.0.1:9090:9090]
-    networks: [observability, ops_edge]
+    networks: [observability, ops_edge, authority_private]
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1G }
@@ -144,6 +144,9 @@ networks:
   # a wildcard host port on this bridge.
   ops_edge:
     name: earlybirds_observability_edge
+  authority_private:
+    external: true
+    name: earlybirds_authority_private
 
 volumes:
   prometheus-data:
