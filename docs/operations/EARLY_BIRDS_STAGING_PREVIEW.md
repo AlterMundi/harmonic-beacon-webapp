@@ -367,10 +367,11 @@ No deployment, DNS change, certificate request, nginx installation, host
 firewall change, OAuth registration, or provider call is performed by these
 files or lifecycle scripts.
 
-Free acceptance is the only membership flow in this staging milestone. The
-runtime defines no checkout service and supplies no PayPal, Mercado Pago, or
-other paid-provider configuration. Paid acceptance remains disabled even when
-the public Listener kill switch is opened.
+The isolated staging host may expose the separately gated PayPal Sandbox and
+Mercado Pago TEST workbench for supervised acceptance. The public Listener uses
+different Live checkout flags, which remain OFF in this preview contract. No
+real-provider credential or production checkout is enabled by opening the
+public Listener kill switch.
 
 ## Prepare synthetic inputs
 
@@ -484,10 +485,11 @@ The stream vhost exposes `/healthz` and `/v1/hls/`; container-private `/readyz`
 and metrics are not proxied. The Listener vhost exposes the unified Listener
 entry canonically at `/`, plus `/api/early-birds/`, Next static assets and health;
 legacy `/early-birds/home` redirects to `/`. It blocks `/api/internal/`
-and returns 404 for the image's weekend, staff, event and checkout surfaces.
+and returns 404 for the image's weekend, staff and event surfaces; its exact
+staging checkout and cancellation routes remain independently gated.
 The `listen.harmonicbeacon.com` vhost is narrower: it exposes only `/`, Next
 static assets, health, the dedicated Listener OAuth/session namespace, the
-exact ordinary-Free schedule endpoint, stream leases/manifests and configured
+exact ordinary-Free quota endpoint, stream leases/manifests and configured
 drop-ins. Synthetic login, membership projection and all other app routes
 remain unreachable from that host. Public invitations use only the exact
 Listener and legacy entry/redeem pages plus their two exact POST aliases on
@@ -498,7 +500,12 @@ no-store/no-referrer locations to the canonical host. Both staging redeem POST
 aliases return an unlogged, no-store 404 so neither can fall through the broad
 legacy prefix. The application additionally returns a hidden 404 for Better
 Auth's email/password endpoints, so the public namespace offers only configured
-Google and Apple social providers.
+Google and Apple social providers. The public vhost now also contains only the
+exact, same-origin Listener checkout and cancellation locations plus the two
+stable signed-provider webhook locations documented in
+`FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md`; all are fail-closed while their Live
+flags and authority credentials remain disabled. No prefix proxy exposes other
+membership or authority routes.
 
 A host operator must review certificate/DNS ownership, provision each named
 certificate, install these as new site files, and run `nginx -t` before any
