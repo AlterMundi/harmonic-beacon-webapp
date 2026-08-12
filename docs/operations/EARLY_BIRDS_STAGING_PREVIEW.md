@@ -1,12 +1,12 @@
 # EarlyBirds isolated staging runtime
 
-## 2026-08-12 commercial lane deployed with Live sales OFF
+## 2026-08-12 terminal-status checkpoint deployed with Live sales OFF
 
 The isolated Listener now runs merge SHA
-`f571495ff51591fdca5bf51b2c9ab27c1e1eeeb3`, image
-`harmonic-beacon/earlybirds-preview-listener:f571495` and unchanged Prisma
+`fcdde37948e7f826641d5e4438f7666765aeda22`, image
+`harmonic-beacon/earlybirds-preview-listener:fcdde37` and unchanged Prisma
 head `20260810223000_listener_founder_continuity`. The isolated membership
-authority runs merge SHA `7bc2dabd05aa68602bbfe9faa6e29c4e1c081017`
+authority runs merge SHA `60584936603525027c9891e0865efc58055a3d5d`
 at unchanged Alembic head `7b4c1e9a2d60`.
 
 - PayPal Live, Mercado Pago Live and both public Listener checkout flags are
@@ -21,16 +21,21 @@ at unchanged Alembic head `7b4c1e9a2d60`.
 - `/`, `/listener/terms`, `/listener/privacy`, liveness and readiness return
   `200` on the public Listener. The same UI/legal routes return `200` on the
   exact staging host, whose payment workbench uses the same release image.
+- The account surface now presents canonical pending/expired/refunded/revoked
+  outcomes without retaining the Founder badge or unlimited access. A fresh
+  PayPal Sandbox refund physically proved the terminal Free fallback before this
+  exact image was built and deployed.
 - The origin retained container `ed7ce1c99f79`; event app, playlist bot and
   LiveKit retained containers `527b5d590844`, `c67664aabcca` and
   `b81a99a8c3c9`. All remained healthy and no event configuration was changed.
 - Root-owned database, environment and nginx backups are retained under
   `/mnt/beacon-data/staging-backups/listener-commercial-20260812T052454Z` and
   `/mnt/beacon-data/staging-backups/listener-commercial-20260812T052916Z`.
-  Binary rollback selects Listener image `0e8ae66` and authority image
-  `ceed7b1e8edc1961c64a809b67f808119857b696`, restores the matched protected
-  environments/nginx files, recreates only the isolated services and reruns
-  health smoke. No schema rollback is required or authorized.
+  Immediate Listener rollback selects the retained stopped containers
+  `earlybirds-preview-listener-1-pre-fcdde37-20260812T0810Z` and
+  `listener-ui-dev-pre-fcdde37-20260812T0810Z`, both exact image `ca8a040`.
+  Authority rollback remains the matched protected image/environment procedure.
+  No schema rollback is required or authorized.
 
 ## 2026-08-11 Founder continuity cutover
 

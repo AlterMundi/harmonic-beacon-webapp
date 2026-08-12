@@ -477,17 +477,17 @@ The webapp vendors byte-exact copies of the canonical backend contracts under
   runtime authority contract instead of requiring an unused prefix. The
   provider remains TEST-only and disabled by default; the checkout surface is
   exact-host staging-only and absent from the public Listener edge.
-  The canonical Founder price and all shared contract bytes advance to USD 5
+  The canonical Founder price and all shared contract bytes advanced to USD 5
   in backend PR #59 / `cad4eded2e08ee46da49e54ee94e1ab8601d9495`.
-  Mandatory external gate before any paid activation: real Mercado Pago TEST
-  proof that `/preapproval/search?q=hb_<external_reference>` returns the exact
-  created preapproval.
+  Mercado Pago TEST has since passed real browser checkout, canonical activation,
+  pause/reactivation and fresh reconciliation without enabling Live credentials.
 - `contracts/listener-checkout/v1`: the production-only, provider-neutral
   checkout command/result. It exposes no provider subscription ID, fixes
   `environment=live`, keeps payer email transient and uses a separate new-sales
-  gate from provider lifecycle. Backend PR #69 / merge
-  `7bc2dabd05aa68602bbfe9faa6e29c4e1c081017` is CI-green. The Listener Live
-  surface, cancellation and exact webhook ingress remain disabled by default;
+  gate from provider lifecycle. The deployed authority runtime
+  `60584936603525027c9891e0865efc58055a3d5d` is CI-green and includes canonical
+  cancellation/reactivation plus paid-lifecycle metrics. The Listener Live
+  surface and exact webhook ingress remain disabled by default;
   see `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md`.
 
 ## 11. Fast Forward development lane
