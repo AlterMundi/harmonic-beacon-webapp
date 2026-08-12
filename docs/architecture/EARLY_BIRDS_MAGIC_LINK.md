@@ -1,7 +1,7 @@
 # Founding Listener email magic-link boundary
 
-Status: Listener side implemented; private mail adapter pending in
-`SairaAsua/proyecciones-mito`.
+Status: Listener and private delivery implemented. The dedicated mail sidecar is
+being rolled out independently from the event runtime.
 
 This fallback reuses the deployed Google Workspace/Gmail delivery capability
 without copying its OAuth grant into the Listener container. It is additive to
@@ -56,7 +56,7 @@ Body (`listener-magic-link.v1`):
 The endpoint must:
 
 1. exist only on the private `earlybirds_authority_private` network under the
-   existing `pmp-myth-api` alias;
+   dedicated `listener-mail-api` alias;
 2. authenticate the dedicated Bearer token in constant time;
 3. accept only the schema above, ES/EN locale, an HTTPS
    `listen.harmonicbeacon.com` or staging verification URL and a future expiry
@@ -68,24 +68,24 @@ The endpoint must:
    its current ambiguous-outcome semantics;
 7. return a minimal `202 {"status":"accepted"}` for accepted or replayed work.
 
-The current deployed PMP service already owns the Gmail API OAuth grant for the
-Google Workspace sender and its worker/durable delivery machinery. It does not
-yet expose this purpose/endpoint. That small adapter belongs in
-`proyecciones-mito`; mounting the same grant in the Listener would create a
-second email authority and is explicitly rejected.
+The event PMP runtime owns the Gmail API OAuth grant for the Google Workspace
+sender. A dedicated Listener-only API, worker and PostgreSQL queue reuse that
+root-owned grant through a read-only worker mount. Listener and the sidecar API
+never receive it. The sidecar has no host ports and neither deploys nor restarts
+the event API or workers.
 
 ## Configuration and rollout
 
 The Listener feature remains absent unless all are set:
 
 ```dotenv
-EARLY_BIRDS_MAGIC_LINK_DELIVERY_URL=http://pmp-myth-api:8765/api/internal/v1/listener-magic-links/deliver
+BEACON_LISTENER_MAGIC_LINK_DELIVERY_URL=http://listener-mail-api:8765/api/internal/v1/listener-magic-links/deliver
 EARLY_BIRDS_MAGIC_LINK_DELIVERY_TOKEN=<32-plus random characters>
 EARLY_BIRDS_MAGIC_LINK_RATE_SECRET=<32-plus independent random characters>
 ```
 
-Apply migration `20260807090000_early_bird_magic_link_throttles`, configure the
-mail adapter first, then install the three protected Listener values and
+Apply migration `20260807090000_early_bird_magic_link_throttles`, deploy the
+isolated mail sidecar first, then install the three protected Listener values and
 recreate only the isolated Listener. Rollback clears the three values and
 recreates only that container; existing Google sessions and email-only sessions
 remain valid until normal expiry, while no new email request route is exposed.
