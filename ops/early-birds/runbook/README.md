@@ -58,6 +58,40 @@ critical threshold, persistent 5xx/rebuffer evidence, retransmits ≥1%, or a
 healthy origin whose direct egress remains the bottleneck. It is not activated
 solely from an advertised NIC speed.
 
+## Paid Listener authority
+
+Prometheus joins the authority's existing private Docker network and scrapes
+`pmp-myth-api:8765/metrics`. The authority port remains loopback/private and no
+nginx location exposes metrics. Exported payment labels are fixed provider,
+environment, operation, outcome, job kind and job status values; no account,
+email, provider subscription ID, checkout URL, webhook body or signature is
+exported.
+
+Operational signals cover authority reachability, provider readiness while
+new sales are enabled, the oldest durable paid job, failed lifecycle/projection
+jobs, invalid webhook signatures and checkout provider errors. The request
+counters are process-local; `pmp_listener_paid_observer_process_start_time_seconds`
+separates restart epochs. Database queue gauges remain durable across API
+restarts.
+
+Immediate actions:
+
+- **authority/provider:** turn off new sales in Listener and authority, but
+  leave webhooks, reconciliation and existing membership access running;
+- **queue/projection:** inspect only aggregate job status first, retry or
+  reconcile through the durable authority path, and never infer access from a
+  browser redirect;
+- **webhook signatures:** verify the exact provider environment and registered
+  endpoint before changing a secret; do not log or paste webhook bodies;
+- **recovery:** wait for the matching resolved Telegram notification and a
+  green authority target before reopening sales.
+
+Fault injection uses a synthetic Alertmanager alert with fixed labels and an
+explicit end time, followed by a resolved update. It must never disable the
+origin or any event container. A deliberately missed sandbox webhook is
+repaired by the provider reconciliation worker, then the canonical Listener
+projection is verified before the drill is considered complete.
+
 ## Per-container restart/OOM observability blocker
 
 Per-container `container_start_time_seconds` and `container_oom_events_total`

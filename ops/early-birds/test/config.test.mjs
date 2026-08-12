@@ -15,7 +15,9 @@ test('keeps all metrics and Alertmanager listeners off public interfaces', async
   assert.match(compose, /--path\.sysfs=\/host\/sys/);
   assert.match(compose, /networks: \[observability\]/);
   assert.match(compose, /networks: \[observability, ops_edge\]/g);
+  assert.match(compose, /networks: \[observability, ops_edge, authority_private\]/);
   assert.match(compose, /ops_edge:\s+name: earlybirds_observability_edge/);
+  assert.match(compose, /authority_private:\s+external: true\s+name: earlybirds_authority_private/);
   assert.doesNotMatch(compose, /--web\.enable-lifecycle=false/);
   // Alertmanager may bind inside its private Docker network, but host-published
   // admin/metrics ports must remain loopback-only.
@@ -48,7 +50,20 @@ test('references Telegram and canary credentials as mounted secret files only', 
 test('scrapes node-exporter by the internal Docker DNS name', async () => {
   const prometheus = await read('prometheus/prometheus.yml');
   assert.match(prometheus, /targets: \[node-exporter:9100\]/);
+  assert.match(prometheus, /job_name: listener-authority[\s\S]*targets: \[pmp-myth-api:8765\]/);
   assert.doesNotMatch(prometheus, /host\.docker\.internal/);
+});
+
+test('alerts on paid authority failures without account or provider identifiers', async () => {
+  const alerts = await read('prometheus/alerts.yml');
+  assert.match(alerts, /ListenerAuthorityUnreachable/);
+  assert.match(alerts, /ListenerPaidQueueDelayed/);
+  assert.match(alerts, /ListenerPaidQueueCritical/);
+  assert.match(alerts, /ListenerPaidJobFailed/);
+  assert.match(alerts, /ListenerProjectionFailed/);
+  assert.match(alerts, /ListenerWebhookSignatureFailuresCritical/);
+  assert.match(alerts, /ListenerCheckoutProviderErrors/);
+  assert.doesNotMatch(alerts, /account_id|email|subscription_id|approval_url/);
 });
 
 test('routes warnings hourly and critical alerts immediately every fifteen minutes', async () => {
