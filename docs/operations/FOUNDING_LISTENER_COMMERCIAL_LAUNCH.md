@@ -33,9 +33,15 @@ SHA `456ece2b38e203a2d12c54864115e03ebaa1a89c`. The API, worker and PostgreSQL q
 ports, use separate storage and did not restart or modify any event service. A controlled message
 reached Gmail with terminal delivery state `SENT`; the human callback, Free-entry and logout check
 remain. The other remaining gates are human/external:
-final legal/copy acceptance, Google OAuth secret rotation (#328), one
+final legal/copy acceptance, one
 supervised low-value Live lifecycle per enabled provider and explicit approval to open public
 checkout. Production fonts are now hermetic under #327/#329.
+
+Google OAuth rotation #328 is complete. The persistent Listener and disposable staging workbench
+both use the replacement client and root-only secret. Canonical login, logout and re-login passed;
+the staging callback passed without `authError`. The previous client was revoked only after those
+checks and is recoverable in Google Cloud for 30 days for administrative recovery. Never restore
+the exposed secret from an environment backup.
 
 The exact public Listener image is
 `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`. Health and readiness attest that SHA. The previous
@@ -129,7 +135,6 @@ converted back into a reversible action.
 ## Human release gates still required
 
 - Counsel/merchant review of public terms, privacy, refund and tax/invoicing obligations.
-- Controlled Google OAuth secret rotation (#328); hermetic fonts are complete (#327/#329).
 - One supervised real purchase and cancellation per provider.
 - Explicit approval to turn on real sales. The checked-in defaults remain OFF.
 
