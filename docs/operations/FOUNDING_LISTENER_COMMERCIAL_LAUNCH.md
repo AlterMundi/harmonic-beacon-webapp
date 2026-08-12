@@ -28,12 +28,19 @@ truthful launch baseline, not a substitute for counsel review. Human owner: Nico
   database backup was restored into an isolated rehearsal database and verified.
 - Production provider and new-sales flags remain OFF. No real payment was attempted.
 
-Backend magic-link delivery is merged at `c443a7ec9b387fa54ff16904e1a5d561613ec102` and its
-dedicated Listener-only sidecar is being deployed without an event maintenance window. The other
-remaining gates are human/external:
+Passwordless email delivery is deployed in the dedicated Listener-only sidecar at exact backend
+SHA `456ece2b38e203a2d12c54864115e03ebaa1a89c`. The API, worker and PostgreSQL queue have no host
+ports, use separate storage and did not restart or modify any event service. A controlled message
+reached Gmail with terminal delivery state `SENT`; the human callback, Free-entry and logout check
+remain. The other remaining gates are human/external:
 final legal/copy acceptance, protected Live credentials, Google OAuth secret rotation (#328), one
 supervised low-value Live lifecycle per enabled provider and explicit approval to open public
 checkout. Production fonts are now hermetic under #327/#329.
+
+The exact public Listener image is
+`4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`. Health and readiness attest that SHA. The previous
+same-schema Listener image `fcdde379` remains available as the bounded application rollback target;
+the weekly-quota database policy itself is forward-only.
 
 ## Independent switches
 
@@ -109,3 +116,5 @@ converted back into a reversible action.
 - Controlled Google OAuth secret rotation (#328); hermetic fonts are complete (#327/#329).
 - One supervised real purchase and cancellation per provider.
 - Explicit approval to turn on real sales. The checked-in defaults remain OFF.
+
+The concise current-state handoff is `docs/operations/LISTENER_LAUNCH_NOW.md`.

@@ -7,6 +7,14 @@
 > real charges and every audio encoding/content/signature choice still require the
 > explicit release and audio gates in this document.
 
+> **Current launch memory (2026-08-12):** the public Listener candidate runs exact
+> SHA `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`; canonical payment authority runs
+> `60584936603525027c9891e0865efc58055a3d5d`; the isolated mail sidecar runs
+> `456ece2b38e203a2d12c54864115e03ebaa1a89c`. PayPal Sandbox and Mercado Pago
+> TEST lifecycles are accepted. Live providers, new sales and public checkout
+> remain OFF. See `docs/operations/LISTENER_LAUNCH_NOW.md` for the few remaining
+> human/external gates.
+
 Reviewed inputs: `.hermes/plans/2026-08-05_beacon-founders-mvp.md` and
 `docs/BEACON_FOUNDERS.md` from the daimonmatrix checkout. They remain valuable
 vision inputs; this document supersedes them only as the implementation plan for

@@ -6,6 +6,13 @@ This is the multi-horizon roadmap for Harmonic Beacon. It sits above the individ
 
 Four phases, each roughly 8 weeks, plus a long-horizon section (Phase 4+) that is open-ended and reactive to what Phases 1–3 produce.
 
+> **Active pre-release lane (2026-08-12):** Founding Listeners is the current thin
+> monetization path: registered weekly Free plus a USD 5/month uninterrupted
+> Founder subscription using PayPal and Mercado Pago. Sandbox/TEST lifecycles are
+> accepted; Live credentials, real charges and public checkout remain OFF pending
+> the release gates in `docs/operations/LISTENER_LAUNCH_NOW.md`. The Stripe items
+> below are longer-horizon roadmap ideas, not the authority for this pre-release.
+
 ---
 
 ## Compass (restated)

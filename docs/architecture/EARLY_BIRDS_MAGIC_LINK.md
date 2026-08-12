@@ -1,7 +1,9 @@
 # Founding Listener email magic-link boundary
 
-Status: Listener and private delivery implemented. The dedicated mail sidecar is
-being rolled out independently from the event runtime.
+Status: Listener and private delivery are deployed. The dedicated mail sidecar
+runs exact backend SHA `456ece2b38e203a2d12c54864115e03ebaa1a89c` independently from the event
+runtime. A controlled message reached Gmail `SENT`; only human callback, Free
+entry and logout acceptance remain.
 
 This fallback reuses the deployed Google Workspace/Gmail delivery capability
 without copying its OAuth grant into the Listener container. It is additive to
@@ -91,7 +93,14 @@ recreates only that container; existing Google sessions and email-only sessions
 remain valid until normal expiry, while no new email request route is exposed.
 
 Browser acceptance uses a fresh address and proves request, receipt, callback,
-Free schedule and Listener. Negative checks cover unknown addresses, social
+Free quota and Listener. Negative checks cover unknown addresses, social
 address collision, expiry, alteration, replay, callback injection, throttling,
 logout and Google sign-in regression. No test email should contain real
 participant data.
+
+Runtime evidence on 2026-08-12: sidecar API and worker were healthy with zero
+restarts; the API had no host ports and only the private authority/database
+networks; the worker alone had egress and a read-only Gmail grant mount. Public
+Listener health/readiness stayed green at exact SHA
+`4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`, while event API, workers, app and
+origin container identities/restart counts remained unchanged.

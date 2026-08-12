@@ -22,9 +22,11 @@ The weekly-Free candidate has advanced to a complete Founding Listener pre-relea
 - private paid-operation metrics, alerts, backup/restore and sales kill switches;
 - production provider adapters and public checkout present but fail-closed/default-off.
 
-The release is not yet authorized for real sales. Backend magic-link delivery is merged at
-`SairaAsua/proyecciones-mito@c443a7ec9b387fa54ff16904e1a5d561613ec102`; its dedicated sidecar rollout
-is isolated from the event runtime. Remaining gates include final ES/EN legal/copy review, controlled rotation of the exposed Google OAuth
+The release is not yet authorized for real sales. Passwordless email delivery is deployed in an
+event-isolated sidecar at exact backend SHA
+`SairaAsua/proyecciones-mito@456ece2b38e203a2d12c54864115e03ebaa1a89c`; a controlled email reached
+Gmail with terminal state `SENT`. The human callback/Free/logout check remains. Remaining gates
+include final ES/EN legal/copy review, controlled rotation of the exposed Google OAuth
 client secret, protected PayPal/MP Live credentials, one supervised low-value Live lifecycle per
 provider and explicit main/public-sales approval. Hermetic fonts are complete. See
 `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and issue #315 for the current checklist.
@@ -49,10 +51,12 @@ repair, never restoring daily/welcome authorization.
 
 | Artifact | Exact value |
 |---|---|
-| Deployed Listener application | `1f8368d2fda19b30b74c95af884d862838f73305` |
-| Operational smoke/documentation head | `8444ed7d06b2764c519f65ce4d32932346a94fdd` |
+| Deployed Listener application | `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a` |
+| Previous same-schema application rollback | `fcdde379` |
+| Commercial checkpoint documentation | `78ede811161cf47104f3758e6703d06d2328ea6f` |
 | Listener database schema | `20260808160000_listener_weekly_quota` |
-| Authority application | `21c3637ee0f520ee79d20c247e2914699ed8a73a` |
+| Canonical payment authority application | `60584936603525027c9891e0865efc58055a3d5d` |
+| Listener mail sidecar application | `456ece2b38e203a2d12c54864115e03ebaa1a89c` |
 | Public mode | Free for All OFF during coordinated registered-Free acceptance |
 | Recovery | Stop/kill-switch and roll forward; old policy images unsupported |
 
@@ -70,7 +74,7 @@ test-only branch head.
 | Public email/password and synthetic entry absent | Proven | Listener edge returns 404 for email sign-in, test-login and internal/event/staff surfaces. Public invitation redemption is an explicit, bounded exception below. |
 | Public invitation redemption | Deployed; one human gate remains | Staging bearer entry redirects once to canonical `listen`; staging cannot mint the cookie or accept redemption. Canonical HTTPS+Host+Origin is the only mutation boundary, bearer paths are unlogged/no-store/no-referrer and terminal cookies are cleared. Automated nginx/browser negatives pass; one real Google+valid-invitation flow remains. |
 | OAuth/session privacy and CSRF boundary | Proven | Exact-Origin mutation gate, callback state/cookie+PKCE, token scrubbing, zero persisted session IP/user-agent and logout tests/runtime smoke. |
-| Passwordless email fallback | Listener ready; authority blocked | #221 is merged and hidden/fail-closed until the existing Gmail authority implements `SairaAsua/proyecciones-mito#44` and protected delivery values are installed. |
+| Passwordless email fallback | Deployed; one human gate remains | The event-isolated sidecar is healthy, exact-host/auth negatives pass and a controlled Gmail delivery reached `SENT`; open the received link and prove email-only Listener → Free → logout. |
 | Three-hour weekly Free quota | Proven | Unit/integration/PostgreSQL matrix plus deployed virgin-account smoke. |
 | First-play cycle anchor | Proven | Page view and lease preparation do not anchor; the first authorized listening transition creates one immutable anchor. |
 | Exact seven-day reset/no rollover | Proven | Server-clock cycle arithmetic, multi-cycle inactivity and reset tests are green. |
@@ -139,8 +143,8 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - Listener health/readiness, origin, PostgreSQL and decoded canary are green.
 - Alertmanager has no active alert. A prior root-disk warning was real, then
   resolved after removing only old unreferenced Listener/authority image tags.
-- Current image is `1f8368d`. Image `ae1d0ba` remains the same-schema recovery
-  target for this visual-only release; earlier policy images are historical and
+- Current image is `4ac408f`. Image `fcdde379` remains the same-schema application recovery
+  target; earlier policy images are historical and
   are not valid rollback targets.
 - The fixed public-disable command was exercised after deployment. Its first
   health probe observed the normal Next.js startup connection reset, retried,
@@ -162,9 +166,10 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #201 is In Progress: the human acceptance matrix.
 - #216's old daily-window acceptance is obsolete; weekly reset/countdown human
   acceptance replaces it.
-- #217 remains open while backend #44 is merged but not yet deployed to the
-  shared PMP email runtime. Its rollout needs an event-safe maintenance window,
-  a dedicated service token and one controlled Gmail callback smoke.
+- #217 remains open only for a human to use the delivered email and prove the
+  callback, email-only Listener session, Free entry and logout. The dedicated
+  sidecar is deployed without an event maintenance window; one controlled
+  message already reached Gmail `SENT`.
 - #218 is closed/Done with deployed runtime evidence.
 - #219 is closed/Done after positive physical iPhone acceptance of the deployed
   gesture-safe handoff.
