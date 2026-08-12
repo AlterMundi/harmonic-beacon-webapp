@@ -491,6 +491,11 @@ scripts/early-birds-preview/start.sh /secure/earlybirds-preview.env
 scripts/early-birds-preview/health-smoke.sh /secure/earlybirds-preview.env
 ```
 
+`start.sh` is the ordinary Listener release path. It migrates and recreates
+the application only; it never rebuilds, recreates or restarts the audio
+origin. This separation is a release invariant: a short app/control-plane
+deployment must not interrupt an already playing HLS stream.
+
 Startup is fail closed:
 
 1. preview PostgreSQL must become healthy;
@@ -503,6 +508,16 @@ Listener `/api/health` liveness, Listener `/api/health/ready` database
 readiness, stream `/healthz` liveness on loopback, and stream `/readyz` inside
 its private container network. It does not claim playback or decoded-audio
 acceptance.
+
+Creating or changing the isolated origin is a separate maintenance operation:
+
+```bash
+scripts/early-birds-preview/start-origin.sh /secure/earlybirds-preview.env
+```
+
+That command must be announced as an origin maintenance window and followed
+immediately by the health smoke and decoded-audio canary. It is never part of
+an ordinary UI/API release.
 
 To rerun the idempotent forward migration separately:
 
@@ -676,15 +691,16 @@ Normal stop retains all preview data:
 scripts/early-birds-preview/stop.sh /secure/earlybirds-preview.env
 ```
 
-Incident rollback stops the two public-serving components while retaining
-PostgreSQL for diagnosis and a forward fix:
+Ordinary app rollback stops only Listener while retaining PostgreSQL and the
+approved long-lived origin for diagnosis and a forward fix:
 
 ```bash
 scripts/early-birds-preview/rollback.sh /secure/earlybirds-preview.env
 ```
 
 Set `EARLY_BIRDS_ENABLED=0` and `EARLY_BIRDS_FREE_FOR_ALL=0` before the next
-start. None of these scripts uses
+start. If the origin itself is diagnosed as faulty, use the separately scoped
+`ops/early-birds/scripts/stop-stream.sh` command. None of these scripts uses
 `docker compose down`, deletes a volume, or targets the event/live project.
 
 ## Staging release gate

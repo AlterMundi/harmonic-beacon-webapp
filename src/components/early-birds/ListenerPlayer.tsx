@@ -17,6 +17,12 @@ import {
     type HarmonicAnalysisFrame,
     type HarmonicAnalysisProvider,
 } from '@/lib/listener/analysis';
+import {
+    LISTENER_PLAYBACK_WATCHDOG_INTERVAL_MS,
+    ListenerPlaybackLivenessWatchdog,
+    listenerPlaybackObservation,
+    type ListenerPlaybackDiagnostic,
+} from '@/lib/listener/playback-liveness';
 
 import { deriveListenerPresentationPhase } from './listener-presentation';
 import { ListenerTabIdentityCoordinator } from './listener-tab-identity';
@@ -61,6 +67,13 @@ const TRANSPORT_FADE_OUT_MS = 650;
 const DEFAULT_LISTENER_VOLUME = 0.7;
 
 export const LISTENER_PLAYBACK_PRESENCE_EVENT = 'listener:playback-presence';
+export const LISTENER_PLAYBACK_DIAGNOSTIC_EVENT = 'listener:playback-diagnostic';
+
+function boundedDiagnosticToken(value: unknown): string | null {
+    return typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(value)
+        ? value
+        : null;
+}
 
 export function resolveListenerAnalysisFramesPerSecond({
     reducedMotion,
@@ -265,6 +278,13 @@ function ListenerPlayerController({
     const recoveryTimer = useRef<number | null>(null);
     const queuedRecoveryDelay = useRef<number | null>(null);
     const nativeSuspendObserved = useRef(false);
+    const playbackWatchdog = useRef(new ListenerPlaybackLivenessWatchdog());
+    const lastPlaybackAction = useRef('mount');
+    const lastHlsSignal = useRef<ListenerPlaybackDiagnostic['hls']>({
+        type: null,
+        details: null,
+        fatal: null,
+    });
     const listenerPresence = useRef<'idle' | 'listening'>('idle');
     const automaticRecovery = useRef<(initialDelayMs?: number) => void>(() => undefined);
     const deferLiveFadeForRecovery = useRef<() => void>(() => undefined);
@@ -437,6 +457,7 @@ function ListenerPlayerController({
         const audio = liveAudio.current;
         if (!audio) return;
         stopHls();
+        lastHlsSignal.current = { type: null, details: null, fatal: null };
         manifestUrl.current = url;
 
         const nativeHlsSupported = Boolean(audio.canPlayType('application/vnd.apple.mpegurl'));
@@ -461,6 +482,11 @@ function ListenerPlayerController({
         }
         const instance = new HlsConstructor(LISTENER_HLS_BUFFER_CONFIG);
         instance.on(HlsConstructor.Events.ERROR, (_event, data) => {
+            lastHlsSignal.current = {
+                type: boundedDiagnosticToken(data.type),
+                details: boundedDiagnosticToken(data.details),
+                fatal: Boolean(data.fatal),
+            };
             if (!data.fatal) return;
             deferLiveFadeForRecovery.current();
             liveAudio.current?.pause();
@@ -837,9 +863,12 @@ function ListenerPlayerController({
                     manifestExpiresAt.current = 0;
                 } else if (probe.kind === 'active') {
                     manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
-                    if (probe.grant.stream.manifestUrl !== manifestUrl.current) {
+                    if (forceRefresh || probe.grant.stream.manifestUrl !== manifestUrl.current) {
                         await attachManifest(probe.grant.stream.manifestUrl);
                     }
+                    // A verified active lease has now been force-reattached or
+                    // was already fresh. Never mint a duplicate lease merely
+                    // to recover the media pipeline.
                     forceRefresh = false;
                 } else {
                     // A newer request/presence report won the race. Keep its
@@ -1053,6 +1082,8 @@ function ListenerPlayerController({
     const scheduleAutomaticRecovery = useCallback((initialDelayMs = 0) => {
         if (!wantsLivePlayback.current || liveStateRef.current === 'displaced') return;
 
+        lastPlaybackAction.current = 'automatic-recovery';
+
         if (playbackAttemptRunning.current) {
             queuedRecoveryDelay.current = queuedRecoveryDelay.current === null
                 ? Math.max(0, initialDelayMs)
@@ -1097,6 +1128,45 @@ function ListenerPlayerController({
     }, [attemptLivePlayback, reportPresence, updateLiveState]);
 
     useEffect(() => {
+        const interval = window.setInterval(() => {
+            const audio = liveAudio.current;
+            const eligible = Boolean(audio)
+                && wantsLivePlayback.current
+                && activeDrop.current === null
+                && liveStateRef.current === 'playing'
+                && document.visibilityState === 'visible';
+            if (!audio || !eligible) {
+                playbackWatchdog.current.reset();
+                return;
+            }
+
+            const diagnostic = playbackWatchdog.current.observe(listenerPlaybackObservation({
+                audio,
+                observedAtMs: performance.now(),
+                lastAction: lastPlaybackAction.current,
+                leaseGeneration: leaseGeneration.current,
+                presenceSequence: presenceSequence.current,
+                hlsSignal: lastHlsSignal.current,
+                visibility: document.visibilityState,
+            }));
+            if (!diagnostic) return;
+
+            playbackWatchdog.current.reset();
+            lastPlaybackAction.current = 'watchdog-recovery';
+            // The object is deliberately bounded and contains no account,
+            // lease ID, token, URL, cookie, IP or device fingerprint.
+            console.warn('[listener] media-clock recovery', diagnostic);
+            window.dispatchEvent(new CustomEvent(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, {
+                detail: diagnostic,
+            }));
+            reportPresence('idle');
+            deferLiveFade();
+            scheduleAutomaticRecovery(0);
+        }, LISTENER_PLAYBACK_WATCHDOG_INTERVAL_MS);
+        return () => window.clearInterval(interval);
+    }, [deferLiveFade, reportPresence, scheduleAutomaticRecovery]);
+
+    useEffect(() => {
         automaticRecovery.current = scheduleAutomaticRecovery;
         return () => {
             automaticRecovery.current = () => undefined;
@@ -1128,6 +1198,7 @@ function ListenerPlayerController({
     }, [armLiveFadeIn, attemptLivePlayback, cancelRecovery, pauseDropIns, reportPresence, scheduleAutomaticRecovery, updateLiveState]);
 
     function playBeaconOnly() {
+        lastPlaybackAction.current = 'listen-beacon';
         dropGeneration.current += 1;
         if (!livePreparedRef.current) return;
         startReactiveAnalysis('beacon');
@@ -1168,6 +1239,8 @@ function ListenerPlayerController({
     }
 
     function stopTransport() {
+        lastPlaybackAction.current = 'stop';
+        playbackWatchdog.current.reset();
         dropGeneration.current += 1;
         setTransportStopped(true);
         setTransportPaused(false);
@@ -1213,6 +1286,8 @@ function ListenerPlayerController({
 
     function handleNativePlaying() {
         if (!wantsLivePlayback.current) return;
+        lastPlaybackAction.current = 'media-playing';
+        playbackWatchdog.current.reset();
         nativeSuspendObserved.current = false;
         cancelRecovery(true);
         const introduction = activeDrop.current
@@ -1382,6 +1457,7 @@ function ListenerPlayerController({
     }
 
     async function playWithIntro(language: DropLanguage) {
+        lastPlaybackAction.current = `listen-intro-${language}`;
         const selected = dropAudio[language].current;
         if (!selected || !dropIns[language]) return;
         startReactiveAnalysis(`intro-${language}`);
@@ -1481,6 +1557,7 @@ function ListenerPlayerController({
             [language]: { current: 0, duration: current[language].duration },
         }));
         audio!.currentTime = 0;
+        lastPlaybackAction.current = 'intro-handoff';
         startReactiveAnalysis('beacon');
         if (liveAudio.current && !liveAudio.current.paused) {
             cancelRecovery(true);
@@ -1542,6 +1619,7 @@ function ListenerPlayerController({
     }
 
     function skipToBeacon() {
+        lastPlaybackAction.current = 'skip-to-beacon';
         dropGeneration.current += 1;
         setTransportPaused(false);
         startReactiveAnalysis('beacon');

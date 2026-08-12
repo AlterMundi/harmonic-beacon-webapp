@@ -121,6 +121,7 @@ import ListenerPlayer, {
     getOrCreateEarlyBirdDeviceId,
     hlsFragmentProgramTimeMs,
     LISTENER_HLS_BUFFER_CONFIG,
+    LISTENER_PLAYBACK_DIAGNOSTIC_EVENT,
     LISTENER_PLAYBACK_PRESENCE_EVENT,
     nativeHlsProgramTimeMs,
     nextPresenceSequence,
@@ -657,6 +658,81 @@ describe('EarlyBird Listener player', () => {
         expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
     });
 
+    it('detects a silent media-clock stall and rebuilds the same lease pipeline', async () => {
+        const intervals: Array<{ callback: () => void; delay: number }> = [];
+        vi.spyOn(window, 'setInterval').mockImplementation((callback, delay) => {
+            if (typeof callback === 'function') {
+                intervals.push({ callback: callback as () => void, delay: Number(delay) });
+            }
+            return intervals.length as unknown as ReturnType<typeof window.setInterval>;
+        });
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        let monotonicNow = 0;
+        vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow);
+        const manifestUrl = '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003&leaseGeneration=1';
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: { manifestUrl, expiresAt: '2099-08-06T12:03:00.000Z' },
+        };
+        const fetchMock = vi.fn().mockImplementation((url, init) => {
+            if (url === '/api/early-birds/stream/lease') {
+                return Promise.resolve(new Response(JSON.stringify(grant), { status: 200 }));
+            }
+            const body = JSON.parse(String(init?.body ?? '{}')) as { presenceSequence?: number };
+            return Promise.resolve(new Response(JSON.stringify({
+                leaseGeneration: 1,
+                presenceSequence: body.presenceSequence ?? 0,
+                leaseExpiresAt: '2099-08-06T12:04:00.000Z',
+                stream: { manifestUrl, expiresAt: '2099-08-06T12:04:00.000Z' },
+            }), { status: 200 }));
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        const diagnostics: unknown[] = [];
+        const onDiagnostic: EventListener = (event) => {
+            diagnostics.push((event as CustomEvent).detail);
+        };
+        window.addEventListener(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, onDiagnostic);
+
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
+        const live = screen.getByLabelText('Beacon');
+        Object.defineProperties(live, {
+            currentTime: { value: 120, writable: true, configurable: true },
+            paused: { value: false, configurable: true },
+        });
+        const watchdog = intervals.find(({ delay }) => delay === 5_000);
+        expect(watchdog).toBeDefined();
+
+        watchdog!.callback();
+        monotonicNow = 15_000;
+        watchdog!.callback();
+
+        await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
+        expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
+        expect(hlsHarness.instances[1].loadedSources).toEqual([manifestUrl]);
+        expect(diagnostics).toHaveLength(1);
+        expect(diagnostics[0]).toMatchObject({
+            schemaVersion: 1,
+            reason: 'media-clock-stalled',
+            lease: { generation: 1 },
+        });
+        expect(JSON.stringify(diagnostics[0])).not.toMatch(/leaseId|account|email|cookie|token|url/i);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
+        window.removeEventListener(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, onDiagnostic);
+    });
+
     it('keeps the pre-attached iOS source lease alive before the first play gesture', async () => {
         const intervalCallbacks: Array<() => void | Promise<void>> = [];
         vi.spyOn(window, 'setInterval').mockImplementation((callback) => {
@@ -1129,10 +1205,12 @@ describe('EarlyBird Listener player', () => {
         finishFirstPlay?.();
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3), { timeout: 3_000 });
-        // Presence promotion/refresh never replaces the prepared generation or
-        // creates a second audio pipeline.
-        expect(hlsHarness.instances).toHaveLength(1);
+        // Recovery preserves the prepared lease generation while rebuilding
+        // the one hls.js pipeline. A control-plane interruption must not leave
+        // the original non-progressing instance attached.
+        expect(hlsHarness.instances).toHaveLength(2);
+        expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
-        expect(hlsHarness.instances[0].loadedSources).toEqual([initialGrant.stream.manifestUrl]);
+        expect(hlsHarness.instances[1].loadedSources).toEqual([initialGrant.stream.manifestUrl]);
     });
 });
