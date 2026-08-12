@@ -1,6 +1,19 @@
 # EarlyBirds isolated staging runtime
 
-## 2026-08-12 terminal-status checkpoint deployed with Live sales OFF
+## 2026-08-12 Listener silence-recovery checkpoint deployed with Live sales OFF
+
+The isolated Listener runs exact merge SHA
+`4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`, image
+`harmonic-beacon/earlybirds-preview-listener:4ac408f` and unchanged Prisma head
+`20260810223000_listener_founder_continuity`. It adds a bounded media-liveness
+watchdog and same-lease recovery for the reported silent-playback failure. It
+does not change origin, audio assets, codec, gain, fades, HLS timing or event
+services. Public health/readiness and fail-closed payment smokes are green.
+Immediate rollback is retained as container
+`earlybirds-preview-listener-1-pre-4ac408f-20260812T085101Z` and protected backup
+`/mnt/beacon-data/staging-backups/listener-release-20260812T084938Z`.
+
+## 2026-08-12 terminal-status checkpoint (superseded application image)
 
 The isolated Listener now runs merge SHA
 `fcdde37948e7f826641d5e4438f7666765aeda22`, image
@@ -621,16 +634,16 @@ Return both switches to `0` after the supervised team window.
 
 ### Optional email magic-link fallback
 
-The fallback remains absent until the existing PMP mail authority implements
-the exact private contract in
+The fallback remains absent until the dedicated PMP Listener mail sidecar is
+healthy with the exact private contract in
 `docs/architecture/EARLY_BIRDS_MAGIC_LINK.md`. Do not copy or mount its Gmail
-OAuth grant into the Listener. After that adapter is deployed on
+OAuth grant into the Listener or sidecar API. After the adapter is deployed on
 `earlybirds_authority_private`, apply the additive
 `20260807090000_early_bird_magic_link_throttles` migration and configure all
 three values together:
 
 ```dotenv
-EARLY_BIRDS_MAGIC_LINK_DELIVERY_URL=http://pmp-myth-api:8765/api/internal/v1/listener-magic-links/deliver
+BEACON_LISTENER_MAGIC_LINK_DELIVERY_URL=http://listener-mail-api:8765/api/internal/v1/listener-magic-links/deliver
 EARLY_BIRDS_MAGIC_LINK_DELIVERY_TOKEN=<dedicated-32-plus-character-token>
 EARLY_BIRDS_MAGIC_LINK_RATE_SECRET=<independent-32-plus-character-secret>
 ```

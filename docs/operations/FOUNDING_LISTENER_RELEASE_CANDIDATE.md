@@ -23,10 +23,10 @@ The weekly-Free candidate has advanced to a complete Founding Listener pre-relea
 - production provider adapters and public checkout present but fail-closed/default-off.
 
 The release is not yet authorized for real sales. Backend magic-link delivery is merged at
-`SairaAsua/proyecciones-mito@c443a7ec9b387fa54ff16904e1a5d561613ec102` but still needs an event-safe
-runtime rollout. Remaining gates also include final ES/EN legal/copy review, controlled rotation of the exposed Google OAuth
+`SairaAsua/proyecciones-mito@c443a7ec9b387fa54ff16904e1a5d561613ec102`; its dedicated sidecar rollout
+is isolated from the event runtime. Remaining gates include final ES/EN legal/copy review, controlled rotation of the exposed Google OAuth
 client secret, protected PayPal/MP Live credentials, one supervised low-value Live lifecycle per
-provider, a hermetic font build and explicit main/public-sales approval. See
+provider and explicit main/public-sales approval. Hermetic fonts are complete. See
 `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and issue #315 for the current checklist.
 
 ## Status: weekly Free deployed for acceptance
@@ -188,12 +188,11 @@ worksheet.
    and support copy.
 2. Rotate the exposed Google OAuth client secret through the protected store and
    re-run callback/logout without printing it.
-3. Self-host the approved fonts so the release build has no Google Fonts network dependency (#327).
-4. Deploy backend #44 in an event-safe maintenance window and prove one controlled
+3. Prove one controlled
    magic-link request, email, callback and Free entry.
-5. Install protected PayPal and Mercado Pago Live credentials with all sales
+4. Install protected PayPal and Mercado Pago Live credentials with all sales
    flags still OFF, then run one explicitly approved low-value lifecycle per provider.
-6. Approve merge to `main` and public checkout separately; retain the immediate
+5. Approve merge to `main` and public checkout separately; retain the immediate
    new-sales kill switch throughout launch.
 
 Do not select a user's Google account, provision Apple, charge a provider,
