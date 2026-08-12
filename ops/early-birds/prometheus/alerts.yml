@@ -12,7 +12,7 @@ groups:
         labels: { severity: warning, service: listener-payments }
         annotations: { summary: "A Listener sandbox/test provider is unavailable", runbook: "listener-paid-provider" }
       - alert: ListenerLiveProviderUnavailableDuringSales
-        expr: pmp_listener_new_sales_enabled == 1 and on() sum(pmp_listener_provider_ready{environment="live"}) < 2
+        expr: pmp_listener_new_sales_enabled{environment="live"} == 1 and on(provider, environment) pmp_listener_provider_ready{environment="live"} == 0
         for: 2m
         labels: { severity: critical, service: listener-payments }
         annotations: { summary: "New sales are enabled while a Live provider is unavailable", runbook: "listener-paid-provider" }
@@ -27,12 +27,12 @@ groups:
         labels: { severity: critical, service: listener-payments }
         annotations: { summary: "Listener paid lifecycle queue is more than ten minutes old", runbook: "listener-paid-queue" }
       - alert: ListenerPaidJobFailed
-        expr: sum(pmp_listener_paid_jobs{status="failed"}) > 0
+        expr: sum(pmp_listener_paid_jobs_failed_recent) > 0
         for: 2m
         labels: { severity: critical, service: listener-payments }
         annotations: { summary: "A durable Listener paid lifecycle job failed", runbook: "listener-paid-queue" }
       - alert: ListenerProjectionFailed
-        expr: pmp_listener_paid_jobs{kind="early_birds.beacon.project",status="failed"} > 0
+        expr: pmp_listener_paid_jobs_failed_recent{kind="early_birds.beacon.project"} > 0
         for: 1m
         labels: { severity: critical, service: listener-payments }
         annotations: { summary: "A canonical Listener membership projection failed", runbook: "listener-paid-projection" }

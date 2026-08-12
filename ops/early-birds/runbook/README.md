@@ -72,7 +72,10 @@ new sales are enabled, the oldest durable paid job, failed lifecycle/projection
 jobs, invalid webhook signatures and checkout provider errors. The request
 counters are process-local; `pmp_listener_paid_observer_process_start_time_seconds`
 separates restart epochs. Database queue gauges remain durable across API
-restarts.
+restarts. Queue age includes only due, immediate jobs; scheduled renewal locks
+and checkout-expiry recovery do not page before their `available_at`. Failed-job
+alerts use a rolling 15-minute window, so historical pre-release failures stay
+auditable without remaining permanently active.
 
 Immediate actions:
 
