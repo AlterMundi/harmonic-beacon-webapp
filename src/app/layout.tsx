@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Cormorant_Garamond, Syne, Space_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { requestLocale } from "@/lib/i18n-server";
@@ -7,24 +7,44 @@ import { isCanonicalListenerHost, listenerLocaleForHeaders } from "@/lib/listene
 import "./globals.css";
 import { Toaster } from "sonner";
 
-const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
+const cormorant = localFont({
+  src: [
+    {
+      path: "./fonts/cormorant-garamond/CormorantGaramond-wght.woff2",
+      weight: "400 600",
+      style: "normal",
+    },
+    {
+      path: "./fonts/cormorant-garamond/CormorantGaramond-Italic-wght.woff2",
+      weight: "400 600",
+      style: "italic",
+    },
+  ],
   variable: "--font-cormorant",
   display: "swap",
 });
 
-const syne = Syne({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const syne = localFont({
+  src: "./fonts/syne/Syne-wght.woff2",
+  weight: "400 700",
+  style: "normal",
   variable: "--font-syne",
   display: "swap",
 });
 
-const spaceMono = Space_Mono({
-  subsets: ["latin"],
-  weight: ["400", "700"],
+const spaceMono = localFont({
+  src: [
+    {
+      path: "./fonts/space-mono/SpaceMono-Regular.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/space-mono/SpaceMono-Bold.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
   variable: "--font-space-mono",
   display: "swap",
 });
