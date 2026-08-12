@@ -40,19 +40,22 @@ The dedicated magic-link API, worker and PostgreSQL queue are isolated from the
 event runtime and have no host ports. A controlled Gmail delivery reached
 `SENT`; the human callback/Free/logout check remains.
 
+Google OAuth rotation #328 is complete. Canonical login → logout → re-login and
+the staging callback passed on the replacement client. The previous client was
+revoked after acceptance; its secret must never be restored from an old env
+backup. Only Listener and the disposable staging workbench were recreated.
+
 ## Remaining blockers to public sales
 
 1. #217 — open the delivered magic link and prove email-only session → Free → logout.
 2. #304 — complete a physical 60-minute listen and record any watchdog recovery.
 3. #317 — final mobile/account-menu billing acceptance.
 4. #318 — human ES/EN offer/legal/seller/refund/support acceptance.
-5. #328 — rotate the exposed Google OAuth client secret in the protected store,
-   then prove canonical and staging login/logout/relogin without printing it.
-6. With explicit approval, execute one supervised low-scope activation,
+5. With explicit approval, execute one supervised low-scope activation,
    cancellation and refund per provider.
-7. Confirm Founder activation, terminal Free fallback, metrics, alerts and the
+6. Confirm Founder activation, terminal Free fallback, metrics, alerts and the
    absence of PII/secret leakage against those Live transactions.
-8. Obtain separate explicit approvals for merge to `main` and public checkout.
+7. Obtain separate explicit approvals for merge to `main` and public checkout.
 
 ## Non-negotiable isolation
 
@@ -75,6 +78,9 @@ without explicit approval.
   authority.
 - Magic delivery incident: clear the three protected magic-link values and
   recreate only Listener; do not restart the event runtime.
+- Google OAuth incident: keep the replacement client and roll forward with a
+  new secret. The revoked client remains provider-restorable for 30 days only
+  for controlled recovery; never restore its exposed secret from backups.
 
 ## Public-document truth
 
