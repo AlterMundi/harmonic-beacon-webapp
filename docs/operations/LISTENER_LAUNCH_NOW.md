@@ -19,6 +19,7 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 - PayPal Live checkout: OFF
 - Mercado Pago Live checkout: OFF
 - Authority paid checkout/providers: OFF
+- Authority Sandbox/TEST new-sales gate: ON only inside isolated staging acceptance; Live metrics remain zero/OFF
 - Public sales and real charges: not authorized
 
 PayPal Sandbox has passed activation, pending cancellation, reactivation and
@@ -61,3 +62,12 @@ without explicit approval.
   authority.
 - Magic delivery incident: clear the three protected magic-link values and
   recreate only Listener; do not restart the event runtime.
+
+## Public-document truth
+
+The broad Phase 2 patronage/provider-economy documents are future strategy, not
+the implementation authority for Founding Listeners. Public and repository copy
+must not claim that Harmonic Beacon has no payment or email processing: the
+Sandbox/TEST subscription lanes and Gmail magic-link delivery are already real
+pre-release processors. Equally, copy must not claim Live billing is active;
+productive credentials, real charges and public checkout remain OFF.

@@ -246,10 +246,15 @@ This is documented here only to note that monetization for the Seal is an open q
 
 ## Compliance scaffolding
 
-Whatever monetization we ship will run on these scaffolds. None of them is in place — Stripe is not integrated, no tax advisor has been engaged, and no ledger separates Harmonic Beacon within the parent org's accounts. **[Planned — Phase 2]**
+The broader patronage/provider economy below remains planned for Phase 2. It is not the current
+Founding Listener implementation. That pre-release uses a provider-neutral authority with PayPal
+and Mercado Pago, USD 5/month Founder continuity, weekly Free access and default-off Live gates;
+see `operations/LISTENER_LAUNCH_NOW.md`. No real charge or public checkout is enabled yet. A tax
+advisor and a dedicated Harmonic Beacon accounting ledger remain launch/operations work.
 
-- **Billing provider**: Stripe at launch (Stripe Billing for subscriptions, Stripe Connect for Provider payouts, Stripe Tax for VAT/sales tax, Stripe Checkout for one-time donations).
-- **Tax**: Stripe Tax computes and collects. We file where required. A tax advisor is engaged before the first payout-bearing month — it is an open thread in [README.md](./README.md#open-threads) and it gates the phase, because the currencies quoted above decide which registrations we need.
+- **Founding Listener billing**: PayPal and Mercado Pago through the canonical membership authority; Live remains OFF until supervised cutover.
+- **Future patron/provider economy**: provider, payout and tax tooling are a separate Phase 2 decision; Stripe is a candidate, not deployed fact.
+- **Tax**: the receiving merchant/entity and jurisdictional obligations must be accepted before public sales. A processor does not replace the tax/accounting decision.
 - **Receipts**: every charge generates a compliant receipt. Annual patrons receive a year-end summary of what they contributed.
 - **Legal entity**: payments flow through the designated AlterMundi entity; separate ledger for Harmonic Beacon within the parent org's accounts.
 - **Currency risk**: unhedged at launch; visible in the monthly financial review.
