@@ -76,13 +76,18 @@ describe('public Listener membership presentation', () => {
         });
     });
 
-    it.each(['EXPIRED', 'REFUNDED', 'REVOKED', 'PENDING'] as const)(
-        'removes the Founder badge for terminal or non-authoritative %s membership',
-        (state) => {
+    it.each([
+        ['EXPIRED', 'expired'],
+        ['REFUNDED', 'refunded'],
+        ['REVOKED', 'revoked'],
+        ['PENDING', 'pending'],
+    ] as const)(
+        'removes the Founder badge while preserving the informational %s paid state',
+        (state, expected) => {
             expect(listenerMembershipPresentation(projection({
                 state,
                 founderContinuityState: state === 'PENDING' ? null : 'ENDED',
-            }), NOW)).toEqual({ kind: 'none', state: 'none' });
+            }), NOW)).toEqual({ kind: 'paid-status', provider: 'paypal', state: expected });
         },
     );
 
