@@ -9,7 +9,7 @@
 
 > **Current launch memory (2026-08-12):** the public Listener candidate runs exact
 > SHA `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`; canonical payment authority runs
-> `60584936603525027c9891e0865efc58055a3d5d`; the isolated mail sidecar runs
+> `8e10f16fe3471a097021f7f1ee41eb8f88f4f154`; the isolated mail sidecar runs
 > `456ece2b38e203a2d12c54864115e03ebaa1a89c`. PayPal Sandbox and Mercado Pago
 > TEST lifecycles are accepted. Live providers, new sales and public checkout
 > remain OFF. See `docs/operations/LISTENER_LAUNCH_NOW.md` for the few remaining
@@ -493,10 +493,13 @@ The webapp vendors byte-exact copies of the canonical backend contracts under
   checkout command/result. It exposes no provider subscription ID, fixes
   `environment=live`, keeps payer email transient and uses a separate new-sales
   gate from provider lifecycle. The deployed authority runtime
-  `60584936603525027c9891e0865efc58055a3d5d` is CI-green and includes canonical
+  `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` is CI-green and includes canonical
   cancellation/reactivation plus paid-lifecycle metrics. The Listener Live
   surface and exact webhook ingress remain disabled by default;
   see `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md`.
+  This authority release also provides a read-only, redacted Live-provider
+  preflight for exact PayPal catalog/webhook and Mercado Pago merchant checks;
+  productive credentials remain absent and all Live flags remain OFF.
 
 ## 11. Fast Forward development lane
 
