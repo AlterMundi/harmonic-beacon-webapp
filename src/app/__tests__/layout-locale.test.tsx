@@ -7,10 +7,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('next/headers', () => ({ headers: mocks.headers }));
 vi.mock('@/lib/i18n-server', () => ({ requestLocale: mocks.requestLocale }));
-vi.mock('next/font/google', () => ({
-    Cormorant_Garamond: () => ({ variable: 'cormorant' }),
-    Syne: () => ({ variable: 'syne' }),
-    Space_Mono: () => ({ variable: 'mono' }),
+vi.mock('next/font/local', () => ({
+    default: () => ({ variable: 'local-font' }),
 }));
 vi.mock('@/context/LocaleContext', () => ({
     LocaleProvider: ({ children }: { children: React.ReactNode }) => children,
