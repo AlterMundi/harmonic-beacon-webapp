@@ -41,13 +41,18 @@ deleting bindings, events, jobs or projections.
 ## Public boundaries
 
 - Browser checkout: exact same-origin `POST /api/listener/checkout`.
-- Browser cancel request: exact same-origin `POST /api/listener/membership/cancel`.
+- Browser membership action: exact same-origin `POST /api/listener/membership/action` with
+  canonical `cancel|reactivate`.
 - PayPal Live webhook: `POST /v1/webhooks/listener/paypal`.
 - Mercado Pago Live webhook: `POST /v1/webhooks/listener/mercado-pago`.
 - Every other authority route stays loopback/private. Event vhosts expose none of these routes.
 - The browser supplies only provider plus a random attempt ID for checkout, and only a random
-  attempt ID for cancellation. Account, email, current provider and provider subscription ID are
+  attempt ID plus canonical action for membership management. Account, email, current provider and provider subscription ID are
   server-derived. Provider IDs never enter the browser response.
+
+For reversible cancellation before the service boundary, PayPal uses suspend/activate and Mercado
+Pago uses pause/reactivate. A terminal provider cancellation, lapse or adverse event is never
+converted back into a reversible action.
 
 ## Preflight and cutover
 

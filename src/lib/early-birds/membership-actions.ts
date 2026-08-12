@@ -10,6 +10,8 @@ import {
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+export type ListenerMembershipAction = 'cancel' | 'reactivate';
+
 export class ListenerMembershipActionUnavailableError extends Error {
     constructor() {
         super('Listener membership action is unavailable');
@@ -20,11 +22,12 @@ export class ListenerMembershipActionUnavailableError extends Error {
 function idempotencyKey(
     accountId: string,
     attemptId: string,
+    action: ListenerMembershipAction,
     environment: ListenerCheckoutEnvironment,
     provider: ListenerCheckoutProvider | null,
 ): string {
     const digest = createHash('sha256')
-        .update(`listener-membership-cancel-v1\n${environment}\n${provider ?? 'canonical'}\n${accountId}\n${attemptId}`)
+        .update(`listener-membership-action-v1\n${action}\n${environment}\n${provider ?? 'canonical'}\n${accountId}\n${attemptId}`)
         .digest('hex');
     return `listener-membership:${digest}`;
 }
@@ -35,9 +38,10 @@ export class HttpListenerMembershipActionsGateway {
         private readonly request: typeof fetch = fetch,
     ) {}
 
-    async cancel(input: {
+    async requestAction(input: {
         accountId: string;
         attemptId: string;
+        action: ListenerMembershipAction;
         environment?: ListenerCheckoutEnvironment;
         provider?: ListenerCheckoutProvider | null;
     }): Promise<void> {
@@ -55,18 +59,21 @@ export class HttpListenerMembershipActionsGateway {
             : provider === 'paypal'
                 ? '/api/internal/v1/early-bird-paypal-actions'
                 : '/api/internal/v1/early-bird-mercado-pago-actions';
+        const providerAction = provider === 'paypal'
+            ? input.action === 'cancel' ? 'suspend' : 'activate'
+            : input.action === 'cancel' ? 'pause' : 'reactivate';
         const payload = environment === 'live' ? {
             schema_version: 'listener-membership.action.v1',
             account_id: input.accountId,
-            action: 'cancel',
+            action: input.action,
         } : provider === 'paypal' ? {
             schema_version: 'early-bird-paypal-lifecycle.command.v1',
             account_id: input.accountId,
-            action: 'cancel',
+            action: providerAction,
         } : {
             schema_version: 'early-bird-mercado-pago-lifecycle.command.v1',
             account_id: input.accountId,
-            action: 'cancel',
+            action: providerAction,
         };
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -85,6 +92,7 @@ export class HttpListenerMembershipActionsGateway {
                         'idempotency-key': idempotencyKey(
                             input.accountId,
                             input.attemptId,
+                            input.action,
                             environment,
                             provider,
                         ),
@@ -110,7 +118,8 @@ export class HttpListenerMembershipActionsGateway {
             const schema = provider === 'paypal'
                 ? 'early-bird-paypal-lifecycle.response.v1'
                 : 'early-bird-mercado-pago-lifecycle.response.v1';
-            const commonInvalid = body.account_id !== input.accountId || body.action !== 'cancel' ||
+            const expectedResponseAction = environment === 'live' ? input.action : providerAction;
+            const commonInvalid = body.account_id !== input.accountId || body.action !== expectedResponseAction ||
                 body.status !== 'queued' || typeof body.job_id !== 'string' || !body.job_id;
             const liveInvalid = environment === 'live' && (
                 Object.keys(body).sort().join('\0') !== liveExpected.sort().join('\0') ||

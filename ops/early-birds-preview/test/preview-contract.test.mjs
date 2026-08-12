@@ -207,11 +207,13 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \/_next\/static\/ \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
   assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
   assert.match(app, /location = \/api\/listener\/checkout \{[^}]*access_log off;[^}]*client_max_body_size 512;[^}]*limit_req zone=listener_checkout burst=4 nodelay;[^}]*limit_req_status 429;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
-  assert.match(app, /location = \/api\/listener\/membership\/cancel \{[^}]*access_log off;[^}]*client_max_body_size 256;[^}]*limit_req zone=listener_checkout burst=2 nodelay;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
+  assert.match(app, /location = \/api\/listener\/membership\/action \{[^}]*access_log off;[^}]*client_max_body_size 256;[^}]*limit_req zone=listener_checkout burst=2 nodelay;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location = \/listener\/terms \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location = \/listener\/privacy \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(listener, /location = \/api\/listener\/checkout \{[^}]*access_log off;[^}]*limit_req zone=listener_live_checkout burst=4 nodelay;[^}]*client_max_body_size 512;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;[^}]*Cache-Control "private, no-store"/s);
-  assert.match(listener, /location = \/api\/listener\/membership\/cancel \{[^}]*access_log off;[^}]*limit_req zone=listener_membership_action burst=2 nodelay;[^}]*client_max_body_size 256;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
+  assert.match(listener, /location = \/api\/listener\/membership\/action \{[^}]*access_log off;[^}]*limit_req zone=listener_membership_action burst=2 nodelay;[^}]*client_max_body_size 256;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
+  assert.doesNotMatch(app, /location = \/api\/listener\/membership\/cancel/);
+  assert.doesNotMatch(listener, /location = \/api\/listener\/membership\/cancel/);
   assert.match(listener, /location = \/listener\/terms \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
   assert.match(listener, /location = \/listener\/privacy \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
   assert.match(listener, /limit_req_zone \$binary_remote_addr zone=listener_live_checkout:1m rate=6r\/m;/);

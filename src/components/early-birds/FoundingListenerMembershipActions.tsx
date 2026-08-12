@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
@@ -17,7 +17,14 @@ export default function FoundingListenerMembershipActions({
     const router = useRouter();
     const [confirming, setConfirming] = useState(false);
     const [status, setStatus] = useState<'idle' | 'busy' | 'queued' | 'failed'>('idle');
-    const attempt = useRef<string | null>(null);
+    const [action, setAction] = useState<'cancel' | 'reactivate' | null>(null);
+    const attempt = useRef<{ action: 'cancel' | 'reactivate'; id: string } | null>(null);
+    const refreshTimers = useRef<number[]>([]);
+
+    useEffect(() => () => {
+        for (const timer of refreshTimers.current) window.clearTimeout(timer);
+        refreshTimers.current = [];
+    }, []);
 
     const boundary = membership.serviceThrough
         ? new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-US', {
@@ -26,17 +33,20 @@ export default function FoundingListenerMembershipActions({
         }).format(new Date(membership.serviceThrough))
         : null;
 
-    async function cancelMembership() {
+    async function requestMembershipAction(requestedAction: 'cancel' | 'reactivate') {
         if (status === 'busy') return;
         setStatus('busy');
-        const attemptId = attempt.current ?? crypto.randomUUID();
-        attempt.current = attemptId;
+        setAction(requestedAction);
+        const attemptId = attempt.current?.action === requestedAction
+            ? attempt.current.id
+            : crypto.randomUUID();
+        attempt.current = { action: requestedAction, id: attemptId };
         try {
-            const response = await fetch('/api/listener/membership/cancel', {
+            const response = await fetch('/api/listener/membership/action', {
                 method: 'POST',
                 cache: 'no-store',
                 headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-                body: JSON.stringify({ attemptId }),
+                body: JSON.stringify({ action: requestedAction, attemptId }),
             });
             const body = await response.json() as unknown;
             if (response.status !== 202 || !body || typeof body !== 'object' ||
@@ -45,8 +55,8 @@ export default function FoundingListenerMembershipActions({
             }
             setStatus('queued');
             setConfirming(false);
-            window.setTimeout(() => router.refresh(), 2_000);
-            window.setTimeout(() => router.refresh(), 8_000);
+            refreshTimers.current = [2_000, 5_000, 10_000, 20_000]
+                .map((delay) => window.setTimeout(() => router.refresh(), delay));
         } catch {
             setStatus('failed');
         }
@@ -64,10 +74,21 @@ export default function FoundingListenerMembershipActions({
                     {copy.membershipCancel}
                 </button>
             )}
+            {membership.state === 'ending' && status !== 'queued' && (
+                <button
+                    type="button"
+                    disabled={status === 'busy'}
+                    onClick={() => void requestMembershipAction('reactivate')}
+                >
+                    {status === 'busy' && action === 'reactivate'
+                        ? copy.membershipReactivateWorking
+                        : copy.membershipReactivate}
+                </button>
+            )}
             {confirming && status !== 'queued' && (
                 <div role="group" aria-label={copy.membershipCancelConfirmTitle}>
                     <p>{copy.membershipCancelConfirmDetail}</p>
-                    <button type="button" disabled={status === 'busy'} onClick={() => void cancelMembership()}>
+                    <button type="button" disabled={status === 'busy'} onClick={() => void requestMembershipAction('cancel')}>
                         {status === 'busy' ? copy.membershipCancelWorking : copy.membershipCancelConfirm}
                     </button>
                     <button type="button" disabled={status === 'busy'} onClick={() => {
@@ -78,8 +99,12 @@ export default function FoundingListenerMembershipActions({
                     </button>
                 </div>
             )}
-            {status === 'queued' && <p role="status">{copy.membershipCancelQueued}</p>}
-            {status === 'failed' && <p role="alert">{copy.membershipCancelFailed}</p>}
+            {status === 'queued' && <p role="status">{action === 'reactivate'
+                ? copy.membershipReactivateQueued
+                : copy.membershipCancelQueued}</p>}
+            {status === 'failed' && <p role="alert">{action === 'reactivate'
+                ? copy.membershipReactivateFailed
+                : copy.membershipCancelFailed}</p>}
         </div>
     );
 }

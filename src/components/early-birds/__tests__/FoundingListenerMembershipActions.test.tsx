@@ -41,11 +41,17 @@ describe('Founding Listener membership actions', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Yes, cancel at period end' }));
         await screen.findByText(/We received the request/);
         const sent = JSON.parse(fetchMock.mock.calls[0][1].body) as Record<string, unknown>;
-        expect(sent).toEqual({ attemptId: '123e4567-e89b-42d3-a456-426614174000' });
+        expect(fetchMock).toHaveBeenCalledWith('/api/listener/membership/action', expect.any(Object));
+        expect(sent).toEqual({
+            action: 'cancel',
+            attemptId: '123e4567-e89b-42d3-a456-426614174000',
+        });
         expect(JSON.stringify(sent)).not.toMatch(/paypal|subscription|account/i);
     });
 
-    it('does not offer cancellation twice once canonical state is ending', () => {
+    it('offers provider-neutral reactivation while canonical state is ending', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(Response.json({ status: 'queued' }, { status: 202 }));
+        vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
                 <FoundingListenerMembershipActions membership={{
@@ -54,6 +60,14 @@ describe('Founding Listener membership actions', () => {
             </LocaleProvider>,
         );
         expect(screen.queryByRole('button', { name: 'Cancel membership' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Reactivate membership' }));
+        await screen.findByText(/provider confirms reactivation/);
+        const sent = JSON.parse(fetchMock.mock.calls[0][1].body) as Record<string, unknown>;
+        expect(sent).toEqual({
+            action: 'reactivate',
+            attemptId: '123e4567-e89b-42d3-a456-426614174000',
+        });
+        expect(JSON.stringify(sent)).not.toMatch(/paypal|mercado|subscription|account/i);
     });
 
     it('keeps the action retryable after a generic failure', async () => {

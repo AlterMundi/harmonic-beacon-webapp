@@ -6,6 +6,7 @@ import { getEarlyBirdListeningAccess } from '@/lib/early-birds/access';
 import {
     HttpListenerMembershipActionsGateway,
     ListenerMembershipActionUnavailableError,
+    type ListenerMembershipAction,
 } from '@/lib/early-birds/membership-actions';
 import { isCanonicalListenerHost, isListenerStagingHost } from '@/lib/listener/public-discovery';
 
@@ -29,6 +30,10 @@ function requestEnvironment(request: NextRequest): 'live' | 'staging' | null {
     return null;
 }
 
+function membershipAction(input: unknown): ListenerMembershipAction | null {
+    return input === 'cancel' || input === 'reactivate' ? input : null;
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!earlyBirdsEnabled()) return json({ error: 'Membership unavailable.' }, 404);
     const environment = requestEnvironment(request);
@@ -48,11 +53,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return json({ error: 'Invalid request.' }, 400);
     }
     if (!input || typeof input !== 'object' || Array.isArray(input) ||
-        Object.keys(input).sort().join('\0') !== ['attemptId'].join('\0')) {
+        Object.keys(input).sort().join('\0') !== ['action', 'attemptId'].join('\0')) {
         return json({ error: 'Invalid request.' }, 400);
     }
     const attemptId = (input as Record<string, unknown>).attemptId;
-    if (typeof attemptId !== 'string' ||
+    const action = membershipAction((input as Record<string, unknown>).action);
+    if (typeof attemptId !== 'string' || !action ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attemptId)) {
         return json({ error: 'Invalid request.' }, 400);
     }
@@ -71,9 +77,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     try {
-        await new HttpListenerMembershipActionsGateway().cancel({
+        await new HttpListenerMembershipActionsGateway().requestAction({
             accountId: session.user.id,
             attemptId,
+            action,
             environment,
             provider,
         });

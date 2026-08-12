@@ -332,9 +332,9 @@ server {
         add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
     }
 
-    # Account-derived sandbox cancellation. The browser cannot name a provider
+    # Account-derived sandbox membership action. The browser cannot name a provider
     # or subscription; the Listener resolves the current canonical projection.
-    location = /api/listener/membership/cancel {
+    location = /api/listener/membership/action {
         access_log off;
         client_max_body_size 256;
         limit_req zone=listener_checkout burst=2 nodelay;
