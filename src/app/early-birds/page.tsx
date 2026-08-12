@@ -46,17 +46,19 @@ export default async function EarlyBirdsPage({
     if (!earlyBirdsEnabled()) return <EarlyBirdUnavailable />;
     const incomingHeaders = new Headers(await requestHeaders());
     const listenerStagingHost = isListenerStagingHost(incomingHeaders);
+    const canonicalListenerHost = isCanonicalListenerHost(incomingHeaders);
     const reactiveVisualizationAvailable = listenerStagingHost
         || isCanonicalListenerHost(incomingHeaders);
     const reactiveFieldLabAvailable = listenerStagingHost
         && process.env.BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED === '1';
-    const checkoutAvailability = listenerStagingHost
-        ? listenerCheckoutAvailability()
+    const checkoutEnvironment = canonicalListenerHost ? 'live' : 'staging';
+    const checkoutAvailability = (listenerStagingHost || canonicalListenerHost)
+        ? listenerCheckoutAvailability(process.env, checkoutEnvironment)
         : { paypal: false, mercadoPago: false };
     const params = await searchParams;
     const paypalReturn = params.paypal;
     const checkoutReturn = params.checkout;
-    if (listenerStagingHost && (
+    if ((listenerStagingHost || canonicalListenerHost) && (
         paypalReturn === 'success'
         || paypalReturn === 'cancel'
         || checkoutReturn === 'returned'
@@ -108,6 +110,7 @@ export default async function EarlyBirdsPage({
                 accessKind={access.kind === 'free-quota' ? 'free-quota' : 'membership'}
                 quota={access.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
                 checkoutAvailability={checkoutAvailability}
+                checkoutEnvironment={checkoutEnvironment}
                 serverNow={access.serverNow.toISOString()}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
@@ -140,6 +143,7 @@ export default async function EarlyBirdsPage({
             syntheticTeamEntryAvailable={syntheticTeamEntryAvailable}
             quota={access?.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
             checkoutAvailability={checkoutAvailability}
+            checkoutEnvironment={checkoutEnvironment}
             membership={listenerMembershipPresentation(access?.membership.projection ?? null)}
             serverNow={access?.serverNow.toISOString() ?? new Date().toISOString()}
         />

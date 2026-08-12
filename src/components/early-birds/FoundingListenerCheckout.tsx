@@ -8,7 +8,13 @@ import type { ListenerCheckoutProvider } from '@/lib/early-birds/checkout';
 
 type Availability = { paypal: boolean; mercadoPago: boolean };
 
-export default function FoundingListenerCheckout({ available }: { available: Availability }) {
+export default function FoundingListenerCheckout({
+    available,
+    environment = 'staging',
+}: {
+    available: Availability;
+    environment?: 'staging' | 'live';
+}) {
     const { locale } = useLocale();
     const copy = earlyBirdCopy[locale];
     const [busy, setBusy] = useState<ListenerCheckoutProvider | null>(null);
@@ -48,8 +54,15 @@ export default function FoundingListenerCheckout({ available }: { available: Ava
         <details className="listener-checkout">
             <summary>{copy.freeQuotaMembershipCta}</summary>
             <div className="listener-checkout__options">
-                <strong>{copy.checkoutSandboxTitle}</strong>
-                <p>{copy.checkoutSandboxDetail}</p>
+                <strong>{environment === 'live' ? copy.checkoutLiveTitle : copy.checkoutSandboxTitle}</strong>
+                <p>{environment === 'live' ? copy.checkoutLiveDetail : copy.checkoutSandboxDetail}</p>
+                {environment === 'live' && (
+                    <p className="listener-checkout__legal">
+                        {copy.checkoutAgreement}{' '}
+                        <a href="/listener/terms">{copy.checkoutTerms}</a>{' · '}
+                        <a href="/listener/privacy">{copy.checkoutPrivacy}</a>
+                    </p>
+                )}
                 {available.paypal && (
                     <button
                         type="button"
@@ -70,7 +83,9 @@ export default function FoundingListenerCheckout({ available }: { available: Ava
                         {busy === 'mercado_pago' ? copy.checkoutOpening : copy.checkoutMercadoPago}
                     </button>
                 )}
-                {failed && <p role="alert">{copy.checkoutUnavailable}</p>}
+                {failed && <p role="alert">{environment === 'live'
+                    ? copy.checkoutLiveUnavailable
+                    : copy.checkoutUnavailable}</p>}
             </div>
         </details>
     );

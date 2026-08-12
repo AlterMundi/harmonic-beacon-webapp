@@ -6,9 +6,10 @@ import {
     listenerCheckoutAvailability,
     ListenerCheckoutUnavailableError,
     type ListenerCheckoutProvider,
+    type ListenerCheckoutEnvironment,
 } from '@/lib/early-birds/checkout';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
-import { isListenerStagingHost } from '@/lib/listener/public-discovery';
+import { isCanonicalListenerHost, isListenerStagingHost } from '@/lib/listener/public-discovery';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,12 +22,18 @@ function json(body: Record<string, unknown>, status: number): NextResponse {
     return response;
 }
 
-function requestOrigin(request: NextRequest): string | null {
+function requestContext(request: NextRequest): {
+    origin: string;
+    environment: ListenerCheckoutEnvironment;
+} | null {
     const host = request.headers.get('host')?.trim().toLowerCase();
     const protocol = request.headers.get('x-forwarded-proto')?.trim().toLowerCase();
-    if (!host || protocol !== 'https' || !isListenerStagingHost(request.headers)) return null;
+    const environment = isCanonicalListenerHost(request.headers)
+        ? 'live'
+        : isListenerStagingHost(request.headers) ? 'staging' : null;
+    if (!host || protocol !== 'https' || !environment) return null;
     const expected = `https://${host}`;
-    return request.headers.get('origin') === expected ? expected : null;
+    return request.headers.get('origin') === expected ? { origin: expected, environment } : null;
 }
 
 function providerFrom(value: unknown): ListenerCheckoutProvider | null {
@@ -35,8 +42,8 @@ function providerFrom(value: unknown): ListenerCheckoutProvider | null {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!earlyBirdsEnabled()) return json({ error: 'Checkout unavailable.' }, 404);
-    const origin = requestOrigin(request);
-    if (!origin) return json({ error: 'Invalid request.' }, 403);
+    const context = requestContext(request);
+    if (!context) return json({ error: 'Invalid request.' }, 403);
 
     const declared = request.headers.get('content-length');
     if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_REQUEST_BYTES)) {
@@ -63,7 +70,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return json({ error: 'Invalid request.' }, 400);
     }
 
-    const available = listenerCheckoutAvailability();
+    const available = listenerCheckoutAvailability(process.env, context.environment);
     if ((provider === 'paypal' && !available.paypal) ||
         (provider === 'mercado_pago' && !available.mercadoPago)) {
         return json({ error: 'Checkout unavailable.' }, 404);
@@ -77,8 +84,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             email: session.user.email,
             provider,
             attemptId,
-            returnUrl: `${origin}/?checkout=returned`,
-            cancelUrl: `${origin}/?checkout=cancelled`,
+            returnUrl: `${context.origin}/?checkout=returned`,
+            cancelUrl: `${context.origin}/?checkout=cancelled`,
+            environment: context.environment,
         });
         return json({ provider: result.provider, approvalUrl: result.approvalUrl }, 200);
     } catch (error) {

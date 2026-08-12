@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/listener-checkout/v1/checkout.schema.json",
+  "title": "Listener Live checkout result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "account_id",
+    "provider",
+    "approval_url",
+    "currency",
+    "amount_minor",
+    "environment"
+  ],
+  "properties": {
+    "schema_version": {"const": "listener-checkout.checkout.v1"},
+    "account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
+    "provider": {"enum": ["paypal", "mercado_pago"]},
+    "approval_url": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 9,
+      "maxLength": 2048,
+      "pattern": "^https://[^\\s/@]+(?:[/?#][^\\s]*)?$"
+    },
+    "currency": {"enum": ["USD", "ARS"]},
+    "amount_minor": {"type": "integer", "minimum": 1},
+    "environment": {"const": "live"}
+  }
+}

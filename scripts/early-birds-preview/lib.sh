@@ -105,6 +105,8 @@ require_synthetic_env() {
   case "$paypal_checkout_switch" in ''|0|1) ;; *) preview_fail 'BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED must be 0 or 1' ;; esac
   mercado_pago_checkout_switch=$(preview_env_value BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED "$env_file")
   case "$mercado_pago_checkout_switch" in ''|0|1) ;; *) preview_fail 'BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED must be 0 or 1' ;; esac
+  require_exact_preview_value BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED 0 "$env_file"
+  require_exact_preview_value BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED 0 "$env_file"
   require_exact_preview_value EARLY_BIRDS_TEST_ACCESS_ENABLED 1 "$env_file"
 
   authority_network=$(preview_env_value EARLYBIRDS_PREVIEW_AUTHORITY_NETWORK "$env_file")

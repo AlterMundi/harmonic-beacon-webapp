@@ -1859,6 +1859,68 @@ body {
 .listener-checkout__options p { line-height: 1.45; }
 .listener-checkout__options [role="alert"] { color: #fecaca; }
 
+.listener-checkout__legal {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.listener-checkout__legal a,
+.listener-legal a { color: var(--gold); text-decoration: underline; text-underline-offset: 0.22em; }
+
+.listener-legal-shell { min-height: 100dvh; padding: 2rem 1rem; overflow: auto; }
+
+.listener-legal {
+  width: min(100%, 48rem);
+  margin: auto;
+  padding: clamp(1.2rem, 4vw, 3rem);
+  border: 1px solid var(--border-subtle);
+  border-radius: 1.2rem;
+  background: rgba(9, 27, 21, 0.92);
+  box-shadow: var(--shadow-deep);
+}
+
+.listener-legal > p:first-of-type { margin-top: 2rem; color: var(--gold); letter-spacing: 0.12em; font-size: 0.7rem; }
+.listener-legal h1 { margin: 0.6rem 0; color: var(--paper); font-size: clamp(1.7rem, 6vw, 3.4rem); line-height: 1.05; }
+.listener-legal > p { color: var(--text-muted); font-size: 0.78rem; }
+.listener-legal section { margin-top: 2rem; }
+.listener-legal h2 { margin-bottom: 0.65rem; color: var(--paper); font-size: 1rem; }
+.listener-legal section p { margin-top: 0.65rem; color: var(--text-secondary); line-height: 1.65; }
+
+.listener-membership-actions {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.listener-membership-actions small,
+.listener-membership-actions p {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.listener-membership-actions > button,
+.listener-membership-actions [role="group"] button {
+  width: fit-content;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.listener-membership-actions [role="group"] {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  border-radius: 0.65rem;
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.listener-membership-actions [role="alert"] { color: #fecaca; }
+
 .listener-membership-status {
   display: grid;
   gap: 0.45rem;

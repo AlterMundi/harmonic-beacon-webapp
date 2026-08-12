@@ -203,6 +203,7 @@ describe('EarlyBird Listener page', () => {
             kind: 'founder',
             provider: 'mercado-pago',
             state: 'ending',
+            serviceThrough: '2026-08-31T00:00:00.000Z',
         });
         expect(JSON.stringify(result.props.membership)).not.toMatch(/PRIVATE_REASON|internal-provider-value|MERCADO_PAGO/);
     });

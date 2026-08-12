@@ -4,6 +4,9 @@
 # routes.
 limit_req_zone $binary_remote_addr zone=listener_invitation_redeem:1m rate=30r/m;
 limit_req_zone $binary_remote_addr zone=listener_public_visual_analysis:1m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=listener_live_checkout:1m rate=6r/m;
+limit_req_zone $binary_remote_addr zone=listener_membership_action:1m rate=6r/m;
+limit_req_zone $binary_remote_addr zone=listener_provider_webhook:1m rate=120r/m;
 
 server {
     listen 80;
@@ -49,6 +52,14 @@ server {
         access_log off;
         add_header Cache-Control "private, no-store" always;
         add_header Referrer-Policy "no-referrer" always;
+        return 302 https://listen.harmonicbeacon.com$request_uri;
+    }
+
+    location = /listener/terms {
+        return 302 https://listen.harmonicbeacon.com$request_uri;
+    }
+
+    location = /listener/privacy {
         return 302 https://listen.harmonicbeacon.com$request_uri;
     }
 
@@ -197,6 +208,26 @@ server {
         proxy_read_timeout 30s;
     }
 
+    location = /listener/terms {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /listener/privacy {
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }
+
     location = / {
         # The root may receive a legacy invitation bearer before the internal
         # Listener rewrite can scrub it. Never persist that first request.
@@ -251,6 +282,82 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # New sales and cancellation are exact, authenticated, same-origin app
+    # routes. Their independent runtime flags remain OFF until launch approval.
+    location = /api/listener/checkout {
+        access_log off;
+        limit_req zone=listener_live_checkout burst=4 nodelay;
+        limit_req_status 429;
+        client_max_body_size 512;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "listener-public-free" always;
+    }
+
+    location = /api/listener/membership/cancel {
+        access_log off;
+        limit_req zone=listener_membership_action burst=2 nodelay;
+        limit_req_status 429;
+        client_max_body_size 256;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "listener-public-free" always;
+    }
+
+    # Provider callbacks reach only the exact signed webhook handlers in the
+    # isolated membership authority. No internal/readiness prefix is exposed.
+    location = /v1/webhooks/listener/paypal {
+        if ($request_method != POST) { return 405; }
+        access_log off;
+        limit_req zone=listener_provider_webhook burst=30 nodelay;
+        limit_req_status 429;
+        client_max_body_size 1m;
+        proxy_pass http://127.0.0.1:18876;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /v1/webhooks/listener/mercado-pago {
+        if ($request_method != POST) { return 405; }
+        access_log off;
+        limit_req zone=listener_provider_webhook burst=30 nodelay;
+        limit_req_status 429;
+        client_max_body_size 1m;
+        proxy_pass http://127.0.0.1:18876;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
         proxy_connect_timeout 10s;
         proxy_send_timeout 30s;
         proxy_read_timeout 30s;

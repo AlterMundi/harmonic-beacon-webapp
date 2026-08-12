@@ -10,6 +10,7 @@ import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 import ListenerPlayer from './ListenerPlayer';
 import FreeQuotaStatus from './FreeQuotaStatus';
 import FoundingListenerCheckout from './FoundingListenerCheckout';
+import FoundingListenerMembershipActions from './FoundingListenerMembershipActions';
 import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
 export default function EarlyBirdHome({
@@ -23,6 +24,7 @@ export default function EarlyBirdHome({
     reactiveFieldLabAvailable = false,
     quota = null,
     checkoutAvailability = { paypal: false, mercadoPago: false },
+    checkoutEnvironment = 'staging',
 }: {
     displayName: string;
     membership: ListenerMembershipPresentation;
@@ -34,6 +36,7 @@ export default function EarlyBirdHome({
     reactiveFieldLabAvailable?: boolean;
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
     checkoutAvailability?: { paypal: boolean; mercadoPago: boolean };
+    checkoutEnvironment?: 'staging' | 'live';
 }) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
@@ -68,6 +71,9 @@ export default function EarlyBirdHome({
                                 {accessKind === 'membership' && membership.kind === 'founder' && (
                                     <FreeQuotaStatus serverNow={serverNow} unlimited="membership" compact />
                                 )}
+                                {accessKind === 'membership' && membership.kind === 'founder' && (
+                                    <FoundingListenerMembershipActions membership={membership} />
+                                )}
                                 <button type="button" onClick={signOut}>{copy.signOut}</button>
                             </div>
                         </details>}
@@ -87,7 +93,10 @@ export default function EarlyBirdHome({
                             compact
                             showMembershipLink={!checkoutAvailability.paypal && !checkoutAvailability.mercadoPago}
                         />
-                        <FoundingListenerCheckout available={checkoutAvailability} />
+                        <FoundingListenerCheckout
+                            available={checkoutAvailability}
+                            environment={checkoutEnvironment}
+                        />
                     </footer>
                 )}
             </div>

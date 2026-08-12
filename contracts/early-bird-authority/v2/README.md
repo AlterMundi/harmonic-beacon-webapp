@@ -1,4 +1,7 @@
-# EarlyBird authority membership read contract v2
+# EarlyBird authority membership read contract v2 — retired experiment
+
+This contract is retained only as historical evidence. No runtime may use
+`founder_price_eligibility`; v3 replaces it with continuity and an irreversible ended tombstone.
 
 This additive private read contract exposes two independent facts to Listener:
 

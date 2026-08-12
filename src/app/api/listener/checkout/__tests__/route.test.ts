@@ -43,6 +43,8 @@ beforeEach(() => {
     vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
     vi.stubEnv('BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED', '1');
     vi.stubEnv('BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED', '1');
+    vi.stubEnv('BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED', '0');
+    vi.stubEnv('BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED', '0');
     currentEarlyBirdSession.mockResolvedValue({
         user: { id: 'opaqueBetterAuthId', email: 'listener@example.com', name: 'Listener' },
     });
@@ -74,11 +76,37 @@ describe('Listener sandbox checkout route', () => {
             attemptId: ATTEMPT,
             returnUrl: `https://${HOST}/?checkout=returned`,
             cancelUrl: `https://${HOST}/?checkout=cancelled`,
+            environment: 'staging',
         });
     });
 
+    it('allows an explicitly enabled Live checkout only on the canonical Listener origin', async () => {
+        vi.stubEnv('BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED', '1');
+        createCheckout.mockResolvedValue({
+            provider: 'paypal',
+            approvalUrl: 'https://www.paypal.com/checkoutnow?token=live',
+        });
+        const host = 'listen.harmonicbeacon.com';
+        const response = await POST(request(undefined, `https://${host}`, host));
+        expect(response.status).toBe(200);
+        expect(createCheckout).toHaveBeenCalledWith(expect.objectContaining({
+            accountId: 'opaqueBetterAuthId',
+            provider: 'paypal',
+            environment: 'live',
+            returnUrl: `https://${host}/?checkout=returned`,
+            cancelUrl: `https://${host}/?checkout=cancelled`,
+        }));
+    });
+
+    it('keeps canonical Live checkout closed when only sandbox providers are enabled', async () => {
+        const host = 'listen.harmonicbeacon.com';
+        const response = await POST(request(undefined, `https://${host}`, host));
+        expect(response.status).toBe(404);
+        expect(currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(createCheckout).not.toHaveBeenCalled();
+    });
+
     it.each([
-        ['canonical public host', 'https://listen.harmonicbeacon.com', 'listen.harmonicbeacon.com'],
         ['event host', 'https://live.harmonicbeacon.com', 'live.harmonicbeacon.com'],
         ['cross origin', 'https://attacker.invalid', HOST],
     ])('rejects %s before auth', async (_label, origin, host) => {

@@ -482,6 +482,13 @@ The webapp vendors byte-exact copies of the canonical backend contracts under
   Mandatory external gate before any paid activation: real Mercado Pago TEST
   proof that `/preapproval/search?q=hb_<external_reference>` returns the exact
   created preapproval.
+- `contracts/listener-checkout/v1`: the production-only, provider-neutral
+  checkout command/result. It exposes no provider subscription ID, fixes
+  `environment=live`, keeps payer email transient and uses a separate new-sales
+  gate from provider lifecycle. Backend PR #69 / merge
+  `7bc2dabd05aa68602bbfe9faa6e29c4e1c081017` is CI-green. The Listener Live
+  surface, cancellation and exact webhook ingress remain disabled by default;
+  see `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md`.
 
 ## 11. Fast Forward development lane
 

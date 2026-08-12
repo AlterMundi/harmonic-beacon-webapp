@@ -28,6 +28,7 @@ type Props = {
     membership: ListenerMembershipPresentation;
     serverNow: string;
     checkoutAvailability?: { paypal: boolean; mercadoPago: boolean };
+    checkoutEnvironment?: 'staging' | 'live';
 };
 
 export default function EarlyBirdLanding(props: Props) {
@@ -180,7 +181,7 @@ export default function EarlyBirdLanding(props: Props) {
                                         <FoundingListenerCheckout available={props.checkoutAvailability ?? {
                                             paypal: false,
                                             mercadoPago: false,
-                                        }} />
+                                        }} environment={props.checkoutEnvironment ?? 'staging'} />
                                     </>
                                 )}
                                 <button

@@ -1,0 +1,8 @@
+{
+  "schema_version": "listener-checkout.checkout-create.v1",
+  "account_id": "acct_listener_synthetic_0001",
+  "provider": "mercado_pago",
+  "payer_email": "listener@example.test",
+  "return_url": "https://listen.harmonicbeacon.com/membership/return",
+  "cancel_url": "https://listen.harmonicbeacon.com/membership/cancel"
+}

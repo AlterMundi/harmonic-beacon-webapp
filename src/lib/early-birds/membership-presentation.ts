@@ -19,6 +19,7 @@ export type ListenerMembershipPresentation =
         kind: 'founder';
         provider: 'paypal' | 'mercado-pago';
         state: ListenerMembershipPresentationState;
+        serviceThrough?: string | null;
     };
 
 function presentationState(
@@ -62,7 +63,12 @@ export function listenerMembershipPresentation(
         && projection.offerCode === EARLY_BIRDS_FOUNDERS_OFFER
         && projection.source === 'PAYPAL'
     ) {
-        return { kind: 'founder', provider: 'paypal', state };
+        return {
+            kind: 'founder',
+            provider: 'paypal',
+            state,
+            serviceThrough: projection.founderContinuityServiceThrough?.toISOString() ?? null,
+        };
     }
     if (
         accessAllowed
@@ -71,7 +77,12 @@ export function listenerMembershipPresentation(
         && projection.offerCode === EARLY_BIRDS_FOUNDERS_OFFER
         && projection.source === 'MERCADO_PAGO'
     ) {
-        return { kind: 'founder', provider: 'mercado-pago', state };
+        return {
+            kind: 'founder',
+            provider: 'mercado-pago',
+            state,
+            serviceThrough: projection.founderContinuityServiceThrough?.toISOString() ?? null,
+        };
     }
 
     // Unknown and incomplete projections fail closed in presentation just as

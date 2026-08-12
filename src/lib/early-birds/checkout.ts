@@ -3,13 +3,14 @@ import { createHash } from 'node:crypto';
 import { isEarlyBirdAccountId } from './account-id';
 
 export type ListenerCheckoutProvider = 'paypal' | 'mercado_pago';
+export type ListenerCheckoutEnvironment = 'staging' | 'live';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
 export class ListenerCheckoutUnavailableError extends Error {
     constructor() {
-        super('Listener sandbox checkout is unavailable');
+        super('Listener checkout is unavailable');
         this.name = 'ListenerCheckoutUnavailableError';
     }
 }
@@ -19,7 +20,16 @@ export type ListenerCheckoutResult = {
     approvalUrl: string;
 };
 
-export function listenerCheckoutAvailability(environment: NodeJS.ProcessEnv = process.env) {
+export function listenerCheckoutAvailability(
+    environment: NodeJS.ProcessEnv = process.env,
+    target: ListenerCheckoutEnvironment = 'staging',
+) {
+    if (target === 'live') {
+        return {
+            paypal: environment.BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED === '1',
+            mercadoPago: environment.BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED === '1',
+        } as const;
+    }
     return {
         paypal: environment.BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED === '1',
         mercadoPago: environment.BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED === '1',
@@ -35,7 +45,7 @@ function normalizedEmail(value: string): string {
     return normalized;
 }
 
-function authorityConfig(environment: NodeJS.ProcessEnv = process.env) {
+export function listenerAuthorityConfig(environment: NodeJS.ProcessEnv = process.env) {
     const rawBaseUrl = environment.EARLY_BIRDS_AUTHORITY_BASE_URL?.trim();
     const keyId = environment.EARLY_BIRDS_AUTHORITY_SERVICE_KEY_ID?.trim();
     const token = environment.EARLY_BIRDS_AUTHORITY_SERVICE_TOKEN?.trim();
@@ -54,7 +64,7 @@ function authorityConfig(environment: NodeJS.ProcessEnv = process.env) {
     return { baseUrl: baseUrl.toString().replace(/\/$/, ''), keyId, token };
 }
 
-async function boundedJson(response: Response): Promise<unknown> {
+export async function listenerBoundedJson(response: Response): Promise<unknown> {
     const declared = response.headers.get('content-length');
     if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_RESPONSE_BYTES)) {
         await response.body?.cancel().catch(() => undefined);
@@ -91,7 +101,7 @@ async function boundedJson(response: Response): Promise<unknown> {
     }
 }
 
-function checkoutResult(
+function sandboxCheckoutResult(
     raw: unknown,
     accountId: string,
     provider: ListenerCheckoutProvider,
@@ -129,16 +139,60 @@ function checkoutResult(
     return { provider, approvalUrl: approval.toString() };
 }
 
-function idempotencyKey(accountId: string, provider: ListenerCheckoutProvider, attemptId: string): string {
+function liveCheckoutResult(
+    raw: unknown,
+    accountId: string,
+    provider: ListenerCheckoutProvider,
+): ListenerCheckoutResult {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new ListenerCheckoutUnavailableError();
+    }
+    const input = raw as Record<string, unknown>;
+    const expectedKeys = [
+        'account_id', 'amount_minor', 'approval_url', 'currency',
+        'environment', 'provider', 'schema_version',
+    ];
+    if (Object.keys(input).sort().join('\0') !== expectedKeys.sort().join('\0') ||
+        input.schema_version !== 'listener-checkout.checkout.v1' ||
+        input.account_id !== accountId || input.provider !== provider || input.environment !== 'live' ||
+        !Number.isSafeInteger(input.amount_minor) || Number(input.amount_minor) <= 0 ||
+        (provider === 'paypal'
+            ? input.currency !== 'USD' || input.amount_minor !== 500
+            : input.currency !== 'ARS') ||
+        typeof input.approval_url !== 'string') {
+        throw new ListenerCheckoutUnavailableError();
+    }
+    let approval: URL;
+    try {
+        approval = new URL(input.approval_url);
+    } catch {
+        throw new ListenerCheckoutUnavailableError();
+    }
+    const allowedHost = provider === 'paypal'
+        ? approval.hostname === 'paypal.com' || approval.hostname === 'www.paypal.com'
+        : approval.hostname === 'www.mercadopago.com.ar';
+    if (approval.protocol !== 'https:' || approval.username || approval.password || !allowedHost ||
+        input.approval_url.length > 2048) {
+        throw new ListenerCheckoutUnavailableError();
+    }
+    return { provider, approvalUrl: approval.toString() };
+}
+
+function idempotencyKey(
+    accountId: string,
+    provider: ListenerCheckoutProvider,
+    attemptId: string,
+    environment: ListenerCheckoutEnvironment,
+): string {
     const digest = createHash('sha256')
-        .update(`listener-checkout-v1\n${accountId}\n${provider}\n${attemptId}`)
+        .update(`listener-checkout-v2\n${environment}\n${accountId}\n${provider}\n${attemptId}`)
         .digest('hex');
     return `listener-checkout:${digest}`;
 }
 
 export class HttpListenerCheckoutGateway {
     constructor(
-        private readonly config = authorityConfig(),
+        private readonly config = listenerAuthorityConfig(),
         private readonly request: typeof fetch = fetch,
     ) {}
 
@@ -149,15 +203,26 @@ export class HttpListenerCheckoutGateway {
         attemptId: string;
         returnUrl: string;
         cancelUrl: string;
+        environment?: ListenerCheckoutEnvironment;
     }): Promise<ListenerCheckoutResult> {
         if (!isEarlyBirdAccountId(input.accountId) ||
             !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.attemptId)) {
             throw new ListenerCheckoutUnavailableError();
         }
-        const endpoint = input.provider === 'paypal'
-            ? '/api/internal/v1/early-bird-checkouts'
-            : '/api/internal/v2/early-bird-checkouts';
-        const payload = input.provider === 'paypal' ? {
+        const environment = input.environment ?? 'staging';
+        const endpoint = environment === 'live'
+            ? '/api/internal/v1/listener-checkouts'
+            : input.provider === 'paypal'
+                ? '/api/internal/v1/early-bird-checkouts'
+                : '/api/internal/v2/early-bird-checkouts';
+        const payload = environment === 'live' ? {
+            schema_version: 'listener-checkout.checkout-create.v1',
+            account_id: input.accountId,
+            provider: input.provider,
+            payer_email: input.provider === 'mercado_pago' ? normalizedEmail(input.email) : null,
+            return_url: input.returnUrl,
+            cancel_url: input.cancelUrl,
+        } : input.provider === 'paypal' ? {
             schema_version: 'early-bird-authority.checkout-create.v1',
             account_id: input.accountId,
             provider: input.provider,
@@ -183,7 +248,12 @@ export class HttpListenerCheckoutGateway {
                     accept: 'application/json',
                     authorization: `Bearer ${this.config.token}`,
                     'content-type': 'application/json',
-                    'idempotency-key': idempotencyKey(input.accountId, input.provider, input.attemptId),
+                    'idempotency-key': idempotencyKey(
+                        input.accountId,
+                        input.provider,
+                        input.attemptId,
+                        environment,
+                    ),
                     'x-hb-service-key-id': this.config.keyId,
                 },
                 body: JSON.stringify(payload),
@@ -192,7 +262,10 @@ export class HttpListenerCheckoutGateway {
                 await response.body?.cancel().catch(() => undefined);
                 throw new ListenerCheckoutUnavailableError();
             }
-            return checkoutResult(await boundedJson(response), input.accountId, input.provider);
+            const raw = await listenerBoundedJson(response);
+            return environment === 'live'
+                ? liveCheckoutResult(raw, input.accountId, input.provider)
+                : sandboxCheckoutResult(raw, input.accountId, input.provider);
         } catch (error) {
             if (error instanceof ListenerCheckoutUnavailableError) throw error;
             throw new ListenerCheckoutUnavailableError();
