@@ -180,19 +180,24 @@ Two things in that diagram are commitments rather than descriptions and should b
 
 ### 4.3 Processors
 
-An earlier draft of this document asserted that "no third-party processor touches identifiable data except Stripe (billing) and our email provider (transactional)". That sentence was wrong in both directions — neither Stripe nor an email provider is integrated, and the roadmap adds several processors the sentence excluded. An absolute claim about processors is falsified the day a dependency is added, so this section is a dated list instead. Maintaining it is also what GDPR Art. 28 and Art. 30 record-keeping will require.
+An earlier draft of this document asserted that "no third-party processor touches identifiable data except Stripe (billing) and our email provider (transactional)". That sentence was wrong in both directions: Stripe is not the current Listener billing authority, and an absolute list becomes false as soon as a dependency is added. This dated inventory separates services currently exercised in the Founding Listener pre-release from later research processors. Maintaining it is also what GDPR Art. 28 and Art. 30 record-keeping will require.
 
-**Processors with access to identifiable data, as of 2026-06-09:**
+**Processors with access to identifiable data, as of 2026-08-12:**
 
 | Processor | Data | Role |
 |---|---|---|
-| Zitadel (`auth.altermundi.net`, AlterMundi-operated) | Email, name, OIDC subject | Identity provider — see `src/lib/auth-config.ts` |
+| Google OAuth | Email and provider subject during sign-in | Configured Listener identity provider |
+| Gmail API / Google Workspace | Recipient and one-use sign-in URL | Transactional Listener magic-link delivery |
+| PayPal Sandbox and Mercado Pago TEST | Test buyer identity and synthetic payment instrument data | Accepted pre-release subscription testing only; no Live charges |
 | PostgreSQL and object storage on AlterMundi-operated hosts | All application data | First-party infrastructure |
 | LiveKit, self-hosted on AlterMundi infrastructure | Live audio, participant identities | Real-time transport |
 
-No payment processor, email provider, error-tracking, crash-reporting, analytics or push-notification service is integrated today.
+PayPal Live and Mercado Pago productive credentials are not installed, their provider and public
+checkout flags are OFF, and no real Founding Listener charge has occurred. The Listener stores
+opaque provider evidence and membership state; providers retain financial instrument data. No
+error-tracking, crash-reporting or push-notification service is integrated in this lane.
 
-**We update this list before adding a processor, not after.** The roadmap already names candidates that will belong here, each of which is a processor decision and not merely a dependency choice: Sentry with release tracking (Phase 1), a transactional email provider such as Resend or Postmark (Phase 2), Stripe including Connect KYC for provider payouts (Phase 2), Firebase Crashlytics (Phase 3 — Google as processor, with its own data-sharing posture, which is the one on this list most worth a second look before it is adopted), and a push-notification service (Phase 3). None is integrated; none may be added while this table still says it is not.
+**We update this list before adding a processor, not after.** The broader roadmap still names candidates such as Sentry, Stripe Connect for a future provider economy, Firebase Crashlytics and push notifications. None is implied by the Listener pre-release and each requires its own processor decision and inventory update before activation.
 
 ### 4.4 Retention
 

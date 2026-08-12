@@ -82,7 +82,7 @@ The product makes public commitments in its policy corpus. They are documented, 
 - **[Trust & Safety](./docs/TRUST_AND_SAFETY.md)**: reports will be acknowledged within 24 hours and S1 incidents will get a public postmortem. Neither exists yet — there is no report model and no incidents page. **[Planned — Phase 1]**
 - **[Research ethics](./docs/RESEARCH_PROTOCOL.md)**: informed consent, revocable participation, preregistered protocols, de-identified public aggregates — the standard the research protocol will be held to once it starts enrolling. No research data is collected today. **[Planned — Phase 3]**
 - **[Content policy](./docs/CONTENT_POLICY.md)**: no therapeutic claims is a standing rule enforced today through moderation review; appeals of a moderation decision are not yet available. **[Planned — Phase 2]**
-- **[Monetization](./docs/MONETIZATION.md)**: patronage-not-paywall, core experience free forever. No payment processing or entitlement model exists yet, so every published meditation is free to everyone today by default rather than by an enforced floor. **[Planned — Phase 2]**
+- **[Monetization](./docs/MONETIZATION.md)**: the broader patronage/provider economy remains planned for Phase 2. Separately, the experimental Founding Listener lane now has a server-authoritative weekly Free allowance and USD 5/month PayPal/Mercado Pago membership authority. Sandbox/TEST are accepted; Live credentials, real charges and public checkout remain OFF pending [the release gates](./docs/operations/LISTENER_LAUNCH_NOW.md).
 
 What's live today:
 
