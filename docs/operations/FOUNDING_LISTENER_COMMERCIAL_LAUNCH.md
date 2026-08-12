@@ -42,6 +42,13 @@ The exact public Listener image is
 same-schema Listener image `fcdde379` remains available as the bounded application rollback target;
 the weekly-quota database policy itself is forward-only.
 
+The exact isolated payment-authority image is
+`8e10f16fe3471a097021f7f1ee41eb8f88f4f154`. Its read-only Live preflight is deployed, health is
+green and its migration completed with exit `0`. PayPal Live and Mercado Pago Live remain disabled
+and report zero provider-readiness/new-sales metrics because productive credentials are absent.
+The previous authority image `60584936603525027c9891e0865efc58055a3d5d` and protected backup
+`/mnt/beacon-data/staging-backups/authority-live-preflight-20260812T193128Z` are retained for rollback.
+
 ## Independent switches
 
 Listener app, all default OFF:
@@ -83,17 +90,24 @@ converted back into a reversible action.
 
 1. Back up the Listener database and record current Listener and authority image SHAs.
 2. Install root-only provider secrets; verify ownership/mode without printing values.
-3. Keep new-sales flags OFF. Enable one provider lifecycle and validate private readiness,
-   catalog/merchant identity, signed-webhook negative cases and reconciliation.
-4. Install the reviewed Listener nginx template and verify exact routes plus final 404. Do not
+3. Keep every Live provider and Listener checkout flag OFF. Temporarily set
+   `PMP_MYTH_EARLY_BIRDS_PAID_CHECKOUT_ENABLED=false` so the read-only preflight cannot coexist
+   with Sandbox/TEST new sales, then run inside the exact authority container:
+   `pmp-myth-listener-live-preflight --provider paypal`,
+   `pmp-myth-listener-live-preflight --provider mercado_pago`, or `--provider all`.
+   The command performs only provider reads and emits no IDs, secrets or PII. Require
+   `status=verified` and `new_sales=disabled`; on any failure, keep all Live flags OFF.
+4. Validate private readiness, exact signed-webhook negative cases and reconciliation. The
+   preflight does not replace webhook signature or lifecycle tests.
+5. Install the reviewed Listener nginx template and verify exact routes plus final 404. Do not
    reload nginx unless `nginx -t` is green.
-5. Enable the matching Listener checkout flag only after the authority reports that Live provider
+6. Enable the matching Listener checkout flag only after the authority reports that Live provider
    ready and the public copy/terms have human approval.
-6. Execute one supervised real USD 5 membership with an agreed account. Confirm provider event,
+7. Execute one supervised real USD 5 membership with an agreed account. Confirm provider event,
    canonical projection, profile badge, unlimited access, renewal boundary and no raw PII in logs.
-7. Request cancellation in the profile. Confirm provider cancellation, pending-end projection and
+8. Request cancellation in the profile. Confirm provider cancellation, pending-end projection and
    access through paid-through. Use a separate controlled account to rehearse failure/refund.
-8. Expand availability only after webhook/reconciliation lag and alerts remain healthy.
+9. Expand availability only after webhook/reconciliation lag and alerts remain healthy.
 
 ## Incident and rollback
 

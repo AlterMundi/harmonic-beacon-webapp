@@ -1,5 +1,19 @@
 # EarlyBirds isolated staging runtime
 
+## 2026-08-12 payment-authority Live-preflight checkpoint
+
+The isolated membership authority runs exact merge SHA
+`8e10f16fe3471a097021f7f1ee41eb8f88f4f154`, image
+`harmonic-beacon/earlybirds-authority:8e10f16fe3471a097021f7f1ee41eb8f88f4f154`
+and unchanged Alembic head `7b4c1e9a2d60`. API and worker are healthy with
+zero restarts and migration exit `0`. PayPal Sandbox and Mercado Pago TEST remain
+ready for staging acceptance; both Live providers and Live new sales remain OFF.
+The release adds only a read-only, redacted Live catalog/merchant/webhook
+preflight. Productive secrets are not installed and no checkout, subscription,
+payment, event service or audio surface changed. Rollback retains exact prior
+authority image `60584936603525027c9891e0865efc58055a3d5d` and protected backup
+`/mnt/beacon-data/staging-backups/authority-live-preflight-20260812T193128Z`.
+
 ## 2026-08-12 Listener silence-recovery checkpoint deployed with Live sales OFF
 
 The isolated Listener runs exact merge SHA
@@ -19,7 +33,7 @@ The isolated Listener now runs merge SHA
 `fcdde37948e7f826641d5e4438f7666765aeda22`, image
 `harmonic-beacon/earlybirds-preview-listener:fcdde37` and unchanged Prisma
 head `20260810223000_listener_founder_continuity`. The isolated membership
-authority runs merge SHA `60584936603525027c9891e0865efc58055a3d5d`
+authority then ran merge SHA `60584936603525027c9891e0865efc58055a3d5d`
 at unchanged Alembic head `7b4c1e9a2d60`.
 
 - PayPal Live, Mercado Pago Live and both public Listener checkout flags are

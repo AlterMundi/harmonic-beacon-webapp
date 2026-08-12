@@ -55,10 +55,16 @@ repair, never restoring daily/welcome authorization.
 | Previous same-schema application rollback | `fcdde379` |
 | Commercial checkpoint documentation | `78ede811161cf47104f3758e6703d06d2328ea6f` |
 | Listener database schema | `20260808160000_listener_weekly_quota` |
-| Canonical payment authority application | `60584936603525027c9891e0865efc58055a3d5d` |
+| Canonical payment authority application | `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` |
 | Listener mail sidecar application | `456ece2b38e203a2d12c54864115e03ebaa1a89c` |
 | Public mode | Free for All OFF during coordinated registered-Free acceptance |
 | Recovery | Stop/kill-switch and roll forward; old policy images unsupported |
+
+The current authority adds a read-only Live provider preflight only. Live
+credentials are not installed, Live provider/new-sales metrics remain zero and
+no real charge is authorized. Authority rollback retains exact previous image
+`60584936603525027c9891e0865efc58055a3d5d` plus protected backup
+`/mnt/beacon-data/staging-backups/authority-live-preflight-20260812T193128Z`.
 
 Health must attest the deployed application SHA, not the later documentation or
 test-only branch head.
