@@ -30,9 +30,10 @@ truthful launch baseline, not a substitute for counsel review. Human owner: Nico
 
 Backend magic-link delivery is merged at `c443a7ec9b387fa54ff16904e1a5d561613ec102` but remains
 inert until an event-safe PMP maintenance window. The other remaining gates are human/external:
-final legal/copy acceptance, protected Live credentials, Google OAuth secret rotation, one
+final legal/copy acceptance, protected Live credentials, Google OAuth secret rotation (#328), one
 supervised low-value Live lifecycle per enabled provider and explicit approval to open public
-checkout.
+checkout. Production font builds must also be made hermetic under #327; retries against Google
+Fonts are evidence of a release defect, not a durable build strategy.
 
 ## Independent switches
 
@@ -105,5 +106,6 @@ converted back into a reversible action.
 - PayPal Live Business account/app/product/plan/webhook and root-only Live secrets.
 - Mercado Pago productive merchant credentials/webhook and root-only Live secrets.
 - Counsel/merchant review of public terms, privacy, refund and tax/invoicing obligations.
+- Hermetic production fonts (#327) and controlled Google OAuth secret rotation (#328).
 - One supervised real purchase and cancellation per provider.
 - Explicit approval to turn on real sales. The checked-in defaults remain OFF.

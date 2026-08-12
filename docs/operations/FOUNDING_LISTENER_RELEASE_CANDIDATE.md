@@ -26,7 +26,7 @@ The release is not yet authorized for real sales. Backend magic-link delivery is
 `SairaAsua/proyecciones-mito@c443a7ec9b387fa54ff16904e1a5d561613ec102` but still needs an event-safe
 runtime rollout. Remaining gates also include final ES/EN legal/copy review, controlled rotation of the exposed Google OAuth
 client secret, protected PayPal/MP Live credentials, one supervised low-value Live lifecycle per
-provider and explicit main/public-sales approval. See
+provider, a hermetic font build and explicit main/public-sales approval. See
 `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and issue #315 for the current checklist.
 
 ## Status: weekly Free deployed for acceptance
@@ -188,11 +188,12 @@ worksheet.
    and support copy.
 2. Rotate the exposed Google OAuth client secret through the protected store and
    re-run callback/logout without printing it.
-3. Deploy backend #44 in an event-safe maintenance window and prove one controlled
+3. Self-host the approved fonts so the release build has no Google Fonts network dependency (#327).
+4. Deploy backend #44 in an event-safe maintenance window and prove one controlled
    magic-link request, email, callback and Free entry.
-4. Install protected PayPal and Mercado Pago Live credentials with all sales
+5. Install protected PayPal and Mercado Pago Live credentials with all sales
    flags still OFF, then run one explicitly approved low-value lifecycle per provider.
-5. Approve merge to `main` and public checkout separately; retain the immediate
+6. Approve merge to `main` and public checkout separately; retain the immediate
    new-sales kill switch throughout launch.
 
 Do not select a user's Google account, provision Apple, charge a provider,
