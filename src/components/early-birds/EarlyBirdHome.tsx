@@ -62,10 +62,10 @@ export default function EarlyBirdHome({
                             </summary>
                             <div className="listener-account__menu">
                                 <p>{displayName}</p>
-                                {accessKind === 'membership' && (
+                                {membershipCopy && (
                                     <span>{membershipCopy?.title ?? copy.active}</span>
                                 )}
-                                {accessKind === 'membership' && membership.kind === 'founder' && membershipCopy?.detail && (
+                                {membership.kind !== 'none' && membershipCopy?.detail && (
                                     <small>{membershipCopy.detail}</small>
                                 )}
                                 {accessKind === 'membership' && membership.kind === 'founder' && (

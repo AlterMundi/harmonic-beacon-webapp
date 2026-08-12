@@ -16,6 +16,11 @@ export type ListenerMembershipPresentation =
     | { kind: 'invitation'; state: ListenerMembershipPresentationState }
     | { kind: 'preview'; state: ListenerMembershipPresentationState }
     | {
+        kind: 'paid-status';
+        provider: 'paypal' | 'mercado-pago';
+        state: 'pending' | 'expired' | 'refunded' | 'revoked';
+    }
+    | {
         kind: 'founder';
         provider: 'paypal' | 'mercado-pago';
         state: ListenerMembershipPresentationState;
@@ -56,6 +61,11 @@ export function listenerMembershipPresentation(
     const continuityCurrent = projection.founderContinuityState === 'ACTIVE'
         || projection.founderContinuityState === 'CANCELLED_PENDING_END'
         || projection.founderContinuityState === 'GRACE';
+    const provider = projection.source === 'PAYPAL'
+        ? 'paypal'
+        : projection.source === 'MERCADO_PAGO'
+            ? 'mercado-pago'
+            : null;
     if (
         accessAllowed
         && continuityCurrent
@@ -85,8 +95,16 @@ export function listenerMembershipPresentation(
         };
     }
 
+    if (
+        provider
+        && projection.offerCode === EARLY_BIRDS_FOUNDERS_OFFER
+        && (state === 'pending' || state === 'expired' || state === 'refunded' || state === 'revoked')
+    ) {
+        return { kind: 'paid-status', provider, state };
+    }
+
     // Unknown and incomplete projections fail closed in presentation just as
-    // they do in authorization. Never infer Founder status from an offer,
-    // price, redirect or reason code.
+    // they do in authorization. A terminal paid status is informational only;
+    // it never restores the Founder badge or listening authority.
     return { kind: 'none', state: 'none' };
 }

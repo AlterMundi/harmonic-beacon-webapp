@@ -126,6 +126,24 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
     });
 
+    it('shows a terminal paid status while keeping the account on Free access', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'paid-status', provider: 'paypal', state: 'refunded' }}
+                    accessKind="free-quota"
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByText('The payment was refunded and Founder access has ended.')).toBeInTheDocument();
+        expect(screen.getByText('You can continue with the Free listening available to your account.')).toBeInTheDocument();
+        expect(screen.queryByText('Founder access')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Cancel membership' })).not.toBeInTheDocument();
+    });
+
     it('places Free allowance and membership action below the listening surface', () => {
         render(
             <LocaleProvider initialLocale="en">
