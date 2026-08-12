@@ -412,7 +412,7 @@ test('production Listener HTTPS validation remains fail closed', async () => {
   assert.match(env, /^EARLY_BIRDS_STREAM_ORIGIN=https:\/\/stream\.harmonicbeacon\.com$/m);
 });
 
-test('smoke and rollback contracts cover both probes without deleting state', async () => {
+test('smoke covers both probes while ordinary app rollback preserves the origin and state', async () => {
   const smoke = await readRepository('scripts/early-birds-preview/health-smoke.sh');
   assert.match(smoke, /api\/health"/);
   assert.match(smoke, /databaseSchemaVersion/);
@@ -424,8 +424,14 @@ test('smoke and rollback contracts cover both probes without deleting state', as
   assert.match(smoke, /State\.ExitCode/);
 
   const rollback = await readRepository('scripts/early-birds-preview/rollback.sh');
-  assert.match(rollback, /stop listener beacon-stream/);
-  assert.doesNotMatch(rollback, /preview_compose_command[^\n]*stop[^\n]*postgres|\bdown\b|volume rm/);
+  assert.match(rollback, /stop listener/);
+  assert.doesNotMatch(rollback, /preview_compose_command[^\n]*stop[^\n]*(postgres|beacon-stream)|\bdown\b|volume rm/);
+  const start = await readRepository('scripts/early-birds-preview/start.sh');
+  assert.match(start, /up -d --build listener/);
+  assert.doesNotMatch(start, /up[^\n]*listener[^\n]*beacon-stream|up[^\n]*beacon-stream[^\n]*listener/);
+  const startOrigin = await readRepository('scripts/early-birds-preview/start-origin.sh');
+  assert.match(startOrigin, /up -d --build --no-deps beacon-stream/);
+  assert.doesNotMatch(startOrigin, /\blistener\b.*\bup\b|up[^\n]*listener/);
   const stop = await readRepository('scripts/early-birds-preview/stop.sh');
   assert.match(stop, /stop listener beacon-stream postgres/);
   assert.doesNotMatch(stop, /\bdown\b|-v\b|volume rm/);
