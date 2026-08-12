@@ -11,26 +11,26 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 - Public candidate: `https://listen.harmonicbeacon.com/`
 - Listener image/SHA: `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`
 - Previous same-schema Listener rollback image: `fcdde379`
-- Canonical payment authority: `8e10f16fe3471a097021f7f1ee41eb8f88f4f154`
-- Previous authority rollback image: `60584936603525027c9891e0865efc58055a3d5d`
+- Canonical payment authority: `b1038ddb579817e39add567c5b7b055e2f716095`
+- Previous authority rollback image: `8e10f16fe3471a097021f7f1ee41eb8f88f4f154`
 - Listener mail sidecar: `456ece2b38e203a2d12c54864115e03ebaa1a89c`
 - Weekly Free: three hours per server-owned seven-day cycle
 - Founding Listener: USD 5/month while service remains uninterrupted
 - Free For All: OFF
 - PayPal Live checkout: OFF
 - Mercado Pago Live checkout: OFF
-- Authority paid checkout/providers: OFF
+- Authority Live providers: OFF
 - Authority Sandbox/TEST new-sales gate: ON only inside isolated staging acceptance; Live metrics remain zero/OFF
 - Public sales and real charges: not authorized
 
-The authority now includes a read-only Live-provider preflight. It validates the
-exact PayPal Live product, plan and webhook event set and the Mercado Pago Live
-merchant identity without creating checkouts, subscriptions or payments. The
-deployed authority is healthy with migration exit `0`; PayPal Live and Mercado
-Pago Live readiness/new-sales metrics are both `0`. Productive credentials are
-not installed, so the preflight cannot yet reach either Live provider. The
-global staging new-sales gate deliberately remains ON for Sandbox/TEST and makes
-the Live preflight fail closed until an operator explicitly disables it.
+The authority now includes the reviewed adverse-event hardening and a read-only
+Live-provider preflight. The deployed API/worker are healthy at exact revision
+`b1038ddb`; Alembic is at `7b4c1e9a2d60`. Productive credentials are installed
+root-only. With new sales forced OFF, PayPal verified its exact Live product,
+USD 5 plan and webhook event set; Mercado Pago verified its productive MLA
+merchant and webhook configuration. Neither preflight creates checkout,
+subscription, binding or payment. The normal runtime deliberately remains on
+Sandbox/TEST for acceptance, with both Live provider flags OFF.
 
 PayPal Sandbox has passed activation, pending cancellation, reactivation and
 terminal refund. Mercado Pago TEST has passed checkout, activation, pause,
@@ -48,11 +48,10 @@ event runtime and have no host ports. A controlled Gmail delivery reached
 4. #318 — human ES/EN offer/legal/seller/refund/support acceptance.
 5. #328 — rotate the exposed Google OAuth client secret in the protected store,
    then prove canonical and staging login/logout/relogin without printing it.
-6. Install protected PayPal Live and Mercado Pago productive credentials while
-   every Live sales/provider flag remains OFF; temporarily disable the global
-   staging new-sales gate and run the read-only provider preflight.
-7. With explicit approval, execute one supervised low-value activation,
+6. With explicit approval, execute one supervised low-scope activation,
    cancellation and refund per provider.
+7. Confirm Founder activation, terminal Free fallback, metrics, alerts and the
+   absence of PII/secret leakage against those Live transactions.
 8. Obtain separate explicit approvals for merge to `main` and public checkout.
 
 ## Non-negotiable isolation
@@ -67,9 +66,9 @@ without explicit approval.
 
 - Commerce incident: switch OFF Listener checkout flags and authority new-sales;
   keep webhooks, reconciliation, cancellation and existing access running.
-- Authority application regression: restore exact image `60584936603525027c9891e0865efc58055a3d5d`
+- Authority application regression: restore exact image `8e10f16fe3471a097021f7f1ee41eb8f88f4f154`
   with the protected pre-deploy configuration/database backup at
-  `/mnt/beacon-data/staging-backups/authority-live-preflight-20260812T193128Z`.
+  `/var/backups/harmonic-beacon/earlybirds-authority-pre-b1038ddb579817e39add567c5b7b055e2f716095.sql.gz`.
 - Listener application regression: roll back only the isolated Listener to
   `fcdde379` if contract-compatible; otherwise disable Listener and roll forward.
 - Weekly quota is forward-only. Never restore the retired daily-window/welcome
@@ -83,5 +82,6 @@ The broad Phase 2 patronage/provider-economy documents are future strategy, not
 the implementation authority for Founding Listeners. Public and repository copy
 must not claim that Harmonic Beacon has no payment or email processing: the
 Sandbox/TEST subscription lanes and Gmail magic-link delivery are already real
-pre-release processors. Equally, copy must not claim Live billing is active;
-productive credentials, real charges and public checkout remain OFF.
+pre-release processors. Equally, copy must not claim Live billing is active:
+productive credentials are installed and verified, but both Live providers,
+real charges and public checkout remain OFF.

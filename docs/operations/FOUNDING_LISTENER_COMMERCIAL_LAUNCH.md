@@ -33,7 +33,7 @@ SHA `456ece2b38e203a2d12c54864115e03ebaa1a89c`. The API, worker and PostgreSQL q
 ports, use separate storage and did not restart or modify any event service. A controlled message
 reached Gmail with terminal delivery state `SENT`; the human callback, Free-entry and logout check
 remain. The other remaining gates are human/external:
-final legal/copy acceptance, protected Live credentials, Google OAuth secret rotation (#328), one
+final legal/copy acceptance, Google OAuth secret rotation (#328), one
 supervised low-value Live lifecycle per enabled provider and explicit approval to open public
 checkout. Production fonts are now hermetic under #327/#329.
 
@@ -43,11 +43,15 @@ same-schema Listener image `fcdde379` remains available as the bounded applicati
 the weekly-quota database policy itself is forward-only.
 
 The exact isolated payment-authority image is
-`8e10f16fe3471a097021f7f1ee41eb8f88f4f154`. Its read-only Live preflight is deployed, health is
-green and its migration completed with exit `0`. PayPal Live and Mercado Pago Live remain disabled
-and report zero provider-readiness/new-sales metrics because productive credentials are absent.
-The previous authority image `60584936603525027c9891e0865efc58055a3d5d` and protected backup
-`/mnt/beacon-data/staging-backups/authority-live-preflight-20260812T193128Z` are retained for rollback.
+`b1038ddb579817e39add567c5b7b055e2f716095`. It includes the reviewed Mercado Pago adverse-event
+hardening from backend PR #80. API and worker are healthy, Alembic is at head `7b4c1e9a2d60`, and
+the exact public webhook routes fail closed while Live is disabled. Productive PayPal and Mercado
+Pago credentials are installed only in the root-owned runtime store. Read-only preflights verified
+the PayPal Live catalog/webhook and Mercado Pago productive merchant/webhook configuration with
+new sales forced OFF. No checkout, subscription or payment was created. The previous authority
+image `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` and protected pre-deploy backup
+`/var/backups/harmonic-beacon/earlybirds-authority-pre-b1038ddb579817e39add567c5b7b055e2f716095.sql.gz`
+are retained for rollback.
 
 ## Independent switches
 
@@ -124,8 +128,6 @@ converted back into a reversible action.
 
 ## Human release gates still required
 
-- PayPal Live Business account/app/product/plan/webhook and root-only Live secrets.
-- Mercado Pago productive merchant credentials/webhook and root-only Live secrets.
 - Counsel/merchant review of public terms, privacy, refund and tax/invoicing obligations.
 - Controlled Google OAuth secret rotation (#328); hermetic fonts are complete (#327/#329).
 - One supervised real purchase and cancellation per provider.
