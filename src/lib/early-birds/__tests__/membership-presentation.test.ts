@@ -50,7 +50,12 @@ describe('public Listener membership presentation', () => {
             reasonCode: 'PRIVATE_REASON',
         }), NOW);
 
-        expect(result).toEqual({ kind: 'founder', provider: 'paypal', state: 'ending' });
+        expect(result).toEqual({
+            kind: 'founder',
+            provider: 'paypal',
+            state: 'ending',
+            serviceThrough: '2026-09-07T12:00:00.000Z',
+        });
         expect(JSON.stringify(result)).not.toMatch(/PRIVATE_REASON|provider-internal-value|PAYPAL/);
     });
 
@@ -67,6 +72,7 @@ describe('public Listener membership presentation', () => {
             kind: 'founder',
             provider: 'paypal',
             state: expected,
+            serviceThrough: '2026-09-07T12:00:00.000Z',
         });
     });
 

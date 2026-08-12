@@ -1,0 +1,9 @@
+{
+  "schema_version": "listener-checkout.checkout.v1",
+  "account_id": "acct_listener_synthetic_0001",
+  "provider": "paypal",
+  "approval_url": "https://www.paypal.com/approve",
+  "currency": "USD",
+  "amount_minor": 500,
+  "environment": "live"
+}

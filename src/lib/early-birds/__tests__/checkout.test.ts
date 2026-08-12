@@ -46,6 +46,11 @@ describe('Listener sandbox checkout gateway', () => {
             BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED: '1',
             BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED: 'true',
         } as NodeJS.ProcessEnv)).toEqual({ paypal: true, mercadoPago: false });
+        expect(listenerCheckoutAvailability({
+            NODE_ENV: 'test',
+            BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED: '1',
+            BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED: 'true',
+        } as NodeJS.ProcessEnv, 'live')).toEqual({ paypal: true, mercadoPago: false });
     });
 
     it('creates PayPal through v1 without sending email and keeps retries idempotent', async () => {
@@ -117,6 +122,56 @@ describe('Listener sandbox checkout gateway', () => {
         }));
         const gateway = new HttpListenerCheckoutGateway(config, request as typeof fetch);
         await expect(gateway.create({ ...base, provider: 'paypal' }))
+            .rejects.toBeInstanceOf(ListenerCheckoutUnavailableError);
+    });
+
+    it('uses the unified Live contract and strips provider subscription identity', async () => {
+        const request = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+            const captured = new Request(input, init);
+            expect(captured.url).toBe('http://pmp-myth-api:8765/api/internal/v1/listener-checkouts');
+            await expect(captured.json()).resolves.toEqual({
+                schema_version: 'listener-checkout.checkout-create.v1',
+                account_id: base.accountId,
+                provider: 'paypal',
+                payer_email: null,
+                return_url: base.returnUrl,
+                cancel_url: base.cancelUrl,
+            });
+            return Response.json({
+                schema_version: 'listener-checkout.checkout.v1',
+                account_id: base.accountId,
+                provider: 'paypal',
+                approval_url: 'https://www.paypal.com/checkoutnow?token=live',
+                currency: 'USD',
+                amount_minor: 500,
+                environment: 'live',
+            });
+        });
+        const gateway = new HttpListenerCheckoutGateway(config, request as typeof fetch);
+        await expect(gateway.create({ ...base, provider: 'paypal', environment: 'live' })).resolves.toEqual({
+            provider: 'paypal',
+            approvalUrl: 'https://www.paypal.com/checkoutnow?token=live',
+        });
+    });
+
+    it.each([
+        ['sandbox response', { environment: 'staging' }],
+        ['wrong PayPal price', { amount_minor: 700 }],
+        ['sandbox PayPal host', { approval_url: 'https://www.sandbox.paypal.com/checkout' }],
+        ['provider identity leak', { external_subscription_id: 'I-secret' }],
+    ])('rejects %s on the Live boundary', async (_label, override) => {
+        const request = vi.fn(async () => Response.json({
+            schema_version: 'listener-checkout.checkout.v1',
+            account_id: base.accountId,
+            provider: 'paypal',
+            approval_url: 'https://www.paypal.com/checkoutnow?token=live',
+            currency: 'USD',
+            amount_minor: 500,
+            environment: 'live',
+            ...override,
+        }));
+        const gateway = new HttpListenerCheckoutGateway(config, request as typeof fetch);
+        await expect(gateway.create({ ...base, provider: 'paypal', environment: 'live' }))
             .rejects.toBeInstanceOf(ListenerCheckoutUnavailableError);
     });
 });

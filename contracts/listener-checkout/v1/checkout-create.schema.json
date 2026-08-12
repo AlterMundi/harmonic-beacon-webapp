@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/listener-checkout/v1/checkout-create.schema.json",
+  "title": "Listener Live checkout creation command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "account_id", "provider", "return_url", "cancel_url"],
+  "properties": {
+    "schema_version": {"const": "listener-checkout.checkout-create.v1"},
+    "account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
+    "provider": {"enum": ["paypal", "mercado_pago"]},
+    "payer_email": {
+      "type": ["string", "null"],
+      "minLength": 3,
+      "maxLength": 320,
+      "pattern": "^[^@\\sA-Z]+@[^@\\sA-Z]+$"
+    },
+    "return_url": {"type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048},
+    "cancel_url": {"type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"provider": {"const": "mercado_pago"}}},
+      "then": {"required": ["payer_email"], "properties": {"payer_email": {"type": "string"}}},
+      "else": {"properties": {"payer_email": {"type": "null"}}}
+    }
+  ]
+}

@@ -13,6 +13,7 @@ CONTRACTS = (
     ROOT / "contracts/early-bird-checkout/v2",
     ROOT / "contracts/early-bird-membership/v1",
     ROOT / "contracts/early-bird-membership/v2",
+    ROOT / "contracts/listener-checkout/v1",
 )
 
 
