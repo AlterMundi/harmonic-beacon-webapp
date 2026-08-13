@@ -7,12 +7,13 @@
 > real charges and every audio encoding/content/signature choice still require the
 > explicit release and audio gates in this document.
 
-> **Current launch memory (2026-08-12):** the public Listener candidate runs exact
+> **Current launch memory (2026-08-13):** the public Listener candidate runs exact
 > SHA `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`; canonical payment authority runs
-> `8e10f16fe3471a097021f7f1ee41eb8f88f4f154`; the isolated mail sidecar runs
+> `b1038ddb579817e39add567c5b7b055e2f716095`; the isolated mail sidecar runs
 > `456ece2b38e203a2d12c54864115e03ebaa1a89c`. PayPal Sandbox and Mercado Pago
-> TEST lifecycles are accepted. Live providers, new sales and public checkout
-> remain OFF. See `docs/operations/LISTENER_LAUNCH_NOW.md` for the few remaining
+> TEST lifecycles are accepted. One PayPal Live approval intent exists without a
+> subscription or charge; new sales and public checkout remain OFF while its Live
+> lifecycle ingestion stays ON. See `docs/operations/LISTENER_LAUNCH_NOW.md` for the few remaining
 > human/external gates.
 
 Reviewed inputs: `.hermes/plans/2026-08-05_beacon-founders-mvp.md` and
@@ -493,8 +494,9 @@ The webapp vendors byte-exact copies of the canonical backend contracts under
   checkout command/result. It exposes no provider subscription ID, fixes
   `environment=live`, keeps payer email transient and uses a separate new-sales
   gate from provider lifecycle. The deployed authority runtime
-  `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` is CI-green and includes canonical
-  cancellation/reactivation plus paid-lifecycle metrics. The Listener Live
+  `b1038ddb579817e39add567c5b7b055e2f716095` is CI-green, includes canonical
+  cancellation/reactivation, paid-lifecycle metrics and reviewed Mercado Pago adverse-event
+  hardening, and is the minimum authority binary after any Live checkout attempt. The Listener Live
   surface and exact webhook ingress remain disabled by default;
   see `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md`.
   This authority release also provides a read-only, redacted Live-provider
@@ -744,6 +746,10 @@ its own explicit approval.
   incident response stops Listener/uses the kill switch and rolls forward a
   repair. It never restores the retired daily-schedule or welcome-access
   authorization rules.
+- After the first Live checkout attempt, payment-authority rollback is also forward-only:
+  `b1038ddb` is the minimum supported binary. Stop new sales with flags, keep provider lifecycle
+  ingestion and the current database, reconcile, and roll forward. Never use a pre-cutover database
+  restore as routine rollback.
 - No secret, provider token, raw webhook payload with PII or customer record is
   committed or logged publicly.
 - No synthetic test writes to real participant or payment data.

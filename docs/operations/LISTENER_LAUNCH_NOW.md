@@ -1,6 +1,6 @@
 # Listener launch — current state
 
-Last reconciled: 2026-08-12
+Last reconciled: 2026-08-13
 
 This is the compact operational memory for Founding Listeners. Detailed evidence
 and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
@@ -12,16 +12,17 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 - Listener image/SHA: `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`
 - Previous same-schema Listener rollback image: `fcdde379`
 - Canonical payment authority: `b1038ddb579817e39add567c5b7b055e2f716095`
-- Previous authority rollback image: `8e10f16fe3471a097021f7f1ee41eb8f88f4f154`
+- Minimum authority after any Live checkout attempt: `b1038ddb579817e39add567c5b7b055e2f716095`
 - Listener mail sidecar: `456ece2b38e203a2d12c54864115e03ebaa1a89c`
 - Weekly Free: three hours per server-owned seven-day cycle
 - Founding Listener: USD 5/month while service remains uninterrupted
 - Free For All: OFF
 - PayPal Live checkout: OFF
 - Mercado Pago Live checkout: OFF
-- Authority Live providers: OFF
-- Authority Sandbox/TEST new-sales gate: ON only inside isolated staging acceptance; Live metrics remain zero/OFF
-- Public sales and real charges: not authorized
+- PayPal Live lifecycle: ON with new sales OFF after creating one supervised approval intent
+- Mercado Pago Live provider: OFF
+- Mercado Pago TEST lifecycle: ready; global new sales OFF
+- Public sales: OFF; only the explicitly supervised Live lifecycle is authorized
 
 The authority now includes the reviewed adverse-event hardening and a read-only
 Live-provider preflight. The deployed API/worker are healthy at exact revision
@@ -29,8 +30,11 @@ Live-provider preflight. The deployed API/worker are healthy at exact revision
 root-only. With new sales forced OFF, PayPal verified its exact Live product,
 USD 5 plan and webhook event set; Mercado Pago verified its productive MLA
 merchant and webhook configuration. Neither preflight creates checkout,
-subscription, binding or payment. The normal runtime deliberately remains on
-Sandbox/TEST for acceptance, with both Live provider flags OFF.
+subscription, binding or payment. A supervised PayPal Live approval intent was subsequently
+created for the exact USD 5 offer and is awaiting a buyer account different from the merchant; it
+created no subscription or charge. Global new sales and both public Listener checkout flags are
+OFF. PayPal Live lifecycle ingestion remains ON so its callback, signed webhook, reconciliation
+and cancellation path stay available. Mercado Pago remains on TEST with Live OFF.
 
 PayPal Sandbox has passed activation, pending cancellation, reactivation and
 terminal refund. Mercado Pago TEST has passed checkout, activation, pause,
@@ -51,8 +55,9 @@ backup. Only Listener and the disposable staging workbench were recreated.
 2. #304 — complete a physical 60-minute listen and record any watchdog recovery.
 3. #317 — final mobile/account-menu billing acceptance.
 4. #318 — human ES/EN offer/legal/seller/refund/support acceptance.
-5. With explicit approval, execute one supervised low-scope activation,
-   cancellation and refund per provider.
+5. Complete the already-created PayPal approval intent with a non-merchant buyer, then execute its
+   supervised activation, cancellation and refund evidence. Execute the corresponding supervised
+   Mercado Pago lifecycle separately.
 6. Confirm Founder activation, terminal Free fallback, metrics, alerts and the
    absence of PII/secret leakage against those Live transactions.
 7. Obtain separate explicit approvals for merge to `main` and public checkout.
@@ -69,9 +74,12 @@ without explicit approval.
 
 - Commerce incident: switch OFF Listener checkout flags and authority new-sales;
   keep webhooks, reconciliation, cancellation and existing access running.
-- Authority application regression: restore exact image `8e10f16fe3471a097021f7f1ee41eb8f88f4f154`
-  with the protected pre-deploy configuration/database backup at
-  `/var/backups/harmonic-beacon/earlybirds-authority-pre-b1038ddb579817e39add567c5b7b055e2f716095.sql.gz`.
+- Authority application regression after any Live checkout attempt: keep the current database,
+  keep the affected provider's Live lifecycle flag ON, keep new sales OFF and roll forward with
+  `b1038ddb` or a newer contract-compatible authority. Never deploy `8e10f16` against the current
+  database. Never use the protected pre-`b1038` database backup as a routine rollback: it can lose
+  canonical checkout/lifecycle evidence and exists only for explicitly commanded disaster
+  recovery followed by complete provider reconciliation.
 - Listener application regression: roll back only the isolated Listener to
   `fcdde379` if contract-compatible; otherwise disable Listener and roll forward.
 - Weekly quota is forward-only. Never restore the retired daily-window/welcome
