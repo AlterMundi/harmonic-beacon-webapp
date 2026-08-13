@@ -51,9 +51,25 @@ canonical authority runtime; they are never copied into Listener configuration.
 4. In the canonical authority, enable only the selected Live provider and its bounded new-sales
    gate. The other Live provider must be OFF. Signed webhook/reconciliation lifecycle stays active
    after new sales is closed.
-5. Set the workbench gate to `1` and recreate only the isolated staging Listener container. Require
-   `/api/health/ready` green. Install the reviewed staging nginx template only after `nginx -t` is
-   green; do not change any event vhost.
+5. Build the reviewed Listener commit as the exact local image
+   `harmonic-beacon/earlybirds-preview-listener:<sha40>` with `BEACON_GIT_SHA=<sha40>`. Install the
+   four workbench values in `/etc/harmonic-beacon/listener-live-workbench.env` as `root:root` mode
+   `0600`; that fixed file may contain no other variables. Start only the disposable loopback
+   workbench on port `13001`:
+
+   ```bash
+   LISTENER_UI_PREVIEW_FREE_FOR_ALL=0 \
+   LISTENER_UI_PREVIEW_LIVE_WORKBENCH_ENABLED=1 \
+   LISTENER_UI_PREVIEW_EXPECTED_SHA=<sha40> \
+   scripts/listener-ui-preview.sh start
+   ```
+
+   The launcher refuses an absent/mismatched image revision, dev mode, FFA, Sandbox/TEST checkout,
+   a non-root or non-`0600` secret file, ambiguous keys and every port except
+   `127.0.0.1:13001`. It forces both auth-base aliases to staging and requires `/api/health` plus
+   `/api/health/ready` before returning. It never recreates the persistent Listener on `13000`.
+   Install the reviewed staging nginx template only after `nginx -t` is green; do not change any
+   event vhost.
 6. Sign in on the exact staging hostname as the allowlisted Listener account. The private Live card
    appears only for that session. Verify provider, USD 5/approved ARS offer and seller before the
    human confirms payment.

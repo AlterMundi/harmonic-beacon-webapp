@@ -102,7 +102,16 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
   assert.match(source, /PREVIEW_ORIGIN="https:\/\/earlybirds-staging\.harmonicbeacon\.com"/);
   assert.match(source, /set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "\$PREVIEW_ORIGIN"/);
   assert.match(source, /set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "\$PREVIEW_ORIGIN"/);
-  assert.match(source, /if \[ "\$PREVIEW_PAYPAL_CHECKOUT" = 1 \] \|\| \[ "\$PREVIEW_MERCADO_PAGO_CHECKOUT" = 1 \]/);
+  assert.match(source, /PREVIEW_LIVE_WORKBENCH="\$\{LISTENER_UI_PREVIEW_LIVE_WORKBENCH_ENABLED:-0\}"/);
+  assert.match(source, /LIVE_WORKBENCH_ENV_FILE="\/etc\/harmonic-beacon\/listener-live-workbench\.env"/);
+  assert.match(source, /harmonic-beacon\/earlybirds-preview-listener:\$\{PREVIEW_EXPECTED_SHA\}/);
+  assert.match(source, /grep -Fqx "BEACON_GIT_SHA=\$PREVIEW_EXPECTED_SHA"/);
+  assert.match(source, /PREVIEW_LIVE_WORKBENCH" = 1/);
+  assert.match(source, /set_env_file_value EARLY_BIRDS_FREE_FOR_ALL 0/);
+  assert.match(source, /set_env_file_value BEACON_LISTENER_FREE_FOR_ALL 0/);
+  assert.match(source, /sudo stat -c '%u:%g:%a'/);
+  assert.match(source, /127\.0\.0\.1:13001/);
+  assert.match(source, /api\/health\/ready/);
   assert.doesNotMatch(source, /PREVIEW_ORIGIN="https:\/\/listen\.harmonicbeacon\.com"/);
 });
 
