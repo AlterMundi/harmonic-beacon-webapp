@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { earlyBirdCopy, earlyBirdHomeCopy } from '@/lib/early-birds/copy';
+import { earlyBirdCopy, earlyBirdHomeCopy, earlyBirdLegalCopy } from '@/lib/early-birds/copy';
 
 describe('EarlyBirds interface copy', () => {
     it.each([
@@ -14,5 +14,18 @@ describe('EarlyBirds interface copy', () => {
         expect(visibleCopy).not.toMatch(
             /record(?:ed|ing)?|grabaci[oó]n|grabad[oa]|live instrument|instrumento en vivo/i,
         );
+    });
+
+    it('identifies the initial merchant and billing contact in both public terms locales', () => {
+        const spanish = earlyBirdLegalCopy.es.sections.flatMap((section) => section.paragraphs).join(' ');
+        const english = earlyBirdLegalCopy.en.sections.flatMap((section) => section.paragraphs).join(' ');
+
+        for (const visibleCopy of [spanish, english]) {
+            expect(visibleCopy).toContain('Nicolás Echaniz');
+            expect(visibleCopy).toContain('nicoechaniz@harmonicbeacon.com');
+            expect(visibleCopy).toMatch(/merchant of record/i);
+            expect(visibleCopy).toMatch(/PayPal/);
+            expect(visibleCopy).toMatch(/Mercado Pago/);
+        }
     });
 });

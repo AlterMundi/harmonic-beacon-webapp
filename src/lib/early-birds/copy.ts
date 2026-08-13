@@ -169,11 +169,12 @@ export const earlyBirdLegalCopy = {
         back: 'Volver a Listener',
         eyebrow: 'HARMONIC BEACON · FOUNDING LISTENER',
         title: 'Condiciones y privacidad del servicio Listener',
-        updated: 'Versión de lanzamiento · 12 de agosto de 2026',
+        updated: 'Versión de lanzamiento · 13 de agosto de 2026',
         sections: [
             {
                 title: 'Oferta',
                 paragraphs: [
+                    'El vendedor inicial y merchant of record es Nicolás Echaniz, operando Harmonic Beacon desde Argentina. PayPal o Mercado Pago muestran el descriptor aplicable antes de confirmar. Para soporte de facturación o solicitar el comprobante fiscal aplicable escribe a nicoechaniz@harmonicbeacon.com.',
                     'Founding Listener cuesta USD 5 por mes, con cobro recurrente y sin período de prueba. Mercado Pago puede cobrar el equivalente en ARS informado por el checkout. El acceso se activa únicamente después de la confirmación canónica del proveedor.',
                     'El precio Founder se conserva mientras el servicio permanezca ininterrumpido, incluyendo el período ya pagado o de gracia aprobado. Cuando el servicio termina, también terminan la categoría y el precio Founder.',
                 ],
@@ -205,11 +206,12 @@ export const earlyBirdLegalCopy = {
         back: 'Back to Listener',
         eyebrow: 'HARMONIC BEACON · FOUNDING LISTENER',
         title: 'Listener service terms and privacy',
-        updated: 'Launch version · August 12, 2026',
+        updated: 'Launch version · August 13, 2026',
         sections: [
             {
                 title: 'Offer',
                 paragraphs: [
+                    'The initial seller and merchant of record is Nicolás Echaniz, operating Harmonic Beacon from Argentina. PayPal or Mercado Pago shows the applicable descriptor before confirmation. For billing support or to request the applicable tax receipt, contact nicoechaniz@harmonicbeacon.com.',
                     'Founding Listener costs USD 5 per month, billed recurrently with no trial. Mercado Pago may charge the ARS equivalent shown at checkout. Access starts only after canonical provider confirmation.',
                     'Founder pricing continues while service remains uninterrupted, including an already-paid period or approved grace. When service ends, Founder status and pricing end as well.',
                 ],
