@@ -20,6 +20,13 @@ describe('prominent consumer-withdrawal entry', () => {
         expect(link).toHaveClass('listener-withdrawal-link');
     });
 
+    it('exposes the separately named no-login service cancellation link', () => {
+        usePathname.mockReturnValue('/listener');
+        render(<LocaleProvider initialLocale="es"><ConsumerWithdrawalLink kind="SERVICE_CANCELLATION" /></LocaleProvider>);
+        expect(screen.getByRole('link', { name: /BOTÓN DE BAJA DE SERVICIO/ }))
+            .toHaveAttribute('href', '/listener/cancel-service');
+    });
+
     it('does not cover the request itself with a self-link', () => {
         usePathname.mockReturnValue('/listener/withdrawal');
         render(<LocaleProvider initialLocale="es"><ConsumerWithdrawalLink /></LocaleProvider>);

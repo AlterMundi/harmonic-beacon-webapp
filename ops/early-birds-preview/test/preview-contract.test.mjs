@@ -31,6 +31,7 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['unsafe kill switch value', 'EARLY_BIRDS_ENABLED=true', /must be 0 or 1/],
     ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
     ['unsafe team-entry switch', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=true', /must be 0 or 1/],
+    ['unsafe withdrawal switch', 'LISTENER_WITHDRAWAL_ENABLED=true', /must be 0 or 1/],
     ['unsafe PayPal checkout switch', 'BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED=true', /must be 0 or 1/],
     ['unsafe Mercado Pago checkout switch', 'BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED=true', /must be 0 or 1/],
     ['unsafe PayPal Live switch', 'BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED=1', /must be 0/],
@@ -141,6 +142,8 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /EARLY_BIRDS_FREE_FOR_ALL: \$\{EARLY_BIRDS_FREE_FOR_ALL:-0\}/);
   assert.match(source, /EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: \$\{EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED: \$\{BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED:-0\}/);
+  assert.match(source, /LISTENER_WITHDRAWAL_ENABLED: \$\{LISTENER_WITHDRAWAL_ENABLED:-0\}/);
+  assert.match(source, /LISTENER_WITHDRAWAL_SECRET: \$\{LISTENER_WITHDRAWAL_SECRET:-\}/);
   assert.match(source, /BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED:-0\}/);
@@ -161,6 +164,36 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /@earlybirds-preview-postgres:5432/, 'database URLs must use the collision-proof alias');
   assert.match(source, /BEACON_LISTENER_GEOIP_DB_PATH: \/data\/geoip\/dbip-country-lite\.mmdb/);
   assert.match(source, /BEACON_LISTENER_GEOIP_HOST_PATH[^\n]*:\/data\/geoip\/dbip-country-lite\.mmdb:ro/);
+});
+
+test('withdrawal edge is exact, private-by-default and isolated from non-Listener vhosts', async () => {
+  const listener = await readPreview('nginx/listen.harmonicbeacon.com.conf.template');
+  const staging = await readPreview('nginx/earlybirds-staging.harmonicbeacon.com.conf.template');
+  for (const [source, port, zone] of [
+    [listener, '13000', 'listener_withdrawal'],
+    [staging, '13001', 'listener_staging_withdrawal'],
+  ]) {
+    assert.match(source, new RegExp(`limit_req_zone \\$binary_remote_addr zone=${zone}:1m`));
+    assert.match(source, /location = \/listener\/withdrawal \{[\s\S]*if \(\$request_method != GET\) \{ return 405; \}[\s\S]*access_log off;[\s\S]*Cache-Control "private, no-store"/);
+    assert.match(source, /location = \/listener\/cancel-service \{[\s\S]*if \(\$request_method != GET\) \{ return 405; \}[\s\S]*access_log off;[\s\S]*Cache-Control "private, no-store"/);
+    const api = source.slice(source.indexOf('location = /api/listener/withdrawal'));
+    assert.match(api, /if \(\$request_method != POST\) \{ return 405; \}/);
+    assert.match(api, /client_max_body_size 2048;/);
+    assert.match(api, new RegExp(`limit_req zone=${zone}`));
+    assert.match(api, /access_log off;/);
+    assert.match(api, /Cache-Control "private, no-store"/);
+    assert.match(api, new RegExp(`proxy_pass http:\/\/127\\.0\\.0\\.1:${port};`));
+    assert.match(api, /proxy_set_header Host \$host;/);
+    assert.match(api, /proxy_set_header X-Real-IP \$remote_addr;/);
+    assert.match(api, /proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;/);
+    assert.match(api, /proxy_set_header X-Forwarded-Proto https;/);
+  }
+
+  const nginxFiles = await fs.readdir(path.join(previewRoot, 'nginx'));
+  for (const name of nginxFiles.filter((entry) => !entry.startsWith('listen.') && !entry.startsWith('earlybirds-staging.'))) {
+    assert.doesNotMatch(await readPreview(`nginx/${name}`), /listener\/(?:withdrawal|cancel-service)/);
+  }
+  assert.doesNotMatch(await readPreview('nginx/stream.harmonicbeacon.com.conf.template'), /withdrawal|cancel-service/);
 });
 
 test('optional authority overlay joins only the dedicated external private network', async () => {

@@ -28,7 +28,7 @@ const copy = {
         rateLimited: 'Recibimos demasiadas solicitudes desde esta conexión. Intenta nuevamente más tarde.',
         received: 'Solicitud recibida',
         receipt: 'Tu código de identificación es',
-        receiptHelp: `Guárdalo. El equipo debe revisar la solicitud dentro de ${LISTENER_WITHDRAWAL_RESPONSE_HOURS} horas y puede contactarte en el correo indicado.`,
+        receiptHelp: `Guárdalo. El equipo procesará la solicitud y adoptará las medidas correspondientes dentro de ${LISTENER_WITHDRAWAL_RESPONSE_HOURS} horas; puede contactarte en el correo indicado.`,
     },
     en: {
         back: 'Back to Listener',
@@ -48,15 +48,35 @@ const copy = {
         rateLimited: 'Too many requests came from this connection. Please try again later.',
         received: 'Request received',
         receipt: 'Your identification code is',
-        receiptHelp: `Keep this code. The team must review the request within ${LISTENER_WITHDRAWAL_RESPONSE_HOURS} hours and may contact you at the email supplied.`,
+        receiptHelp: `Keep this code. The team will process the request and take the corresponding measures within ${LISTENER_WITHDRAWAL_RESPONSE_HOURS} hours; it may contact you at the email supplied.`,
+    },
+} as const;
+
+const cancellationCopy = {
+    es: {
+        title: 'BOTÓN DE BAJA DE SERVICIO',
+        intro: 'Puedes solicitar la baja del servicio sin iniciar sesión ni crear una cuenta. Recibirás un código de identificación de inmediato.',
+        scope: 'Esta solicitud abre un caso para procesar la baja. No ejecuta automáticamente acciones en el proveedor: el equipo verifica la operación y adopta las medidas correspondientes dentro de 24 horas.',
+    },
+    en: {
+        title: 'BOTÓN DE BAJA DE SERVICIO',
+        intro: 'You may request service cancellation without signing in or creating an account. You will receive an identification code immediately.',
+        scope: 'This request opens a case to process the cancellation. It does not automatically act at the provider: the team verifies the transaction and takes the corresponding measures within 24 hours.',
     },
 } as const;
 
 type Receipt = { receiptCode: string; receivedAt: string };
 
-export default function ConsumerWithdrawalForm() {
+export default function ConsumerWithdrawalForm({
+    requestKind = 'WITHDRAWAL',
+}: {
+    requestKind?: 'WITHDRAWAL' | 'SERVICE_CANCELLATION';
+}) {
     const { locale } = useLocale();
-    const text = copy[locale];
+    const baseText = copy[locale];
+    const text = requestKind === 'SERVICE_CANCELLATION'
+        ? { ...baseText, ...cancellationCopy[locale] }
+        : baseText;
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -81,6 +101,7 @@ export default function ConsumerWithdrawalForm() {
                     locale,
                     provider: form.get('provider'),
                     purchaseDate: form.get('purchaseDate'),
+                    requestKind,
                 }),
             });
             if (!response.ok) {

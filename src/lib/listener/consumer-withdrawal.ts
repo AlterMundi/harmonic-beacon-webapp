@@ -1,18 +1,20 @@
 import { createHash, createHmac } from 'node:crypto';
 
-import { Prisma, type ListenerWithdrawalProvider } from '@prisma/client';
+import { Prisma, type ListenerConsumerRequestKind, type ListenerWithdrawalProvider } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 
 const RATE_WINDOW_MS = 60 * 60 * 1_000;
-const RATE_WINDOW_MAX = 8;
-const RATE_RETENTION_MS = 48 * 60 * 60 * 1_000;
+const NETWORK_RATE_WINDOW_MAX = 8;
+const EMAIL_RATE_WINDOW_MAX = 5;
+const GLOBAL_RATE_WINDOW_MAX = 200;
 const RECEIPT_HEX_LENGTH = 30;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const IDEMPOTENCY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export type ListenerWithdrawalInput = {
     email: string;
+    requestKind: ListenerConsumerRequestKind;
     provider: ListenerWithdrawalProvider;
     purchaseDate: Date | null;
     locale: 'es' | 'en';
@@ -46,6 +48,45 @@ export class ListenerWithdrawalRateLimitError extends Error {
     }
 }
 
+export class ListenerWithdrawalConfigurationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ListenerWithdrawalConfigurationError';
+    }
+}
+
+export type ListenerWithdrawalConfiguration = {
+    enabled: boolean;
+    secret: string | null;
+};
+
+export function listenerWithdrawalConfiguration(
+    environment: Record<string, string | undefined> = process.env,
+): ListenerWithdrawalConfiguration {
+    const enabled = environment.LISTENER_WITHDRAWAL_ENABLED?.trim() || '0';
+    if (enabled !== '0' && enabled !== '1') {
+        throw new ListenerWithdrawalConfigurationError('LISTENER_WITHDRAWAL_ENABLED must be 0 or 1');
+    }
+    const secret = listenerWithdrawalSecret(environment);
+    if (enabled === '1' && !secret) {
+        throw new ListenerWithdrawalConfigurationError(
+            'LISTENER_WITHDRAWAL_SECRET must contain at least 32 characters when withdrawal is enabled',
+        );
+    }
+    return { enabled: enabled === '1', secret };
+}
+
+export function listenerWithdrawalPublicConfiguration(
+    environment: Record<string, string | undefined> = process.env,
+): ListenerWithdrawalConfiguration | null {
+    try {
+        const configuration = listenerWithdrawalConfiguration(environment);
+        return configuration.enabled && configuration.secret ? configuration : null;
+    } catch {
+        return null;
+    }
+}
+
 export function listenerWithdrawalSecret(
     environment: Record<string, string | undefined> = process.env,
 ): string | null {
@@ -64,6 +105,11 @@ function normalizeEmail(value: unknown): string {
 
 function normalizeProvider(value: unknown): ListenerWithdrawalProvider {
     if (value === 'PAYPAL' || value === 'MERCADO_PAGO' || value === 'OTHER') return value;
+    throw new ListenerWithdrawalInputError();
+}
+
+function normalizeRequestKind(value: unknown): ListenerConsumerRequestKind {
+    if (value === 'WITHDRAWAL' || value === 'SERVICE_CANCELLATION') return value;
     throw new ListenerWithdrawalInputError();
 }
 
@@ -89,7 +135,7 @@ export function parseListenerWithdrawalInput(input: unknown, now = new Date()): 
     }
     const record = input as Record<string, unknown>;
     const keys = Object.keys(record).sort();
-    const expected = ['email', 'idempotencyKey', 'locale', 'provider', 'purchaseDate'].sort();
+    const expected = ['email', 'idempotencyKey', 'locale', 'provider', 'purchaseDate', 'requestKind'].sort();
     if (keys.join('\0') !== expected.join('\0')) {
         throw new ListenerWithdrawalInputError();
     }
@@ -99,6 +145,7 @@ export function parseListenerWithdrawalInput(input: unknown, now = new Date()): 
     }
     return {
         email: normalizeEmail(record.email),
+        requestKind: normalizeRequestKind(record.requestKind),
         provider: normalizeProvider(record.provider),
         purchaseDate: normalizePurchaseDate(record.purchaseDate, now),
         locale: record.locale,
@@ -109,6 +156,7 @@ export function parseListenerWithdrawalInput(input: unknown, now = new Date()): 
 function canonicalRequest(input: ListenerWithdrawalInput): string {
     return JSON.stringify({
         email: input.email,
+        requestKind: input.requestKind,
         idempotencyKey: input.idempotencyKey,
         locale: input.locale,
         provider: input.provider,
@@ -142,10 +190,20 @@ export function listenerWithdrawalNetworkBucketKey(networkIdentity: string, secr
     return `network:${digest}`;
 }
 
-async function consumeNetworkBucket(
+export function listenerWithdrawalEmailBucketKey(normalizedEmail: string, secret: string): string {
+    const digest = createHmac('sha256', secret)
+        .update(`listener-withdrawal-email\n${normalizedEmail}`, 'utf8')
+        .digest('hex');
+    return `email:${digest}`;
+}
+
+export const LISTENER_WITHDRAWAL_GLOBAL_BUCKET_KEY = 'global';
+
+async function consumeBucket(
     tx: Prisma.TransactionClient,
     key: string,
     now: Date,
+    maximum: number,
 ): Promise<void> {
     const current = await tx.listenerWithdrawalThrottle.upsert({
         where: { key },
@@ -161,11 +219,7 @@ async function consumeNetworkBucket(
         });
         return;
     }
-    if (current.attempts >= RATE_WINDOW_MAX) {
-        await tx.listenerWithdrawalThrottle.update({
-            where: { key },
-            data: { blockedUntil: windowEnd },
-        });
+    if (current.attempts >= maximum) {
         throw new ListenerWithdrawalRateLimitError();
     }
     await tx.listenerWithdrawalThrottle.update({
@@ -189,7 +243,8 @@ export async function submitListenerWithdrawal(input: {
     const requestHash = listenerWithdrawalRequestHash(input.request);
     const receiptCode = listenerWithdrawalReceiptCode(input.request.idempotencyKey);
     const receiptDigest = listenerWithdrawalReceiptDigest(receiptCode);
-    const bucketKey = listenerWithdrawalNetworkBucketKey(input.networkIdentity, input.secret);
+    const networkBucketKey = listenerWithdrawalNetworkBucketKey(input.networkIdentity, input.secret);
+    const emailBucketKey = listenerWithdrawalEmailBucketKey(input.request.email, input.secret);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
@@ -203,10 +258,11 @@ export async function submitListenerWithdrawal(input: {
                     return { receiptCode, receivedAt: existing.createdAt, replayed: true };
                 }
 
-                await tx.listenerWithdrawalThrottle.deleteMany({
-                    where: { updatedAt: { lt: new Date(now.getTime() - RATE_RETENTION_MS) } },
-                });
-                await consumeNetworkBucket(tx, bucketKey, now);
+                // Stable ordering prevents concurrent submissions from taking
+                // the same bucket locks in different orders.
+                await consumeBucket(tx, LISTENER_WITHDRAWAL_GLOBAL_BUCKET_KEY, now, GLOBAL_RATE_WINDOW_MAX);
+                await consumeBucket(tx, emailBucketKey, now, EMAIL_RATE_WINDOW_MAX);
+                await consumeBucket(tx, networkBucketKey, now, NETWORK_RATE_WINDOW_MAX);
                 const created = await tx.listenerWithdrawalRequest.create({
                     data: {
                         receiptDigest,
@@ -214,6 +270,7 @@ export async function submitListenerWithdrawal(input: {
                         idempotencyKey: input.request.idempotencyKey,
                         requestHash,
                         contactEmail: input.request.email,
+                        requestKind: input.request.requestKind,
                         provider: input.request.provider,
                         purchaseDate: input.request.purchaseDate,
                         locale: input.request.locale,

@@ -662,7 +662,7 @@ explicitly approved.
   event code or data.
 - Current event tests remain green at final convergence.
 - Runbook includes launch, pause, source replacement, incident and rollback.
-- Public sales remain closed until the consumer-withdrawal route, dedicated
+- Public sales remain closed until the consumer-withdrawal and service-cancellation routes, dedicated
   secret, queue migration and operator runbook are deployed and smoke-tested.
 
 ## 14. Post-weekend convergence card

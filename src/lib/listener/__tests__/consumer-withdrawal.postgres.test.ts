@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
     ListenerWithdrawalConflictError,
     ListenerWithdrawalRateLimitError,
+    LISTENER_WITHDRAWAL_GLOBAL_BUCKET_KEY,
+    listenerWithdrawalEmailBucketKey,
     listenerWithdrawalNetworkBucketKey,
     parseListenerWithdrawalInput,
     submitListenerWithdrawal,
@@ -19,6 +21,8 @@ const suffix = randomUUID();
 const secret = `postgres-withdrawal-${suffix}`;
 const idempotencyKey = randomUUID();
 const rateIdempotencyKeys = Array.from({ length: 9 }, () => randomUUID());
+const emailRateIdempotencyKeys = Array.from({ length: 6 }, () => randomUUID());
+const globalRateIdempotencyKey = randomUUID();
 
 function request(email = `withdrawal-${suffix}@example.invalid`) {
     return parseListenerWithdrawalInput({
@@ -27,6 +31,7 @@ function request(email = `withdrawal-${suffix}@example.invalid`) {
         locale: 'es',
         provider: 'PAYPAL',
         purchaseDate: '',
+        requestKind: 'WITHDRAWAL',
     });
 }
 
@@ -37,7 +42,12 @@ postgres('Listener withdrawal PostgreSQL queue', () => {
 
     afterAll(async () => {
         await prisma.listenerWithdrawalRequest.deleteMany({
-            where: { idempotencyKey: { in: [idempotencyKey, ...rateIdempotencyKeys] } },
+            where: { idempotencyKey: { in: [
+                idempotencyKey,
+                globalRateIdempotencyKey,
+                ...rateIdempotencyKeys,
+                ...emailRateIdempotencyKeys,
+            ] } },
         });
         await prisma.listenerWithdrawalThrottle.deleteMany({
             where: {
@@ -45,6 +55,9 @@ postgres('Listener withdrawal PostgreSQL queue', () => {
                     in: [
                         listenerWithdrawalNetworkBucketKey(suffix, secret),
                         listenerWithdrawalNetworkBucketKey(`rate-${suffix}`, secret),
+                        listenerWithdrawalEmailBucketKey(`withdrawal-${suffix}@example.invalid`, secret),
+                        listenerWithdrawalEmailBucketKey(`shared-${suffix}@example.invalid`, secret),
+                        LISTENER_WITHDRAWAL_GLOBAL_BUCKET_KEY,
                     ],
                 },
             },
@@ -88,6 +101,7 @@ postgres('Listener withdrawal PostgreSQL queue', () => {
                 locale: 'en',
                 provider: 'OTHER',
                 purchaseDate: '',
+                requestKind: 'WITHDRAWAL',
             });
             const submission = submitListenerWithdrawal({
                 request: candidate,
@@ -100,5 +114,53 @@ postgres('Listener withdrawal PostgreSQL queue', () => {
         expect(await prisma.listenerWithdrawalRequest.count({
             where: { idempotencyKey: { in: rateIdempotencyKeys } },
         })).toBe(8);
+    });
+
+    it('limits one normalized email across distributed network identities', async () => {
+        for (const [index, key] of emailRateIdempotencyKeys.entries()) {
+            const candidate = parseListenerWithdrawalInput({
+                email: ` Shared-${suffix}@Example.Invalid `,
+                idempotencyKey: key,
+                locale: 'en',
+                provider: 'OTHER',
+                purchaseDate: '',
+                requestKind: 'SERVICE_CANCELLATION',
+            });
+            const submission = submitListenerWithdrawal({
+                request: candidate,
+                networkIdentity: `distributed-${index}-${suffix}`,
+                secret,
+            });
+            if (index < 5) await expect(submission).resolves.toMatchObject({ replayed: false });
+            else await expect(submission).rejects.toBeInstanceOf(ListenerWithdrawalRateLimitError);
+        }
+        expect(await prisma.listenerWithdrawalThrottle.findUnique({
+            where: { key: listenerWithdrawalEmailBucketKey(`shared-${suffix}@example.invalid`, secret) },
+        })).toMatchObject({ attempts: 5 });
+    });
+
+    it('enforces the fixed global hourly cap before accepting another request', async () => {
+        await prisma.listenerWithdrawalThrottle.upsert({
+            where: { key: LISTENER_WITHDRAWAL_GLOBAL_BUCKET_KEY },
+            create: {
+                key: LISTENER_WITHDRAWAL_GLOBAL_BUCKET_KEY,
+                windowStartedAt: new Date(),
+                attempts: 200,
+            },
+            update: { windowStartedAt: new Date(), attempts: 200 },
+        });
+        const candidate = parseListenerWithdrawalInput({
+            email: `global-${suffix}@example.invalid`,
+            idempotencyKey: globalRateIdempotencyKey,
+            locale: 'es',
+            provider: 'PAYPAL',
+            purchaseDate: '',
+            requestKind: 'WITHDRAWAL',
+        });
+        await expect(submitListenerWithdrawal({
+            request: candidate,
+            networkIdentity: `global-${suffix}`,
+            secret,
+        })).rejects.toBeInstanceOf(ListenerWithdrawalRateLimitError);
     });
 });

@@ -129,6 +129,11 @@ enum ListenerWithdrawalProvider {
   OTHER
 }
 
+enum ListenerConsumerRequestKind {
+  WITHDRAWAL
+  SERVICE_CANCELLATION
+}
+
 enum ListenerWithdrawalStatus {
   RECEIVED
   ACKNOWLEDGED
@@ -699,6 +704,7 @@ model ListenerWithdrawalRequest {
   idempotencyKey  String                     @unique @map("idempotency_key") @db.Uuid
   requestHash     String                     @map("request_hash") @db.Char(64)
   contactEmail    String                     @map("contact_email") @db.VarChar(254)
+  requestKind     ListenerConsumerRequestKind @map("request_kind")
   provider        ListenerWithdrawalProvider
   purchaseDate    DateTime?                  @map("purchase_date") @db.Date
   locale          String                     @db.Char(2)
@@ -716,10 +722,10 @@ model ListenerWithdrawalRequest {
   @@map("listener_withdrawal_requests")
 }
 
-// HMAC-keyed network buckets. Raw IP addresses are neither persisted nor
-// exposed to operators.
+// HMAC-keyed network/email buckets plus one fixed global bucket. Raw IP and
+// email values are neither persisted here nor exposed to operators.
 model ListenerWithdrawalThrottle {
-  key             String    @id @db.Char(72)
+  key             String    @id @db.VarChar(72)
   windowStartedAt DateTime  @map("window_started_at")
   attempts        Int       @default(0)
   blockedUntil    DateTime? @map("blocked_until")

@@ -5,7 +5,7 @@ import {
     ListenerWithdrawalInputError,
     ListenerWithdrawalRateLimitError,
     listenerWithdrawalNetworkIdentity,
-    listenerWithdrawalSecret,
+    listenerWithdrawalPublicConfiguration,
     parseListenerWithdrawalInput,
     submitListenerWithdrawal,
 } from '@/lib/listener/consumer-withdrawal';
@@ -36,9 +36,9 @@ function trustedRequest(request: NextRequest): boolean {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    const configuration = listenerWithdrawalPublicConfiguration();
+    if (!configuration) return json({ error: 'Not found.' }, 404);
     if (!trustedRequest(request)) return json({ error: 'Invalid request.' }, 403);
-    const secret = listenerWithdrawalSecret();
-    if (!secret) return json({ error: 'Request service unavailable.' }, 503);
 
     const declared = request.headers.get('content-length');
     if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > LISTENER_WITHDRAWAL_MAX_REQUEST_BYTES)) {
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const result = await submitListenerWithdrawal({
             request: parsed,
             networkIdentity: listenerWithdrawalNetworkIdentity(request),
-            secret,
+            secret: configuration.secret!,
         });
         return json({
             receiptCode: result.receiptCode,

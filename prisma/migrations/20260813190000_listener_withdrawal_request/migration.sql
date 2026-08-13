@@ -2,6 +2,7 @@
 -- relation to event, staff, playback or canonical payment tables.
 CREATE TYPE "ListenerWithdrawalProvider" AS ENUM ('PAYPAL', 'MERCADO_PAGO', 'OTHER');
 CREATE TYPE "ListenerWithdrawalStatus" AS ENUM ('RECEIVED', 'ACKNOWLEDGED', 'RESOLVED');
+CREATE TYPE "ListenerConsumerRequestKind" AS ENUM ('WITHDRAWAL', 'SERVICE_CANCELLATION');
 
 CREATE TABLE "listener_withdrawal_requests" (
     "id" UUID NOT NULL,
@@ -10,6 +11,7 @@ CREATE TABLE "listener_withdrawal_requests" (
     "idempotency_key" UUID NOT NULL,
     "request_hash" CHAR(64) NOT NULL,
     "contact_email" VARCHAR(254) NOT NULL,
+    "request_kind" "ListenerConsumerRequestKind" NOT NULL,
     "provider" "ListenerWithdrawalProvider" NOT NULL,
     "purchase_date" DATE,
     "locale" CHAR(2) NOT NULL,
@@ -55,7 +57,7 @@ CREATE INDEX "listener_withdrawal_requests_created_at_idx"
     ON "listener_withdrawal_requests"("created_at");
 
 CREATE TABLE "listener_withdrawal_throttles" (
-    "key" CHAR(72) NOT NULL,
+    "key" VARCHAR(72) NOT NULL,
     "window_started_at" TIMESTAMP(3) NOT NULL,
     "attempts" INTEGER NOT NULL DEFAULT 0,
     "blocked_until" TIMESTAMP(3),
@@ -63,7 +65,7 @@ CREATE TABLE "listener_withdrawal_throttles" (
 
     CONSTRAINT "listener_withdrawal_throttles_pkey" PRIMARY KEY ("key"),
     CONSTRAINT "listener_withdrawal_throttles_key_check"
-        CHECK ("key" ~ '^network:[0-9a-f]{64}$'),
+        CHECK ("key" = 'global' OR "key" ~ '^(network|email):[0-9a-f]{64}$'),
     CONSTRAINT "listener_withdrawal_throttles_attempts_check"
         CHECK ("attempts" >= 0)
 );

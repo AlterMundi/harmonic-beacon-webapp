@@ -21,6 +21,8 @@ function usage(): never {
         '  listener-withdrawal-operator.ts show <request-uuid|receipt-code>',
         '  listener-withdrawal-operator.ts acknowledge <request-uuid> <operator-code>',
         '  listener-withdrawal-operator.ts resolve <request-uuid> <operator-code> <resolution-code>',
+        '  listener-withdrawal-operator.ts metrics',
+        '  listener-withdrawal-operator.ts prune-throttles [retention-hours]',
     ].join('\n'));
 }
 
@@ -45,6 +47,45 @@ async function main() {
     assertRoot();
     const [command, ...args] = process.argv.slice(2);
 
+    if (command === 'metrics') {
+        if (args.length !== 0) usage();
+        const [received, acknowledged, oldest] = await Promise.all([
+            prisma.listenerWithdrawalRequest.count({ where: { status: 'RECEIVED' } }),
+            prisma.listenerWithdrawalRequest.count({ where: { status: 'ACKNOWLEDGED' } }),
+            prisma.listenerWithdrawalRequest.findFirst({
+                where: { status: { not: 'RESOLVED' } },
+                orderBy: { createdAt: 'asc' },
+                select: { createdAt: true },
+            }),
+        ]);
+        const ageSeconds = oldest
+            ? Math.max(0, Math.floor((Date.now() - oldest.createdAt.getTime()) / 1_000))
+            : 0;
+        process.stdout.write([
+            '# HELP beacon_listener_withdrawal_open_requests Open consumer requests by bounded status.',
+            '# TYPE beacon_listener_withdrawal_open_requests gauge',
+            `beacon_listener_withdrawal_open_requests{status="received"} ${received}`,
+            `beacon_listener_withdrawal_open_requests{status="acknowledged"} ${acknowledged}`,
+            '# HELP beacon_listener_withdrawal_oldest_open_age_seconds Age of the oldest open request.',
+            '# TYPE beacon_listener_withdrawal_oldest_open_age_seconds gauge',
+            `beacon_listener_withdrawal_oldest_open_age_seconds ${ageSeconds}`,
+            '',
+        ].join('\n'));
+        return;
+    }
+
+    if (command === 'prune-throttles') {
+        if (args.length > 1) usage();
+        const hours = args[0] === undefined ? 48 : Number(args[0]);
+        if (!Number.isSafeInteger(hours) || hours < 2 || hours > 8_760) usage();
+        const cutoff = new Date(Date.now() - hours * 60 * 60 * 1_000);
+        const deleted = await prisma.listenerWithdrawalThrottle.deleteMany({
+            where: { updatedAt: { lt: cutoff } },
+        });
+        process.stdout.write(`${JSON.stringify({ prunedThrottleRows: deleted.count, cutoff: cutoff.toISOString() })}\n`);
+        return;
+    }
+
     if (command === 'list') {
         if (args.length > 1) usage();
         const limit = args[0] === undefined ? 50 : Number(args[0]);
@@ -57,6 +98,7 @@ async function main() {
                 id: true,
                 receiptLastFour: true,
                 provider: true,
+                requestKind: true,
                 status: true,
                 createdAt: true,
                 acknowledgedAt: true,
@@ -75,6 +117,7 @@ async function main() {
                 receiptLastFour: true,
                 contactEmail: true,
                 provider: true,
+                requestKind: true,
                 purchaseDate: true,
                 locale: true,
                 status: true,

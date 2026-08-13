@@ -5,6 +5,8 @@ import {
     listenerWithdrawalReceiptCode,
     listenerWithdrawalReceiptDigest,
     listenerWithdrawalRequestHash,
+    listenerWithdrawalConfiguration,
+    listenerWithdrawalPublicConfiguration,
     parseListenerWithdrawalInput,
 } from '../consumer-withdrawal';
 
@@ -14,9 +16,23 @@ const BASE = {
     locale: 'es',
     provider: 'PAYPAL',
     purchaseDate: '2026-08-12',
+    requestKind: 'WITHDRAWAL',
 };
 
 describe('Listener consumer-withdrawal contract', () => {
+    it('keeps the public surface dark unless both switch and dedicated secret are valid', () => {
+        expect(listenerWithdrawalPublicConfiguration({})).toBeNull();
+        expect(listenerWithdrawalPublicConfiguration({
+            LISTENER_WITHDRAWAL_ENABLED: '1',
+            LISTENER_WITHDRAWAL_SECRET: 'short',
+        })).toBeNull();
+        expect(listenerWithdrawalPublicConfiguration({
+            LISTENER_WITHDRAWAL_ENABLED: '1',
+            LISTENER_WITHDRAWAL_SECRET: 's'.repeat(32),
+        })).toEqual({ enabled: true, secret: 's'.repeat(32) });
+        expect(() => listenerWithdrawalConfiguration({ LISTENER_WITHDRAWAL_ENABLED: 'true' }))
+            .toThrow(/must be 0 or 1/);
+    });
     it('normalizes only bounded fields needed to locate a purchase', () => {
         expect(parseListenerWithdrawalInput(BASE, new Date('2026-08-13T12:00:00Z'))).toEqual({
             email: 'listener@example.com',
@@ -24,12 +40,14 @@ describe('Listener consumer-withdrawal contract', () => {
             locale: 'es',
             provider: 'PAYPAL',
             purchaseDate: new Date('2026-08-12T00:00:00.000Z'),
+            requestKind: 'WITHDRAWAL',
         });
     });
 
     it.each([
         { ...BASE, accepted: false },
         { ...BASE, provider: 'paypal' },
+        { ...BASE, requestKind: 'CANCEL' },
         { ...BASE, email: 'not-an-email' },
         { ...BASE, purchaseDate: '2026-08-14' },
         { ...BASE, idempotencyKey: 'predictable' },

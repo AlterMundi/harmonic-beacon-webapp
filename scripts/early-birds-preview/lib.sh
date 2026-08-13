@@ -101,6 +101,12 @@ require_synthetic_env() {
   case "$team_entry_switch" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED must be 0 or 1' ;; esac
   reactive_lab_switch=$(preview_env_value BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED "$env_file")
   case "$reactive_lab_switch" in ''|0|1) ;; *) preview_fail 'BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED must be 0 or 1' ;; esac
+  withdrawal_switch=$(preview_env_value LISTENER_WITHDRAWAL_ENABLED "$env_file")
+  case "$withdrawal_switch" in ''|0|1) ;; *) preview_fail 'LISTENER_WITHDRAWAL_ENABLED must be 0 or 1' ;; esac
+  withdrawal_secret=$(preview_env_value LISTENER_WITHDRAWAL_SECRET "$env_file")
+  if test "$withdrawal_switch" = 1; then
+    test "${#withdrawal_secret}" -ge 32 || preview_fail 'LISTENER_WITHDRAWAL_SECRET is required when withdrawal is enabled'
+  fi
   paypal_checkout_switch=$(preview_env_value BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED "$env_file")
   case "$paypal_checkout_switch" in ''|0|1) ;; *) preview_fail 'BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED must be 0 or 1' ;; esac
   mercado_pago_checkout_switch=$(preview_env_value BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED "$env_file")

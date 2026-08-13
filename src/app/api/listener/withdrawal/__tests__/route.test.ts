@@ -20,6 +20,7 @@ const BODY = {
     locale: 'en',
     provider: 'PAYPAL',
     purchaseDate: '',
+    requestKind: 'WITHDRAWAL',
 };
 
 function request(overrides: {
@@ -47,6 +48,7 @@ function request(overrides: {
 describe('public Listener withdrawal API', () => {
     beforeEach(() => {
         process.env.LISTENER_WITHDRAWAL_SECRET = 'w'.repeat(32);
+        process.env.LISTENER_WITHDRAWAL_ENABLED = '1';
         submitListenerWithdrawal.mockReset();
         submitListenerWithdrawal.mockResolvedValue({
             receiptCode: 'HBW-1234567890ABCDEF1234567890ABCD',
@@ -84,9 +86,12 @@ describe('public Listener withdrawal API', () => {
         expect(submitListenerWithdrawal).not.toHaveBeenCalled();
     });
 
-    it('fails closed without its dedicated secret', async () => {
+    it('is indistinguishable from an absent route while disabled or missing its secret', async () => {
+        process.env.LISTENER_WITHDRAWAL_ENABLED = '0';
+        expect((await POST(request())).status).toBe(404);
+        process.env.LISTENER_WITHDRAWAL_ENABLED = '1';
         delete process.env.LISTENER_WITHDRAWAL_SECRET;
-        expect((await POST(request())).status).toBe(503);
+        expect((await POST(request())).status).toBe(404);
         expect(submitListenerWithdrawal).not.toHaveBeenCalled();
     });
 

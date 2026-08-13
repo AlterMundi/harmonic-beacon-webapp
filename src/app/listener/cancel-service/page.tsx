@@ -7,11 +7,11 @@ import { listenerWithdrawalPublicConfiguration } from '@/lib/listener/consumer-w
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-    title: 'BOTÓN DE ARREPENTIMIENTO · Harmonic Beacon',
+    title: 'BOTÓN DE BAJA DE SERVICIO · Harmonic Beacon',
     robots: { index: true, follow: true },
 };
 
-export default function ListenerWithdrawalPage() {
+export default function ListenerServiceCancellationPage() {
     if (!listenerWithdrawalPublicConfiguration()) notFound();
-    return <ConsumerWithdrawalForm />;
+    return <ConsumerWithdrawalForm requestKind="SERVICE_CANCELLATION" />;
 }
