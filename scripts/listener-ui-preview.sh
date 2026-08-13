@@ -75,7 +75,16 @@ else
     image="$(docker inspect "$RELEASE_CONTAINER" --format '{{.Config.Image}}')"
 fi
 env_file="$(mktemp /tmp/listener-ui-dev-env.XXXXXX)"
-cleanup() { rm -f "$env_file"; }
+workbench_container_started=0
+workbench_validated=0
+cleanup() {
+    rm -f "$env_file"
+    if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ] &&
+       [ "$workbench_container_started" = 1 ] &&
+       [ "$workbench_validated" != 1 ]; then
+        docker rm -f "$DEV_CONTAINER" >/dev/null 2>&1 || true
+    fi
+}
 trap cleanup EXIT
 umask 077
 docker inspect "$RELEASE_CONTAINER" | jq -r '.[0].Config.Env[]' > "$env_file"
@@ -152,6 +161,9 @@ if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
     set_env_file_value BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED 0
     set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "$PREVIEW_ORIGIN"
     set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "$PREVIEW_ORIGIN"
+    # The inherited release env would otherwise override the selected image's
+    # baked provenance with the persistent 13000 release SHA.
+    set_env_file_value BEACON_GIT_SHA "$PREVIEW_EXPECTED_SHA"
 fi
 
 docker run -d \
@@ -172,6 +184,9 @@ docker run -d \
     "${runtime_args[@]}" \
     "$image" \
     "${command_args[@]}" >/dev/null
+if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
+    workbench_container_started=1
+fi
 
 docker network connect earlybirds_preview_listener_egress "$DEV_CONTAINER"
 docker network connect earlybirds_authority_private "$DEV_CONTAINER"
@@ -183,6 +198,7 @@ for _ in $(seq 1 90); do
             running_sha="$(docker inspect "$DEV_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BEACON_GIT_SHA=//p')"
             test "$running_sha" = "$PREVIEW_EXPECTED_SHA"
             test "$(docker port "$DEV_CONTAINER" 3000/tcp)" = "127.0.0.1:13001"
+            workbench_validated=1
         fi
         exit 0
     fi
