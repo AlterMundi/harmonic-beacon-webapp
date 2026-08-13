@@ -9,8 +9,9 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 ## Exact deployed state
 
 - Public candidate: `https://listen.harmonicbeacon.com/`
-- Listener image/SHA: `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`
-- Previous same-schema Listener rollback image: `fcdde379`
+- Listener image/SHA: `0a475717d45d32cec38afdb8fc35fb772a994017`
+- Previous contract-compatible Listener application image: `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`
+- Withdrawal operator sidecar image/SHA: `0a475717d45d32cec38afdb8fc35fb772a994017`
 - Canonical payment authority: `b1038ddb579817e39add567c5b7b055e2f716095`
 - Minimum authority after any Live checkout attempt: `b1038ddb579817e39add567c5b7b055e2f716095`
 - Listener mail sidecar: `456ece2b38e203a2d12c54864115e03ebaa1a89c`
@@ -22,6 +23,7 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 - PayPal Live lifecycle: ON with new sales OFF after creating one supervised approval intent
 - Mercado Pago Live provider: OFF
 - Mercado Pago TEST lifecycle: ready; global new sales OFF
+- Public consumer withdrawal/service cancellation: ON; no login, immediate opaque receipt
 - Public sales: OFF; only the explicitly supervised Live lifecycle is authorized
 
 The authority now includes the reviewed adverse-event hardening and a read-only
@@ -42,7 +44,7 @@ reactivation and reconciliation. Browser redirects never grant membership.
 
 The dedicated magic-link API, worker and PostgreSQL queue are isolated from the
 event runtime and have no host ports. A controlled Gmail delivery reached
-`SENT`; the human callback/Free/logout check remains.
+`SENT`; the real-browser email-only callback, Free entry and logout passed.
 
 Google OAuth rotation #328 is complete. Canonical login → logout → re-login and
 the staging callback passed on the replacement client. The previous client was
@@ -51,20 +53,18 @@ backup. Only Listener and the disposable staging workbench were recreated.
 
 ## Remaining blockers to public sales
 
-1. #217 — open the delivered magic link and prove email-only session → Free → logout.
-2. #304 — complete a physical 60-minute listen and record any watchdog recovery.
-3. #317 — final mobile/account-menu billing acceptance.
-4. #318 — deploy and smoke the implemented no-login consumer-withdrawal queue,
-   then record human ES/EN offer/legal/seller/refund/support acceptance. The
-   implementation returns an opaque receipt and has no automatic provider
-   action; operations must install its dedicated secret and own the 24-hour
-   private queue procedure.
-5. Complete the already-created PayPal approval intent with a non-merchant buyer, then execute its
+1. #304 — complete a physical 60-minute listen and record any watchdog recovery.
+2. #317 — final mobile/account-menu billing acceptance.
+3. #318 — record human ES/EN offer/legal/seller/refund/support and invoicing
+   acceptance. The public no-login withdrawal and service-cancellation paths,
+   dedicated secret, migration, private operator, metrics and 20h/24h alerts
+   are deployed and smoke-tested.
+4. Complete the already-created PayPal approval intent with a non-merchant buyer, then execute its
    supervised activation, cancellation and refund evidence. Execute the corresponding supervised
    Mercado Pago lifecycle separately.
-6. Confirm Founder activation, terminal Free fallback, metrics, alerts and the
+5. Confirm Founder activation, terminal Free fallback, metrics, alerts and the
    absence of PII/secret leakage against those Live transactions.
-7. Obtain separate explicit approvals for merge to `main` and public checkout.
+6. Obtain separate explicit approvals for merge to `main` and public checkout.
 
 ## Non-negotiable isolation
 
@@ -85,7 +85,10 @@ without explicit approval.
   canonical checkout/lifecycle evidence and exists only for explicitly commanded disaster
   recovery followed by complete provider reconciliation.
 - Listener application regression: roll back only the isolated Listener to
-  `fcdde379` if contract-compatible; otherwise disable Listener and roll forward.
+  `4ac408f` if contract-compatible; keep the `0a475717` withdrawal operator and
+  current database running so already-received legal requests remain processable.
+  Set `LISTENER_WITHDRAWAL_ENABLED=0` to hide the public request routes during
+  application recovery, then roll forward.
 - Weekly quota is forward-only. Never restore the retired daily-window/welcome
   authority.
 - Magic delivery incident: clear the three protected magic-link values and
@@ -100,6 +103,7 @@ The broad Phase 2 patronage/provider-economy documents are future strategy, not
 the implementation authority for Founding Listeners. Public and repository copy
 must not claim that Harmonic Beacon has no payment or email processing: the
 Sandbox/TEST subscription lanes and Gmail magic-link delivery are already real
-pre-release processors. Equally, copy must not claim Live billing is active:
-productive credentials are installed and verified, but both Live providers,
-real charges and public checkout remain OFF.
+pre-release processors. Equally, copy must not claim public Live billing is
+active: productive credentials are installed and verified, PayPal Live
+lifecycle ingestion is ON only for the supervised pending intent, and authority
+new sales, real charges and both public checkout flags remain OFF.
