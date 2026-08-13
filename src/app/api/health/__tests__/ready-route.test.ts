@@ -51,6 +51,27 @@ describe('GET /api/health/ready', () => {
         }
     });
 
+    it('fails readiness before the database on a partial private Live workbench', async () => {
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED', '1');
+        const mockPrisma = { $queryRaw: vi.fn() };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const { GET } = await import('../ready/route');
+            const response = await GET();
+            const { status, body } = await parseResponse(response);
+            expect(status).toBe(503);
+            expect(body).toEqual({
+                status: 'error',
+                checks: { database: 'unknown', listenerRuntime: 'invalid' },
+            });
+            expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+            expect(errorSpy.mock.calls.flat().map(String).join(' ')).not.toContain('undefined');
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
     it('returns 503 when the database query rejects', async () => {
         const mockPrisma = {
             $queryRaw: vi.fn().mockRejectedValue(

@@ -159,6 +159,43 @@ describe('EarlyBird Listener page', () => {
         });
     });
 
+    it('exposes one server-selected Live workbench only to its staging allowlist account', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED', '1');
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID', 'listener-1');
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER', 'mercado_pago');
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_CSRF_SECRET', 's'.repeat(43));
+        vi.stubEnv('BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED', '0');
+        vi.stubEnv('BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED', '0');
+        mocks.headers.mockResolvedValue(new Headers({
+            host: 'earlybirds-staging.harmonicbeacon.com',
+        }));
+        mocks.currentEarlyBirdSession.mockResolvedValue({
+            user: { id: 'listener-1', name: 'Nico', email: 'nico@example.com' },
+            session: { id: 'session-1', expiresAt: new Date('2026-09-01T00:00:00Z') },
+        });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: true,
+            kind: 'free-quota',
+            membership: { allowed: false, projection: null },
+            quota: availableQuota,
+            allowedUntil: null,
+            serverNow: new Date('2026-08-13T15:00:00.000Z'),
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+        expect(result.props.liveWorkbench).toEqual({
+            provider: 'mercado_pago',
+            csrfToken: expect.stringMatching(/^\d{10}\.[A-Za-z0-9_-]{32}\.[A-Za-z0-9_-]{43}$/),
+        });
+        expect(result.props.checkoutEnvironment).toBe('staging');
+
+        mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
+        const publicResult = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+        expect(publicResult.props.liveWorkbench).toBeNull();
+    });
+
     it('derives a sanitized Founder presentation on the server', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');

@@ -35,6 +35,8 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['unsafe Mercado Pago checkout switch', 'BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED=true', /must be 0 or 1/],
     ['unsafe PayPal Live switch', 'BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED=1', /must be 0/],
     ['unsafe Mercado Pago Live switch', 'BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED=1', /must be 0/],
+    ['unsafe private Live workbench switch', 'BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED=1', /must be 0/],
+    ['synthetic private Live account', 'BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID=opaque-account', /cannot contain a private Live account/],
     ['wrong team-entry host', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=staging.example.invalid', /must be earlybirds-staging/],
     ['unreviewed GeoIP path', 'BEACON_LISTENER_GEOIP_HOST_PATH=/tmp/random.mmdb', /reviewed absolute July 2026/],
     ['non-synthetic secret', 'EARLY_BIRDS_AUTH_SECRET=not-a-real-but-long-enough-secret-value', /visibly synthetic/],
@@ -130,6 +132,10 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED:-0\}/);
+  assert.match(source, /BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED: \$\{BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED:-0\}/);
+  assert.match(source, /BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID: \$\{BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID:-\}/);
+  assert.match(source, /BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER: \$\{BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER:-\}/);
+  assert.match(source, /BEACON_LISTENER_STAGING_LIVE_WORKBENCH_CSRF_SECRET: \$\{BEACON_LISTENER_STAGING_LIVE_WORKBENCH_CSRF_SECRET:-\}/);
   assert.match(source, /NODE_ENV: production/);
   assert.match(source, /preview_db:[\s\S]*internal: true/);
   assert.match(source, /listener_egress:/);
@@ -194,8 +200,8 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \^~ \/api\/early-birds\//);
   assert.equal(
     (app.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length,
-    9,
-    'server plus eight sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
+    10,
+    'server plus nine sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
   );
   assert.equal(
     (listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length,
@@ -207,6 +213,8 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \/_next\/static\/ \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
   assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
   assert.match(app, /location = \/api\/listener\/checkout \{[^}]*access_log off;[^}]*client_max_body_size 512;[^}]*limit_req zone=listener_checkout burst=4 nodelay;[^}]*limit_req_status 429;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
+  assert.match(app, /location = \/api\/listener\/checkout\/live-workbench \{[^}]*access_log off;[^}]*client_max_body_size 256;[^}]*limit_req zone=listener_checkout burst=2 nodelay;[^}]*limit_req_status 429;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
+  assert.doesNotMatch(listener, /location = \/api\/listener\/checkout\/live-workbench/);
   assert.match(app, /location = \/api\/listener\/membership\/action \{[^}]*access_log off;[^}]*client_max_body_size 256;[^}]*limit_req zone=listener_checkout burst=2 nodelay;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location = \/listener\/terms \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location = \/listener\/privacy \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);

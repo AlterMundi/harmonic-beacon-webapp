@@ -156,3 +156,7 @@ converted back into a reversible action.
 - Explicit approval to turn on real sales. The checked-in defaults remain OFF.
 
 The concise current-state handoff is `docs/operations/LISTENER_LAUNCH_NOW.md`.
+
+Supervised real-provider acceptance must use the separate, one-account staging workbench described
+in `LISTENER_PRIVATE_LIVE_WORKBENCH.md`. It leaves this public checkout surface OFF and preserves the
+normal staging Sandbox/TEST route.

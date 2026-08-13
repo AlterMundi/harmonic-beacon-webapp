@@ -12,6 +12,9 @@ import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 import BeaconField from './BeaconField';
 import FreeQuotaStatus from './FreeQuotaStatus';
 import FoundingListenerCheckout from './FoundingListenerCheckout';
+import FoundingListenerLiveWorkbench, {
+    type ListenerLiveWorkbenchClientConfig,
+} from './FoundingListenerLiveWorkbench';
 import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
 import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
@@ -29,6 +32,7 @@ type Props = {
     serverNow: string;
     checkoutAvailability?: { paypal: boolean; mercadoPago: boolean };
     checkoutEnvironment?: 'staging' | 'live';
+    liveWorkbench?: ListenerLiveWorkbenchClientConfig | null;
 };
 
 export default function EarlyBirdLanding(props: Props) {
@@ -182,6 +186,7 @@ export default function EarlyBirdLanding(props: Props) {
                                             paypal: false,
                                             mercadoPago: false,
                                         }} environment={props.checkoutEnvironment ?? 'staging'} />
+                                        <FoundingListenerLiveWorkbench config={props.liveWorkbench ?? null} />
                                     </>
                                 )}
                                 <button
