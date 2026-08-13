@@ -1,4 +1,26 @@
 groups:
+  - name: listener-consumer-requests
+    rules:
+      - alert: ListenerConsumerRequestQueueWarning
+        expr: beacon_listener_withdrawal_oldest_open_age_seconds > 72000 and beacon_listener_withdrawal_oldest_open_age_seconds <= 86400
+        for: 5m
+        labels: { severity: warning, service: listener-consumer-requests }
+        annotations: { summary: "A Listener consumer request has been open for more than 20 hours", runbook: "listener-consumer-requests" }
+      - alert: ListenerConsumerRequestQueueCritical
+        expr: beacon_listener_withdrawal_oldest_open_age_seconds > 86400
+        for: 1m
+        labels: { severity: critical, service: listener-consumer-requests }
+        annotations: { summary: "A Listener consumer request has been open for more than 24 hours", runbook: "listener-consumer-requests" }
+      - alert: ListenerConsumerRequestMetricsStale
+        expr: time() - beacon_listener_withdrawal_metrics_export_unixtime > 600 and time() - beacon_listener_withdrawal_metrics_export_unixtime <= 1200
+        for: 2m
+        labels: { severity: warning, service: listener-consumer-requests }
+        annotations: { summary: "Listener consumer request metrics have not refreshed for ten minutes", runbook: "listener-consumer-requests" }
+      - alert: ListenerConsumerRequestMetricsMissing
+        expr: (time() - beacon_listener_withdrawal_metrics_export_unixtime > 1200) or absent_over_time(beacon_listener_withdrawal_metrics_export_unixtime[20m])
+        for: 1m
+        labels: { severity: critical, service: listener-consumer-requests }
+        annotations: { summary: "Listener consumer request metrics are missing or more than twenty minutes old", runbook: "listener-consumer-requests" }
   - name: listener-paid-authority
     rules:
       - alert: ListenerAuthorityUnreachable

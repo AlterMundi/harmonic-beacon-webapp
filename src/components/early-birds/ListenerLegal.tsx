@@ -3,8 +3,9 @@
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdLegalCopy } from '@/lib/early-birds/copy';
 import Link from 'next/link';
+import ConsumerWithdrawalLink from './ConsumerWithdrawalLink';
 
-export default function ListenerLegal() {
+export default function ListenerLegal({ withdrawalAvailable = false }: { withdrawalAvailable?: boolean }) {
     const { locale } = useLocale();
     const copy = earlyBirdLegalCopy[locale];
 
@@ -21,6 +22,21 @@ export default function ListenerLegal() {
                         {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                     </section>
                 ))}
+                {withdrawalAvailable ? <section>
+                    <h2>{locale === 'es' ? 'Derecho de revocación' : 'Cancellation right'}</h2>
+                    <p>
+                        {locale === 'es'
+                            ? 'Puedes iniciar una solicitud pública sin ingresar a tu cuenta.'
+                            : 'You can open a public request without signing in to your account.'}{' '}
+                        <ConsumerWithdrawalLink inline />
+                    </p>
+                    <p>
+                        {locale === 'es'
+                            ? 'También puedes solicitar la baja del servicio sin ingresar a tu cuenta.'
+                            : 'You may also request service cancellation without signing in to your account.'}{' '}
+                        <ConsumerWithdrawalLink inline kind="SERVICE_CANCELLATION" />
+                    </p>
+                </section> : null}
             </article>
         </main>
     );

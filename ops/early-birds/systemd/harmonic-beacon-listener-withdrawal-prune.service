@@ -1,0 +1,16 @@
+[Unit]
+Description=Prune expired Listener consumer request throttle buckets
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/etc/harmonic-beacon/listener-withdrawal-ops.env
+ExecStart=/usr/local/libexec/harmonic-beacon/listener-withdrawal-prune-throttles.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+UMask=0077

@@ -72,6 +72,59 @@ describe('GET /api/health/ready', () => {
         }
     });
 
+    it('fails readiness before the database when withdrawal is enabled without its secret', async () => {
+        vi.stubEnv('LISTENER_WITHDRAWAL_ENABLED', '1');
+        vi.stubEnv('LISTENER_WITHDRAWAL_SECRET', '');
+        const mockPrisma = { $queryRaw: vi.fn() };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const { GET } = await import('../ready/route');
+            const { status, body } = await parseResponse(await GET());
+            expect(status).toBe(503);
+            expect(body).toEqual({
+                status: 'error',
+                checks: { database: 'unknown', listenerRuntime: 'invalid' },
+            });
+            expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
+    it('fails readiness when enabled withdrawal tables have not been migrated', async () => {
+        vi.stubEnv('LISTENER_WITHDRAWAL_ENABLED', '1');
+        vi.stubEnv('LISTENER_WITHDRAWAL_SECRET', 's'.repeat(32));
+        const mockPrisma = { $queryRaw: vi.fn().mockResolvedValue([{ requests: null, throttles: null }]) };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const { GET } = await import('../ready/route');
+            const { status, body } = await parseResponse(await GET());
+            expect(status).toBe(503);
+            expect(body).toEqual({ status: 'error', checks: { database: 'unreachable' } });
+            expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
+    it('reports enabled withdrawal readiness only after both tables are readable', async () => {
+        vi.stubEnv('LISTENER_WITHDRAWAL_ENABLED', '1');
+        vi.stubEnv('LISTENER_WITHDRAWAL_SECRET', 's'.repeat(32));
+        const mockPrisma = { $queryRaw: vi.fn()
+            .mockResolvedValueOnce([{ requests: 'listener_withdrawal_requests', throttles: 'listener_withdrawal_throttles' }])
+            .mockResolvedValueOnce([{ '?column?': 1 }]) };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+        const { GET } = await import('../ready/route');
+        const { status, body } = await parseResponse(await GET());
+        expect(status).toBe(200);
+        expect(body).toEqual({
+            status: 'ok',
+            checks: { database: 'ok', listenerWithdrawal: 'ok' },
+        });
+    });
+
     it('returns 503 when the database query rejects', async () => {
         const mockPrisma = {
             $queryRaw: vi.fn().mockRejectedValue(

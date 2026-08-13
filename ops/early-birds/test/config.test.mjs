@@ -49,9 +49,48 @@ test('references Telegram and canary credentials as mounted secret files only', 
 
 test('scrapes node-exporter by the internal Docker DNS name', async () => {
   const prometheus = await read('prometheus/prometheus.yml');
+  const compose = await read('docker-compose.yml');
   assert.match(prometheus, /targets: \[node-exporter:9100\]/);
+  assert.match(compose, /--collector\.textfile\.directory=\/host\/var\/lib\/harmonic-beacon\/metrics/);
   assert.match(prometheus, /job_name: listener-authority[\s\S]*targets: \[pmp-myth-api:8765\]/);
   assert.doesNotMatch(prometheus, /host\.docker\.internal/);
+});
+
+test('alerts on the private consumer request age metric without PII', async () => {
+  const alerts = await read('prometheus/alerts.yml');
+  assert.match(alerts, /ListenerConsumerRequestQueueWarning[\s\S]*> 72000/);
+  assert.match(alerts, /ListenerConsumerRequestQueueCritical[\s\S]*> 86400/);
+  assert.match(alerts, /ListenerConsumerRequestMetricsStale[\s\S]*> 600/);
+  assert.match(alerts, /ListenerConsumerRequestMetricsMissing[\s\S]*absent_over_time/);
+  assert.doesNotMatch(
+    alerts.slice(alerts.indexOf('listener-consumer-requests'), alerts.indexOf('listener-paid-authority')),
+    /email|receipt|provider_id|request_id/,
+  );
+});
+
+test('schedules an atomic private metric export and out-of-band throttle pruning', async () => {
+  const exporter = await fs.readFile(path.join(root, '../../scripts/listener-withdrawal-export-metrics.sh'), 'utf8');
+  const metricService = await read('systemd/harmonic-beacon-listener-withdrawal-metrics.service');
+  const metricTimer = await read('systemd/harmonic-beacon-listener-withdrawal-metrics.timer');
+  const pruneService = await read('systemd/harmonic-beacon-listener-withdrawal-prune.service');
+  const pruneTimer = await read('systemd/harmonic-beacon-listener-withdrawal-prune.timer');
+  const prune = await fs.readFile(path.join(root, '../../scripts/listener-withdrawal-prune-throttles.sh'), 'utf8');
+  assert.match(exporter, /mktemp[\s\S]*listener-withdrawal-operator\.ts metrics[\s\S]*metrics_export_unixtime[\s\S]*mv -f/);
+  assert.match(exporter, /docker exec --user root/);
+  assert.match(exporter, /earlybirds-preview-withdrawal-operator-1/);
+  assert.doesNotMatch(exporter, /earlybirds-preview-listener-1/);
+  assert.match(exporter, /State\.Health[\s\S]*true healthy/);
+  assert.match(metricService, /EnvironmentFile=\/etc\/harmonic-beacon\/listener-withdrawal-ops\.env/);
+  assert.match(metricTimer, /OnUnitActiveSec=5m/);
+  assert.match(pruneService, /\/usr\/local\/libexec\/harmonic-beacon\/listener-withdrawal-prune-throttles\.sh/);
+  assert.match(prune, /prune-throttles 48/);
+  assert.match(prune, /earlybirds-preview-withdrawal-operator-1/);
+  assert.match(prune, /State\.Health[\s\S]*true healthy/);
+  assert.match(pruneTimer, /OnCalendar=daily/);
+  assert.doesNotMatch(exporter, /curl|https?:\/\//);
+  const dockerfile = await fs.readFile(path.join(root, '../../Dockerfile'), 'utf8');
+  assert.match(dockerfile, /listener-withdrawal-operator\.ts/);
+  assert.match(dockerfile, /consumer-withdrawal\.ts/);
 });
 
 test('alerts on paid authority failures without account or provider identifiers', async () => {

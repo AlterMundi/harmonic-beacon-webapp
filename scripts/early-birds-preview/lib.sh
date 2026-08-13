@@ -39,6 +39,49 @@ require_synthetic_secret() {
   test "${#secret_value}" -ge "$secret_min_length" || preview_fail "$secret_key is too short"
 }
 
+require_withdrawal_operator_image() {
+  operator_env_file=${1:?usage: require_withdrawal_operator_image FILE}
+  operator_tag=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG "$operator_env_file")
+  operator_expected_sha=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA "$operator_env_file")
+  operator_environment=$(preview_env_value EARLYBIRDS_PREVIEW_ENV "$operator_env_file")
+  if test "$operator_environment" = synthetic; then
+    test "$operator_tag" = synthetic || preview_fail 'synthetic withdrawal operator image tag must be synthetic'
+    test "$operator_expected_sha" = synthetic-preview || preview_fail 'synthetic withdrawal operator provenance must be synthetic-preview'
+  else
+    test -n "$operator_tag" || preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG is required'
+    test -n "$operator_expected_sha" || preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA is required'
+    printf '%s\n' "$operator_tag" | grep -Eq '^[0-9a-f]{40}$' || \
+      preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG must be an exact lowercase sha40'
+    test "$operator_expected_sha" = "$operator_tag" || \
+      preview_fail 'withdrawal operator image tag must match EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA'
+  fi
+  operator_image="harmonic-beacon/earlybirds-preview-listener:$operator_tag"
+  operator_actual_sha=$(docker image inspect "$operator_image" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | \
+    sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
+  test "$operator_actual_sha" = "$operator_expected_sha" || \
+    preview_fail 'withdrawal operator image provenance does not match its pinned tag'
+}
+
+verify_running_withdrawal_operator() {
+  operator_env_file=${1:?usage: verify_running_withdrawal_operator FILE}
+  operator_expected_sha=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA "$operator_env_file")
+  operator_container="${LISTENER_WITHDRAWAL_CONTAINER:-earlybirds-preview-withdrawal-operator-1}"
+  operator_state=''
+  operator_attempt=0
+  while test "$operator_attempt" -lt 60; do
+    operator_state=$(docker inspect "$operator_container" \
+      --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)
+    test "$operator_state" != 'true healthy' || break
+    operator_attempt=$((operator_attempt + 1))
+    sleep 1
+  done
+  test "$operator_state" = 'true healthy' || preview_fail 'withdrawal operator container is not healthy'
+  operator_running_sha=$(docker inspect "$operator_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | \
+    sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
+  test "$operator_running_sha" = "$operator_expected_sha" || \
+    preview_fail 'running withdrawal operator provenance does not match its pinned SHA'
+}
+
 require_synthetic_env() {
   env_file=${1:?usage: provide a synthetic preview env file}
   test -f "$env_file" || preview_fail "preview env file not found: $env_file"
@@ -101,6 +144,12 @@ require_synthetic_env() {
   case "$team_entry_switch" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED must be 0 or 1' ;; esac
   reactive_lab_switch=$(preview_env_value BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED "$env_file")
   case "$reactive_lab_switch" in ''|0|1) ;; *) preview_fail 'BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED must be 0 or 1' ;; esac
+  withdrawal_switch=$(preview_env_value LISTENER_WITHDRAWAL_ENABLED "$env_file")
+  case "$withdrawal_switch" in ''|0|1) ;; *) preview_fail 'LISTENER_WITHDRAWAL_ENABLED must be 0 or 1' ;; esac
+  withdrawal_secret=$(preview_env_value LISTENER_WITHDRAWAL_SECRET "$env_file")
+  if test "$withdrawal_switch" = 1; then
+    test "${#withdrawal_secret}" -ge 32 || preview_fail 'LISTENER_WITHDRAWAL_SECRET is required when withdrawal is enabled'
+  fi
   paypal_checkout_switch=$(preview_env_value BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED "$env_file")
   case "$paypal_checkout_switch" in ''|0|1) ;; *) preview_fail 'BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED must be 0 or 1' ;; esac
   mercado_pago_checkout_switch=$(preview_env_value BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED "$env_file")

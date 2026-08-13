@@ -10,6 +10,10 @@ import {
     validateListenerLiveWorkbenchEnvironment,
 } from '@/lib/early-birds/live-workbench';
 import { OperationTimeoutError, withTimeout } from '@/lib/with-timeout';
+import {
+    ListenerWithdrawalConfigurationError,
+    listenerWithdrawalConfiguration,
+} from '@/lib/listener/consumer-withdrawal';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,12 +30,15 @@ const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
  */
 export async function GET() {
     let listenerRuntimeConfigured = false;
+    let listenerWithdrawalConfigured = false;
     try {
         listenerRuntimeConfigured = validateListenerRuntimeEnvironment();
         validateListenerLiveWorkbenchEnvironment();
+        listenerWithdrawalConfigured = listenerWithdrawalConfiguration().enabled;
     } catch (error) {
         const diagnostic = error instanceof ListenerRuntimeEnvironmentError ||
-            error instanceof ListenerLiveWorkbenchConfigurationError
+            error instanceof ListenerLiveWorkbenchConfigurationError ||
+            error instanceof ListenerWithdrawalConfigurationError
             ? error.message
             : 'unexpected validation failure';
         console.error('Listener runtime configuration invalid:', diagnostic);
@@ -44,6 +51,20 @@ export async function GET() {
         );
     }
     try {
+        if (listenerWithdrawalConfigured) {
+            const tables = await withTimeout(
+                prisma.$queryRaw<Array<{ requests: string | null; throttles: string | null }>>`
+                    SELECT
+                        to_regclass('public.listener_withdrawal_requests')::text AS requests,
+                        to_regclass('public.listener_withdrawal_throttles')::text AS throttles
+                `,
+                DB_CHECK_TIMEOUT_MS,
+                'Listener withdrawal schema check',
+            );
+            if (!tables[0]?.requests || !tables[0]?.throttles) {
+                throw new Error('Listener withdrawal schema unavailable');
+            }
+        }
         await withTimeout(prisma.$queryRaw`SELECT 1`, DB_CHECK_TIMEOUT_MS, 'Database check');
         return NextResponse.json(
             {
@@ -51,6 +72,7 @@ export async function GET() {
                 checks: {
                     database: 'ok',
                     ...(listenerRuntimeConfigured ? { listenerRuntime: 'ok' } : {}),
+                    ...(listenerWithdrawalConfigured ? { listenerWithdrawal: 'ok' } : {}),
                 },
             },
             { headers: NO_STORE_HEADERS },

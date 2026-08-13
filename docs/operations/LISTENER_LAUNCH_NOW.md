@@ -54,7 +54,11 @@ backup. Only Listener and the disposable staging workbench were recreated.
 1. #217 — open the delivered magic link and prove email-only session → Free → logout.
 2. #304 — complete a physical 60-minute listen and record any watchdog recovery.
 3. #317 — final mobile/account-menu billing acceptance.
-4. #318 — human ES/EN offer/legal/seller/refund/support acceptance.
+4. #318 — deploy and smoke the implemented no-login consumer-withdrawal queue,
+   then record human ES/EN offer/legal/seller/refund/support acceptance. The
+   implementation returns an opaque receipt and has no automatic provider
+   action; operations must install its dedicated secret and own the 24-hour
+   private queue procedure.
 5. Complete the already-created PayPal approval intent with a non-merchant buyer, then execute its
    supervised activation, cancellation and refund evidence. Execute the corresponding supervised
    Mercado Pago lifecycle separately.

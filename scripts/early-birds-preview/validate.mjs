@@ -16,6 +16,8 @@ const syntheticEnv = [
   'EARLYBIRDS_PREVIEW_DB_NAME=earlybirds_preview',
   'EARLYBIRDS_PREVIEW_APP_PORT=13000',
   'EARLYBIRDS_PREVIEW_IMAGE_TAG=synthetic',
+  'EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG=synthetic',
+  'EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA=synthetic-preview',
   'EARLYBIRDS_PREVIEW_GIT_SHA=synthetic-preview',
   'EARLYBIRDS_PREVIEW_BUILD_TIME=synthetic-preview',
   'EARLYBIRDS_PREVIEW_SCHEMA_VERSION=preview-forward-only',
@@ -33,6 +35,8 @@ const syntheticEnv = [
   'EARLY_BIRDS_TEST_LOGIN_SECRET=synthetic-preview-login-secret-at-least-32-characters',
   'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=0',
   'BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED=0',
+  'LISTENER_WITHDRAWAL_ENABLED=0',
+  'LISTENER_WITHDRAWAL_SECRET=',
   'EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=earlybirds-staging.harmonicbeacon.com',
   'BEACON_LISTENER_GEOIP_HOST_PATH=.',
   'EARLY_BIRDS_AUTHORITY_BASE_URL=https://authority.example.invalid',
@@ -76,10 +80,10 @@ try {
     encoding: 'utf8',
   });
   const resolved = JSON.parse(rendered);
-  const { postgres, migration, listener, 'beacon-stream': stream } = resolved.services;
+  const { postgres, migration, listener, 'withdrawal-operator': withdrawalOperator, 'beacon-stream': stream } = resolved.services;
 
   assert.deepEqual(Object.keys(resolved.services).sort(), [
-    'beacon-stream', 'listener', 'migration', 'postgres',
+    'beacon-stream', 'listener', 'migration', 'postgres', 'withdrawal-operator',
   ]);
   assert.equal(postgres.ports, undefined, 'PostgreSQL must not publish a host port');
   assert.deepEqual(Object.keys(postgres.networks), ['preview_db']);
@@ -104,6 +108,8 @@ try {
   assert.equal(listener.environment.EARLY_BIRDS_FREE_FOR_ALL, '0');
   assert.equal(listener.environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED, '0');
   assert.equal(listener.environment.BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED, '0');
+  assert.equal(listener.environment.LISTENER_WITHDRAWAL_ENABLED, '0');
+  assert.equal(listener.environment.LISTENER_WITHDRAWAL_SECRET, '');
   assert.equal(
     listener.environment.EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS,
     'earlybirds-staging.harmonicbeacon.com',
@@ -126,6 +132,16 @@ try {
   const appPort = publishedPort(listener, 3000);
   assert.equal(appPort.host_ip, '127.0.0.1');
   assert.equal(Number(appPort.published), 13000);
+
+  assert.equal(withdrawalOperator.image, 'harmonic-beacon/earlybirds-preview-listener:synthetic');
+  assert.equal(withdrawalOperator.restart, 'unless-stopped');
+  assert.deepEqual(withdrawalOperator.command, ['tail', '-f', '/dev/null']);
+  assert.equal(withdrawalOperator.ports, undefined);
+  assert.equal(withdrawalOperator.volumes, undefined);
+  assert.deepEqual(Object.keys(withdrawalOperator.networks), ['preview_db']);
+  assert.equal(withdrawalOperator.depends_on.postgres.condition, 'service_healthy');
+  assert.equal(withdrawalOperator.depends_on.migration.condition, 'service_completed_successfully');
+  assert.match(withdrawalOperator.environment.DATABASE_URL, /@earlybirds-preview-postgres:5432/);
 
   assert.equal(stream.build.context, path.join(root, 'services/beacon-stream'));
   assert.equal(stream.build.dockerfile, 'Dockerfile');

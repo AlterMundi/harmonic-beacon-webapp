@@ -31,6 +31,7 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['unsafe kill switch value', 'EARLY_BIRDS_ENABLED=true', /must be 0 or 1/],
     ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
     ['unsafe team-entry switch', 'EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED=true', /must be 0 or 1/],
+    ['unsafe withdrawal switch', 'LISTENER_WITHDRAWAL_ENABLED=true', /must be 0 or 1/],
     ['unsafe PayPal checkout switch', 'BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED=true', /must be 0 or 1/],
     ['unsafe Mercado Pago checkout switch', 'BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED=true', /must be 0 or 1/],
     ['unsafe PayPal Live switch', 'BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED=1', /must be 0/],
@@ -141,6 +142,8 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /EARLY_BIRDS_FREE_FOR_ALL: \$\{EARLY_BIRDS_FREE_FOR_ALL:-0\}/);
   assert.match(source, /EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: \$\{EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED: \$\{BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED:-0\}/);
+  assert.match(source, /LISTENER_WITHDRAWAL_ENABLED: \$\{LISTENER_WITHDRAWAL_ENABLED:-0\}/);
+  assert.match(source, /LISTENER_WITHDRAWAL_SECRET: \$\{LISTENER_WITHDRAWAL_SECRET:-\}/);
   assert.match(source, /BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED:-0\}/);
   assert.match(source, /BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED: \$\{BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED:-0\}/);
@@ -161,6 +164,81 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /@earlybirds-preview-postgres:5432/, 'database URLs must use the collision-proof alias');
   assert.match(source, /BEACON_LISTENER_GEOIP_DB_PATH: \/data\/geoip\/dbip-country-lite\.mmdb/);
   assert.match(source, /BEACON_LISTENER_GEOIP_HOST_PATH[^\n]*:\/data\/geoip\/dbip-country-lite\.mmdb:ro/);
+
+  const operatorBlock = source.slice(source.indexOf('  withdrawal-operator:'), source.indexOf('\nnetworks:'));
+  assert.match(operatorBlock, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG:\?set_exact_operator_image_tag/);
+  assert.match(operatorBlock, /restart: unless-stopped/);
+  assert.match(operatorBlock, /command: \["tail", "-f", "\/dev\/null"\]/);
+  assert.match(operatorBlock, /networks: \[preview_db\]/);
+  assert.match(operatorBlock, /migration: \{ condition: service_completed_successfully \}/);
+  assert.match(operatorBlock, /test -f scripts\/listener-withdrawal-operator\.ts[\s\S]*node_modules\/\.bin\/tsx/);
+  assert.doesNotMatch(operatorBlock, /ports:|listener_egress|authority_private|volumes:/);
+});
+
+test('preview lifecycle pins and preserves the private withdrawal operator', async () => {
+  const helper = await readRepository('scripts/early-birds-preview/lib.sh');
+  const start = await readRepository('scripts/early-birds-preview/start.sh');
+  const rollback = await readRepository('scripts/early-birds-preview/rollback.sh');
+  assert.match(helper, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG must be an exact lowercase sha40/);
+  assert.match(helper, /EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA/);
+  assert.match(helper, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG is required/);
+  assert.doesNotMatch(
+    helper.slice(helper.indexOf('require_withdrawal_operator_image'), helper.indexOf('require_synthetic_env')),
+    /EARLYBIRDS_PREVIEW_GIT_SHA/,
+  );
+  assert.match(helper, /docker image inspect[\s\S]*BEACON_GIT_SHA/);
+  assert.match(start, /build listener[\s\S]*require_withdrawal_operator_image[\s\S]*up -d listener withdrawal-operator[\s\S]*verify_running_withdrawal_operator/);
+  assert.match(helper, /withdrawal operator container is not healthy/);
+  assert.match(helper, /running withdrawal operator provenance does not match its pinned SHA/);
+  assert.match(helper, /while test "\$operator_attempt" -lt 60; do[\s\S]*sleep 1/);
+  assert.match(rollback, /stop listener/);
+  assert.doesNotMatch(rollback, /stop[^\n]*withdrawal-operator/);
+
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'withdrawal-operator-pin-'));
+  const missingTagEnv = path.join(temporary, 'missing-tag.env');
+  await fs.writeFile(missingTagEnv, [
+    'EARLYBIRDS_PREVIEW_ENV=runtime',
+    'EARLYBIRDS_PREVIEW_IMAGE_TAG=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    '',
+  ].join('\n'));
+  const missingTag = spawnSync('sh', [
+    '-c', '. "$1"; require_withdrawal_operator_image "$2"', 'sh',
+    path.join(repositoryRoot, 'scripts/early-birds-preview/lib.sh'), missingTagEnv,
+  ], { encoding: 'utf8' });
+  await fs.rm(temporary, { recursive: true, force: true });
+  assert.equal(missingTag.status, 2);
+  assert.match(missingTag.stderr, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG is required/);
+});
+
+test('withdrawal edge is exact, private-by-default and isolated from non-Listener vhosts', async () => {
+  const listener = await readPreview('nginx/listen.harmonicbeacon.com.conf.template');
+  const staging = await readPreview('nginx/earlybirds-staging.harmonicbeacon.com.conf.template');
+  for (const [source, port, zone] of [
+    [listener, '13000', 'listener_withdrawal'],
+    [staging, '13001', 'listener_staging_withdrawal'],
+  ]) {
+    assert.match(source, new RegExp(`limit_req_zone \\$binary_remote_addr zone=${zone}:1m`));
+    assert.match(source, /location = \/listener\/withdrawal \{[\s\S]*if \(\$request_method != GET\) \{ return 405; \}[\s\S]*access_log off;[\s\S]*Cache-Control "private, no-store"/);
+    assert.match(source, /location = \/listener\/cancel-service \{[\s\S]*if \(\$request_method != GET\) \{ return 405; \}[\s\S]*access_log off;[\s\S]*Cache-Control "private, no-store"/);
+    const api = source.slice(source.indexOf('location = /api/listener/withdrawal'));
+    assert.match(api, /if \(\$request_method != POST\) \{ return 405; \}/);
+    assert.match(api, /client_max_body_size 2048;/);
+    assert.match(api, new RegExp(`limit_req zone=${zone}`));
+    assert.match(api, /access_log off;/);
+    assert.match(api, /Cache-Control "private, no-store"/);
+    assert.match(api, new RegExp(`proxy_pass http:\/\/127\\.0\\.0\\.1:${port};`));
+    assert.match(api, /proxy_set_header Host \$host;/);
+    assert.match(api, /proxy_set_header X-Real-IP \$remote_addr;/);
+    assert.match(api, /proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;/);
+    assert.match(api, /proxy_set_header X-Forwarded-Proto https;/);
+  }
+
+  const nginxFiles = await fs.readdir(path.join(previewRoot, 'nginx'));
+  for (const name of nginxFiles.filter((entry) => !entry.startsWith('listen.') && !entry.startsWith('earlybirds-staging.'))) {
+    assert.doesNotMatch(await readPreview(`nginx/${name}`), /listener\/(?:withdrawal|cancel-service)/);
+  }
+  assert.doesNotMatch(await readPreview('nginx/stream.harmonicbeacon.com.conf.template'), /withdrawal|cancel-service/);
 });
 
 test('optional authority overlay joins only the dedicated external private network', async () => {
@@ -448,13 +526,13 @@ test('smoke covers both probes while ordinary app rollback preserves the origin 
   assert.match(rollback, /stop listener/);
   assert.doesNotMatch(rollback, /preview_compose_command[^\n]*stop[^\n]*(postgres|beacon-stream)|\bdown\b|volume rm/);
   const start = await readRepository('scripts/early-birds-preview/start.sh');
-  assert.match(start, /up -d --build listener/);
+  assert.match(start, /build listener[\s\S]*up -d listener withdrawal-operator/);
   assert.doesNotMatch(start, /up[^\n]*listener[^\n]*beacon-stream|up[^\n]*beacon-stream[^\n]*listener/);
   const startOrigin = await readRepository('scripts/early-birds-preview/start-origin.sh');
   assert.match(startOrigin, /up -d --build --no-deps beacon-stream/);
   assert.doesNotMatch(startOrigin, /\blistener\b.*\bup\b|up[^\n]*listener/);
   const stop = await readRepository('scripts/early-birds-preview/stop.sh');
-  assert.match(stop, /stop listener beacon-stream postgres/);
+  assert.match(stop, /stop listener withdrawal-operator beacon-stream postgres/);
   assert.doesNotMatch(stop, /\bdown\b|-v\b|volume rm/);
 
   const disablePublic = await readRepository('scripts/early-birds-preview/disable-public.sh');

@@ -8,7 +8,10 @@ require_synthetic_env "$env_file"
 # PostgreSQL health -> forward-only migration -> Listener readiness. The
 # long-lived audio origin is intentionally outside an ordinary app release;
 # use start-origin.sh only in its own reviewed maintenance window.
-preview_compose_command "$env_file" up -d --build listener
+preview_compose_command "$env_file" build listener
+require_withdrawal_operator_image "$env_file"
+preview_compose_command "$env_file" up -d listener withdrawal-operator
+verify_running_withdrawal_operator "$env_file"
 kill_switch=$(preview_env_value EARLY_BIRDS_ENABLED "$env_file")
 free_for_all_switch=$(preview_env_value EARLY_BIRDS_FREE_FOR_ALL "$env_file")
 team_entry_switch=$(preview_env_value EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED "$env_file")
