@@ -138,6 +138,35 @@ services:
         max-size: 10m
         max-file: "3"
 
+  # Durable operator seam: intentionally independent from the app container so
+  # a Listener image rollback cannot remove queue processing or metrics. Pin an
+  # exact image that contains the withdrawal operator; never use a moving tag.
+  withdrawal-operator:
+    image: harmonic-beacon/earlybirds-preview-listener:${EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG:-${EARLYBIRDS_PREVIEW_IMAGE_TAG:-synthetic}}
+    restart: unless-stopped
+    init: true
+    command: ["tail", "-f", "/dev/null"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@earlybirds-preview-postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
+    networks: [preview_db]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migration: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "sh", "-ec", "test -f scripts/listener-withdrawal-operator.ts && test -f src/lib/listener/consumer-withdrawal.ts && test -x node_modules/.bin/tsx"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 256M }
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
 networks:
   preview_db:
     name: earlybirds_preview_db_internal

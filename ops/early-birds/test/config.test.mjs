@@ -77,10 +77,15 @@ test('schedules an atomic private metric export and out-of-band throttle pruning
   const prune = await fs.readFile(path.join(root, '../../scripts/listener-withdrawal-prune-throttles.sh'), 'utf8');
   assert.match(exporter, /mktemp[\s\S]*listener-withdrawal-operator\.ts metrics[\s\S]*metrics_export_unixtime[\s\S]*mv -f/);
   assert.match(exporter, /docker exec --user root/);
+  assert.match(exporter, /earlybirds-preview-withdrawal-operator-1/);
+  assert.doesNotMatch(exporter, /earlybirds-preview-listener-1/);
+  assert.match(exporter, /State\.Health[\s\S]*true healthy/);
   assert.match(metricService, /EnvironmentFile=\/etc\/harmonic-beacon\/listener-withdrawal-ops\.env/);
   assert.match(metricTimer, /OnUnitActiveSec=5m/);
   assert.match(pruneService, /\/usr\/local\/libexec\/harmonic-beacon\/listener-withdrawal-prune-throttles\.sh/);
   assert.match(prune, /prune-throttles 48/);
+  assert.match(prune, /earlybirds-preview-withdrawal-operator-1/);
+  assert.match(prune, /State\.Health[\s\S]*true healthy/);
   assert.match(pruneTimer, /OnCalendar=daily/);
   assert.doesNotMatch(exporter, /curl|https?:\/\//);
   const dockerfile = await fs.readFile(path.join(root, '../../Dockerfile'), 'utf8');

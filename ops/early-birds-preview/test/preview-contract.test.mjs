@@ -164,6 +164,31 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /@earlybirds-preview-postgres:5432/, 'database URLs must use the collision-proof alias');
   assert.match(source, /BEACON_LISTENER_GEOIP_DB_PATH: \/data\/geoip\/dbip-country-lite\.mmdb/);
   assert.match(source, /BEACON_LISTENER_GEOIP_HOST_PATH[^\n]*:\/data\/geoip\/dbip-country-lite\.mmdb:ro/);
+
+  const operatorBlock = source.slice(source.indexOf('  withdrawal-operator:'), source.indexOf('\nnetworks:'));
+  assert.match(operatorBlock, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG:-\$\{EARLYBIRDS_PREVIEW_IMAGE_TAG:-synthetic\}/);
+  assert.match(operatorBlock, /restart: unless-stopped/);
+  assert.match(operatorBlock, /command: \["tail", "-f", "\/dev\/null"\]/);
+  assert.match(operatorBlock, /networks: \[preview_db\]/);
+  assert.match(operatorBlock, /migration: \{ condition: service_completed_successfully \}/);
+  assert.match(operatorBlock, /test -f scripts\/listener-withdrawal-operator\.ts[\s\S]*node_modules\/\.bin\/tsx/);
+  assert.doesNotMatch(operatorBlock, /ports:|listener_egress|authority_private|volumes:/);
+});
+
+test('preview lifecycle pins and preserves the private withdrawal operator', async () => {
+  const helper = await readRepository('scripts/early-birds-preview/lib.sh');
+  const start = await readRepository('scripts/early-birds-preview/start.sh');
+  const rollback = await readRepository('scripts/early-birds-preview/rollback.sh');
+  assert.match(helper, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG must be an exact lowercase sha40/);
+  assert.match(helper, /EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA/);
+  assert.doesNotMatch(
+    helper.slice(helper.indexOf('require_withdrawal_operator_image'), helper.indexOf('require_synthetic_env')),
+    /EARLYBIRDS_PREVIEW_GIT_SHA/,
+  );
+  assert.match(helper, /docker image inspect[\s\S]*BEACON_GIT_SHA/);
+  assert.match(start, /build listener[\s\S]*require_withdrawal_operator_image[\s\S]*up -d listener withdrawal-operator/);
+  assert.match(rollback, /stop listener/);
+  assert.doesNotMatch(rollback, /stop[^\n]*withdrawal-operator/);
 });
 
 test('withdrawal edge is exact, private-by-default and isolated from non-Listener vhosts', async () => {
@@ -481,13 +506,13 @@ test('smoke covers both probes while ordinary app rollback preserves the origin 
   assert.match(rollback, /stop listener/);
   assert.doesNotMatch(rollback, /preview_compose_command[^\n]*stop[^\n]*(postgres|beacon-stream)|\bdown\b|volume rm/);
   const start = await readRepository('scripts/early-birds-preview/start.sh');
-  assert.match(start, /up -d --build listener/);
+  assert.match(start, /build listener[\s\S]*up -d listener withdrawal-operator/);
   assert.doesNotMatch(start, /up[^\n]*listener[^\n]*beacon-stream|up[^\n]*beacon-stream[^\n]*listener/);
   const startOrigin = await readRepository('scripts/early-birds-preview/start-origin.sh');
   assert.match(startOrigin, /up -d --build --no-deps beacon-stream/);
   assert.doesNotMatch(startOrigin, /\blistener\b.*\bup\b|up[^\n]*listener/);
   const stop = await readRepository('scripts/early-birds-preview/stop.sh');
-  assert.match(stop, /stop listener beacon-stream postgres/);
+  assert.match(stop, /stop listener withdrawal-operator beacon-stream postgres/);
   assert.doesNotMatch(stop, /\bdown\b|-v\b|volume rm/);
 
   const disablePublic = await readRepository('scripts/early-birds-preview/disable-public.sh');

@@ -75,7 +75,8 @@ provider IDs or request IDs.
 ## Private metrics and maintenance
 
 Create `/etc/harmonic-beacon/listener-withdrawal-ops.env` root-owned, mode
-`0600`, containing only `LISTENER_WITHDRAWAL_CONTAINER=earlybirds-preview-listener-1`
+`0600`, containing only
+`LISTENER_WITHDRAWAL_CONTAINER=earlybirds-preview-withdrawal-operator-1`
 (or the reviewed replacement container name). The operator inherits the
 container's private `DATABASE_URL`; do not duplicate it on the host. Install
 the two wrappers into `/usr/local/libexec/harmonic-beacon/`, root-owned mode
@@ -98,13 +99,35 @@ cover queue age at 20/24 hours and missing/stale exports at 10/20 minutes;
 Alertmanager's existing `send_resolved: true` emits recovery. Neither endpoint
 nor metrics path is routed through nginx.
 
+`withdrawal-operator` is a private, no-port, database-only sidecar pinned by
+the explicit `EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG`. Before enabling the
+feature, build or pull an exact immutable release containing the operator
+scripts, set that sha40 tag and the identical, independent
+`EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA` in the root-owned preview env, and
+verify. Do not derive either from the app rollback SHA:
+
+```bash
+docker compose --env-file /root-owned/preview.env -f ops/early-birds-preview/compose.yml config withdrawal-operator
+operator_tag=$(sed -n 's/^EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG=//p' /root-owned/preview.env | tail -n1)
+test "$(docker image inspect "harmonic-beacon/earlybirds-preview-listener:$operator_tag" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BEACON_GIT_SHA=//p')" = "$operator_tag"
+docker exec earlybirds-preview-withdrawal-operator-1 test -r scripts/listener-withdrawal-operator.ts
+docker exec earlybirds-preview-withdrawal-operator-1 test -r src/lib/listener/consumer-withdrawal.ts
+docker inspect earlybirds-preview-withdrawal-operator-1 --format '{{.State.Health.Status}}'
+```
+
+An app rollback must update or recreate only `listener`. Do not downgrade,
+recreate or remove `withdrawal-operator`: keep it pinned at this release or a
+newer reviewed release until every durable request is resolved. The sidecar
+starts only after the forward-only migration and has no egress/public network.
+
 Before switching on, confirm `node_textfile_scrape_error == 0`, the freshness
 metric advances twice, the queue alerts have no pending/firing state, and a
 direct public request to `/api/internal/` remains `404`.
 
 ## Rollback
 
-Set `LISTENER_WITHDRAWAL_ENABLED=0` to hide both links/routes/API, or deploy the previous Listener image. Keep the
+Set `LISTENER_WITHDRAWAL_ENABLED=0` to hide both links/routes/API, or deploy the
+previous Listener image without touching `withdrawal-operator`. Keep the
 additive tables: dropping them would destroy open consumer requests. The queue
 can continue to be processed with this commit's root-only CLI. No event or
 payment-provider rollback is involved.

@@ -6,11 +6,12 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   exit 1
 fi
 
-container=${LISTENER_WITHDRAWAL_CONTAINER:-earlybirds-preview-listener-1}
+container=${LISTENER_WITHDRAWAL_CONTAINER:-earlybirds-preview-withdrawal-operator-1}
 metrics_dir=/var/lib/harmonic-beacon/metrics
 metrics_file=$metrics_dir/listener-withdrawal.prom
-docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null | grep -Fxq true || {
-  echo 'Listener container is not running' >&2
+docker inspect --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" \
+  2>/dev/null | grep -Fxq 'true healthy' || {
+  echo 'Listener withdrawal operator sidecar is not healthy' >&2
   exit 1
 }
 

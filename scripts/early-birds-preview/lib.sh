@@ -39,6 +39,28 @@ require_synthetic_secret() {
   test "${#secret_value}" -ge "$secret_min_length" || preview_fail "$secret_key is too short"
 }
 
+require_withdrawal_operator_image() {
+  operator_env_file=${1:?usage: require_withdrawal_operator_image FILE}
+  operator_tag=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG "$operator_env_file")
+  test -n "$operator_tag" || operator_tag=$(preview_env_value EARLYBIRDS_PREVIEW_IMAGE_TAG "$operator_env_file")
+  operator_expected_sha=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA "$operator_env_file")
+  operator_environment=$(preview_env_value EARLYBIRDS_PREVIEW_ENV "$operator_env_file")
+  if test "$operator_environment" = synthetic; then
+    test "$operator_tag" = synthetic || preview_fail 'synthetic withdrawal operator image tag must be synthetic'
+    test "$operator_expected_sha" = synthetic-preview || preview_fail 'synthetic withdrawal operator provenance must be synthetic-preview'
+  else
+    printf '%s\n' "$operator_tag" | grep -Eq '^[0-9a-f]{40}$' || \
+      preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG must be an exact lowercase sha40'
+    test "$operator_expected_sha" = "$operator_tag" || \
+      preview_fail 'withdrawal operator image tag must match EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA'
+  fi
+  operator_image="harmonic-beacon/earlybirds-preview-listener:$operator_tag"
+  operator_actual_sha=$(docker image inspect "$operator_image" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | \
+    sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
+  test "$operator_actual_sha" = "$operator_expected_sha" || \
+    preview_fail 'withdrawal operator image provenance does not match its pinned tag'
+}
+
 require_synthetic_env() {
   env_file=${1:?usage: provide a synthetic preview env file}
   test -f "$env_file" || preview_fail "preview env file not found: $env_file"
