@@ -630,6 +630,8 @@ cross into event/staff privileges.
 - reconcile stale/missing delivery.
 - implement MercadoPago/BCRA rate lock and failure semantics through the same contract;
 - approve terms, privacy, all-ages offer copy and source wording;
+- expose the public no-login **BOTÓN DE ARREPENTIMIENTO**, return an opaque
+  receipt immediately and process its private durable queue within 24 hours;
 - complete accessibility/mobile/audio/security acceptance;
 - run sustained origin/canary test and failure rehearsal;
 - verify backups, observability, stop switch and rollback;
@@ -660,6 +662,8 @@ explicitly approved.
   event code or data.
 - Current event tests remain green at final convergence.
 - Runbook includes launch, pause, source replacement, incident and rollback.
+- Public sales remain closed until the consumer-withdrawal route, dedicated
+  secret, queue migration and operator runbook are deployed and smoke-tested.
 
 ## 14. Post-weekend convergence card
 

@@ -2043,6 +2043,104 @@ body {
   line-height: 1.65;
 }
 
+.listener-withdrawal-link {
+  position: fixed;
+  right: max(0.8rem, env(safe-area-inset-right));
+  bottom: max(0.8rem, env(safe-area-inset-bottom));
+  z-index: 90;
+  display: grid;
+  gap: 0.12rem;
+  min-height: 48px;
+  max-width: min(18rem, calc(100vw - 1.6rem));
+  padding: 0.7rem 0.95rem;
+  border: 1px solid rgba(255, 216, 117, 0.48);
+  border-radius: 0.8rem;
+  color: var(--night);
+  background: var(--gold);
+  box-shadow: 0 0.7rem 2.2rem rgba(0, 0, 0, 0.45);
+  font-family: var(--font-space-mono), monospace;
+  text-decoration: none;
+}
+
+.listener-withdrawal-link strong { font-size: 0.66rem; letter-spacing: 0.055em; }
+.listener-withdrawal-link span { font-size: 0.62rem; }
+.listener-withdrawal-link--inline { white-space: nowrap; }
+
+.listener-withdrawal__intro,
+.listener-withdrawal__scope {
+  margin-top: 1rem;
+  color: var(--text-secondary) !important;
+  font-size: 0.9rem !important;
+  line-height: 1.65;
+}
+
+.listener-withdrawal__scope {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.listener-withdrawal__form {
+  display: grid;
+  gap: 1.1rem;
+  margin-top: 1.5rem;
+}
+
+.listener-withdrawal__form > label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.listener-withdrawal__form label > span {
+  color: var(--paper);
+  font-size: 0.78rem;
+}
+
+.listener-withdrawal__form input,
+.listener-withdrawal__form select {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.72rem 0.85rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.7rem;
+  color: var(--paper);
+  background: #0d1917;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.listener-withdrawal__error { color: #fecaca; font-size: 0.78rem; line-height: 1.5; }
+
+.listener-withdrawal__receipt {
+  padding: 1.2rem;
+  border: 1px solid rgba(200, 255, 122, 0.32);
+  border-radius: 0.9rem;
+  background: rgba(200, 255, 122, 0.07);
+}
+
+.listener-withdrawal__receipt code {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 1rem 0;
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+  border-radius: 0.55rem;
+  color: var(--night);
+  background: var(--lime);
+  font-size: clamp(0.72rem, 2.5vw, 0.95rem);
+}
+
+@media (max-width: 640px) {
+  .listener-withdrawal-link {
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    max-width: none;
+  }
+}
+
 /* --------------------------------------------
    LISTENER PAGE SHELL / ACTIONS / ALERTS / FIELDS
    Listener-scoped mirrors of the event visual
