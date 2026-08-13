@@ -22,13 +22,13 @@ The weekly-Free candidate has advanced to a complete Founding Listener pre-relea
 - private paid-operation metrics, alerts, backup/restore and sales kill switches;
 - production provider adapters and public checkout present but fail-closed/default-off.
 
-The release is not yet authorized for real sales. Passwordless email delivery is deployed in an
+The release is not yet authorized for public real sales. Passwordless email delivery is deployed in an
 event-isolated sidecar at exact backend SHA
 `SairaAsua/proyecciones-mito@456ece2b38e203a2d12c54864115e03ebaa1a89c`; a controlled email reached
-Gmail with terminal state `SENT`. The human callback/Free/logout check remains. Remaining gates
-include final ES/EN legal/copy review, controlled rotation of the exposed Google OAuth
-client secret, protected PayPal/MP Live credentials, one supervised low-value Live lifecycle per
-provider and explicit main/public-sales approval. Hermetic fonts are complete. See
+Gmail with terminal state `SENT`. The human callback/Free/logout check remains. Google OAuth
+rotation and real callback/logout/re-login acceptance are complete. Productive provider credentials
+are installed root-only. Remaining gates include final ES/EN legal/copy review, completion of one
+supervised low-value Live lifecycle per provider and explicit main/public-sales approval. Hermetic fonts are complete. See
 `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and issue #315 for the current checklist.
 
 ## Status: weekly Free deployed for acceptance
@@ -55,16 +55,18 @@ repair, never restoring daily/welcome authorization.
 | Previous same-schema application rollback | `fcdde379` |
 | Commercial checkpoint documentation | `78ede811161cf47104f3758e6703d06d2328ea6f` |
 | Listener database schema | `20260808160000_listener_weekly_quota` |
-| Canonical payment authority application | `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` |
+| Canonical payment authority application and post-Live rollback floor | `b1038ddb579817e39add567c5b7b055e2f716095` |
 | Listener mail sidecar application | `456ece2b38e203a2d12c54864115e03ebaa1a89c` |
 | Public mode | Free for All OFF during coordinated registered-Free acceptance |
 | Recovery | Stop/kill-switch and roll forward; old policy images unsupported |
 
-The current authority adds a read-only Live provider preflight only. Live
-credentials are not installed, Live provider/new-sales metrics remain zero and
-no real charge is authorized. Authority rollback retains exact previous image
-`60584936603525027c9891e0865efc58055a3d5d` plus protected backup
-`/mnt/beacon-data/staging-backups/authority-live-preflight-20260812T193128Z`.
+The current authority adds the reviewed Mercado Pago adverse-event hardening and a read-only Live
+provider preflight. Productive credentials are installed root-only. A supervised PayPal Live
+approval intent was created for USD 5 and is awaiting a non-merchant buyer; it created no
+subscription or charge. New sales and public checkout are OFF while PayPal Live lifecycle
+ingestion remains ON. Once any Live checkout attempt exists, `b1038ddb` is the authority binary
+floor: preserve the current database, reconcile provider state and roll forward. Older images and
+pre-cutover backups are forensic/disaster-recovery artifacts, not routine rollback targets.
 
 Health must attest the deployed application SHA, not the later documentation or
 test-only branch head.
@@ -152,6 +154,9 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - Current image is `4ac408f`. Image `fcdde379` remains the same-schema application recovery
   target; earlier policy images are historical and
   are not valid rollback targets.
+- The authority has an independent post-Live floor: `b1038ddb` is the minimum binary. New sales
+  stop with flags while provider lifecycle ingestion and the current canonical database remain;
+  recovery reconciles and rolls forward.
 - The fixed public-disable command was exercised after deployment. Its first
   health probe observed the normal Next.js startup connection reset, retried,
   then proved liveness, readiness and anonymous lease denial before exiting 0.
@@ -186,9 +191,10 @@ deployed image; later documentation-only commits do not require rebuilding it.
   remains default-off and can be re-enabled only on staging for later variants.
 - #199/#200 have fresh provider evidence: PayPal Sandbox completed USD 5
   activation, cancel-pending-end, reversal and terminal refund; Mercado Pago TEST
-  completed checkout, pause, reactivation and reconciliation. Both adapters and
-  their production lanes remain default-off. No Live credential, public checkout
-  flag or real sale is active.
+  completed checkout, pause, reactivation and reconciliation. Productive credentials are installed
+  root-only. One PayPal Live approval intent exists without a subscription or charge; PayPal Live
+  lifecycle ingestion stays ON while global new sales, both public checkout flags and Mercado Pago
+  Live remain OFF.
 
 ## Remaining human sequence
 

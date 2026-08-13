@@ -1,5 +1,21 @@
 # EarlyBirds isolated staging runtime
 
+## 2026-08-13 Live-lifecycle rollback floor
+
+The isolated payment authority runs exact SHA
+`b1038ddb579817e39add567c5b7b055e2f716095`. A supervised PayPal Live approval intent was created
+for the exact USD 5 offer; it awaits a buyer account different from the merchant and created no
+subscription or charge. New sales were returned to OFF immediately. PayPal Live lifecycle
+ingestion remains ON so signed webhooks, reconciliation and cancellation stay available; Mercado
+Pago Live remains OFF.
+
+From this first Live checkout attempt onward, `b1038ddb` is the minimum authority binary. Routine
+incident recovery keeps the current database, disables new sales, leaves the affected provider's
+lifecycle ingestion active, reconciles from the provider and rolls forward. The older `8e10f16`
+image and pre-`b1038` database backup must not be paired with current data or used as routine
+rollback targets. The Listener UI may still roll back independently to `fcdde379` while its
+contract remains compatible.
+
 ## 2026-08-12 payment-authority Live-preflight checkpoint
 
 The isolated membership authority runs exact merge SHA

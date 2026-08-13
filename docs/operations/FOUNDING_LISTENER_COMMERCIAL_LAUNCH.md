@@ -54,10 +54,14 @@ hardening from backend PR #80. API and worker are healthy, Alembic is at head `7
 the exact public webhook routes fail closed while Live is disabled. Productive PayPal and Mercado
 Pago credentials are installed only in the root-owned runtime store. Read-only preflights verified
 the PayPal Live catalog/webhook and Mercado Pago productive merchant/webhook configuration with
-new sales forced OFF. No checkout, subscription or payment was created. The previous authority
-image `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` and protected pre-deploy backup
+new sales forced OFF. On 2026-08-13, a supervised PayPal Live approval intent was created for the
+USD 5 offer; it is awaiting approval by a buyer account different from the merchant, and created
+no subscription or charge. New sales were immediately returned to OFF while PayPal Live lifecycle
+ingestion remains ON. The former authority image
+`8e10f16fe3471a097021f7f1ee41eb8f88f4f154` and protected pre-deploy backup
 `/var/backups/harmonic-beacon/earlybirds-authority-pre-b1038ddb579817e39add567c5b7b055e2f716095.sql.gz`
-are retained for rollback.
+are retained only as pre-Live forensic/disaster-recovery artifacts; they are no longer routine
+rollback targets.
 
 ## Independent switches
 
@@ -123,7 +127,20 @@ converted back into a reversible action.
 
 - Checkout/provider incident: turn off both app checkout flags and the authority new-sales flag.
   Existing lifecycle workers and webhooks stay running.
+- Live authority floor: after the first Live checkout attempt, provider binding or event,
+  `b1038ddb579817e39add567c5b7b055e2f716095` is the minimum supported authority binary. Do not run
+  `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` against the current database and do not routinely
+  restore the pre-`b1038` database backup. The older binary predates required Mercado Pago
+  adverse-event hardening and a database restore could discard canonical checkout/lifecycle
+  evidence.
+- Authority regression after Live cutover: keep the current database, turn new sales OFF, retain
+  the affected provider's Live lifecycle flag so signed webhooks, reconciliation, cancellation and
+  existing access continue, then deploy a repaired `b1038`-compatible-or-newer image and reconcile
+  from the provider. Recovery is roll-forward. A pre-cutover database restore is reserved for an
+  explicitly commanded disaster recovery with both providers frozen and a complete provider-led
+  reconciliation plan; it is not an ordinary rollback.
 - Listener regression: roll back only the Listener image while keeping a contract-compatible
+  authority. `fcdde379` remains the bounded contract-compatible UI rollback for the current
   authority. If compatibility is uncertain, keep Listener disabled and roll forward.
 - Provider-specific incident: disable only that app checkout flag. Do not route a pending checkout
   to the other provider or manufacture membership.
