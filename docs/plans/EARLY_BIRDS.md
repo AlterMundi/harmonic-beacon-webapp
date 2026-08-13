@@ -7,8 +7,9 @@
 > real charges and every audio encoding/content/signature choice still require the
 > explicit release and audio gates in this document.
 
-> **Current launch memory (2026-08-13):** the public Listener candidate and the
-> private withdrawal operator run exact SHA `0a475717d45d32cec38afdb8fc35fb772a994017`; canonical payment authority runs
+> **Current launch memory (2026-08-13):** the public Listener candidate runs exact
+> SHA `acc90ba35fea52f63ef18337e3a555ef637c552f`; the private withdrawal operator remains pinned at
+> `0a475717d45d32cec38afdb8fc35fb772a994017`; canonical payment authority runs
 > `b1038ddb579817e39add567c5b7b055e2f716095`; the isolated mail sidecar runs
 > `456ece2b38e203a2d12c54864115e03ebaa1a89c`. PayPal Sandbox and Mercado Pago
 > TEST lifecycles are accepted. One PayPal Live approval intent exists without a
