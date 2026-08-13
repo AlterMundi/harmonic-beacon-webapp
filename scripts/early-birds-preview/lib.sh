@@ -42,13 +42,14 @@ require_synthetic_secret() {
 require_withdrawal_operator_image() {
   operator_env_file=${1:?usage: require_withdrawal_operator_image FILE}
   operator_tag=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG "$operator_env_file")
-  test -n "$operator_tag" || operator_tag=$(preview_env_value EARLYBIRDS_PREVIEW_IMAGE_TAG "$operator_env_file")
   operator_expected_sha=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA "$operator_env_file")
   operator_environment=$(preview_env_value EARLYBIRDS_PREVIEW_ENV "$operator_env_file")
   if test "$operator_environment" = synthetic; then
     test "$operator_tag" = synthetic || preview_fail 'synthetic withdrawal operator image tag must be synthetic'
     test "$operator_expected_sha" = synthetic-preview || preview_fail 'synthetic withdrawal operator provenance must be synthetic-preview'
   else
+    test -n "$operator_tag" || preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG is required'
+    test -n "$operator_expected_sha" || preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA is required'
     printf '%s\n' "$operator_tag" | grep -Eq '^[0-9a-f]{40}$' || \
       preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG must be an exact lowercase sha40'
     test "$operator_expected_sha" = "$operator_tag" || \
@@ -59,6 +60,19 @@ require_withdrawal_operator_image() {
     sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
   test "$operator_actual_sha" = "$operator_expected_sha" || \
     preview_fail 'withdrawal operator image provenance does not match its pinned tag'
+}
+
+verify_running_withdrawal_operator() {
+  operator_env_file=${1:?usage: verify_running_withdrawal_operator FILE}
+  operator_expected_sha=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA "$operator_env_file")
+  operator_container="${LISTENER_WITHDRAWAL_CONTAINER:-earlybirds-preview-withdrawal-operator-1}"
+  operator_state=$(docker inspect "$operator_container" \
+    --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)
+  test "$operator_state" = 'true healthy' || preview_fail 'withdrawal operator container is not healthy'
+  operator_running_sha=$(docker inspect "$operator_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | \
+    sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
+  test "$operator_running_sha" = "$operator_expected_sha" || \
+    preview_fail 'running withdrawal operator provenance does not match its pinned SHA'
 }
 
 require_synthetic_env() {

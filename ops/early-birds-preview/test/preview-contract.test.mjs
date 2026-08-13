@@ -166,7 +166,7 @@ test('compose gates the loopback Listener on a forward-only isolated database mi
   assert.match(source, /BEACON_LISTENER_GEOIP_HOST_PATH[^\n]*:\/data\/geoip\/dbip-country-lite\.mmdb:ro/);
 
   const operatorBlock = source.slice(source.indexOf('  withdrawal-operator:'), source.indexOf('\nnetworks:'));
-  assert.match(operatorBlock, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG:-\$\{EARLYBIRDS_PREVIEW_IMAGE_TAG:-synthetic\}/);
+  assert.match(operatorBlock, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG:\?set_exact_operator_image_tag/);
   assert.match(operatorBlock, /restart: unless-stopped/);
   assert.match(operatorBlock, /command: \["tail", "-f", "\/dev\/null"\]/);
   assert.match(operatorBlock, /networks: \[preview_db\]/);
@@ -181,14 +181,33 @@ test('preview lifecycle pins and preserves the private withdrawal operator', asy
   const rollback = await readRepository('scripts/early-birds-preview/rollback.sh');
   assert.match(helper, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG must be an exact lowercase sha40/);
   assert.match(helper, /EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA/);
+  assert.match(helper, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG is required/);
   assert.doesNotMatch(
     helper.slice(helper.indexOf('require_withdrawal_operator_image'), helper.indexOf('require_synthetic_env')),
     /EARLYBIRDS_PREVIEW_GIT_SHA/,
   );
   assert.match(helper, /docker image inspect[\s\S]*BEACON_GIT_SHA/);
-  assert.match(start, /build listener[\s\S]*require_withdrawal_operator_image[\s\S]*up -d listener withdrawal-operator/);
+  assert.match(start, /build listener[\s\S]*require_withdrawal_operator_image[\s\S]*up -d listener withdrawal-operator[\s\S]*verify_running_withdrawal_operator/);
+  assert.match(helper, /withdrawal operator container is not healthy/);
+  assert.match(helper, /running withdrawal operator provenance does not match its pinned SHA/);
   assert.match(rollback, /stop listener/);
   assert.doesNotMatch(rollback, /stop[^\n]*withdrawal-operator/);
+
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'withdrawal-operator-pin-'));
+  const missingTagEnv = path.join(temporary, 'missing-tag.env');
+  await fs.writeFile(missingTagEnv, [
+    'EARLYBIRDS_PREVIEW_ENV=runtime',
+    'EARLYBIRDS_PREVIEW_IMAGE_TAG=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    '',
+  ].join('\n'));
+  const missingTag = spawnSync('sh', [
+    '-c', '. "$1"; require_withdrawal_operator_image "$2"', 'sh',
+    path.join(repositoryRoot, 'scripts/early-birds-preview/lib.sh'), missingTagEnv,
+  ], { encoding: 'utf8' });
+  await fs.rm(temporary, { recursive: true, force: true });
+  assert.equal(missingTag.status, 2);
+  assert.match(missingTag.stderr, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG is required/);
 });
 
 test('withdrawal edge is exact, private-by-default and isolated from non-Listener vhosts', async () => {

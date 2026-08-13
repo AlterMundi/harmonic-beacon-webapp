@@ -142,7 +142,7 @@ services:
   # a Listener image rollback cannot remove queue processing or metrics. Pin an
   # exact image that contains the withdrawal operator; never use a moving tag.
   withdrawal-operator:
-    image: harmonic-beacon/earlybirds-preview-listener:${EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG:-${EARLYBIRDS_PREVIEW_IMAGE_TAG:-synthetic}}
+    image: harmonic-beacon/earlybirds-preview-listener:${EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG:?set_exact_operator_image_tag}
     restart: unless-stopped
     init: true
     command: ["tail", "-f", "/dev/null"]
