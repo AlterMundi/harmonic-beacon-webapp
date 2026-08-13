@@ -18,6 +18,10 @@ import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
 import { serializeEarlyBirdQuotaSnapshot } from '@/lib/early-birds/quota';
 import { listenerCheckoutAvailability } from '@/lib/early-birds/checkout';
+import {
+    createListenerLiveWorkbenchCsrfToken,
+    listenerLiveWorkbenchConfig,
+} from '@/lib/early-birds/live-workbench';
 import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import {
     isCanonicalListenerHost,
@@ -90,6 +94,19 @@ export default async function EarlyBirdsPage({
         .then((session) => ({ session, unavailable: false as const }))
         .catch(() => ({ session: null, unavailable: true as const }));
     const session = sessionResolution.session;
+    const liveWorkbenchConfig = listenerStagingHost
+        ? listenerLiveWorkbenchConfig()
+        : null;
+    const liveWorkbenchToken = session && liveWorkbenchConfig
+        ? createListenerLiveWorkbenchCsrfToken({
+            config: liveWorkbenchConfig,
+            accountId: session.user.id,
+            sessionId: session.session.id,
+        })
+        : null;
+    const liveWorkbench = liveWorkbenchConfig && liveWorkbenchToken
+        ? { provider: liveWorkbenchConfig.provider, csrfToken: liveWorkbenchToken }
+        : null;
     const accessResolution = session
         ? await getEarlyBirdListeningAccess(session.user.id)
             .then((access) => ({ access, unavailable: false as const }))
@@ -111,6 +128,7 @@ export default async function EarlyBirdsPage({
                 quota={access.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
                 checkoutAvailability={checkoutAvailability}
                 checkoutEnvironment={checkoutEnvironment}
+                liveWorkbench={liveWorkbench}
                 serverNow={access.serverNow.toISOString()}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
@@ -144,6 +162,7 @@ export default async function EarlyBirdsPage({
             quota={access?.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
             checkoutAvailability={checkoutAvailability}
             checkoutEnvironment={checkoutEnvironment}
+            liveWorkbench={liveWorkbench}
             membership={listenerMembershipPresentation(access?.membership.projection ?? null)}
             serverNow={access?.serverNow.toISOString() ?? new Date().toISOString()}
         />

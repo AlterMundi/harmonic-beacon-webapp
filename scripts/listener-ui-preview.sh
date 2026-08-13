@@ -15,14 +15,37 @@ RELEASE_CONTAINER="earlybirds-preview-listener-1"
 PREVIEW_FREE_FOR_ALL="${LISTENER_UI_PREVIEW_FREE_FOR_ALL:-1}"
 PREVIEW_PAYPAL_CHECKOUT="${LISTENER_UI_PREVIEW_PAYPAL_SANDBOX_CHECKOUT_ENABLED:-0}"
 PREVIEW_MERCADO_PAGO_CHECKOUT="${LISTENER_UI_PREVIEW_MERCADO_PAGO_TEST_CHECKOUT_ENABLED:-0}"
+PREVIEW_LIVE_WORKBENCH="${LISTENER_UI_PREVIEW_LIVE_WORKBENCH_ENABLED:-0}"
+PREVIEW_EXPECTED_SHA="${LISTENER_UI_PREVIEW_EXPECTED_SHA:-}"
+LIVE_WORKBENCH_ENV_FILE="/etc/harmonic-beacon/listener-live-workbench.env"
 PREVIEW_ORIGIN="https://earlybirds-staging.harmonicbeacon.com"
 
-case "$PREVIEW_FREE_FOR_ALL:$PREVIEW_PAYPAL_CHECKOUT:$PREVIEW_MERCADO_PAGO_CHECKOUT" in
-    0:0:0|0:1:0|0:0:1|1:0:0) ;;
-    1:1:0|1:0:1) echo "Payment checkout requires Free For All to be disabled." >&2; exit 2 ;;
-    0:1:1|1:1:1) echo "Select exactly one payment provider in the workbench." >&2; exit 2 ;;
-    *) echo "Preview switches must be 0 or 1." >&2; exit 2 ;;
-esac
+for switch in "$PREVIEW_FREE_FOR_ALL" "$PREVIEW_PAYPAL_CHECKOUT" \
+    "$PREVIEW_MERCADO_PAGO_CHECKOUT" "$PREVIEW_LIVE_WORKBENCH"; do
+    case "$switch" in 0|1) ;; *) echo "Preview switches must be 0 or 1." >&2; exit 2 ;; esac
+done
+
+payment_modes=$((PREVIEW_PAYPAL_CHECKOUT + PREVIEW_MERCADO_PAGO_CHECKOUT + PREVIEW_LIVE_WORKBENCH))
+if [ "$payment_modes" -gt 0 ] && [ "$PREVIEW_FREE_FOR_ALL" != 0 ]; then
+    echo "Payment checkout requires Free For All to be disabled." >&2
+    exit 2
+fi
+if [ "$payment_modes" -gt 1 ]; then
+    echo "Select exactly one payment provider or private Live workbench." >&2
+    exit 2
+fi
+if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
+    case "$PREVIEW_EXPECTED_SHA" in
+        *[!0-9a-f]*|'') echo "Private Live workbench requires an exact lowercase 40-character SHA." >&2; exit 2 ;;
+    esac
+    [ "${#PREVIEW_EXPECTED_SHA}" -eq 40 ] || {
+        echo "Private Live workbench requires an exact lowercase 40-character SHA." >&2
+        exit 2
+    }
+elif [ -n "$PREVIEW_EXPECTED_SHA" ]; then
+    echo "LISTENER_UI_PREVIEW_EXPECTED_SHA is valid only for the private Live workbench." >&2
+    exit 2
+fi
 
 usage() {
     echo "Usage: $0 {start|sync|watch|status|stop|logs}" >&2
@@ -40,12 +63,28 @@ sync_source() {
 }
 
 start_remote() {
-    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' PREVIEW_MERCADO_PAGO_CHECKOUT='$PREVIEW_MERCADO_PAGO_CHECKOUT' PREVIEW_ORIGIN='$PREVIEW_ORIGIN' bash -s" <<'REMOTE'
+    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' PREVIEW_MERCADO_PAGO_CHECKOUT='$PREVIEW_MERCADO_PAGO_CHECKOUT' PREVIEW_LIVE_WORKBENCH='$PREVIEW_LIVE_WORKBENCH' PREVIEW_EXPECTED_SHA='$PREVIEW_EXPECTED_SHA' LIVE_WORKBENCH_ENV_FILE='$LIVE_WORKBENCH_ENV_FILE' PREVIEW_ORIGIN='$PREVIEW_ORIGIN' bash -s" <<'REMOTE'
 set -euo pipefail
 
-image="$(docker inspect "$RELEASE_CONTAINER" --format '{{.Config.Image}}')"
+if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
+    image="harmonic-beacon/earlybirds-preview-listener:${PREVIEW_EXPECTED_SHA}"
+    docker image inspect "$image" >/dev/null
+    docker image inspect "$image" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+        grep -Fqx "BEACON_GIT_SHA=$PREVIEW_EXPECTED_SHA"
+else
+    image="$(docker inspect "$RELEASE_CONTAINER" --format '{{.Config.Image}}')"
+fi
 env_file="$(mktemp /tmp/listener-ui-dev-env.XXXXXX)"
-cleanup() { rm -f "$env_file"; }
+workbench_container_started=0
+workbench_validated=0
+cleanup() {
+    rm -f "$env_file"
+    if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ] &&
+       [ "$workbench_container_started" = 1 ] &&
+       [ "$workbench_validated" != 1 ]; then
+        docker rm -f "$DEV_CONTAINER" >/dev/null 2>&1 || true
+    fi
+}
 trap cleanup EXIT
 umask 077
 docker inspect "$RELEASE_CONTAINER" | jq -r '.[0].Config.Env[]' > "$env_file"
@@ -67,7 +106,7 @@ fi
 
 runtime_args=()
 command_args=()
-if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ] || [ "$PREVIEW_MERCADO_PAGO_CHECKOUT" = 1 ]; then
+if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ] || [ "$PREVIEW_MERCADO_PAGO_CHECKOUT" = 1 ] || [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
     # Synthetic team entry is deliberately unavailable under NODE_ENV=development.
     # Payment rehearsal therefore runs the exact built release artifact.
     # OAuth state and session cookies are host-only. The workbench must initiate
@@ -94,6 +133,39 @@ else
     command_args=(npm run dev -- --hostname 0.0.0.0 --port 3000)
 fi
 
+if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
+    test "$(sudo stat -c '%u:%g:%a' "$LIVE_WORKBENCH_ENV_FILE")" = "0:0:600"
+    sudo awk -F= '
+        BEGIN { good=1 }
+        /^[[:space:]]*$/ { next }
+        $1 == "BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED" ||
+        $1 == "BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID" ||
+        $1 == "BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER" ||
+        $1 == "BEACON_LISTENER_STAGING_LIVE_WORKBENCH_CSRF_SECRET" { seen[$1]++; next }
+        { good=0 }
+        END {
+            required[1]="BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED"
+            required[2]="BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID"
+            required[3]="BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER"
+            required[4]="BEACON_LISTENER_STAGING_LIVE_WORKBENCH_CSRF_SECRET"
+            for (i=1; i<=4; i++) if (seen[required[i]] != 1) good=0
+            exit good ? 0 : 1
+        }
+    ' "$LIVE_WORKBENCH_ENV_FILE"
+    sudo cat "$LIVE_WORKBENCH_ENV_FILE" >> "$env_file"
+    set_env_file_value EARLY_BIRDS_FREE_FOR_ALL 0
+    set_env_file_value BEACON_LISTENER_FREE_FOR_ALL 0
+    set_env_file_value BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED 0
+    set_env_file_value BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED 0
+    set_env_file_value BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED 0
+    set_env_file_value BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED 0
+    set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "$PREVIEW_ORIGIN"
+    set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "$PREVIEW_ORIGIN"
+    # The inherited release env would otherwise override the selected image's
+    # baked provenance with the persistent 13000 release SHA.
+    set_env_file_value BEACON_GIT_SHA "$PREVIEW_EXPECTED_SHA"
+fi
+
 docker run -d \
     --name "$DEV_CONTAINER" \
     --restart unless-stopped \
@@ -112,12 +184,22 @@ docker run -d \
     "${runtime_args[@]}" \
     "$image" \
     "${command_args[@]}" >/dev/null
+if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
+    workbench_container_started=1
+fi
 
 docker network connect earlybirds_preview_listener_egress "$DEV_CONTAINER"
 docker network connect earlybirds_authority_private "$DEV_CONTAINER"
 
 for _ in $(seq 1 90); do
-    if curl --fail --silent --max-time 3 http://127.0.0.1:13001/api/health >/dev/null; then
+    if curl --fail --silent --max-time 3 http://127.0.0.1:13001/api/health >/dev/null &&
+       curl --fail --silent --max-time 3 http://127.0.0.1:13001/api/health/ready >/dev/null; then
+        if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
+            running_sha="$(docker inspect "$DEV_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BEACON_GIT_SHA=//p')"
+            test "$running_sha" = "$PREVIEW_EXPECTED_SHA"
+            test "$(docker port "$DEV_CONTAINER" 3000/tcp)" = "127.0.0.1:13001"
+            workbench_validated=1
+        fi
         exit 0
     fi
     sleep 1

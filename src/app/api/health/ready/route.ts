@@ -5,6 +5,10 @@ import {
     ListenerRuntimeEnvironmentError,
     validateListenerRuntimeEnvironment,
 } from '@/lib/listener/runtime-env';
+import {
+    ListenerLiveWorkbenchConfigurationError,
+    validateListenerLiveWorkbenchEnvironment,
+} from '@/lib/early-birds/live-workbench';
 import { OperationTimeoutError, withTimeout } from '@/lib/with-timeout';
 
 export const dynamic = 'force-dynamic';
@@ -24,8 +28,10 @@ export async function GET() {
     let listenerRuntimeConfigured = false;
     try {
         listenerRuntimeConfigured = validateListenerRuntimeEnvironment();
+        validateListenerLiveWorkbenchEnvironment();
     } catch (error) {
-        const diagnostic = error instanceof ListenerRuntimeEnvironmentError
+        const diagnostic = error instanceof ListenerRuntimeEnvironmentError ||
+            error instanceof ListenerLiveWorkbenchConfigurationError
             ? error.message
             : 'unexpected validation failure';
         console.error('Listener runtime configuration invalid:', diagnostic);

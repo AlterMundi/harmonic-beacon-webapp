@@ -10,6 +10,9 @@ import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 import ListenerPlayer from './ListenerPlayer';
 import FreeQuotaStatus from './FreeQuotaStatus';
 import FoundingListenerCheckout from './FoundingListenerCheckout';
+import FoundingListenerLiveWorkbench, {
+    type ListenerLiveWorkbenchClientConfig,
+} from './FoundingListenerLiveWorkbench';
 import FoundingListenerMembershipActions from './FoundingListenerMembershipActions';
 import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
@@ -25,6 +28,7 @@ export default function EarlyBirdHome({
     quota = null,
     checkoutAvailability = { paypal: false, mercadoPago: false },
     checkoutEnvironment = 'staging',
+    liveWorkbench = null,
 }: {
     displayName: string;
     membership: ListenerMembershipPresentation;
@@ -37,6 +41,7 @@ export default function EarlyBirdHome({
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
     checkoutAvailability?: { paypal: boolean; mercadoPago: boolean };
     checkoutEnvironment?: 'staging' | 'live';
+    liveWorkbench?: ListenerLiveWorkbenchClientConfig | null;
 }) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
@@ -97,6 +102,7 @@ export default function EarlyBirdHome({
                             available={checkoutAvailability}
                             environment={checkoutEnvironment}
                         />
+                        <FoundingListenerLiveWorkbench config={liveWorkbench} />
                     </footer>
                 )}
             </div>
