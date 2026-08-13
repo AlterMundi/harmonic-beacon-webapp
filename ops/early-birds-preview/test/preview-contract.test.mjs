@@ -190,6 +190,7 @@ test('preview lifecycle pins and preserves the private withdrawal operator', asy
   assert.match(start, /build listener[\s\S]*require_withdrawal_operator_image[\s\S]*up -d listener withdrawal-operator[\s\S]*verify_running_withdrawal_operator/);
   assert.match(helper, /withdrawal operator container is not healthy/);
   assert.match(helper, /running withdrawal operator provenance does not match its pinned SHA/);
+  assert.match(helper, /while test "\$operator_attempt" -lt 60; do[\s\S]*sleep 1/);
   assert.match(rollback, /stop listener/);
   assert.doesNotMatch(rollback, /stop[^\n]*withdrawal-operator/);
 

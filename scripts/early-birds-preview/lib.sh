@@ -66,8 +66,15 @@ verify_running_withdrawal_operator() {
   operator_env_file=${1:?usage: verify_running_withdrawal_operator FILE}
   operator_expected_sha=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA "$operator_env_file")
   operator_container="${LISTENER_WITHDRAWAL_CONTAINER:-earlybirds-preview-withdrawal-operator-1}"
-  operator_state=$(docker inspect "$operator_container" \
-    --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)
+  operator_state=''
+  operator_attempt=0
+  while test "$operator_attempt" -lt 60; do
+    operator_state=$(docker inspect "$operator_container" \
+      --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)
+    test "$operator_state" != 'true healthy' || break
+    operator_attempt=$((operator_attempt + 1))
+    sleep 1
+  done
   test "$operator_state" = 'true healthy' || preview_fail 'withdrawal operator container is not healthy'
   operator_running_sha=$(docker inspect "$operator_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | \
     sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
