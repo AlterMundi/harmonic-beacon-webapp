@@ -9,8 +9,8 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 ## Exact deployed state
 
 - Public candidate: `https://listen.harmonicbeacon.com/`
-- Listener image/SHA: `0a475717d45d32cec38afdb8fc35fb772a994017`
-- Previous contract-compatible Listener application image: `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`
+- Listener image/SHA: `acc90ba35fea52f63ef18337e3a555ef637c552f`
+- Previous contract-compatible Listener application image: `0a475717d45d32cec38afdb8fc35fb772a994017`
 - Withdrawal operator sidecar image/SHA: `0a475717d45d32cec38afdb8fc35fb772a994017`
 - Canonical payment authority: `b1038ddb579817e39add567c5b7b055e2f716095`
 - Minimum authority after any Live checkout attempt: `b1038ddb579817e39add567c5b7b055e2f716095`
@@ -85,7 +85,7 @@ without explicit approval.
   canonical checkout/lifecycle evidence and exists only for explicitly commanded disaster
   recovery followed by complete provider reconciliation.
 - Listener application regression: roll back only the isolated Listener to
-  `4ac408f` if contract-compatible; keep the `0a475717` withdrawal operator and
+  `0a475717` if contract-compatible; keep the `0a475717` withdrawal operator and
   current database running so already-received legal requests remain processable.
   Set `LISTENER_WITHDRAWAL_ENABLED=0` to hide the public request routes during
   application recovery, then roll forward.

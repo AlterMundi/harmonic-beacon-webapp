@@ -44,9 +44,9 @@ checks and is recoverable in Google Cloud for 30 days for administrative recover
 the exposed secret from an environment backup.
 
 The exact public Listener image is
-`0a475717d45d32cec38afdb8fc35fb772a994017`. Health and readiness attest that SHA. The same exact
-image runs the no-port withdrawal operator sidecar and the staging-only Live workbench. The previous
-contract-compatible Listener image `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a` remains available as
+`acc90ba35fea52f63ef18337e3a555ef637c552f`. Health and readiness attest that SHA. The same exact
+image runs the staging-only Live workbench. The no-port withdrawal operator remains independently
+pinned at `0a475717d45d32cec38afdb8fc35fb772a994017`. That previous contract-compatible Listener image remains available as
 an application-only rollback target; the operator and current database must remain running so legal
 requests already received can still be processed. The weekly-quota database policy itself is
 forward-only.
@@ -149,7 +149,7 @@ converted back into a reversible action.
   explicitly commanded disaster recovery with both providers frozen and a complete provider-led
   reconciliation plan; it is not an ordinary rollback.
 - Listener regression: roll back only the Listener image while keeping a contract-compatible
-  authority. `4ac408f` remains the bounded contract-compatible application rollback for the current
+  authority. `0a475717` remains the bounded contract-compatible application rollback for the current
   authority. Preserve the `0a475717` withdrawal operator and database so already-received legal
   requests remain processable; hide new legal submissions with their feature switch if necessary.
   If compatibility is uncertain, keep Listener disabled and roll forward.
