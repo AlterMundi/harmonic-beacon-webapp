@@ -31,8 +31,8 @@ truthful launch baseline, not a substitute for counsel review. Human owner: Nico
 Passwordless email delivery is deployed in the dedicated Listener-only sidecar at exact backend
 SHA `456ece2b38e203a2d12c54864115e03ebaa1a89c`. The API, worker and PostgreSQL queue have no host
 ports, use separate storage and did not restart or modify any event service. A controlled message
-reached Gmail with terminal delivery state `SENT`; the human callback, Free-entry and logout check
-remain. The other remaining gates are human/external:
+reached Gmail with terminal delivery state `SENT`; the real-browser callback, isolated email-only
+Free entry and logout check passed. The other remaining gates are human/external:
 final legal/copy acceptance, one
 supervised low-value Live lifecycle per enabled provider and explicit approval to open public
 checkout. Production fonts are now hermetic under #327/#329.
@@ -44,9 +44,18 @@ checks and is recoverable in Google Cloud for 30 days for administrative recover
 the exposed secret from an environment backup.
 
 The exact public Listener image is
-`4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a`. Health and readiness attest that SHA. The previous
-same-schema Listener image `fcdde379` remains available as the bounded application rollback target;
-the weekly-quota database policy itself is forward-only.
+`0a475717d45d32cec38afdb8fc35fb772a994017`. Health and readiness attest that SHA. The same exact
+image runs the no-port withdrawal operator sidecar and the staging-only Live workbench. The previous
+contract-compatible Listener image `4ac408f4bc43cab85f058fc3d39aa2a2b4b4207a` remains available as
+an application-only rollback target; the operator and current database must remain running so legal
+requests already received can still be processed. The weekly-quota database policy itself is
+forward-only.
+
+The public no-login `BOTÓN DE ARREPENTIMIENTO` and `BOTÓN DE BAJA DE SERVICIO` are deployed with an
+immediate opaque receipt, bounded durable queue and no automatic provider action. Root-only timers
+export and prune through the pinned operator sidecar. Prometheus loads warning/critical/freshness
+rules at 20h/24h; the runtime smoke accepted and resolved one synthetic request of each kind, then
+returned the open queue and alerts to zero without exporting PII.
 
 The exact isolated payment-authority image is
 `b1038ddb579817e39add567c5b7b055e2f716095`. It includes the reviewed Mercado Pago adverse-event
@@ -140,8 +149,10 @@ converted back into a reversible action.
   explicitly commanded disaster recovery with both providers frozen and a complete provider-led
   reconciliation plan; it is not an ordinary rollback.
 - Listener regression: roll back only the Listener image while keeping a contract-compatible
-  authority. `fcdde379` remains the bounded contract-compatible UI rollback for the current
-  authority. If compatibility is uncertain, keep Listener disabled and roll forward.
+  authority. `4ac408f` remains the bounded contract-compatible application rollback for the current
+  authority. Preserve the `0a475717` withdrawal operator and database so already-received legal
+  requests remain processable; hide new legal submissions with their feature switch if necessary.
+  If compatibility is uncertain, keep Listener disabled and roll forward.
 - Provider-specific incident: disable only that app checkout flag. Do not route a pending checkout
   to the other provider or manufacture membership.
 - Webhook/reconciliation lag: stop new sales, keep ingestion active, reconcile from provider APIs,
