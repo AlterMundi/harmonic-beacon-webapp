@@ -132,6 +132,7 @@ import ListenerPlayer, {
 
 beforeEach(() => {
     vi.spyOn(window.navigator, 'vendor', 'get').mockReturnValue('Google Inc.');
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
 });
 
 afterEach(() => {
@@ -586,21 +587,121 @@ describe('EarlyBird Listener player', () => {
             currentTime: 12,
             seekable: {
                 length: 1,
-                end: () => 123.5,
+                start: () => 20,
+                end: () => 250,
             },
         } as unknown as HTMLAudioElement;
         expect(seekNativeAudioToLiveEdge(audio)).toBe(true);
-        expect(audio.currentTime).toBe(123.25);
+        expect(audio.currentTime).toBe(130);
     });
 
     it('keeps a stability-first desktop HLS buffer without enabling low latency', () => {
         expect(LISTENER_HLS_BUFFER_CONFIG).toMatchObject({
             lowLatencyMode: false,
-            liveSyncDurationCount: 5,
-            liveMaxLatencyDurationCount: 10,
-            maxBufferLength: 60,
-            maxMaxBufferLength: 90,
+            initialLiveManifestSize: 21,
+            liveSyncDurationCount: 20,
+            liveMaxLatencyDurationCount: 45,
+            liveSyncMode: 'buffered',
+            startOnSegmentBoundary: true,
+            maxBufferLength: 120,
+            maxMaxBufferLength: 180,
         });
+    });
+
+    it('does not advertise a reconnect for a transient native stalled event', async () => {
+        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=stable&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, init) => {
+            const body = JSON.parse(String(init?.body ?? '{}')) as { presenceSequence?: number };
+            return Promise.resolve(new Response(JSON.stringify({
+                ...grant,
+                presenceSequence: body.presenceSequence ?? 0,
+            }), { status: 200 }));
+        }));
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
+        const live = screen.getByLabelText('Beacon');
+        fireEvent.stalled(live);
+
+        expect(screen.queryByText('Restoring connection…')).toBeNull();
+        expect(hlsHarness.instances).toHaveLength(1);
+        expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    });
+
+    it('suspends quota and HLS in background then rejoins with the same lease in foreground', async () => {
+        const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+        const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+        const grant = {
+            leaseId: '00000000-0000-4000-8000-000000000003',
+            leaseGeneration: 1,
+            presenceSequence: 0,
+            leaseExpiresAt: '2099-08-06T12:03:00.000Z',
+            stream: {
+                manifestUrl: '/api/early-birds/stream/manifest?leaseId=background&leaseGeneration=1',
+                expiresAt: '2099-08-06T12:03:00.000Z',
+            },
+        };
+        const presenceBodies: Array<{ presence?: string; presenceSequence?: number }> = [];
+        const fetchMock = vi.fn().mockImplementation((url, init) => {
+            const body = JSON.parse(String(init?.body ?? '{}')) as {
+                presence?: string;
+                presenceSequence?: number;
+            };
+            if (String(url).includes('/heartbeat')) presenceBodies.push(body);
+            return Promise.resolve(new Response(JSON.stringify({
+                ...grant,
+                presenceSequence: body.presenceSequence ?? 0,
+            }), { status: 200 }));
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <ListenerPlayer dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Listen' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
+        expect(hlsHarness.instances).toHaveLength(1);
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        await waitFor(() => expect(presenceBodies.some(({ presence }) => presence === 'idle')).toBe(true));
+        expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
+        expect(screen.queryByText('Restoring connection…')).toBeNull();
+
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        fireEvent(document, new Event('visibilitychange'));
+        await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
+        await waitFor(() => expect(presenceBodies.at(-1)).toMatchObject({ presence: 'listening' }));
+
+        expect(fetchMock.mock.calls.filter(([url]) => (
+            url === '/api/early-birds/stream/lease'
+        ))).toHaveLength(1);
+        expect(hlsHarness.instances[1].loadedSources).toEqual([grant.stream.manifestUrl]);
+        expect(play).toHaveBeenCalledTimes(2);
+        expect(pause).toHaveBeenCalled();
+        expect(screen.queryByText('Restoring connection…')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
     });
 
     it('does not trust Chromium native HLS claims while preserving Apple native playback', () => {
@@ -654,7 +755,10 @@ describe('EarlyBird Listener player', () => {
             url === '/api/early-birds/stream/heartbeat'
         )).length).toBeGreaterThanOrEqual(2);
         expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
-        expect(hlsHarness.instances[1].loadedSources).toEqual([grants[1].stream.manifestUrl]);
+        expect(hlsHarness.instances[1].loadedSources).toEqual([grants[0].stream.manifestUrl]);
+        expect(fetchMock.mock.calls.filter(([url]) => (
+            url === '/api/early-birds/stream/lease'
+        ))).toHaveLength(1);
         expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
     });
 
@@ -719,7 +823,11 @@ describe('EarlyBird Listener player', () => {
         monotonicNow = 15_000;
         watchdog!.callback();
 
-        await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
+        // This case deliberately replaces window.setInterval so the watchdog
+        // can be driven without waiting 15 seconds. Vitest's poller uses the
+        // real timer; Testing Library's waitFor would otherwise be captured by
+        // that interval seam and never observe this non-DOM array mutation.
+        await vi.waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
         expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
         expect(hlsHarness.instances[1].loadedSources).toEqual([manifestUrl]);
         expect(diagnostics).toHaveLength(1);

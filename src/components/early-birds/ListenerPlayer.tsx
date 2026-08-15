@@ -32,6 +32,10 @@ export { getOrCreateEarlyBirdDeviceId } from './listener-tab-identity';
 type DropLanguage = 'es' | 'en';
 type PlaybackMode = 'intro' | 'beacon';
 type LiveState = 'idle' | 'loading' | 'recovering' | 'playing' | 'paused' | 'error' | 'displaced';
+type BackgroundSuspension = {
+    source: 'beacon' | DropLanguage;
+    rebuildHls: boolean;
+};
 type LeasePayload = {
     leaseId: string;
     leaseGeneration: number;
@@ -65,6 +69,7 @@ const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
 const TRANSPORT_FADE_OUT_MS = 650;
 const DEFAULT_LISTENER_VOLUME = 0.7;
+const LISTENER_STABILITY_DELAY_SECONDS = 120;
 
 export const LISTENER_PLAYBACK_PRESENCE_EVENT = 'listener:playback-presence';
 export const LISTENER_PLAYBACK_DIAGNOSTIC_EVENT = 'listener:playback-diagnostic';
@@ -125,24 +130,32 @@ export function nextPresenceSequence(
     return nextPresence === currentPresence ? currentSequence : currentSequence + 1;
 }
 
-// The Listener does not need low latency. Holding roughly five six-second HLS
-// segments behind the edge gives desktop browsers useful network headroom
-// while every fresh play still seeks to the current configured live position.
+// The Listener does not need low latency. Starting roughly twenty six-second
+// HLS segments behind the edge gives browsers two minutes of network headroom
+// while every fresh play still joins the current continuous program.
 export const LISTENER_HLS_BUFFER_CONFIG = {
     lowLatencyMode: false,
     liveDurationInfinity: true,
-    liveSyncDurationCount: 5,
-    liveMaxLatencyDurationCount: 10,
-    maxBufferLength: 60,
-    maxMaxBufferLength: 90,
+    initialLiveManifestSize: 21,
+    liveSyncDurationCount: 20,
+    liveMaxLatencyDurationCount: 45,
+    liveSyncMode: 'buffered',
+    startOnSegmentBoundary: true,
+    maxBufferLength: 120,
+    maxMaxBufferLength: 180,
     backBufferLength: 0,
 } as const;
 
 export function seekNativeAudioToLiveEdge(audio: HTMLAudioElement): boolean {
     if (audio.seekable.length < 1) return false;
-    const edge = audio.seekable.end(audio.seekable.length - 1);
-    if (!Number.isFinite(edge)) return false;
-    audio.currentTime = Math.max(0, edge - 0.25);
+    const rangeIndex = audio.seekable.length - 1;
+    const start = audio.seekable.start(rangeIndex);
+    const edge = audio.seekable.end(rangeIndex);
+    if (!Number.isFinite(start) || !Number.isFinite(edge) || edge <= start) return false;
+    // Listener has no low-latency requirement. Native HLS should use the same
+    // two-minute safety margin as hls.js instead of sitting 250 ms from the
+    // edge, where one delayed segment becomes an audible interruption.
+    audio.currentTime = Math.max(start, edge - LISTENER_STABILITY_DELAY_SECONDS);
     return true;
 }
 
@@ -286,8 +299,10 @@ function ListenerPlayerController({
         fatal: null,
     });
     const listenerPresence = useRef<'idle' | 'listening'>('idle');
-    const automaticRecovery = useRef<(initialDelayMs?: number) => void>(() => undefined);
+    const automaticRecovery = useRef<(initialDelayMs?: number, action?: string) => void>(() => undefined);
     const deferLiveFadeForRecovery = useRef<() => void>(() => undefined);
+    const backgroundSuspension = useRef<BackgroundSuspension | null>(null);
+    const playbackLifecycleGeneration = useRef(0);
     const [liveState, setLiveState] = useState<LiveState>('idle');
     const [playingDrop, setPlayingDrop] = useState<DropLanguage | null>(null);
     const [transportStopped, setTransportStopped] = useState(true);
@@ -490,7 +505,7 @@ function ListenerPlayerController({
             if (!data.fatal) return;
             deferLiveFadeForRecovery.current();
             liveAudio.current?.pause();
-            automaticRecovery.current(0);
+            automaticRecovery.current(0, 'hls-fatal');
         });
         instance.on(HlsConstructor.Events.FRAG_CHANGED, (_event, data) => {
             const programStartMs = data.frag.programDateTime;
@@ -834,6 +849,7 @@ function ListenerPlayerController({
     const attemptLivePlayback = useCallback(async (
         forceRefresh = false,
         verifyExistingLease = false,
+        expectedLifecycleGeneration = playbackLifecycleGeneration.current,
     ): Promise<boolean> => {
         const audio = liveAudio.current;
         if (!audio || playbackAttemptRunning.current) return false;
@@ -916,6 +932,11 @@ function ListenerPlayerController({
                 }
             }
 
+            if (
+                expectedLifecycleGeneration !== playbackLifecycleGeneration.current
+                || !wantsLivePlayback.current
+                || document.visibilityState !== 'visible'
+            ) return false;
             const liveSyncPosition = hls.current?.liveSyncPosition;
             if (typeof liveSyncPosition === 'number' && Number.isFinite(liveSyncPosition)) {
                 audio.currentTime = liveSyncPosition;
@@ -923,6 +944,14 @@ function ListenerPlayerController({
                 seekNativeAudioToLiveEdge(audio);
             }
             await audio.play();
+            if (
+                expectedLifecycleGeneration !== playbackLifecycleGeneration.current
+                || !wantsLivePlayback.current
+                || document.visibilityState !== 'visible'
+            ) {
+                audio.pause();
+                return false;
+            }
             return true;
         } catch {
             audio.pause();
@@ -1079,10 +1108,13 @@ function ListenerPlayerController({
         }
     }, [dropIns.en, dropIns.es]);
 
-    const scheduleAutomaticRecovery = useCallback((initialDelayMs = 0) => {
+    const scheduleAutomaticRecovery = useCallback((
+        initialDelayMs = 0,
+        action = 'automatic-recovery',
+    ) => {
         if (!wantsLivePlayback.current || liveStateRef.current === 'displaced') return;
 
-        lastPlaybackAction.current = 'automatic-recovery';
+        lastPlaybackAction.current = action;
 
         if (playbackAttemptRunning.current) {
             queuedRecoveryDelay.current = queuedRecoveryDelay.current === null
@@ -1093,7 +1125,6 @@ function ListenerPlayerController({
         }
         if (recoveryTimer.current !== null) return;
 
-        updateLiveState('recovering');
         const runAttempt = (delayMs: number) => {
             if (!wantsLivePlayback.current) return;
             if (recoveryAttempts.current >= RECOVERY_DELAYS_MS.length) {
@@ -1106,6 +1137,7 @@ function ListenerPlayerController({
             recoveryTimer.current = window.setTimeout(async () => {
                 recoveryTimer.current = null;
                 if (!wantsLivePlayback.current) return;
+                updateLiveState('recovering');
                 recoveryAttempts.current += 1;
                 const recovered = await attemptLivePlayback(true, true);
                 if (!wantsLivePlayback.current) return;
@@ -1161,7 +1193,7 @@ function ListenerPlayerController({
             }));
             reportPresence('idle');
             deferLiveFade();
-            scheduleAutomaticRecovery(0);
+            scheduleAutomaticRecovery(0, 'watchdog-recovery');
         }, LISTENER_PLAYBACK_WATCHDOG_INTERVAL_MS);
         return () => window.clearInterval(interval);
     }, [deferLiveFade, reportPresence, scheduleAutomaticRecovery]);
@@ -1185,7 +1217,7 @@ function ListenerPlayerController({
         if (queuedRecoveryDelay.current !== null) {
             const queuedDelay = queuedRecoveryDelay.current;
             queuedRecoveryDelay.current = null;
-            scheduleAutomaticRecovery(queuedDelay);
+            scheduleAutomaticRecovery(queuedDelay, lastPlaybackAction.current);
             return;
         }
         if (played) {
@@ -1194,7 +1226,7 @@ function ListenerPlayerController({
             updateLiveState('playing');
             return;
         }
-        scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+        scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS, 'play-failed');
     }, [armLiveFadeIn, attemptLivePlayback, cancelRecovery, pauseDropIns, reportPresence, scheduleAutomaticRecovery, updateLiveState]);
 
     function playBeaconOnly() {
@@ -1240,6 +1272,8 @@ function ListenerPlayerController({
 
     function stopTransport() {
         lastPlaybackAction.current = 'stop';
+        playbackLifecycleGeneration.current += 1;
+        backgroundSuspension.current = null;
         playbackWatchdog.current.reset();
         dropGeneration.current += 1;
         setTransportStopped(true);
@@ -1272,16 +1306,17 @@ function ListenerPlayerController({
         if (!wantsLivePlayback.current || !['playing', 'recovering'].includes(liveStateRef.current)) {
             return;
         }
-        if (kind === 'suspend') {
-            // `suspend` commonly means that the browser intentionally stopped
-            // fetching enough buffered media. It is only supporting evidence;
-            // stalled/error or a non-progressing page resume drives recovery.
+        if (kind !== 'error') {
+            // `stalled` and `suspend` are advisory and can be emitted while a
+            // healthy forward buffer still exists. A single event must not
+            // flash “Reconnecting” or rebuild HLS. The media-clock watchdog is
+            // the authority after a sustained 15-second non-progress interval.
             nativeSuspendObserved.current = true;
             return;
         }
         reportPresence('idle');
         deferLiveFade();
-        scheduleAutomaticRecovery(kind === 'error' ? 0 : STALL_RECOVERY_DELAY_MS);
+        scheduleAutomaticRecovery(0, 'native-error');
     }, [deferLiveFade, reportPresence, scheduleAutomaticRecovery]);
 
     function handleNativePlaying() {
@@ -1319,38 +1354,139 @@ function ListenerPlayerController({
     }
 
     useEffect(() => {
-        const recoverAfterResume = () => {
-            if (document.visibilityState !== 'visible') {
-                if (wantsLivePlayback.current) deferLiveFade();
+        const suspendForBackground = () => {
+            if (document.visibilityState === 'visible' || backgroundSuspension.current) return;
+            const introduction = activeDrop.current;
+            if (!wantsLivePlayback.current && !introduction) return;
+
+            playbackLifecycleGeneration.current += 1;
+            const rebuildHls = hls.current !== null;
+            backgroundSuspension.current = {
+                source: introduction ?? 'beacon',
+                rebuildHls,
+            };
+            lastPlaybackAction.current = 'background-suspend';
+            playbackWatchdog.current.reset();
+            cancelRecovery(true);
+            wantsLivePlayback.current = false;
+            reportPresence('idle');
+            analysisProvider.current?.pauseAnalysis();
+
+            const live = liveAudio.current;
+            live?.pause();
+            if (introduction) {
+                dropAudio[introduction].current?.pause();
+                cancelLiveFade();
+                pendingLiveFade.current = false;
+                liveSuppressedForDrop.current = true;
+                if (live) {
+                    live.muted = true;
+                    if (volumeSupported) live.volume = 0;
+                }
+            } else {
+                deferLiveFade();
+            }
+            if (rebuildHls) stopHls();
+            updateLiveState('paused');
+        };
+
+        const resumeAfterBackground = async () => {
+            if (document.visibilityState !== 'visible') return;
+            const suspension = backgroundSuspension.current;
+            if (!suspension) {
+                if (!wantsLivePlayback.current) revalidateIdlePreparedSource();
+                return;
+            }
+            backgroundSuspension.current = null;
+            playbackLifecycleGeneration.current += 1;
+            const lifecycleGeneration = playbackLifecycleGeneration.current;
+            lastPlaybackAction.current = 'foreground-resume';
+            wantsLivePlayback.current = true;
+            cancelRecovery(true);
+            updateLiveState('loading');
+
+            const introduction = suspension.source === 'beacon'
+                ? null
+                : dropAudio[suspension.source].current;
+            const introResume = introduction
+                ? introduction.play().then(() => true).catch(() => false)
+                : Promise.resolve(true);
+            const liveResume = attemptLivePlayback(
+                suspension.rebuildHls,
+                true,
+                lifecycleGeneration,
+            );
+            const [introPlayed, livePlayed] = await Promise.all([introResume, liveResume]);
+            if (
+                lifecycleGeneration !== playbackLifecycleGeneration.current
+                || document.visibilityState !== 'visible'
+            ) return;
+
+            if (livePlayed && introPlayed) {
+                nativeSuspendObserved.current = false;
+                playbackWatchdog.current.reset();
+                setTransportPaused(false);
+                reportPresence('listening');
+                updateLiveState('playing');
+                if (!introduction) beginLiveFade();
+                else startReactiveAnalysis(`intro-${suspension.source}`);
+                return;
+            }
+
+            if (introduction && !introPlayed) {
+                setTransportPaused(true);
+                reportPresence('idle');
+                updateLiveState('paused');
+                return;
+            }
+            scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS, 'foreground-resume-failed');
+        };
+
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') void resumeAfterBackground();
+            else suspendForBackground();
+        };
+        const recoverVisibleTransport = () => {
+            if (document.visibilityState !== 'visible') return;
+            if (backgroundSuspension.current) {
+                void resumeAfterBackground();
                 return;
             }
             if (!wantsLivePlayback.current) {
                 revalidateIdlePreparedSource();
                 return;
             }
-            const pausedDuringPendingFade = pendingLiveFade.current
-                && Boolean(liveAudio.current?.paused);
-            if (pendingLiveFade.current && liveAudio.current && !liveAudio.current.paused) beginLiveFade();
             const leaseNearExpiry = manifestExpiresAt.current <= Date.now() + 30_000;
             const suspendedWithoutFutureData = nativeSuspendObserved.current
                 && Boolean(liveAudio.current)
                 && (liveAudio.current?.readyState ?? 0) < 3;
-            if (liveStateRef.current === 'recovering'
-                || leaseNearExpiry
-                || suspendedWithoutFutureData
-                || pausedDuringPendingFade) {
-                scheduleAutomaticRecovery(0);
+            if (liveStateRef.current === 'recovering' || leaseNearExpiry || suspendedWithoutFutureData) {
+                scheduleAutomaticRecovery(0, 'foreground-health-check');
             }
         };
-        document.addEventListener('visibilitychange', recoverAfterResume);
-        window.addEventListener('online', recoverAfterResume);
-        window.addEventListener('pageshow', recoverAfterResume);
+        document.addEventListener('visibilitychange', handleVisibility);
+        window.addEventListener('online', recoverVisibleTransport);
+        window.addEventListener('pageshow', recoverVisibleTransport);
         return () => {
-            document.removeEventListener('visibilitychange', recoverAfterResume);
-            window.removeEventListener('online', recoverAfterResume);
-            window.removeEventListener('pageshow', recoverAfterResume);
+            document.removeEventListener('visibilitychange', handleVisibility);
+            window.removeEventListener('online', recoverVisibleTransport);
+            window.removeEventListener('pageshow', recoverVisibleTransport);
         };
-    }, [beginLiveFade, deferLiveFade, revalidateIdlePreparedSource, scheduleAutomaticRecovery]);
+    }, [
+        attemptLivePlayback,
+        beginLiveFade,
+        cancelLiveFade,
+        cancelRecovery,
+        deferLiveFade,
+        dropAudio,
+        reportPresence,
+        revalidateIdlePreparedSource,
+        scheduleAutomaticRecovery,
+        startReactiveAnalysis,
+        stopHls,
+        updateLiveState,
+        volumeSupported,
+    ]);
 
     useEffect(() => {
         if (!reactiveVisualizationEnabled) return;
@@ -1399,7 +1535,7 @@ function ListenerPlayerController({
                 livePreparedRef.current = false;
                 setLivePrepared(false);
                 setDevicePreparedByGesture(false);
-                if (wantsLivePlayback.current) scheduleAutomaticRecovery(0);
+                if (wantsLivePlayback.current) scheduleAutomaticRecovery(0, 'lease-expired');
                 else void prepareLiveSource(true);
                 return;
             }
@@ -1413,6 +1549,8 @@ function ListenerPlayerController({
     }, [cancelRecovery, clearLeaseCursor, prepareLiveSource, probeExistingLease, reportPresence, scheduleAutomaticRecovery, stopHls, updateLiveState]);
 
     useEffect(() => () => {
+        playbackLifecycleGeneration.current += 1;
+        backgroundSuspension.current = null;
         wantsLivePlayback.current = false;
         reportPresence('idle');
         cancelRecovery(true);
@@ -1502,14 +1640,14 @@ function ListenerPlayerController({
                 void attemptLivePlayback().then((played) => {
                     if (!wantsLivePlayback.current) return;
                     if (played) updateLiveState('playing');
-                    else scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+                    else scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS, 'intro-live-start-failed');
                 });
             }
             await introStarted;
             if (!isCurrent()) return;
             if (liveStarted) {
                 void liveStarted.then(() => updateLiveState('playing')).catch(() => {
-                    scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS);
+                    scheduleAutomaticRecovery(STALL_RECOVERY_DELAY_MS, 'intro-native-live-start-failed');
                 });
             }
             setHasStarted(true);

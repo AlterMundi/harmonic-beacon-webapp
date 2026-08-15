@@ -21,7 +21,10 @@ const NO_STORE_HEADERS = {
     'X-Content-Type-Options': 'nosniff',
 };
 const LEASE_ID = /^[0-9a-f-]{36}$/i;
-const MAX_AUDIBLE_LATENCY_MS = 90_000;
+// The stability-first player deliberately listens two minutes behind the live
+// edge. Keep the optional visualization valid throughout the five-minute HLS
+// recovery window without accepting arbitrary historical decode requests.
+const MAX_AUDIBLE_LATENCY_MS = 5.5 * 60_000;
 const MAX_FUTURE_SKEW_MS = 5_000;
 
 export async function GET(request: Request) {

@@ -1,6 +1,10 @@
 import { signedUrl } from './auth.mjs';
 
-const WINDOW_SEGMENTS = 6;
+// Listener values continuity over realtime latency. Fifty six-second entries
+// retain a five-minute recovery window while the player deliberately starts
+// two minutes behind the edge. This is still a small, deterministic playlist
+// and avoids making one delayed request an audible interruption.
+export const WINDOW_SEGMENTS = 50;
 
 export function currentSequence(metadata, nowMs = Date.now()) {
   const elapsedSeconds = Math.max(0, (nowMs - metadata.epochMs) / 1000);
@@ -34,9 +38,13 @@ export function renderManifest({
   nowMs = Date.now(),
   tokenTtlSeconds = 120,
   authorizationExpiresAtSeconds = Number.POSITIVE_INFINITY,
+  windowSegments = WINDOW_SEGMENTS,
 }) {
+  if (!Number.isSafeInteger(windowSegments) || windowSegments < 6 || windowSegments > 150) {
+    throw new Error('windowSegments must be an integer between 6 and 150');
+  }
   const edgeSequence = currentSequence(metadata, nowMs);
-  const firstSequence = Math.max(0, edgeSequence - (WINDOW_SEGMENTS - 1));
+  const firstSequence = Math.max(0, edgeSequence - (windowSegments - 1));
   const expiresAt = Math.min(
     Math.floor(nowMs / 1000) + tokenTtlSeconds,
     authorizationExpiresAtSeconds,
