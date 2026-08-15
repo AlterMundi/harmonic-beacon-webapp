@@ -1,6 +1,6 @@
 # Listener launch — current state
 
-Last reconciled: 2026-08-13
+Last reconciled: 2026-08-15
 
 This is the compact operational memory for Founding Listeners. Detailed evidence
 and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
@@ -12,31 +12,35 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 - Listener image/SHA: `acc90ba35fea52f63ef18337e3a555ef637c552f`
 - Previous contract-compatible Listener application image: `0a475717d45d32cec38afdb8fc35fb772a994017`
 - Withdrawal operator sidecar image/SHA: `0a475717d45d32cec38afdb8fc35fb772a994017`
-- Canonical payment authority: `b1038ddb579817e39add567c5b7b055e2f716095`
-- Minimum authority after any Live checkout attempt: `b1038ddb579817e39add567c5b7b055e2f716095`
+- Canonical payment authority: `4e5b208e902969285c8f68067f7fd13b7e2eb68d`
+- Minimum authority after any new Live checkout attempt: `4e5b208e902969285c8f68067f7fd13b7e2eb68d`
 - Listener mail sidecar: `456ece2b38e203a2d12c54864115e03ebaa1a89c`
 - Weekly Free: three hours per server-owned seven-day cycle
 - Founding Listener: USD 5/month while service remains uninterrupted
 - Free For All: OFF
 - PayPal Live checkout: OFF
 - Mercado Pago Live checkout: OFF
-- PayPal Live lifecycle: ON with new sales OFF after creating one supervised approval intent
+- PayPal Live lifecycle/read-only reconciliation: ready with new sales OFF and no outstanding intent
 - Mercado Pago Live provider: OFF
 - Mercado Pago TEST lifecycle: ready; global new sales OFF
 - Public consumer withdrawal/service cancellation: ON; no login, immediate opaque receipt
 - Public sales: OFF; only the explicitly supervised Live lifecycle is authorized
 
-The authority now includes the reviewed adverse-event hardening and a read-only
-Live-provider preflight. The deployed API/worker are healthy at exact revision
-`b1038ddb`; Alembic is at `7b4c1e9a2d60`. Productive credentials are installed
+The authority now includes the reviewed adverse-event hardening, typed recovery
+for missing PayPal approvals and a read-only Live-provider preflight. The
+deployed API/worker are healthy at exact revision `4e5b208`; Alembic is at
+`7b4c1e9a2d60`. Productive credentials are installed
 root-only. With new sales forced OFF, PayPal verified its exact Live product,
 USD 5 plan and webhook event set; Mercado Pago verified its productive MLA
 merchant and webhook configuration. Neither preflight creates checkout,
-subscription, binding or payment. A supervised PayPal Live approval intent was subsequently
-created for the exact USD 5 offer and is awaiting a buyer account different from the merchant; it
-created no subscription or charge. Global new sales and both public Listener checkout flags are
-OFF. PayPal Live lifecycle ingestion remains ON so its callback, signed webhook, reconciliation
-and cancellation path stay available. Mercado Pago remains on TEST with Live OFF.
+subscription, binding or payment. The one abandoned PayPal Live approval later
+returned canonical provider 404 and was retired with the bounded application
+operator: no charge, provider subscription, Founder continuity or Purchase was
+created, the old approval cannot replay and no outstanding PayPal binding
+remains. Global new sales and both public Listener checkout flags are OFF.
+PayPal Live lifecycle ingestion remains ready so signed webhooks,
+reconciliation and cancellation stay available. Mercado Pago remains on TEST
+with Live OFF.
 
 PayPal Sandbox has passed activation, pending cancellation, reactivation and
 terminal refund. Mercado Pago TEST has passed checkout, activation, pause,
@@ -59,9 +63,10 @@ backup. Only Listener and the disposable staging workbench were recreated.
    acceptance. The public no-login withdrawal and service-cancellation paths,
    dedicated secret, migration, private operator, metrics and 20h/24h alerts
    are deployed and smoke-tested.
-4. Complete the already-created PayPal approval intent with a non-merchant buyer, then execute its
-   supervised activation, cancellation and refund evidence. Execute the corresponding supervised
-   Mercado Pago lifecycle separately.
+4. With a new explicit approval, create a fresh PayPal checkout for a
+   non-merchant buyer and execute supervised activation, cancellation and
+   refund evidence. Execute the corresponding supervised Mercado Pago Live
+   lifecycle separately.
 5. Confirm Founder activation, terminal Free fallback, metrics, alerts and the
    absence of PII/secret leakage against those Live transactions.
 6. Obtain separate explicit approvals for merge to `main` and public checkout.
@@ -78,10 +83,11 @@ without explicit approval.
 
 - Commerce incident: switch OFF Listener checkout flags and authority new-sales;
   keep webhooks, reconciliation, cancellation and existing access running.
-- Authority application regression after any Live checkout attempt: keep the current database,
+- Authority application regression after any new Live checkout attempt: keep the current database,
   keep the affected provider's Live lifecycle flag ON, keep new sales OFF and roll forward with
-  `b1038ddb` or a newer contract-compatible authority. Never deploy `8e10f16` against the current
-  database. Never use the protected pre-`b1038` database backup as a routine rollback: it can lose
+  `4e5b208` or a newer contract-compatible authority. Never deploy `b1038ddb` or `8e10f16` after a
+  new approval has been created: `b1038ddb` predates safe provider-404 retirement and `8e10f16`
+  predates adverse-webhook hardening. Never use a protected pre-cutover backup as a routine rollback: it can lose
   canonical checkout/lifecycle evidence and exists only for explicitly commanded disaster
   recovery followed by complete provider reconciliation.
 - Listener application regression: roll back only the isolated Listener to
@@ -105,5 +111,5 @@ must not claim that Harmonic Beacon has no payment or email processing: the
 Sandbox/TEST subscription lanes and Gmail magic-link delivery are already real
 pre-release processors. Equally, copy must not claim public Live billing is
 active: productive credentials are installed and verified, PayPal Live
-lifecycle ingestion is ON only for the supervised pending intent, and authority
-new sales, real charges and both public checkout flags remain OFF.
+lifecycle/reconciliation is ready with no outstanding intent, and authority new
+sales, real charges and both public checkout flags remain OFF.

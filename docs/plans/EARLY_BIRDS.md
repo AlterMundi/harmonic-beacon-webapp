@@ -7,14 +7,15 @@
 > real charges and every audio encoding/content/signature choice still require the
 > explicit release and audio gates in this document.
 
-> **Current launch memory (2026-08-13):** the public Listener candidate runs exact
+> **Current launch memory (2026-08-15):** the public Listener candidate runs exact
 > SHA `acc90ba35fea52f63ef18337e3a555ef637c552f`; the private withdrawal operator remains pinned at
 > `0a475717d45d32cec38afdb8fc35fb772a994017`; canonical payment authority runs
-> `b1038ddb579817e39add567c5b7b055e2f716095`; the isolated mail sidecar runs
+> `4e5b208e902969285c8f68067f7fd13b7e2eb68d`; the isolated mail sidecar runs
 > `456ece2b38e203a2d12c54864115e03ebaa1a89c`. PayPal Sandbox and Mercado Pago
-> TEST lifecycles are accepted. One PayPal Live approval intent exists without a
-> subscription or charge; new sales and public checkout remain OFF while its Live
-> lifecycle ingestion stays ON. The public no-login withdrawal and service-cancellation paths,
+> TEST lifecycles are accepted. The abandoned PayPal Live approval was retired
+> after canonical provider 404 evidence without a charge, subscription or
+> Founder state; no outstanding binding remains. New sales and public checkout
+> remain OFF while Live lifecycle/reconciliation stays ready. The public no-login withdrawal and service-cancellation paths,
 > private queue and 20h/24h alerts are deployed and smoke-tested. See
 > `docs/operations/LISTENER_LAUNCH_NOW.md` for the few remaining human/external gates.
 
@@ -496,14 +497,16 @@ The webapp vendors byte-exact copies of the canonical backend contracts under
   checkout command/result. It exposes no provider subscription ID, fixes
   `environment=live`, keeps payer email transient and uses a separate new-sales
   gate from provider lifecycle. The deployed authority runtime
-  `b1038ddb579817e39add567c5b7b055e2f716095` is CI-green, includes canonical
-  cancellation/reactivation, paid-lifecycle metrics and reviewed Mercado Pago adverse-event
-  hardening, and is the minimum authority binary after any Live checkout attempt. The Listener Live
+  `4e5b208e902969285c8f68067f7fd13b7e2eb68d` is CI-green, includes canonical
+  cancellation/reactivation, paid-lifecycle metrics, reviewed Mercado Pago adverse-event
+  hardening and bounded missing-PayPal-approval recovery, and is the minimum authority binary after
+  any new Live checkout attempt. The Listener Live
   surface and exact webhook ingress remain disabled by default;
   see `docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md`.
   This authority release also provides a read-only, redacted Live-provider
   preflight for exact PayPal catalog/webhook and Mercado Pago merchant checks;
-  productive credentials remain absent and all Live flags remain OFF.
+  productive credentials are installed root-only and verified read-only; public
+  checkout and global new sales remain OFF.
 
 ## 11. Fast Forward development lane
 
@@ -752,8 +755,8 @@ its own explicit approval.
   incident response stops Listener/uses the kill switch and rolls forward a
   repair. It never restores the retired daily-schedule or welcome-access
   authorization rules.
-- After the first Live checkout attempt, payment-authority rollback is also forward-only:
-  `b1038ddb` is the minimum supported binary. Stop new sales with flags, keep provider lifecycle
+- After any new Live checkout attempt, payment-authority rollback is also forward-only:
+  `4e5b208` is the minimum supported binary. Stop new sales with flags, keep provider lifecycle
   ingestion and the current database, reconcile, and roll forward. Never use a pre-cutover database
   restore as routine rollback.
 - No secret, provider token, raw webhook payload with PII or customer record is
