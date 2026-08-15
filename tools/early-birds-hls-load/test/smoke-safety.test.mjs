@@ -82,6 +82,7 @@ function fixture(nowMs = Date.now()) {
       egressBitsPerSecond: 500_000_000,
       tcpRetransmitRatio: 0.001,
       interfaceErrorsDrops: 0,
+      containerObserverFresh: true,
       restartBaselineEstablished: true,
       containerRestartsObserved: 0,
       oomEventsDelta: 0,

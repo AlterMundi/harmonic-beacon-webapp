@@ -15,6 +15,7 @@ export const STAGING_ATTESTATION = 'early-birds-staging';
 // earlybirds-preview Compose project. Never participant or event containers.
 export const LISTENER_CONTAINER = 'earlybirds-preview-listener-1';
 export const ORIGIN_CONTAINER = 'earlybirds-preview-beacon-stream-1';
+export const CONTAINER_OBSERVER_MAX_AGE_SECONDS = 15;
 
 // Instant Prometheus queries. Every query must yield exactly one vector
 // element; an empty, duplicated or non-finite result fails the probe. Host
@@ -36,10 +37,16 @@ export const MONITOR_QUERIES = Object.freeze({
     + ' + sum(node_network_receive_drop_total{device!~"lo|docker.*|veth.*"})',
   originUp: 'up{job="beacon-stream"}',
   canaryOk: 'beacon_stream_canary_ok',
-  listenerStartSeconds: `container_start_time_seconds{name="${LISTENER_CONTAINER}"}`,
-  originStartSeconds: `container_start_time_seconds{name="${ORIGIN_CONTAINER}"}`,
-  listenerOomEvents: `container_oom_events_total{name="${LISTENER_CONTAINER}"}`,
-  originOomEvents: `container_oom_events_total{name="${ORIGIN_CONTAINER}"}`,
+  containerObserverUp: 'beacon_listener_container_observer_up',
+  containerObserverAgeSeconds:
+    'time() - beacon_listener_container_observer_last_success_timestamp_seconds',
+  containerObserverEpochSeconds: 'beacon_listener_container_observer_epoch_start_time_seconds',
+  listenerStartSeconds: 'beacon_listener_container_start_time_seconds{role="listener"}',
+  originStartSeconds: 'beacon_listener_container_start_time_seconds{role="origin"}',
+  listenerRestartEvents: 'beacon_listener_container_restart_events_total{role="listener"}',
+  originRestartEvents: 'beacon_listener_container_restart_events_total{role="origin"}',
+  listenerOomEvents: 'beacon_listener_container_oom_events_total{role="listener"}',
+  originOomEvents: 'beacon_listener_container_oom_events_total{role="origin"}',
 });
 
 export function loopbackTunnelOrigin(value, label) {
@@ -147,7 +154,10 @@ export function createContainerBaseline() {
     established: false,
     verified: false,
     startSeconds: null,
+    restartEvents: null,
     oomEvents: null,
+    observerEpochSeconds: null,
+    continuityLost: false,
     restartsObserved: 0,
     oomEventsDelta: 0,
   };
@@ -155,19 +165,36 @@ export function createContainerBaseline() {
 
 export function observeContainerBaseline(baseline, sample) {
   const starts = [sample.listenerStartSeconds, sample.originStartSeconds];
+  const restarts = [sample.listenerRestartEvents, sample.originRestartEvents];
   const ooms = [sample.listenerOomEvents, sample.originOomEvents];
   if (!baseline.established) {
     baseline.established = true;
     baseline.startSeconds = starts;
+    baseline.restartEvents = restarts;
     baseline.oomEvents = ooms;
+    baseline.observerEpochSeconds = sample.containerObserverEpochSeconds;
     return;
   }
+  if (sample.containerObserverEpochSeconds !== baseline.observerEpochSeconds) {
+    baseline.continuityLost = true;
+    baseline.verified = false;
+  }
   starts.forEach((value, index) => {
-    if (value !== baseline.startSeconds[index]) {
+    const restartDelta = restarts[index] - baseline.restartEvents[index];
+    if (restartDelta < 0) {
+      baseline.continuityLost = true;
+      baseline.verified = false;
+    } else if (restartDelta > 0) {
+      baseline.restartsObserved += restartDelta;
+      baseline.verified = false;
+    } else if (value !== baseline.startSeconds[index]) {
+      // A changed start time with no matching monotonic counter movement is
+      // still a restart and must never become a clean sample.
       baseline.restartsObserved += 1;
-      baseline.startSeconds[index] = value;
       baseline.verified = false;
     }
+    baseline.restartEvents[index] = restarts[index];
+    baseline.startSeconds[index] = value;
   });
   ooms.forEach((value, index) => {
     const delta = value - baseline.oomEvents[index];
@@ -175,10 +202,38 @@ export function observeContainerBaseline(baseline, sample) {
       baseline.oomEventsDelta += delta;
       baseline.verified = false;
     }
+    if (delta < 0) {
+      baseline.continuityLost = true;
+      baseline.verified = false;
+    }
     if (delta !== 0) baseline.oomEvents[index] = value;
   });
-  if (baseline.restartsObserved === 0 && baseline.oomEventsDelta === 0) {
+  if (!baseline.continuityLost
+    && baseline.restartsObserved === 0 && baseline.oomEventsDelta === 0) {
     baseline.verified = true;
+  }
+}
+
+function validateContainerObserverScalars(scalars) {
+  if (scalars.containerObserverUp !== 1
+    || scalars.containerObserverAgeSeconds < 0
+    || scalars.containerObserverAgeSeconds > CONTAINER_OBSERVER_MAX_AGE_SECONDS
+    || !Number.isSafeInteger(scalars.containerObserverEpochSeconds)
+    || scalars.containerObserverEpochSeconds <= 0) {
+    throw new Error('container observer is missing, failed or stale');
+  }
+  for (const name of ['listenerStartSeconds', 'originStartSeconds']) {
+    if (!(scalars[name] > 0)) throw new Error('container start time is invalid');
+  }
+  for (const name of [
+    'listenerRestartEvents',
+    'originRestartEvents',
+    'listenerOomEvents',
+    'originOomEvents',
+  ]) {
+    if (!Number.isSafeInteger(scalars[name]) || scalars[name] < 0) {
+      throw new Error('container continuity counter is invalid');
+    }
   }
 }
 
@@ -232,6 +287,7 @@ export async function probeMonitor({
     egressBitsPerSecond: null,
     tcpRetransmitRatio: null,
     interfaceErrorsDrops: null,
+    containerObserverFresh: false,
     restartBaselineEstablished: baseline.verified,
     containerRestartsObserved: baseline.restartsObserved,
     oomEventsDelta: baseline.oomEventsDelta,
@@ -254,15 +310,21 @@ export async function probeMonitor({
       ])
     );
     const scalars = Object.fromEntries(scalarNames.map((name, index) => [name, scalarValues[index]]));
+    validateContainerObserverScalars(scalars);
     observeContainerBaseline(baseline, {
+      containerObserverEpochSeconds: scalars.containerObserverEpochSeconds,
       listenerStartSeconds: scalars.listenerStartSeconds,
       originStartSeconds: scalars.originStartSeconds,
+      listenerRestartEvents: scalars.listenerRestartEvents,
+      originRestartEvents: scalars.originRestartEvents,
       listenerOomEvents: scalars.listenerOomEvents,
       originOomEvents: scalars.originOomEvents,
     });
+    const containerObserverFresh = true;
     const passed = listenerReady && streamHealthy && liveReady
       && alertmanager.ready && alertmanager.activeAlerts === 0 && firingAlerts === 0
       && withinImmediateThresholds(scalars)
+      && containerObserverFresh
       && baseline.verified
       && baseline.restartsObserved === 0 && baseline.oomEventsDelta === 0;
     return {
@@ -283,6 +345,7 @@ export async function probeMonitor({
       egressBitsPerSecond: scalars.egressBitsPerSecond,
       tcpRetransmitRatio: scalars.tcpRetransmitRatio,
       interfaceErrorsDrops: scalars.interfaceErrorsDrops,
+      containerObserverFresh,
       restartBaselineEstablished: baseline.verified,
       containerRestartsObserved: baseline.restartsObserved,
       oomEventsDelta: baseline.oomEventsDelta,

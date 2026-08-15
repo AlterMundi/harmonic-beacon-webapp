@@ -174,6 +174,8 @@ export function validateTargetMonitorStatus(status, nowMs = Date.now()) {
   boundedCount(status.interfaceErrorsDrops, 'target monitor interface errors/drops', 1e9);
   assert(status.interfaceErrorsDrops === MONITOR_THRESHOLDS.maxInterfaceErrorsDrops,
     'target monitor reports interface errors or drops');
+  assert(status.containerObserverFresh === true,
+    'target monitor container observer is missing, failed or stale');
   // A status that has not established and verified a restart/OOM baseline can
   // never be accepted; nor can one that observed a restart or OOM kill.
   assert(status.restartBaselineEstablished === true,

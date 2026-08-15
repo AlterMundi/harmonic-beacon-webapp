@@ -1,10 +1,11 @@
 # First external Listener HLS smoke
 
-**Status: code-complete but runtime-blocked. This smoke is not ready to
-execute.** The fail-closed harness, monitor, canary and policy are complete and
-tested, but the restart/OOM preflight blocker below is unresolved on `mona`:
-no supported per-container restart/OOM observer exists yet. No monitored smoke
-may run until one is implemented and verified (see "Runtime blocker" below).
+**Status: observer implementation prepared but not deployed; this smoke is not
+ready to execute.** The fail-closed harness, monitor, canary, policy and a
+reviewable fixed-target observer are complete and tested. The observer has not
+been installed or verified on `mona`, so its metrics remain absent and every
+network run still fails closed. Installation is a separate operational change
+requiring explicit review because the root-owned process reads Docker state.
 
 This is the only approved first network step for Listener capacity evidence. It
 drives exactly ten media-plane clients from one external host for a sixty-second
@@ -75,7 +76,8 @@ firing rules, evaluates the immediate stop thresholds from direct instant
 queries (host CPU, memory, root disk, egress, TCP retransmits, interface
 errors/drops, origin up and the deployed decoded canary) and maintains an
 in-process restart/OOM baseline for the exact isolated Listener and origin
-containers:
+roles. Its private Prometheus input comes from the reviewed root-owned observer,
+not cAdvisor:
 
 ```bash
 node tools/early-birds-hls-load/external-target-monitor.mjs \
@@ -92,22 +94,23 @@ monitor never infers Alertmanager health from Prometheus.
 
 ### Restart/OOM preflight blocker
 
-The restart/OOM baseline requires per-container `container_start_time_seconds`
-and `container_oom_events_total` series (currently expected from cAdvisor) for
-exactly
-`earlybirds-preview-listener-1` and `earlybirds-preview-beacon-stream-1`, each
-resolving to exactly one finite series. Before scheduling load, run the monitor
+The restart/OOM baseline requires the fixed
+`beacon_listener_container_*` observer series for roles `listener` and
+`origin`, plus one fresh observer health and epoch series. Every query must
+resolve to exactly one finite sample. Before scheduling load, run the monitor
 with `--once` (it probes twice: baseline plus verification) and confirm a
 `PASS` status with `restartBaselineEstablished: true`,
-`containerRestartsObserved: 0` and `oomEventsDelta: 0`. If those container
-metrics are absent or ambiguous, the monitor keeps reporting `FAIL` — that is
-the exact preflight blocker, and it is currently unresolved on `mona` (see
-"Runtime blocker" below). The monitor never silently claims zero restarts.
+`containerObserverFresh: true`, `containerRestartsObserved: 0` and
+`oomEventsDelta: 0`. If any observer metric is absent, stale, ambiguous,
+non-finite or reports failure, the monitor keeps reporting `FAIL`. The monitor
+never silently claims zero restarts.
 Because the baseline is
 in-process, a restarted monitor reports `FAIL` again until it has re-established
-and verified a fresh baseline, and the wrapper rejects such a status.
+and verified a fresh baseline. An observer epoch change or counter regression
+is latched as lost continuity and cannot pass until the monitor itself is
+restarted for a new operator-observed five-minute baseline.
 
-### Runtime blocker: no supported per-container restart/OOM observer
+### Root-owned fixed-target observer
 
 Verified on `mona` (read-only inspection): Prometheus currently exposes **only
 the root cgroup** for `container_start_time_seconds` and
@@ -132,34 +135,91 @@ reverted. **Recreating or restarting cAdvisor is not a fix and must never be
 treated as one** — with any mount propagation flag it keeps exposing only the
 root cgroup for these series.
 
-Therefore the ten-client smoke **cannot start** and stays blocked: the
-monitor's exact container queries return empty vectors, every probe reports
-`FAIL`, and the wrapper refuses the network run. There is no fallback — no
-Docker CLI/API read, no inferred zero, no weakened restart/OOM evidence. No
-monitored smoke may run until a supported, read-only per-container
-restart/OOM observer is implemented and verified on `mona`. Candidate options
-are listed in `ops/early-birds/runbook/README.md` ("Per-container restart/OOM
-observability blocker"); none may be implemented, restarted or deployed
-without explicit operational approval.
+The selected implementation is `scripts/listener_container_observer.py` plus
+the `harmonic-beacon-listener-container-observer` oneshot/timer units. It is
+not a cAdvisor replacement and changes no container. Every five seconds a
+root-owned, network-isolated host process performs one fixed `docker inspect`
+for exactly the isolated Listener and origin names, verifies their exact
+Compose project/service labels, maintains a root-only durable epoch/counter
+file and atomically exports fixed-role textfile metrics for node-exporter.
 
-Only after such an observer is deployed and verified, the operator confirms —
-through the loopback SSH tunnel — that each of the four exact queries returns
-exactly one finite series, not an empty vector:
+Threat boundary:
+
+- access to the Docker socket is root-equivalent, so the observer runs only as
+  a reviewed root-owned host unit; the socket is never mounted into Listener,
+  the load generator or another application container;
+- the program accepts no arguments, paths, names or labels from callers and
+  invokes only `/usr/bin/docker inspect` for two compiled-in container names;
+- the unit has private networking, `AF_UNIX` only, strict filesystem
+  protection and write access only to its metrics and state directories;
+- exported labels are the fixed allowlist `role="listener|origin"`; container
+  IDs, hostnames, image names, account data and Docker payloads never enter
+  Prometheus;
+- missing/stopped/wrong-label/duplicated targets, corrupt state, a backwards
+  counter or any inspect error best-effort exports observer failure and removes
+  the role series. If the output path itself is unavailable, the last success
+  becomes stale within fifteen seconds. Freshness and exact-cardinality queries
+  therefore fail closed;
+- start time, a cumulative replacement/restart counter and a cumulative OOM
+  counter are all observed. A fast OOM restart is still detected by start time
+  and restart count even if the terminal `OOMKilled` flag is no longer set.
+
+The code being merged does **not** authorize installation. Before any load, a
+host operator must review the exact release and explicitly install the script
+and units:
+
+```bash
+install -d -o root -g root -m 0755 /usr/local/libexec/harmonic-beacon
+install -d -o root -g root -m 0755 /var/lib/harmonic-beacon/metrics
+install -d -o root -g root -m 0700 \
+  /var/lib/harmonic-beacon/listener-container-observer
+install -o root -g root -m 0755 scripts/listener_container_observer.py \
+  /usr/local/libexec/harmonic-beacon/listener_container_observer.py
+install -o root -g root -m 0644 \
+  ops/early-birds/systemd/harmonic-beacon-listener-container-observer.{service,timer} \
+  /etc/systemd/system/
+systemd-analyze verify \
+  /etc/systemd/system/harmonic-beacon-listener-container-observer.{service,timer}
+systemctl daemon-reload
+systemctl start harmonic-beacon-listener-container-observer.service
+systemctl enable --now harmonic-beacon-listener-container-observer.timer
+```
+
+This operation must not restart Docker, cAdvisor, Listener, origin or any event
+service. Back up any pre-existing destination files first. Revocation is:
+
+```bash
+systemctl disable --now harmonic-beacon-listener-container-observer.timer
+rm -f /var/lib/harmonic-beacon/metrics/listener-container-observer.prom
+```
+
+Keep the root-only state file for audit unless its removal is separately
+approved. Removing it starts a new observer epoch and invalidates any active
+monitor baseline.
+
+Only after the observer is deployed and verified, the operator confirms through
+the loopback SSH tunnel that every exact query returns one finite series:
 
 ```bash
 for query in \
-  'container_start_time_seconds{name="earlybirds-preview-listener-1"}' \
-  'container_start_time_seconds{name="earlybirds-preview-beacon-stream-1"}' \
-  'container_oom_events_total{name="earlybirds-preview-listener-1"}' \
-  'container_oom_events_total{name="earlybirds-preview-beacon-stream-1"}'
+  'beacon_listener_container_observer_up' \
+  'time() - beacon_listener_container_observer_last_success_timestamp_seconds' \
+  'beacon_listener_container_observer_epoch_start_time_seconds' \
+  'beacon_listener_container_start_time_seconds{role="listener"}' \
+  'beacon_listener_container_start_time_seconds{role="origin"}' \
+  'beacon_listener_container_restart_events_total{role="listener"}' \
+  'beacon_listener_container_restart_events_total{role="origin"}' \
+  'beacon_listener_container_oom_events_total{role="listener"}' \
+  'beacon_listener_container_oom_events_total{role="origin"}'
 do
   curl -fsS 'http://127.0.0.1:19090/api/v1/query' --get --data-urlencode "query=$query"
 done
 ```
 
-Only then run the monitor `--once` preflight above. An empty vector at any
-step is a hard blocker: stop and resolve observability first; never treat
-missing series as zero restarts or zero OOM events.
+Require observer `up=1`, age between zero and fifteen seconds, then run the
+monitor `--once` preflight above. An empty or duplicate vector, changed epoch,
+negative age or counter regression is a hard blocker; never treat missing
+series as zero restarts or zero OOM events.
 
 ## Five-minute baseline
 

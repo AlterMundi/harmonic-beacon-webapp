@@ -97,12 +97,12 @@ projection is verified before the drill is considered complete.
 
 ## Per-container restart/OOM observability blocker
 
-Per-container `container_start_time_seconds` and `container_oom_events_total`
-series for the isolated Listener and origin containers are a hard prerequisite
-for the Listener external smoke (see
-`docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md`). On `mona`, Prometheus
-currently exposes only the root cgroup for these series and the exact
-per-container queries return empty vectors; cAdvisor logs that it cannot find
+Per-container start, restart and OOM continuity for the isolated Listener and
+origin is a hard prerequisite for the Listener external smoke (see
+`docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md`). The original cAdvisor-backed
+`container_start_time_seconds` and `container_oom_events_total` design remains
+unusable on `mona`: Prometheus exposes only the root cgroup and cAdvisor logs
+that it cannot find
 `/rootfs/var/lib/docker/image/overlayfs/layerdb/mounts/.../mount-id`.
 
 An earlier change blamed missing recursive slave propagation on the cAdvisor
@@ -116,34 +116,27 @@ cAdvisor is incompatible with Docker's containerd image store for these
 per-container series.
 
 **Recreating or restarting cAdvisor is not a fix and must never be proposed or
-treated as one** — no mount propagation flag changes this. No monitored smoke
-may run until a supported, read-only per-container restart/OOM observer is
-implemented and verified on `mona`. Until then the smoke stays
-runtime-blocked (its harness is code-complete and fails closed on the missing
-series).
+treated as one** — no mount propagation flag changes this.
 
-Candidate future options, for evaluation only — none may be implemented,
-restarted or deployed without explicit operational approval:
+The reviewed code path is now a root-owned host observer:
+`scripts/listener_container_observer.py` and the
+`harmonic-beacon-listener-container-observer` systemd timer. It accepts no
+caller-controlled target/path, performs only one fixed `docker inspect` for the
+isolated Listener and origin, verifies exact Compose labels, stores a durable
+root-only epoch/counter state and exports fixed-role metrics through the
+existing node-exporter textfile directory. Private networking, AF_UNIX-only and
+strict filesystem controls bound the unit; no Docker socket is mounted into an
+application container.
 
-1. A minimal read-only Docker Engine observer that watches the Engine event
-   stream and container state (restart counts, OOM-killed status) for exactly
-   the isolated Listener and origin containers and exports the required
-   Prometheus series. This needs read-only access to the Docker socket, which
-   is root-equivalent on the host, so it is acceptable only with an explicit
-   threat model: dedicated least-privilege observer, read-only socket mount,
-   no write API calls.
-2. A proven containerd-compatible per-container collector — for example a
-   cAdvisor release verified against the containerd image store, or a
-   containerd-native metrics source — validated read-only in a throwaway
-   container on `mona` before any change to the checked-in observability
-   stack.
-3. Any other observer only if it keeps the same fail-closed contract: exactly
-   one finite series per exact container query, no inferred zeros, no
-   weakened restart/OOM evidence.
-
-Whatever is chosen, verification is unchanged: the four exact per-container
-queries must each return exactly one finite series before any load, and empty
-vectors remain a hard blocker, never a reason to proceed.
+This implementation remains **not installed by code merge**. Installation on
+`mona` requires a separate operational review because Docker read access is
+root-equivalent. It must not restart Docker, cAdvisor, Listener, origin or any
+event service. Until the unit is explicitly installed and all observer
+health/freshness/epoch/start/restart/OOM queries return exactly one finite
+series, the ten-client smoke remains runtime-blocked. Empty, duplicated, stale
+or reset series are a hard blocker, never a reason to proceed. Exact install,
+verification and revocation commands live in
+`docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md`.
 
 The bounded ten-client wrapper also requires its fixed local lock at
 `/tmp/harmonic-beacon-listener-smoke-10-network-run.lock`. The path has no CLI
