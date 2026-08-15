@@ -44,9 +44,10 @@ require_withdrawal_operator_image() {
   operator_tag=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG "$operator_env_file")
   operator_expected_sha=$(preview_env_value EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA "$operator_env_file")
   operator_environment=$(preview_env_value EARLYBIRDS_PREVIEW_ENV "$operator_env_file")
-  if test "$operator_environment" = synthetic; then
-    test "$operator_tag" = synthetic || preview_fail 'synthetic withdrawal operator image tag must be synthetic'
-    test "$operator_expected_sha" = synthetic-preview || preview_fail 'synthetic withdrawal operator provenance must be synthetic-preview'
+  if test "$operator_environment" = synthetic && \
+     test "$operator_tag" = synthetic && \
+     test "$operator_expected_sha" = synthetic-preview; then
+    :
   else
     test -n "$operator_tag" || preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG is required'
     test -n "$operator_expected_sha" || preview_fail 'EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA is required'

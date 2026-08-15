@@ -8,7 +8,9 @@
 > explicit release and audio gates in this document.
 
 > **Current launch memory (2026-08-15):** the public Listener candidate runs exact
-> SHA `acc90ba35fea52f63ef18337e3a555ef637c552f`; the private withdrawal operator remains pinned at
+> SHA `5d1073f598272d81a14a64d55a4220c2c13e9a74`; the previous contract-compatible Listener
+> image and dormant private Live workbench remain on `acc90ba35fea52f63ef18337e3a555ef637c552f`;
+> the private withdrawal operator remains pinned at
 > `0a475717d45d32cec38afdb8fc35fb772a994017`; canonical payment authority runs
 > `4e5b208e902969285c8f68067f7fd13b7e2eb68d`; the isolated mail sidecar runs
 > `456ece2b38e203a2d12c54864115e03ebaa1a89c`. PayPal Sandbox and Mercado Pago

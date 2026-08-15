@@ -206,9 +206,29 @@ test('preview lifecycle pins and preserves the private withdrawal operator', asy
     '-c', '. "$1"; require_withdrawal_operator_image "$2"', 'sh',
     path.join(repositoryRoot, 'scripts/early-birds-preview/lib.sh'), missingTagEnv,
   ], { encoding: 'utf8' });
-  await fs.rm(temporary, { recursive: true, force: true });
   assert.equal(missingTag.status, 2);
   assert.match(missingTag.stderr, /EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG is required/);
+
+  const exactSha = 'cccccccccccccccccccccccccccccccccccccccc';
+  const exactRuntimeEnv = path.join(temporary, 'exact-runtime.env');
+  const fakeBin = path.join(temporary, 'bin');
+  await fs.mkdir(fakeBin);
+  await fs.writeFile(exactRuntimeEnv, [
+    'EARLYBIRDS_PREVIEW_ENV=synthetic',
+    `EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG=${exactSha}`,
+    `EARLYBIRDS_WITHDRAWAL_OPERATOR_GIT_SHA=${exactSha}`,
+    '',
+  ].join('\n'));
+  await fs.writeFile(path.join(fakeBin, 'docker'), `#!/bin/sh\nprintf '%s\\n' 'BEACON_GIT_SHA=${exactSha}'\n`, { mode: 0o755 });
+  const exactRuntime = spawnSync('sh', [
+    '-c', '. "$1"; require_withdrawal_operator_image "$2"', 'sh',
+    path.join(repositoryRoot, 'scripts/early-birds-preview/lib.sh'), exactRuntimeEnv,
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` },
+  });
+  await fs.rm(temporary, { recursive: true, force: true });
+  assert.equal(exactRuntime.status, 0, exactRuntime.stderr);
 });
 
 test('withdrawal edge is exact, private-by-default and isolated from non-Listener vhosts', async () => {

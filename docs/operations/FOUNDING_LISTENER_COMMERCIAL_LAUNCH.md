@@ -44,12 +44,19 @@ checks and is recoverable in Google Cloud for 30 days for administrative recover
 the exposed secret from an environment backup.
 
 The exact public Listener image is
-`acc90ba35fea52f63ef18337e3a555ef637c552f`. Health and readiness attest that SHA. The same exact
-image runs the staging-only Live workbench. The no-port withdrawal operator remains independently
-pinned at `0a475717d45d32cec38afdb8fc35fb772a994017`. That previous contract-compatible Listener image remains available as
-an application-only rollback target; the operator and current database must remain running so legal
+`5d1073f598272d81a14a64d55a4220c2c13e9a74`. Health attests that SHA. The dormant staging-only
+Live workbench remains on `acc90ba35fea52f63ef18337e3a555ef637c552f`. The no-port withdrawal
+operator remains independently pinned at `0a475717d45d32cec38afdb8fc35fb772a994017`.
+`acc90ba35fea52f63ef18337e3a555ef637c552f` remains available as the previous
+contract-compatible application-only rollback target; the operator and current database must remain running so legal
 requests already received can still be processed. The weekly-quota database policy itself is
 forward-only.
+
+The `5d1073f` release keeps the mandatory consumer actions fixed on desktop but places them after
+Listener content on screens up to 640 px, so they remain prominent without obscuring the hero or
+primary entry action. Real-browser ES/EN checks at 390x844 confirmed the actions in document flow;
+the desktop check retained the fixed bottom-right placement. No checkout, membership, provider,
+event, LiveKit, media or audio behavior changed.
 
 The public no-login `BOTÓN DE ARREPENTIMIENTO` and `BOTÓN DE BAJA DE SERVICIO` are deployed with an
 immediate opaque receipt, bounded durable queue and no automatic provider action. Root-only timers

@@ -9,8 +9,8 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 ## Exact deployed state
 
 - Public candidate: `https://listen.harmonicbeacon.com/`
-- Listener image/SHA: `acc90ba35fea52f63ef18337e3a555ef637c552f`
-- Previous contract-compatible Listener application image: `0a475717d45d32cec38afdb8fc35fb772a994017`
+- Listener image/SHA: `5d1073f598272d81a14a64d55a4220c2c13e9a74`
+- Previous contract-compatible Listener application image: `acc90ba35fea52f63ef18337e3a555ef637c552f`
 - Withdrawal operator sidecar image/SHA: `0a475717d45d32cec38afdb8fc35fb772a994017`
 - Canonical payment authority: `4e5b208e902969285c8f68067f7fd13b7e2eb68d`
 - Minimum authority after any new Live checkout attempt: `4e5b208e902969285c8f68067f7fd13b7e2eb68d`
@@ -25,6 +25,7 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 - Mercado Pago Live provider: OFF
 - Mercado Pago TEST lifecycle: ready; global new sales OFF
 - Public consumer withdrawal/service cancellation: ON; no login, immediate opaque receipt
+- Mobile consumer actions: in document flow after Listener content; desktop remains fixed
 - Public sales: OFF; only the explicitly supervised Live lifecycle is authorized
 
 The authority now includes the reviewed adverse-event hardening, typed recovery
