@@ -49,6 +49,8 @@ export type ReactiveFilament = {
     wiggle: number;
     activation: number;
     visibility: number;
+    /** Seconds since the most recent measured rising activation edge. */
+    impulseAgeSeconds: number | null;
     trail: Array<{
         capturedAtMs: number;
         angle: number;
@@ -255,6 +257,8 @@ export function buildReactiveCampfireScene(
     history: ReactiveTrailHistory = new Map(),
     decay = 1,
     lastActivatedAtMs: ReadonlyMap<number, number> = new Map(),
+    activationStartedAtMs: ReadonlyMap<number, number> = new Map(),
+    animationTimeMs?: number,
 ): ReactiveCampfireScene {
     const settings = validateReactiveCampfireSettings(settingsCandidate);
     const confidence = clamp(frame?.confidence ?? 0) * clamp(decay);
@@ -268,6 +272,10 @@ export function buildReactiveCampfireScene(
     );
     const centerMix = settings.centerCutPercent / 100;
     const outerMix = 1 - centerMix;
+    const innerDrivenMode = settings.visualizationMode === 'inner-anchor-kelp';
+    const motionClockMs = innerDrivenMode && Number.isFinite(animationTimeMs)
+        ? animationTimeMs!
+        : capturedAtMs;
     const rings: ReactiveRing[] = [];
     const seriesRings: ReactiveSeriesRing[] = indexes.map((index) => {
         const progress = harmonics.length <= 1 ? 0 : index / (harmonics.length - 1);
@@ -331,6 +339,10 @@ export function buildReactiveCampfireScene(
             settings.activationTtlSeconds,
             lastActivatedAtMs,
         );
+        const activationStartedAt = activationStartedAtMs.get(index);
+        const impulseAgeSeconds = activationStartedAt === undefined
+            ? null
+            : Math.max(0, (motionClockMs - activationStartedAt) / 1_000);
         const harmonicNumber = index + 1;
         if (index < centerCutIndex) {
             rings.push({
@@ -348,9 +360,14 @@ export function buildReactiveCampfireScene(
 
         const tier = index < MID_HARMONIC_COUNT ? 'mid' : 'high';
         const baseAngle = seededUnit(index, 2) * Math.PI * 2;
-        const innerRadius = tier === 'mid'
-            ? 0.12 + seededUnit(index, 9) * 0.08
-            : 0.24 + seededUnit(index, 9) * 0.13;
+        const innerDriven = innerDrivenMode;
+        const innerRadius = innerDriven
+            ? tier === 'mid'
+                ? 0.075 + seededUnit(index, 9) * 0.045
+                : 0.11 + seededUnit(index, 9) * 0.075
+            : tier === 'mid'
+                ? 0.12 + seededUnit(index, 9) * 0.08
+                : 0.24 + seededUnit(index, 9) * 0.13;
         const baseOuterRadius = tier === 'mid'
             ? 0.38 + seededUnit(index, 11) * 0.25
             : 0.57 + seededUnit(index, 11) * 0.32;
@@ -366,14 +383,18 @@ export function buildReactiveCampfireScene(
         filaments.push({
             harmonicIndex: index,
             tier,
-            // The field has a fixed point of view. Variation deforms each
-            // ribbon locally instead of rotating or zooming the whole scene.
-            angle: baseAngle + flow.lateral * (tier === 'high' ? 0.072 : 0.048),
+            // Inner-anchor kelp keeps the base curve static: all motion then
+            // originates inside the ribbon chain rather than at its endpoint.
+            angle: innerDriven
+                ? baseAngle
+                : baseAngle + flow.lateral * (tier === 'high' ? 0.072 : 0.048),
             innerRadius,
-            outerRadius: baseOuterRadius + flow.radial * (tier === 'high' ? 0.045 : 0.028),
-            bend: (seededUnit(index, 6) - 0.5) * 0.24
-                + flow.lateral * 0.055
-                + movement * 0.01,
+            outerRadius: innerDriven
+                ? baseOuterRadius
+                : baseOuterRadius + flow.radial * (tier === 'high' ? 0.045 : 0.028),
+            bend: (seededUnit(index, 6) - 0.5) * 0.24 + (
+                innerDriven ? 0 : flow.lateral * 0.055 + movement * 0.01
+            ),
             opacity: absolute * (tier === 'high' ? 0.62 : 0.7),
             weight: 0.35 + absolute * (tier === 'high' ? 1.05 : 1.5),
             // Delta never raises opacity or weight: it changes geometry and the
@@ -383,6 +404,7 @@ export function buildReactiveCampfireScene(
             wiggle: clamp(Math.abs(deltas[index] ?? 0) / 9) * absolute,
             activation,
             visibility,
+            impulseAgeSeconds,
             trail: tier === 'high'
                 ? trailFor(
                     index,
@@ -413,6 +435,6 @@ export function buildReactiveCampfireScene(
         veils,
         confidence,
         centerCutIndex,
-        flowTimeSeconds: capturedAtMs / 1_000,
+        flowTimeSeconds: motionClockMs / 1_000,
     };
 }

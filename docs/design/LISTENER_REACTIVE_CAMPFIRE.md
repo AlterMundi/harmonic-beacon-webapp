@@ -63,13 +63,19 @@ increases displacement toward the free edge. The original Radial ribbons mode
 can render bounded translucent whole-ribbon history, leaving a ghostly trace of
 the movement.
 
-The laboratory offers one low-cost and three full renderers over the same frame:
+The laboratory offers one low-cost and four full renderers over the same frame:
 
 - **Minimal pulse** draws one fixed measured-level halo at two frames per second.
 - **Harmonic radial series** places the complete selected harmonic bank in
   concentric bands; outer-spacing growth expands upper harmonic separation.
 - **Radial ribbons** divides the complete bank between center and outer ribbons
   using a true 0–100% Center field control.
+- **Inner-anchor kelp** preserves Radial ribbons as-is and adds an experimental
+  top-down kelp field. Each leaf is pinned beside the fixed center; a measured
+  harmonic rising edge launches a causal wave from that inner anchor toward
+  the free edge. Propagation speed, damping and impulse are visual-only lab
+  controls. The field rotates very slowly counter-clockwise around the same
+  fixed center; neither the camera nor the center follows audio energy.
 - **Horizon flow** pours broad harmonic ribbons from fixed horizon positions.
 
 Changing renderer, cut, zoom, activation TTL, width, palette or other visual

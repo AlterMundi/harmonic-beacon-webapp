@@ -3,6 +3,7 @@ export const REACTIVE_VISUALIZATION_MODES = [
     'minimal-pulse',
     'harmonic-radial-series',
     'radial-ribbons',
+    'inner-anchor-kelp',
     'horizon-flow',
 ] as const;
 
@@ -23,6 +24,9 @@ export type ReactiveCampfireSettings = {
     zoomPercent: number;
     activationTtlSeconds: number;
     ribbonWidth: number;
+    kelpPropagationSpeed: number;
+    kelpDamping: number;
+    kelpInnerImpulse: number;
     palette: ReactivePalette;
     visualizationMode: ReactiveVisualizationMode;
     fftSize: 8_192 | 16_384;
@@ -42,6 +46,9 @@ export const DEFAULT_REACTIVE_CAMPFIRE_SETTINGS: Readonly<ReactiveCampfireSettin
     zoomPercent: 165,
     activationTtlSeconds: 30,
     ribbonWidth: 2.45,
+    kelpPropagationSpeed: 0.72,
+    kelpDamping: 1.15,
+    kelpInnerImpulse: 1.6,
     palette: 'ember',
     visualizationMode: 'radial-ribbons',
     fftSize: 16_384,
@@ -61,6 +68,9 @@ const LIMITS = {
     zoomPercent: [50, 220],
     activationTtlSeconds: [0, 30],
     ribbonWidth: [0.6, 3],
+    kelpPropagationSpeed: [0.2, 2],
+    kelpDamping: [0.2, 3],
+    kelpInnerImpulse: [0, 3],
 } as const;
 
 function clampFinite(value: unknown, fallback: number, min: number, max: number): number {
@@ -136,6 +146,21 @@ export function validateReactiveCampfireSettings(
             candidate?.ribbonWidth,
             fallback.ribbonWidth,
             ...LIMITS.ribbonWidth,
+        ),
+        kelpPropagationSpeed: clampFinite(
+            candidate?.kelpPropagationSpeed,
+            fallback.kelpPropagationSpeed,
+            ...LIMITS.kelpPropagationSpeed,
+        ),
+        kelpDamping: clampFinite(
+            candidate?.kelpDamping,
+            fallback.kelpDamping,
+            ...LIMITS.kelpDamping,
+        ),
+        kelpInnerImpulse: clampFinite(
+            candidate?.kelpInnerImpulse,
+            fallback.kelpInnerImpulse,
+            ...LIMITS.kelpInnerImpulse,
         ),
         palette,
         visualizationMode,

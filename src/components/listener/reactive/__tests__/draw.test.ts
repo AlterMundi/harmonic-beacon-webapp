@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { HarmonicAnalysisFrame } from '@/lib/listener/analysis/types';
 
-import { buildClothRibbonPoints, drawMinimalReactivePulse } from '../draw';
+import {
+    buildClothRibbonPoints,
+    buildInnerDrivenRibbonPoints,
+    drawMinimalReactivePulse,
+    innerKelpRotationAt,
+} from '../draw';
 import { DEFAULT_REACTIVE_CAMPFIRE_SETTINGS } from '../settings';
 
 const geometry = {
@@ -64,6 +69,39 @@ describe('reactive cloth ribbons', () => {
 
         expect(quietDistance).toBeGreaterThan(0);
         expect(activeDistance).toBeGreaterThan(quietDistance * 3);
+    });
+});
+
+describe('inner-anchor kelp', () => {
+    const build = (impulseAgeSeconds: number | null) => buildInnerDrivenRibbonPoints({
+        ...geometry,
+        timeSeconds: 20,
+        activity: 0.8,
+        wiggle: 0.7,
+        impulseAgeSeconds,
+        propagationSpeed: 0.72,
+        damping: 1.15,
+        innerImpulse: 1.6,
+    });
+
+    it('pins the inner tip and lets the measured impulse reach inner samples first', () => {
+        const baseline = build(null);
+        const early = build(0.65);
+        const late = build(3);
+        const distance = (left: typeof baseline[number], right: typeof baseline[number]) => (
+            Math.hypot(left.centerX - right.centerX, left.centerY - right.centerY)
+        );
+
+        expect(early[0]).toEqual(baseline[0]);
+        expect(late[0]).toEqual(baseline[0]);
+        expect(distance(early[4], baseline[4])).toBeGreaterThan(0.1);
+        expect(distance(early.at(-1)!, baseline.at(-1)!)).toBeCloseTo(0, 8);
+        expect(distance(late.at(-1)!, baseline.at(-1)!)).toBeGreaterThan(0.1);
+    });
+
+    it('rotates counter-clockwise slowly around the fixed center', () => {
+        expect(innerKelpRotationAt(11)).toBeLessThan(innerKelpRotationAt(10));
+        expect(Math.abs(innerKelpRotationAt(60))).toBeLessThan(Math.PI / 8);
     });
 });
 

@@ -25,6 +25,9 @@ describe('reactive campfire settings', () => {
             zoomPercent: 165,
             activationTtlSeconds: 30,
             ribbonWidth: 2.45,
+            kelpPropagationSpeed: 0.72,
+            kelpDamping: 1.15,
+            kelpInnerImpulse: 1.6,
             palette: 'ember',
             visualizationMode: 'radial-ribbons',
             fftSize: 16_384,
@@ -43,6 +46,9 @@ describe('reactive campfire settings', () => {
             highDetail: 8,
             zoomPercent: 999,
             activationTtlSeconds: -1,
+            kelpPropagationSpeed: 99,
+            kelpDamping: -1,
+            kelpInnerImpulse: 99,
             palette: 'unknown' as never,
             fftSize: 32_768 as never,
         });
@@ -57,6 +63,9 @@ describe('reactive campfire settings', () => {
             highDetail: 1,
             zoomPercent: 220,
             activationTtlSeconds: 0,
+            kelpPropagationSpeed: 2,
+            kelpDamping: 0.2,
+            kelpInnerImpulse: 3,
         });
     });
 

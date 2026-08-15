@@ -138,6 +138,7 @@ describe('reactive campfire components', () => {
         expect(fft).toHaveTextContent('16384 · more detail');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Harmonic radial series');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Radial ribbons');
+        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Inner-anchor kelp');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Horizon flow');
         expect(screen.getByLabelText('Visualization')).not.toHaveTextContent('Analysis only');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Minimal pulse · 2 fps');
@@ -150,6 +151,32 @@ describe('reactive campfire components', () => {
         expect(screen.getByText(/7% center · 93% outer/)).toBeInTheDocument();
         expect(screen.getByLabelText(/Zoom/i)).toHaveValue('165');
         expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('30');
+    });
+
+    it('exposes inner-anchor propagation controls only for the kelp laboratory mode', () => {
+        const { rerender } = render(
+            <ReactiveCampfireTuningPanel
+                enabled
+                settings={{ ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS }}
+                onChange={vi.fn()}
+            />,
+        );
+        expect(screen.queryByLabelText(/Kelp propagation speed/i)).not.toBeInTheDocument();
+
+        rerender(
+            <ReactiveCampfireTuningPanel
+                enabled
+                settings={{
+                    ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,
+                    visualizationMode: 'inner-anchor-kelp',
+                }}
+                onChange={vi.fn()}
+            />,
+        );
+        expect(screen.getByLabelText(/Kelp propagation speed/i)).toHaveValue('0.72');
+        expect(screen.getByLabelText(/Kelp damping/i)).toHaveValue('1.15');
+        expect(screen.getByLabelText(/Inner impulse/i)).toHaveValue('1.6');
+        expect(screen.getByText(/inner anchor drives an outward wave/i)).toBeInTheDocument();
     });
 
     it('makes server-owned analysis parameters explicit and read-only', () => {

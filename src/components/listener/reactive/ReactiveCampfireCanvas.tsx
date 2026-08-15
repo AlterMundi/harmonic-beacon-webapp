@@ -155,6 +155,8 @@ export function ReactiveCampfireCanvas({
                 frameStateRef.current.history as ReactiveTrailHistory,
                 decay,
                 frameStateRef.current.lastActivatedAtMs,
+                frameStateRef.current.activationStartedAtMs,
+                performance.timeOrigin + now,
             );
             drawReactiveCampfire(context, width, height, scene, settingsRef.current);
         };

@@ -19,6 +19,8 @@ export type ReactiveFrameState = {
     sourceKind: HarmonicAnalysisFrame['sourceKind'] | null;
     history: Map<number, HarmonicTrailSample[]>;
     lastActivatedAtMs: Map<number, number>;
+    activationStartedAtMs: Map<number, number>;
+    activeHarmonics: Set<number>;
 };
 
 export function createReactiveFrameState(): ReactiveFrameState {
@@ -30,6 +32,8 @@ export function createReactiveFrameState(): ReactiveFrameState {
         sourceKind: null,
         history: new Map(),
         lastActivatedAtMs: new Map(),
+        activationStartedAtMs: new Map(),
+        activeHarmonics: new Set(),
     };
 }
 
@@ -50,6 +54,12 @@ function appendFrameToHistory(
     for (const existing of state.lastActivatedAtMs.keys()) {
         if (!retained.has(existing)) state.lastActivatedAtMs.delete(existing);
     }
+    for (const existing of state.activationStartedAtMs.keys()) {
+        if (!retained.has(existing)) state.activationStartedAtMs.delete(existing);
+    }
+    for (const existing of state.activeHarmonics) {
+        if (!retained.has(existing)) state.activeHarmonics.delete(existing);
+    }
     const maxAgeMs = Math.max(4_000, settings.trailSeconds * 1_000);
     for (const index of indexes) {
         const activation = harmonicActivationStrength(
@@ -58,7 +68,13 @@ function appendFrameToHistory(
             settings.absoluteFloorDb,
         );
         if (activation >= HARMONIC_ACTIVATION_THRESHOLD) {
+            if (!state.activeHarmonics.has(index)) {
+                state.activationStartedAtMs.set(index, frame.capturedAtMs);
+            }
+            state.activeHarmonics.add(index);
             state.lastActivatedAtMs.set(index, frame.capturedAtMs);
+        } else {
+            state.activeHarmonics.delete(index);
         }
         if (index < 38) continue;
         const samples = state.history.get(index) ?? [];
@@ -81,6 +97,8 @@ function resetSourceHistory(state: ReactiveFrameState) {
     state.lastSmoothAtMs = null;
     state.previousCaptureAtMs = null;
     state.lastActivatedAtMs.clear();
+    state.activationStartedAtMs.clear();
+    state.activeHarmonics.clear();
 }
 
 export function recordReactiveFrame(

@@ -90,6 +90,21 @@ export type ClothRibbonPoint = {
     halfWidth: number;
 };
 
+export const INNER_KELP_ROTATION_RADIANS_PER_SECOND = -0.006;
+
+export function innerKelpRotationAt(timeSeconds: number): number {
+    if (!Number.isFinite(timeSeconds)) return 0;
+    const revolutionSeconds = Math.PI * 2
+        / Math.abs(INNER_KELP_ROTATION_RADIANS_PER_SECOND);
+    return (timeSeconds % revolutionSeconds)
+        * INNER_KELP_ROTATION_RADIANS_PER_SECOND;
+}
+
+function smoothstep(value: number): number {
+    const bounded = Math.max(0, Math.min(1, value));
+    return bounded * bounded * (3 - 2 * bounded);
+}
+
 /**
  * A small deterministic cloth model: the inner edge is pinned and two slow
  * waves travel toward the free edge. Absolute energy and measured variation
@@ -163,29 +178,106 @@ export function buildClothRibbonPoints({
     return points;
 }
 
-function fillClothRibbon(
+/**
+ * An inner-driven rope/leaf model. The first sample is pinned; ambient water
+ * and measured activation both use a delayed phase, so their wavefront travels
+ * from the center-facing anchor toward the free edge. Activation has an actual
+ * causal front: samples remain unchanged until the measured rising edge has
+ * had enough time to reach them.
+ */
+export function buildInnerDrivenRibbonPoints({
+    start,
+    control,
+    end,
+    startWidth,
+    endWidth,
+    harmonicIndex,
+    timeSeconds,
+    activity,
+    wiggle,
+    impulseAgeSeconds,
+    propagationSpeed,
+    damping,
+    innerImpulse,
+}: {
+    start: readonly [number, number];
+    control: readonly [number, number];
+    end: readonly [number, number];
+    startWidth: number;
+    endWidth: number;
+    harmonicIndex: number;
+    timeSeconds: number;
+    activity: number;
+    wiggle: number;
+    impulseAgeSeconds: number | null;
+    propagationSpeed: number;
+    damping: number;
+    innerImpulse: number;
+}): ClothRibbonPoint[] {
+    const points: ClothRibbonPoint[] = [];
+    const phase = seededUnit(harmonicIndex, 191) * Math.PI * 2;
+    const ambientRate = 0.07 + seededUnit(harmonicIndex, 193) * 0.055;
+    const activeRate = 0.24 + seededUnit(harmonicIndex, 195) * 0.2;
+    const safeSpeed = Math.max(0.2, propagationSpeed);
+    const safeDamping = Math.max(0.2, damping);
+    const safeImpulse = Math.max(0, innerImpulse);
+    const perspective = 0.45 + seededUnit(harmonicIndex, 197) * 0.55;
+    const segments = 18;
+
+    for (let segment = 0; segment <= segments; segment += 1) {
+        const t = segment / segments;
+        const oneMinusT = 1 - t;
+        const baseX = oneMinusT * oneMinusT * start[0]
+            + 2 * oneMinusT * t * control[0]
+            + t * t * end[0];
+        const baseY = oneMinusT * oneMinusT * start[1]
+            + 2 * oneMinusT * t * control[1]
+            + t * t * end[1];
+        const tangentX = 2 * oneMinusT * (control[0] - start[0])
+            + 2 * t * (end[0] - control[0]);
+        const tangentY = 2 * oneMinusT * (control[1] - start[1])
+            + 2 * t * (end[1] - control[1]);
+        const tangentLength = Math.max(1, Math.hypot(tangentX, tangentY));
+        const normalX = -tangentY / tangentLength;
+        const normalY = tangentX / tangentLength;
+
+        // Constant phase moves toward increasing t because every outer sample
+        // evaluates an earlier source time. This is the opposite sign from an
+        // exterior-driven wave.
+        const travelDelay = t * 1.55 / safeSpeed;
+        const delayedTime = timeSeconds - travelDelay;
+        const pinnedProfile = Math.sin(t * Math.PI * 0.5) ** 1.35;
+        const ambientWave = Math.sin(
+            phase + delayedTime * Math.PI * 2 * ambientRate,
+        ) * 0.7 * pinnedProfile;
+
+        const arrival = impulseAgeSeconds === null
+            ? 0
+            : smoothstep((impulseAgeSeconds - travelDelay) / 0.18);
+        const spatialDamping = Math.exp(-safeDamping * t * 0.24);
+        const measuredAmplitude = (
+            Math.max(0, activity) * 4.1 + Math.max(0, wiggle) * 9.4
+        ) * safeImpulse;
+        const activatedWave = Math.sin(
+            phase * 0.61 + delayedTime * Math.PI * 2 * activeRate,
+        ) * measuredAmplitude * arrival * spatialDamping * pinnedProfile;
+        const displacement = ambientWave + activatedWave;
+        const leafProfile = 0.28
+            + Math.sin(Math.PI * t) * 0.82
+            + perspective * t * t * 0.5;
+        points.push({
+            centerX: baseX + normalX * displacement,
+            centerY: baseY + normalY * displacement,
+            halfWidth: (startWidth + (endWidth - startWidth) * t) * leafProfile,
+        });
+    }
+    return points;
+}
+
+function fillRibbonPoints(
     context: CanvasRenderingContext2D,
-    start: readonly [number, number],
-    control: readonly [number, number],
-    end: readonly [number, number],
-    startWidth: number,
-    endWidth: number,
-    harmonicIndex: number,
-    timeSeconds: number,
-    activity: number,
-    wiggle: number,
+    points: readonly ClothRibbonPoint[],
 ) {
-    const points = buildClothRibbonPoints({
-        start,
-        control,
-        end,
-        startWidth,
-        endWidth,
-        harmonicIndex,
-        timeSeconds,
-        activity,
-        wiggle,
-    });
     context.beginPath();
     points.forEach((point, index) => {
         const previous = points[Math.max(0, index - 1)];
@@ -214,6 +306,63 @@ function fillClothRibbon(
     context.fill();
 }
 
+function fillClothRibbon(
+    context: CanvasRenderingContext2D,
+    start: readonly [number, number],
+    control: readonly [number, number],
+    end: readonly [number, number],
+    startWidth: number,
+    endWidth: number,
+    harmonicIndex: number,
+    timeSeconds: number,
+    activity: number,
+    wiggle: number,
+) {
+    const points = buildClothRibbonPoints({
+        start,
+        control,
+        end,
+        startWidth,
+        endWidth,
+        harmonicIndex,
+        timeSeconds,
+        activity,
+        wiggle,
+    });
+    fillRibbonPoints(context, points);
+}
+
+function fillInnerDrivenRibbon(
+    context: CanvasRenderingContext2D,
+    start: readonly [number, number],
+    control: readonly [number, number],
+    end: readonly [number, number],
+    startWidth: number,
+    endWidth: number,
+    filament: ReactiveFilament,
+    timeSeconds: number,
+    settings: ReactiveCampfireSettings,
+    impulseAgeSeconds = filament.impulseAgeSeconds,
+    activity = filament.activity,
+    wiggle = filament.wiggle,
+) {
+    fillRibbonPoints(context, buildInnerDrivenRibbonPoints({
+        start,
+        control,
+        end,
+        startWidth,
+        endWidth,
+        harmonicIndex: filament.harmonicIndex,
+        timeSeconds,
+        activity,
+        wiggle,
+        impulseAgeSeconds,
+        propagationSpeed: settings.kelpPropagationSpeed,
+        damping: settings.kelpDamping,
+        innerImpulse: settings.kelpInnerImpulse,
+    }));
+}
+
 function drawRadialRibbon(
     context: CanvasRenderingContext2D,
     filament: ReactiveFilament,
@@ -221,10 +370,12 @@ function drawRadialRibbon(
     centerY: number,
     scale: number,
     palette: Palette,
-    ribbonScale: number,
+    settings: ReactiveCampfireSettings,
     timeSeconds: number,
 ) {
     if (filament.visibility <= 0) return;
+    const ribbonScale = settings.ribbonWidth;
+    const innerDriven = settings.visualizationMode === 'inner-anchor-kelp';
     const color = filament.tier === 'high' ? palette.high : palette.mid;
     const start = endpoint(
         centerX,
@@ -266,34 +417,72 @@ function drawRadialRibbon(
         );
         const ghostWidth = (1.4 + ghost.weight * 2.6) * ribbonScale;
         context.fillStyle = rgba(color, ghost.opacity * filament.visibility);
-        fillClothRibbon(
-            context,
-            ghostStart,
-            ghostControl,
-            ghostEnd,
-            ghostWidth * 0.36,
-            ghostWidth,
-            filament.harmonicIndex,
-            ghost.capturedAtMs / 1_000,
-            ghost.activity,
-            ghost.wiggle,
-        );
+        if (innerDriven) {
+            const ghostAge = filament.impulseAgeSeconds === null
+                ? null
+                : Math.max(0, filament.impulseAgeSeconds - (
+                    timeSeconds - ghost.capturedAtMs / 1_000
+                ));
+            fillInnerDrivenRibbon(
+                context,
+                ghostStart,
+                ghostControl,
+                ghostEnd,
+                ghostWidth * 0.36,
+                ghostWidth,
+                filament,
+                ghost.capturedAtMs / 1_000,
+                settings,
+                ghostAge,
+                ghost.activity,
+                ghost.wiggle,
+            );
+        } else {
+            fillClothRibbon(
+                context,
+                ghostStart,
+                ghostControl,
+                ghostEnd,
+                ghostWidth * 0.36,
+                ghostWidth,
+                filament.harmonicIndex,
+                ghost.capturedAtMs / 1_000,
+                ghost.activity,
+                ghost.wiggle,
+            );
+        }
     }
 
     const width = (1.8 + filament.weight * 3.2) * ribbonScale;
     const leafGradient = context.createLinearGradient(start[0], start[1], end[0], end[1]);
-    leafGradient.addColorStop(0, rgba(
-        color,
-        (0.012 + filament.opacity * 0.18) * filament.visibility,
-    ));
-    leafGradient.addColorStop(0.58, rgba(
-        color,
-        (0.018 + filament.opacity * 0.62) * filament.visibility,
-    ));
-    leafGradient.addColorStop(1, rgba(
-        color,
-        (0.025 + filament.opacity * 0.86) * filament.visibility,
-    ));
+    if (innerDriven) {
+        leafGradient.addColorStop(0, rgba(
+            color,
+            (0.035 + filament.opacity * 0.78 + filament.activation * 0.18)
+                * filament.visibility,
+        ));
+        leafGradient.addColorStop(0.42, rgba(
+            color,
+            (0.025 + filament.opacity * 0.68) * filament.visibility,
+        ));
+        leafGradient.addColorStop(1, rgba(
+            color,
+            (0.012 + filament.opacity * 0.44) * filament.visibility,
+        ));
+    } else {
+        leafGradient.addColorStop(0, rgba(
+            color,
+            (0.012 + filament.opacity * 0.18) * filament.visibility,
+        ));
+        leafGradient.addColorStop(0.58, rgba(
+            color,
+            (0.018 + filament.opacity * 0.62) * filament.visibility,
+        ));
+        leafGradient.addColorStop(1, rgba(
+            color,
+            (0.025 + filament.opacity * 0.86) * filament.visibility,
+        ));
+    }
     context.fillStyle = leafGradient;
     context.save();
     const glowStrength = filament.activation * filament.visibility;
@@ -301,21 +490,35 @@ function drawRadialRibbon(
     context.shadowBlur = glowStrength > 0.08
         ? Math.min(22, glowStrength * 16 * ribbonScale)
         : 0;
-    fillClothRibbon(
-        context,
-        start,
-        control,
-        end,
-        width * 0.42,
-        width,
-        filament.harmonicIndex,
-        timeSeconds,
-        filament.activity,
-        filament.wiggle,
-    );
+    if (innerDriven) {
+        fillInnerDrivenRibbon(
+            context,
+            start,
+            control,
+            end,
+            width * 0.42,
+            width,
+            filament,
+            timeSeconds,
+            settings,
+        );
+    } else {
+        fillClothRibbon(
+            context,
+            start,
+            control,
+            end,
+            width * 0.42,
+            width,
+            filament.harmonicIndex,
+            timeSeconds,
+            filament.activity,
+            filament.wiggle,
+        );
+    }
     context.restore();
 
-    if (filament.emphasis > 0.04 && filament.visibility > 0) {
+    if (!innerDriven && filament.emphasis > 0.04 && filament.visibility > 0) {
         context.fillStyle = rgba(
             color,
             filament.emphasis * 0.42 * filament.visibility,
@@ -353,6 +556,13 @@ function drawRadialField(
     context.fillStyle = atmosphere;
     context.fillRect(0, 0, width, height);
 
+    context.save();
+    if (settings.visualizationMode === 'inner-anchor-kelp') {
+        context.translate(centerX, centerY);
+        context.rotate(innerKelpRotationAt(scene.flowTimeSeconds));
+        context.translate(-centerX, -centerY);
+    }
+
     for (const ring of scene.rings) {
         if (ring.visibility <= 0) continue;
         context.save();
@@ -382,7 +592,7 @@ function drawRadialField(
             centerY,
             scale,
             palette,
-            settings.ribbonWidth,
+            settings,
             scene.flowTimeSeconds,
         );
     }
@@ -428,6 +638,7 @@ function drawRadialField(
         context.arc(centerX, centerY, radius, 0, Math.PI * 2);
         context.fill();
     }
+    context.restore();
 }
 
 function drawHarmonicRadialSeries(
