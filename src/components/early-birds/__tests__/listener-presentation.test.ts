@@ -38,6 +38,12 @@ describe('Listener presentation phase', () => {
             transportStopped: false,
             liveState: 'recovering',
         })).toBe('reconnecting');
+        expect(deriveListenerPresentationPhase({
+            ...baseline,
+            transportStopped: false,
+            liveState: 'recovering',
+            playingDrop: 'en',
+        })).toBe('intro');
     });
 
     it('gives access and transport failures precedence', () => {

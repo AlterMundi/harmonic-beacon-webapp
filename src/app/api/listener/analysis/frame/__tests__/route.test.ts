@@ -82,6 +82,11 @@ describe('GET /api/listener/analysis/frame', () => {
     });
 
     it('rejects stale program times before decoding', async () => {
+        expect((await GET(request(
+            'earlybirds-staging.harmonicbeacon.com',
+            Date.now() - 3 * 60_000,
+        ))).status).toBe(200);
+        analyzer.frameAt.mockClear();
         const response = await GET(request(
             'earlybirds-staging.harmonicbeacon.com',
             Date.now() - 10 * 60_000,

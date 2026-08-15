@@ -26,10 +26,13 @@ export function deriveListenerPresentationPhase({
 }): ListenerPresentationPhase {
     if (liveState === 'displaced') return 'displaced';
     if (liveState === 'error') return 'unavailable';
-    if (liveState === 'recovering') return 'reconnecting';
     if (transportPaused) return 'paused';
-    if (transportStopped) return hasStarted ? 'stopped' : 'ready';
+    // The introduction remains the audible source while the hidden Beacon
+    // pipeline is repaired. Its state is more truthful than a reconnect label
+    // for media the listener cannot hear yet.
     if (playingDrop) return 'intro';
+    if (liveState === 'recovering') return 'reconnecting';
+    if (transportStopped) return hasStarted ? 'stopped' : 'ready';
     if (liveState === 'playing') return 'beacon';
     if (livePreparing || liveState === 'loading') return 'preparing';
     return hasStarted ? 'stopped' : 'ready';
