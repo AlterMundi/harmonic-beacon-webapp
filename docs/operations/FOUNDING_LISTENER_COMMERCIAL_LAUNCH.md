@@ -139,8 +139,10 @@ converted back into a reversible action.
    `pmp-myth-listener-live-preflight --provider mercado_pago`, or `--provider all`.
    The command performs only provider reads and emits no IDs, secrets or PII. Require
    `status=verified` and `new_sales=disabled`; on any failure, keep all Live flags OFF.
-4. Validate private readiness, exact signed-webhook negative cases and reconciliation. The
-   preflight does not replace webhook signature or lifecycle tests.
+4. Validate private readiness, exact signed-webhook negative cases and reconciliation. From an
+   external operator host, run
+   `node scripts/early-birds-preview/listener-live-dormant-check.mjs` and require `PASS` while
+   sales are dormant. The provider preflight does not replace webhook signature or lifecycle tests.
 5. Install the reviewed Listener nginx template and verify exact routes plus final 404. Do not
    reload nginx unless `nginx -t` is green.
 6. Enable the matching Listener checkout flag only after the authority reports that Live provider

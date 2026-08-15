@@ -39,6 +39,20 @@ The dormant preflight was reconfirmed after the first external media smoke:
 This dormant state is the required baseline before selecting either provider.
 Do not turn the gate or authority new sales on merely to test route reachability.
 
+Recheck the public/staging/event HTTP boundary from an external operator host:
+
+```bash
+node scripts/early-birds-preview/listener-live-dormant-check.mjs
+```
+
+Require `status=PASS`. The fixed verifier uses no cookie, authorization header,
+account or provider secret. It checks health/legal surfaces and sends only
+anonymous, correctly shaped requests that can never pass session validation;
+both productive provider routes and both Live-workbench hosts must return
+`404`, and the event vhost must expose neither route. Pair this external check
+with the authority's read-only `pmp-myth-listener-live-preflight --provider all`;
+neither command creates checkout state.
+
 ## Boundary
 
 - Exact browser endpoint: `POST /api/listener/checkout/live-workbench` on the staging host only.
