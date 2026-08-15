@@ -73,6 +73,12 @@ lifecycle/reconciliation stays ready. The exact pre-deploy backup
 and older images are retained only as forensic/disaster-recovery artifacts; they are not routine
 post-transaction rollback targets.
 
+After that repair, the private staging workbench was returned to its dormant
+state: exact image `acc90ba`, effective workbench gate `0`, both public Live
+flags `0`, authority new sales disabled and both staging/canonical workbench
+POSTs `404`. Its root-owned allowlist/provider/CSRF configuration remains
+installed at mode `0600` for a future explicitly approved rehearsal.
+
 ## Independent switches
 
 Listener app, all default OFF:

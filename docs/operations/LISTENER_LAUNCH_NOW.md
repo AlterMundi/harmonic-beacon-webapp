@@ -20,6 +20,7 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 - Free For All: OFF
 - PayPal Live checkout: OFF
 - Mercado Pago Live checkout: OFF
+- Private staging Live workbench: OFF; staging and canonical workbench routes return 404
 - PayPal Live lifecycle/read-only reconciliation: ready with new sales OFF and no outstanding intent
 - Mercado Pago Live provider: OFF
 - Mercado Pago TEST lifecycle: ready; global new sales OFF
