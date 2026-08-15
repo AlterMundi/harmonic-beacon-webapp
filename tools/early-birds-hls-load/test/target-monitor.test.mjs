@@ -26,8 +26,13 @@ const DEFAULT_SCALARS = {
   interfaceErrorsDrops: 0,
   originUp: 1,
   canaryOk: 1,
+  containerObserverUp: 1,
+  containerObserverAgeSeconds: 2,
+  containerObserverEpochSeconds: 1_700_000_050,
   listenerStartSeconds: 1_700_000_000,
   originStartSeconds: 1_700_000_100,
+  listenerRestartEvents: 0,
+  originRestartEvents: 0,
   listenerOomEvents: 0,
   originOomEvents: 0,
 };
@@ -240,6 +245,87 @@ test('a changed container start timestamp is latched as a restart', async () => 
   const latched = await probeMonitor(options);
   assert.equal(latched.status, 'FAIL');
   assert.equal(latched.containerRestartsObserved, 1);
+});
+
+test('a monotonic restart counter increase is counted once even when start time also changes', async () => {
+  const state = { scalars: {} };
+  const baseline = createContainerBaseline();
+  const options = {
+    fetchImpl: makeFetch(state),
+    prometheusOrigin: PROMETHEUS,
+    alertmanagerOrigin: ALERTMANAGER,
+    hostHash: TEST_HOST_HASH,
+    baseline,
+  };
+  await probeMonitor(options);
+  assert.equal((await probeMonitor(options)).status, 'PASS');
+  state.scalars.listenerRestartEvents = 1;
+  state.scalars.listenerStartSeconds = DEFAULT_SCALARS.listenerStartSeconds + 60;
+  const restarted = await probeMonitor(options);
+  assert.equal(restarted.status, 'FAIL');
+  assert.equal(restarted.containerRestartsObserved, 1);
+});
+
+test('observer failure, staleness or epoch/counter reset fails closed and stays latched', async () => {
+  const down = await probeTwice({ scalars: { containerObserverUp: 0 } });
+  assert.equal(down.second.status, 'FAIL');
+  assert.equal(down.second.containerObserverFresh, false);
+
+  const stale = await probeTwice({ scalars: { containerObserverAgeSeconds: 16 } });
+  assert.equal(stale.second.status, 'FAIL');
+  assert.equal(stale.second.containerObserverFresh, false);
+
+  const state = { scalars: {} };
+  const baseline = createContainerBaseline();
+  const options = {
+    fetchImpl: makeFetch(state),
+    prometheusOrigin: PROMETHEUS,
+    alertmanagerOrigin: ALERTMANAGER,
+    hostHash: TEST_HOST_HASH,
+    baseline,
+  };
+  await probeMonitor(options);
+  assert.equal((await probeMonitor(options)).status, 'PASS');
+  state.scalars.containerObserverEpochSeconds = DEFAULT_SCALARS.containerObserverEpochSeconds + 1;
+  assert.equal((await probeMonitor(options)).status, 'FAIL');
+  state.scalars.containerObserverEpochSeconds = DEFAULT_SCALARS.containerObserverEpochSeconds;
+  assert.equal((await probeMonitor(options)).status, 'FAIL');
+
+  const counterState = { scalars: { listenerRestartEvents: 3 } };
+  const counterBaseline = createContainerBaseline();
+  const counterOptions = {
+    ...options,
+    fetchImpl: makeFetch(counterState),
+    baseline: counterBaseline,
+  };
+  await probeMonitor(counterOptions);
+  assert.equal((await probeMonitor(counterOptions)).status, 'PASS');
+  counterState.scalars.listenerRestartEvents = 2;
+  assert.equal((await probeMonitor(counterOptions)).status, 'FAIL');
+  counterState.scalars.listenerRestartEvents = 3;
+  assert.equal((await probeMonitor(counterOptions)).status, 'FAIL');
+});
+
+test('invalid observer timestamps and counters fail before establishing a baseline', async () => {
+  for (const scalars of [
+    { containerObserverAgeSeconds: -1 },
+    { containerObserverEpochSeconds: 1.5 },
+    { listenerStartSeconds: 0 },
+    { listenerRestartEvents: -1 },
+    { originOomEvents: 0.5 },
+  ]) {
+    const baseline = createContainerBaseline();
+    const result = await probeMonitor({
+      fetchImpl: makeFetch({ scalars }),
+      prometheusOrigin: PROMETHEUS,
+      alertmanagerOrigin: ALERTMANAGER,
+      hostHash: TEST_HOST_HASH,
+      baseline,
+    });
+    assert.equal(result.status, 'FAIL');
+    assert.equal(result.containerObserverFresh, false);
+    assert.equal(baseline.established, false);
+  }
 });
 
 test('an increased container OOM counter fails closed with a bounded delta', async () => {

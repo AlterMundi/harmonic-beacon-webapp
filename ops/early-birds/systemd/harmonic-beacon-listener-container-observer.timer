@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh fixed Listener container restart and OOM metrics
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5s
+AccuracySec=1s
+Persistent=false
+Unit=harmonic-beacon-listener-container-observer.service
+
+[Install]
+WantedBy=timers.target

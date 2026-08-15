@@ -115,7 +115,9 @@ same external host as the wrapper. The target monitor queries Alertmanager
 (`--prometheus-url`, default `http://127.0.0.1:19090`) through separate
 uncredentialed loopback SSH tunnels, evaluates the immediate host thresholds
 directly and maintains an in-process restart/OOM baseline for the isolated
-Listener and origin containers. The wrapper polls both status files every two
+Listener and origin roles. A passing sample additionally requires the private
+fixed-target observer to be up, fresh, in the same durable epoch and to expose
+exactly one finite start/restart/OOM series per role. The wrapper polls both status files every two
 seconds and aborts the load child exactly once on the first failing or stale
 check. See
 [`LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md`](../../docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md).

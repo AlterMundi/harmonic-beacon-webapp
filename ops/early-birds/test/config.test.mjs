@@ -56,6 +56,32 @@ test('scrapes node-exporter by the internal Docker DNS name', async () => {
   assert.doesNotMatch(prometheus, /host\.docker\.internal/);
 });
 
+test('exports fixed Listener container safety metrics from a hardened host timer', async () => {
+  const observer = await fs.readFile(
+    path.join(root, '../../scripts/listener_container_observer.py'),
+    'utf8',
+  );
+  const service = await read('systemd/harmonic-beacon-listener-container-observer.service');
+  const timer = await read('systemd/harmonic-beacon-listener-container-observer.timer');
+  assert.match(observer, /earlybirds-preview-listener-1/);
+  assert.match(observer, /earlybirds-preview-beacon-stream-1/);
+  assert.match(observer, /com\.docker\.compose\.project.*earlybirds-preview/s);
+  assert.match(observer, /subprocess\.run\([\s\S]*DOCKER_BINARY,[\s\S]*--host=unix:\/\/\/var\/run\/docker\.sock[\s\S]*"inspect"/);
+  assert.match(observer, /"DOCKER_CONFIG": "\/nonexistent"/);
+  assert.doesNotMatch(observer, /docker exec|docker events|curl|https?:\/\//);
+  assert.match(observer, /beacon_listener_container_observer_up 0/);
+  assert.match(observer, /beacon_listener_container_observer_epoch_start_time_seconds/);
+  assert.match(observer, /role="\{role\}"/);
+  assert.doesNotMatch(observer, /name="\{target\['name'\]\}"/);
+  assert.match(service, /User=root/);
+  assert.match(service, /PrivateNetwork=yes/);
+  assert.match(service, /RestrictAddressFamilies=AF_UNIX/);
+  assert.match(service, /ReadOnlyPaths=\/var\/run\/docker\.sock/);
+  assert.match(service, /ReadWritePaths=\/var\/lib\/harmonic-beacon\/metrics \/var\/lib\/harmonic-beacon\/listener-container-observer/);
+  assert.match(timer, /OnUnitActiveSec=5s/);
+  assert.match(timer, /Persistent=false/);
+});
+
 test('alerts on the private consumer request age metric without PII', async () => {
   const alerts = await read('prometheus/alerts.yml');
   assert.match(alerts, /ListenerConsumerRequestQueueWarning[\s\S]*> 72000/);
