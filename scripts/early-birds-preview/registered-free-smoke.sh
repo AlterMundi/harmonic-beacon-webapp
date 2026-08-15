@@ -91,11 +91,42 @@ jq -e '.reason == "displaced"' "$temporary/heartbeat.response" >/dev/null || \
 
 third_lease=$(jq -er '.leaseId' "$temporary/lease-3.response")
 third_generation=$(jq -er '.leaseGeneration' "$temporary/lease-3.response")
+third_sequence=$(jq -er '.presenceSequence' "$temporary/lease-3.response")
+manifest_url=$(jq -er '.stream.manifestUrl' "$temporary/lease-3.response")
+printf '%s\n' "$manifest_url" | grep -Eq \
+  '^https://stream\.harmonicbeacon\.com/v1/hls/[A-Za-z0-9._-]+/live\.m3u8\?grantId=[a-f0-9]{64}&grant=[A-Za-z0-9_-]{43}$' || \
+  preview_fail "active Free lease did not return the bounded direct-origin grant"
+printf 'url = "%s"\nheader = "Origin: https://earlybirds-staging.harmonicbeacon.com"\n' \
+  "$manifest_url" >"$temporary/manifest.curl"
 manifest_status=$(curl --silent --show-error --output "$temporary/manifest.m3u8" \
+  --write-out '%{http_code}' --config "$temporary/manifest.curl")
+test "$manifest_status" = 200 || preview_fail "direct-origin Free manifest returned HTTP $manifest_status"
+grep -q '^#EXTM3U' "$temporary/manifest.m3u8" || preview_fail "active Free manifest is invalid"
+segment_url=$(grep -m1 '^https://stream\.harmonicbeacon\.com/v1/hls/' "$temporary/manifest.m3u8")
+test -n "$segment_url" || preview_fail "direct-origin manifest contains no media segment"
+printf 'url = "%s"\nheader = "Origin: https://earlybirds-staging.harmonicbeacon.com"\n' \
+  "$segment_url" >"$temporary/segment.curl"
+segment_status=$(curl --silent --show-error --output "$temporary/segment.bin" \
+  --write-out '%{http_code}' --config "$temporary/segment.curl")
+test "$segment_status" = 200 || preview_fail "direct-origin media segment returned HTTP $segment_status"
+test -s "$temporary/segment.bin" || preview_fail "direct-origin media segment is empty"
+
+printf '{"leaseId":"%s","leaseGeneration":%s,"presenceSequence":%s,"intent":"play","presence":"listening"}' \
+  "$third_lease" "$third_generation" "$third_sequence" >"$temporary/renew.json"
+renew_status=$(curl --silent --show-error --output "$temporary/renew.response" \
+  --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' \
+  --cookie "$cookie_jar" --data-binary @"$temporary/renew.json" \
+  "$base_url/api/early-birds/stream/heartbeat")
+test "$renew_status" = 200 || preview_fail "direct-origin grant renewal returned HTTP $renew_status"
+renewed_manifest_url=$(jq -er '.stream.manifestUrl' "$temporary/renew.response")
+test "$renewed_manifest_url" = "$manifest_url" || \
+  preview_fail "heartbeat replaced the active media URL"
+
+legacy_manifest_status=$(curl --silent --show-error --output /dev/null \
   --write-out '%{http_code}' --cookie "$cookie_jar" \
   "$base_url/api/early-birds/stream/manifest?leaseId=$third_lease&leaseGeneration=$third_generation")
-test "$manifest_status" = 200 || preview_fail "active Free manifest returned HTTP $manifest_status"
-grep -q '^#EXTM3U' "$temporary/manifest.m3u8" || preview_fail "active Free manifest is invalid"
+test "$legacy_manifest_status" = 404 || \
+  preview_fail "removed Listener media proxy returned HTTP $legacy_manifest_status"
 
 active_status=$(curl --silent --show-error --output "$temporary/active.json" \
   --write-out '%{http_code}' --cookie "$cookie_jar" \
@@ -110,4 +141,4 @@ jq -e '
   (.access.quota.remainingMs > 0 and .access.quota.remainingMs <= 10800000)
 ' "$temporary/active.json" >/dev/null || preview_fail "active weekly quota state is invalid"
 
-echo "Registered Free smoke passed: weekly anchor, three-hour allowance, removed legacy APIs, two-device eviction, and generation-bound manifest."
+echo "Registered Free smoke passed: weekly quota, two-device eviction, stable direct-origin grant, decoded media bytes, and removed Listener media proxy."

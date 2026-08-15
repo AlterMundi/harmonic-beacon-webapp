@@ -603,10 +603,14 @@ test('registered Free smoke covers weekly quota and device boundaries without ex
   assert.match(source, /for ordinal in 1 2 3/);
   assert.match(source, /evictedAnotherDevice/);
   assert.match(source, /\.reason == "displaced"/);
-  assert.match(source, /api\/early-birds\/stream\/manifest/);
+  assert.match(source, /https:\/\/stream\\\.harmonicbeacon\\\.com\/v1\/hls/);
+  assert.match(source, /--config "\$temporary\/manifest\.curl"/);
+  assert.match(source, /--config "\$temporary\/segment\.curl"/);
+  assert.match(source, /removed Listener media proxy/);
   assert.match(source, /leaseGeneration/);
   assert.match(source, /trap 'rm -rf "\$temporary"'/);
   assert.doesNotMatch(source, /echo[^\n]*login_secret/);
+  assert.doesNotMatch(source, /curl[^\n]*"\$(?:manifest_url|segment_url)"/);
 });
 
 test('Free for All quiescence is shipped as a fail-closed server-only operation', async () => {
