@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import type { Prisma } from '@prisma/client';
 
@@ -20,8 +20,8 @@ export const EARLY_BIRD_MAX_STREAM_DEVICES = 2;
 export const EARLY_BIRD_LEASE_TTL_MS = 3 * 60 * 1000;
 export const EARLY_BIRD_ORIGIN_MAX_SIGNATURE_TTL_SECONDS = 10 * 60;
 export const EARLY_BIRD_ORIGIN_MANIFEST_TTL_SECONDS = 60;
-export const EARLY_BIRD_LEASE_MANIFEST_PATH = '/api/early-birds/stream/manifest';
 export const EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID = 'early-birds-free-for-all';
+export const EARLY_BIRD_STREAM_CONTROL_TIMEOUT_MS = 3_000;
 
 export type ListenerLeasePresence = {
     state: 'IDLE' | 'LISTENING';
@@ -60,18 +60,61 @@ export class EarlyBirdStreamIssuerUnavailableError extends Error {
     }
 }
 
-class EnvironmentManifestIssuer implements EarlyBirdStreamUrlIssuer {
+export class EnvironmentManifestIssuer implements EarlyBirdStreamUrlIssuer {
+    constructor(
+        private readonly environment: NodeJS.ProcessEnv = process.env,
+        private readonly fetchImpl: typeof fetch = fetch,
+    ) {}
+
     async issue(request: StreamUrlIssueRequest): Promise<StreamUrlGrant> {
-        // Validate the origin integration at lease issuance, but expose only a
-        // stable same-origin URL to the browser. The route signs and refreshes
-        // the upstream manifest on every HLS poll.
-        earlyBirdOriginConfig();
+        const config = earlyBirdOriginConfig(this.environment);
+        const controlOrigin = earlyBirdStreamControlOrigin(this.environment);
+        const identity = `${request.leaseId}:${request.leaseGeneration}`;
+        const grantId = createHmac('sha256', config.signingSecret)
+            .update(`listener-media-grant-id:v1:${identity}`, 'utf8')
+            .digest('hex');
+        const grantToken = createHmac('sha256', config.signingSecret)
+            .update(`listener-media-grant-token:v1:${identity}`, 'utf8')
+            .digest('base64url');
+        const pathname = `/internal/v1/listener/media-grants/${grantId}`;
+        const body = JSON.stringify({
+            tokenSha256: createHash('sha256').update(grantToken, 'utf8').digest('hex'),
+            expiresAtMs: request.leaseExpiresAt.getTime(),
+        });
+        const timestamp = Math.floor(request.issuedAt.getTime() / 1000);
+        const signature = signEarlyBirdStreamControlRequest({
+            secret: config.signingSecret,
+            pathname,
+            timestamp,
+            body,
+        });
+        let response: Response;
+        try {
+            response = await this.fetchImpl(new URL(pathname, controlOrigin), {
+                method: 'PUT',
+                headers: {
+                    'content-type': 'application/json',
+                    'x-beacon-control-timestamp': String(timestamp),
+                    'x-beacon-control-signature': signature,
+                },
+                body,
+                cache: 'no-store',
+                signal: AbortSignal.timeout(EARLY_BIRD_STREAM_CONTROL_TIMEOUT_MS),
+            });
+        } catch {
+            throw new EarlyBirdStreamIssuerUnavailableError();
+        }
+        if (response.status !== 204) throw new EarlyBirdStreamIssuerUnavailableError();
+
+        const manifestUrl = new URL(earlyBirdOriginManifestPath(config.artifactId), config.origin);
+        manifestUrl.searchParams.set('grantId', grantId);
+        manifestUrl.searchParams.set('grant', grantToken);
         const query = new URLSearchParams({
-            leaseId: request.leaseId,
-            leaseGeneration: String(request.leaseGeneration),
+            grantId,
+            grant: grantToken,
         });
         return {
-            manifestUrl: `${EARLY_BIRD_LEASE_MANIFEST_PATH}?${query}`,
+            manifestUrl: `${manifestUrl.origin}${manifestUrl.pathname}?${query}`,
             expiresAt: request.leaseExpiresAt,
         };
     }
@@ -175,6 +218,36 @@ export type EarlyBirdOriginConfig = {
     artifactId: string;
     signingSecret: string;
 };
+
+export function earlyBirdStreamControlOrigin(
+    environment: NodeJS.ProcessEnv = process.env,
+): string {
+    const value = environment.EARLY_BIRDS_STREAM_CONTROL_ORIGIN?.trim();
+    if (!value) throw new EarlyBirdStreamIssuerUnavailableError();
+    let parsed: URL;
+    try { parsed = new URL(value); } catch { throw new EarlyBirdStreamIssuerUnavailableError(); }
+    if (!['http:', 'https:'].includes(parsed.protocol)
+        || parsed.username || parsed.password || parsed.pathname !== '/'
+        || parsed.search || parsed.hash) {
+        throw new EarlyBirdStreamIssuerUnavailableError();
+    }
+    if (environment.NODE_ENV === 'production'
+        && !(parsed.protocol === 'http:' && parsed.hostname === 'beacon-stream')) {
+        throw new EarlyBirdStreamIssuerUnavailableError();
+    }
+    return parsed.origin;
+}
+
+export function signEarlyBirdStreamControlRequest(input: {
+    secret: string;
+    pathname: string;
+    timestamp: number;
+    body: string;
+}): string {
+    const bodyHash = createHash('sha256').update(input.body).digest('hex');
+    const canonical = `PUT\n${input.pathname}\n${bodyHash}\n${input.timestamp}`;
+    return createHmac('sha256', input.secret).update(canonical).digest('base64url');
+}
 
 export function earlyBirdOriginConfig(
     environment: NodeJS.ProcessEnv = process.env,
@@ -398,13 +471,6 @@ async function acquireEarlyBirdStreamLeaseWithMode(
                 data: { expiresAt: leaseExpiresAt },
             });
         }
-        const stream = await issuer.issue({
-            accountId,
-            leaseId: current.id,
-            leaseGeneration: current.generation,
-            issuedAt: now,
-            leaseExpiresAt,
-        });
         return {
             kind: 'ok' as const,
             current,
@@ -412,12 +478,37 @@ async function acquireEarlyBirdStreamLeaseWithMode(
             leaseExpiresAt,
             serverNow: now,
             access: accessAfter,
-            stream,
         };
     });
 
     if (lease.kind === 'denied') throw new EarlyBirdAccessDeniedError();
     if (lease.kind === 'capacity') throw new EarlyBirdDeviceCapacityError();
+
+    let stream: StreamUrlGrant;
+    try {
+        stream = await issuer.issue({
+            accountId,
+            leaseId: lease.current.id,
+            leaseGeneration: lease.current.generation,
+            issuedAt: lease.serverNow,
+            leaseExpiresAt: lease.leaseExpiresAt,
+        });
+    } catch (error) {
+        await prisma.earlyBirdStreamLease.updateMany({
+            where: {
+                id: lease.current.id,
+                accountId,
+                generation: lease.current.generation,
+            },
+            data: {
+                evictedAt: lease.serverNow,
+                presence: 'IDLE',
+                presenceUpdatedAt: lease.serverNow,
+                expiresAt: lease.serverNow,
+            },
+        });
+        throw error;
+    }
 
     return {
         leaseId: lease.current.id,
@@ -425,7 +516,7 @@ async function acquireEarlyBirdStreamLeaseWithMode(
         presenceSequence: lease.current.presenceSequence,
         leaseExpiresAt: lease.leaseExpiresAt,
         evictedLeaseId: lease.evictedLeaseId,
-        stream: lease.stream,
+        stream,
         serverNow: lease.serverNow,
         accessKind: lease.access.kind,
         quota: lease.access.quota ? serializeEarlyBirdQuotaSnapshot(lease.access.quota) : null,

@@ -9,11 +9,13 @@ const MEDIA_FILE_SHA256 = {
     // Listener-only HLS window/target changes from 60/90 seconds to a two-minute
     // start target and three-minute maximum, native HLS uses the same margin,
     // advisory stalls no longer rebuild a healthy buffer, and hidden documents
-    // explicitly pause before same-lease foreground recovery. Source URLs,
-    // media assets, codec, element gain/fades, AudioContext and event audio are
-    // unchanged.
+    // explicitly pause before same-lease foreground recovery. The stream core
+    // was re-reviewed again for the bounded direct-origin grant: it moves only
+    // authorization/network issuance out of the DB transaction and leaves all
+    // player, signal, codec, buffer, gain/fade, AudioContext, asset and event
+    // audio behavior unchanged.
     'src/components/early-birds/ListenerPlayer.tsx': '70a0bf3b72acf37f69974f97feed2bbd53499ad9e62b4eab18b2c7e0a7a96bc5',
-    'src/lib/early-birds/stream.ts': '96a2d9fe798591833327631b59a73a5b2fc5ca06be7081945a0b07450970da84',
+    'src/lib/early-birds/stream.ts': '40c5a17d27e8d6f820251d96dd33cd2bbbd83b164e50a212acf8fd0bb158c51c',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',
     'src/app/api/early-birds/stream/manifest/route.ts': '56d8266fd8144c1e3ee13b168115f0a814a1da9f0a9f2db8b33e33facbba094e',

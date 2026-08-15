@@ -26,6 +26,7 @@ services:
       # `internal` network. This separate edge bridge permits the explicit
       # loopback binding above without exposing private readiness/metrics.
       - stream_edge
+      - stream_control
     deploy:
       resources:
         limits:
@@ -46,3 +47,6 @@ networks:
     internal: true
   stream_edge:
     name: earlybirds_stream_edge
+  stream_control:
+    name: earlybirds_stream_control_internal
+    internal: true

@@ -39,6 +39,7 @@ export function renderManifest({
   tokenTtlSeconds = 120,
   authorizationExpiresAtSeconds = Number.POSITIVE_INFINITY,
   windowSegments = WINDOW_SEGMENTS,
+  mediaAuthorizationQuery = null,
 }) {
   if (!Number.isSafeInteger(windowSegments) || windowSegments < 6 || windowSegments > 150) {
     throw new Error('windowSegments must be an integer between 6 and 150');
@@ -62,9 +63,19 @@ export function renderManifest({
     '#EXT-X-INDEPENDENT-SEGMENTS',
   ];
 
+  const mediaUrl = (pathname) => {
+    if (mediaAuthorizationQuery) {
+      const url = new URL(pathname, origin);
+      url.searchParams.set('grantId', mediaAuthorizationQuery.grantId);
+      url.searchParams.set('grant', mediaAuthorizationQuery.grant);
+      return url.toString();
+    }
+    return signedUrl({ origin, secret, pathname, expiresAt });
+  };
+
   if (metadata.initialization) {
     const pathname = `/v1/hls/${metadata.artifactId}/segments/${encodeURIComponent(metadata.initialization.file)}`;
-    lines.push(`#EXT-X-MAP:URI="${signedUrl({ origin, secret, pathname, expiresAt })}"`);
+    lines.push(`#EXT-X-MAP:URI="${mediaUrl(pathname)}"`);
   }
 
   for (let sequence = firstSequence; sequence <= edgeSequence; sequence += 1) {
@@ -74,7 +85,7 @@ export function renderManifest({
     lines.push(`#EXTINF:${segment.durationSeconds.toFixed(6)},`);
     const pathname = `/v1/hls/${metadata.artifactId}/segments/${encodeURIComponent(segment.file)}`;
     // Native HLS does not inherit the manifest query string. Every URI is signed.
-    lines.push(signedUrl({ origin, secret, pathname, expiresAt }));
+    lines.push(mediaUrl(pathname));
   }
   return `${lines.join('\n')}\n`;
 }

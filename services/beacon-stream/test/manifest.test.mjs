@@ -54,6 +54,31 @@ test('never signs a segment beyond the inbound manifest authorization horizon', 
   }
 });
 
+test('carries one stable opaque media grant across every map and segment URL', () => {
+  const item = variableMetadata();
+  const grantId = 'a'.repeat(64);
+  const grant = 'b'.repeat(43);
+  const manifest = renderManifest({
+    metadata: item,
+    origin: 'https://stream.example.test',
+    secret,
+    nowMs: item.epochMs + 50_000,
+    mediaAuthorizationQuery: { grantId, grant },
+  });
+  const urls = [
+    ...manifest.split('\n').filter((line) => line.startsWith('https://')),
+    manifest.match(/#EXT-X-MAP:URI="([^"]+)"/)?.[1],
+  ].filter(Boolean);
+  assert.ok(urls.length > 1);
+  for (const value of urls) {
+    const url = new URL(value);
+    assert.equal(url.searchParams.get('grantId'), grantId);
+    assert.equal(url.searchParams.get('grant'), grant);
+    assert.equal(url.searchParams.has('exp'), false);
+    assert.equal(url.searchParams.has('sig'), false);
+  }
+});
+
 test('renders a signed fMP4 map and preserves a short final segment across loops', () => {
   const item = variableMetadata();
   const epoch = item.epochMs;

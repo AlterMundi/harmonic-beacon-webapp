@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createPublicHandler, createInternalHandler, parseAllowedOrigins } from '../src/server.mjs';
 import { signedUrl, signPath } from '../src/auth.mjs';
 import { Metrics } from '../src/metrics.mjs';
+import { signControlRequest } from '../src/control-auth.mjs';
 import { metadata, temporaryArtifact, temporaryVariableArtifact, variableMetadata } from './helpers.mjs';
 
 const secret = 'z'.repeat(32);
@@ -110,4 +111,76 @@ test('publishes readiness and Prometheus metrics only on the internal listener',
   assert.equal((await fetch(`${origin}/readyz`)).status, 200);
   const body = await (await fetch(`${origin}/metrics`)).text();
   assert.match(body, /beacon_stream_http_requests_total/);
+});
+
+test('serves a registered media grant without consulting Listener and expires it locally', async (t) => {
+  const { artifactRoot } = await temporaryArtifact();
+  const item = metadata();
+  let now = item.epochMs + 42_000;
+  const { server, origin } = await listen(createPublicHandler({
+    artifactRoot,
+    metadata: item,
+    publicOrigin: 'https://stream.example.test',
+    signingSecret: secret,
+    allowedOrigins: new Set(['https://listen.example.test']),
+    now: () => now,
+  }));
+  t.after(() => server.close());
+  const grantId = 'a'.repeat(64);
+  const grant = 'b'.repeat(43);
+  const pathname = `/internal/v1/listener/media-grants/${grantId}`;
+  const body = JSON.stringify({
+    tokenSha256: (await import('node:crypto')).createHash('sha256').update(grant).digest('hex'),
+    expiresAtMs: now + 180_000,
+  });
+  const timestamp = Math.floor(now / 1000);
+  const signature = signControlRequest({ secret, pathname, timestamp, body });
+  const registered = await fetch(`${origin}${pathname}`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      'x-beacon-control-timestamp': String(timestamp),
+      'x-beacon-control-signature': signature,
+    },
+    body,
+  });
+  assert.equal(registered.status, 204);
+
+  const manifestUrl = `${origin}/v1/hls/${item.artifactId}/live.m3u8?grantId=${grantId}&grant=${grant}`;
+  const response = await fetch(manifestUrl);
+  assert.equal(response.status, 200);
+  const manifest = await response.text();
+  const publicSegment = new URL(manifest.split('\n').find((line) => line.startsWith('https://')));
+  const segmentUrl = new URL(`${origin}${publicSegment.pathname}${publicSegment.search}`);
+  assert.equal((await fetch(segmentUrl)).status, 200);
+
+  // No callback to Listener occurs on either media request. The origin keeps
+  // serving solely from the local grant until its exact lease horizon.
+  now += 179_999;
+  assert.equal((await fetch(manifestUrl)).status, 200);
+  now += 1;
+  assert.equal((await fetch(manifestUrl)).status, 403);
+  assert.equal((await fetch(segmentUrl)).status, 403);
+});
+
+test('rejects mutated, stale and oversized grant-control requests', async (t) => {
+  const { artifactRoot } = await temporaryArtifact();
+  const item = metadata();
+  const now = item.epochMs + 42_000;
+  const { server, origin } = await listen(createPublicHandler({
+    artifactRoot, metadata: item, publicOrigin: 'https://stream.example.test', signingSecret: secret, now: () => now,
+  }));
+  t.after(() => server.close());
+  const pathname = `/internal/v1/listener/media-grants/${'c'.repeat(64)}`;
+  const body = JSON.stringify({ tokenSha256: 'd'.repeat(64), expiresAtMs: now + 60_000 });
+  const timestamp = Math.floor(now / 1000);
+  const headers = {
+    'x-beacon-control-timestamp': String(timestamp),
+    'x-beacon-control-signature': signControlRequest({ secret, pathname, timestamp, body }),
+  };
+  assert.equal((await fetch(`${origin}${pathname}`, { method: 'PUT', headers, body: `${body} ` })).status, 403);
+  assert.equal((await fetch(`${origin}${pathname}`, {
+    method: 'PUT', headers: { ...headers, 'x-beacon-control-timestamp': String(timestamp - 31) }, body,
+  })).status, 403);
+  assert.equal((await fetch(`${origin}${pathname}`, { method: 'PUT', headers, body: 'x'.repeat(1025) })).status, 413);
 });

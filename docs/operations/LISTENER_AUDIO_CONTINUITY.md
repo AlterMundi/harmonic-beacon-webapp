@@ -85,12 +85,22 @@ Firefox, Android Chrome and iPhone Safari. Include foreground, one
 background/foreground cycle and speakers/headphones when available. Perform a
 60-minute physical listen on at least one representative mobile device.
 
-For deterministic recovery evidence in staging, interrupt only the Listener
-control plane for less than 30 seconds while the independent origin remains
-healthy. The same client must reconnect at the configured buffered live
-position with one audible source and one quota presence interval. Do not
-perform this exercise while an event is active and do not restart the origin
-to simulate it.
+For deterministic recovery evidence in staging, acquire a media grant and then
+interrupt only the Listener control plane while the independent origin remains
+healthy. Manifest and segment requests using the already-issued URL must keep
+returning 200 without any Listener/database callback until the exact registered
+lease expiry; the next request must return 403. Restore Listener before expiry
+for a physical playback drill. The stable URL must survive heartbeat renewal,
+with one audible source and one quota presence interval. Do not restart the
+origin to simulate a control-plane failure.
+
+This is bounded continuity, not unrestricted media access. Heartbeats renew
+once per minute; each successful renewal grants at most three further minutes,
+also capped by remaining quota. With the approximately two-minute playback
+buffer, a failure immediately after renewal can preserve roughly five minutes
+of user-perceived audio. Stop/revoke may likewise take at most the outstanding
+grant horizon to drain at origin; quota settlement remains capped by the same
+lease expiry.
 
 ## Reliability tiers still required
 
@@ -98,16 +108,11 @@ The five-minute origin window protects against ordinary last-mile jitter; it
 does not make a single host highly available. Public-release reliability also
 requires independently reviewable delivery work:
 
-1. cache immutable media segments at a CDN/edge and keep manifests private and
-   short-lived;
-2. remove the Listener application/database from the segment hot path after a
-   bounded authorization decision, so control-plane latency cannot interrupt
-   already-authorized audio;
-3. publish the identical encoded timeline from at least two failure domains
+1. publish the identical encoded timeline from at least two failure domains
    and provide tested client/playlist failover without overlapping audio;
-4. run synthetic audio canaries from North America, Europe and Latin America,
+2. run synthetic audio canaries from North America, Europe and Latin America,
    and retain low-cardinality, non-PII browser recovery causes;
-5. define and gate on interruption-free session rate, rebuffer ratio, join
+3. define and gate on interruption-free session rate, rebuffer ratio, join
    success and recovery time, including multi-hour network and origin-failure
    drills.
 

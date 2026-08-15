@@ -159,7 +159,7 @@ describe('quota-aware two-connection leases', () => {
         expect(tx.earlyBirdStreamLease.updateMany).not.toHaveBeenCalled();
     });
 
-    it('rolls back play+anchor when deterministic manifest issuance fails in-transaction', async () => {
+    it('revokes the exact committed lease generation if private grant issuance fails', async () => {
         quotaMocks.settleLockedEarlyBirdQuota
             .mockResolvedValueOnce(unstarted)
             .mockResolvedValueOnce(listening);
@@ -167,7 +167,15 @@ describe('quota-aware two-connection leases', () => {
         await expect(acquireEarlyBirdStreamLease(
             'listener-1', 'device_abcdefghijklmnopqrstuvwxyz', NOW, failingIssuer,
         )).rejects.toThrow('config');
-        expect(prisma.earlyBirdStreamLease.updateMany).not.toHaveBeenCalled();
+        expect(prisma.earlyBirdStreamLease.updateMany).toHaveBeenCalledWith({
+            where: { id: LEASE_ID, accountId: 'listener-1', generation: 1 },
+            data: {
+                evictedAt: NOW,
+                presence: 'IDLE',
+                presenceUpdatedAt: NOW,
+                expiresAt: NOW,
+            },
+        });
     });
 
     it('commits exhausted settlement before denying manifest authorization', async () => {

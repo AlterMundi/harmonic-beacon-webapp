@@ -77,7 +77,8 @@ describe('EarlyBird stream heartbeat route', () => {
         });
     });
 
-    it('returns a renewed same-origin grant for an active lease', async () => {
+    it('returns the stable direct-origin grant for an active lease renewal', async () => {
+        const directGrant = `https://stream.harmonicbeacon.com/v1/hls/approved/live.m3u8?grantId=${'a'.repeat(64)}&grant=${'b'.repeat(43)}`;
         mocks.heartbeatEarlyBirdStreamLease.mockResolvedValue({
             serverNow: new Date('2026-08-06T12:00:00.000Z'),
             accessKind: 'free-quota',
@@ -86,14 +87,14 @@ describe('EarlyBird stream heartbeat route', () => {
             presenceSequence: 3,
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             stream: {
-                manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}`,
+                manifestUrl: directGrant,
                 expiresAt: new Date('2026-08-06T12:03:00.000Z'),
             },
         });
         const response = await POST(request());
         expect(response.status).toBe(200);
         await expect(response.json()).resolves.toMatchObject({
-            stream: { manifestUrl: `/api/early-birds/stream/manifest?leaseId=${LEASE_ID}` },
+            stream: { manifestUrl: directGrant },
         });
         expect(mocks.heartbeatEarlyBirdStreamLease).toHaveBeenCalledWith(
             'listener-1', LEASE_ID, 2, 3, undefined, undefined, true,
