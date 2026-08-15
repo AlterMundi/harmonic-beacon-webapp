@@ -64,7 +64,7 @@ const NUMBER_FIELDS: Array<{
         label: 'Camera rotation',
         min: -90,
         max: 90,
-        step: 0.5,
+        step: 0.1,
         suffix: '°/min',
         modes: ['inner-anchor-kelp'],
     },
