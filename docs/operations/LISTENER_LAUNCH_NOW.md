@@ -25,6 +25,8 @@ and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
 - Mercado Pago Live provider: OFF
 - Mercado Pago TEST lifecycle: ready; global new sales OFF
 - Public consumer withdrawal/service cancellation: ON; no login, immediate opaque receipt
+- Fixed Listener/origin container observer: ON, epoch `1786790963`, restart/OOM counters `0`
+- External media smoke: 10 clients / 60 seconds passed from `daimonmatrix`; no larger capacity claim
 - Mobile consumer actions: in document flow after Listener content; desktop remains fixed
 - Public sales: OFF; only the explicitly supervised Live lifecycle is authorized
 
@@ -47,6 +49,12 @@ with Live OFF.
 PayPal Sandbox has passed activation, pending cancellation, reactivation and
 terminal refund. Mercado Pago TEST has passed checkout, activation, pause,
 reactivation and reconciliation. Browser redirects never grant membership.
+
+The first bounded external media-plane smoke passed on 2026-08-15: ten clients
+from `daimonmatrix`, 348/348 successful requests, no fetch/window/scheduling
+misses, no Listener/origin restart or OOM, no alert and clean five-minute
+baseline and recovery windows. This is evidence for ten clients only; it does
+not validate 3,000/4,000/5,000 listeners or authorize a larger run.
 
 The dedicated magic-link API, worker and PostgreSQL queue are isolated from the
 event runtime and have no host ports. A controlled Gmail delivery reached
@@ -93,7 +101,7 @@ without explicit approval.
   canonical checkout/lifecycle evidence and exists only for explicitly commanded disaster
   recovery followed by complete provider reconciliation.
 - Listener application regression: roll back only the isolated Listener to
-  `0a475717` if contract-compatible; keep the `0a475717` withdrawal operator and
+  `acc90ba3` if contract-compatible; keep the `0a475717` withdrawal operator and
   current database running so already-received legal requests remain processable.
   Set `LISTENER_WITHDRAWAL_ENABLED=0` to hide the public request routes during
   application recovery, then roll forward.
