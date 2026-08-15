@@ -58,19 +58,20 @@ rules at 20h/24h; the runtime smoke accepted and resolved one synthetic request 
 returned the open queue and alerts to zero without exporting PII.
 
 The exact isolated payment-authority image is
-`b1038ddb579817e39add567c5b7b055e2f716095`. It includes the reviewed Mercado Pago adverse-event
-hardening from backend PR #80. API and worker are healthy, Alembic is at head `7b4c1e9a2d60`, and
+`4e5b208e902969285c8f68067f7fd13b7e2eb68d`. It includes the reviewed Mercado Pago adverse-event
+hardening from backend PR #80 and missing-PayPal-approval recovery from backend PR #82. API and
+worker are healthy, Alembic is at head `7b4c1e9a2d60`, and
 the exact public webhook routes fail closed while Live is disabled. Productive PayPal and Mercado
 Pago credentials are installed only in the root-owned runtime store. Read-only preflights verified
 the PayPal Live catalog/webhook and Mercado Pago productive merchant/webhook configuration with
-new sales forced OFF. On 2026-08-13, a supervised PayPal Live approval intent was created for the
-USD 5 offer; it is awaiting approval by a buyer account different from the merchant, and created
-no subscription or charge. New sales were immediately returned to OFF while PayPal Live lifecycle
-ingestion remains ON. The former authority image
-`8e10f16fe3471a097021f7f1ee41eb8f88f4f154` and protected pre-deploy backup
-`/var/backups/harmonic-beacon/earlybirds-authority-pre-b1038ddb579817e39add567c5b7b055e2f716095.sql.gz`
-are retained only as pre-Live forensic/disaster-recovery artifacts; they are no longer routine
-rollback targets.
+new sales forced OFF. On 2026-08-15 the abandoned supervised PayPal approval was verified missing
+through the official provider API and retired with the application operator. The repair produced no
+subscription, charge, Founder continuity, Purchase or direct SQL mutation; the request is
+tombstoned and outstanding PayPal Live bindings are zero. New sales remain OFF while PayPal Live
+lifecycle/reconciliation stays ready. The exact pre-deploy backup
+`/var/backups/harmonic-beacon/earlybirds-authority-pre-4e5b208-20260815T090209Z.dump`
+and older images are retained only as forensic/disaster-recovery artifacts; they are not routine
+post-transaction rollback targets.
 
 ## Independent switches
 
@@ -136,15 +137,16 @@ converted back into a reversible action.
 
 - Checkout/provider incident: turn off both app checkout flags and the authority new-sales flag.
   Existing lifecycle workers and webhooks stay running.
-- Live authority floor: after the first Live checkout attempt, provider binding or event,
-  `b1038ddb579817e39add567c5b7b055e2f716095` is the minimum supported authority binary. Do not run
-  `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` against the current database and do not routinely
-  restore the pre-`b1038` database backup. The older binary predates required Mercado Pago
-  adverse-event hardening and a database restore could discard canonical checkout/lifecycle
-  evidence.
+- Live authority floor: after any new Live checkout attempt, provider binding or event,
+  `4e5b208e902969285c8f68067f7fd13b7e2eb68d` is the minimum supported authority binary. Do not run
+  `b1038ddb579817e39add567c5b7b055e2f716095` or
+  `8e10f16fe3471a097021f7f1ee41eb8f88f4f154` after a new approval exists: the first predates
+  safe provider-404 retirement and the second also predates required Mercado Pago adverse-event
+  hardening. Do not routinely restore a pre-cutover database backup; it could discard canonical
+  checkout/lifecycle evidence.
 - Authority regression after Live cutover: keep the current database, turn new sales OFF, retain
   the affected provider's Live lifecycle flag so signed webhooks, reconciliation, cancellation and
-  existing access continue, then deploy a repaired `b1038`-compatible-or-newer image and reconcile
+  existing access continue, then deploy a repaired `4e5b208`-compatible-or-newer image and reconcile
   from the provider. Recovery is roll-forward. A pre-cutover database restore is reserved for an
   explicitly commanded disaster recovery with both providers frozen and a complete provider-led
   reconciliation plan; it is not an ordinary rollback.
