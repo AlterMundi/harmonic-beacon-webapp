@@ -19,6 +19,9 @@ on:
       - ops/early-birds/**
       - ops/early-birds-preview/**
       - scripts/early-birds-preview/**
+      - scripts/listener_container_observer.py
+      - tools/early-birds-hls-load/**
+      - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
       - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
       - .github/workflows/early-birds-fast-forward.yml
   push:
@@ -40,6 +43,9 @@ on:
       - ops/early-birds/**
       - ops/early-birds-preview/**
       - scripts/early-birds-preview/**
+      - scripts/listener_container_observer.py
+      - tools/early-birds-hls-load/**
+      - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
       - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
       - .github/workflows/early-birds-fast-forward.yml
 

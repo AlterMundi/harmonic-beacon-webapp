@@ -158,7 +158,7 @@ Threat boundary:
 - missing/stopped/wrong-label/duplicated targets, corrupt state, a backwards
   counter or any inspect error best-effort exports observer failure and removes
   the role series. If the output path itself is unavailable, the last success
-  becomes stale within fifteen seconds. Freshness and exact-cardinality queries
+  becomes stale within thirty seconds. Freshness and exact-cardinality queries
   therefore fail closed;
 - start time, a cumulative replacement/restart counter and a cumulative OOM
   counter are all observed. A fast OOM restart is still detected by start time
@@ -216,10 +216,12 @@ do
 done
 ```
 
-Require observer `up=1`, age between zero and fifteen seconds, then run the
-monitor `--once` preflight above. An empty or duplicate vector, changed epoch,
-negative age or counter regression is a hard blocker; never treat missing
-series as zero restarts or zero OOM events.
+Require observer `up=1` and age between zero and thirty seconds, then run the
+monitor `--once` preflight above. The bound covers the five-second observer
+timer plus the configured fifteen-second node-exporter scrape alignment; one
+missed scrape fails the continuously polled monitor. An empty or duplicate
+vector, changed epoch, negative age or counter regression is a hard blocker;
+never treat missing series as zero restarts or zero OOM events.
 
 ## Five-minute baseline
 
