@@ -105,6 +105,17 @@ test('alerts on paid authority failures without account or provider identifiers'
   assert.doesNotMatch(alerts, /account_id|email|subscription_id|approval_url/);
 });
 
+test('alerts on unavailable payment providers only while their sales lane is enabled', async () => {
+  const alerts = await read('prometheus/alerts.yml');
+  const sandboxRule = alerts.slice(
+    alerts.indexOf('- alert: ListenerSandboxProviderUnavailable'),
+    alerts.indexOf('- alert: ListenerLiveProviderUnavailableDuringSales'),
+  );
+  assert.match(sandboxRule, /pmp_listener_new_sales_enabled\{environment=~"sandbox\|test"\} == 1/);
+  assert.match(sandboxRule, /pmp_listener_provider_ready\{environment=~"sandbox\|test"\} == 0/);
+  assert.match(sandboxRule, /on\(provider, environment\)/);
+});
+
 test('routes warnings hourly and critical alerts immediately every fifteen minutes', async () => {
   const alertmanager = await read('alertmanager/alertmanager.yml.tmpl');
   assert.match(alertmanager, /group_wait: 5m[\s\S]*repeat_interval: 1h/);

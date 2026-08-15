@@ -29,10 +29,10 @@ groups:
         labels: { severity: critical, service: listener-payments }
         annotations: { summary: "Listener membership authority is unreachable", runbook: "listener-paid-authority" }
       - alert: ListenerSandboxProviderUnavailable
-        expr: pmp_listener_provider_ready{environment=~"sandbox|test"} == 0
+        expr: pmp_listener_new_sales_enabled{environment=~"sandbox|test"} == 1 and on(provider, environment) pmp_listener_provider_ready{environment=~"sandbox|test"} == 0
         for: 5m
         labels: { severity: warning, service: listener-payments }
-        annotations: { summary: "A Listener sandbox/test provider is unavailable", runbook: "listener-paid-provider" }
+        annotations: { summary: "Sandbox/test sales are enabled while a Listener provider is unavailable", runbook: "listener-paid-provider" }
       - alert: ListenerLiveProviderUnavailableDuringSales
         expr: pmp_listener_new_sales_enabled{environment="live"} == 1 and on(provider, environment) pmp_listener_provider_ready{environment="live"} == 0
         for: 2m
