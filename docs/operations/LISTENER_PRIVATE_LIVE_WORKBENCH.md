@@ -1,11 +1,30 @@
 # Private Listener Live checkout workbench
 
-Status: implemented, default-OFF, not deployed by this change.
+Status: implemented and deployed on the isolated staging runtime; gate OFF when
+no supervised rehearsal is active.
 
 This workbench exists only for one supervised real-provider acceptance on
 `earlybirds-staging.harmonicbeacon.com`. It does not open checkout on
 `listen.harmonicbeacon.com`, does not replace the ordinary staging Sandbox/TEST checkout and does
 not touch event, LiveKit, playlist-bot, tapestry or audio services.
+
+## Current dormant state — 2026-08-15
+
+- Exact staging workbench image: `acc90ba35fea52f63ef18337e3a555ef637c552f`.
+- Effective workbench gate: `0`; both public Live checkout flags: `0`.
+- Authority global new sales: disabled.
+- The former abandoned PayPal approval was retired after official provider 404
+  evidence without a charge, subscription, Founder state or Purchase. There is
+  no outstanding PayPal Live binding.
+- Staging and canonical workbench POSTs both return `404`; staging home,
+  health/readiness and canonical Listener remain healthy.
+- The root-owned account/provider/CSRF configuration is retained at mode `0600`
+  so a separately approved rehearsal can be started without copying secrets.
+- Recreating this disposable port-13001 container did not restart the
+  persistent Listener, event app, LiveKit, event workers or audio origin.
+
+This dormant state is the required baseline before selecting either provider.
+Do not turn the gate or authority new sales on merely to test route reachability.
 
 ## Boundary
 
