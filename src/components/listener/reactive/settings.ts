@@ -20,6 +20,9 @@ export type ReactiveCampfireSettings = {
     density: number;
     highDetail: number;
     centerCutPercent: number;
+    centerFieldScalePercent: number;
+    centerRibbonWidth: number;
+    rotationDegreesPerMinute: number;
     radialSpacingGrowthPercent: number;
     zoomPercent: number;
     activationTtlSeconds: number;
@@ -36,21 +39,24 @@ export const DEFAULT_REACTIVE_CAMPFIRE_SETTINGS: Readonly<ReactiveCampfireSettin
     sensitivity: 3,
     absoluteFloorDb: -70,
     baselineDurationSeconds: 24,
-    attackMs: 20,
-    releaseMs: 220,
+    attackMs: 30,
+    releaseMs: 380,
     trailSeconds: 4,
-    density: 1,
-    highDetail: 0.7,
-    centerCutPercent: 7,
+    density: 0.95,
+    highDetail: 1,
+    centerCutPercent: 3,
+    centerFieldScalePercent: 100,
+    centerRibbonWidth: 3,
+    rotationDegreesPerMinute: -20.6,
     radialSpacingGrowthPercent: 65,
-    zoomPercent: 165,
-    activationTtlSeconds: 30,
-    ribbonWidth: 2.45,
-    kelpPropagationSpeed: 0.72,
-    kelpDamping: 1.15,
-    kelpInnerImpulse: 1.6,
-    palette: 'ember',
-    visualizationMode: 'radial-ribbons',
+    zoomPercent: 220,
+    activationTtlSeconds: 27.5,
+    ribbonWidth: 3,
+    kelpPropagationSpeed: 0.24,
+    kelpDamping: 2.8,
+    kelpInnerImpulse: 3,
+    palette: 'moon',
+    visualizationMode: 'inner-anchor-kelp',
     fftSize: 16_384,
 });
 
@@ -64,6 +70,9 @@ const LIMITS = {
     density: [0.2, 1],
     highDetail: [0, 1],
     centerCutPercent: [0, 100],
+    centerFieldScalePercent: [10, 200],
+    centerRibbonWidth: [0.3, 3],
+    rotationDegreesPerMinute: [-90, 90],
     radialSpacingGrowthPercent: [0, 250],
     zoomPercent: [50, 220],
     activationTtlSeconds: [0, 30],
@@ -127,6 +136,21 @@ export function validateReactiveCampfireSettings(
             fallback.centerCutPercent,
             ...LIMITS.centerCutPercent,
         )),
+        centerFieldScalePercent: Math.round(clampFinite(
+            candidate?.centerFieldScalePercent,
+            fallback.centerFieldScalePercent,
+            ...LIMITS.centerFieldScalePercent,
+        )),
+        centerRibbonWidth: clampFinite(
+            candidate?.centerRibbonWidth,
+            fallback.centerRibbonWidth,
+            ...LIMITS.centerRibbonWidth,
+        ),
+        rotationDegreesPerMinute: clampFinite(
+            candidate?.rotationDegreesPerMinute,
+            fallback.rotationDegreesPerMinute,
+            ...LIMITS.rotationDegreesPerMinute,
+        ),
         radialSpacingGrowthPercent: Math.round(clampFinite(
             candidate?.radialSpacingGrowthPercent,
             fallback.radialSpacingGrowthPercent,

@@ -74,8 +74,9 @@ The laboratory offers one low-cost and four full renderers over the same frame:
   top-down kelp field. Each leaf is pinned beside the fixed center; a measured
   harmonic rising edge launches a causal wave from that inner anchor toward
   the free edge. Propagation speed, damping and impulse are visual-only lab
-  controls. The field rotates very slowly counter-clockwise around the same
-  fixed center; neither the camera nor the center follows audio energy.
+  controls. Center field scale and width are independent from the outer-ribbon
+  width. A signed camera-rotation control selects speed and direction around
+  the same fixed center; neither the camera nor the center follows audio energy.
 - **Horizon flow** pours broad harmonic ribbons from fixed horizon positions.
 
 Changing renderer, cut, zoom, activation TTL, width, palette or other visual
@@ -87,11 +88,12 @@ parameters in this build and remain visibly read-only in the laboratory.
 The field is on by default. The checkbox and parameter panel are off by default
 on every host. Operators can restore them only on the exact staging host with
 `BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED=1`; the canonical public host never
-exposes them. Presets export as versioned JSON. The accepted Radial ribbons Ember
-default is: sensitivity 3, -70 dB floor, 24 s baseline, 20 ms attack, 220 ms
-release, 4 s whole-ribbon trail, density 1, upper-detail bias 0.7, center field
-7%, outer-spacing growth 65%, zoom 165%, activation TTL 30 seconds, ribbon width
-2.45 and FFT 16384.
+exposes them. Presets export as versioned JSON. The accepted Inner-anchor kelp
+Moon default is: sensitivity 3, -70 dB floor, 24 s baseline, 30 ms attack,
+380 ms release, 4 s whole-ribbon trail, density 0.95, upper-detail bias 1,
+center field 3%, center scale 100%, center width 3, outer-spacing growth 65%,
+zoom 220%, activation TTL 27.5 seconds, outer ribbon width 3, propagation 0.24,
+damping 2.8, impulse 3, camera rotation -20.6 degrees/minute and FFT 16384.
 
 The retired client Web Audio diagnostic mode and the older regional fixture have
 no runtime compatibility promise: this is an experimental product before public

@@ -90,14 +90,31 @@ export type ClothRibbonPoint = {
     halfWidth: number;
 };
 
-export const INNER_KELP_ROTATION_RADIANS_PER_SECOND = -0.006;
-
-export function innerKelpRotationAt(timeSeconds: number): number {
-    if (!Number.isFinite(timeSeconds)) return 0;
+export function innerKelpRotationAt(
+    timeSeconds: number,
+    degreesPerMinute: number,
+): number {
+    if (!Number.isFinite(timeSeconds) || !Number.isFinite(degreesPerMinute)) return 0;
+    const radiansPerSecond = degreesPerMinute * Math.PI / 180 / 60;
+    if (radiansPerSecond === 0) return 0;
     const revolutionSeconds = Math.PI * 2
-        / Math.abs(INNER_KELP_ROTATION_RADIANS_PER_SECOND);
+        / Math.abs(radiansPerSecond);
     return (timeSeconds % revolutionSeconds)
-        * INNER_KELP_ROTATION_RADIANS_PER_SECOND;
+        * radiansPerSecond;
+}
+
+export function scaledCenterFieldRadius(
+    radius: number,
+    settings: Pick<ReactiveCampfireSettings, 'centerFieldScalePercent'>,
+): number {
+    return radius * settings.centerFieldScalePercent / 100;
+}
+
+export function centerFieldStrokeWidth(
+    weight: number,
+    settings: Pick<ReactiveCampfireSettings, 'centerRibbonWidth'>,
+): number {
+    return Math.max(0.5, (2 + weight * 2.5) * settings.centerRibbonWidth);
 }
 
 function smoothstep(value: number): number {
@@ -559,7 +576,10 @@ function drawRadialField(
     context.save();
     if (settings.visualizationMode === 'inner-anchor-kelp') {
         context.translate(centerX, centerY);
-        context.rotate(innerKelpRotationAt(scene.flowTimeSeconds));
+        context.rotate(innerKelpRotationAt(
+            scene.flowTimeSeconds,
+            settings.rotationDegreesPerMinute,
+        ));
         context.translate(-centerX, -centerY);
     }
 
@@ -569,13 +589,14 @@ function drawRadialField(
         context.shadowColor = rgba(palette.low, ring.activation * 0.65);
         context.shadowBlur = ring.activation > 0.08 ? Math.min(18, ring.activation * 16) : 0;
         context.strokeStyle = rgba(palette.low, ring.opacity * 0.72 * ring.visibility);
-        context.lineWidth = Math.max(2, (2 + ring.weight * 2.5) * settings.ribbonWidth);
+        context.lineWidth = centerFieldStrokeWidth(ring.weight, settings);
         context.beginPath();
         context.ellipse(
             centerX,
             centerY,
-            ring.radius * scale * (1 + scene.core.stereoWidth * 0.08),
-            ring.radius * scale * ring.eccentricity,
+            scaledCenterFieldRadius(ring.radius * scale, settings)
+                * (1 + scene.core.stereoWidth * 0.08),
+            scaledCenterFieldRadius(ring.radius * scale, settings) * ring.eccentricity,
             ring.rotation,
             0,
             Math.PI * 2,
@@ -612,8 +633,11 @@ function drawRadialField(
     }
 
     if (scene.core.radius > 0) {
-        const radius = scene.core.radius * scale;
-        const auraRadius = Math.max(radius * 4.5, Math.min(width, height) * 0.16);
+        const radius = scaledCenterFieldRadius(scene.core.radius * scale, settings);
+        const auraRadius = Math.max(
+            radius * 4.5,
+            scaledCenterFieldRadius(Math.min(width, height) * 0.16, settings),
+        );
         const aura = context.createRadialGradient(
             centerX,
             centerY,

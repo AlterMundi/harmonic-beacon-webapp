@@ -42,10 +42,36 @@ const NUMBER_FIELDS: Array<{
     { key: 'density', label: 'Harmonic density', min: 0.2, max: 1, step: 0.05 },
     { key: 'highDetail', label: 'High detail', min: 0, max: 1, step: 0.05 },
     { key: 'centerCutPercent', label: 'Center field', min: 0, max: 100, step: 1, suffix: '%' },
+    {
+        key: 'centerFieldScalePercent',
+        label: 'Center field scale',
+        min: 10,
+        max: 200,
+        step: 1,
+        suffix: '%',
+        modes: ['radial-ribbons', 'inner-anchor-kelp'],
+    },
+    {
+        key: 'centerRibbonWidth',
+        label: 'Center ribbon width',
+        min: 0.3,
+        max: 3,
+        step: 0.05,
+        modes: ['radial-ribbons', 'inner-anchor-kelp'],
+    },
+    {
+        key: 'rotationDegreesPerMinute',
+        label: 'Camera rotation',
+        min: -90,
+        max: 90,
+        step: 0.5,
+        suffix: '°/min',
+        modes: ['inner-anchor-kelp'],
+    },
     { key: 'radialSpacingGrowthPercent', label: 'Outer spacing growth', min: 0, max: 250, step: 1, suffix: '%' },
     { key: 'zoomPercent', label: 'Zoom', min: 50, max: 220, step: 1, suffix: '%' },
     { key: 'activationTtlSeconds', label: 'Activation TTL', min: 0, max: 30, step: 0.5, suffix: ' s' },
-    { key: 'ribbonWidth', label: 'Ribbon width', min: 0.6, max: 3, step: 0.05 },
+    { key: 'ribbonWidth', label: 'Outer ribbon width', min: 0.6, max: 3, step: 0.05 },
     {
         key: 'kelpPropagationSpeed',
         label: 'Kelp propagation speed',
@@ -141,6 +167,15 @@ export function ReactiveCampfireTuningPanel({
                                     : settings.centerCutPercent === 100
                                         ? 'All center field'
                                         : `${settings.centerCutPercent}% center · ${100 - settings.centerCutPercent}% outer`}
+                            </span>
+                        )}
+                        {field.key === 'rotationDegreesPerMinute' && (
+                            <span className={styles.hint}>
+                                {settings.rotationDegreesPerMinute < 0
+                                    ? 'Counter-clockwise'
+                                    : settings.rotationDegreesPerMinute > 0
+                                        ? 'Clockwise'
+                                        : 'Still'}
                             </span>
                         )}
                         <input

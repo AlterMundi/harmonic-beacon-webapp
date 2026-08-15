@@ -5,8 +5,10 @@ import type { HarmonicAnalysisFrame } from '@/lib/listener/analysis/types';
 import {
     buildClothRibbonPoints,
     buildInnerDrivenRibbonPoints,
+    centerFieldStrokeWidth,
     drawMinimalReactivePulse,
     innerKelpRotationAt,
+    scaledCenterFieldRadius,
 } from '../draw';
 import { DEFAULT_REACTIVE_CAMPFIRE_SETTINGS } from '../settings';
 
@@ -100,8 +102,17 @@ describe('inner-anchor kelp', () => {
     });
 
     it('rotates counter-clockwise slowly around the fixed center', () => {
-        expect(innerKelpRotationAt(11)).toBeLessThan(innerKelpRotationAt(10));
-        expect(Math.abs(innerKelpRotationAt(60))).toBeLessThan(Math.PI / 8);
+        expect(innerKelpRotationAt(11, -20.6)).toBeLessThan(innerKelpRotationAt(10, -20.6));
+        expect(innerKelpRotationAt(11, 20.6)).toBeGreaterThan(innerKelpRotationAt(10, 20.6));
+        expect(innerKelpRotationAt(60, 0)).toBe(0);
+        expect(Math.abs(innerKelpRotationAt(60, -20.6))).toBeLessThan(Math.PI / 8);
+    });
+
+    it('scales and weights the center independently from outer ribbons', () => {
+        expect(scaledCenterFieldRadius(200, { centerFieldScalePercent: 40 })).toBe(80);
+        expect(scaledCenterFieldRadius(200, { centerFieldScalePercent: 100 })).toBe(200);
+        expect(centerFieldStrokeWidth(1, { centerRibbonWidth: 0.5 })).toBe(2.25);
+        expect(centerFieldStrokeWidth(1, { centerRibbonWidth: 2 })).toBe(9);
     });
 });
 

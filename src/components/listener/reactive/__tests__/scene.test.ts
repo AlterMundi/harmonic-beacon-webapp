@@ -159,21 +159,24 @@ describe('reactive campfire scene', () => {
             sensitivity: 3,
             absoluteFloorDb: -70,
             baselineDurationSeconds: 24,
-            attackMs: 20,
-            releaseMs: 220,
+            attackMs: 30,
+            releaseMs: 380,
             trailSeconds: 4,
-            density: 1,
-            highDetail: 0.7,
-            centerCutPercent: 7,
+            density: 0.95,
+            highDetail: 1,
+            centerCutPercent: 3,
+            centerFieldScalePercent: 100,
+            centerRibbonWidth: 3,
+            rotationDegreesPerMinute: -20.6,
             radialSpacingGrowthPercent: 65,
-            zoomPercent: 165,
-            activationTtlSeconds: 30,
-            ribbonWidth: 2.45,
-            kelpPropagationSpeed: 0.72,
-            kelpDamping: 1.15,
-            kelpInnerImpulse: 1.6,
-            palette: 'ember',
-            visualizationMode: 'radial-ribbons',
+            zoomPercent: 220,
+            activationTtlSeconds: 27.5,
+            ribbonWidth: 3,
+            kelpPropagationSpeed: 0.24,
+            kelpDamping: 2.8,
+            kelpInnerImpulse: 3,
+            palette: 'moon',
+            visualizationMode: 'inner-anchor-kelp',
             fftSize: 16_384,
         });
     });
@@ -183,11 +186,11 @@ describe('reactive campfire scene', () => {
         const first = buildReactiveCampfireScene(frameWith(absolute, undefined, {
             capturedAtMs: 10_000,
             stereoBalance: -1,
-        }), { centerCutPercent: 20 });
+        }), { centerCutPercent: 20, visualizationMode: 'radial-ribbons' });
         const second = buildReactiveCampfireScene(frameWith(absolute, undefined, {
             capturedAtMs: 10_020,
             stereoBalance: 1,
-        }), { centerCutPercent: 20 });
+        }), { centerCutPercent: 20, visualizationMode: 'radial-ribbons' });
 
         expect(first.core.stereoOffset).toBe(0);
         expect(second.core.stereoOffset).toBe(0);
