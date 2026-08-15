@@ -196,15 +196,18 @@ test window and rotate the temporary code after the window.
 
 ## Stream and device leases
 
-An entitled account may hold two active device leases. A third device evicts the oldest lease. The
-browser plays a stable same-origin URL under `/api/early-birds/stream/manifest`; the route rechecks
-the authenticated account, current membership and non-evicted lease before proxying a short-lived
-origin manifest with `private, no-store` behavior.
+An entitled account may hold two active device leases. A third device evicts the oldest lease. After
+the account, quota and lease decision, Listener registers one opaque media grant over a private
+container network. The browser then fetches the manifest and segments directly from
+`stream.harmonicbeacon.com`; playback no longer polls Listener, Better Auth or PostgreSQL.
 
-The origin signature is HMAC-SHA-256 base64url over the exact bytes
-`GET\n/v1/hls/{artifactId}/live.m3u8\n{unix_expiry}`. Expiry never exceeds the lease or ten minutes.
-The origin manifest must contain individually signed, same-origin segment URLs. Signing material and
-signed URLs are never returned in API JSON or logged.
+The grant ID and bearer are deterministic per opaque lease generation, so a heartbeat extends its
+expiry without replacing the media URL. The origin retains only a token hash and expiry—never the
+account, device, lease ID or PII—and rejects grants beyond the three-minute lease horizon. A Listener
+or database outage therefore cannot interrupt already-buffered audio immediately: origin requests
+continue until the last registered lease expiry, then fail closed. Media-query credentials are not
+written to nginx or application logs. Legacy `exp`/`sig` HMAC URLs remain an operator canary and
+origin-first rollback protocol, not an alternate public authorization model.
 
 Reviewed intro artifacts are configured as immutable, server-selected private files. Listener UI does not
 encode or alter them and their progress is local to the browser. Before either intro can be selected, the

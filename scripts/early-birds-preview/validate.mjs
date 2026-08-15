@@ -45,6 +45,7 @@ const syntheticEnv = [
   'EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT_ID=synthetic-v1',
   'EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT=synthetic-preview-inbound-token-at-least-43-characters-long',
   'EARLY_BIRDS_STREAM_ORIGIN=https://stream.harmonicbeacon.com',
+  'EARLY_BIRDS_STREAM_CONTROL_ORIGIN=http://beacon-stream:8080',
   'EARLY_BIRDS_STREAM_ARTIFACT_ID=synthetic-preview-artifact',
   `EARLY_BIRDS_STREAM_SIGNING_SECRET=${syntheticSecret}`,
   'EARLY_BIRDS_DEVICE_PEPPER=synthetic-preview-device-pepper-at-least-32-characters',
@@ -128,7 +129,8 @@ try {
   assert.equal(listener.volumes[1].read_only, true);
   assert.equal(listener.depends_on.postgres.condition, 'service_healthy');
   assert.equal(listener.depends_on.migration.condition, 'service_completed_successfully');
-  assert.deepEqual(Object.keys(listener.networks).sort(), ['listener_egress', 'preview_db']);
+  assert.deepEqual(Object.keys(listener.networks).sort(), ['listener_egress', 'preview_db', 'stream_control']);
+  assert.equal(listener.environment.EARLY_BIRDS_STREAM_CONTROL_ORIGIN, 'http://beacon-stream:8080');
   const appPort = publishedPort(listener, 3000);
   assert.equal(appPort.host_ip, '127.0.0.1');
   assert.equal(Number(appPort.published), 13000);
@@ -145,7 +147,9 @@ try {
 
   assert.equal(stream.build.context, path.join(root, 'services/beacon-stream'));
   assert.equal(stream.build.dockerfile, 'Dockerfile');
-  assert.deepEqual(Object.keys(stream.networks).sort(), ['stream_edge', 'stream_observability']);
+  assert.deepEqual(Object.keys(stream.networks).sort(), ['stream_control', 'stream_edge', 'stream_observability']);
+  assert.equal(resolved.networks.stream_control.internal, true);
+  assert.equal(resolved.networks.stream_control.name, 'earlybirds_stream_control_internal');
   assert.equal(resolved.networks.stream_observability.internal, true);
   assert.equal(resolved.networks.stream_observability.name, 'earlybirds_stream_observability');
   assert.notEqual(resolved.networks.stream_edge.internal, true);
@@ -175,7 +179,7 @@ try {
   assert.equal(authorityResolved.networks.authority_private.external, true);
   assert.equal(authorityResolved.networks.authority_private.name, 'earlybirds_authority_private');
   assert.deepEqual(Object.keys(authorityResolved.services.listener.networks).sort(), [
-    'authority_private', 'listener_egress', 'preview_db',
+    'authority_private', 'listener_egress', 'preview_db', 'stream_control',
   ]);
   assert.deepEqual(
     authorityResolved.services.listener.networks.authority_private.aliases,

@@ -3,7 +3,9 @@ import http from 'node:http';
 import path from 'node:path';
 import { loadArtifact, verifyArtifactFiles } from './artifact.mjs';
 import { verifySignedPath } from './auth.mjs';
+import { verifyControlRequest } from './control-auth.mjs';
 import { renderManifest } from './manifest.mjs';
+import { MediaGrantRegistry, MEDIA_GRANT_ID_PATTERN } from './media-grants.mjs';
 import { Metrics } from './metrics.mjs';
 
 function send(response, status, body = '', headers = {}) {
@@ -62,8 +64,33 @@ function authorized({ request, url, secret }) {
   });
 }
 
+function mediaGrantFrom(url) {
+  return {
+    id: url.searchParams.get('grantId') ?? '',
+    token: url.searchParams.get('grant') ?? '',
+  };
+}
+
+function authorizedMedia({ request, url, secret, mediaGrants }) {
+  const grant = mediaGrantFrom(url);
+  if (grant.id || grant.token) return mediaGrants.authorize(grant);
+  return authorized({ request, url, secret });
+}
+
+async function readBoundedBody(request, maximumBytes = 1024) {
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of request) {
+    bytes += chunk.length;
+    if (bytes > maximumBytes) throw new Error('body_too_large');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 function routeName(pathname) {
   if (pathname === '/healthz') return 'health';
+  if (pathname.startsWith('/internal/v1/listener/media-grants/')) return 'grant_control';
   if (pathname.endsWith('/live.m3u8')) return 'manifest';
   if (pathname.includes('/segments/')) return 'segment';
   return 'unknown';
@@ -75,7 +102,7 @@ function mediaContentType(file) {
   return 'application/octet-stream';
 }
 
-export function createPublicHandler({ artifactRoot, metadata, publicOrigin, signingSecret, allowedOrigins = new Set(), metrics = new Metrics(), now = () => Date.now() }) {
+export function createPublicHandler({ artifactRoot, metadata, publicOrigin, signingSecret, allowedOrigins = new Set(), metrics = new Metrics(), now = () => Date.now(), mediaGrants = new MediaGrantRegistry({ now }) }) {
   const manifestPath = `/v1/hls/${metadata.artifactId}/live.m3u8`;
   const segmentPrefix = `/v1/hls/${metadata.artifactId}/segments/`;
 
@@ -90,6 +117,40 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
       send(response, responseStatus, body, { ...cors, ...headers })
     );
     try {
+      const controlPrefix = '/internal/v1/listener/media-grants/';
+      if (request.method === 'PUT' && url.pathname.startsWith(controlPrefix)) {
+        const grantId = url.pathname.slice(controlPrefix.length);
+        const body = await readBoundedBody(request);
+        if (!MEDIA_GRANT_ID_PATTERN.test(grantId)
+          || !verifyControlRequest({
+            secret: signingSecret,
+            method: 'PUT',
+            pathname: url.pathname,
+            timestamp: request.headers['x-beacon-control-timestamp'],
+            signature: request.headers['x-beacon-control-signature'],
+            body,
+            nowMs: now(),
+          })) {
+          status = 403;
+          respond(status, 'forbidden\n', { 'Cache-Control': 'no-store' });
+          return;
+        }
+        let payload;
+        try { payload = JSON.parse(body.toString('utf8')); } catch { payload = null; }
+        const result = payload && mediaGrants.upsert({
+          id: grantId,
+          tokenSha256: payload.tokenSha256,
+          expiresAtMs: payload.expiresAtMs,
+        });
+        if (!result?.ok) {
+          status = result?.reason === 'capacity' ? 503 : result?.reason === 'conflict' ? 409 : 400;
+          respond(status, status === 503 ? 'unavailable\n' : 'invalid grant\n', { 'Cache-Control': 'no-store' });
+          return;
+        }
+        status = 204;
+        respond(status, '', { 'Cache-Control': 'no-store' });
+        return;
+      }
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         status = 405;
         respond(status, 'method not allowed\n', { Allow: 'GET, HEAD' });
@@ -101,11 +162,12 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
         return;
       }
       if (url.pathname === manifestPath) {
-        if (!authorized({ request, url, secret: signingSecret })) {
+        if (!authorizedMedia({ request, url, secret: signingSecret, mediaGrants })) {
           status = 403;
           respond(status, 'forbidden\n', { 'Cache-Control': 'no-store' });
           return;
         }
+        const grant = mediaGrantFrom(url);
         const manifest = renderManifest({
           metadata,
           origin: publicOrigin,
@@ -114,6 +176,7 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
           // A segment grant is derived from this manifest grant and must never
           // remain usable after the upstream Listener lease horizon.
           authorizationExpiresAtSeconds: tokenFrom(url).expiresAt,
+          mediaAuthorizationQuery: grant.id ? { grantId: grant.id, grant: grant.token } : null,
         });
         status = 200;
         bytes = request.method === 'HEAD' ? 0 : Buffer.byteLength(manifest);
@@ -124,7 +187,7 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
         return;
       }
       if (url.pathname.startsWith(segmentPrefix)) {
-        if (!authorized({ request, url, secret: signingSecret })) {
+        if (!authorizedMedia({ request, url, secret: signingSecret, mediaGrants })) {
           status = 403;
           respond(status, 'forbidden\n', { 'Cache-Control': 'no-store' });
           return;
@@ -154,10 +217,10 @@ export function createPublicHandler({ artifactRoot, metadata, publicOrigin, sign
       }
       status = 404;
       respond(status, 'not found\n', { 'Cache-Control': 'no-store' });
-    } catch {
+    } catch (error) {
       // Do not expose filesystem paths, credentials or signed URLs.
-      status = 500;
-      if (!response.headersSent) respond(status, 'internal server error\n', { 'Cache-Control': 'no-store' });
+      status = error instanceof Error && error.message === 'body_too_large' ? 413 : 500;
+      if (!response.headersSent) respond(status, status === 413 ? 'payload too large\n' : 'internal server error\n', { 'Cache-Control': 'no-store' });
     } finally {
       metrics.observe({ route, status, bytes, durationMs: Math.max(0, now() - startedAt) });
     }

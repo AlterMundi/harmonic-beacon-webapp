@@ -82,6 +82,7 @@ services:
       EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT_ID: ${EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT_ID:?set_in_preview.env}
       EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT: ${EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT:?set_in_preview.env}
       EARLY_BIRDS_STREAM_ORIGIN: ${EARLY_BIRDS_STREAM_ORIGIN:?set_in_preview.env}
+      EARLY_BIRDS_STREAM_CONTROL_ORIGIN: ${EARLY_BIRDS_STREAM_CONTROL_ORIGIN:?set_in_preview.env}
       EARLY_BIRDS_STREAM_ARTIFACT_ID: ${EARLY_BIRDS_STREAM_ARTIFACT_ID:?set_in_preview.env}
       EARLY_BIRDS_STREAM_SIGNING_SECRET: ${EARLY_BIRDS_STREAM_SIGNING_SECRET:?set_in_preview.env}
       EARLY_BIRDS_DEVICE_PEPPER: ${EARLY_BIRDS_DEVICE_PEPPER:?set_in_preview.env}
@@ -119,6 +120,7 @@ services:
     networks:
       - preview_db
       - listener_egress
+      - stream_control
     depends_on:
       postgres: { condition: service_healthy }
       migration: { condition: service_completed_successfully }
@@ -175,6 +177,11 @@ networks:
   # HTTPS stream origin without giving PostgreSQL or migrations internet egress.
   listener_egress:
     name: earlybirds_preview_listener_egress
+  # Private control-plane link: Listener renews opaque media grants here while
+  # browsers fetch audio directly from the public stream origin.
+  stream_control:
+    name: earlybirds_stream_control_internal
+    internal: true
 
 volumes:
   earlybirds-preview-postgres:

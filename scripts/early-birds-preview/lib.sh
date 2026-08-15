@@ -116,6 +116,7 @@ require_synthetic_env() {
     require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"
   fi
   require_exact_preview_value EARLY_BIRDS_STREAM_ORIGIN https://stream.harmonicbeacon.com "$env_file"
+  require_exact_preview_value EARLY_BIRDS_STREAM_CONTROL_ORIGIN http://beacon-stream:8080 "$env_file"
   require_exact_preview_value BEACON_STREAM_PUBLIC_ORIGIN https://stream.harmonicbeacon.com "$env_file"
   stream_allowed_origins=$(preview_env_value BEACON_STREAM_ALLOWED_ORIGINS "$env_file")
   case "$stream_allowed_origins" in
@@ -197,6 +198,7 @@ require_synthetic_env() {
       EARLY_BIRDS_TRUSTED_ORIGINS=https://listen.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com|\
       EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS=earlybirds-staging.harmonicbeacon.com|\
       EARLY_BIRDS_STREAM_ORIGIN=https://stream.harmonicbeacon.com|\
+      EARLY_BIRDS_STREAM_CONTROL_ORIGIN=http://beacon-stream:8080|\
       BEACON_STREAM_PUBLIC_ORIGIN=https://stream.harmonicbeacon.com|\
       BEACON_STREAM_ALLOWED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com|\
       BEACON_STREAM_ALLOWED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com,https://listen.harmonicbeacon.com) ;;

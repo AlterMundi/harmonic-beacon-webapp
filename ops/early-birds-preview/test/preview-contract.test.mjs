@@ -287,6 +287,18 @@ test('stream publishes only through a dedicated edge network', async () => {
   assert.match(source, /- stream_observability\s+[^]*- stream_edge/);
   assert.match(source, /stream_observability:\s+name: earlybirds_stream_observability\s+internal: true/);
   assert.match(source, /stream_edge:\s+name: earlybirds_stream_edge/);
+  assert.match(source, /stream_control:\s+name: earlybirds_stream_control_internal\s+internal: true/);
+});
+
+test('Listener renews media grants only over the shared private control network', async () => {
+  const listener = await readPreview('compose.yml');
+  const origin = await readRepository('services/beacon-stream/docker-compose.yml');
+  const nginx = await readPreview('nginx/stream.harmonicbeacon.com.conf.template');
+  assert.match(listener, /EARLY_BIRDS_STREAM_CONTROL_ORIGIN:.*EARLY_BIRDS_STREAM_CONTROL_ORIGIN/);
+  assert.match(listener, /- stream_control/);
+  assert.match(origin, /- stream_control/);
+  assert.match(nginx, /location \^~ \/v1\/hls\/ \{\s+[^}]*access_log off;[^}]*error_log \/dev\/null crit;/);
+  assert.doesNotMatch(nginx, /internal\/v1\/listener\/media-grants/);
 });
 
 test('nginx templates isolate staging, stream and the constrained public Listener host', async () => {

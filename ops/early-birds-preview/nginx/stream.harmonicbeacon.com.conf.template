@@ -38,6 +38,10 @@ server {
     }
 
     location ^~ /v1/hls/ {
+        # Signed/granted media URLs are bearer credentials. Never persist the
+        # query string in edge access logs.
+        access_log off;
+        error_log /dev/null crit;
         proxy_pass http://127.0.0.1:18080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

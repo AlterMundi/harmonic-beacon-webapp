@@ -69,7 +69,7 @@ describe('EarlyBird stream lease route', () => {
         expect(acquireEarlyBirdStreamLease).not.toHaveBeenCalled();
     });
 
-    it('returns only the stable same-origin manifest grant', async () => {
+    it('returns only the stable direct-origin media grant', async () => {
         currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
         acquireEarlyBirdStreamLease.mockResolvedValue({
             serverNow: new Date('2026-08-06T12:00:00.000Z'),
@@ -81,7 +81,7 @@ describe('EarlyBird stream lease route', () => {
             leaseExpiresAt: new Date('2026-08-06T12:03:00.000Z'),
             evictedLeaseId: '00000000-0000-4000-8000-000000000001',
             stream: {
-                manifestUrl: '/api/early-birds/stream/manifest?leaseId=00000000-0000-4000-8000-000000000003',
+                manifestUrl: `https://stream.harmonicbeacon.com/v1/hls/approved/live.m3u8?grantId=${'a'.repeat(64)}&grant=${'b'.repeat(43)}`,
                 expiresAt: new Date('2026-08-06T12:03:00.000Z'),
             },
         });
@@ -89,7 +89,8 @@ describe('EarlyBird stream lease route', () => {
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body.evictedAnotherDevice).toBe(true);
-        expect(body.stream.manifestUrl).toMatch(/^\/api\/early-birds\/stream\/manifest/);
+        expect(body.stream.manifestUrl).toMatch(/^https:\/\/stream\.harmonicbeacon\.com\/v1\/hls\/[^?]+\/live\.m3u8\?grantId=/);
+        expect(body.stream.manifestUrl).not.toContain(body.leaseId);
         expect(JSON.stringify(body)).not.toContain('sig=');
     });
 

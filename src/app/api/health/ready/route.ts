@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { redactError } from '@/lib/redact';
 import {
     ListenerRuntimeEnvironmentError,
+    listenerRuntimeFlag,
     validateListenerRuntimeEnvironment,
 } from '@/lib/listener/runtime-env';
 import {
@@ -14,6 +15,11 @@ import {
     ListenerWithdrawalConfigurationError,
     listenerWithdrawalConfiguration,
 } from '@/lib/listener/consumer-withdrawal';
+import {
+    earlyBirdOriginConfig,
+    earlyBirdStreamControlOrigin,
+    EarlyBirdStreamIssuerUnavailableError,
+} from '@/lib/early-birds/stream';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,12 +39,17 @@ export async function GET() {
     let listenerWithdrawalConfigured = false;
     try {
         listenerRuntimeConfigured = validateListenerRuntimeEnvironment();
+        if (listenerRuntimeFlag('ENABLED')) {
+            earlyBirdOriginConfig();
+            earlyBirdStreamControlOrigin();
+        }
         validateListenerLiveWorkbenchEnvironment();
         listenerWithdrawalConfigured = listenerWithdrawalConfiguration().enabled;
     } catch (error) {
         const diagnostic = error instanceof ListenerRuntimeEnvironmentError ||
             error instanceof ListenerLiveWorkbenchConfigurationError ||
             error instanceof ListenerWithdrawalConfigurationError
+            || error instanceof EarlyBirdStreamIssuerUnavailableError
             ? error.message
             : 'unexpected validation failure';
         console.error('Listener runtime configuration invalid:', diagnostic);

@@ -51,6 +51,26 @@ describe('GET /api/health/ready', () => {
         }
     });
 
+    it('requires the private media-grant control origin when Listener is enabled', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_AUTH_BASE_URL', 'https://listen.example.test');
+        vi.stubEnv('EARLY_BIRDS_AUTH_SECRET', 'a'.repeat(32));
+        vi.stubEnv('EARLY_BIRDS_STREAM_ORIGIN', 'https://stream.example.test');
+        vi.stubEnv('EARLY_BIRDS_STREAM_ARTIFACT_ID', 'approved-v1');
+        vi.stubEnv('EARLY_BIRDS_STREAM_SIGNING_SECRET', 's'.repeat(32));
+        vi.stubEnv('EARLY_BIRDS_STREAM_CONTROL_ORIGIN', '');
+        const mockPrisma = { $queryRaw: vi.fn() };
+        vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const { GET } = await import('../ready/route');
+            expect((await GET()).status).toBe(503);
+            expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
     it('fails readiness before the database on a partial private Live workbench', async () => {
         vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED', '1');
         const mockPrisma = { $queryRaw: vi.fn() };

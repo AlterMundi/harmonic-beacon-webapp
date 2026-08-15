@@ -10,13 +10,18 @@ small origin derives the current media sequence from wall-clock time. Restarting
 the origin does not restart or duplicate the Beacon timeline.
 
 Safari uses native HLS and other supported browsers use `hls.js`. Membership
-authorizes a stable, same-origin lease-manifest route. That route rechecks the
-session, current membership and device lease on every manifest refresh, then
-proxies a very short-lived origin manifest whose segment URLs are individually
-signed. Native players therefore never need an `audio.src` replacement merely
-to refresh authorization. Signatures cover method, canonical path and expiry,
-use constant-time comparison and are never logged. Public health is minimal;
-metrics bind privately.
+authorizes an opaque, three-minute media grant registered on the origin over a
+private network. The browser receives one stable direct-origin URL; heartbeats
+extend the same grant without replacing `audio.src`. Manifest and segment
+fetches therefore do not depend on the Listener process, auth service or
+database. The origin stores only a token hash and expiry, compares credentials
+in constant time and fails closed at the lease horizon. Bearer query strings
+are never logged. Public health is minimal; metrics bind privately.
+
+The current immutable loop is a temporary source adapter for development. The
+delivery and grant boundary is source-agnostic: a future continuously played
+Beacon is packaged into the same advancing HLS timeline without changing
+browser authorization or the audio controls.
 
 ## Audio boundary
 

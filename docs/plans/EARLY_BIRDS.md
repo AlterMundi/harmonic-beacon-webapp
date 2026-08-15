@@ -289,12 +289,12 @@ promotion, never an accidental restart side effect.
 - The public page does not expose a durable unrestricted media URL.
 - The private player obtains a short-lived signed stream authorization after a
   current membership check.
-- The browser keeps one stable same-origin lease-manifest URL. Each refresh
-  rechecks session, membership and device lease before proxying a fresh signed
-  origin manifest, so authorization refresh never replaces the media source.
-- The manifest embeds individually signed segment URLs; signatures cover HTTP
-  method, canonical path and expiry, are compared in constant time and are
-  never logged.
+- The browser keeps one stable direct-origin media-grant URL. Listener checks
+  session, membership, quota and device lease only at acquisition/heartbeat,
+  then renews the opaque grant privately without replacing the media source.
+- Manifest and segment fetches never consult Listener or PostgreSQL. The origin
+  stores only a token hash and lease-bounded expiry; bearer URLs are never
+  logged and fail closed after the last successful renewal.
 - Expiry and refresh do not interrupt healthy playback unnecessarily.
 - The UI says "continuous Beacon stream" and does not claim whether the source
   is an instrument, a file or another origin.
