@@ -28,6 +28,11 @@ truthful launch baseline, not a substitute for counsel review. Human owner: Nico
   database backup was restored into an isolated rehearsal database and verified.
 - Production provider and new-sales flags remain OFF. No real payment was attempted.
 
+These accepted browser lifecycles are explicitly non-production: PayPal used
+Sandbox and Mercado Pago used TEST. The productive lanes have passed only
+read-only provider preflight so far; neither provider has completed a Live
+activation/cancel/refund rehearsal and no real charge has been created.
+
 Passwordless email delivery is deployed in the dedicated Listener-only sidecar at exact backend
 SHA `456ece2b38e203a2d12c54864115e03ebaa1a89c`. The API, worker and PostgreSQL queue have no host
 ports, use separate storage and did not restart or modify any event service. A controlled message
@@ -164,9 +169,10 @@ converted back into a reversible action.
   explicitly commanded disaster recovery with both providers frozen and a complete provider-led
   reconciliation plan; it is not an ordinary rollback.
 - Listener regression: roll back only the Listener image while keeping a contract-compatible
-  authority. `0a475717` remains the bounded contract-compatible application rollback for the current
-  authority. Preserve the `0a475717` withdrawal operator and database so already-received legal
-  requests remain processable; hide new legal submissions with their feature switch if necessary.
+  authority. `acc90ba3` remains the bounded contract-compatible application rollback for the current
+  authority. Preserve the independently pinned `0a475717` withdrawal operator
+  and database so already-received legal requests remain processable; hide new
+  legal submissions with their feature switch if necessary.
   If compatibility is uncertain, keep Listener disabled and roll forward.
 - Provider-specific incident: disable only that app checkout flag. Do not route a pending checkout
   to the other provider or manufacture membership.

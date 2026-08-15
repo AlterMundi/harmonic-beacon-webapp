@@ -50,6 +50,14 @@ PayPal Sandbox has passed activation, pending cancellation, reactivation and
 terminal refund. Mercado Pago TEST has passed checkout, activation, pause,
 reactivation and reconciliation. Browser redirects never grant membership.
 
+| Provider | Non-production lifecycle | Productive state |
+| --- | --- | --- |
+| PayPal | Sandbox activation, pending cancellation, reactivation and terminal refund accepted | Live catalog/webhook read-only preflight verified; lifecycle and real charge not yet rehearsed |
+| Mercado Pago | TEST checkout, activation, pause, reactivation and reconciliation accepted | Live merchant/webhook read-only preflight verified; lifecycle and real charge not yet rehearsed |
+
+“Private rehearsal completed” currently means Sandbox/TEST only. A productive
+Live rehearsal remains a separate, explicitly approved real-money operation.
+
 The first bounded external media-plane smoke passed on 2026-08-15: ten clients
 from `daimonmatrix`, 348/348 successful requests, no fetch/window/scheduling
 misses, no Listener/origin restart or OOM, no alert and clean five-minute

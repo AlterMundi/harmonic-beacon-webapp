@@ -23,6 +23,19 @@ not touch event, LiveKit, playlist-bot, tapestry or audio services.
 - Recreating this disposable port-13001 container did not restart the
   persistent Listener, event app, LiveKit, event workers or audio origin.
 
+The dormant preflight was reconfirmed after the first external media smoke:
+
+- `pmp-myth-listener-live-preflight --provider all` returned `verified` for
+  the PayPal catalog/webhook and Mercado Pago merchant/webhook with
+  `new_sales=disabled`;
+- authority API/worker, public Listener and the staging workbench were healthy
+  with restart count `0` at their exact documented images;
+- same-origin, correctly shaped public PayPal and Mercado Pago checkout
+  requests returned `404`; canonical and staging Live-workbench requests also
+  returned `404`;
+- Prometheus and Alertmanager had zero active alerts. This read-only evidence
+  created no checkout, approval, subscription or charge.
+
 This dormant state is the required baseline before selecting either provider.
 Do not turn the gate or authority new sales on merely to test route reachability.
 
