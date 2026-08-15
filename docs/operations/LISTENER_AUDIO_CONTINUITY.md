@@ -41,9 +41,10 @@ Listener is not a low-latency product. The canonical origin retains fifty
 six-second entries (approximately five minutes) and a fresh browser starts
 approximately twenty entries (two minutes) behind the live edge. hls.js may
 hold up to three minutes of forward media; native HLS seeks to the same
-two-minute target rather than sitting directly on the edge. This costs about
-4.8 MB of initial media at 320 kbit/s and intentionally trades latency for
-continuity.
+two-minute target rather than sitting directly on the edge. A full two-minute
+forward buffer is about 4.8 MB at 320 kbit/s, but playback does not wait for the
+whole buffer to fill. The trade is approximately two minutes of program delay,
+not two minutes of startup silence.
 
 The playlist window and client target are one contract. A client target larger
 than the retained playlist is fictional buffering and must not ship. Any future
