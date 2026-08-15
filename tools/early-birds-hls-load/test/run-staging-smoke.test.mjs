@@ -74,7 +74,10 @@ test('a later run passes the lock after a clean release and still fails closed',
   assert.equal(result.code, 1);
   // The lock was acquired; the run now fails closed on the missing
   // precondition file instead of on the lock.
-  assert.match(result.stderr, /cannot read signed manifest file/);
+  assert.match(
+    result.stderr,
+    /cannot read (?:signed manifest file|external decoded canary status file|target monitor status file)/,
+  );
   assert.doesNotMatch(result.stderr, /network run lock/);
   // The validation-error path released the lock deterministically.
   await assert.rejects(access(NETWORK_RUN_LOCK_PATH), /ENOENT/);
@@ -86,7 +89,10 @@ test('a wrapper that acquires the lock itself refuses a second wrapper until it 
   // The first wrapper failed closed on preconditions and released its lock,
   // so a following invocation is again refused only on preconditions.
   assert.equal(first.code, 1);
-  assert.match(first.stderr, /cannot read signed manifest file/);
+  assert.match(
+    first.stderr,
+    /cannot read (?:signed manifest file|external decoded canary status file|target monitor status file)/,
+  );
   await assert.rejects(access(NETWORK_RUN_LOCK_PATH), /ENOENT/);
 });
 

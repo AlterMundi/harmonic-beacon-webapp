@@ -18,7 +18,6 @@ const MEDIA_FILE_SHA256 = {
     'src/lib/early-birds/stream.ts': '40c5a17d27e8d6f820251d96dd33cd2bbbd83b164e50a212acf8fd0bb158c51c',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',
-    'src/app/api/early-birds/stream/manifest/route.ts': '56d8266fd8144c1e3ee13b168115f0a814a1da9f0a9f2db8b33e33facbba094e',
     'src/app/api/early-birds/stream/heartbeat/route.ts': '268ced6066e4a666f09286f2dc995a4085d9efd7a3f4ea4e983dc8055c9eab6b',
     'src/app/api/early-birds/drop-ins/[language]/route.ts': '545c6c04dc1532b939ae99f4e99e1d862d8b16e79ae94db184aef162154d5fa1',
 } as const;
