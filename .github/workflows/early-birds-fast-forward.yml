@@ -23,6 +23,9 @@ on:
       - tools/early-birds-hls-load/**
       - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
       - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
+      - docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md
+      - docs/operations/LISTENER_LAUNCH_NOW.md
+      - docs/operations/LISTENER_PRIVATE_LIVE_WORKBENCH.md
       - .github/workflows/early-birds-fast-forward.yml
   push:
     branches: [early-birds, "feat/early-birds-*"]
@@ -47,6 +50,9 @@ on:
       - tools/early-birds-hls-load/**
       - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
       - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
+      - docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md
+      - docs/operations/LISTENER_LAUNCH_NOW.md
+      - docs/operations/LISTENER_PRIVATE_LIVE_WORKBENCH.md
       - .github/workflows/early-birds-fast-forward.yml
 
 permissions:
