@@ -271,7 +271,11 @@ test('observer failure, staleness or epoch/counter reset fails closed and stays 
   assert.equal(down.second.status, 'FAIL');
   assert.equal(down.second.containerObserverFresh, false);
 
-  const stale = await probeTwice({ scalars: { containerObserverAgeSeconds: 16 } });
+  const boundary = await probeTwice({ scalars: { containerObserverAgeSeconds: 30 } });
+  assert.equal(boundary.second.status, 'PASS');
+  assert.equal(boundary.second.containerObserverFresh, true);
+
+  const stale = await probeTwice({ scalars: { containerObserverAgeSeconds: 31 } });
   assert.equal(stale.second.status, 'FAIL');
   assert.equal(stale.second.containerObserverFresh, false);
 

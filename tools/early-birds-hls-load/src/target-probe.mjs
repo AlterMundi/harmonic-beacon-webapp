@@ -15,7 +15,10 @@ export const STAGING_ATTESTATION = 'early-birds-staging';
 // earlybirds-preview Compose project. Never participant or event containers.
 export const LISTENER_CONTAINER = 'earlybirds-preview-listener-1';
 export const ORIGIN_CONTAINER = 'earlybirds-preview-beacon-stream-1';
-export const CONTAINER_OBSERVER_MAX_AGE_SECONDS = 15;
+// The host timer runs every 5s and Prometheus scrapes node-exporter every 15s.
+// Thirty seconds tolerates one normal scrape interval plus timer alignment,
+// while a missed scrape still fails the continuously polled monitor.
+export const CONTAINER_OBSERVER_MAX_AGE_SECONDS = 30;
 
 // Instant Prometheus queries. Every query must yield exactly one vector
 // element; an empty, duplicated or non-finite result fails the probe. Host
