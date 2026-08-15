@@ -192,6 +192,7 @@ fi
 
 docker network connect earlybirds_preview_listener_egress "$DEV_CONTAINER"
 docker network connect earlybirds_authority_private "$DEV_CONTAINER"
+docker network connect earlybirds_stream_control_internal "$DEV_CONTAINER"
 
 for _ in $(seq 1 90); do
     if curl --fail --silent --max-time 3 http://127.0.0.1:13001/api/health >/dev/null &&
