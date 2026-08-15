@@ -1,11 +1,38 @@
 # First external Listener HLS smoke
 
-**Status: observer implementation prepared but not deployed; this smoke is not
-ready to execute.** The fail-closed harness, monitor, canary, policy and a
-reviewable fixed-target observer are complete and tested. The observer has not
-been installed or verified on `mona`, so its metrics remain absent and every
-network run still fails closed. Installation is a separate operational change
-requiring explicit review because the root-owned process reads Docker state.
+**Status: first ten-client external smoke completed successfully on
+2026-08-15.** The fixed-target observer is installed on `mona`; the fail-closed
+harness, monitor, decoded canary and policy were exercised from `daimonmatrix`.
+The result is media-plane evidence for exactly ten clients, not a capacity
+claim for larger levels.
+
+## Executed checkpoint — 2026-08-15
+
+- Observer implementation: PR #350 / merge `de192b6`; freshness follow-up
+  PR #351 / merge `d3c7869`.
+- Observer epoch: `1786790963`; final state `up=1`, Listener/origin restart
+  counters `0`, OOM counters `0`. The observer and its root-only state were
+  installed without restarting Listener, origin or an event service.
+- External generator: `daimonmatrix`, NTP offset `+1.002 ms`; primary load was
+  never generated from `mona`.
+- Clean baseline: 61 samples over five minutes, all `PASS`; private redacted
+  evidence SHA-256
+  `9342edf5b2515104ef41d1c3bf724929298c8e43ec248b63fae73f33047aab02`.
+- Network run: `listener-smoke-20260815-h`, ten clients, two starts/second,
+  sixty-second soak. All ten clients completed; 348/348 requests returned 200,
+  with zero failures, fetch misses, sequence regressions, playlist-window
+  misses or scheduling misses. Manifest p95 was at most 25 ms and segment p95
+  at most 50 ms. The redacted result SHA-256 is
+  `5706a16c5b7b4f444e4ef504766c064d4191910581b18f0d1a42cf5a9725d221`.
+- Clean recovery: 61 samples over five minutes, all `PASS`; private redacted
+  evidence SHA-256
+  `0fd50d1f3da40e022970257cd267dfa7fdc1c69aeba41d415abd9d4717525c75`.
+- Final verification: Listener/origin restart and OOM counters remained zero;
+  Prometheus and Alertmanager had no active alerts; Listener, origin and live
+  readiness were green. LiveKit exposed only the fixed `beacon` room with its
+  one publisher and no event room. Expired signed URLs were removed.
+- Only run `-h` issued network requests. Earlier rehearsal plans/refusals made
+  zero requests and are not capacity evidence.
 
 This is the only approved first network step for Listener capacity evidence. It
 drives exactly ten media-plane clients from one external host for a sixty-second
@@ -164,9 +191,9 @@ Threat boundary:
   counter are all observed. A fast OOM restart is still detected by start time
   and restart count even if the terminal `OOMKilled` flag is no longer set.
 
-The code being merged does **not** authorize installation. Before any load, a
-host operator must review the exact release and explicitly install the script
-and units:
+The observer was installed from the exact reviewed release for the checkpoint
+above. For a future reinstall or host replacement, review the exact release and
+use the same root-owned procedure:
 
 ```bash
 install -d -o root -g root -m 0755 /usr/local/libexec/harmonic-beacon
