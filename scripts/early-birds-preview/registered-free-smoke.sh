@@ -9,8 +9,8 @@ require_synthetic_env "$env_file"
 command -v jq >/dev/null 2>&1 || preview_fail "jq is required"
 
 case "$base_url" in
-  https://earlybirds-staging.harmonicbeacon.com) ;;
-  *) preview_fail "BASE_URL must be the protected EarlyBirds staging host" ;;
+  https://earlybirds-staging.harmonicbeacon.com|https://listen.harmonicbeacon.com) ;;
+  *) preview_fail "BASE_URL must be an exact Listener staging or public host" ;;
 esac
 
 temporary=$(mktemp -d)
@@ -96,16 +96,16 @@ manifest_url=$(jq -er '.stream.manifestUrl' "$temporary/lease-3.response")
 printf '%s\n' "$manifest_url" | grep -Eq \
   '^https://stream\.harmonicbeacon\.com/v1/hls/[A-Za-z0-9._-]+/live\.m3u8\?grantId=[a-f0-9]{64}&grant=[A-Za-z0-9_-]{43}$' || \
   preview_fail "active Free lease did not return the bounded direct-origin grant"
-printf 'url = "%s"\nheader = "Origin: https://earlybirds-staging.harmonicbeacon.com"\n' \
-  "$manifest_url" >"$temporary/manifest.curl"
+printf 'url = "%s"\nheader = "Origin: %s"\n' \
+  "$manifest_url" "$base_url" >"$temporary/manifest.curl"
 manifest_status=$(curl --silent --show-error --output "$temporary/manifest.m3u8" \
   --write-out '%{http_code}' --config "$temporary/manifest.curl")
 test "$manifest_status" = 200 || preview_fail "direct-origin Free manifest returned HTTP $manifest_status"
 grep -q '^#EXTM3U' "$temporary/manifest.m3u8" || preview_fail "active Free manifest is invalid"
 segment_url=$(grep -m1 '^https://stream\.harmonicbeacon\.com/v1/hls/' "$temporary/manifest.m3u8")
 test -n "$segment_url" || preview_fail "direct-origin manifest contains no media segment"
-printf 'url = "%s"\nheader = "Origin: https://earlybirds-staging.harmonicbeacon.com"\n' \
-  "$segment_url" >"$temporary/segment.curl"
+printf 'url = "%s"\nheader = "Origin: %s"\n' \
+  "$segment_url" "$base_url" >"$temporary/segment.curl"
 segment_status=$(curl --silent --show-error --output "$temporary/segment.bin" \
   --write-out '%{http_code}' --config "$temporary/segment.curl")
 test "$segment_status" = 200 || preview_fail "direct-origin media segment returned HTTP $segment_status"
