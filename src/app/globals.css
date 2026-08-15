@@ -2139,9 +2139,15 @@ body {
 
 @media (max-width: 640px) {
   .listener-consumer-request-links {
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    position: static;
+    width: auto;
+    max-width: none;
+    margin: 0 0.75rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .listener-consumer-request-links .listener-withdrawal-link {
+    width: 100%;
     max-width: none;
   }
 }

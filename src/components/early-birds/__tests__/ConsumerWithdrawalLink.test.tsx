@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LocaleProvider } from '@/context/LocaleContext';
@@ -31,5 +33,19 @@ describe('prominent consumer-withdrawal entry', () => {
         usePathname.mockReturnValue('/listener/withdrawal');
         render(<LocaleProvider initialLocale="es"><ConsumerWithdrawalLink /></LocaleProvider>);
         expect(screen.queryByRole('link')).toBeNull();
+    });
+
+    it('keeps mobile consumer actions in document flow after Listener content', () => {
+        const root = process.cwd();
+        const layout = readFileSync(join(root, 'src/app/listener/layout.tsx'), 'utf8');
+        const css = readFileSync(join(root, 'src/app/globals.css'), 'utf8');
+
+        expect(layout.indexOf('{children}')).toBeGreaterThan(-1);
+        expect(layout.indexOf('{children}')).toBeLessThan(
+            layout.indexOf('className="listener-consumer-request-links"'),
+        );
+        expect(css).toMatch(
+            /@media \(max-width: 640px\)[\s\S]*?\.listener-consumer-request-links\s*\{[\s\S]*?position:\s*static;/,
+        );
     });
 });
