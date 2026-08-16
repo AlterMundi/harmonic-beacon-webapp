@@ -153,7 +153,7 @@ describe('reactive campfire components', () => {
         }));
         expect(screen.getByText(/4% center · 96% outer/)).toBeInTheDocument();
         expect(screen.getByLabelText(/Zoom/i)).toHaveValue('220');
-        expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('13.5');
+        expect(screen.queryByLabelText(/Ribbon visibility TTL/i)).not.toBeInTheDocument();
     });
 
     it('exposes inner-anchor propagation controls only for the kelp laboratory mode', () => {
@@ -168,6 +168,7 @@ describe('reactive campfire components', () => {
             />,
         );
         expect(screen.queryByLabelText(/Kelp propagation speed/i)).not.toBeInTheDocument();
+        expect(screen.getByLabelText(/Ribbon visibility TTL/i)).toHaveValue('13.5');
 
         rerender(
             <ReactiveCampfireTuningPanel
@@ -179,6 +180,7 @@ describe('reactive campfire components', () => {
                 onChange={vi.fn()}
             />,
         );
+        expect(screen.queryByLabelText(/Ribbon visibility TTL/i)).not.toBeInTheDocument();
         expect(screen.getByLabelText(/Center field scale/i)).toHaveValue('28');
         expect(screen.getByLabelText(/Center ribbon width/i)).toHaveValue('0.8');
         expect(screen.getByLabelText(/Camera rotation/i)).toHaveValue('-59.5');

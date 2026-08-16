@@ -70,7 +70,15 @@ const NUMBER_FIELDS: Array<{
     },
     { key: 'radialSpacingGrowthPercent', label: 'Outer spacing growth', min: 0, max: 250, step: 1, suffix: '%' },
     { key: 'zoomPercent', label: 'Zoom', min: 50, max: 220, step: 1, suffix: '%' },
-    { key: 'activationTtlSeconds', label: 'Activation TTL', min: 0, max: 30, step: 0.5, suffix: ' s' },
+    {
+        key: 'activationTtlSeconds',
+        label: 'Ribbon visibility TTL',
+        min: 0,
+        max: 30,
+        step: 0.5,
+        suffix: ' s',
+        modes: ['harmonic-radial-series', 'radial-ribbons'],
+    },
     { key: 'ribbonWidth', label: 'Outer ribbon width', min: 0.6, max: 3, step: 0.05 },
     {
         key: 'kelpPropagationSpeed',
