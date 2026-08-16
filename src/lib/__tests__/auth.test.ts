@@ -170,7 +170,7 @@ async function attendeeRow(entitlement: Record<string, unknown> = {}) {
     return {
         id: 'web-session-1',
         tokenDigest: await digestOf(ATTENDEE_COOKIE),
-        expiresAt: new Date('2026-08-09T00:00:00.000Z'),
+        expiresAt: new Date('2036-08-09T00:00:00.000Z'),
         revokedAt: null,
         staffUser: null,
         ticketEntitlement: {
@@ -190,7 +190,7 @@ async function staffRow(role: string, disabledAt: Date | null = null) {
     return {
         id: 'web-session-2',
         tokenDigest: await digestOf(ATTENDEE_COOKIE),
-        expiresAt: new Date('2026-08-09T00:00:00.000Z'),
+        expiresAt: new Date('2036-08-09T00:00:00.000Z'),
         revokedAt: null,
         staffUser: { id: 'user-1', role, disabledAt },
         ticketEntitlement: null,
