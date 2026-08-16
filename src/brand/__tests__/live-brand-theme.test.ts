@@ -73,4 +73,18 @@ describe("Live canonical brand boundary", () => {
     expect(css).not.toMatch(/div:has\(> iframe\) \{[^}]*backdrop-filter/);
     expect(css).not.toMatch(/\.stage-tile__identity \{[^}]*backdrop-filter/);
   });
+
+  it("keeps entry and audio activation panels transparent enough to reveal the field", () => {
+    const css = source("src/app/globals.css");
+    const landing = source("src/app/page.tsx");
+
+    expect(landing).toContain("event-card event-entry-panel max-w-xl");
+    expect(css).toMatch(
+      /\.event-shell \.event-entry-panel,\s*\.event-shell \.event-card\[role="group"\] \{[\s\S]*?rgba\(22, 18, 13, 0\.04\)[\s\S]*?backdrop-filter: blur\(1\.5px\)/,
+    );
+    expect(css).toMatch(
+      /\.event-shell \.event-entry-panel:hover,\s*\.event-shell \.event-card\[role="group"\]:hover \{[\s\S]*?rgba\(22, 18, 13, 0\.07\)[\s\S]*?transform: none/,
+    );
+    expect(css).toMatch(/\.event-shell::after \{[\s\S]*?opacity: 0\.45[\s\S]*?repeating-radial-gradient/);
+  });
 });
