@@ -151,9 +151,9 @@ describe('reactive campfire components', () => {
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
             visualizationMode: 'horizon-flow',
         }));
-        expect(screen.getByText(/3% center · 97% outer/)).toBeInTheDocument();
+        expect(screen.getByText(/4% center · 96% outer/)).toBeInTheDocument();
         expect(screen.getByLabelText(/Zoom/i)).toHaveValue('220');
-        expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('27.5');
+        expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('13.5');
     });
 
     it('exposes inner-anchor propagation controls only for the kelp laboratory mode', () => {
@@ -179,13 +179,13 @@ describe('reactive campfire components', () => {
                 onChange={vi.fn()}
             />,
         );
-        expect(screen.getByLabelText(/Center field scale/i)).toHaveValue('100');
-        expect(screen.getByLabelText(/Center ribbon width/i)).toHaveValue('3');
-        expect(screen.getByLabelText(/Camera rotation/i)).toHaveValue('-20.6');
+        expect(screen.getByLabelText(/Center field scale/i)).toHaveValue('28');
+        expect(screen.getByLabelText(/Center ribbon width/i)).toHaveValue('0.8');
+        expect(screen.getByLabelText(/Camera rotation/i)).toHaveValue('-59.5');
         expect(screen.getByText('Counter-clockwise')).toBeInTheDocument();
         expect(screen.getByLabelText(/Outer ribbon width/i)).toHaveValue('3');
-        expect(screen.getByLabelText(/Kelp propagation speed/i)).toHaveValue('0.24');
-        expect(screen.getByLabelText(/Kelp damping/i)).toHaveValue('2.8');
+        expect(screen.getByLabelText(/Kelp propagation speed/i)).toHaveValue('0.5');
+        expect(screen.getByLabelText(/Kelp damping/i)).toHaveValue('3');
         expect(screen.getByLabelText(/Inner impulse/i)).toHaveValue('3');
         expect(screen.getByText(/inner anchor drives an outward wave/i)).toBeInTheDocument();
     });

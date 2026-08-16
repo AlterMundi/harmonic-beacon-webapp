@@ -89,11 +89,11 @@ The field is on by default. The checkbox and parameter panel are off by default
 on every host. Operators can restore them only on the exact staging host with
 `BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED=1`; the canonical public host never
 exposes them. Presets export as versioned JSON. The accepted Inner-anchor kelp
-Moon default is: sensitivity 3, -70 dB floor, 24 s baseline, 30 ms attack,
-380 ms release, 4 s whole-ribbon trail, density 0.95, upper-detail bias 1,
-center field 3%, center scale 100%, center width 3, outer-spacing growth 65%,
-zoom 220%, activation TTL 27.5 seconds, outer ribbon width 3, propagation 0.24,
-damping 2.8, impulse 3, camera rotation -20.6 degrees/minute and FFT 16384.
+Aurora default is: sensitivity 3, -101 dB floor, 24 s baseline, 30 ms attack,
+380 ms release, 4 s whole-ribbon trail, density 0.6, upper-detail bias 1,
+center field 4%, center scale 28%, center width 0.8, outer-spacing growth 65%,
+zoom 220%, activation TTL 13.5 seconds, outer ribbon width 3, propagation 0.5,
+damping 3, impulse 3, camera rotation -59.5 degrees/minute and FFT 16384.
 
 The retired client Web Audio diagnostic mode and the older regional fixture have
 no runtime compatibility promise: this is an experimental product before public
