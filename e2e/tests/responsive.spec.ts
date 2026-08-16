@@ -7,7 +7,7 @@ const LONG_ES_TITLE = 'Viaje colectivo hacia el bosque interior y las imágenes 
 const LONG_EN_TITLE = 'A collective journey through the inner forest and the images that still travel with us';
 
 /**
- * Responsive gate — runs once per viewport project (1440 / 1024 / 390 / 320
+ * Responsive gate — runs once per viewport project (1440 / 1024 / 768 / 390 / 320
  * px, see playwright.config.ts). Public surfaces only, so it never depends
  * on the fixture stack: the landing's documented degraded state must be
  * just as layout-safe as the seeded one.
@@ -17,10 +17,11 @@ const LONG_EN_TITLE = 'A collective journey through the inner forest and the ima
  */
 
 async function expectNoHorizontalScroll(page: import('@playwright/test').Page): Promise<void> {
-    const overflow = await page.evaluate(
-        () => document.documentElement.scrollWidth - window.innerWidth,
-    );
-    expect(overflow, 'page has horizontal overflow').toBeLessThanOrEqual(1);
+    const viewport = page.viewportSize();
+    expect(viewport, 'page has no configured viewport').not.toBeNull();
+    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(documentWidth, 'document expands beyond the configured viewport')
+        .toBeLessThanOrEqual(viewport!.width + 1);
 }
 
 test.describe('responsive public surfaces', () => {
@@ -62,6 +63,28 @@ test.describe('responsive public surfaces', () => {
 });
 
 stackTest.describe('responsive live surfaces', () => {
+    stackTest('event health keeps long operational paths in the viewport', async ({ page }) => {
+        const check = { status: 'green', detail: 'Nominal fixture', latencyMs: 1 } as const;
+        await page.route('**/api/ops/health**', (route) => route.fulfill({
+            json: {
+                status: 'yellow',
+                checkedAt: '2026-08-01T14:00:00.000Z',
+                session: null,
+                checks: {
+                    postgres: check,
+                    livekit: check,
+                    stageRoom: check,
+                    publisherGrants: check,
+                    bedPublisher: check,
+                    tapestry: check,
+                },
+            },
+        }));
+        await loginViaDashboard(page, 'FACILITATOR_OP', 'E2E Conductor', ROUTES.opsHealth);
+        await expect(page.getByText('docs/ops/WEEKEND_EVENT_RUNBOOK.md')).toBeVisible();
+        await expectNoHorizontalScroll(page);
+    });
+
     stackTest('attendee shell never overflows and keeps room controls reachable', async ({ page }, testInfo) => {
         const db = requireDirectDb(testInfo);
         await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {

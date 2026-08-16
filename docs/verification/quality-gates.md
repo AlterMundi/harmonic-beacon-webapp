@@ -17,8 +17,8 @@ this file is the evidence register, not the how-to.
 |---|---|---|
 | Functional smoke (roles, routing, keyboard) | `e2e/tests/smoke.spec.ts` | `.github/workflows/e2e.yml` |
 | Accessibility (axe WCAG 2.0/2.1 A+AA) | `e2e/tests/accessibility.spec.ts` | same |
-| Responsive geometry (1440/1024/390/320 px) | `e2e/tests/responsive.spec.ts` | same |
-| Visual baselines (same four widths) | `e2e/tests/visual.spec.ts` + snapshots | same |
+| Responsive geometry (1440/1024/768/390/320 px) | `e2e/tests/responsive.spec.ts` | same |
+| Visual baselines (same five widths) | `e2e/tests/visual.spec.ts` + snapshots | same |
 | Media continuity, real browser + LiveKit | `e2e/tests/media-continuity.spec.ts` + `e2e/helpers/media-probe.ts` | same |
 | Stage invitation consent, two browsers + LiveKit | `e2e/tests/stage-invitation.spec.ts` | same |
 | Media continuity, integration level | `src/app/session/[id]/__tests__/media-continuity.test.tsx` | existing `test` job (Vitest) |
@@ -40,12 +40,13 @@ by Playwright; Chromium 149 (Playwright 1.61.0).
   five open drawers. The gate caught
   one real defect on introduction: unnamed `<select>` elements in
   `AdmissionConsole` (fixed with accessible names in the same branch).
-- **Responsive: 20/20 passed** (5 tests × 4 widths) — no horizontal
+- **Responsive:** the current gate covers 7 scenarios × 5 widths — no horizontal
   overflow on the landing, staff portal, attendee room or conductor cockpit;
-  controls remain inside the viewport at 320 px.
-- **Visual: 16/16 passed** (4 surfaces × 4 widths) against reviewed
-  baselines for the landing, staff portal, attendee audio prompt and
-  conductor cockpit. Dynamic participant state is explicitly masked.
+  event-health paths wrap, and controls remain inside the viewport at 320 px.
+- **Visual:** the current gate covers 7 surfaces × 5 widths against reviewed
+  baselines for the landing, staff portal, attendee audio prompt, conductor
+  cockpit, event hub, admission and health. Dynamic participant state is
+  explicitly masked.
 - **Media continuity, browser: 2/2 passed.** Facilitator published real
   mic+camera; attendee activated audio once; exercising every mounted
   control (volume, mix, hand raise/lower) and audio-only off/on produced

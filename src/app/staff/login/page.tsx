@@ -35,7 +35,7 @@ export default async function StaffLoginPage() {
         <main className="event-shell">
             <div className="relative z-10 mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-6 py-12">
                 <header className="space-y-1">
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="event-auth-header flex items-center justify-between gap-4">
                         <BrandLockup href="/" />
                         <LanguageControl />
                     </div>

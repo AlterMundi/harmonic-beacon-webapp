@@ -33,7 +33,6 @@ describe('professional surface legibility contract', () => {
 
         expect(occurrences).toEqual([
             'src/app/ops/events/[id]/page.tsx: <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-[var(--gold)]">404</p>',
-            'src/app/page.tsx: <p className="flex items-center gap-2.5 text-[10px] font-mono uppercase tracking-[0.18em] text-[var(--gold)]">',
         ]);
     });
 
