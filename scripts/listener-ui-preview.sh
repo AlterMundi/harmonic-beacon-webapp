@@ -142,7 +142,10 @@ else
         -v "$REMOTE_SOURCE/tsconfig.json:/app/tsconfig.json:ro"
         -v "$REMOTE_NEXT:/app/.next"
     )
-    command_args=(npm run dev -- --hostname 0.0.0.0 --port 3000)
+    # Turbopack can stall indefinitely while compiling source bind-mounted
+    # from the remote preview volume. Webpack is slower to cold-start but is
+    # deterministic for this disposable network-mounted UI loop.
+    command_args=(npm run dev -- --webpack --hostname 0.0.0.0 --port 3000)
 fi
 
 if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import BrandLockup from '@/components/brand/BrandLockup';
+import HarmonicBeaconBrand from '@/components/brand/HarmonicBeaconBrand';
 import { useLocale } from '@/context/LocaleContext';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
@@ -47,11 +47,11 @@ export default function FreeInvitationRedeemer() {
         <main className="listener-page-shell">
             <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center gap-8 px-6 py-12">
                 <header className="flex items-center justify-between gap-4">
-                    <BrandLockup href={LISTENER_NAMESPACE.publicWebsite} />
+                    <HarmonicBeaconBrand href={LISTENER_NAMESPACE.publicWebsite} />
                 </header>
                 <section className="space-y-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-7 shadow-[var(--shadow-deep)]">
-                    <p className="font-mono text-xs tracking-[0.22em] text-[var(--gold)]">{copy.eyebrow}</p>
-                    <h1 className="font-serif text-4xl font-normal leading-tight">{copy.heading}</h1>
+                    <p className="hb-eyebrow">{copy.eyebrow}</p>
+                    <h1 className="hb-heading text-4xl leading-tight">{copy.heading}</h1>
                     <p className="text-sm leading-6 text-[var(--text-secondary)]">{copy.body}</p>
                     {error && <p role="alert" className="listener-alert listener-alert--danger">{copy.error}</p>}
                     <button

@@ -30,6 +30,24 @@ import EarlyBirdHome from '../EarlyBirdHome';
 afterEach(cleanup);
 
 describe('EarlyBird Listener home access chrome', () => {
+    it('uses the canonical public brand link without exposing the Reactive Lab', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'invitation', state: 'active' }}
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByRole('link', { name: 'Harmonic Beacon' }))
+            .toHaveAttribute('href', 'https://harmonicbeacon.com/');
+        expect(document.querySelector('.hb-brand__mark path')).toBeInTheDocument();
+        expect(screen.getByLabelText('listener-player'))
+            .toHaveAttribute('data-reactive-initially-enabled', 'false');
+    });
+
     it('labels a canonically active paid membership as Founding Listener', () => {
         render(
             <LocaleProvider initialLocale="en">

@@ -123,6 +123,7 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
   assert.match(source, /set_env_file_value EARLY_BIRDS_DROPIN_EN_PATH "\$PREVIEW_DROPIN_EN_PATH"/);
   assert.match(source, /docker network connect earlybirds_stream_control_internal "\$DEV_CONTAINER"/);
   assert.match(source, /api\/health\/ready/);
+  assert.match(source, /npm run dev -- --webpack --hostname 0\.0\.0\.0 --port 3000/);
   assert.doesNotMatch(source, /PREVIEW_ORIGIN="https:\/\/listen\.harmonicbeacon\.com"/);
 });
 

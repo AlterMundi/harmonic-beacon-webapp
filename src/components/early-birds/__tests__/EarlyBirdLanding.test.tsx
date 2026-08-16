@@ -14,8 +14,6 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 vi.mock('@/lib/early-birds/auth-client', () => ({
     earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
 }));
-vi.mock('@/components/brand/BrandLockup', () => ({ default: ({ href }: { href: string }) => <a href={href}>Harmonic Beacon</a> }));
-
 import EarlyBirdLanding from '../EarlyBirdLanding';
 
 function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdLanding>> = {}) {
@@ -68,6 +66,10 @@ describe('EarlyBird public landing', () => {
     it('keeps login in the compact hero and removes explanatory landing copy', () => {
         const { container } = renderLanding();
 
+        expect(screen.getByRole('link', { name: 'Harmonic Beacon' }))
+            .toHaveAttribute('href', 'https://harmonicbeacon.com/');
+        expect(container.querySelector('.hb-brand__mark path')).toBeInTheDocument();
+        expect(container.querySelector('.listener-field__mark')).toHaveProperty('tagName', 'svg');
         expect(container.querySelector('.listener-public-hero .listener-access__card'))
             .toContainElement(screen.getByRole('button', { name: 'Continue with Google' }));
         expect(screen.getByRole('heading', { name: 'Remember your harmonic center.' }))
