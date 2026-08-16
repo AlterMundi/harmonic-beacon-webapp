@@ -1,0 +1,188 @@
+# Isolated EarlyBirds staging runtime. This project never joins the weekend
+# event compose stack and publishes only the Listener and stream origin on
+# loopback for host nginx.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${EARLYBIRDS_PREVIEW_DB_USER:?set_in_preview.env}
+      POSTGRES_PASSWORD: ${EARLYBIRDS_PREVIEW_DB_PASSWORD:?set_in_preview.env}
+      POSTGRES_DB: ${EARLYBIRDS_PREVIEW_DB_NAME:?set_in_preview.env}
+    volumes:
+      - earlybirds-preview-postgres:/var/lib/postgresql/data
+    networks:
+      preview_db:
+        aliases:
+          # The Listener also joins the private membership-authority network,
+          # whose Compose project has its own `postgres` service. Keep the
+          # preview database hostname unambiguous across both networks.
+          - earlybirds-preview-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+        reservations: { cpus: "0.25", memory: 256M }
+
+  # Forward-only gate: the Listener cannot start until every checked-in Prisma
+  # migration has applied successfully to this preview-only database.
+  migration:
+    build:
+      context: ../..
+      target: deps
+    restart: "no"
+    working_dir: /app
+    command: ["npx", "prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@earlybirds-preview-postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [preview_db]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+  listener:
+    image: harmonic-beacon/earlybirds-preview-listener:${EARLYBIRDS_PREVIEW_IMAGE_TAG:-synthetic}
+    build:
+      context: ../..
+      target: runner
+      args:
+        NEXT_PUBLIC_LIVEKIT_URL: https://livekit.example.invalid
+        BEACON_GIT_SHA: ${EARLYBIRDS_PREVIEW_GIT_SHA:-synthetic-preview}
+        BEACON_BUILD_TIME: ${EARLYBIRDS_PREVIEW_BUILD_TIME:-synthetic-preview}
+        BEACON_DATABASE_SCHEMA_VERSION: ${EARLYBIRDS_PREVIEW_SCHEMA_VERSION:?set_in_preview.env}
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      BEACON_GIT_SHA: ${EARLYBIRDS_PREVIEW_GIT_SHA:-synthetic-preview}
+      BEACON_BUILD_TIME: ${EARLYBIRDS_PREVIEW_BUILD_TIME:-synthetic-preview}
+      BEACON_DATABASE_SCHEMA_VERSION: ${EARLYBIRDS_PREVIEW_SCHEMA_VERSION:?set_in_preview.env}
+      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@earlybirds-preview-postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
+      EARLY_BIRDS_ENABLED: ${EARLY_BIRDS_ENABLED:-0}
+      EARLY_BIRDS_FREE_FOR_ALL: ${EARLY_BIRDS_FREE_FOR_ALL:-0}
+      EARLY_BIRDS_AUTH_BASE_URL: ${EARLY_BIRDS_AUTH_BASE_URL:?set_in_preview.env}
+      EARLY_BIRDS_TRUSTED_ORIGINS: ${EARLY_BIRDS_TRUSTED_ORIGINS:?set_in_preview.env}
+      EARLY_BIRDS_AUTH_SECRET: ${EARLY_BIRDS_AUTH_SECRET:?set_in_preview.env}
+      EARLY_BIRDS_GOOGLE_CLIENT_ID: ${EARLY_BIRDS_GOOGLE_CLIENT_ID:-}
+      EARLY_BIRDS_GOOGLE_CLIENT_SECRET: ${EARLY_BIRDS_GOOGLE_CLIENT_SECRET:-}
+      EARLY_BIRDS_APPLE_CLIENT_ID: ${EARLY_BIRDS_APPLE_CLIENT_ID:-}
+      EARLY_BIRDS_APPLE_CLIENT_SECRET: ${EARLY_BIRDS_APPLE_CLIENT_SECRET:-}
+      EARLY_BIRDS_MAGIC_LINK_DELIVERY_URL: ${EARLY_BIRDS_MAGIC_LINK_DELIVERY_URL:-}
+      EARLY_BIRDS_MAGIC_LINK_DELIVERY_TOKEN: ${EARLY_BIRDS_MAGIC_LINK_DELIVERY_TOKEN:-}
+      EARLY_BIRDS_MAGIC_LINK_RATE_SECRET: ${EARLY_BIRDS_MAGIC_LINK_RATE_SECRET:-}
+      EARLY_BIRDS_AUTHORITY_BASE_URL: ${EARLY_BIRDS_AUTHORITY_BASE_URL:?set_in_preview.env}
+      EARLY_BIRDS_AUTHORITY_SERVICE_KEY_ID: ${EARLY_BIRDS_AUTHORITY_SERVICE_KEY_ID:?set_in_preview.env}
+      EARLY_BIRDS_AUTHORITY_SERVICE_TOKEN: ${EARLY_BIRDS_AUTHORITY_SERVICE_TOKEN:?set_in_preview.env}
+      EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT_ID: ${EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT_ID:?set_in_preview.env}
+      EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT: ${EARLY_BIRDS_BEACON_SERVICE_KEY_CURRENT:?set_in_preview.env}
+      EARLY_BIRDS_STREAM_ORIGIN: ${EARLY_BIRDS_STREAM_ORIGIN:?set_in_preview.env}
+      EARLY_BIRDS_STREAM_CONTROL_ORIGIN: ${EARLY_BIRDS_STREAM_CONTROL_ORIGIN:?set_in_preview.env}
+      EARLY_BIRDS_STREAM_ARTIFACT_ID: ${EARLY_BIRDS_STREAM_ARTIFACT_ID:?set_in_preview.env}
+      EARLY_BIRDS_STREAM_SIGNING_SECRET: ${EARLY_BIRDS_STREAM_SIGNING_SECRET:?set_in_preview.env}
+      EARLY_BIRDS_DEVICE_PEPPER: ${EARLY_BIRDS_DEVICE_PEPPER:?set_in_preview.env}
+      EARLY_BIRDS_DROPIN_ES_PATH: ${EARLY_BIRDS_DROPIN_ES_PATH:-}
+      EARLY_BIRDS_DROPIN_EN_PATH: ${EARLY_BIRDS_DROPIN_EN_PATH:-}
+      EARLY_BIRDS_TEST_ACCESS_ENABLED: ${EARLY_BIRDS_TEST_ACCESS_ENABLED:-0}
+      EARLY_BIRDS_TEST_LOGIN_SECRET: ${EARLY_BIRDS_TEST_LOGIN_SECRET:-}
+      EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: ${EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED:-0}
+      EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS: ${EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS:?set_in_preview.env}
+      BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED: ${BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED:-0}
+      # Public consumer withdrawal stays dark until the additive migration,
+      # dedicated secret and queue alerting have all been installed.
+      LISTENER_WITHDRAWAL_ENABLED: ${LISTENER_WITHDRAWAL_ENABLED:-0}
+      LISTENER_WITHDRAWAL_SECRET: ${LISTENER_WITHDRAWAL_SECRET:-}
+      BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED: ${BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED:-0}
+      BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED: ${BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED:-0}
+      # Public Live checkout has a separate, fail-closed gate from the staging
+      # providers. Both stay OFF until the supervised commercial cutover.
+      BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED: ${BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED:-0}
+      BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED: ${BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED:-0}
+      # A separate staging-only, account-bound Live acceptance seam. The
+      # normal staging checkout above remains Sandbox/TEST. All four values
+      # are server-side and the enabled default is deliberately OFF.
+      BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED: ${BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED:-0}
+      BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID: ${BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID:-}
+      BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER: ${BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER:-}
+      BEACON_LISTENER_STAGING_LIVE_WORKBENCH_CSRF_SECRET: ${BEACON_LISTENER_STAGING_LIVE_WORKBENCH_CSRF_SECRET:-}
+      BEACON_LISTENER_GEOIP_DB_PATH: /data/geoip/dbip-country-lite.mmdb
+      TRUSTED_PROXY_HOPS: "1"
+    ports:
+      - "127.0.0.1:${EARLYBIRDS_PREVIEW_APP_PORT:-13000}:3000"
+    volumes:
+      - ${BEACON_STREAM_ARTIFACTS_HOST_PATH:?set_in_preview.env}:/media/artifacts:ro
+      - ${BEACON_LISTENER_GEOIP_HOST_PATH:?set_in_preview.env}:/data/geoip/dbip-country-lite.mmdb:ro
+    networks:
+      - preview_db
+      - listener_egress
+      - stream_control
+    depends_on:
+      postgres: { condition: service_healthy }
+      migration: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/api/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+        reservations: { cpus: "0.25", memory: 256M }
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # Durable operator seam: intentionally independent from the app container so
+  # a Listener image rollback cannot remove queue processing or metrics. Pin an
+  # exact image that contains the withdrawal operator; never use a moving tag.
+  withdrawal-operator:
+    image: harmonic-beacon/earlybirds-preview-listener:${EARLYBIRDS_WITHDRAWAL_OPERATOR_IMAGE_TAG:?set_exact_operator_image_tag}
+    restart: unless-stopped
+    init: true
+    command: ["tail", "-f", "/dev/null"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${EARLYBIRDS_PREVIEW_DB_USER}:${EARLYBIRDS_PREVIEW_DB_PASSWORD}@earlybirds-preview-postgres:5432/${EARLYBIRDS_PREVIEW_DB_NAME}?schema=public
+    networks: [preview_db]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migration: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "sh", "-ec", "test -f scripts/listener-withdrawal-operator.ts && test -f src/lib/listener/consumer-withdrawal.ts && test -x node_modules/.bin/tsx"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 256M }
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+networks:
+  preview_db:
+    name: earlybirds_preview_db_internal
+    internal: true
+  # Only the Listener joins this bridge, so it can fetch the approved public
+  # HTTPS stream origin without giving PostgreSQL or migrations internet egress.
+  listener_egress:
+    name: earlybirds_preview_listener_egress
+  # Private control-plane link: Listener renews opaque media grants here while
+  # browsers fetch audio directly from the public stream origin.
+  stream_control:
+    name: earlybirds_stream_control_internal
+    internal: true
+
+volumes:
+  earlybirds-preview-postgres:
+    name: earlybirds-preview-postgres

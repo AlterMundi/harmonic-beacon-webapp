@@ -1,0 +1,11 @@
+{
+  "name": "harmonic-beacon-early-birds-ops",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check canary/canary-exporter.mjs && node --check scripts/validate-config.mjs",
+    "validate": "node scripts/validate-config.mjs"
+  },
+  "engines": { "node": ">=22" }
+}

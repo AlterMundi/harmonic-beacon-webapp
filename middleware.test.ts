@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { SESSION_COOKIE_NAME } from './src/lib/session-auth';
+import {
+    EARLY_BIRD_INVITATION_COOKIE,
+    EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
+    LISTENER_INVITATION_COOKIE,
+} from './src/lib/early-birds/invitation-cookie';
 // `src/middleware.ts`, not the repository root: Next only loads the middleware
 // convention from inside `src` when the app lives there, and a root-level file is
 // silently ignored — which is what it had been doing.
 import middleware, { config } from './src/middleware';
+
+const INVITATION = `ebi_v1.${'a'.repeat(32)}.${'b'.repeat(32)}.${'c'.repeat(32)}`;
 
 /**
  * Middleware is navigation convenience, not the authorization boundary.
@@ -18,12 +25,18 @@ import middleware, { config } from './src/middleware';
  * one that should make that obvious.
  */
 
-function request(pathname: string, cookie?: string): NextRequest {
+function request(
+    pathname: string,
+    cookie?: string,
+    hostname = 'live.harmonicbeacon.com',
+    extraHeaders: Record<string, string> = {},
+): NextRequest {
     const headers = new Headers();
     if (cookie) {
         headers.set('cookie', cookie);
     }
-    return new NextRequest(new URL(pathname, 'https://live.harmonicbeacon.com'), { headers });
+    for (const [name, value] of Object.entries(extraHeaders)) headers.set(name, value);
+    return new NextRequest(new URL(pathname, `https://${hostname}`), { headers });
 }
 
 function location(response: NextResponse): URL {
@@ -31,6 +44,147 @@ function location(response: NextResponse): URL {
 }
 
 describe('middleware', () => {
+    describe('EarlyBird invitation URL scrubbing', () => {
+        it.each([
+            ['/listener', 'invite'],
+            ['/listener/redeem', 'token'],
+            ['/early-birds', 'invite'],
+            ['/early-birds/redeem', 'token'],
+        ])('forwards staging %s bearer once to the canonical redeem host', (pathname, queryName) => {
+            const response = middleware(request(
+                `${pathname}?${queryName}=${INVITATION}&locale=en`,
+                undefined,
+                'earlybirds-staging.harmonicbeacon.com',
+            ));
+
+            expect(response.status).toBe(307);
+            const target = location(response);
+            expect(target.origin).toBe('https://listen.harmonicbeacon.com');
+            expect(target.pathname).toBe('/listener/redeem');
+            expect(target.searchParams.get('token')).toBe(INVITATION);
+            expect(target.searchParams.has('invite')).toBe(false);
+            expect(target.searchParams.has('locale')).toBe(false);
+            expect(response.headers.get('cache-control')).toBe('private, no-store');
+            expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+            expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
+        });
+
+        it.each([
+            ['listen.harmonicbeacon.com', '/listener', 'invite'],
+            ['listen.harmonicbeacon.com', '/listener/redeem', 'token'],
+            ['listen.harmonicbeacon.com', '/early-birds', 'invite'],
+            ['listen.harmonicbeacon.com', '/early-birds/redeem', 'token'],
+        ])('moves a canonical %s%s query into the host-only handoff cookie', (hostname, pathname, queryName) => {
+            const response = middleware(request(
+                `${pathname}?${queryName}=${INVITATION}&locale=en`,
+                undefined,
+                hostname,
+            ));
+
+            expect(response.status).toBe(307);
+            expect(location(response).searchParams.has(queryName)).toBe(false);
+            expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toMatchObject({
+                value: INVITATION,
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax',
+            });
+            expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toMatchObject({
+                value: INVITATION,
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax',
+            });
+        });
+
+        it('completes the real staging-to-canonical scrub topology without a staging cookie', () => {
+            const staging = middleware(request(
+                `/listener?invite=${INVITATION}`,
+                undefined,
+                'earlybirds-staging.harmonicbeacon.com',
+            ));
+            expect(staging.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            expect(staging.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
+
+            const canonicalURL = location(staging);
+            const canonical = middleware(request(
+                `${canonicalURL.pathname}${canonicalURL.search}`,
+                undefined,
+                canonicalURL.hostname,
+            ));
+            expect(location(canonical).toString()).toBe(
+                'https://listen.harmonicbeacon.com/listener/redeem',
+            );
+            expect(canonical.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toMatchObject({
+                value: INVITATION,
+                httpOnly: true,
+                secure: true,
+                sameSite: 'lax',
+                path: '/',
+                maxAge: EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
+            });
+            expect(canonical.cookies.get(LISTENER_INVITATION_COOKIE)).toMatchObject({
+                value: INVITATION,
+                path: '/',
+                maxAge: EARLY_BIRD_INVITATION_MAX_AGE_SECONDS,
+            });
+        });
+
+        it.each([
+            ['live.harmonicbeacon.com', '/early-birds', 'invite'],
+            ['listen.harmonicbeacon.com.attacker.invalid', '/listener', 'invite'],
+        ])('scrubs but never persists %s%s invitation queries', (hostname, pathname, queryName) => {
+            const response = middleware(request(
+                `${pathname}?${queryName}=${INVITATION}&locale=en`,
+                undefined,
+                hostname,
+            ));
+
+            expect(response.status).toBe(307);
+            expect(location(response).searchParams.has(queryName)).toBe(false);
+            expect(location(response).searchParams.get('locale')).toBe('en');
+            expect(response.headers.get('cache-control')).toBe('private, no-store');
+            expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+            expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
+        });
+
+        it('does not trust a forwarded Listener host on an off-surface URL', () => {
+            const response = middleware(request(
+                `/early-birds?invite=${INVITATION}`,
+                undefined,
+                'live.harmonicbeacon.com',
+                { 'x-forwarded-host': 'listen.harmonicbeacon.com' },
+            ));
+
+            expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            expect(response.cookies.get(LISTENER_INVITATION_COOKIE)).toBeUndefined();
+        });
+
+        it('scrubs malformed or ambiguous query values without persisting them', () => {
+            for (const pathname of [
+                '/early-birds?invite=not-canonical',
+                `/early-birds?invite=${INVITATION}&invite=${INVITATION}`,
+            ]) {
+                const response = middleware(request(pathname));
+                expect(response.status).toBe(307);
+                expect(location(response).searchParams.has('invite')).toBe(false);
+                expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+            }
+        });
+
+        it('sends malformed staging input to the canonical clean entry without carrying it', () => {
+            const response = middleware(request(
+                '/listener?invite=not-canonical',
+                undefined,
+                'earlybirds-staging.harmonicbeacon.com',
+            ));
+            expect(location(response).toString()).toBe('https://listen.harmonicbeacon.com/listener');
+            expect(response.cookies.get(EARLY_BIRD_INVITATION_COOKIE)).toBeUndefined();
+        });
+    });
+
     it('recognizes exactly the cookie the session contract issues', () => {
         // Drift guard for the literal in `middleware.ts`, which cannot import
         // `@/lib/session-auth` because the edge runtime has no `node:crypto`.
@@ -100,8 +254,15 @@ describe('middleware', () => {
     });
 
     describe('matcher', () => {
-        it('runs only on the two protected surfaces', () => {
-            expect(config.matcher).toEqual(['/session/:path*', '/ops/:path*']);
+        it('runs only on invitation entry and the two protected surfaces', () => {
+            expect(config.matcher).toEqual([
+                '/listener',
+                '/listener/redeem',
+                '/early-birds',
+                '/early-birds/redeem',
+                '/session/:path*',
+                '/ops/:path*',
+            ]);
         });
     });
 });

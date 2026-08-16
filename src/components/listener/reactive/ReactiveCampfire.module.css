@@ -1,0 +1,144 @@
+.viewport {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    contain: strict;
+}
+
+.canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0.94;
+}
+
+.panel {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 50;
+    width: min(22rem, calc(100vw - 2rem));
+    color: #f7f3ff;
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: 1rem;
+    background: rgb(11 7 25 / 88%);
+    box-shadow: 0 1rem 3rem rgb(0 0 0 / 36%);
+    backdrop-filter: blur(1rem);
+}
+
+.summary {
+    cursor: pointer;
+    min-height: 2.75rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.78rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem 1rem;
+    max-height: min(34rem, 70vh);
+    padding: 0 1rem 1rem;
+    overflow-y: auto;
+}
+
+.field {
+    display: grid;
+    gap: 0.3rem;
+    min-width: 0;
+    color: rgb(247 243 255 / 82%);
+    font-size: 0.74rem;
+}
+
+.guide {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: rgb(247 243 255 / 68%);
+    font-size: 0.68rem;
+    line-height: 1.45;
+}
+
+.field input,
+.field select {
+    width: 100%;
+    min-height: 2rem;
+    color: #fff;
+    accent-color: #ff77af;
+    border: 1px solid rgb(255 255 255 / 15%);
+    border-radius: 0.5rem;
+    background: rgb(255 255 255 / 7%);
+}
+
+.field input[type='number'],
+.field select {
+    padding: 0.35rem 0.5rem;
+}
+
+.field option {
+    color: #f7f3ff;
+    background: #181022;
+}
+
+.hint {
+    color: rgb(255 255 255 / 48%);
+    font-size: 0.66rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.value {
+    color: rgb(255 255 255 / 54%);
+    font-variant-numeric: tabular-nums;
+}
+
+.actions {
+    display: flex;
+    grid-column: 1 / -1;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.button {
+    min-height: 2.25rem;
+    padding: 0.45rem 0.7rem;
+    color: #fff;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 8%);
+    cursor: pointer;
+}
+
+.status {
+    color: rgb(255 255 255 / 62%);
+    font-size: 0.7rem;
+}
+
+@media (max-width: 520px) {
+    .panel {
+        right: 0.5rem;
+        bottom: 0.5rem;
+        width: calc(100vw - 1rem);
+    }
+
+    .form {
+        grid-template-columns: 1fr;
+    }
+
+    .actions {
+        grid-column: 1;
+    }
+
+    .guide {
+        grid-column: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .canvas {
+        opacity: 0.76;
+    }
+}

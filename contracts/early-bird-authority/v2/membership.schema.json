@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/early-bird-authority/v2/membership.schema.json",
+  "title": "EarlyBird canonical membership and Founder price eligibility v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "account_id",
+    "membership_revision",
+    "state",
+    "source",
+    "access_allowed",
+    "effective_at",
+    "paid_through",
+    "grace_until",
+    "offer",
+    "provider",
+    "current_price",
+    "free_entitlement_consumed",
+    "reason_code",
+    "founder_price_eligibility"
+  ],
+  "properties": {
+    "schema_version": {"const": "early-bird-authority.membership.v2"},
+    "account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
+    "membership_revision": {"type": "integer", "minimum": 1},
+    "state": {
+      "enum": [
+        "PENDING",
+        "ACTIVE",
+        "GRACE",
+        "CANCELLED_PENDING_END",
+        "EXPIRED",
+        "REFUNDED",
+        "REVOKED"
+      ]
+    },
+    "source": {"type": ["string", "null"], "enum": ["FREE", "PAYPAL", "MERCADO_PAGO", null]},
+    "access_allowed": {"type": "boolean"},
+    "effective_at": {"type": "string", "format": "date-time"},
+    "paid_through": {"type": ["string", "null"], "format": "date-time"},
+    "grace_until": {"type": ["string", "null"], "format": "date-time"},
+    "offer": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "revision"],
+          "properties": {
+            "code": {"const": "EARLY_BIRDS_FOUNDERS_V1"},
+            "revision": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    },
+    "provider": {"type": ["string", "null"], "enum": ["paypal", "mercado_pago", null]},
+    "current_price": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["currency", "amount_minor"],
+          "properties": {
+            "currency": {"enum": ["USD", "ARS"]},
+            "amount_minor": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    },
+    "free_entitlement_consumed": {"type": "boolean"},
+    "reason_code": {"type": "string", "minLength": 1, "maxLength": 64},
+    "founder_price_eligibility": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["offer", "canonical_price", "billing_period", "granted_at"],
+          "properties": {
+            "offer": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "revision"],
+              "properties": {
+                "code": {"const": "EARLY_BIRDS_FOUNDERS_V1"},
+                "revision": {"type": "integer", "minimum": 1}
+              }
+            },
+            "canonical_price": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["currency", "amount_minor"],
+              "properties": {
+                "currency": {"const": "USD"},
+                "amount_minor": {"const": 500}
+              }
+            },
+            "billing_period": {"const": "MONTHLY"},
+            "granted_at": {"type": "string", "format": "date-time"}
+          }
+        }
+      ]
+    }
+  }
+}

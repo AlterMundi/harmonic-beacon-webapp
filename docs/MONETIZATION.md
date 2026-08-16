@@ -7,16 +7,15 @@
 > statement in this document is a claim about code that exists today; if you find
 > one that is not, that is a bug in this document.
 >
-> **Nothing in this document is live.** There is no payment processing, no
-> entitlement model, no patron/free distinction and no payout mechanism in the
-> codebase: no Stripe integration of any kind, and no patronage, subscription,
-> tier or payout model in `prisma/schema.prisma`. No price below has ever been
-> published or charged, and nobody has been billed anything. Every published
-> meditation is available to every signed-in Listener right now — which exceeds
-> the Commons commitment below, and also means the floor it describes is enforced
-> nowhere. Read the whole document as the model patronage will implement when it
-> ships: **[Planned — Phase 2]** throughout, except where a rule below is tagged
-> to a different phase.
+> **Founding Listener pre-release is implemented but real sales remain OFF.**
+> The isolated Listener has a server-authoritative three-hour weekly Free quota
+> and a recurring **USD 5/month Founding Listener** offer. PayPal Sandbox and
+> Mercado Pago TEST have completed supervised checkout and lifecycle acceptance;
+> production provider credentials, Live flags and public checkout stay disabled
+> until the commercial release gates are approved. The broader patronage tiers,
+> donations, provider payouts and institutional mechanics below remain draft
+> Phase 2 proposals; they must not be confused with the Founding Listener launch
+> candidate.
 
 *Draft · 2026-04-12 · author: product design, pending validation*
 
@@ -24,7 +23,7 @@ Authoritative rules live in [BUSINESS_RULES.md §5](../BUSINESS_RULES.md). This 
 
 ## Stance
 
-Harmonic Beacon will be monetized through **patronage and institutional licensing**, not through a paywall. The core listening experience is free forever; money flows into the product because people and organizations want the instrument to exist, not because they have been fenced out of it.
+Harmonic Beacon is being monetized first through **Founding Listener membership**, then potentially through the broader patronage and institutional model described below. Registered Free listeners receive a recurring weekly allowance; Founding Listeners receive unrestricted access while their USD 5 monthly service remains uninterrupted. Free For All can still open access temporarily without creating membership or payment state.
 
 This is a deliberate choice, not a fallback. A Calm-style paywall would corrode the brand. A donation-only model would starve the infrastructure. The middle path — named patronage tiers with meaningful but non-essential benefits, optional pure donations, and institutional deals on the side — is what we will build.
 
@@ -38,7 +37,7 @@ We expect revenue to come from up to five stacked surfaces. Only the first two m
 4. **Grants and foundation support** (continuous). Not transactional; grant-writing is meant to be a standing function of the org rather than a side task, and it needs an owner before it is one.
 5. **Harmonic Seal certification** (Phase 4+ speculative). A future certification mark for Harmonically Aware Technology applied to third-party devices, environments, or systems.
 
-We do **not** monetize through: advertising, data resale, affiliate deals that compromise the brand, or NFTs/tokens. That refusal is a standing rule and holds today, trivially — we do not monetize at all.
+We do **not** monetize through advertising, data resale, affiliate deals that compromise the brand, or NFTs/tokens. That refusal remains a standing rule as payment capability moves from sandbox acceptance toward an explicitly approved launch.
 
 ## Patronage tiers
 
@@ -247,10 +246,15 @@ This is documented here only to note that monetization for the Seal is an open q
 
 ## Compliance scaffolding
 
-Whatever monetization we ship will run on these scaffolds. None of them is in place — Stripe is not integrated, no tax advisor has been engaged, and no ledger separates Harmonic Beacon within the parent org's accounts. **[Planned — Phase 2]**
+The broader patronage/provider economy below remains planned for Phase 2. It is not the current
+Founding Listener implementation. That pre-release uses a provider-neutral authority with PayPal
+and Mercado Pago, USD 5/month Founder continuity, weekly Free access and default-off Live gates;
+see `operations/LISTENER_LAUNCH_NOW.md`. No real charge or public checkout is enabled yet. A tax
+advisor and a dedicated Harmonic Beacon accounting ledger remain launch/operations work.
 
-- **Billing provider**: Stripe at launch (Stripe Billing for subscriptions, Stripe Connect for Provider payouts, Stripe Tax for VAT/sales tax, Stripe Checkout for one-time donations).
-- **Tax**: Stripe Tax computes and collects. We file where required. A tax advisor is engaged before the first payout-bearing month — it is an open thread in [README.md](./README.md#open-threads) and it gates the phase, because the currencies quoted above decide which registrations we need.
+- **Founding Listener billing**: PayPal and Mercado Pago through the canonical membership authority; Live remains OFF until supervised cutover.
+- **Future patron/provider economy**: provider, payout and tax tooling are a separate Phase 2 decision; Stripe is a candidate, not deployed fact.
+- **Tax**: the receiving merchant/entity and jurisdictional obligations must be accepted before public sales. A processor does not replace the tax/accounting decision.
 - **Receipts**: every charge generates a compliant receipt. Annual patrons receive a year-end summary of what they contributed.
 - **Legal entity**: payments flow through the designated AlterMundi entity; separate ledger for Harmonic Beacon within the parent org's accounts.
 - **Currency risk**: unhedged at launch; visible in the monthly financial review.

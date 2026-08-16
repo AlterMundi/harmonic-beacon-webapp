@@ -1,0 +1,34 @@
+{
+  "schema_version": "early-bird-authority.membership.v2",
+  "account_id": "account_synthetic_founder_0001",
+  "membership_revision": 2,
+  "state": "EXPIRED",
+  "source": "PAYPAL",
+  "access_allowed": false,
+  "effective_at": "2026-08-06T12:00:00Z",
+  "paid_through": "2026-09-06T12:00:00Z",
+  "grace_until": null,
+  "offer": {
+    "code": "EARLY_BIRDS_FOUNDERS_V1",
+    "revision": 1
+  },
+  "provider": "paypal",
+  "current_price": {
+    "currency": "USD",
+    "amount_minor": 500
+  },
+  "free_entitlement_consumed": true,
+  "reason_code": "SUBSCRIPTION_CANCELLED",
+  "founder_price_eligibility": {
+    "offer": {
+      "code": "EARLY_BIRDS_FOUNDERS_V1",
+      "revision": 1
+    },
+    "canonical_price": {
+      "currency": "USD",
+      "amount_minor": 500
+    },
+    "billing_period": "MONTHLY",
+    "granted_at": "2026-08-06T12:00:00Z"
+  }
+}

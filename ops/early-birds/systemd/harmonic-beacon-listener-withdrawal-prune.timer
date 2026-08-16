@@ -1,0 +1,11 @@
+[Unit]
+Description=Prune Listener consumer request throttle buckets daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=15m
+Persistent=true
+Unit=harmonic-beacon-listener-withdrawal-prune.service
+
+[Install]
+WantedBy=timers.target

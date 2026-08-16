@@ -1,28 +1,59 @@
 import type { Metadata, Viewport } from "next";
-import { Cormorant_Garamond, Syne, Space_Mono } from "next/font/google";
+import localFont from "next/font/local";
+import { headers } from "next/headers";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { requestLocale } from "@/lib/i18n-server";
+import { isCanonicalListenerHost, listenerLocaleForHeaders } from "@/lib/listener/public-discovery";
+import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
 
-const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
+const cormorant = localFont({
+  src: [
+    {
+      path: "./fonts/cormorant-garamond/CormorantGaramond-wght.woff2",
+      weight: "400 600",
+      style: "normal",
+    },
+    {
+      path: "./fonts/cormorant-garamond/CormorantGaramond-Italic-wght.woff2",
+      weight: "400 600",
+      style: "italic",
+    },
+  ],
   variable: "--font-cormorant",
   display: "swap",
 });
 
-const syne = Syne({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const inter = localFont({
+  src: "./fonts/inter/Inter-latin-wght.woff2",
+  weight: "300 600",
+  style: "normal",
+  variable: "--font-hb-inter",
+  display: "swap",
+});
+
+const syne = localFont({
+  src: "./fonts/syne/Syne-wght.woff2",
+  weight: "400 700",
+  style: "normal",
   variable: "--font-syne",
   display: "swap",
 });
 
-const spaceMono = Space_Mono({
-  subsets: ["latin"],
-  weight: ["400", "700"],
+const spaceMono = localFont({
+  src: [
+    {
+      path: "./fonts/space-mono/SpaceMono-Regular.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/space-mono/SpaceMono-Bold.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
   variable: "--font-space-mono",
   display: "swap",
 });
@@ -41,21 +72,36 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  themeColor: "#07120f",
-};
+export async function generateViewport(): Promise<Viewport> {
+  const incomingHeaders = await headers();
+  return {
+    width: "device-width",
+    initialScale: 1,
+    themeColor: isCanonicalListenerHost(incomingHeaders) ? "#16120D" : "#07120f",
+  };
+}
 
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const locale = await requestLocale();
+  const incomingHeaders = await headers();
+  // Listener content and metadata use the browser's primary language. Bind
+  // that behavior to the exact public host so event-language defaults on the
+  // rest of the application remain untouched.
+  const listenerHost = isCanonicalListenerHost(incomingHeaders);
+  const locale = listenerHost
+    ? listenerLocaleForHeaders(incomingHeaders)
+    : await requestLocale();
 
   return (
-    <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${syne.variable} ${spaceMono.variable}`}>
+    <html
+      lang={locale}
+      data-lang={locale}
+      data-hb-surface={listenerHost ? "listener" : undefined}
+      className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}
+    >
       <body className="antialiased">
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
@@ -66,11 +112,15 @@ export default async function RootLayout({
             position="top-center"
             toastOptions={{
               style: {
-                background: "rgba(7, 18, 15, 0.96)",
+                background: listenerHost ? "rgba(27, 21, 15, 0.97)" : "rgba(7, 18, 15, 0.96)",
                 backdropFilter: "blur(16px)",
-                border: "1px solid rgba(238, 245, 233, 0.12)",
-                color: "#fff9e9",
-                fontFamily: "var(--font-syne), system-ui, sans-serif",
+                border: listenerHost
+                  ? "1px solid rgba(201, 162, 78, 0.22)"
+                  : "1px solid rgba(238, 245, 233, 0.12)",
+                color: listenerHost ? "#F4EEE2" : "#fff9e9",
+                fontFamily: listenerHost
+                  ? "var(--font-hb-inter), Inter, system-ui, sans-serif"
+                  : "var(--font-syne), system-ui, sans-serif",
                 fontSize: "13px",
               },
             }}

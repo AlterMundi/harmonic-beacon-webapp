@@ -1,0 +1,32 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: telegram-warning
+  group_by: [service, alertname, environment]
+  group_wait: 5m
+  group_interval: 5m
+  repeat_interval: 1h
+  routes:
+    - receiver: telegram-critical
+      matchers: [severity="critical"]
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 15m
+
+receivers:
+  - name: telegram-warning
+    telegram_configs:
+      - bot_token_file: /runtime-secrets/telegram_bot_token
+        chat_id: __TELEGRAM_CHAT_ID__
+        send_resolved: true
+        message: '{{ template "telegram.default.message" . }}'
+  - name: telegram-critical
+    telegram_configs:
+      - bot_token_file: /runtime-secrets/telegram_bot_token
+        chat_id: __TELEGRAM_CHAT_ID__
+        send_resolved: true
+        message: '{{ template "telegram.default.message" . }}'
+
+templates:
+  - /etc/alertmanager/templates/*.tmpl

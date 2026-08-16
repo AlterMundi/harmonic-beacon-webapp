@@ -1,0 +1,52 @@
+# Isolated preview only. It neither joins nor replaces the event compose project.
+services:
+  beacon-stream:
+    build: .
+    restart: unless-stopped
+    environment:
+      BEACON_STREAM_PORT: 8080
+      BEACON_STREAM_MEDIA_ROOT: ${BEACON_STREAM_MEDIA_ROOT:?set_in_preview.env}
+      BEACON_STREAM_ARTIFACT_ID: ${BEACON_STREAM_ARTIFACT_ID:?set_in_preview.env}
+      BEACON_STREAM_PUBLIC_ORIGIN: ${BEACON_STREAM_PUBLIC_ORIGIN:?set_in_preview.env}
+      BEACON_STREAM_ALLOWED_ORIGINS: ${BEACON_STREAM_ALLOWED_ORIGINS:?set_in_preview.env}
+      BEACON_STREAM_SIGNING_SECRET: ${BEACON_STREAM_SIGNING_SECRET:?set_in_preview.env}
+      # Metrics and ready state are network-private; do not publish this port.
+      BEACON_STREAM_METRICS_PORT: 9090
+      BEACON_STREAM_METRICS_BIND_HOST: 0.0.0.0
+    volumes:
+      - ${BEACON_STREAM_ARTIFACTS_HOST_PATH:?set_in_preview.env}:/media/artifacts:ro
+    ports:
+      # Host nginx (or an explicit local test) is the sole listener boundary.
+      - "127.0.0.1:${BEACON_STREAM_HOST_PORT:-18080}:8080"
+    expose:
+      - "9090"
+    networks:
+      - stream_observability
+      # Docker does not publish host ports for a container attached only to an
+      # `internal` network. This separate edge bridge permits the explicit
+      # loopback binding above without exposing private readiness/metrics.
+      - stream_edge
+      - stream_control
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  stream_observability:
+    name: earlybirds_stream_observability
+    internal: true
+  stream_edge:
+    name: earlybirds_stream_edge
+  stream_control:
+    name: earlybirds_stream_control_internal
+    internal: true

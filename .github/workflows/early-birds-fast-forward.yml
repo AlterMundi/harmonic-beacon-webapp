@@ -1,0 +1,127 @@
+name: EarlyBirds fast-forward checks
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - package.json
+      - package-lock.json
+      - prisma/**
+      - src/app/api/health/**
+      - src/app/api/early-birds/**
+      - src/app/api/listener/**
+      - src/app/early-birds/**
+      - src/app/listener/**
+      - src/components/early-birds/**
+      - src/lib/early-birds/**
+      - src/lib/listener/**
+      - services/beacon-stream/**
+      - ops/early-birds/**
+      - ops/early-birds-preview/**
+      - scripts/early-birds-preview/**
+      - scripts/listener_container_observer.py
+      - tools/early-birds-hls-load/**
+      - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
+      - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
+      - docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md
+      - docs/operations/LISTENER_LAUNCH_NOW.md
+      - docs/operations/LISTENER_PRIVATE_LIVE_WORKBENCH.md
+      - .github/workflows/early-birds-fast-forward.yml
+  push:
+    branches: [early-birds, "feat/early-birds-*"]
+    paths:
+      - Dockerfile
+      - package.json
+      - package-lock.json
+      - prisma/**
+      - src/app/api/health/**
+      - src/app/api/early-birds/**
+      - src/app/api/listener/**
+      - src/app/early-birds/**
+      - src/app/listener/**
+      - src/components/early-birds/**
+      - src/lib/early-birds/**
+      - src/lib/listener/**
+      - services/beacon-stream/**
+      - ops/early-birds/**
+      - ops/early-birds-preview/**
+      - scripts/early-birds-preview/**
+      - scripts/listener_container_observer.py
+      - tools/early-birds-hls-load/**
+      - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
+      - docs/operations/EARLY_BIRDS_STAGING_PREVIEW.md
+      - docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md
+      - docs/operations/LISTENER_LAUNCH_NOW.md
+      - docs/operations/LISTENER_PRIVATE_LIVE_WORKBENCH.md
+      - .github/workflows/early-birds-fast-forward.yml
+
+permissions:
+  contents: read
+
+jobs:
+  quota-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: listener_test
+          POSTGRES_DB: listener_test
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d listener_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:listener_test@localhost:55433/listener_test
+      LISTENER_TEST_DATABASE_URL: postgresql://postgres:listener_test@localhost:55433/listener_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm test -- --run src/lib/early-birds/__tests__/founder-eligibility.postgres.test.ts src/lib/early-birds/__tests__/quota.postgres.test.ts
+
+  stream-origin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/beacon-stream
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+      - run: npm run check
+
+  observability-config:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ops/early-birds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: npm test
+      - run: npm run check
+      - run: npm run validate
+      - run: npm --prefix ../../tools/early-birds-hls-load test
+      - run: npm --prefix ../../tools/early-birds-hls-load run check
+
+  staging-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm --prefix ops/early-birds-preview run check
+      - run: npm --prefix ops/early-birds-preview test
+      - run: npm --prefix ops/early-birds-preview run validate:build

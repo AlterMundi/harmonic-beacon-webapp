@@ -1,0 +1,367 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+    currentEarlyBirdSession: vi.fn(),
+    earlyBirdOAuthAvailability: vi.fn(),
+    earlyBirdMagicLinkAvailable: vi.fn(),
+    getEarlyBirdListeningAccess: vi.fn(),
+    headers: vi.fn(),
+    redirect: vi.fn(),
+}));
+
+vi.mock('next/headers', () => ({
+    headers: mocks.headers,
+}));
+vi.mock('next/navigation', () => ({
+    redirect: mocks.redirect,
+}));
+vi.mock('@/lib/early-birds/auth', () => ({
+    currentEarlyBirdSession: mocks.currentEarlyBirdSession,
+    earlyBirdOAuthAvailability: mocks.earlyBirdOAuthAvailability,
+}));
+vi.mock('@/lib/early-birds/magic-link', () => ({
+    earlyBirdMagicLinkAvailable: mocks.earlyBirdMagicLinkAvailable,
+}));
+vi.mock('@/lib/early-birds/access', () => ({
+    getEarlyBirdListeningAccess: mocks.getEarlyBirdListeningAccess,
+}));
+
+import EarlyBirdHome from '@/components/early-birds/EarlyBirdHome';
+import {
+    EARLY_BIRD_INVITATION_COOKIE,
+    LISTENER_INVITATION_COOKIE,
+} from '@/lib/early-birds/invitation-cookie';
+import EarlyBirdsPage from '../page';
+
+const INVITATION = `ebi_v1.${'a'.repeat(32)}.${'b'.repeat(32)}.${'c'.repeat(32)}`;
+
+afterEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+});
+
+const availableQuota = {
+    policy: 'personal-7-day-v1' as const,
+    status: 'not-started' as const,
+    cycleStartedAt: null,
+    cycleEndsAt: null,
+    baseAllowanceMs: 10_800_000,
+    bonusAllowanceMs: 0,
+    consumedMs: 0,
+    remainingMs: 10_800_000,
+    activelyConsuming: false,
+    exhaustsAt: null,
+    nextCycleAt: null,
+};
+
+describe('EarlyBird Listener page', () => {
+    it('cleans provider return parameters without treating them as payment authority', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        mocks.headers.mockResolvedValue(new Headers({
+            host: 'earlybirds-staging.harmonicbeacon.com',
+        }));
+        const redirected = new Error('redirected');
+        mocks.redirect.mockImplementation(() => { throw redirected; });
+
+        await expect(EarlyBirdsPage({
+            searchParams: Promise.resolve({
+                paypal: 'success',
+                subscription_id: 'opaque-provider-value',
+                ba_token: 'opaque-provider-value',
+                token: 'opaque-provider-value',
+            }),
+        })).rejects.toBe(redirected);
+
+        expect(mocks.redirect).toHaveBeenCalledWith('/');
+        expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('renders the Listener directly without auth or membership in Free for All mode', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        vi.stubEnv('EARLY_BIRDS_DROPIN_EN_PATH', '/media/drop-ins/amara.m4a');
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.type).toBe(EarlyBirdHome);
+        expect(result.props).toMatchObject({
+            publicAccess: true,
+            displayName: '',
+            membership: { kind: 'none', state: 'none' },
+            dropIns: { es: null, en: '/api/early-birds/drop-ins/en' },
+        });
+        expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('keeps remote visualization unavailable on public and unflagged staging hosts', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        mocks.headers.mockResolvedValue(new Headers({
+            host: 'earlybirds-staging.harmonicbeacon.com',
+        }));
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.type).toBe(EarlyBirdHome);
+        expect(result.props).toMatchObject({
+            reactiveVisualizationAvailable: false,
+            reactiveFieldLabAvailable: false,
+        });
+
+        mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
+        const publicResult = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+        expect(publicResult.props).toMatchObject({
+            reactiveVisualizationAvailable: false,
+            reactiveFieldLabAvailable: false,
+        });
+    });
+
+    it('enables the lab only by explicit flag on the exact staging hostname', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
+        vi.stubEnv('BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED', '1');
+        mocks.headers.mockResolvedValue(new Headers({
+            host: 'earlybirds-staging.harmonicbeacon.com',
+        }));
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+        expect(result.props).toMatchObject({
+            reactiveVisualizationAvailable: true,
+            reactiveFieldLabAvailable: true,
+        });
+    });
+
+    it('renders an authenticated Listener immediately with the server-authoritative Free quota', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: true,
+            kind: 'free-quota',
+            membership: { allowed: false, projection: null },
+            quota: availableQuota,
+            allowedUntil: null,
+            serverNow: new Date('2026-08-08T15:00:00.000Z'),
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.type).toBe(EarlyBirdHome);
+        expect(result.props).toMatchObject({
+            displayName: 'Nico',
+            membership: { kind: 'none', state: 'none' },
+            accessKind: 'free-quota',
+            quota: expect.objectContaining({ remainingMs: 10_800_000 }),
+            serverNow: '2026-08-08T15:00:00.000Z',
+        });
+    });
+
+    it('exposes one server-selected Live workbench only to its staging allowlist account', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED', '1');
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ACCOUNT_ID', 'listener-1');
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER', 'mercado_pago');
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_CSRF_SECRET', 's'.repeat(43));
+        vi.stubEnv('BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED', '0');
+        vi.stubEnv('BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED', '0');
+        mocks.headers.mockResolvedValue(new Headers({
+            host: 'earlybirds-staging.harmonicbeacon.com',
+        }));
+        mocks.currentEarlyBirdSession.mockResolvedValue({
+            user: { id: 'listener-1', name: 'Nico', email: 'nico@example.com' },
+            session: { id: 'session-1', expiresAt: new Date('2026-09-01T00:00:00Z') },
+        });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: true,
+            kind: 'free-quota',
+            membership: { allowed: false, projection: null },
+            quota: availableQuota,
+            allowedUntil: null,
+            serverNow: new Date('2026-08-13T15:00:00.000Z'),
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+        expect(result.props.liveWorkbench).toEqual({
+            provider: 'mercado_pago',
+            csrfToken: expect.stringMatching(/^\d{10}\.[A-Za-z0-9_-]{32}\.[A-Za-z0-9_-]{43}$/),
+        });
+        expect(result.props.checkoutEnvironment).toBe('staging');
+
+        mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
+        const publicResult = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+        expect(publicResult.props.liveWorkbench).toBeNull();
+    });
+
+    it('derives a sanitized Founder presentation on the server', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: true,
+            kind: 'membership',
+            membership: {
+                allowed: true,
+                projection: {
+                    state: 'CANCELLED_PENDING_END',
+                    source: 'MERCADO_PAGO',
+                    offerCode: 'EARLY_BIRDS_FOUNDERS_V1',
+                    offerRevision: 1,
+                    effectiveAt: new Date('2026-08-01T00:00:00.000Z'),
+                    paidThrough: new Date('2026-08-31T00:00:00.000Z'),
+                    graceUntil: null,
+                    synthetic: false,
+                    founderContinuityEpisodeId: '00000000-0000-4000-8000-000000000101',
+                    founderContinuityState: 'CANCELLED_PENDING_END',
+                    founderContinuityOfferCode: 'EARLY_BIRDS_FOUNDERS_V1',
+                    founderContinuityOfferRevision: 1,
+                    founderContinuityCurrency: 'USD',
+                    founderContinuityAmountMinor: 500,
+                    founderContinuityBillingPeriod: 'MONTHLY',
+                    founderContinuityActivatedAt: new Date('2026-08-01T00:00:00.000Z'),
+                    founderContinuityServiceThrough: new Date('2026-08-31T00:00:00.000Z'),
+                    provider: 'internal-provider-value',
+                    reasonCode: 'PRIVATE_REASON',
+                },
+            },
+            quota: null,
+            allowedUntil: new Date('2026-08-31T00:00:00.000Z'),
+            serverNow: new Date('2026-08-08T15:00:00.000Z'),
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.type).toBe(EarlyBirdHome);
+        expect(result.props.membership).toEqual({
+            kind: 'founder',
+            provider: 'mercado-pago',
+            state: 'ending',
+            serviceThrough: '2026-08-31T00:00:00.000Z',
+        });
+        expect(JSON.stringify(result.props.membership)).not.toMatch(/PRIVATE_REASON|internal-provider-value|MERCADO_PAGO/);
+    });
+
+    it('shows exhausted quota rather than fabricating membership', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(true);
+        mocks.getEarlyBirdListeningAccess.mockResolvedValue({
+            allowed: false,
+            kind: 'denied',
+            membership: { allowed: false, projection: null },
+            quota: {
+                ...availableQuota,
+                status: 'exhausted',
+                cycleStartedAt: new Date('2026-08-01T15:00:00.000Z'),
+                cycleEndsAt: new Date('2026-08-08T15:00:00.000Z'),
+                consumedMs: 10_800_000,
+                remainingMs: 0,
+                nextCycleAt: new Date('2026-08-08T15:00:00.000Z'),
+            },
+            serverNow: new Date('2026-08-08T14:00:00.000Z'),
+        });
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props).toMatchObject({
+            signedIn: true,
+            entitled: false,
+            providers: { google: true, apple: false },
+            emailMagicLinkAvailable: true,
+            quota: expect.objectContaining({
+                status: 'exhausted',
+                remainingMs: 0,
+            }),
+            serverNow: '2026-08-08T14:00:00.000Z',
+        });
+    });
+
+    it('does not fabricate Free or welcome state when identity resolution fails', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockRejectedValue(new Error('identity unavailable'));
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props).toMatchObject({
+            signedIn: false,
+            serviceUnavailable: 'identity',
+            quota: null,
+        });
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it('does not fabricate Free or welcome state when access resolution fails', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1', name: 'Nico' } });
+        mocks.getEarlyBirdListeningAccess.mockRejectedValue(new Error('database unavailable'));
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props).toMatchObject({
+            signedIn: true,
+            serviceUnavailable: 'access',
+            quota: null,
+        });
+    });
+
+    it('shows identity unavailable when no public sign-in method is configured', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.headers.mockResolvedValue(new Headers());
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: false, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props.serviceUnavailable).toBe('identity');
+    });
+
+    it.each([
+        [LISTENER_INVITATION_COOKIE],
+        [EARLY_BIRD_INVITATION_COOKIE],
+    ])('recognizes a valid %s invitation cookie without exposing its value', async (name) => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        mocks.headers.mockResolvedValue(new Headers({ cookie: `${name}=${INVITATION}` }));
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props.invitationAvailable).toBe(true);
+        expect(JSON.stringify(result.props)).not.toContain(INVITATION);
+    });
+
+    it('fails closed when canonical and legacy invitation cookies conflict', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        const other = `ebi_v1.${'d'.repeat(32)}.${'e'.repeat(32)}.${'f'.repeat(32)}`;
+        mocks.headers.mockResolvedValue(new Headers({
+            cookie: `${LISTENER_INVITATION_COOKIE}=${other}; ${EARLY_BIRD_INVITATION_COOKIE}=${INVITATION}`,
+        }));
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+        mocks.earlyBirdOAuthAvailability.mockReturnValue({ google: true, apple: false });
+        mocks.earlyBirdMagicLinkAvailable.mockReturnValue(false);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
+
+        expect(result.props.invitationAvailable).toBe(false);
+    });
+});

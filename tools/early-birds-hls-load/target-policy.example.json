@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "id": "early-birds-staging",
+      "environment": "staging",
+      "production": false,
+      "attestation": {
+        "header": "x-harmonic-beacon-environment",
+        "value": "early-birds-staging"
+      },
+      "origins": [
+        "https://earlybirds-staging.example.invalid",
+        "https://earlybirds-media-staging.example.invalid"
+      ],
+      "limits": {
+        "maxClients": 10,
+        "maxRampPerSecond": 2,
+        "maxSoakSeconds": 60,
+        "maxShardCount": 2,
+        "minManifestIntervalMs": 3000,
+        "maxInflightPerShard": 16,
+        "maxSegmentsPerPoll": 6,
+        "maxRequestsPerSecond": 30,
+        "maxManifestBytes": 262144,
+        "maxSegmentBytes": 8388608,
+        "maxClockOffsetMs": 100
+      }
+    }
+  ]
+}

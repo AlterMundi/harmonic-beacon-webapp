@@ -17,6 +17,16 @@ export function parseUiLocale(value: unknown): UiLocale | null {
     return value === 'es' || value === 'en' ? value : null;
 }
 
+export function localeForBrowserLanguage(acceptLanguage: string | null | undefined): UiLocale {
+    const primaryLanguage = acceptLanguage
+        ?.split(',')[0]
+        ?.trim()
+        .split(';')[0]
+        ?.trim()
+        .toLowerCase();
+    return primaryLanguage === 'es' || primaryLanguage?.startsWith('es-') ? 'es' : 'en';
+}
+
 export function localeForEventLanguage(language: EventLanguage | null | undefined): UiLocale {
     return language === 'ENGLISH' ? 'en' : 'es';
 }

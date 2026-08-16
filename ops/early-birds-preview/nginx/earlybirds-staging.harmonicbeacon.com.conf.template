@@ -1,0 +1,530 @@
+# Isolated EarlyBirds staging vhost. Review and install separately from every
+# live/event vhost only after the named certificate exists.
+limit_req_zone $binary_remote_addr zone=listener_visual_analysis:1m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=listener_payment_webhooks:1m rate=60r/m;
+limit_req_zone $binary_remote_addr zone=listener_checkout:1m rate=6r/m;
+limit_req_zone $binary_remote_addr zone=listener_staging_withdrawal:1m rate=1r/m;
+log_format listener_payment_webhook '$remote_addr - $request_method $uri $status $body_bytes_sent';
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name earlybirds-staging.harmonicbeacon.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location = / {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+
+    # Legacy invitation links carry a bearer in the query string. Suppress the
+    # very first edge log and avoid caching the one redirect that still has it.
+    location = /early-birds {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+
+    location = /early-birds/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://listen.harmonicbeacon.com/listener/redeem$is_args$args;
+    }
+
+    location = /listener {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+
+    location = /listener/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://listen.harmonicbeacon.com/listener/redeem$is_args$args;
+    }
+
+    location = /listener/withdrawal {
+        if ($request_method != GET) { return 405; }
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+
+    location = /listener/cancel-service {
+        if ($request_method != GET) { return 405; }
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+
+    location = /api/early-birds/auth/magic-link/verify {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://listen.harmonicbeacon.com$request_uri;
+    }
+
+    # Redemption authority lives only on the canonical Listener origin. Keep
+    # both compatibility POST aliases dark on staging instead of forwarding a
+    # mutation (or allowing the legacy alias to fall through a broad prefix).
+    location = /api/listener/free/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 404;
+    }
+
+    location = /api/early-birds/free/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 404;
+    }
+
+    location / {
+        return 301 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name earlybirds-staging.harmonicbeacon.com;
+
+    ssl_certificate /etc/letsencrypt/live/earlybirds-staging.harmonicbeacon.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/earlybirds-staging.harmonicbeacon.com/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+
+    # Membership projection is a private server-to-server boundary and is not
+    # exposed by this public staging vhost.
+    location = /api/internal {
+        return 404;
+    }
+
+    location ^~ /api/internal/ {
+        return 404;
+    }
+
+    # Sandbox provider ingress is deliberately two exact POST endpoints. The
+    # authority API itself remains bound to host loopback; no readiness,
+    # internal action or checkout route is exposed through this vhost. The
+    # dedicated access format records only `$uri`, never query parameters,
+    # headers or request bodies.
+    location = /v1/webhooks/early-birds/paypal {
+        if ($request_method != POST) { return 405; }
+        client_max_body_size 1m;
+        limit_req zone=listener_payment_webhooks burst=60 nodelay;
+        limit_req_status 429;
+        access_log /var/log/nginx/listener-payment-webhooks.log listener_payment_webhook;
+        proxy_pass http://127.0.0.1:18876;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /v1/webhooks/early-birds/mercado-pago {
+        if ($request_method != POST) { return 405; }
+        client_max_body_size 1m;
+        limit_req zone=listener_payment_webhooks burst=60 nodelay;
+        limit_req_status 429;
+        access_log /var/log/nginx/listener-payment-webhooks.log listener_payment_webhook;
+        proxy_pass http://127.0.0.1:18876;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # The staging hostname is the mutable UI workbench. It targets the
+    # disposable Next dev runtime on 13001; the accepted Listener release stays
+    # on 13000 behind listen.harmonicbeacon.com.
+    location /_next/static/ {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        add_header Cache-Control "private, no-store" always;
+    }
+
+    location /_next/webpack-hmr {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 1h;
+    }
+
+    location = /api/health {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+    }
+
+    location = /api/health/ready {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+    }
+
+    location = /early-birds {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 /$is_args$args;
+    }
+
+    location = /listener {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 /$is_args$args;
+    }
+
+    # The preview hostname exists only for this product, so keep its public
+    # address canonical at `/`. The application receives the canonical
+    # Listener route while legacy aliases and auth callbacks remain available.
+    location = / {
+        access_log off;
+        rewrite ^ /listener break;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    location = /early-birds/home {
+        return 302 /;
+    }
+
+    location = /listener/terms {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /listener/privacy {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /listener/withdrawal {
+        if ($request_method != GET) { return 405; }
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /listener/cancel-service {
+        if ($request_method != GET) { return 405; }
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /api/listener/withdrawal {
+        if ($request_method != POST) { return 405; }
+        client_max_body_size 2048;
+        limit_req zone=listener_staging_withdrawal burst=7 nodelay;
+        limit_req_status 429;
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 15s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /early-birds/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 302 https://listen.harmonicbeacon.com/listener/redeem$is_args$args;
+    }
+
+    location = /listener/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 302 https://listen.harmonicbeacon.com/listener/redeem$is_args$args;
+    }
+
+    # The shared preview's auth/session origin is the canonical Listener host.
+    # Never let the one-use magic token fall through the logged broad API
+    # prefix; carry it once to the exact unlogged canonical verifier.
+    location = /api/early-birds/auth/magic-link/verify {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 302 https://listen.harmonicbeacon.com$request_uri;
+    }
+
+    # The canonical Listener host owns the session and invitation cookie. A
+    # POST cannot be safely redirected, so fail both staging aliases closed.
+    location = /api/listener/free/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 404;
+    }
+
+    location = /api/early-birds/free/redeem {
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+        return 404;
+    }
+
+    location = /api/listener/access-state {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # Authenticated browser checkout is independently fail-closed inside the
+    # application. This staging surface can enable only Sandbox/TEST providers;
+    # the public vhost uses separate Live flags and contracts.
+    location = /api/listener/checkout {
+        access_log off;
+        client_max_body_size 512;
+        limit_req zone=listener_checkout burst=4 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+    }
+
+    # One-account supervised Live acceptance. The application additionally
+    # requires the exact staging Host/Origin/fetch metadata, an authenticated
+    # allowlisted account and a session-bound CSRF proof. This exact route is
+    # intentionally absent from listen.harmonicbeacon.com.
+    location = /api/listener/checkout/live-workbench {
+        access_log off;
+        client_max_body_size 256;
+        limit_req zone=listener_checkout burst=2 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+    }
+
+    # Account-derived sandbox membership action. The browser cannot name a provider
+    # or subscription; the Listener resolves the current canonical projection.
+    location = /api/listener/membership/action {
+        access_log off;
+        client_max_body_size 256;
+        limit_req zone=listener_checkout burst=2 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+    }
+
+    # Renderer-neutral frames for the disposable visual workbench. The public
+    # Listener edge intentionally has no matching location.
+    location = /api/listener/analysis/frame {
+        access_log off;
+        limit_req zone=listener_visual_analysis burst=40 nodelay;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 15s;
+        proxy_read_timeout 15s;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Harmonic-Beacon-Environment "early-birds-staging" always;
+    }
+
+    location = /api/listener/free-window {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /api/listener/welcome-access {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location ^~ /early-birds/ {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    location ^~ /api/early-birds/ {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # The image also contains weekend/event routes. They are intentionally not
+    # part of this staging vhost, keeping checkout and staff surfaces dark.
+    location / {
+        return 404;
+    }
+}

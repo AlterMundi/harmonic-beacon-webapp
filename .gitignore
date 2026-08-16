@@ -16,6 +16,9 @@
 /playwright-report/
 /e2e/.auth/
 /artifacts/load-test/
+/artifacts/early-birds-hls-load/
+__pycache__/
+*.py[cod]
 
 # next.js
 /.next/

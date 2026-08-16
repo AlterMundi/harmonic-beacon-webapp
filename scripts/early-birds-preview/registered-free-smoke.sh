@@ -1,0 +1,144 @@
+#!/usr/bin/env sh
+set -eu
+umask 077
+. "$(dirname -- "$0")/lib.sh"
+
+env_file=${1:?usage: registered-free-smoke.sh PREVIEW_ENV [BASE_URL]}
+base_url=${2:-https://earlybirds-staging.harmonicbeacon.com}
+require_synthetic_env "$env_file"
+command -v jq >/dev/null 2>&1 || preview_fail "jq is required"
+
+case "$base_url" in
+  https://earlybirds-staging.harmonicbeacon.com|https://listen.harmonicbeacon.com) ;;
+  *) preview_fail "BASE_URL must be an exact Listener staging or public host" ;;
+esac
+
+temporary=$(mktemp -d)
+trap 'rm -rf "$temporary"' EXIT HUP INT TERM
+login_secret=$(preview_env_value EARLY_BIRDS_TEST_LOGIN_SECRET "$env_file")
+run_id="$(date +%s)-$$"
+cookie_jar="$temporary/listener.cookies"
+
+printf 'header = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\n' \
+  "$login_secret" >"$temporary/login.curl"
+printf '{"name":"Weekly quota smoke","email":"weekly-quota-%s@e2e.invalid","authOnly":true}' \
+  "$run_id" >"$temporary/login.json"
+login_status=$(curl --silent --show-error --output "$temporary/login.response" \
+  --write-out '%{http_code}' --request POST --config "$temporary/login.curl" \
+  --cookie-jar "$cookie_jar" --data-binary @"$temporary/login.json" \
+  "$base_url/api/early-birds/test-login")
+test "$login_status" = 200 || preview_fail "synthetic auth-only login returned HTTP $login_status"
+jq -e '.ok == true' "$temporary/login.response" >/dev/null || \
+  preview_fail "synthetic auth-only login response is invalid"
+
+initial_status=$(curl --silent --show-error --output "$temporary/initial.json" \
+  --write-out '%{http_code}' --cookie "$cookie_jar" \
+  "$base_url/api/listener/access-state")
+test "$initial_status" = 200 || preview_fail "initial quota state returned HTTP $initial_status"
+jq -e '
+  .access.kind == "free-quota" and
+  .access.quota.policy == "personal-7-day-v1" and
+  .access.quota.status == "not-started" and
+  .access.quota.cycleStartedAt == null and
+  .access.quota.baseAllowanceMs == 10800000 and
+  .access.quota.remainingMs == 10800000
+' "$temporary/initial.json" >/dev/null || preview_fail "initial weekly quota state is invalid"
+
+for removed in free-window welcome-access; do
+  removed_status=$(curl --silent --show-error --output "$temporary/$removed.json" \
+    --write-out '%{http_code}' --cookie "$cookie_jar" \
+    "$base_url/api/listener/$removed")
+  test "$removed_status" = 404 || preview_fail "$removed legacy authority returned HTTP $removed_status"
+done
+
+for ordinal in 1 2 3; do
+  printf '{"deviceId":"weekly_quota_%s_device_%s","intent":"play"}' \
+    "$run_id" "$ordinal" >"$temporary/lease-$ordinal.json"
+  lease_status=$(curl --silent --show-error --output "$temporary/lease-$ordinal.response" \
+    --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' \
+    --cookie "$cookie_jar" --data-binary @"$temporary/lease-$ordinal.json" \
+    "$base_url/api/early-birds/stream/lease")
+  test "$lease_status" = 200 || preview_fail "device $ordinal lease returned HTTP $lease_status"
+  jq -e '
+    .accessKind == "free-quota" and
+    .quota.policy == "personal-7-day-v1" and
+    .quota.status == "listening" and
+    (.quota.remainingMs > 0 and .quota.remainingMs <= 10800000) and
+    (.leaseGeneration | type == "number") and
+    (.presenceSequence | type == "number")
+  ' "$temporary/lease-$ordinal.response" >/dev/null || preview_fail "device $ordinal quota lease is invalid"
+done
+
+jq -e -s '
+  .[0].evictedAnotherDevice == false and
+  .[1].evictedAnotherDevice == false and
+  .[2].evictedAnotherDevice == true
+' "$temporary/lease-1.response" "$temporary/lease-2.response" "$temporary/lease-3.response" \
+  >/dev/null || preview_fail "two-device eviction is invalid"
+
+first_lease=$(jq -er '.leaseId' "$temporary/lease-1.response")
+first_generation=$(jq -er '.leaseGeneration' "$temporary/lease-1.response")
+first_sequence=$(jq -er '.presenceSequence' "$temporary/lease-1.response")
+printf '{"leaseId":"%s","leaseGeneration":%s,"presenceSequence":%s,"intent":"play","presence":"listening"}' \
+  "$first_lease" "$first_generation" "$first_sequence" >"$temporary/heartbeat.json"
+heartbeat_status=$(curl --silent --show-error --output "$temporary/heartbeat.response" \
+  --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' \
+  --cookie "$cookie_jar" --data-binary @"$temporary/heartbeat.json" \
+  "$base_url/api/early-birds/stream/heartbeat")
+test "$heartbeat_status" = 410 || preview_fail "displaced oldest device returned HTTP $heartbeat_status"
+jq -e '.reason == "displaced"' "$temporary/heartbeat.response" >/dev/null || \
+  preview_fail "oldest device displacement response is invalid"
+
+third_lease=$(jq -er '.leaseId' "$temporary/lease-3.response")
+third_generation=$(jq -er '.leaseGeneration' "$temporary/lease-3.response")
+third_sequence=$(jq -er '.presenceSequence' "$temporary/lease-3.response")
+manifest_url=$(jq -er '.stream.manifestUrl' "$temporary/lease-3.response")
+printf '%s\n' "$manifest_url" | grep -Eq \
+  '^https://stream\.harmonicbeacon\.com/v1/hls/[A-Za-z0-9._-]+/live\.m3u8\?grantId=[a-f0-9]{64}&grant=[A-Za-z0-9_-]{43}$' || \
+  preview_fail "active Free lease did not return the bounded direct-origin grant"
+printf 'url = "%s"\nheader = "Origin: %s"\n' \
+  "$manifest_url" "$base_url" >"$temporary/manifest.curl"
+manifest_status=$(curl --silent --show-error --output "$temporary/manifest.m3u8" \
+  --write-out '%{http_code}' --config "$temporary/manifest.curl")
+test "$manifest_status" = 200 || preview_fail "direct-origin Free manifest returned HTTP $manifest_status"
+grep -q '^#EXTM3U' "$temporary/manifest.m3u8" || preview_fail "active Free manifest is invalid"
+segment_url=$(grep -m1 '^https://stream\.harmonicbeacon\.com/v1/hls/' "$temporary/manifest.m3u8")
+test -n "$segment_url" || preview_fail "direct-origin manifest contains no media segment"
+printf 'url = "%s"\nheader = "Origin: %s"\n' \
+  "$segment_url" "$base_url" >"$temporary/segment.curl"
+segment_status=$(curl --silent --show-error --output "$temporary/segment.bin" \
+  --write-out '%{http_code}' --config "$temporary/segment.curl")
+test "$segment_status" = 200 || preview_fail "direct-origin media segment returned HTTP $segment_status"
+test -s "$temporary/segment.bin" || preview_fail "direct-origin media segment is empty"
+
+printf '{"leaseId":"%s","leaseGeneration":%s,"presenceSequence":%s,"intent":"play","presence":"listening"}' \
+  "$third_lease" "$third_generation" "$third_sequence" >"$temporary/renew.json"
+renew_status=$(curl --silent --show-error --output "$temporary/renew.response" \
+  --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' \
+  --cookie "$cookie_jar" --data-binary @"$temporary/renew.json" \
+  "$base_url/api/early-birds/stream/heartbeat")
+test "$renew_status" = 200 || preview_fail "direct-origin grant renewal returned HTTP $renew_status"
+renewed_manifest_url=$(jq -er '.stream.manifestUrl' "$temporary/renew.response")
+test "$renewed_manifest_url" = "$manifest_url" || \
+  preview_fail "heartbeat replaced the active media URL"
+
+legacy_manifest_status=$(curl --silent --show-error --output /dev/null \
+  --write-out '%{http_code}' --cookie "$cookie_jar" \
+  "$base_url/api/early-birds/stream/manifest?leaseId=$third_lease&leaseGeneration=$third_generation")
+test "$legacy_manifest_status" = 404 || \
+  preview_fail "removed Listener media proxy returned HTTP $legacy_manifest_status"
+
+active_status=$(curl --silent --show-error --output "$temporary/active.json" \
+  --write-out '%{http_code}' --cookie "$cookie_jar" \
+  "$base_url/api/listener/access-state")
+test "$active_status" = 200 || preview_fail "active quota state returned HTTP $active_status"
+jq -e '
+  .access.kind == "free-quota" and
+  .access.quota.status == "listening" and
+  (.access.quota.cycleStartedAt | type == "string") and
+  ((.access.quota.cycleEndsAt | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) -
+   (.access.quota.cycleStartedAt | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) == 604800) and
+  (.access.quota.remainingMs > 0 and .access.quota.remainingMs <= 10800000)
+' "$temporary/active.json" >/dev/null || preview_fail "active weekly quota state is invalid"
+
+echo "Registered Free smoke passed: weekly quota, two-device eviction, stable direct-origin grant, decoded media bytes, and removed Listener media proxy."

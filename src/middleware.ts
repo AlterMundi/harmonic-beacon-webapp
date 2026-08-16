@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import {
+    canonicalEarlyBirdInvitation,
+    earlyBirdInvitationCookieHost,
+    earlyBirdInvitationStagingHost,
+    listenerInvitationCookies,
+    LISTENER_INVITATION_CANONICAL_ORIGIN,
+} from '@/lib/early-birds/invitation-cookie';
+import { listenerInvitationQuery } from '@/lib/listener/namespace';
+
 /**
  * Navigation convenience, not an authorization boundary.
  *
@@ -10,10 +19,12 @@ import type { NextRequest } from 'next/server';
  * as authorization would mean a revoked ticket kept its access simply because
  * the browser still held the cookie.
  *
- * So it does exactly one thing: send a visitor who obviously has no session to
- * the right login surface instead of rendering a protected page that would fail.
- * Every protected page and API route resolves the principal itself through
- * `@/lib/auth`, and none of them may assume this file ran.
+ * It performs two edge-local navigation chores: staging forwards a canonical
+ * invitation once to the Listener product host, which exchanges it for a short
+ * browser-inaccessible cookie, while every other host only scrubs the bearer;
+ * it also sends visitors with no session cookie to the relevant login surface.
+ * Every protected page and API route still resolves the principal itself
+ * through `@/lib/auth`, and none of them may assume this file ran.
  */
 
 /**
@@ -29,13 +40,51 @@ const ATTENDEE_PREFIXES = ['/session'];
 
 /** Staff surfaces: the operator console. */
 const STAFF_PREFIXES = ['/ops'];
-
 function matches(pathname: string, prefixes: string[]): boolean {
     return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+function scrubEarlyBirdInvitation(request: NextRequest): NextResponse | null {
+    const queryName = listenerInvitationQuery(request.nextUrl.pathname);
+    if (!queryName || !request.nextUrl.searchParams.has(queryName)) return null;
+
+    const candidates = request.nextUrl.searchParams.getAll(queryName);
+    const token = candidates.length === 1
+        ? canonicalEarlyBirdInvitation(candidates[0])
+        : null;
+    const hostname = request.nextUrl.hostname;
+    if (earlyBirdInvitationStagingHost(hostname)) {
+        // OAuth/session authority lives on the canonical Listener host. Carry
+        // the bearer through exactly one unlogged/no-store redirect so the
+        // canonical edge can scrub it into its own host-only __Host- cookie.
+        const canonical = new URL(
+            token ? '/listener/redeem' : '/listener',
+            LISTENER_INVITATION_CANONICAL_ORIGIN,
+        );
+        if (token) canonical.searchParams.set('token', token);
+        const response = NextResponse.redirect(canonical);
+        response.headers.set('Cache-Control', 'private, no-store');
+        response.headers.set('Referrer-Policy', 'no-referrer');
+        return response;
+    }
+    const target = request.nextUrl.clone();
+    target.searchParams.delete(queryName);
+    const response = NextResponse.redirect(target);
+    response.headers.set('Cache-Control', 'private, no-store');
+    response.headers.set('Referrer-Policy', 'no-referrer');
+    // Host is taken from the request URL populated by the exact nginx vhost;
+    // forwarded host headers are deliberately not trusted.
+    if (token && earlyBirdInvitationCookieHost(hostname)) {
+        for (const cookie of listenerInvitationCookies(token)) response.cookies.set(cookie);
+    }
+    return response;
+}
+
 export default function middleware(request: NextRequest): NextResponse {
     const { pathname } = request.nextUrl;
+
+    const invitationRedirect = scrubEarlyBirdInvitation(request);
+    if (invitationRedirect) return invitationRedirect;
 
     if (request.cookies.get(SESSION_COOKIE)?.value) {
         return NextResponse.next();
@@ -58,5 +107,12 @@ export default function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-    matcher: ['/session/:path*', '/ops/:path*'],
+    matcher: [
+        '/listener',
+        '/listener/redeem',
+        '/early-birds',
+        '/early-birds/redeem',
+        '/session/:path*',
+        '/ops/:path*',
+    ],
 };

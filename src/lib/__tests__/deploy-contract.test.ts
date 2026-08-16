@@ -15,6 +15,7 @@ describe('production deploy contract', () => {
   const workflow = readRepositoryFile('.github/workflows/deploy.yml');
   const rootHelper = readRepositoryFile('deploy/hb-deploy-root');
   const runnerSudoers = readRepositoryFile('deploy/beacon-runner.sudoers');
+  const nginx = readRepositoryFile('deploy/nginx-harmonic-beacon.conf');
 
   it('gives app and tapestry independent commit-tagged images', () => {
     expect(compose).toContain(
@@ -162,5 +163,16 @@ describe('production deploy contract', () => {
         'npm audit --omit=dev --prefix services/playlist-bot --audit-level=high',
       );
     }
+  });
+
+  it('keeps legacy invitation bearer queries out of the first HTTP and HTTPS access logs', () => {
+    const invitationEntryLocations = [...nginx.matchAll(
+      /location = \/early-birds(?:\/redeem)? \{([^}]*)\}/g,
+    )];
+
+    expect(invitationEntryLocations).toHaveLength(4);
+    expect(invitationEntryLocations.every((match) => /access_log off;/.test(match[1]))).toBe(true);
+    expect(nginx.match(/add_header Referrer-Policy "no-referrer" always;/g)).toHaveLength(2);
+    expect(nginx.match(/add_header Cache-Control "private, no-store" always;/g)).toHaveLength(2);
   });
 });

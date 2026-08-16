@@ -1,0 +1,14 @@
+{
+  "name": "harmonic-beacon-early-birds-hls-load",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "External, bounded, format-neutral HLS load and soak evidence harness",
+  "scripts": {
+    "check": "python3 -m py_compile ../../scripts/listener_container_observer.py && node --check run.mjs && node --check run-staging-smoke.mjs && node --check external-decoded-canary.mjs && node --check external-target-monitor.mjs && node --check aggregate.mjs && node --check verify-planned.mjs && node --check src/contracts.mjs && node --check src/runner.mjs && node --check src/smoke-safety.mjs && node --check src/target-probe.mjs && node --check src/smoke-guard.mjs && node --check src/network-run-lock.mjs",
+    "test": "node --test test/*.test.mjs && python3 -m unittest discover -s test -p 'test_*.py'"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

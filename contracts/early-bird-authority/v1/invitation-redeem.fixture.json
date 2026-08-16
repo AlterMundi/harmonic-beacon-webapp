@@ -1,0 +1,5 @@
+{
+  "schema_version": "early-bird-authority.invitation-redeem.v1",
+  "account_id": "account_synthetic_0001",
+  "invitation_token": "ebi_v1.AAAAAAAAAAAAAAAAAAAAAA.synthetic_nonce_00000000000000000000.synthetic_signature_0000000000000000000000000000000"
+}

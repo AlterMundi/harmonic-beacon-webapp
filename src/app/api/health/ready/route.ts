@@ -1,7 +1,25 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { redactError } from '@/lib/redact';
+import {
+    ListenerRuntimeEnvironmentError,
+    listenerRuntimeFlag,
+    validateListenerRuntimeEnvironment,
+} from '@/lib/listener/runtime-env';
+import {
+    ListenerLiveWorkbenchConfigurationError,
+    validateListenerLiveWorkbenchEnvironment,
+} from '@/lib/early-birds/live-workbench';
 import { OperationTimeoutError, withTimeout } from '@/lib/with-timeout';
+import {
+    ListenerWithdrawalConfigurationError,
+    listenerWithdrawalConfiguration,
+} from '@/lib/listener/consumer-withdrawal';
+import {
+    earlyBirdOriginConfig,
+    earlyBirdStreamControlOrigin,
+    EarlyBirdStreamIssuerUnavailableError,
+} from '@/lib/early-birds/stream';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +35,57 @@ const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
  * body distinguishes only 'timeout' from 'unreachable', nothing more.
  */
 export async function GET() {
+    let listenerRuntimeConfigured = false;
+    let listenerWithdrawalConfigured = false;
     try {
+        listenerRuntimeConfigured = validateListenerRuntimeEnvironment();
+        if (listenerRuntimeFlag('ENABLED')) {
+            earlyBirdOriginConfig();
+            earlyBirdStreamControlOrigin();
+        }
+        validateListenerLiveWorkbenchEnvironment();
+        listenerWithdrawalConfigured = listenerWithdrawalConfiguration().enabled;
+    } catch (error) {
+        const diagnostic = error instanceof ListenerRuntimeEnvironmentError ||
+            error instanceof ListenerLiveWorkbenchConfigurationError ||
+            error instanceof ListenerWithdrawalConfigurationError
+            || error instanceof EarlyBirdStreamIssuerUnavailableError
+            ? error.message
+            : 'unexpected validation failure';
+        console.error('Listener runtime configuration invalid:', diagnostic);
+        return NextResponse.json(
+            {
+                status: 'error',
+                checks: { database: 'unknown', listenerRuntime: 'invalid' },
+            },
+            { status: 503, headers: NO_STORE_HEADERS },
+        );
+    }
+    try {
+        if (listenerWithdrawalConfigured) {
+            const tables = await withTimeout(
+                prisma.$queryRaw<Array<{ requests: string | null; throttles: string | null }>>`
+                    SELECT
+                        to_regclass('public.listener_withdrawal_requests')::text AS requests,
+                        to_regclass('public.listener_withdrawal_throttles')::text AS throttles
+                `,
+                DB_CHECK_TIMEOUT_MS,
+                'Listener withdrawal schema check',
+            );
+            if (!tables[0]?.requests || !tables[0]?.throttles) {
+                throw new Error('Listener withdrawal schema unavailable');
+            }
+        }
         await withTimeout(prisma.$queryRaw`SELECT 1`, DB_CHECK_TIMEOUT_MS, 'Database check');
         return NextResponse.json(
-            { status: 'ok', checks: { database: 'ok' } },
+            {
+                status: 'ok',
+                checks: {
+                    database: 'ok',
+                    ...(listenerRuntimeConfigured ? { listenerRuntime: 'ok' } : {}),
+                    ...(listenerWithdrawalConfigured ? { listenerWithdrawal: 'ok' } : {}),
+                },
+            },
             { headers: NO_STORE_HEADERS },
         );
     } catch (error) {

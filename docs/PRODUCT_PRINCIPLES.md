@@ -36,12 +36,12 @@ No streaks, no badges, no gamified retention. The product should feel like a qui
 
 Any UX pattern that relies on manufactured scarcity, FOMO, manipulative defaults, guilt, or sunk-cost pressure is banned.
 
-- Cancellation will be one click, same number of screens as signup. **[Planned — Phase 2]**
-- Price will always be visible before commitment. **[Planned — Phase 2]**
+- Cancellation is available from the Listener profile with an explicit confirmation; a pending cancellation can be reversed before service ends.
+- The exact recurring price and provider are visible before checkout.
 - We do not use confirm-shaming copy ("No, I don't want to feel better").
 - Push notifications will be rare, informative, and never emotional. **[Planned — Phase 3]**
 
-The first two and the last describe surfaces that do not exist — there is no payment flow, no price, and no notification channel. They are written down now because the cheapest time to bind a dark-pattern rule is before the surface that would tempt it. The third holds today, being a rule about copy we already write.
+The first two are implemented in the pre-release Founding Listener surface and remain release gates for every provider. The notification channel is still future work. The copy rule holds today.
 
 If a proposed feature would be embarrassing to explain at a press interview, we don't ship it.
 
@@ -75,7 +75,7 @@ Every time we touch security, privacy, moderation, billing, or research consent,
 
 - No shipping with known moderate-or-higher vulnerabilities.
 - No logging PII to anywhere we can't purge. *This one is enforced, not just stated:* `src/lib/redact.ts` strips credentials and presigned-URL signatures before anything reaches a log, and `src/lib/__tests__/no-pii-in-logs.test.ts` scans every `console.*` call in `src/` for personal-data accessors and fails the build on a match. The motivating regression was real — the app logged a user's email on every JWT sync — and the test exists so it cannot come back. A principle with a test behind it is a different kind of object from a principle without one, and the rest of this list is the second kind.
-- No shipping a payment feature without the cancel/refund path in the same PR. No payment feature exists yet, so this rule has not been tested against anything.
+- No shipping a payment feature without cancellation, canonical terminal/refund handling and reconciliation in the same release. Founding Listener now exercises this rule in sandbox/test; real sales remain disabled pending supervised Live acceptance.
 - No collecting a new field on a user without updating Privacy and the consent copy.
 
 ## 7. Default to public
@@ -137,7 +137,7 @@ This is the first test case for the linter in §5.
 
 You cannot keep a 24/7 promise you can't see. You cannot run research you can't audit. Before any new surface goes live, it will have logs, metrics, and alerts proportional to its blast radius. Observability investment is not deferred past launch; it is launch. **[Planned — Phase 1]**
 
-Today there is none of it. No error tracking, no metrics, no traces, no external uptime monitor, no alerting — the codebase has container healthchecks, a liveness probe, and ad-hoc `console` calls. This is the principle with the widest gap between statement and practice, and it is load-bearing for two others: §7 cannot publish numbers nobody measures, and §1's promise that the beacon never goes dark is currently a promise we would learn we had broken from a listener rather than from a page.
+The Listener launch lane now has private Prometheus metrics, Alertmanager/Telegram warning-critical-recovery rules, health/readiness, provider and queue gauges, backups and a rehearsed restore. Public status and broader product observability remain incomplete, so this principle is partially implemented rather than satisfied.
 
 ## 12. Innovate cautiously, document generously
 
