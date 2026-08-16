@@ -1231,8 +1231,6 @@ body {
 .event-shell .lang-control {
   background: rgba(30, 24, 18, 0.54);
   border-color: var(--hb-hair-soft);
-  -webkit-backdrop-filter: blur(12px) saturate(1.08);
-  backdrop-filter: blur(12px) saturate(1.08);
 }
 
 .event-shell .lang-control__button {
@@ -1309,11 +1307,6 @@ body {
   box-shadow: var(--live-glass-shadow);
 }
 
-:where(.event-shell, .live-ops-shell) .operational-panel {
-  -webkit-backdrop-filter: blur(10px) saturate(1.08);
-  backdrop-filter: blur(10px) saturate(1.08);
-}
-
 :where(.event-shell, .live-ops-shell) [role="dialog"] {
   -webkit-backdrop-filter: blur(18px) saturate(1.1);
   backdrop-filter: blur(18px) saturate(1.1);
@@ -1330,8 +1323,6 @@ body {
   background-color: rgba(27, 21, 15, 0.62);
   border-color: var(--hb-hair-soft);
   box-shadow: var(--live-glass-shadow);
-  -webkit-backdrop-filter: blur(var(--live-glass-blur)) saturate(1.08);
-  backdrop-filter: blur(var(--live-glass-blur)) saturate(1.08);
 }
 
 .event-shell .crossfader {
