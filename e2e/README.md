@@ -83,10 +83,11 @@ proving that operational UI changes do not replace or reactivate media.
 ## Screenshot baselines
 
 Baselines live in `tests/visual.spec.ts-snapshots/` and are blessed
-intentionally for four surfaces (landing, staff portal, attendee audio
-prompt and conductor cockpit) at all five widths. They contain fixture data
-only; the one dynamic participant summary is masked explicitly, animations
-are disabled, and the 1% pixel tolerance only absorbs font rasterization.
+intentionally for seven surfaces (landing, staff portal, attendee audio
+prompt, conductor cockpit, event hub, admission and health) at all five
+widths. They contain fixture data only; dynamic participant state is masked
+explicitly, animations are disabled, and the 1% pixel tolerance only absorbs
+font rasterization.
 Regenerate on the reference environment and review the diff before committing:
 
 ```bash
