@@ -59,12 +59,15 @@ Keep local edits synchronized while iterating:
 scripts/listener-ui-preview.sh watch
 ```
 
-To compare an immutable English-intro artifact without changing the public
+To compare an immutable intro artifact without changing the public
 Listener or overwriting another artifact, restart only the disposable workbench
 with its container path:
 
 ```bash
 LISTENER_UI_PREVIEW_DROPIN_EN_PATH=/media/artifacts/drop-ins/amara-sol-en-r2-approved-aac320-v1.m4a \
+scripts/listener-ui-preview.sh start
+
+LISTENER_UI_PREVIEW_DROPIN_ES_PATH=/media/artifacts/drop-ins/amara-sol-es-r2-approved-aac320-v1.m4a \
 scripts/listener-ui-preview.sh start
 ```
 

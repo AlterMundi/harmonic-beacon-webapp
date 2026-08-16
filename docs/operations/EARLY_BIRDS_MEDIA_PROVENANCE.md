@@ -84,3 +84,27 @@ and recreating the Listener container at application SHA
 the Beacon origin container was not recreated, the ES intro path remained
 unchanged and no database migration ran. Rollback restores
 `amara-sol-en-r1-approved-aac320-v3.m4a` and recreates only Listener.
+
+## Approved Spanish intro revision — 2026-08-16
+
+Nico supplied and explicitly approved a newly recorded Spanish session as the
+Listener replacement. The prior ES v1 artifact remains immutable and available
+for rollback.
+
+| Field | Value |
+|---|---|
+| Source | `/home/nicolas/BeaconDropIn-Amara-sol/export/BeaconDropIn-Amara-sol_ES_r1_session.wav` |
+| Source SHA-256 | `2e9ad74daddb4350e66a4182af816b38b9a6ef3e6517f2f106fcf722d4bee388` |
+| Source format | PCM signed 16-bit, 48,000 Hz, stereo |
+| Source bytes / duration | 87,264,044 / 454.500 s |
+| Approved artifact | `amara-sol-es-r2-approved-aac320-v1.m4a` |
+| Approved artifact SHA-256 | `4d4b0ecf472a8a1d50468d2e673521b2974c7989d3c6dabe43705e1b68007c5d` |
+| Approved format | AAC-LC, requested 320 kbit/s, 48,000 Hz, stereo, fast-start M4A |
+| Approved bytes / duration | 17,035,677 / 454.500 s |
+| Decoded measurement | -12.9 LUFS integrated, 2.7 LU LRA, 0.0 dBFS true peak |
+
+The conversion applies no gain, normalization, limiter, dynamics, resampling or
+channel change. Promotion changes only the immutable ES artifact path and
+recreates Listener. The Beacon origin, English intro, database and event audio
+remain unchanged. Rollback restores `amara-sol-es-r1-approved-aac320-v1.m4a`
+and recreates only Listener.

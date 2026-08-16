@@ -119,8 +119,10 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
   assert.match(source, /LISTENER_UI_PREVIEW_REACTIVE_FIELD_LAB_ENABLED:-1/);
   assert.match(source, /BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED="\$PREVIEW_REACTIVE_FIELD_LAB"/);
   assert.match(source, /LISTENER_UI_PREVIEW_DROPIN_EN_PATH:-/);
+  assert.match(source, /LISTENER_UI_PREVIEW_DROPIN_ES_PATH:-/);
   assert.match(source, /\^\/media\/artifacts\/drop-ins\/\[A-Za-z0-9\]/);
   assert.match(source, /set_env_file_value EARLY_BIRDS_DROPIN_EN_PATH "\$PREVIEW_DROPIN_EN_PATH"/);
+  assert.match(source, /set_env_file_value EARLY_BIRDS_DROPIN_ES_PATH "\$PREVIEW_DROPIN_ES_PATH"/);
   assert.match(source, /docker network connect earlybirds_stream_control_internal "\$DEV_CONTAINER"/);
   assert.match(source, /api\/health\/ready/);
   assert.match(source, /npm run dev -- --webpack --hostname 0\.0\.0\.0 --port 3000/);
