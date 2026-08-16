@@ -65,19 +65,17 @@ describe('EarlyBird public landing', () => {
         });
     });
 
-    it('uses audience-neutral account and privacy language in both locales', () => {
-        expect(earlyBirdCopy.es.privacy).toBe(
-            'Tu cuenta y membresía administran el acceso. Guardamos únicamente tu ciclo y saldo de escucha, no una cronología de reproducciones. La presencia pública es regional, amplia y efímera; nunca revela tu ubicación exacta.',
-        );
-        expect(earlyBirdCopy.en.privacy).toBe(
-            'Your account and membership manage access. We keep only your listening cycle and allowance, not a playback timeline. Public presence is broad, regional and ephemeral, and never reveals your exact location.',
-        );
-        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
-            .not.toMatch(/adult|child|minor|menor|adulta/i);
-        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
-            .toMatch(/regional.*efímera|ephemeral regional/i);
-        expect(`${earlyBirdCopy.es.privacy} ${earlyBirdCopy.en.privacy}`)
-            .toMatch(/ubicación exacta|exact location/i);
+    it('keeps login in the compact hero and removes explanatory landing copy', () => {
+        const { container } = renderLanding();
+
+        expect(container.querySelector('.listener-public-hero .listener-access__card'))
+            .toContainElement(screen.getByRole('button', { name: 'Continue with Google' }));
+        expect(screen.getByRole('heading', { name: 'Remember your harmonic center.' }))
+            .toBeInTheDocument();
+        expect(screen.queryByText('Listen within the time available to your account')).not.toBeInTheDocument();
+        expect(screen.queryByText('An optional introduction before entering the Beacon')).not.toBeInTheDocument();
+        expect(screen.queryByText('Three Free hours each week')).not.toBeInTheDocument();
+        expect(screen.queryByText(/Your account and membership manage access/)).not.toBeInTheDocument();
     });
 
     it('hides an unconfigured provider from the public identity surface', () => {
@@ -197,10 +195,8 @@ describe('EarlyBird public landing', () => {
     it('uses neutral Listener positioning in both languages', () => {
         expect(earlyBirdCopy.es.eyebrow).toBe('HARMONIC BEACON · LISTENER');
         expect(earlyBirdCopy.en.eyebrow).toBe('HARMONIC BEACON · LISTENER');
-        expect(`${earlyBirdCopy.es.live} ${earlyBirdCopy.en.live}`)
+        expect(`${earlyBirdCopy.es.intro} ${earlyBirdCopy.en.intro}`)
             .not.toMatch(/disponible siempre|available whenever/i);
-        expect(`${earlyBirdCopy.es.membership} ${earlyBirdCopy.en.membership}`)
-            .not.toMatch(/Founding Listener/i);
         expect(Object.values(earlyBirdCopy.es).join(' '))
             .not.toMatch(/\b(elegí|tocá|habilitá|querés)\b/i);
     });

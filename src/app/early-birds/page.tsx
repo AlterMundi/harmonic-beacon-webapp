@@ -51,10 +51,11 @@ export default async function EarlyBirdsPage({
     const incomingHeaders = new Headers(await requestHeaders());
     const listenerStagingHost = isListenerStagingHost(incomingHeaders);
     const canonicalListenerHost = isCanonicalListenerHost(incomingHeaders);
-    const reactiveVisualizationAvailable = listenerStagingHost
-        || isCanonicalListenerHost(incomingHeaders);
     const reactiveFieldLabAvailable = listenerStagingHost
         && process.env.BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED === '1';
+    // Public playback uses the inert CSS field. Remote analysis remains
+    // available only inside the explicitly enabled staging laboratory.
+    const reactiveVisualizationAvailable = reactiveFieldLabAvailable;
     const checkoutEnvironment = canonicalListenerHost ? 'live' : 'staging';
     const checkoutAvailability = (listenerStagingHost || canonicalListenerHost)
         ? listenerCheckoutAvailability(process.env, checkoutEnvironment)

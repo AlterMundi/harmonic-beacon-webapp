@@ -101,32 +101,16 @@ export default function EarlyBirdLanding(props: Props) {
                 </header>
 
                 <section className="listener-public-hero">
+                    <BeaconField phase="ready" />
                     <div className="listener-public-hero__copy">
                         <p>{copy.eyebrow}</p>
                         <h1>
                             {copy.title}
                         </h1>
                         <p>{copy.intro}</p>
-                        <a href="#listener-access" className="listener-public-hero__cta">{copy.enter}</a>
                     </div>
-                    <BeaconField phase="ready" />
-                </section>
-
-                <section className="listener-public-story" aria-label={copy.membership}>
-                    {[copy.live, copy.privateDropIns, copy.membership].map((item, index) => (
-                        <article key={item}>
-                            <span aria-hidden="true">0{index + 1}</span>
-                            <p>{item}</p>
-                        </article>
-                    ))}
-                </section>
-
-                <section id="listener-access" className="listener-access">
-                    <div className="listener-access__intro">
-                        <p>{copy.eyebrow}</p>
-                        <h2>{copy.enter}</h2>
-                    </div>
-                    <div className="listener-access__card">
+                    <div id="listener-access" className="listener-access">
+                        <div className="listener-access__card">
                         {(props.authError || error) && (
                             <p role="alert" className="mb-5 rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-100">
                                 {copy.authError}
@@ -256,12 +240,9 @@ export default function EarlyBirdLanding(props: Props) {
                                 )}
                             </div>
                         )}
+                        </div>
                     </div>
                 </section>
-
-                <footer className="listener-footer">
-                    {copy.privacy}
-                </footer>
             </div>
         </main>
     );

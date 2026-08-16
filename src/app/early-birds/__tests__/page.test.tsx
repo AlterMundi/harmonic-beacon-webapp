@@ -95,7 +95,7 @@ describe('EarlyBird Listener page', () => {
         expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
     });
 
-    it('exposes the field on exact Listener hosts while keeping the lab default-off', async () => {
+    it('keeps remote visualization unavailable on public and unflagged staging hosts', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '1');
         mocks.headers.mockResolvedValue(new Headers({
@@ -106,14 +106,14 @@ describe('EarlyBird Listener page', () => {
 
         expect(result.type).toBe(EarlyBirdHome);
         expect(result.props).toMatchObject({
-            reactiveVisualizationAvailable: true,
+            reactiveVisualizationAvailable: false,
             reactiveFieldLabAvailable: false,
         });
 
         mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
         const publicResult = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
         expect(publicResult.props).toMatchObject({
-            reactiveVisualizationAvailable: true,
+            reactiveVisualizationAvailable: false,
             reactiveFieldLabAvailable: false,
         });
     });
