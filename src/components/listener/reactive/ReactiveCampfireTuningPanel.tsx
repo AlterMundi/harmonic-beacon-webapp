@@ -31,6 +31,7 @@ const NUMBER_FIELDS: Array<{
     max: number;
     step: number;
     suffix?: string;
+    modes?: ReactiveCampfireSettings['visualizationMode'][];
 }> = [
     { key: 'sensitivity', label: 'Variation sensitivity', min: 0.2, max: 3, step: 0.05 },
     { key: 'absoluteFloorDb', label: 'Visible floor', min: -120, max: -36, step: 1, suffix: ' dB' },
@@ -41,16 +42,67 @@ const NUMBER_FIELDS: Array<{
     { key: 'density', label: 'Harmonic density', min: 0.2, max: 1, step: 0.05 },
     { key: 'highDetail', label: 'High detail', min: 0, max: 1, step: 0.05 },
     { key: 'centerCutPercent', label: 'Center field', min: 0, max: 100, step: 1, suffix: '%' },
+    {
+        key: 'centerFieldScalePercent',
+        label: 'Center field scale',
+        min: 10,
+        max: 200,
+        step: 1,
+        suffix: '%',
+        modes: ['radial-ribbons', 'inner-anchor-kelp'],
+    },
+    {
+        key: 'centerRibbonWidth',
+        label: 'Center ribbon width',
+        min: 0.3,
+        max: 3,
+        step: 0.05,
+        modes: ['radial-ribbons', 'inner-anchor-kelp'],
+    },
+    {
+        key: 'rotationDegreesPerMinute',
+        label: 'Camera rotation',
+        min: -90,
+        max: 90,
+        step: 0.1,
+        suffix: '°/min',
+        modes: ['inner-anchor-kelp'],
+    },
     { key: 'radialSpacingGrowthPercent', label: 'Outer spacing growth', min: 0, max: 250, step: 1, suffix: '%' },
     { key: 'zoomPercent', label: 'Zoom', min: 50, max: 220, step: 1, suffix: '%' },
     { key: 'activationTtlSeconds', label: 'Activation TTL', min: 0, max: 30, step: 0.5, suffix: ' s' },
-    { key: 'ribbonWidth', label: 'Ribbon width', min: 0.6, max: 3, step: 0.05 },
+    { key: 'ribbonWidth', label: 'Outer ribbon width', min: 0.6, max: 3, step: 0.05 },
+    {
+        key: 'kelpPropagationSpeed',
+        label: 'Kelp propagation speed',
+        min: 0.2,
+        max: 2,
+        step: 0.02,
+        modes: ['inner-anchor-kelp'],
+    },
+    {
+        key: 'kelpDamping',
+        label: 'Kelp damping',
+        min: 0.2,
+        max: 3,
+        step: 0.05,
+        modes: ['inner-anchor-kelp'],
+    },
+    {
+        key: 'kelpInnerImpulse',
+        label: 'Inner impulse',
+        min: 0,
+        max: 3,
+        step: 0.05,
+        modes: ['inner-anchor-kelp'],
+    },
 ];
 
 const VISUALIZATION_LABELS: Record<ReactiveCampfireSettings['visualizationMode'], string> = {
     'minimal-pulse': 'Minimal pulse · 2 fps',
     'harmonic-radial-series': 'Harmonic radial series',
     'radial-ribbons': 'Radial ribbons',
+    'inner-anchor-kelp': 'Inner-anchor kelp',
     'horizon-flow': 'Horizon flow',
 };
 
@@ -96,7 +148,9 @@ export function ReactiveCampfireTuningPanel({
                     Audio stays native. Visual frames come from the server; Minimal pulse is the
                     lowest rendering workload before comparing a full field.
                 </p>
-                {NUMBER_FIELDS.map((field) => (
+                {NUMBER_FIELDS.filter((field) => (
+                    !field.modes || field.modes.includes(settings.visualizationMode)
+                )).map((field) => (
                     <label className={styles.field} key={field.key}>
                         <span>
                             {field.label}{' '}
@@ -113,6 +167,15 @@ export function ReactiveCampfireTuningPanel({
                                     : settings.centerCutPercent === 100
                                         ? 'All center field'
                                         : `${settings.centerCutPercent}% center · ${100 - settings.centerCutPercent}% outer`}
+                            </span>
+                        )}
+                        {field.key === 'rotationDegreesPerMinute' && (
+                            <span className={styles.hint}>
+                                {settings.rotationDegreesPerMinute < 0
+                                    ? 'Counter-clockwise'
+                                    : settings.rotationDegreesPerMinute > 0
+                                        ? 'Clockwise'
+                                        : 'Still'}
                             </span>
                         )}
                         <input
@@ -151,6 +214,11 @@ export function ReactiveCampfireTuningPanel({
                     {settings.visualizationMode === 'minimal-pulse' && (
                         <span className={styles.hint}>
                             One measured level halo at 2 fps; no harmonic scene or ribbons.
+                        </span>
+                    )}
+                    {settings.visualizationMode === 'inner-anchor-kelp' && (
+                        <span className={styles.hint}>
+                            The inner anchor drives an outward wave; the whole field turns slowly counter-clockwise.
                         </span>
                     )}
                 </label>

@@ -157,20 +157,26 @@ describe('reactive campfire scene', () => {
     it('retains stable defaults in the deterministic fixture', () => {
         expect(DEFAULT_REACTIVE_CAMPFIRE_SETTINGS).toMatchObject({
             sensitivity: 3,
-            absoluteFloorDb: -70,
+            absoluteFloorDb: -101,
             baselineDurationSeconds: 24,
-            attackMs: 20,
-            releaseMs: 220,
+            attackMs: 30,
+            releaseMs: 380,
             trailSeconds: 4,
-            density: 1,
-            highDetail: 0.7,
-            centerCutPercent: 7,
+            density: 0.6,
+            highDetail: 1,
+            centerCutPercent: 4,
+            centerFieldScalePercent: 28,
+            centerRibbonWidth: 0.8,
+            rotationDegreesPerMinute: -59.5,
             radialSpacingGrowthPercent: 65,
-            zoomPercent: 165,
-            activationTtlSeconds: 30,
-            ribbonWidth: 2.45,
-            palette: 'ember',
-            visualizationMode: 'radial-ribbons',
+            zoomPercent: 220,
+            activationTtlSeconds: 13.5,
+            ribbonWidth: 3,
+            kelpPropagationSpeed: 0.5,
+            kelpDamping: 3,
+            kelpInnerImpulse: 3,
+            palette: 'aurora',
+            visualizationMode: 'inner-anchor-kelp',
             fftSize: 16_384,
         });
     });
@@ -180,16 +186,82 @@ describe('reactive campfire scene', () => {
         const first = buildReactiveCampfireScene(frameWith(absolute, undefined, {
             capturedAtMs: 10_000,
             stereoBalance: -1,
-        }), { centerCutPercent: 20 });
+        }), { centerCutPercent: 20, visualizationMode: 'radial-ribbons' });
         const second = buildReactiveCampfireScene(frameWith(absolute, undefined, {
             capturedAtMs: 10_020,
             stereoBalance: 1,
-        }), { centerCutPercent: 20 });
+        }), { centerCutPercent: 20, visualizationMode: 'radial-ribbons' });
 
         expect(first.core.stereoOffset).toBe(0);
         expect(second.core.stereoOffset).toBe(0);
         expect(second.filaments[0].angle).not.toBe(first.filaments[0].angle);
         expect(Math.abs(second.filaments[0].angle - first.filaments[0].angle)).toBeLessThan(0.01);
+    });
+
+    it('keeps inner-anchor kelp endpoints fixed while its local flow clock advances', () => {
+        const absolute = Array.from({ length: 64 }, () => -36);
+        const settings = {
+            centerCutPercent: 20,
+            visualizationMode: 'inner-anchor-kelp' as const,
+        };
+        const first = buildReactiveCampfireScene(
+            frameWith(absolute, undefined, { capturedAtMs: 10_000 }),
+            settings,
+            new Map(),
+            1,
+            new Map(),
+            new Map(),
+            20_000,
+        );
+        const second = buildReactiveCampfireScene(
+            frameWith(absolute, undefined, { capturedAtMs: 10_020 }),
+            settings,
+            new Map(),
+            1,
+            new Map(),
+            new Map(),
+            20_020,
+        );
+
+        expect(second.filaments[0]).toMatchObject({
+            angle: first.filaments[0].angle,
+            innerRadius: first.filaments[0].innerRadius,
+            outerRadius: first.filaments[0].outerRadius,
+            bend: first.filaments[0].bend,
+        });
+        expect(second.flowTimeSeconds).toBeGreaterThan(first.flowTimeSeconds);
+    });
+
+    it('advances an inner-anchor impulse smoothly between slower analysis frames', () => {
+        const frame = frameWith(
+            Array.from({ length: 64 }, () => -36),
+            undefined,
+            { capturedAtMs: 10_000 },
+        );
+        const started = new Map([[50, 9_500]]);
+        const first = buildReactiveCampfireScene(
+            frame,
+            { centerCutPercent: 4, visualizationMode: 'inner-anchor-kelp' },
+            new Map(),
+            1,
+            new Map(),
+            started,
+            10_000,
+        );
+        const next = buildReactiveCampfireScene(
+            frame,
+            { centerCutPercent: 4, visualizationMode: 'inner-anchor-kelp' },
+            new Map(),
+            1,
+            new Map(),
+            started,
+            10_020,
+        );
+
+        expect(next.filaments.find(({ harmonicIndex }) => harmonicIndex === 50)?.impulseAgeSeconds)
+            .toBeCloseTo(0.52);
+        expect(first.filaments.find(({ harmonicIndex }) => harmonicIndex === 50)?.impulseAgeSeconds)
+            .toBeCloseTo(0.5);
     });
 
     it('maps the complete radial series from the center beyond the short edge', () => {

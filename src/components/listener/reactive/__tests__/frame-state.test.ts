@@ -13,6 +13,7 @@ function sourceFrame(
     sourceKind: 'intro' | 'beacon',
     capturedAtMs: number,
     highDb: number,
+    highDeltaDb = 0,
 ): HarmonicAnalysisFrame {
     const absolute = new Float32Array(64).fill(-70);
     absolute[50] = highDb;
@@ -22,7 +23,9 @@ function sourceFrame(
         sourceTimeSeconds: capturedAtMs / 1_000,
         overallDb: highDb,
         harmonicAbsoluteDb: absolute,
-        harmonicDeltaDb: new Float32Array(64),
+        harmonicDeltaDb: new Float32Array(64).map((_, index) => (
+            index === 50 ? highDeltaDb : 0
+        )),
         spectralEnvelopeDb: new Float32Array(24),
         stereoBalance: 0,
         stereoWidth: 0.5,
@@ -71,5 +74,23 @@ describe('reactive frame source boundaries', () => {
         expect(state.history.get(50)?.map((sample) => sample.absoluteDb)).toEqual([-80]);
         expect(advanceReactiveFrame(state, 11_000, 100, settings)?.harmonicAbsoluteDb[50])
             .toBe(-80);
+    });
+
+    it('records one rising edge until the harmonic becomes inactive again', () => {
+        const settings = { ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS, density: 1, highDetail: 1 };
+        const state = createReactiveFrameState();
+
+        recordReactiveFrame(state, sourceFrame('beacon', 10_000, -82), settings);
+        expect(state.activationStartedAtMs.has(50)).toBe(false);
+
+        recordReactiveFrame(state, sourceFrame('beacon', 10_250, -38, 6), settings);
+        expect(state.activationStartedAtMs.get(50)).toBe(10_250);
+        recordReactiveFrame(state, sourceFrame('beacon', 10_500, -36, 7), settings);
+        expect(state.activationStartedAtMs.get(50)).toBe(10_250);
+        expect(state.lastActivatedAtMs.get(50)).toBe(10_500);
+
+        recordReactiveFrame(state, sourceFrame('beacon', 11_000, -82), settings);
+        recordReactiveFrame(state, sourceFrame('beacon', 12_000, -38, 6), settings);
+        expect(state.activationStartedAtMs.get(50)).toBe(12_000);
     });
 });

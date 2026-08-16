@@ -63,13 +63,20 @@ increases displacement toward the free edge. The original Radial ribbons mode
 can render bounded translucent whole-ribbon history, leaving a ghostly trace of
 the movement.
 
-The laboratory offers one low-cost and three full renderers over the same frame:
+The laboratory offers one low-cost and four full renderers over the same frame:
 
 - **Minimal pulse** draws one fixed measured-level halo at two frames per second.
 - **Harmonic radial series** places the complete selected harmonic bank in
   concentric bands; outer-spacing growth expands upper harmonic separation.
 - **Radial ribbons** divides the complete bank between center and outer ribbons
   using a true 0–100% Center field control.
+- **Inner-anchor kelp** preserves Radial ribbons as-is and adds an experimental
+  top-down kelp field. Each leaf is pinned beside the fixed center; a measured
+  harmonic rising edge launches a causal wave from that inner anchor toward
+  the free edge. Propagation speed, damping and impulse are visual-only lab
+  controls. Center field scale and width are independent from the outer-ribbon
+  width. A signed camera-rotation control selects speed and direction around
+  the same fixed center; neither the camera nor the center follows audio energy.
 - **Horizon flow** pours broad harmonic ribbons from fixed horizon positions.
 
 Changing renderer, cut, zoom, activation TTL, width, palette or other visual
@@ -81,11 +88,12 @@ parameters in this build and remain visibly read-only in the laboratory.
 The field is on by default. The checkbox and parameter panel are off by default
 on every host. Operators can restore them only on the exact staging host with
 `BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED=1`; the canonical public host never
-exposes them. Presets export as versioned JSON. The accepted Radial ribbons Ember
-default is: sensitivity 3, -70 dB floor, 24 s baseline, 20 ms attack, 220 ms
-release, 4 s whole-ribbon trail, density 1, upper-detail bias 0.7, center field
-7%, outer-spacing growth 65%, zoom 165%, activation TTL 30 seconds, ribbon width
-2.45 and FFT 16384.
+exposes them. Presets export as versioned JSON. The accepted Inner-anchor kelp
+Aurora default is: sensitivity 3, -101 dB floor, 24 s baseline, 30 ms attack,
+380 ms release, 4 s whole-ribbon trail, density 0.6, upper-detail bias 1,
+center field 4%, center scale 28%, center width 0.8, outer-spacing growth 65%,
+zoom 220%, activation TTL 13.5 seconds, outer ribbon width 3, propagation 0.5,
+damping 3, impulse 3, camera rotation -59.5 degrees/minute and FFT 16384.
 
 The retired client Web Audio diagnostic mode and the older regional fixture have
 no runtime compatibility promise: this is an experimental product before public

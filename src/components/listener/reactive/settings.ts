@@ -3,6 +3,7 @@ export const REACTIVE_VISUALIZATION_MODES = [
     'minimal-pulse',
     'harmonic-radial-series',
     'radial-ribbons',
+    'inner-anchor-kelp',
     'horizon-flow',
 ] as const;
 
@@ -19,10 +20,16 @@ export type ReactiveCampfireSettings = {
     density: number;
     highDetail: number;
     centerCutPercent: number;
+    centerFieldScalePercent: number;
+    centerRibbonWidth: number;
+    rotationDegreesPerMinute: number;
     radialSpacingGrowthPercent: number;
     zoomPercent: number;
     activationTtlSeconds: number;
     ribbonWidth: number;
+    kelpPropagationSpeed: number;
+    kelpDamping: number;
+    kelpInnerImpulse: number;
     palette: ReactivePalette;
     visualizationMode: ReactiveVisualizationMode;
     fftSize: 8_192 | 16_384;
@@ -30,20 +37,26 @@ export type ReactiveCampfireSettings = {
 
 export const DEFAULT_REACTIVE_CAMPFIRE_SETTINGS: Readonly<ReactiveCampfireSettings> = Object.freeze({
     sensitivity: 3,
-    absoluteFloorDb: -70,
+    absoluteFloorDb: -101,
     baselineDurationSeconds: 24,
-    attackMs: 20,
-    releaseMs: 220,
+    attackMs: 30,
+    releaseMs: 380,
     trailSeconds: 4,
-    density: 1,
-    highDetail: 0.7,
-    centerCutPercent: 7,
+    density: 0.6,
+    highDetail: 1,
+    centerCutPercent: 4,
+    centerFieldScalePercent: 28,
+    centerRibbonWidth: 0.8,
+    rotationDegreesPerMinute: -59.5,
     radialSpacingGrowthPercent: 65,
-    zoomPercent: 165,
-    activationTtlSeconds: 30,
-    ribbonWidth: 2.45,
-    palette: 'ember',
-    visualizationMode: 'radial-ribbons',
+    zoomPercent: 220,
+    activationTtlSeconds: 13.5,
+    ribbonWidth: 3,
+    kelpPropagationSpeed: 0.5,
+    kelpDamping: 3,
+    kelpInnerImpulse: 3,
+    palette: 'aurora',
+    visualizationMode: 'inner-anchor-kelp',
     fftSize: 16_384,
 });
 
@@ -57,10 +70,16 @@ const LIMITS = {
     density: [0.2, 1],
     highDetail: [0, 1],
     centerCutPercent: [0, 100],
+    centerFieldScalePercent: [10, 200],
+    centerRibbonWidth: [0.3, 3],
+    rotationDegreesPerMinute: [-90, 90],
     radialSpacingGrowthPercent: [0, 250],
     zoomPercent: [50, 220],
     activationTtlSeconds: [0, 30],
     ribbonWidth: [0.6, 3],
+    kelpPropagationSpeed: [0.2, 2],
+    kelpDamping: [0.2, 3],
+    kelpInnerImpulse: [0, 3],
 } as const;
 
 function clampFinite(value: unknown, fallback: number, min: number, max: number): number {
@@ -117,6 +136,21 @@ export function validateReactiveCampfireSettings(
             fallback.centerCutPercent,
             ...LIMITS.centerCutPercent,
         )),
+        centerFieldScalePercent: Math.round(clampFinite(
+            candidate?.centerFieldScalePercent,
+            fallback.centerFieldScalePercent,
+            ...LIMITS.centerFieldScalePercent,
+        )),
+        centerRibbonWidth: clampFinite(
+            candidate?.centerRibbonWidth,
+            fallback.centerRibbonWidth,
+            ...LIMITS.centerRibbonWidth,
+        ),
+        rotationDegreesPerMinute: clampFinite(
+            candidate?.rotationDegreesPerMinute,
+            fallback.rotationDegreesPerMinute,
+            ...LIMITS.rotationDegreesPerMinute,
+        ),
         radialSpacingGrowthPercent: Math.round(clampFinite(
             candidate?.radialSpacingGrowthPercent,
             fallback.radialSpacingGrowthPercent,
@@ -136,6 +170,21 @@ export function validateReactiveCampfireSettings(
             candidate?.ribbonWidth,
             fallback.ribbonWidth,
             ...LIMITS.ribbonWidth,
+        ),
+        kelpPropagationSpeed: clampFinite(
+            candidate?.kelpPropagationSpeed,
+            fallback.kelpPropagationSpeed,
+            ...LIMITS.kelpPropagationSpeed,
+        ),
+        kelpDamping: clampFinite(
+            candidate?.kelpDamping,
+            fallback.kelpDamping,
+            ...LIMITS.kelpDamping,
+        ),
+        kelpInnerImpulse: clampFinite(
+            candidate?.kelpInnerImpulse,
+            fallback.kelpInnerImpulse,
+            ...LIMITS.kelpInnerImpulse,
         ),
         palette,
         visualizationMode,

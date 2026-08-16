@@ -7,26 +7,32 @@ import {
 } from '../settings';
 
 describe('reactive campfire settings', () => {
-    it('uses the accepted public radial-ribbons preset exactly', () => {
+    it('uses the accepted inner-anchor kelp preset exactly', () => {
         expect(JSON.parse(serializeReactiveCampfirePreset(
             DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,
         ))).toEqual({
             schemaVersion: 1,
             sensitivity: 3,
-            absoluteFloorDb: -70,
+            absoluteFloorDb: -101,
             baselineDurationSeconds: 24,
-            attackMs: 20,
-            releaseMs: 220,
+            attackMs: 30,
+            releaseMs: 380,
             trailSeconds: 4,
-            density: 1,
-            highDetail: 0.7,
-            centerCutPercent: 7,
+            density: 0.6,
+            highDetail: 1,
+            centerCutPercent: 4,
+            centerFieldScalePercent: 28,
+            centerRibbonWidth: 0.8,
+            rotationDegreesPerMinute: -59.5,
             radialSpacingGrowthPercent: 65,
-            zoomPercent: 165,
-            activationTtlSeconds: 30,
-            ribbonWidth: 2.45,
-            palette: 'ember',
-            visualizationMode: 'radial-ribbons',
+            zoomPercent: 220,
+            activationTtlSeconds: 13.5,
+            ribbonWidth: 3,
+            kelpPropagationSpeed: 0.5,
+            kelpDamping: 3,
+            kelpInnerImpulse: 3,
+            palette: 'aurora',
+            visualizationMode: 'inner-anchor-kelp',
             fftSize: 16_384,
         });
     });
@@ -41,8 +47,14 @@ describe('reactive campfire settings', () => {
             trailSeconds: 20,
             density: -4,
             highDetail: 8,
+            centerFieldScalePercent: -1,
+            centerRibbonWidth: 99,
+            rotationDegreesPerMinute: -999,
             zoomPercent: 999,
             activationTtlSeconds: -1,
+            kelpPropagationSpeed: 99,
+            kelpDamping: -1,
+            kelpInnerImpulse: 99,
             palette: 'unknown' as never,
             fftSize: 32_768 as never,
         });
@@ -55,8 +67,14 @@ describe('reactive campfire settings', () => {
             trailSeconds: 4,
             density: 0.2,
             highDetail: 1,
+            centerFieldScalePercent: 10,
+            centerRibbonWidth: 3,
+            rotationDegreesPerMinute: -90,
             zoomPercent: 220,
             activationTtlSeconds: 0,
+            kelpPropagationSpeed: 2,
+            kelpDamping: 0.2,
+            kelpInnerImpulse: 3,
         });
     });
 

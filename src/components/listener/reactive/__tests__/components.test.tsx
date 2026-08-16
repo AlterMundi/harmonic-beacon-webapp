@@ -92,7 +92,10 @@ describe('reactive campfire components', () => {
         const { rerender } = render(
             <ReactiveCampfireTuningPanel
                 enabled={false}
-                settings={{ ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS }}
+                settings={{
+                    ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,
+                    visualizationMode: 'radial-ribbons',
+                }}
                 onChange={vi.fn()}
             />,
         );
@@ -138,6 +141,7 @@ describe('reactive campfire components', () => {
         expect(fft).toHaveTextContent('16384 · more detail');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Harmonic radial series');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Radial ribbons');
+        expect(screen.getByLabelText('Visualization')).toHaveTextContent('Inner-anchor kelp');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Horizon flow');
         expect(screen.getByLabelText('Visualization')).not.toHaveTextContent('Analysis only');
         expect(screen.getByLabelText('Visualization')).toHaveTextContent('Minimal pulse · 2 fps');
@@ -147,9 +151,43 @@ describe('reactive campfire components', () => {
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
             visualizationMode: 'horizon-flow',
         }));
-        expect(screen.getByText(/7% center · 93% outer/)).toBeInTheDocument();
-        expect(screen.getByLabelText(/Zoom/i)).toHaveValue('165');
-        expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('30');
+        expect(screen.getByText(/4% center · 96% outer/)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Zoom/i)).toHaveValue('220');
+        expect(screen.getByLabelText(/Activation TTL/i)).toHaveValue('13.5');
+    });
+
+    it('exposes inner-anchor propagation controls only for the kelp laboratory mode', () => {
+        const { rerender } = render(
+            <ReactiveCampfireTuningPanel
+                enabled
+                settings={{
+                    ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,
+                    visualizationMode: 'radial-ribbons',
+                }}
+                onChange={vi.fn()}
+            />,
+        );
+        expect(screen.queryByLabelText(/Kelp propagation speed/i)).not.toBeInTheDocument();
+
+        rerender(
+            <ReactiveCampfireTuningPanel
+                enabled
+                settings={{
+                    ...DEFAULT_REACTIVE_CAMPFIRE_SETTINGS,
+                    visualizationMode: 'inner-anchor-kelp',
+                }}
+                onChange={vi.fn()}
+            />,
+        );
+        expect(screen.getByLabelText(/Center field scale/i)).toHaveValue('28');
+        expect(screen.getByLabelText(/Center ribbon width/i)).toHaveValue('0.8');
+        expect(screen.getByLabelText(/Camera rotation/i)).toHaveValue('-59.5');
+        expect(screen.getByText('Counter-clockwise')).toBeInTheDocument();
+        expect(screen.getByLabelText(/Outer ribbon width/i)).toHaveValue('3');
+        expect(screen.getByLabelText(/Kelp propagation speed/i)).toHaveValue('0.5');
+        expect(screen.getByLabelText(/Kelp damping/i)).toHaveValue('3');
+        expect(screen.getByLabelText(/Inner impulse/i)).toHaveValue('3');
+        expect(screen.getByText(/inner anchor drives an outward wave/i)).toBeInTheDocument();
     });
 
     it('makes server-owned analysis parameters explicit and read-only', () => {

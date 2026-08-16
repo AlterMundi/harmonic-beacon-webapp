@@ -116,6 +116,9 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
   assert.match(source, /workbench_validated=1/);
   assert.match(source, /docker rm -f "\$DEV_CONTAINER"/);
   assert.match(source, /127\.0\.0\.1:13001/);
+  assert.match(source, /LISTENER_UI_PREVIEW_REACTIVE_FIELD_LAB_ENABLED:-1/);
+  assert.match(source, /BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED="\$PREVIEW_REACTIVE_FIELD_LAB"/);
+  assert.match(source, /docker network connect earlybirds_stream_control_internal "\$DEV_CONTAINER"/);
   assert.match(source, /api\/health\/ready/);
   assert.doesNotMatch(source, /PREVIEW_ORIGIN="https:\/\/listen\.harmonicbeacon\.com"/);
 });
