@@ -58,3 +58,29 @@ from -17.1 dB through -15.2, -13.4 and -12.5 dB in consecutive windows. The v2
 artifact remains available only for rollback. The ES v1 source is Nico's
 2026-08-07 approved current-gain Spanish mix. Its derivative likewise changes
 only codec/container and keeps the authored 48 kHz stereo signal unchanged.
+
+## Approved and published English intro revision — 2026-08-16
+
+Nico supplied and explicitly approved a newly recorded English session as the
+public Listener replacement. The prior EN v3 artifact remains immutable and
+available only for rollback.
+
+| Field | Value |
+|---|---|
+| Source | `/home/nicolas/BeaconDropIn-Amara-sol/export/BeaconDropIn-Amara-sol_EN_r1_session.wav` |
+| Source SHA-256 | `f0d885893c529fb903431e9d5d6117ae30f16d02fa6b69b413860a3ebaec2a65` |
+| Source format | PCM signed 16-bit, 48,000 Hz, stereo |
+| Source bytes / duration | 87,264,044 / 454.500 s |
+| Approved artifact | `amara-sol-en-r2-approved-aac320-v1.m4a` |
+| Approved artifact SHA-256 | `86ce75249b506277651e632a671787827ddfc394a9777c56d9f3987d4fb7cd59` |
+| Approved format | AAC-LC, requested 320 kbit/s, 48,000 Hz, stereo, fast-start M4A |
+| Approved bytes / duration | 16,920,010 / 454.500 s |
+| Decoded measurement | -13.6 LUFS integrated, 3.1 LU LRA, 0.0 dBFS true peak |
+
+The conversion applies no gain, normalization, limiter, dynamics, resampling or
+channel change. It was promoted by changing only the immutable EN artifact path
+and recreating the Listener container at application SHA
+`1e1e43e7f3f39f95371c535cde8547ce73de467a`. Public health/readiness were green,
+the Beacon origin container was not recreated, the ES intro path remained
+unchanged and no database migration ran. Rollback restores
+`amara-sol-en-r1-approved-aac320-v3.m4a` and recreates only Listener.
