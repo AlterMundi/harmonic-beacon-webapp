@@ -82,6 +82,22 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         expect(listenerCss).not.toContain('rgba(255, 143, 200');
     });
 
+    it('keeps the real BeaconField visible through both large interaction panels', () => {
+        const css = readFileSync('src/app/globals.css', 'utf8');
+
+        for (const selector of ['.listener-control-panel', '.listener-access__card']) {
+            const start = css.indexOf(`${selector} {`);
+            const end = css.indexOf('\n}', start);
+            const rule = css.slice(start, end);
+
+            expect(start, `${selector} must exist`).toBeGreaterThanOrEqual(0);
+            expect(rule).toContain('rgba(36, 29, 21, 0.055)');
+            expect(rule).toContain('rgba(22, 18, 13, 0.025)');
+            expect(rule).toContain('backdrop-filter: blur(2.5px) saturate(108%);');
+            expect(rule).not.toContain('blur(18px)');
+        }
+    });
+
     it('keeps every BeaconField loop spatially continuous at its cycle boundary', () => {
         const css = readFileSync('src/app/globals.css', 'utf8');
         expect(css).toContain(

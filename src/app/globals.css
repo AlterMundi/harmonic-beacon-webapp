@@ -1387,9 +1387,10 @@ html[data-hb-surface='listener'] body {
   padding: clamp(0.85rem, 2.2vw, 1.2rem);
   border: 1px solid var(--hb-hair-soft);
   border-radius: var(--hb-radius-card);
-  background: linear-gradient(145deg, rgba(36, 29, 21, 0.84), rgba(22, 18, 13, 0.68));
-  box-shadow: var(--hb-shadow-card);
-  backdrop-filter: blur(18px);
+  background: linear-gradient(145deg, rgba(36, 29, 21, 0.055), rgba(22, 18, 13, 0.025));
+  box-shadow: var(--hb-shadow-card), inset 0 1px rgba(244, 238, 226, 0.025);
+  -webkit-backdrop-filter: blur(2.5px) saturate(108%);
+  backdrop-filter: blur(2.5px) saturate(108%);
 }
 
 .listener-stage__copy {
@@ -1830,9 +1831,10 @@ html[data-hb-surface='listener'] body {
   padding: clamp(1.25rem, 3vw, 2rem);
   border: 1px solid var(--border-subtle);
   border-radius: var(--hb-radius-card);
-  background: rgba(27, 21, 15, 0.82);
-  box-shadow: var(--hb-shadow-card);
-  backdrop-filter: blur(18px);
+  background: linear-gradient(145deg, rgba(36, 29, 21, 0.055), rgba(22, 18, 13, 0.025));
+  box-shadow: var(--hb-shadow-card), inset 0 1px rgba(244, 238, 226, 0.025);
+  -webkit-backdrop-filter: blur(2.5px) saturate(108%);
+  backdrop-filter: blur(2.5px) saturate(108%);
 }
 
 .listener-quota {
