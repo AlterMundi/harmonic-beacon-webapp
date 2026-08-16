@@ -68,6 +68,9 @@ describe("Live canonical brand boundary", () => {
     expect(css).toMatch(/event-alert--danger[\s\S]*?#f0b5a8/);
     expect(css).toMatch(/event-alert--success[\s\S]*?#c4d8b9/);
     expect(css).not.toMatch(/\.event-field \{[^}]*backdrop-filter/);
+    expect(css).not.toMatch(/\.lang-control \{[^}]*backdrop-filter/);
+    expect(css).not.toMatch(/\.operational-panel \{[^}]*backdrop-filter/);
+    expect(css).not.toMatch(/div:has\(> iframe\) \{[^}]*backdrop-filter/);
     expect(css).not.toMatch(/\.stage-tile__identity \{[^}]*backdrop-filter/);
   });
 });
