@@ -1110,13 +1110,12 @@ body {
 }
 
 .event-shell::after {
-  opacity: 0.45;
+  opacity: 0.12;
   background-image:
-    repeating-radial-gradient(ellipse 72% 42% at 50% 58%, transparent 0 54px, rgba(201, 162, 78, 0.12) 55px 57px, transparent 58px 108px),
     radial-gradient(circle at 15% 27%, var(--hb-gold) 0 0.75px, transparent 1.25px),
     radial-gradient(circle at 72% 18%, var(--hb-ink-600) 0 0.75px, transparent 1.25px),
     radial-gradient(circle at 84% 76%, var(--hb-gold-deep) 0 0.75px, transparent 1.25px);
-  background-size: 100% 100%, 310px 310px, 430px 430px, 370px 370px;
+  background-size: 310px 310px, 430px 430px, 370px 370px;
 }
 
 .event-shell .brand-lockup {
@@ -1166,27 +1165,6 @@ body {
     rgba(30, 24, 18, 0.72);
   border-color: var(--hb-hair);
   box-shadow: var(--hb-shadow-card);
-}
-
-/* Keep the two public interaction panels legible without hiding the field.
-   Inputs and the primary action retain their denser individual surfaces. */
-.event-shell .event-entry-panel,
-.event-shell .event-card[role="group"] {
-  background:
-    linear-gradient(145deg, rgba(244, 238, 226, 0.025), transparent 52%),
-    rgba(22, 18, 13, 0.04);
-  -webkit-backdrop-filter: blur(1.5px) saturate(1.03);
-  backdrop-filter: blur(1.5px) saturate(1.03);
-}
-
-.event-shell .event-entry-panel:hover,
-.event-shell .event-card[role="group"]:hover {
-  background:
-    linear-gradient(145deg, rgba(201, 162, 78, 0.035), transparent 52%),
-    rgba(22, 18, 13, 0.07);
-  border-color: var(--hb-hair-soft);
-  box-shadow: var(--live-glass-shadow);
-  transform: none;
 }
 
 :where(.event-shell, .live-ops-shell) .event-button {
@@ -1429,11 +1407,6 @@ body {
   .live-ops-shell > nav,
   .live-ops-shell [data-testid="conductor-cockpit"] > nav,
   .live-ops-shell [data-testid="conductor-cockpit"] > div:has(> iframe) {
-    background: var(--hb-bg-1);
-  }
-
-  .event-shell .event-entry-panel,
-  .event-shell .event-card[role="group"] {
     background: var(--hb-bg-1);
   }
 
