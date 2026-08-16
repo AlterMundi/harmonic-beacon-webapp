@@ -59,6 +59,20 @@ Keep local edits synchronized while iterating:
 scripts/listener-ui-preview.sh watch
 ```
 
+To compare an immutable English-intro artifact without changing the public
+Listener or overwriting another artifact, restart only the disposable workbench
+with its container path:
+
+```bash
+LISTENER_UI_PREVIEW_DROPIN_EN_PATH=/media/artifacts/drop-ins/amara-sol-en-r2-approved-aac320-v1.m4a \
+scripts/listener-ui-preview.sh start
+```
+
+The override accepts only a bounded `.m4a` filename inside the read-only
+drop-in artifact directory. The public Listener keeps its independently pinned
+path until a revision has explicit human approval and completes the release
+checkpoint.
+
 Other operations:
 
 ```bash
