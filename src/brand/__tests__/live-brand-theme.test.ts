@@ -39,4 +39,19 @@ describe("Live canonical brand boundary", () => {
     expect(lockup).toContain("<HarmonicBeaconBrand");
     expect(lockup).not.toContain("&#10022;");
   });
+
+  it("preserves distinct warm room-presence and speaking semantics", () => {
+    const css = source("src/app/globals.css");
+
+    for (const tone of ["0", "1", "2", "3"]) {
+      expect(css).toMatch(
+        new RegExp(`\\.event-shell \\.stage-tile\\[data-presence-tone="${tone}"\\] \\.stage-tile__presence \\{`),
+      );
+    }
+    expect(css).toMatch(/\.event-shell \.stage-tile--protagonist \{[\s\S]*?201, 162, 78/);
+    expect(css).toMatch(/\.event-shell \.stage-tile--speaking \{[\s\S]*?226, 187, 167/);
+    expect(css).not.toMatch(
+      /\.event-shell \.stage-tile--protagonist,\s*\.event-shell \.stage-tile--speaking/,
+    );
+  });
 });
