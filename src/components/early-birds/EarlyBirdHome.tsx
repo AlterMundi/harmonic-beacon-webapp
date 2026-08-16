@@ -7,7 +7,7 @@ import { earlyBirdCopy, earlyBirdHomeCopy, listenerMembershipPresentationCopy } 
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
-import ListenerPlayer from './ListenerPlayer';
+import BeaconField from './BeaconField';
 import FreeQuotaStatus from './FreeQuotaStatus';
 import FoundingListenerCheckout from './FoundingListenerCheckout';
 import FoundingListenerLiveWorkbench, {
@@ -15,6 +15,7 @@ import FoundingListenerLiveWorkbench, {
 } from './FoundingListenerLiveWorkbench';
 import FoundingListenerMembershipActions from './FoundingListenerMembershipActions';
 import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
+import ListenerPlayer from './ListenerPlayer';
 
 export default function EarlyBirdHome({
     displayName,
@@ -84,10 +85,13 @@ export default function EarlyBirdHome({
                         </details>}
                     </div>
                 </header>
+                <div className="listener-static-field" data-testid="listener-static-field">
+                    <BeaconField phase="ready" />
+                </div>
                 <ListenerPlayer
                     dropIns={dropIns}
                     reactiveVisualizationAvailable={reactiveVisualizationAvailable}
-                    reactiveVisualizationInitiallyEnabled={reactiveVisualizationAvailable}
+                    reactiveVisualizationInitiallyEnabled={false}
                     reactiveFieldLabAvailable={reactiveFieldLabAvailable}
                 />
                 {!publicAccess && accessKind === 'free-quota' && (

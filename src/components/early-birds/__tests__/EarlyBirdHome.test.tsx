@@ -78,6 +78,7 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
         expect(screen.queryByRole('group', { name: /language|idioma/i })).not.toBeInTheDocument();
         expect(screen.getByLabelText('listener-player')).toBeInTheDocument();
+        expect(screen.getByTestId('listener-static-field')).toBeInTheDocument();
     });
 
     it('passes the reactive experiment capability only to the isolated player', () => {
@@ -106,7 +107,7 @@ describe('EarlyBird Listener home access chrome', () => {
         );
 
         expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'true');
-        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-initially-enabled', 'true');
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-initially-enabled', 'false');
         expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-lab', 'true');
     });
 
