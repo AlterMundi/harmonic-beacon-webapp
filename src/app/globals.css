@@ -98,6 +98,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* The canonical Listener host owns the browser overscroll canvas. Keep this
+   exact-host marker in RootLayout so the event and operator document retain
+   their established green/Syne theme. */
+html[data-hb-surface='listener'],
+html[data-hb-surface='listener'] body {
+  background: var(--hb-bg-0);
+  color: var(--hb-ink-800);
+}
+
+html[data-hb-surface='listener'] body {
+  font-family: var(--hb-font-sans);
+}
+
 :where(a, button, summary, input, select, textarea):focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
