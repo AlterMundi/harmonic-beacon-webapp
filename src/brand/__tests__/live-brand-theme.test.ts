@@ -54,4 +54,20 @@ describe("Live canonical brand boundary", () => {
       /\.event-shell \.stage-tile--protagonist,\s*\.event-shell \.stage-tile--speaking/,
     );
   });
+
+  it("uses scoped warm glass with an opaque compatibility fallback", () => {
+    const css = source("src/app/globals.css");
+
+    expect(css).toContain("--live-glass-blur: 12px");
+    expect(css).toMatch(/\.event-shell \.event-card \{[\s\S]*?backdrop-filter: blur\(var\(--live-glass-blur\)\)/);
+    expect(css).toMatch(/\.live-ops-shell > nav \{[\s\S]*?backdrop-filter:/);
+    expect(css).toMatch(/\[role="dialog"\] \{[\s\S]*?backdrop-filter: blur\(18px\)/);
+    expect(css).toMatch(/\.event-field \{[\s\S]*?rgba\(22, 18, 13, 0\.76\)/);
+    expect(css).toContain("@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))");
+    expect(css).toMatch(/@supports not[\s\S]*?--bg-card: var\(--hb-bg-1\)/);
+    expect(css).toMatch(/event-alert--danger[\s\S]*?#f0b5a8/);
+    expect(css).toMatch(/event-alert--success[\s\S]*?#c4d8b9/);
+    expect(css).not.toMatch(/\.event-field \{[^}]*backdrop-filter/);
+    expect(css).not.toMatch(/\.stage-tile__identity \{[^}]*backdrop-filter/);
+  });
 });

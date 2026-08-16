@@ -1031,14 +1031,14 @@ body {
 
 :where(.event-shell, .live-ops-shell) {
   --night: var(--hb-bg-0);
-  --forest: var(--hb-bg-1);
-  --forest-2: var(--hb-bg-2);
+  --forest: rgba(27, 21, 15, 0.72);
+  --forest-2: rgba(30, 24, 18, 0.74);
   --cream: var(--hb-bone);
   --paper: var(--hb-bone);
   --text: var(--hb-ink-800);
   --muted: var(--hb-ink-600);
-  --deep: var(--hb-bg-1);
-  --deep-2: var(--hb-bg-2);
+  --deep: rgba(27, 21, 15, 0.72);
+  --deep-2: rgba(30, 24, 18, 0.74);
 
   --gold: var(--hb-gold);
   --cyan: var(--hb-gold-2);
@@ -1047,12 +1047,15 @@ body {
   --violet: #b9a68f;
 
   --bg-page: var(--hb-bg-0);
-  --bg-elevated: rgba(30, 24, 18, 0.9);
-  --bg-elevated-hover: rgba(36, 29, 21, 0.96);
-  --bg-operator: rgba(22, 18, 13, 0.96);
-  --bg-card: rgba(27, 21, 15, 0.88);
-  --bg-card-hover: rgba(30, 24, 18, 0.96);
-  --surface-alt: rgba(36, 29, 21, 0.76);
+  --bg-elevated: rgba(30, 24, 18, 0.7);
+  --bg-elevated-hover: rgba(36, 29, 21, 0.78);
+  --bg-operator: rgba(22, 18, 13, 0.68);
+  --bg-card: rgba(27, 21, 15, 0.62);
+  --bg-card-hover: rgba(30, 24, 18, 0.72);
+  --surface-alt: rgba(36, 29, 21, 0.58);
+
+  --live-glass-blur: 12px;
+  --live-glass-shadow: 0 20px 54px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(244, 238, 226, 0.035);
 
   --text-primary: var(--hb-bone);
   --text-secondary: var(--hb-ink-800);
@@ -1094,8 +1097,10 @@ body {
 
 .live-ops-shell > nav {
   color: var(--hb-ink-800);
-  background-color: rgba(22, 18, 13, 0.94);
+  background-color: rgba(22, 18, 13, 0.7);
   border-color: var(--hb-hair-soft);
+  -webkit-backdrop-filter: blur(var(--live-glass-blur)) saturate(1.08);
+  backdrop-filter: blur(var(--live-glass-blur)) saturate(1.08);
 }
 
 .event-shell::before {
@@ -1145,17 +1150,19 @@ body {
 
 .event-shell .event-card {
   background:
-    linear-gradient(145deg, rgba(244, 238, 226, 0.025), transparent 48%),
-    var(--hb-bg-card);
+    linear-gradient(145deg, rgba(244, 238, 226, 0.045), transparent 52%),
+    rgba(27, 21, 15, 0.62);
   border-color: var(--hb-hair-soft);
   border-radius: var(--hb-radius-card);
-  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.24);
+  box-shadow: var(--live-glass-shadow);
+  -webkit-backdrop-filter: blur(var(--live-glass-blur)) saturate(1.12);
+  backdrop-filter: blur(var(--live-glass-blur)) saturate(1.12);
 }
 
 .event-shell .event-card:hover {
   background:
-    linear-gradient(145deg, rgba(201, 162, 78, 0.04), transparent 48%),
-    var(--hb-bg-card);
+    linear-gradient(145deg, rgba(201, 162, 78, 0.07), transparent 52%),
+    rgba(30, 24, 18, 0.72);
   border-color: var(--hb-hair);
   box-shadow: var(--hb-shadow-card);
 }
@@ -1192,7 +1199,7 @@ body {
 :where(.event-shell, .live-ops-shell) .event-button--secondary,
 :where(.event-shell, .live-ops-shell) .event-button--ghost {
   color: var(--hb-ink-800);
-  background: var(--hb-surface);
+  background: rgba(30, 24, 18, 0.56);
   border-color: var(--hb-hair);
 }
 
@@ -1206,7 +1213,7 @@ body {
 :where(.event-shell, .live-ops-shell) .event-field {
   min-height: 48px;
   color: var(--hb-bone);
-  background: rgba(22, 18, 13, 0.72);
+  background: rgba(22, 18, 13, 0.76);
   border-color: var(--hb-hair-soft);
   border-radius: 12px;
   font-family: var(--hb-font-sans);
@@ -1222,8 +1229,10 @@ body {
 }
 
 .event-shell .lang-control {
-  background: var(--hb-surface);
+  background: rgba(30, 24, 18, 0.54);
   border-color: var(--hb-hair-soft);
+  -webkit-backdrop-filter: blur(12px) saturate(1.08);
+  backdrop-filter: blur(12px) saturate(1.08);
 }
 
 .event-shell .lang-control__button {
@@ -1293,23 +1302,40 @@ body {
 
 :where(.event-shell, .live-ops-shell) .operational-panel,
 :where(.event-shell, .live-ops-shell) [role="dialog"] {
-  background-color: rgba(22, 18, 13, 0.96);
+  background:
+    linear-gradient(145deg, rgba(244, 238, 226, 0.035), transparent 52%),
+    rgba(22, 18, 13, 0.68);
   border-color: var(--hb-hair-soft);
+  box-shadow: var(--live-glass-shadow);
+}
+
+:where(.event-shell, .live-ops-shell) .operational-panel {
+  -webkit-backdrop-filter: blur(10px) saturate(1.08);
+  backdrop-filter: blur(10px) saturate(1.08);
+}
+
+:where(.event-shell, .live-ops-shell) [role="dialog"] {
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  backdrop-filter: blur(18px) saturate(1.1);
 }
 
 .live-ops-shell [data-testid="conductor-cockpit"] > nav {
-  background-color: rgba(27, 21, 15, 0.96);
+  background-color: rgba(27, 21, 15, 0.66);
   border-color: var(--hb-hair-soft);
+  -webkit-backdrop-filter: blur(var(--live-glass-blur)) saturate(1.1);
+  backdrop-filter: blur(var(--live-glass-blur)) saturate(1.1);
 }
 
 .live-ops-shell [data-testid="conductor-cockpit"] > div:has(> iframe) {
-  background-color: var(--hb-bg-card);
+  background-color: rgba(27, 21, 15, 0.62);
   border-color: var(--hb-hair-soft);
-  box-shadow: var(--hb-shadow-card);
+  box-shadow: var(--live-glass-shadow);
+  -webkit-backdrop-filter: blur(var(--live-glass-blur)) saturate(1.08);
+  backdrop-filter: blur(var(--live-glass-blur)) saturate(1.08);
 }
 
 .event-shell .crossfader {
-  background: rgba(22, 18, 13, 0.72);
+  background: rgba(22, 18, 13, 0.58);
   border-color: var(--hb-hair-soft);
 }
 
@@ -1362,7 +1388,44 @@ body {
 }
 
 .event-shell .stage-tile__identity {
-  background: linear-gradient(0deg, rgba(22, 18, 13, 0.96), rgba(22, 18, 13, 0.62));
+  background: linear-gradient(0deg, rgba(22, 18, 13, 0.86), rgba(22, 18, 13, 0.42));
+}
+
+.event-shell section[class*="bg-[var(--night)]/60"] {
+  -webkit-backdrop-filter: blur(8px) saturate(1.04);
+  backdrop-filter: blur(8px) saturate(1.04);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :where(.event-shell, .live-ops-shell) {
+    --forest: var(--hb-bg-1);
+    --forest-2: var(--hb-bg-2);
+    --deep: var(--hb-bg-1);
+    --deep-2: var(--hb-bg-2);
+    --bg-elevated: var(--hb-bg-2);
+    --bg-elevated-hover: #241d15;
+    --bg-operator: var(--hb-bg-0);
+    --bg-card: var(--hb-bg-1);
+    --bg-card-hover: var(--hb-bg-2);
+    --surface-alt: #241d15;
+  }
+
+  .event-shell .event-card,
+  :where(.event-shell, .live-ops-shell) .operational-panel,
+  :where(.event-shell, .live-ops-shell) [role="dialog"],
+  .live-ops-shell > nav,
+  .live-ops-shell [data-testid="conductor-cockpit"] > nav,
+  .live-ops-shell [data-testid="conductor-cockpit"] > div:has(> iframe) {
+    background: var(--hb-bg-1);
+  }
+
+  :where(.event-shell, .live-ops-shell) .event-field,
+  :where(.event-shell, .live-ops-shell) .event-button--secondary,
+  :where(.event-shell, .live-ops-shell) .event-button--ghost,
+  .event-shell .lang-control,
+  .event-shell .crossfader {
+    background: var(--hb-bg-0);
+  }
 }
 
 .live-ops-shell code {
