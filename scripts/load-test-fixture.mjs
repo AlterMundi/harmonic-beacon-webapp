@@ -19,7 +19,17 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 // loader idempotent (safe here: the guard above pins throwaway databases).
 const sql = `DROP SCHEMA public CASCADE;
 CREATE SCHEMA public;
-${readFileSync(join(root, 'db', 'test-fixture.sql'), 'utf8')}`;
+${readFileSync(join(root, 'db', 'test-fixture.sql'), 'utf8')}
+
+-- The committed fixture keeps stable historical event timestamps so visual
+-- and lifecycle assertions remain deterministic. Authentication, however,
+-- must not start failing merely because wall-clock time moved past that
+-- historical weekend. Refresh only non-revoked test entitlements in this
+-- throwaway database; production data can never reach this guarded loader.
+UPDATE public.ticket_entitlements
+SET expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP + INTERVAL '24 hours')
+WHERE state <> 'REVOKED' AND revoked_at IS NULL;
+`;
 const connectionString = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL;
 
 if (!connectionString) {

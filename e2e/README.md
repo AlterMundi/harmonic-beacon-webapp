@@ -32,7 +32,10 @@ they never weaken their assertions to pass.
    ```
 
    The dump predates pending migrations by design; `migrate deploy` brings
-   it current without regenerating anything.
+   it current without regenerating anything. The guarded loader refreshes
+   only non-revoked ticket expirations in the throwaway database, so fixed
+   historical event timestamps remain deterministic while attendee login
+   does not expire merely because wall-clock time advances.
 
 2. **LiveKit** (only for the media-continuity suite):
 
