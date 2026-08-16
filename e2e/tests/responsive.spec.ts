@@ -7,7 +7,7 @@ const LONG_ES_TITLE = 'Viaje colectivo hacia el bosque interior y las imágenes 
 const LONG_EN_TITLE = 'A collective journey through the inner forest and the images that still travel with us';
 
 /**
- * Responsive gate — runs once per viewport project (1440 / 1024 / 390 / 320
+ * Responsive gate — runs once per viewport project (1440 / 1024 / 768 / 390 / 320
  * px, see playwright.config.ts). Public surfaces only, so it never depends
  * on the fixture stack: the landing's documented degraded state must be
  * just as layout-safe as the seeded one.

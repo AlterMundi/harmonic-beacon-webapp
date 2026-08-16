@@ -1,6 +1,11 @@
+import HarmonicBeaconBrand from "./HarmonicBeaconBrand";
+
 /**
- * Brand lockup component: HARMONIC BEACON mark + wordmark.
- * Used across landing, login, and operator surfaces.
+ * Compatibility wrapper for the public Live lockup.
+ *
+ * The small API stays stable for the landing and staff login while the
+ * rendered identity comes from the canonical, provenance-pinned brand
+ * primitives shared with Listener.
  */
 
 interface BrandLockupProps {
@@ -9,20 +14,5 @@ interface BrandLockupProps {
 }
 
 export default function BrandLockup({ href = "/", className = "" }: BrandLockupProps) {
-  const Tag = href ? "a" : "span";
-  return (
-    <Tag
-      href={href}
-      className={`brand-lockup ${className}`}
-    >
-      <span className="brand-lockup__mark" aria-hidden="true">
-        &#10022;
-      </span>
-      <span>
-        HARMONIC
-        <br />
-        <i className="brand-lockup__accent">BEACON</i>
-      </span>
-    </Tag>
-  );
+  return <HarmonicBeaconBrand href={href} className={`brand-lockup ${className}`} markSize={34} />;
 }

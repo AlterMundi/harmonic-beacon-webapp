@@ -106,13 +106,13 @@ export default async function LandingPage({
                 {/* Hero */}
                 <section className="py-2 lg:py-6">
                     <div className="max-w-2xl space-y-5">
-                        <p className="flex items-center gap-2.5 text-[10px] font-mono uppercase tracking-[0.18em] text-[var(--gold)]">
-                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--pink)] shadow-[0_0_10px_var(--pink)]" />
+                        <p className="hb-eyebrow flex items-center gap-2.5">
+                            <span className="event-eyebrow-mark" aria-hidden="true" />
                             {copy.eyebrow}
                         </p>
-                        <h1 className="font-serif text-[clamp(2.8rem,8vw,5rem)] font-normal leading-[0.85] tracking-[-0.04em] text-[var(--paper)]">
+                        <h1 className="font-serif text-[clamp(2.8rem,8vw,5rem)] font-normal leading-[0.9] tracking-[-0.025em] text-[var(--paper)]">
                             {copy.heroLead}<br />
-                            <em className="text-[var(--lime)] not-italic" style={{ textShadow: "0 0 28px rgba(200,255,122,0.25)" }}>
+                            <em className="event-hero-accent not-italic">
                                 {copy.heroAccent}
                             </em>
                         </h1>
@@ -124,7 +124,7 @@ export default async function LandingPage({
 
                 {/* Sessions */}
                 <section className="space-y-5" aria-labelledby="events-heading">
-                    <h2 id="events-heading" className="text-xs font-mono uppercase tracking-[0.14em] text-[var(--muted)]">
+                    <h2 id="events-heading" className="hb-section-label">
                         {copy.sessionsHeading}
                     </h2>
 
@@ -142,7 +142,7 @@ export default async function LandingPage({
                                 <li key={event.id} className="event-card">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="space-y-2">
-                                            <p className="text-xs font-mono uppercase tracking-[0.1em] text-[var(--paper)]">
+                                            <p className="event-card__label">
                                                 {event.language === "ENGLISH" ? copy.english : copy.spanish}
                                             </p>
                                             <p className="text-sm text-[var(--text-secondary)]">
@@ -162,7 +162,7 @@ export default async function LandingPage({
                                             <p className="font-mono text-lg font-normal text-[var(--gold)]">
                                                 {formatTimeOnly(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
                                             </p>
-                                            <p className="text-xs font-mono text-[var(--cyan)]">
+                                            <p className="text-xs font-mono text-[var(--text-secondary)]">
                                                 {event.language === "ENGLISH" ? "US $50" : "US $20"}
                                             </p>
                                         </div>
@@ -196,10 +196,10 @@ export default async function LandingPage({
 
                 {/* Login */}
                 <section className="space-y-5" aria-labelledby="login-heading">
-                    <h2 id="login-heading" className="text-xs font-mono uppercase tracking-[0.14em] text-[var(--muted)]">
+                    <h2 id="login-heading" className="hb-section-label">
                         {copy.loginHeading}
                     </h2>
-                    <div className="max-w-xl">
+                    <div className="event-card max-w-xl">
                         <LoginClient next={next} />
                     </div>
                 </section>

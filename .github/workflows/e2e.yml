@@ -136,6 +136,7 @@ jobs:
           --project=chromium
           --project=w1440
           --project=w1024
+          --project=w768
           --project=w390
           --project=w320
           --project=android-chrome

@@ -49,7 +49,7 @@ handoff still needs rehearsal; the code can prove routing, not comprehension.
 
 ### Attention
 
-- Responsive and visual baselines cover 1440, 1024, 390, and 320 px.
+- Responsive and visual baselines cover 1440, 1024, 768, 390, and 320 px.
 - Invitation and terminal states use one modal/terminal action instead of
   exposing competing controls.
 - The cockpit has a computed primary signal, while all five tools remain
@@ -108,7 +108,7 @@ model.
   disabled.
 - Keyboard focus, focus trapping, Escape/return, visible focus, reduced motion,
   long localized copy, and no horizontal overflow are automated.
-- Responsive and visual suites cover all four target widths.
+- Responsive and visual suites cover all five target widths.
 
 Every surface remains at 2 until real VoiceOver/TalkBack, touch reach, browser
 chrome, safe-area, and partial-permission checks are attached to #24/#69.
