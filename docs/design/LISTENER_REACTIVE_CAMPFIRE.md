@@ -77,6 +77,10 @@ The laboratory offers one low-cost and four full renderers over the same frame:
   controls. Center field scale and width are independent from the outer-ribbon
   width. A signed camera-rotation control selects speed and direction around
   the same fixed center; neither the camera nor the center follows audio energy.
+  Every selected kelp leaf remains faintly present with gentle ambient motion;
+  activation changes its impulse and glow rather than creating or removing it.
+  Its inner tip is fully transparent and gains opacity along the body so the
+  outer field does not visually pile up over the center field.
 - **Horizon flow** pours broad harmonic ribbons from fixed horizon positions.
 
 Changing renderer, cut, zoom, activation TTL, width, palette or other visual
