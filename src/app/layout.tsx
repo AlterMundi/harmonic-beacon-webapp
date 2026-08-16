@@ -1,15 +1,34 @@
 import type { Metadata, Viewport } from "next";
-import { Cormorant_Garamond, Syne, Space_Mono } from "next/font/google";
+import { Syne, Space_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { requestLocale } from "@/lib/i18n-server";
+import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
 
-const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
+const cormorant = localFont({
+  src: [
+    {
+      path: "./fonts/cormorant-garamond/CormorantGaramond-wght.woff2",
+      weight: "400 600",
+      style: "normal",
+    },
+    {
+      path: "./fonts/cormorant-garamond/CormorantGaramond-Italic-wght.woff2",
+      weight: "400 600",
+      style: "italic",
+    },
+  ],
   variable: "--font-cormorant",
+  display: "swap",
+});
+
+const inter = localFont({
+  src: "./fonts/inter/Inter-latin-wght.woff2",
+  weight: "300 600",
+  style: "normal",
+  variable: "--font-hb-inter",
   display: "swap",
 });
 
@@ -44,7 +63,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#07120f",
+  themeColor: "#16120D",
 };
 
 export default async function RootLayout({
@@ -55,7 +74,7 @@ export default async function RootLayout({
   const locale = await requestLocale();
 
   return (
-    <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${syne.variable} ${spaceMono.variable}`}>
+    <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}

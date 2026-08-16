@@ -9,7 +9,7 @@ import { assertSafeFixtureDatabaseUrl } from './e2e/fixtures/database-url';
  *   parallelism unsafe and retries hide media-continuity regressions.
  * - Pinned locale/timezone so rendered dates and screenshots are stable.
  * - Viewport projects double as the responsive gate and the screenshot
- *   baseline matrix (1440 / 1024 / 390 / 320 px).
+ *   baseline matrix (1440 / 1024 / 768 / 390 / 320 px).
  *
  * The web server always boots with the pinned test pepper and the e2e
  * dashboard enabled; process env (E2E_*) wins over these defaults, and
@@ -118,6 +118,11 @@ export default defineConfig({
         {
             name: 'w1024',
             use: { ...devices['Desktop Chrome'], viewport: { width: 1024, height: 768 } },
+            testMatch: PER_WIDTH,
+        },
+        {
+            name: 'w768',
+            use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } },
             testMatch: PER_WIDTH,
         },
         {
