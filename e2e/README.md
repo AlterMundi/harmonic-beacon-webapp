@@ -10,8 +10,8 @@ deterministic fixtures, no production credentials or participant data.
 |---|---|---|
 | `tests/smoke.spec.ts` | stack for role journeys | routing, login, keyboard focus |
 | `tests/accessibility.spec.ts` | stack for role surfaces | axe WCAG 2.0/2.1 A+AA, critical/serious fail |
-| `tests/responsive.spec.ts` | nothing | layout geometry at 1440/1024/390/320 px |
-| `tests/visual.spec.ts` | stack | screenshot baselines at the same four widths |
+| `tests/responsive.spec.ts` | nothing | layout geometry at 1440/1024/768/390/320 px |
+| `tests/visual.spec.ts` | stack | screenshot baselines at the same five widths |
 | `tests/media-continuity.spec.ts` | stack + LiveKit | the four media invariants in desktop Chromium, Android/Chrome emulation and iPhone/WebKit emulation |
 | `tests/stage-invitation.spec.ts` | stack + LiveKit | two-browser hand → decline/invite → fresh connection stays pending → accept → return journey |
 | `tests/whole-system.spec.ts` | stack + LiveKit | two consecutive ES → EN waiting → doors → hand → invite → decline/accept → return → terminate lifecycles, selected-event health, plus one-identity `FACILITATOR_OP` admission/reconciliation |
@@ -84,7 +84,7 @@ proving that operational UI changes do not replace or reactivate media.
 
 Baselines live in `tests/visual.spec.ts-snapshots/` and are blessed
 intentionally for four surfaces (landing, staff portal, attendee audio
-prompt and conductor cockpit) at all four widths. They contain fixture data
+prompt and conductor cockpit) at all five widths. They contain fixture data
 only; the one dynamic participant summary is masked explicitly, animations
 are disabled, and the 1% pixel tolerance only absorbs font rasterization.
 Regenerate on the reference environment and review the diff before committing:

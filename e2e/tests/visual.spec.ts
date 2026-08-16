@@ -36,7 +36,7 @@ async function resetStageRoom(): Promise<void> {
 
 /**
  * Visual regression gate — intentional screenshot baselines at 1440 / 1024 /
- * 390 / 320 px (the viewport projects in playwright.config.ts).
+ * 768 / 390 / 320 px (the viewport projects in playwright.config.ts).
  *
  * Public and fixture-only role surfaces are captured. Baselines contain no
  * real participant data or imagery. Animations are disabled and a 1% pixel
@@ -88,7 +88,7 @@ stackTest.describe('visual baselines', () => {
             })).toBeVisible();
             await expect(page).toHaveScreenshot('attendee-audio-prompt.png', {
                 mask: [page.getByTestId('connection-state').locator('..')],
-                maskColor: '#07120f',
+                maskColor: '#16120d',
             });
         });
     });
@@ -112,7 +112,7 @@ stackTest.describe('visual baselines', () => {
                     .getByTestId('connection-state')
                     .locator('..'),
             ],
-            maskColor: '#07120f',
+            maskColor: '#16120d',
         });
     });
 
