@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/AlterMundi/harmonicbeacon.com",
+    "commit": "0052e5f45a108b6069fc11e4c6565f4da4f77d9f",
+    "sourceFiles": {
+      "assets/hb-brand.css": "1ebbda7eef4b29e72a9eb696b49038c89c1989eaff8f21e599666e0d45673817",
+      "assets/hb-main.js": "fc17b47d74a00ea95d8b9d15edc2b00c61688c6472f23050af8f380e15aa16f0",
+      "docs/brand/BRANDING.md": "68abcacb4263277071309f808455c08c9a8afdb5f0caeae6bf1599b9d2f66c31"
+    }
+  },
+  "snapshots": {
+    "src/brand/canonical/hb-brand-root.css": "9a4b97ef7545de47c99f37704a86c2317ea77e9b2c8c0bb078dda0be546ab89d",
+    "src/brand/canonical/hb-mark.ts": "f832213a4ac29023a38dca3bdc0e0a8d5db9f324f8b3e119538b9aa2c3dcd881"
+  },
+  "extractedPayloads": {
+    "canonicalRootBlock": "6c67b427993ef589c4316ca1b9e894344679009fca997875fb31dbf7ce7f3167",
+    "lissajousPath": "8262505d188b4050d025405c03e13071943b10c76c216538508c39b89c5c2f74"
+  },
+  "fonts": {
+    "src/app/fonts/cormorant-garamond/CormorantGaramond-wght.woff2": "e4c3c3eb566c07afee0b54301b984dc3e5e7e1dd1218a528e61133ed84a7647d",
+    "src/app/fonts/cormorant-garamond/CormorantGaramond-Italic-wght.woff2": "14d1519ed9320432e1782e0b90435647827937a41222e99531f449c981090303",
+    "src/app/fonts/cormorant-garamond/OFL.txt": "6f5a41d57400577a50aae88475b11f292f3d7de78ee7d5113c69577331d8ad31",
+    "src/app/fonts/inter/Inter-latin-wght.woff2": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
+    "src/app/fonts/inter/OFL.txt": "5dd548d31a85f756e01d63e00d7faf1e324103ed3e9102fcbbabf2cc2db6dd39"
+  }
+}

@@ -1,0 +1,41 @@
+/*
+ * Vendored verbatim from harmonicbeacon.com assets/hb-brand.css.
+ * See PROVENANCE.md. This snapshot is not imported directly because its
+ * unnamespaced properties would collide with legacy application tokens.
+ */
+:root{
+  /* ---- Negro cálido (fondo) ---- */
+  --bg-0:   #16120D;
+  --bg-1:   #1E1812;
+  --bg-2:   #241D15;
+  --bg-card:#1B150F;
+
+  /* ---- Tinta clara / hueso (texto) ---- */
+  --bone:   #F4EEE2;
+  --ink-800:#E9E0D0;
+  --ink-600:#ADA089;
+  --ink-500:#8A7F6B;
+  --pearl-400:#6E5E44;
+
+  /* ---- Oro (acento) ---- */
+  --gold:    #C9A24E;
+  --gold-2:  #E3C77E;
+  --gold-deep:#A07E33;
+
+  /* ---- Líneas / superficies ---- */
+  --hair:    rgba(201,162,78,.22);
+  --hair-soft:rgba(244,238,226,.10);
+  --surface: rgba(244,238,226,.035);
+
+  /* ---- Tipografía ---- */
+  --font-serif: 'Cormorant Garamond', Georgia, serif; /* titulares */
+  --font-sans:  'Inter', system-ui, -apple-system, sans-serif;
+
+  /* ---- Tracking ---- */
+  --track-eyebrow: 0.34em;
+  --track-wordmark: 0.18em;
+
+  --r-card: 18px;
+  --shadow-card: 0 24px 60px rgba(0,0,0,.45);
+  --ease: cubic-bezier(.16,1,.3,1);
+}

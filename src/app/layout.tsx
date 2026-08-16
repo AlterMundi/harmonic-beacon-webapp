@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { requestLocale } from "@/lib/i18n-server";
 import { isCanonicalListenerHost, listenerLocaleForHeaders } from "@/lib/listener/public-discovery";
+import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
 
@@ -21,6 +22,14 @@ const cormorant = localFont({
     },
   ],
   variable: "--font-cormorant",
+  display: "swap",
+});
+
+const inter = localFont({
+  src: "./fonts/inter/Inter-latin-wght.woff2",
+  weight: "300 600",
+  style: "normal",
+  variable: "--font-hb-inter",
   display: "swap",
 });
 
@@ -83,7 +92,7 @@ export default async function RootLayout({
     : await requestLocale();
 
   return (
-    <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${syne.variable} ${spaceMono.variable}`}>
+    <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
