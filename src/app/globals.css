@@ -1123,12 +1123,18 @@ body {
    ============================================ */
 
 @keyframes listener-orbit {
-  to { transform: rotate(360deg); }
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 @keyframes listener-breathe {
   0%, 100% { opacity: 0.58; transform: scale(0.96); }
   50% { opacity: 1; transform: scale(1.035); }
+}
+
+@keyframes listener-core-breathe {
+  0%, 100% { opacity: 0.58; transform: translate(-50%, -50%) scale(0.96); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.035); }
 }
 
 @keyframes listener-point {
@@ -1425,7 +1431,7 @@ body {
   background: radial-gradient(circle, rgba(255, 249, 233, 0.09), transparent 70%);
   box-shadow: 0 0 3rem color-mix(in srgb, var(--field-color) 25%, transparent);
   transform: translate(-50%, -50%);
-  animation: listener-breathe 5.5s ease-in-out infinite;
+  animation: listener-core-breathe 5.5s ease-in-out infinite;
 }
 
 .listener-field__mark {

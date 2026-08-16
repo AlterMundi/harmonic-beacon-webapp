@@ -72,6 +72,20 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         }
     });
 
+    it('keeps every BeaconField loop spatially continuous at its cycle boundary', () => {
+        const css = readFileSync('src/app/globals.css', 'utf8');
+        expect(css).toContain(
+            'from { transform: translate(-50%, -50%) rotate(0deg); }',
+        );
+        expect(css).toContain(
+            'to { transform: translate(-50%, -50%) rotate(360deg); }',
+        );
+        expect(css).toContain(
+            '0%, 100% { opacity: 0.58; transform: translate(-50%, -50%) scale(0.96); }',
+        );
+        expect(css).toContain('animation: listener-core-breathe 5.5s ease-in-out infinite;');
+    });
+
     it('standalone Listener pages render the listener page shell, never the event shell', () => {
         const unavailable = render(
             <LocaleProvider initialLocale="es"><EarlyBirdUnavailable /></LocaleProvider>,
