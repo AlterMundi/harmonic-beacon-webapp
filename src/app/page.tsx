@@ -199,7 +199,7 @@ export default async function LandingPage({
                     <h2 id="login-heading" className="hb-section-label">
                         {copy.loginHeading}
                     </h2>
-                    <div className="event-card max-w-xl">
+                    <div className="event-card event-entry-panel max-w-xl">
                         <LoginClient next={next} />
                     </div>
                 </section>
