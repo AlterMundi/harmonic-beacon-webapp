@@ -15,10 +15,6 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 vi.mock('@/lib/early-birds/auth-client', () => ({
     earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
 }));
-vi.mock('@/components/brand/BrandLockup', () => ({
-    default: ({ href }: { href: string }) => <a href={href}>Harmonic Beacon</a>,
-}));
-
 import EarlyBirdLanding from '../EarlyBirdLanding';
 import EarlyBirdUnavailable from '../EarlyBirdUnavailable';
 import FreeInvitationRedeemer from '../FreeInvitationRedeemer';
@@ -72,6 +68,20 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         }
     });
 
+    it('maps every Listener surface to the canonical warm brand without changing event tokens', () => {
+        const css = readFileSync('src/app/globals.css', 'utf8');
+        const listenerCss = css.slice(css.indexOf('HARMONIC BEACON LISTENER'));
+
+        expect(listenerCss).toContain('--night: var(--hb-bg-0);');
+        expect(listenerCss).toContain('--paper: var(--hb-bone);');
+        expect(listenerCss).toContain('--gold: var(--hb-gold);');
+        expect(listenerCss).toContain('font-family: var(--hb-font-sans);');
+        expect(listenerCss).toContain('font-family: var(--hb-font-serif);');
+        expect(listenerCss).not.toContain('rgba(124, 234, 255');
+        expect(listenerCss).not.toContain('rgba(158, 114, 255');
+        expect(listenerCss).not.toContain('rgba(255, 143, 200');
+    });
+
     it('keeps every BeaconField loop spatially continuous at its cycle boundary', () => {
         const css = readFileSync('src/app/globals.css', 'utf8');
         expect(css).toContain(
@@ -84,6 +94,15 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
             '0%, 100% { opacity: 0.58; transform: translate(-50%, -50%) scale(0.96); }',
         );
         expect(css).toContain('animation: listener-core-breathe 5.5s ease-in-out infinite;');
+    });
+
+    it('uses the shared canonical Lissajous for Listener chrome and the field center', () => {
+        const { container } = renderLanding();
+
+        expect(screen.getByRole('link', { name: 'Harmonic Beacon' }))
+            .toHaveAttribute('href', 'https://harmonicbeacon.com/');
+        expect(container.querySelectorAll('.hb-brand__mark path')).toHaveLength(2);
+        expect(container.textContent).not.toContain('✦');
     });
 
     it('standalone Listener pages render the listener page shell, never the event shell', () => {

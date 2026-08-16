@@ -52,7 +52,7 @@ export default function SyntheticTeamEntryForm({
     return (
         <form onSubmit={submit} className="mt-6 space-y-3 border-t border-[var(--border-subtle)] pt-5">
             <div>
-                <p className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--gold)]">{copy.title}</p>
+                <p className="hb-eyebrow">{copy.title}</p>
                 <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">{copy.description}</p>
             </div>
             <label className="block text-xs text-[var(--text-secondary)]">

@@ -5,8 +5,6 @@ import userEvent from '@testing-library/user-event';
 
 import { LocaleProvider } from '@/context/LocaleContext';
 
-vi.mock('@/components/brand/BrandLockup', () => ({ default: ({ href }: { href: string }) => <a href={href}>Harmonic Beacon</a> }));
-
 import FreeInvitationRedeemer from '../FreeInvitationRedeemer';
 
 afterEach(() => {
