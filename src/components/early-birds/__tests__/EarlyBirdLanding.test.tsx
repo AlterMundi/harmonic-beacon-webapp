@@ -178,6 +178,18 @@ describe('EarlyBird public landing', () => {
         expect(screen.queryByText(/daily time|first listen/i)).toBeNull();
     });
 
+    it('uses the private checkout action instead of the mail contact fallback', () => {
+        renderLanding({
+            signedIn: true,
+            liveWorkbench: { provider: 'mercado_pago', csrfToken: 'csrf-proof' },
+        });
+
+        expect(screen.queryByRole('link', { name: 'Become a member for full access' })).toBeNull();
+        expect(document.querySelector('details[data-listener-live-workbench="private"]'))
+            .toHaveTextContent('Become a member for full access');
+        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+    });
+
     it('explains terminal Founder access and returns the account to truthful Free choices', () => {
         renderLanding({
             signedIn: true,
