@@ -1,7 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+
 import { useLocale } from '@/context/LocaleContext';
-import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
+import {
+    clearListenerOAuthAttempt,
+    recoverListenerIdentity,
+} from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy, earlyBirdHomeCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
@@ -46,10 +51,17 @@ export default function EarlyBirdHome({
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
     const membershipCopy = listenerMembershipPresentationCopy(earlyBirdCopy[locale], membership);
+    const [signOutError, setSignOutError] = useState(false);
+
+    useEffect(() => clearListenerOAuthAttempt(), []);
 
     async function signOut() {
-        await earlyBirdAuthClient.signOut();
-        window.location.assign(LISTENER_NAMESPACE.canonical.home);
+        setSignOutError(false);
+        if (await recoverListenerIdentity()) {
+            window.location.replace(LISTENER_NAMESPACE.canonical.home);
+            return;
+        }
+        setSignOutError(true);
     }
 
     return (
@@ -83,6 +95,9 @@ export default function EarlyBirdHome({
                                     <FoundingListenerMembershipActions membership={membership} />
                                 )}
                                 <button type="button" onClick={signOut}>{copy.signOut}</button>
+                                {signOutError && (
+                                    <small role="alert">{earlyBirdCopy[locale].identityRecoveryFailed}</small>
+                                )}
                             </div>
                         </details>}
                     </div>

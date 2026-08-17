@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
+import { clearListenerOAuthAttempt } from '@/lib/early-birds/auth-client';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 export default function FreeInvitationRedeemer() {
@@ -24,6 +25,8 @@ export default function FreeInvitationRedeemer() {
     };
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(false);
+
+    useEffect(() => clearListenerOAuthAttempt(), []);
 
     async function redeem() {
         if (busy) return;

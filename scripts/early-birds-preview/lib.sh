@@ -97,6 +97,7 @@ require_synthetic_env() {
     preview_fail 'EARLYBIRDS_PREVIEW_SCHEMA_VERSION must name a checked-in Prisma migration'
   google_client_id=$(preview_env_value EARLY_BIRDS_GOOGLE_CLIENT_ID "$env_file")
   google_client_secret=$(preview_env_value EARLY_BIRDS_GOOGLE_CLIENT_SECRET "$env_file")
+  apple_enabled=$(preview_env_value EARLY_BIRDS_APPLE_ENABLED "$env_file")
   apple_client_id=$(preview_env_value EARLY_BIRDS_APPLE_CLIENT_ID "$env_file")
   apple_client_secret=$(preview_env_value EARLY_BIRDS_APPLE_CLIENT_SECRET "$env_file")
   if { test -n "$google_client_id" && test -z "$google_client_secret"; } || \
@@ -107,10 +108,23 @@ require_synthetic_env() {
      { test -z "$apple_client_id" && test -n "$apple_client_secret"; }; then
     preview_fail 'Apple OAuth client ID and secret must be configured together'
   fi
+  case "$apple_enabled" in 0|1) ;; *) preview_fail 'EARLY_BIRDS_APPLE_ENABLED must be 0 or 1' ;; esac
+  if test "$apple_enabled" = 1 && { test -z "$apple_client_id" || test -z "$apple_client_secret"; }; then
+    preview_fail 'enabled Apple OAuth requires its client ID and client-secret JWT'
+  fi
   if test -n "$google_client_id" || test -n "$apple_client_id"; then
-    require_exact_preview_value EARLY_BIRDS_AUTH_BASE_URL https://listen.harmonicbeacon.com "$env_file"
-    require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS \
-      https://listen.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com "$env_file"
+    oauth_auth_base=$(preview_env_value EARLY_BIRDS_AUTH_BASE_URL "$env_file")
+    case "$oauth_auth_base" in
+      https://earlybirds-staging.harmonicbeacon.com)
+        require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS \
+          https://earlybirds-staging.harmonicbeacon.com "$env_file"
+        ;;
+      https://listen.harmonicbeacon.com)
+        require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS \
+          https://listen.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com "$env_file"
+        ;;
+      *) preview_fail 'OAuth auth base must be an exact reviewed Listener host' ;;
+    esac
   else
     require_exact_preview_value EARLY_BIRDS_AUTH_BASE_URL https://earlybirds-staging.harmonicbeacon.com "$env_file"
     require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS https://earlybirds-staging.harmonicbeacon.com "$env_file"

@@ -29,6 +29,7 @@ const syntheticEnv = [
   'EARLY_BIRDS_AUTH_SECRET=synthetic-preview-auth-secret-at-least-32-characters',
   'EARLY_BIRDS_GOOGLE_CLIENT_ID=',
   'EARLY_BIRDS_GOOGLE_CLIENT_SECRET=',
+  'EARLY_BIRDS_APPLE_ENABLED=0',
   'EARLY_BIRDS_APPLE_CLIENT_ID=',
   'EARLY_BIRDS_APPLE_CLIENT_SECRET=',
   'EARLY_BIRDS_TEST_ACCESS_ENABLED=1',
@@ -117,6 +118,7 @@ try {
   );
   assert.equal(listener.environment.EARLY_BIRDS_STREAM_ORIGIN, 'https://stream.harmonicbeacon.com');
   assert.equal(listener.environment.EARLY_BIRDS_GOOGLE_CLIENT_ID, '');
+  assert.equal(listener.environment.EARLY_BIRDS_APPLE_ENABLED, '0');
   assert.equal(listener.environment.EARLY_BIRDS_APPLE_CLIENT_ID, '');
   assert.equal(listener.environment.EARLY_BIRDS_DROPIN_ES_PATH, '');
   assert.equal(listener.environment.BEACON_LISTENER_GEOIP_DB_PATH, '/data/geoip/dbip-country-lite.mmdb');

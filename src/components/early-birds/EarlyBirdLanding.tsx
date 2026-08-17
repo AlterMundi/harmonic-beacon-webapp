@@ -1,9 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
-import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
+import {
+    clearListenerOAuthAttempt,
+    consumeListenerOAuthAttempt,
+    earlyBirdAuthClient,
+    markListenerOAuthAttempt,
+    recoverListenerIdentity,
+} from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
@@ -37,10 +43,11 @@ type Props = {
 export default function EarlyBirdLanding(props: Props) {
     const { locale } = useLocale();
     const copy = earlyBirdCopy[locale];
-    const [busy, setBusy] = useState<'google' | 'apple' | 'email' | null>(null);
+    const [busy, setBusy] = useState<'google' | 'apple' | 'email' | 'recovery' | null>(null);
     const [error, setError] = useState(false);
     const [email, setEmail] = useState('');
     const [emailRequested, setEmailRequested] = useState(false);
+    const automaticRecoveryStarted = useRef(false);
     const membership = listenerMembershipPresentationCopy(copy, props.membership);
     const callbackURL = props.invitationAvailable
         ? LISTENER_NAMESPACE.canonical.redeem
@@ -50,6 +57,7 @@ export default function EarlyBirdLanding(props: Props) {
         if (busy || !props.providers[provider]) return;
         setBusy(provider);
         setError(false);
+        markListenerOAuthAttempt();
         try {
             const result = await earlyBirdAuthClient.signIn.social({
                 provider,
@@ -59,13 +67,47 @@ export default function EarlyBirdLanding(props: Props) {
             });
             if (!result.error) return;
         } catch {}
+        clearListenerOAuthAttempt();
         setBusy(null);
         setError(true);
     }
 
+    async function recoverIdentity() {
+        if (busy) return;
+        setBusy('recovery');
+        setError(false);
+        if (await recoverListenerIdentity()) {
+            clearListenerOAuthAttempt();
+            window.location.replace(LISTENER_NAMESPACE.canonical.home);
+            return;
+        }
+        setBusy(null);
+        setError(true);
+    }
+
+    useEffect(() => {
+        if (!props.authError || automaticRecoveryStarted.current) return;
+        automaticRecoveryStarted.current = true;
+        if (!consumeListenerOAuthAttempt()) return;
+
+        setBusy('recovery');
+        setError(false);
+        void recoverListenerIdentity().then((recovered) => {
+            if (recovered) {
+                window.location.replace(LISTENER_NAMESPACE.canonical.home);
+                return;
+            }
+            setBusy(null);
+            setError(true);
+        });
+    }, [props.authError]);
+
+    useEffect(() => {
+        if (!props.authError) clearListenerOAuthAttempt();
+    }, [props.authError]);
+
     async function signOut() {
-        await earlyBirdAuthClient.signOut();
-        window.location.assign(LISTENER_NAMESPACE.canonical.home);
+        await recoverIdentity();
     }
 
     async function requestMagicLink(event: React.FormEvent<HTMLFormElement>) {
@@ -106,13 +148,30 @@ export default function EarlyBirdLanding(props: Props) {
                     </div>
                     <div id="listener-access" className="listener-access">
                         <div className="listener-access__card">
-                        {(props.authError || error) && (
+                        {error && (
                             <p role="alert" className="mb-5 rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-100">
-                                {copy.authError}
+                                {copy.identityRecoveryFailed}
                             </p>
                         )}
 
-                        {props.serviceUnavailable ? (
+                        {props.authError ? (
+                            <div className="listener-access-unavailable">
+                                <div role="alert">
+                                    <strong>{copy.authRecoveryTitle}</strong>
+                                    <p>{copy.authRecoveryDetail}</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={recoverIdentity}
+                                    disabled={busy !== null}
+                                    className="listener-button listener-button--secondary w-full"
+                                >
+                                    {busy === 'recovery'
+                                        ? copy.authRecoveryWorking
+                                        : copy.authRecoveryAction}
+                                </button>
+                            </div>
+                        ) : props.serviceUnavailable ? (
                             <div className="listener-access-unavailable" role="alert">
                                 <strong>{copy.serviceUnavailableTitle}</strong>
                                 <p>{props.serviceUnavailable === 'identity'

@@ -9,10 +9,18 @@ import { earlyBirdCopy } from '@/lib/early-birds/copy';
 const signInSocial = vi.hoisted(() => vi.fn());
 const signInMagicLink = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
+const recoverIdentity = vi.hoisted(() => vi.fn());
+const markOAuthAttempt = vi.hoisted(() => vi.fn());
+const clearOAuthAttempt = vi.hoisted(() => vi.fn());
+const consumeOAuthAttempt = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 vi.mock('@/lib/early-birds/auth-client', () => ({
     earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
+    recoverListenerIdentity: recoverIdentity,
+    markListenerOAuthAttempt: markOAuthAttempt,
+    clearListenerOAuthAttempt: clearOAuthAttempt,
+    consumeListenerOAuthAttempt: consumeOAuthAttempt,
 }));
 import EarlyBirdLanding from '../EarlyBirdLanding';
 
@@ -44,8 +52,15 @@ describe('EarlyBird public landing', () => {
         signInMagicLink.mockResolvedValue({ data: { status: true }, error: null });
         signOut.mockReset();
         signOut.mockResolvedValue({ error: null });
+        recoverIdentity.mockReset();
+        recoverIdentity.mockResolvedValue(false);
+        markOAuthAttempt.mockReset();
+        clearOAuthAttempt.mockReset();
+        consumeOAuthAttempt.mockReset();
+        consumeOAuthAttempt.mockReturnValue(false);
         refresh.mockReset();
         window.localStorage.clear();
+        window.sessionStorage.clear();
     });
     afterEach(() => cleanup());
 
@@ -55,6 +70,7 @@ describe('EarlyBird public landing', () => {
         expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeInTheDocument();
 
         await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }));
+        expect(markOAuthAttempt).toHaveBeenCalledOnce();
         expect(signInSocial).toHaveBeenCalledWith({
             provider: 'google',
             callbackURL: '/listener/redeem',
@@ -91,9 +107,52 @@ describe('EarlyBird public landing', () => {
 
         await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }));
 
-        expect(await screen.findByRole('alert')).toHaveTextContent(earlyBirdCopy.en.authError);
+        expect(await screen.findByRole('alert')).toHaveTextContent(earlyBirdCopy.en.identityRecoveryFailed);
         expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeEnabled();
+    });
+
+    it('turns a callback failure into an explicit, one-shot account recovery', async () => {
+        renderLanding({ authError: true });
+
+        expect(screen.getByRole('alert')).toHaveTextContent('We could not complete sign-in.');
+        expect(screen.queryByRole('button', { name: 'Continue with Google' })).not.toBeInTheDocument();
+        expect(consumeOAuthAttempt).toHaveBeenCalledOnce();
+        expect(recoverIdentity).not.toHaveBeenCalled();
+        await userEvent.click(screen.getByRole('button', { name: 'Use another account' }));
+
+        expect(recoverIdentity).toHaveBeenCalledOnce();
+        expect(await screen.findByText(/We could not prepare a new sign-in/))
+            .toHaveAttribute('role', 'alert');
+        expect(screen.getByRole('button', { name: 'Use another account' })).toBeEnabled();
+    });
+
+    it('automatically consumes one locally initiated OAuth failure exactly once', async () => {
+        consumeOAuthAttempt.mockReturnValueOnce(true);
+        const view = renderLanding({ authError: true });
+
+        expect(await screen.findByText(/We could not prepare a new sign-in/)).toBeInTheDocument();
+        expect(consumeOAuthAttempt).toHaveBeenCalledOnce();
+        expect(recoverIdentity).toHaveBeenCalledOnce();
+
+        view.rerender(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdLanding
+                    signedIn={false}
+                    entitled={false}
+                    serviceUnavailable={null}
+                    invitationAvailable={false}
+                    authError
+                    providers={{ google: true, apple: true }}
+                    emailMagicLinkAvailable={false}
+                    syntheticTeamEntryAvailable={false}
+                    membership={{ kind: 'none', state: 'none' }}
+                    serverNow="2026-08-07T15:00:00.000Z"
+                />
+            </LocaleProvider>,
+        );
+        expect(consumeOAuthAttempt).toHaveBeenCalledOnce();
+        expect(recoverIdentity).toHaveBeenCalledOnce();
     });
 
     it('offers an enumeration-resistant email fallback only when delivery is configured', async () => {

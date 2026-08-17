@@ -11,9 +11,17 @@ const refresh = vi.hoisted(() => vi.fn());
 const signInSocial = vi.hoisted(() => vi.fn());
 const signInMagicLink = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
+const recoverIdentity = vi.hoisted(() => vi.fn());
+const markOAuthAttempt = vi.hoisted(() => vi.fn());
+const clearOAuthAttempt = vi.hoisted(() => vi.fn());
+const consumeOAuthAttempt = vi.hoisted(() => vi.fn(() => false));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 vi.mock('@/lib/early-birds/auth-client', () => ({
     earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
+    recoverListenerIdentity: recoverIdentity,
+    markListenerOAuthAttempt: markOAuthAttempt,
+    clearListenerOAuthAttempt: clearOAuthAttempt,
+    consumeListenerOAuthAttempt: consumeOAuthAttempt,
 }));
 import EarlyBirdLanding from '../EarlyBirdLanding';
 import EarlyBirdUnavailable from '../EarlyBirdUnavailable';

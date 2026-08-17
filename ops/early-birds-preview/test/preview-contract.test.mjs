@@ -27,6 +27,8 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['live hostname', 'EARLY_BIRDS_AUTH_BASE_URL=https://live.harmonicbeacon.com', /must be https:\/\/earlybirds-staging/],
     ['HTTP stream origin', 'EARLY_BIRDS_STREAM_ORIGIN=http://stream.harmonicbeacon.com', /must be https:\/\/stream/],
     ['half-configured OAuth seam', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=real-client-id', /configured together/],
+    ['unsafe Apple switch', 'EARLY_BIRDS_APPLE_ENABLED=true', /must be 0 or 1/],
+    ['enabled Apple without credentials', 'EARLY_BIRDS_APPLE_ENABLED=1', /requires its client ID/],
     ['event database identity', 'EARLYBIRDS_PREVIEW_DB_NAME=beacon', /must be earlybirds_preview/],
     ['unsafe kill switch value', 'EARLY_BIRDS_ENABLED=true', /must be 0 or 1/],
     ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
@@ -84,6 +86,17 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
       )
       .replace('EARLY_BIRDS_GOOGLE_CLIENT_ID=', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=google-client-id')
       .replace('EARLY_BIRDS_GOOGLE_CLIENT_SECRET=', 'EARLY_BIRDS_GOOGLE_CLIENT_SECRET=google-client-secret'), {
+      mode: 0o600,
+    });
+    assert.equal(runGuard(envFile).status, 0);
+  });
+
+  await t.test('guarded staging Apple OAuth handoff remains on the staging callback host', async () => {
+    const envFile = path.join(temporary, 'staging-apple-oauth.env');
+    await fs.writeFile(envFile, source
+      .replace('EARLY_BIRDS_APPLE_ENABLED=0', 'EARLY_BIRDS_APPLE_ENABLED=1')
+      .replace('EARLY_BIRDS_APPLE_CLIENT_ID=', 'EARLY_BIRDS_APPLE_CLIENT_ID=services-id')
+      .replace('EARLY_BIRDS_APPLE_CLIENT_SECRET=', 'EARLY_BIRDS_APPLE_CLIENT_SECRET=synthetic-jwt'), {
       mode: 0o600,
     });
     assert.equal(runGuard(envFile).status, 0);
