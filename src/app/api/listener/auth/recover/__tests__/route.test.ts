@@ -1,15 +1,19 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const authHandler = vi.hoisted(() => vi.fn());
+const currentSession = vi.hoisted(() => vi.fn());
+const deleteSessions = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/early-birds/auth', () => {
     return {
         EARLY_BIRD_COOKIE_PREFIX: 'hb_earlybird',
         EARLY_BIRD_SESSION_COOKIE: 'hb_earlybird_session',
         LISTENER_SESSION_COOKIE: 'hb_listener_session',
-        earlyBirdAuthHandler: authHandler,
+        currentEarlyBirdSession: currentSession,
     };
 });
+vi.mock('@/lib/db', () => ({
+    prisma: { earlyBirdAuthSession: { deleteMany: deleteSessions } },
+}));
 
 import { GET, POST } from '../route';
 
@@ -18,7 +22,11 @@ describe('Listener identity recovery boundary', () => {
         vi.clearAllMocks();
         vi.stubEnv('BEACON_LISTENER_AUTH_BASE_URL', 'https://listen.example.test');
         vi.stubEnv('BEACON_LISTENER_TRUSTED_ORIGINS', 'https://listen.example.test');
-        authHandler.mockResolvedValue(new Response(null, { status: 204 }));
+        currentSession.mockResolvedValue({
+            user: { id: 'account-1', name: 'Listener', email: 'listener@example.test' },
+            session: { id: 'session-1', expiresAt: new Date('2030-01-01T00:00:00Z') },
+        });
+        deleteSessions.mockResolvedValue({ count: 1 });
     });
     afterEach(() => vi.unstubAllEnvs());
 
@@ -38,7 +46,8 @@ describe('Listener identity recovery boundary', () => {
 
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ recovered: true });
-        expect(authHandler).toHaveBeenCalledOnce();
+        expect(currentSession).toHaveBeenCalledOnce();
+        expect(deleteSessions).toHaveBeenCalledWith({ where: { id: 'session-1' } });
         expect(cookies).toHaveLength(6);
         expect(cookies.map((cookie) => cookie.split('=', 1)[0]).sort()).toEqual([
             '__Secure-hb_earlybird.state',
@@ -56,7 +65,7 @@ describe('Listener identity recovery boundary', () => {
     });
 
     it('clears fixed browser credentials but does not claim success if revocation fails', async () => {
-        authHandler.mockRejectedValueOnce(new Error('database unavailable'));
+        deleteSessions.mockRejectedValueOnce(new Error('database unavailable'));
         const response = await POST(request());
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ recovered: false });
@@ -79,9 +88,19 @@ describe('Listener identity recovery boundary', () => {
             const response = await POST(crossOrigin);
             expect(response.status).toBe(403);
             expect(response.headers.getSetCookie()).toEqual([]);
-            expect(authHandler).not.toHaveBeenCalled();
+            expect(currentSession).not.toHaveBeenCalled();
+            expect(deleteSessions).not.toHaveBeenCalled();
         },
     );
+
+    it('clears a stale browser cookie without inventing a durable session', async () => {
+        currentSession.mockResolvedValueOnce(null);
+        const response = await POST(request());
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ recovered: true });
+        expect(deleteSessions).not.toHaveBeenCalled();
+        expect(response.headers.getSetCookie()).toHaveLength(6);
+    });
 
     it('does not mutate identity through GET', () => {
         const response = GET();

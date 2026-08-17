@@ -6,8 +6,8 @@ existing Listener account merely because an email address matches.
 
 ## Runtime contract
 
-- `BEACON_LISTENER_APPLE_ENABLED=1` is the only enable switch. Its legacy
-  alias is accepted while the Listener namespace migration remains active.
+- `BEACON_LISTENER_APPLE_ENABLED=1` is the only enable switch. Apple has no
+  legacy aliases: this new, unreleased integration starts canonical-only.
 - The switch, Services ID and client-secret JWT must come from one complete
   environment generation. Partial or mixed bundles fail readiness.
 - Readiness requires an HTTPS auth base and a structurally valid, unexpired
@@ -50,8 +50,13 @@ variables. Keep `BEACON_LISTENER_APPLE_ENABLED=0` while installing them.
 
 1. Confirm the secret file is root-owned, mode `0600`, and not mounted into an
    event or Live service.
-2. Restart only the isolated Listener container and verify `/api/health/ready`.
-3. Set the switch to `1`, recreate only Listener, then verify readiness again.
+2. Install the complete canonical Apple bundle in the Listener release
+   environment with `BEACON_LISTENER_APPLE_ENABLED=0`, then restart only the
+   isolated Listener container and verify `/api/health/ready`.
+3. Start the disposable staging Listener with Free For All disabled and
+   `LISTENER_UI_PREVIEW_APPLE_ENABLED=1`. The preview launcher always overwrites
+   the inherited Apple gate, so a future public enablement can never turn Apple
+   on in staging accidentally. Verify readiness again.
 4. Complete the staging acceptance first, then a first production Apple
    consent, logout, repeat consent (where name may be
    absent), and “Use another account” recovery after an intentionally failed
@@ -59,8 +64,10 @@ variables. Keep `BEACON_LISTENER_APPLE_ENABLED=0` while installing them.
 5. Confirm no email-match linking occurred and only one Listener provider
    account was used across the repeated Apple consent.
 
-Rollback is `BEACON_LISTENER_APPLE_ENABLED=0` followed by recreating only the
-Listener container. This hides Apple without changing Google, sessions, audio,
+Staging rollback is restarting the preview without
+`LISTENER_UI_PREVIEW_APPLE_ENABLED=1`. Production rollback is
+`BEACON_LISTENER_APPLE_ENABLED=0` followed by recreating only the Listener
+container. This hides Apple without changing Google, sessions, audio,
 membership, payments or events. If credentials are not yet available, their
 safe installation plus the supervised browser acceptance above are the only
 human actions remaining.

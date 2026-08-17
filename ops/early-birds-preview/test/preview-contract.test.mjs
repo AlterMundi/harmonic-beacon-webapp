@@ -27,8 +27,8 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['live hostname', 'EARLY_BIRDS_AUTH_BASE_URL=https://live.harmonicbeacon.com', /must be https:\/\/earlybirds-staging/],
     ['HTTP stream origin', 'EARLY_BIRDS_STREAM_ORIGIN=http://stream.harmonicbeacon.com', /must be https:\/\/stream/],
     ['half-configured OAuth seam', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=real-client-id', /configured together/],
-    ['unsafe Apple switch', 'EARLY_BIRDS_APPLE_ENABLED=true', /must be 0 or 1/],
-    ['enabled Apple without credentials', 'EARLY_BIRDS_APPLE_ENABLED=1', /requires its client ID/],
+    ['unsafe Apple switch', 'BEACON_LISTENER_APPLE_ENABLED=true', /must be 0 or 1/],
+    ['enabled Apple without credentials', 'BEACON_LISTENER_APPLE_ENABLED=1', /requires its client ID/],
     ['event database identity', 'EARLYBIRDS_PREVIEW_DB_NAME=beacon', /must be earlybirds_preview/],
     ['unsafe kill switch value', 'EARLY_BIRDS_ENABLED=true', /must be 0 or 1/],
     ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
@@ -94,9 +94,9 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
   await t.test('guarded staging Apple OAuth handoff remains on the staging callback host', async () => {
     const envFile = path.join(temporary, 'staging-apple-oauth.env');
     await fs.writeFile(envFile, source
-      .replace('EARLY_BIRDS_APPLE_ENABLED=0', 'EARLY_BIRDS_APPLE_ENABLED=1')
-      .replace('EARLY_BIRDS_APPLE_CLIENT_ID=', 'EARLY_BIRDS_APPLE_CLIENT_ID=services-id')
-      .replace('EARLY_BIRDS_APPLE_CLIENT_SECRET=', 'EARLY_BIRDS_APPLE_CLIENT_SECRET=synthetic-jwt'), {
+      .replace('BEACON_LISTENER_APPLE_ENABLED=0', 'BEACON_LISTENER_APPLE_ENABLED=1')
+      .replace('BEACON_LISTENER_APPLE_CLIENT_ID=', 'BEACON_LISTENER_APPLE_CLIENT_ID=services-id')
+      .replace('BEACON_LISTENER_APPLE_CLIENT_SECRET=', 'BEACON_LISTENER_APPLE_CLIENT_SECRET=synthetic-jwt'), {
       mode: 0o600,
     });
     assert.equal(runGuard(envFile).status, 0);
@@ -129,6 +129,13 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
     1,
   );
   assert.match(source, /PREVIEW_LIVE_WORKBENCH="\$\{LISTENER_UI_PREVIEW_LIVE_WORKBENCH_ENABLED:-0\}"/);
+  assert.match(source, /PREVIEW_APPLE="\$\{LISTENER_UI_PREVIEW_APPLE_ENABLED:-0\}"/);
+  assert.match(source, /Apple sign-in acceptance requires Free For All to be disabled/);
+  assert.match(source, /set_env_file_value BEACON_LISTENER_APPLE_ENABLED "\$PREVIEW_APPLE"/);
+  assert.equal(
+    source.match(/set_env_file_value BEACON_LISTENER_APPLE_ENABLED "\$PREVIEW_APPLE"/g)?.length,
+    1,
+  );
   assert.match(source, /LIVE_WORKBENCH_ENV_FILE="\/etc\/harmonic-beacon\/listener-live-workbench\.env"/);
   assert.match(source, /harmonic-beacon\/earlybirds-preview-listener:\$\{PREVIEW_EXPECTED_SHA\}/);
   assert.match(source, /grep -Fqx "BEACON_GIT_SHA=\$PREVIEW_EXPECTED_SHA"/);

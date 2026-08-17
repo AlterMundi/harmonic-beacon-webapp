@@ -177,7 +177,7 @@ describe('Listener runtime environment compatibility', () => {
             BEACON_LISTENER_APPLE_ENABLED: '1',
             EARLY_BIRDS_APPLE_CLIENT_ID: clientId,
             EARLY_BIRDS_APPLE_CLIENT_SECRET: secret,
-        }, 1_800_000_000)).toThrow(/Incomplete Listener runtime bundle/);
+        }, 1_800_000_000)).toThrow(/Unsupported legacy Listener Apple OAuth variables/);
     });
 
     it('rejects stale, overlong and wrongly-scoped Apple client-secret JWTs', () => {

@@ -4,8 +4,9 @@ import {
     EARLY_BIRD_COOKIE_PREFIX,
     EARLY_BIRD_SESSION_COOKIE,
     LISTENER_SESSION_COOKIE,
-    earlyBirdAuthHandler,
+    currentEarlyBirdSession,
 } from '@/lib/early-birds/auth';
+import { prisma } from '@/lib/db';
 import { listenerRuntimeTrustedOrigins } from '@/lib/listener/runtime-env';
 
 export const dynamic = 'force-dynamic';
@@ -64,20 +65,16 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     let revocationFailed = false;
     try {
-        const signOut = new Request(
-            new URL('/api/early-birds/auth/sign-out', request.nextUrl.origin),
-            {
-                method: 'POST',
-                headers: {
-                    origin: request.nextUrl.origin,
-                    cookie: request.headers.get('cookie') ?? '',
-                    'content-type': 'application/json',
-                },
-                body: '{}',
-            },
-        );
-        const response = await earlyBirdAuthHandler(signOut);
-        revocationFailed = response.status >= 500;
+        // Better Auth deliberately turns adapter failures during sign-out into
+        // a successful HTTP response. Resolve the signed cookie through its
+        // normal authority, then delete the exact durable session ourselves so
+        // this endpoint never reports recovery while a bearer remains valid.
+        const session = await currentEarlyBirdSession(request.headers);
+        if (session) {
+            await prisma.earlyBirdAuthSession.deleteMany({
+                where: { id: session.session.id },
+            });
+        }
     } catch {
         revocationFailed = true;
     }

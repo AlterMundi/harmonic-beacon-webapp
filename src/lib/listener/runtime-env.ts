@@ -208,23 +208,42 @@ export function listenerAppleOAuthConfiguration(
     environment: Environment = process.env,
     nowSeconds = Math.floor(Date.now() / 1000),
 ): { clientId: string; clientSecret: string } | null {
-    if (!validateFlag('APPLE_ENABLED', environment)) return null;
-    const configuration = listenerRuntimeBundle(
-        ['APPLE_ENABLED', 'APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'],
-        environment,
-    );
-    if (!configuration || !validateListenerAppleClientSecret(
-        configuration.APPLE_CLIENT_ID,
-        configuration.APPLE_CLIENT_SECRET,
+    const suffixes = ['APPLE_ENABLED', 'APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'] as const;
+    const legacyNames = suffixes.map((suffix) => names(suffix).legacy);
+    if (legacyNames.some((name) => normalized(environment[name]) !== undefined)) {
+        throw new ListenerRuntimeEnvironmentError(
+            `Unsupported legacy Listener Apple OAuth variables: ${legacyNames.join(', ')}`,
+        );
+    }
+    const enabledName = names('APPLE_ENABLED').canonical;
+    const clientIdName = names('APPLE_CLIENT_ID').canonical;
+    const clientSecretName = names('APPLE_CLIENT_SECRET').canonical;
+    const enabled = normalized(environment[enabledName]);
+    const clientId = normalized(environment[clientIdName]);
+    const clientSecret = normalized(environment[clientSecretName]);
+    if (enabled !== undefined && enabled !== '0' && enabled !== '1') {
+        throw new ListenerRuntimeEnvironmentError(
+            `Invalid Listener runtime flag: ${enabledName}`,
+        );
+    }
+    if (Boolean(clientId) !== Boolean(clientSecret)) {
+        throw new ListenerRuntimeEnvironmentError(
+            `Incomplete Listener runtime bundle: ${clientIdName}, ${clientSecretName}`,
+        );
+    }
+    if (enabled !== '1') return null;
+    if (!clientId || !clientSecret || !validateListenerAppleClientSecret(
+        clientId,
+        clientSecret,
         nowSeconds,
     )) {
         throw new ListenerRuntimeEnvironmentError(
-            'Invalid Listener Apple OAuth configuration: BEACON_LISTENER_APPLE_CLIENT_ID, BEACON_LISTENER_APPLE_CLIENT_SECRET or matching legacy aliases',
+            `Invalid Listener Apple OAuth configuration: ${clientIdName}, ${clientSecretName}`,
         );
     }
     return {
-        clientId: configuration.APPLE_CLIENT_ID,
-        clientSecret: configuration.APPLE_CLIENT_SECRET,
+        clientId,
+        clientSecret,
     };
 }
 
@@ -252,21 +271,17 @@ export function validateListenerRuntimeEnvironment(
     const authSecret = listenerRuntimeValue('AUTH_SECRET', environment);
 
     listenerRuntimeBundle(['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'], environment);
-    listenerRuntimeBundle(['APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'], environment);
-    const appleEnabled = validateFlag('APPLE_ENABLED', environment);
+    const apple = listenerAppleOAuthConfiguration(environment);
+    const appleEnabled = apple !== null;
     if (appleEnabled) {
-        const apple = listenerAppleOAuthConfiguration(environment);
         let secureAuthBase = false;
         try {
             secureAuthBase = baseURL !== undefined && new URL(baseURL).protocol === 'https:';
         } catch { /* Report only the bounded variable names below. */ }
         if (!secureAuthBase) {
             throw new ListenerRuntimeEnvironmentError(
-                'Enabled Listener Apple OAuth requires an HTTPS BEACON_LISTENER_AUTH_BASE_URL or matching legacy alias',
+                'Enabled Listener Apple OAuth requires an HTTPS BEACON_LISTENER_AUTH_BASE_URL',
             );
-        }
-        if (!apple) {
-            throw new ListenerRuntimeEnvironmentError('Enabled Listener Apple OAuth is unavailable');
         }
     }
     listenerRuntimeBundle([

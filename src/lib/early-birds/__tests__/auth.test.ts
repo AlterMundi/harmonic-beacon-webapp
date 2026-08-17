@@ -55,7 +55,7 @@ describe('EarlyBird Better Auth isolation', () => {
         const environment = {
             EARLY_BIRDS_GOOGLE_CLIENT_ID: 'google-id',
             EARLY_BIRDS_GOOGLE_CLIENT_SECRET: 'google-secret',
-            EARLY_BIRDS_APPLE_CLIENT_ID: 'half-configured-apple',
+            BEACON_LISTENER_APPLE_CLIENT_ID: 'half-configured-apple',
         } as unknown as NodeJS.ProcessEnv;
 
         expect(earlyBirdOAuthAvailability(environment)).toEqual({ google: true, apple: false });
