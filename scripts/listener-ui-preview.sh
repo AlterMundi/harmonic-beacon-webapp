@@ -177,7 +177,12 @@ if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
             exit good ? 0 : 1
         }
     ' "$LIVE_WORKBENCH_ENV_FILE"
-    sudo cat "$LIVE_WORKBENCH_ENV_FILE" >> "$env_file"
+    # The persistent Listener env already contains the dormant workbench keys.
+    # Replace each value instead of appending duplicates: OCI env arrays may
+    # preserve both entries and runtimes are not required to select the last.
+    while IFS='=' read -r workbench_key workbench_value; do
+        set_env_file_value "$workbench_key" "$workbench_value"
+    done < <(sudo cat "$LIVE_WORKBENCH_ENV_FILE")
     set_env_file_value EARLY_BIRDS_FREE_FOR_ALL 0
     set_env_file_value BEACON_LISTENER_FREE_FOR_ALL 0
     set_env_file_value BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED 0
