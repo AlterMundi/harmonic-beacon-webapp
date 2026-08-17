@@ -38,7 +38,7 @@ Five workstreams.
   - Early access: a separate `earlyAccess` flag on meditations, visible only to patrons
 - [ ] Cancellation flow: one-click, no retention offers, acknowledgement email in brand voice
 - [ ] Dunning: retry at day 1/3/7, pause on third failure, no account lockout
-- [ ] Refund flow: 14-day no-questions-refund endpoint, exposed in the patron's account page
+- [ ] Exceptional refund procedure: manual provider operation after an individually reviewed legal/support case; no automatic or self-service refund endpoint
 - [ ] Hearth page at `/hearth`: patrons at Hearth tier can opt to display name; rendered server-side, static-cached with 1h TTL; alphabetical or chronological, patron's choice
 - [ ] Annual year-end summary email with total patronage contribution (for tax-deductibility where applicable)
 - [ ] Gift flow: purchase annual patronage for another email address; recipient redeems with one click

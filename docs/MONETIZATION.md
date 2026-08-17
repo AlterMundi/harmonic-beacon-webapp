@@ -137,14 +137,15 @@ When a card fails:
 
 ### Refunds
 
-- Within 14 days of a new patronage or annual renewal: no-questions-refund via a self-serve flow.
-- Beyond 14 days: pro-rated by request. No automated pro-ration for monthly patrons beyond that window.
+- Cancellation stops future renewals and preserves the period already paid; it never initiates a refund.
+- Refunds, if exceptionally required by law, provider process or an individually reviewed support case,
+  are performed manually. There is no automatic or self-service refund actuator.
 
 ### Gifts
 
 - Annual patronage will be giftable at any tier. Gifts are a separate flow; the recipient can opt to continue as a patron or let the gift elapse without billing.
 
-The cancellation, dunning, refund and gift rules above are the contract each flow will be built to. None of the flows exists — there is nothing to cancel, no card to fail, and no charge to refund. **[Planned — Phase 2]**
+The cancellation, dunning, exceptional-refund and gift rules above are the contract each flow will be built to. None of the patronage flows exists yet. **[Planned — Phase 2]**
 
 ## Provider revenue share
 

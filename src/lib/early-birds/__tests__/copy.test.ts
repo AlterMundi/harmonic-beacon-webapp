@@ -28,4 +28,14 @@ describe('EarlyBirds interface copy', () => {
             expect(visibleCopy).toMatch(/Mercado Pago/);
         }
     });
+
+    it('keeps cancellation prospective and refunds manual-only in both locales', () => {
+        const spanishTerms = earlyBirdLegalCopy.es.sections.flatMap((section) => section.paragraphs).join(' ');
+        const englishTerms = earlyBirdLegalCopy.en.sections.flatMap((section) => section.paragraphs).join(' ');
+
+        expect(earlyBirdCopy.es.membershipCancelConfirmDetail).toMatch(/próximos cobros.*No se reembolsa/i);
+        expect(earlyBirdCopy.en.membershipCancelConfirmDetail).toMatch(/Future charges.*not refunded/i);
+        expect(spanishTerms).toMatch(/reembolsos.*no.*automáticos.*manualmente/i);
+        expect(englishTerms).toMatch(/Refunds.*never automatic.*manually/i);
+    });
 });

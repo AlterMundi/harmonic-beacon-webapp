@@ -121,7 +121,8 @@ canonical authority runtime; they are never copied into Listener configuration.
    human confirms payment.
 7. As soon as the provider approval URL has been created, turn authority new sales OFF. Keep the
    selected provider lifecycle/webhook/reconciliation flag ON until activation, cancellation and
-   any supervised refund/terminal path are canonical and reconciled.
+   reactivation are canonical and reconciled. Do not issue a refund as part of rehearsal;
+   exceptional refunds remain manual provider operations whose signed events are still ingested.
 8. Verify canonical Founder projection, profile badge, unlimited access, provider event, metrics,
    alerts and logs without copying approval URLs, provider IDs, PII or secrets into public records.
 9. Set the workbench gate back to `0`, recreate only staging Listener, and verify its exact route is

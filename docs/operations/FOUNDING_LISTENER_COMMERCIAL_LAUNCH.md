@@ -12,6 +12,9 @@ LiveKit, Ticket Tailor, playlist-bot, tapestry, event audio or `live.harmonicbea
 - Founder status and price exist only while service is uninterrupted. Cancellation retains access
   through the paid boundary. A real lapse, refund, reversal, dispute, chargeback, fraud or admin
   termination ends Founder continuity.
+- Cancellation is prospective and automatic: it disables future renewals, does not refund the
+  current paid period and does not require a human queue. Refunds are exceptional, manual provider
+  operations only; the authority still ingests their signed events as terminal evidence.
 - Browser redirects, Free, invitations and Free For All never grant membership or emit Purchase.
 
 Public terms and privacy are published at `/listener/terms` and `/listener/privacy`. They are a
@@ -29,9 +32,10 @@ truthful launch baseline, not a substitute for counsel review. Human owner: Nico
 - Production provider and new-sales flags remain OFF. No real payment was attempted.
 
 These accepted browser lifecycles are explicitly non-production: PayPal used
-Sandbox and Mercado Pago used TEST. The productive lanes have passed only
-read-only provider preflight so far; neither provider has completed a Live
-activation/cancel/refund rehearsal and no real charge has been created.
+Sandbox and Mercado Pago used TEST. PayPal Live has since completed activation,
+cancellation and reactivation with a non-merchant buyer. Mercado Pago Live
+still requires its supervised lifecycle. A real refund is intentionally not
+part of launch acceptance.
 
 Passwordless email delivery is deployed in the dedicated Listener-only sidecar at exact backend
 SHA `456ece2b38e203a2d12c54864115e03ebaa1a89c`. The API, worker and PostgreSQL queue have no host
@@ -149,8 +153,9 @@ converted back into a reversible action.
    ready and the public copy/terms have human approval.
 7. Execute one supervised real USD 5 membership with an agreed account. Confirm provider event,
    canonical projection, profile badge, unlimited access, renewal boundary and no raw PII in logs.
-8. Request cancellation in the profile. Confirm provider cancellation, pending-end projection and
-   access through paid-through. Use a separate controlled account to rehearse failure/refund.
+8. Request cancellation in the profile. Confirm future renewals stop, the projection becomes
+   pending-end and access continues through paid-through. Reactivate before the boundary and verify
+   continuity. Never issue a real refund merely as a rehearsal.
 9. Expand availability only after webhook/reconciliation lag and alerts remain healthy.
 
 ## Incident and rollback
@@ -180,8 +185,11 @@ converted back into a reversible action.
   to the other provider or manufacture membership.
 - Webhook/reconciliation lag: stop new sales, keep ingestion active, reconcile from provider APIs,
   and do not infer access from return URLs.
-- Refund/dispute: follow the canonical provider event. Support records the provider operation and
-  opaque account in the private ledger; no card/bank data enters GitHub or application logs.
+- Exceptional refund/dispute: a human explicitly performs or validates the provider operation,
+  then the authority follows the canonical signed provider event. This is not the normal
+  cancellation path and is never triggered automatically. Support records only the provider
+  operation and opaque account in the private ledger; no card/bank data enters GitHub or
+  application logs.
 
 ## Human release gates still required
 
