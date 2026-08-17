@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Syne, Space_Mono } from "next/font/google";
 import localFont from "next/font/local";
+import { headers } from "next/headers";
+import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { LocaleProvider } from "@/context/LocaleContext";
+import { globalNavigationSurface } from "@/lib/brand/global-navigation";
 import { requestLocale } from "@/lib/i18n-server";
 import "@/styles/hb-brand.css";
 import "./globals.css";
@@ -71,11 +74,14 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const incomingHeaders = await headers();
   const locale = await requestLocale();
+  const navigationSurface = globalNavigationSurface(incomingHeaders) ?? "events";
 
   return (
     <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
+        <GlobalNavigation active={navigationSurface} locale={locale} />
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
           <div className="relative z-10">{children}</div>

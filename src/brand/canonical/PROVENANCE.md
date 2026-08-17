@@ -23,6 +23,16 @@ The upstream files and all vendored artifacts are SHA-256 pinned in
 and the path. Updating the brand requires an explicit snapshot, provenance,
 manifest and visual-review update together.
 
+## Global navigation
+
+The cross-product header is intentionally not vendored. Listener and Live load
+the canonical web component directly from
+`https://harmonicbeacon.com/assets/hb-global-nav.js`, owned by
+`AlterMundi/harmonicbeacon.com` (introduced in main merge `9fa515f6` and last
+reviewed here at `51fe213b`). The local light-DOM links are an accessible,
+same-destination fallback only; the shared runtime asset owns the visible
+desktop/mobile component so a navigation edit propagates to all three products.
+
 ## Font source and license
 
 Both families are covered by the SIL Open Font License 1.1; the relevant
@@ -40,4 +50,5 @@ Both families are covered by the SIL Open Font License 1.1; the relevant
   is pinned from the Google Fonts repository commit above, with trailing
   whitespace normalized for the repository gate.
 
-No font, brand source, analytics or other asset is fetched at runtime.
+No font, analytics or decorative brand asset is fetched at runtime. The single
+global-navigation component above is the deliberate exception.

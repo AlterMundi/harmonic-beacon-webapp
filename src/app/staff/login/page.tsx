@@ -12,8 +12,6 @@ import Link from "next/link";
 import { currentPrincipal } from "@/lib/auth";
 
 import StaffLoginClient from "./StaffLoginClient";
-import BrandLockup from "@/components/brand/BrandLockup";
-import LanguageControl from "@/components/brand/LanguageControl";
 import { messages } from "@/lib/i18n";
 import { requestLocale } from "@/lib/i18n-server";
 import { staffRoleLabel } from "@/lib/i18n";
@@ -35,11 +33,7 @@ export default async function StaffLoginPage() {
         <main className="event-shell">
             <div className="relative z-10 mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-6 py-12">
                 <header className="space-y-1">
-                    <div className="event-auth-header flex items-center justify-between gap-4">
-                        <BrandLockup href="/" />
-                        <LanguageControl />
-                    </div>
-                    <h1 className="pt-4 font-serif text-2xl font-normal text-[var(--paper)]">
+                    <h1 className="font-serif text-2xl font-normal text-[var(--paper)]">
                         {copy.heading}
                     </h1>
                     <p className="text-sm text-[var(--text-muted)]">
