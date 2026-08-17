@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LocaleProvider } from '@/context/LocaleContext';
@@ -16,6 +16,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     refresh.mockReset();
@@ -91,6 +92,36 @@ describe('Founding Listener membership actions', () => {
         expect(await screen.findByRole('button', { name: 'Reactivate membership' }))
             .toBeInTheDocument();
         expect(screen.queryByText(/We received the request/)).not.toBeInTheDocument();
+    });
+
+    it('polls silently and refreshes only after canonical cancellation is visible', async () => {
+        vi.useFakeTimers();
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(Response.json({ status: 'queued' }, { status: 202 }))
+            .mockResolvedValueOnce(Response.json({ membershipState: 'ending' }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <FoundingListenerMembershipActions membership={{
+                    kind: 'founder', provider: 'paypal', state: 'active',
+                }} />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel membership' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Yes, cancel at period end' }));
+        await act(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+        expect(screen.getByText(/We received the request/)).toBeInTheDocument();
+        expect(refresh).not.toHaveBeenCalled();
+
+        await act(async () => vi.advanceTimersByTimeAsync(2_000));
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock.mock.calls[1][0]).toBe('/api/listener/access-state');
+        expect(refresh).toHaveBeenCalledTimes(1);
     });
 
     it('offers provider-neutral reactivation while canonical state is ending', async () => {

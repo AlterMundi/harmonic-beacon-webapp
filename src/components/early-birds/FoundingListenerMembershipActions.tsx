@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 export default function FoundingListenerMembershipActions({
     membership,
@@ -20,6 +21,7 @@ export default function FoundingListenerMembershipActions({
     const [action, setAction] = useState<'cancel' | 'reactivate' | null>(null);
     const attempt = useRef<{ action: 'cancel' | 'reactivate'; id: string } | null>(null);
     const refreshTimers = useRef<number[]>([]);
+    const reconciliationGeneration = useRef(0);
 
     function clearRefreshTimers() {
         for (const timer of refreshTimers.current) window.clearTimeout(timer);
@@ -27,6 +29,7 @@ export default function FoundingListenerMembershipActions({
     }
 
     useEffect(() => () => {
+        reconciliationGeneration.current += 1;
         clearRefreshTimers();
     }, []);
 
@@ -37,10 +40,37 @@ export default function FoundingListenerMembershipActions({
         );
         if (!canonicalActionCompleted) return;
         clearRefreshTimers();
+        reconciliationGeneration.current += 1;
         attempt.current = null;
         setAction(null);
         setStatus('idle');
     }, [action, membership.state, status]);
+
+    async function refreshWhenCanonicalStateChanges(
+        requestedAction: 'cancel' | 'reactivate',
+        generation: number,
+    ) {
+        try {
+            const response = await fetch(LISTENER_NAMESPACE.canonical.api.accessState, {
+                cache: 'no-store',
+                headers: { Accept: 'application/json' },
+            });
+            if (!response.ok || generation !== reconciliationGeneration.current) return;
+            const payload = await response.json() as unknown;
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
+            const nextState = (payload as Record<string, unknown>).membershipState;
+            const completed = (requestedAction === 'cancel' && nextState === 'ending')
+                || (requestedAction === 'reactivate' && nextState === 'active');
+            if (completed && generation === reconciliationGeneration.current) {
+                reconciliationGeneration.current += 1;
+                clearRefreshTimers();
+                router.refresh();
+            }
+        } catch {
+            // A failed observation never invents membership state. Later
+            // scheduled checks may still observe the durable provider result.
+        }
+    }
 
     const boundary = membership.serviceThrough
         ? new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-US', {
@@ -76,9 +106,14 @@ export default function FoundingListenerMembershipActions({
             }
             setStatus('queued');
             setConfirming(false);
+            const generation = reconciliationGeneration.current + 1;
+            reconciliationGeneration.current = generation;
             clearRefreshTimers();
             refreshTimers.current = [2_000, 5_000, 10_000, 20_000, 40_000, 60_000, 90_000, 120_000]
-                .map((delay) => window.setTimeout(() => router.refresh(), delay));
+                .map((delay) => window.setTimeout(
+                    () => void refreshWhenCanonicalStateChanges(requestedAction, generation),
+                    delay,
+                ));
         } catch {
             setStatus('failed');
         }
