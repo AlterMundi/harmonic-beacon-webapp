@@ -90,19 +90,36 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         expect(listenerCss).not.toContain('rgba(255, 143, 200');
     });
 
-    it('keeps the real BeaconField visible through both large interaction panels', () => {
+    it('keeps the real BeaconField visible through the warm translucent altars', () => {
         const css = readFileSync('src/app/globals.css', 'utf8');
 
-        for (const selector of ['.listener-control-panel', '.listener-access__card']) {
+        const staticFieldStart = css.indexOf('.listener-static-field {');
+        const staticFieldEnd = css.indexOf('\n}', staticFieldStart);
+        const staticField = css.slice(staticFieldStart, staticFieldEnd);
+        expect(staticField).toContain('position: fixed;');
+        expect(css).toContain('.listener-shell__frame--home > .listener-static-field .listener-field {');
+        expect(css).toContain('.listener-public-hero > .listener-field {');
+        expect(css).not.toContain('.listener-altar > .listener-static-field .listener-field {');
+        expect(css).not.toContain('.listener-public-altar > .listener-field {');
+
+        for (const selector of ['.listener-altar', '.listener-public-altar']) {
             const start = css.indexOf(`${selector} {`);
             const end = css.indexOf('\n}', start);
             const rule = css.slice(start, end);
 
             expect(start, `${selector} must exist`).toBeGreaterThanOrEqual(0);
-            expect(rule).toContain('rgba(36, 29, 21, 0.055)');
-            expect(rule).toContain('rgba(22, 18, 13, 0.025)');
-            expect(rule).toContain('backdrop-filter: blur(2.5px) saturate(108%);');
-            expect(rule).not.toContain('blur(18px)');
+            expect(rule).toContain('rgba(36, 29, 21, 0.24)');
+            expect(rule).toContain('rgba(22, 18, 13, 0.44)');
+            expect(rule).toContain('backdrop-filter: blur(3px) saturate(105%);');
+            expect(rule).toContain('overflow: hidden;');
+        }
+
+        for (const selector of ['.listener-control-panel', '.listener-access__card']) {
+            const start = css.indexOf(`${selector} {`);
+            const end = css.indexOf('\n}', start);
+            const rule = css.slice(start, end);
+            expect(rule).toContain('background: transparent;');
+            expect(rule).toContain('border-top: 1px solid var(--hb-hair-soft);');
         }
     });
 
@@ -155,6 +172,30 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         expect(reducedMotion).toContain('.listener-field__orbit');
         expect(reducedMotion).toContain('.listener-field__core');
         expect(reducedMotion).toContain('.listener-field__point { animation: none; }');
+    });
+
+    it('bounds the altar at 320/390 mobile and 768–1440 desktop widths', () => {
+        const css = readFileSync('src/app/globals.css', 'utf8');
+        const mobile = css.slice(
+            css.indexOf('@media (max-width: 760px)'),
+            css.indexOf('@media (max-width: 360px)'),
+        );
+        const narrowStart = css.indexOf('@media (max-width: 360px)');
+        const narrow = css.slice(
+            narrowStart,
+            css.indexOf('@media (prefers-reduced-motion: reduce)', narrowStart),
+        );
+
+        expect(css).toContain('width: min(100%, 90rem);');
+        expect(css).toContain('width: min(100%, 46rem);');
+        expect(css).toContain('width: min(100%, 42rem);');
+        expect(mobile).toContain('min-height: 48px;');
+        expect(mobile).toContain('width: min(18rem, calc(100vw - 1.5rem));');
+        expect(mobile).not.toContain('position: sticky;');
+        expect(narrow).toContain('width: min(15rem, calc(100vw - 1.1rem));');
+        expect(narrow).toContain('padding-inline: 0.65rem;');
+        expect(css).toMatch(/\.listener-details input\[type='range'\][\s\S]*?min-height: 2\.75rem;/);
+        expect(css).toMatch(/\.listener-quota a[\s\S]*?min-height: 2\.75rem;/);
     });
 
     it('standalone Listener pages render the listener page shell, never the event shell', () => {
@@ -234,7 +275,7 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         expect(screen.getByRole('button', { name: 'Continue with Google' }))
             .toHaveClass('listener-button', 'listener-button--secondary');
         expect(anonymous.container.innerHTML).not.toMatch(EVENT_VISUAL_CLASS);
-        // The anonymous surface offers no competing primary action inside the access card.
+        // Identity providers remain equivalent and do not compete with a product action.
         expect(
             anonymous.container.querySelectorAll('.listener-access__card .listener-button--primary'),
         ).toHaveLength(0);

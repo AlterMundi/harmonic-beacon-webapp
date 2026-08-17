@@ -105,31 +105,37 @@ export default function EarlyBirdHome({
                 <div className="listener-static-field" data-testid="listener-static-field">
                     <BeaconField phase="ready" />
                 </div>
-                <ListenerPlayer
-                    dropIns={dropIns}
-                    reactiveVisualizationAvailable={reactiveVisualizationAvailable}
-                    reactiveVisualizationInitiallyEnabled={false}
-                    reactiveFieldLabAvailable={reactiveFieldLabAvailable}
-                />
-                {!publicAccess && accessKind === 'free-quota' && (
-                    <footer className="listener-listening-status">
-                        <FreeQuotaStatus
-                            snapshot={quota}
-                            serverNow={serverNow}
-                            compact
-                            showMembershipLink={
-                                !checkoutAvailability.paypal
-                                && !checkoutAvailability.mercadoPago
-                                && !liveWorkbench
-                            }
-                        />
-                        <FoundingListenerCheckout
-                            available={checkoutAvailability}
-                            environment={checkoutEnvironment}
-                        />
-                        <FoundingListenerLiveWorkbench config={liveWorkbench} />
-                    </footer>
-                )}
+                <section className="listener-altar" aria-labelledby="listener-heading">
+                    <div className="listener-altar__heading" aria-hidden="true">
+                        <p>{copy.eyebrow}</p>
+                        <strong>{copy.heading}</strong>
+                    </div>
+                    <ListenerPlayer
+                        dropIns={dropIns}
+                        reactiveVisualizationAvailable={reactiveVisualizationAvailable}
+                        reactiveVisualizationInitiallyEnabled={false}
+                        reactiveFieldLabAvailable={reactiveFieldLabAvailable}
+                    />
+                    {!publicAccess && accessKind === 'free-quota' && (
+                        <footer className="listener-listening-status">
+                            <FreeQuotaStatus
+                                snapshot={quota}
+                                serverNow={serverNow}
+                                compact
+                                showMembershipLink={
+                                    !checkoutAvailability.paypal
+                                    && !checkoutAvailability.mercadoPago
+                                    && !liveWorkbench
+                                }
+                            />
+                            <FoundingListenerCheckout
+                                available={checkoutAvailability}
+                                environment={checkoutEnvironment}
+                            />
+                            <FoundingListenerLiveWorkbench config={liveWorkbench} />
+                        </footer>
+                    )}
+                </section>
             </div>
         </main>
     );

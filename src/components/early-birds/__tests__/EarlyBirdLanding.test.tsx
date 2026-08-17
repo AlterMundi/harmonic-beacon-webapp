@@ -82,9 +82,14 @@ describe('EarlyBird public landing', () => {
     it('keeps login in the compact hero and removes explanatory landing copy', () => {
         const { container } = renderLanding();
 
+        expect(container.querySelector('.listener-public-hero'))
+            .toHaveAttribute('aria-labelledby', 'listener-public-title');
+        expect(container.querySelector('.listener-public-altar')).toBeInTheDocument();
         expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
         expect(container.querySelector('.listener-field__spark')).toHaveTextContent('✦');
         expect(container.querySelector('.listener-field svg')).not.toBeInTheDocument();
+        expect(container.querySelector('.listener-public-altar .listener-field')).not.toBeInTheDocument();
+        expect(container.querySelector('.listener-public-hero > .listener-field')).toBeInTheDocument();
         expect(container.querySelector('.listener-public-hero .listener-access__card'))
             .toContainElement(screen.getByRole('button', { name: 'Continue with Google' }));
         expect(screen.getByRole('heading', { name: 'Remember your harmonic center.' }))
@@ -93,6 +98,7 @@ describe('EarlyBird public landing', () => {
         expect(screen.queryByText('An optional introduction before entering the Beacon')).not.toBeInTheDocument();
         expect(screen.queryByText('Three Free hours each week')).not.toBeInTheDocument();
         expect(screen.queryByText(/Your account and membership manage access/)).not.toBeInTheDocument();
+        expect(container.textContent).not.toMatch(/Presence|here now|Your listening space|Listening Altar/i);
     });
 
     it('hides an unconfigured provider from the public identity surface', () => {
