@@ -9,6 +9,7 @@ import {
     type ListenerCheckoutEnvironment,
 } from '@/lib/early-birds/checkout';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
+import { normalizeMercadoPagoPayerEmail } from '@/lib/early-birds/payer-email';
 import { isCanonicalListenerHost, isListenerStagingHost } from '@/lib/listener/public-discovery';
 
 export const dynamic = 'force-dynamic';
@@ -59,14 +60,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch {
         return json({ error: 'Invalid request.' }, 400);
     }
-    if (!input || typeof input !== 'object' || Array.isArray(input) ||
-        Object.keys(input).sort().join('\0') !== ['attemptId', 'provider'].join('\0')) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
         return json({ error: 'Invalid request.' }, 400);
     }
     const body = input as Record<string, unknown>;
     const provider = providerFrom(body.provider);
+    const expectedKeys = provider === 'mercado_pago'
+        ? ['attemptId', 'payerEmail', 'provider']
+        : ['attemptId', 'provider'];
+    if (Object.keys(body).sort().join('\0') !== expectedKeys.join('\0')) {
+        return json({ error: 'Invalid request.' }, 400);
+    }
     const attemptId = typeof body.attemptId === 'string' ? body.attemptId : '';
+    const payerEmail = provider === 'mercado_pago'
+        ? normalizeMercadoPagoPayerEmail(body.payerEmail)
+        : null;
     if (!provider || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attemptId)) {
+        return json({ error: 'Invalid request.' }, 400);
+    }
+    if (provider === 'mercado_pago' && !payerEmail) {
         return json({ error: 'Invalid request.' }, 400);
     }
 
@@ -81,7 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
         const result = await new HttpListenerCheckoutGateway().create({
             accountId: session.user.id,
-            email: session.user.email,
+            payerEmail: payerEmail ?? undefined,
             provider,
             attemptId,
             returnUrl: `${context.origin}/?checkout=returned`,

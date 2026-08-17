@@ -91,7 +91,7 @@ afterEach(() => {
 });
 
 describe('private staging-only Listener Live workbench', () => {
-    it('derives account, email and the single provider from server state', async () => {
+    it('derives account and the single PayPal provider without coupling the session email', async () => {
         const response = await POST(request());
         expect(response.status).toBe(200);
         await expect(response.json()).resolves.toEqual({
@@ -100,13 +100,31 @@ describe('private staging-only Listener Live workbench', () => {
         });
         expect(createCheckout).toHaveBeenCalledWith({
             accountId: ACCOUNT_ID,
-            email: 'listener@example.com',
+            payerEmail: undefined,
             provider: 'paypal',
             attemptId: ATTEMPT,
             returnUrl: `${ORIGIN}/?checkout=returned`,
             cancelUrl: `${ORIGIN}/?checkout=cancelled`,
             environment: 'live',
         });
+    });
+
+    it('accepts an explicit Mercado Pago payer email for the allowlisted Listener account', async () => {
+        vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_PROVIDER', 'mercado_pago');
+        createCheckout.mockResolvedValue({
+            provider: 'mercado_pago',
+            approvalUrl: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=live',
+        });
+        const response = await POST(request({ body: {
+            attemptId: ATTEMPT,
+            payerEmail: 'Ani.Billing@Example.com ',
+        } }));
+        expect(response.status).toBe(200);
+        expect(createCheckout).toHaveBeenCalledWith(expect.objectContaining({
+            accountId: ACCOUNT_ID,
+            provider: 'mercado_pago',
+            payerEmail: 'ani.billing@example.com',
+        }));
     });
 
     it('is absent by default and whenever public Live checkout is enabled', async () => {
@@ -150,6 +168,7 @@ describe('private staging-only Listener Live workbench', () => {
         { attemptId: ATTEMPT, provider: 'mercado_pago' },
         { attemptId: ATTEMPT, accountId: ACCOUNT_ID },
         { attemptId: 'not-a-uuid' },
+        { attemptId: ATTEMPT, payerEmail: 'unexpected@example.com' },
     ])('rejects client attempts to choose authority fields', async (body) => {
         const response = await POST(request({ body }));
         expect(response.status).toBe(400);

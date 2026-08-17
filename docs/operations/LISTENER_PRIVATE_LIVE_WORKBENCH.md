@@ -58,8 +58,10 @@ neither command creates checkout state.
 - Exact browser endpoint: `POST /api/listener/checkout/live-workbench` on the staging host only.
 - The endpoint is absent from the public Listener nginx vhost. A direct application request with
   the public or event Host returns `404` before authentication or authority access.
-- The browser sends only a random attempt UUID and a short-lived session-bound CSRF proof. Account,
-  email, provider, price, environment and callbacks are server-derived.
+- The browser sends a random attempt UUID and a short-lived session-bound CSRF proof. For Mercado
+  Pago only, it also sends the payer email explicitly entered for that provider; this may differ
+  from the Listener sign-in email. Account, provider, price, environment and callbacks remain
+  server-derived. PayPal receives no Listener or client-supplied payer email.
 - One root-owned configuration selects exactly one opaque Listener account and one provider.
 - Enabling either public Listener Live flag makes the workbench fail readiness and disappear.
 - Normal `POST /api/listener/checkout` on staging continues using only PayPal Sandbox or Mercado

@@ -37,6 +37,9 @@ export const earlyBirdCopy = {
         checkoutLiveDetail: 'USD 5 por mes, cobro recurrente. Sin período de prueba. Puedes cancelar cuando quieras; si el servicio se interrumpe, termina el precio Founder.',
         checkoutPayPal: 'Continuar con PayPal',
         checkoutMercadoPago: 'Continuar con Mercado Pago',
+        checkoutMercadoPagoEmail: 'Correo de tu cuenta de Mercado Pago',
+        checkoutMercadoPagoEmailHint: 'Puede ser distinto del correo de tu cuenta Listener. Sólo se usa para abrir esta suscripción.',
+        checkoutMercadoPagoEmailInvalid: 'Ingresa el correo que usas en Mercado Pago.',
         checkoutOpening: 'Abriendo checkout…',
         checkoutUnavailable: 'El checkout de prueba no está disponible ahora.',
         checkoutLiveUnavailable: 'La membresía no está disponible para compra en este momento.',
@@ -113,6 +116,9 @@ export const earlyBirdCopy = {
         checkoutLiveDetail: 'USD 5 per month, billed recurrently. No trial. Cancel anytime; if service lapses, Founder pricing ends.',
         checkoutPayPal: 'Continue with PayPal',
         checkoutMercadoPago: 'Continue with Mercado Pago',
+        checkoutMercadoPagoEmail: 'Email for your Mercado Pago account',
+        checkoutMercadoPagoEmailHint: 'It can differ from your Listener email. It is used only to open this subscription.',
+        checkoutMercadoPagoEmailInvalid: 'Enter the email you use for Mercado Pago.',
         checkoutOpening: 'Opening checkout…',
         checkoutUnavailable: 'Test checkout is unavailable right now.',
         checkoutLiveUnavailable: 'Membership is not available for purchase right now.',
@@ -188,7 +194,7 @@ export const earlyBirdLegalCopy = {
             {
                 title: 'Datos y privacidad',
                 paragraphs: [
-                    'Guardamos un identificador opaco de cuenta, identidad de acceso, sesión, estado de membresía, cuota y leases de reproducción. Los proveedores de pago procesan los datos financieros; Harmonic Beacon no recibe ni almacena números completos de tarjeta.',
+                    'Guardamos un identificador opaco de cuenta, identidad de acceso, sesión, estado de membresía, cuota y leases de reproducción. Los proveedores de pago procesan los datos financieros; Harmonic Beacon no recibe ni almacena números completos de tarjeta. Para Mercado Pago, el correo de pago que ingresas se transmite al proveedor para abrir la suscripción y no se conserva en texto legible como parte de tu perfil Listener.',
                     'Conservamos evidencia de pago y eventos de membresía necesaria para seguridad, soporte, contabilidad e idempotencia. No enviamos información personal a la visualización pública ni vendemos datos personales. Puedes solicitar acceso, corrección o eliminación escribiendo a nicoechaniz@harmonicbeacon.com, sujeto a obligaciones legales de conservación.',
                 ],
             },
@@ -225,7 +231,7 @@ export const earlyBirdLegalCopy = {
             {
                 title: 'Data and privacy',
                 paragraphs: [
-                    'We keep an opaque account identifier, sign-in identity, session, membership state, allowance and playback leases. Payment providers process financial details; Harmonic Beacon does not receive or store full card numbers.',
+                    'We keep an opaque account identifier, sign-in identity, session, membership state, allowance and playback leases. Payment providers process financial details; Harmonic Beacon does not receive or store full card numbers. For Mercado Pago, the payer email you enter is sent to the provider to open the subscription and is not retained in readable form as part of your Listener profile.',
                     'We retain payment evidence and membership events needed for security, support, accounting and idempotency. We do not send personal data to the public visualization or sell personal data. You may request access, correction or deletion at nicoechaniz@harmonicbeacon.com, subject to legal retention duties.',
                 ],
             },

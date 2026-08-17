@@ -6,6 +6,7 @@ import {
     ListenerCheckoutUnavailableError,
 } from '@/lib/early-birds/checkout';
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
+import { normalizeMercadoPagoPayerEmail } from '@/lib/early-birds/payer-email';
 import {
     LISTENER_LIVE_WORKBENCH_CSRF_HEADER,
     listenerLiveWorkbenchConfig,
@@ -19,7 +20,7 @@ import {
 export const dynamic = 'force-dynamic';
 
 const STAGING_ORIGIN = `https://${LISTENER_STAGING_HOST}`;
-const MAX_REQUEST_BYTES = 256;
+const MAX_REQUEST_BYTES = 512;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function json(body: Record<string, unknown>, status: number): NextResponse {
@@ -65,12 +66,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch {
         return json({ error: 'Invalid request.' }, 400);
     }
-    if (!input || typeof input !== 'object' || Array.isArray(input) ||
-        Object.keys(input).join('\0') !== 'attemptId') {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
         return json({ error: 'Invalid request.' }, 400);
     }
-    const attemptId = (input as Record<string, unknown>).attemptId;
+    const body = input as Record<string, unknown>;
+    const expectedKeys = config.provider === 'mercado_pago'
+        ? ['attemptId', 'payerEmail']
+        : ['attemptId'];
+    if (Object.keys(body).sort().join('\0') !== expectedKeys.join('\0')) {
+        return json({ error: 'Invalid request.' }, 400);
+    }
+    const attemptId = body.attemptId;
+    const payerEmail = config.provider === 'mercado_pago'
+        ? normalizeMercadoPagoPayerEmail(body.payerEmail)
+        : null;
     if (typeof attemptId !== 'string' || !ATTEMPT_ID.test(attemptId)) {
+        return json({ error: 'Invalid request.' }, 400);
+    }
+    if (config.provider === 'mercado_pago' && !payerEmail) {
         return json({ error: 'Invalid request.' }, 400);
     }
 
@@ -87,7 +100,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
         const result = await new HttpListenerCheckoutGateway().create({
             accountId: session.user.id,
-            email: session.user.email,
+            payerEmail: payerEmail ?? undefined,
             provider: config.provider,
             attemptId,
             returnUrl: `${STAGING_ORIGIN}/?checkout=returned`,

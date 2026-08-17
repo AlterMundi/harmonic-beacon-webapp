@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { isEarlyBirdAccountId } from './account-id';
+import { normalizeMercadoPagoPayerEmail } from './payer-email';
 
 export type ListenerCheckoutProvider = 'paypal' | 'mercado_pago';
 export type ListenerCheckoutEnvironment = 'staging' | 'live';
@@ -34,15 +35,6 @@ export function listenerCheckoutAvailability(
         paypal: environment.BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED === '1',
         mercadoPago: environment.BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED === '1',
     } as const;
-}
-
-function normalizedEmail(value: string): string {
-    const normalized = value.trim().toLowerCase();
-    if (normalized.length < 3 || normalized.length > 320 ||
-        normalized.split('@').length !== 2 || /[\s\x00-\x20\x7f]/.test(normalized)) {
-        throw new ListenerCheckoutUnavailableError();
-    }
-    return normalized;
 }
 
 export function listenerAuthorityConfig(environment: NodeJS.ProcessEnv = process.env) {
@@ -198,7 +190,7 @@ export class HttpListenerCheckoutGateway {
 
     async create(input: {
         accountId: string;
-        email: string;
+        payerEmail?: string;
         provider: ListenerCheckoutProvider;
         attemptId: string;
         returnUrl: string;
@@ -215,11 +207,17 @@ export class HttpListenerCheckoutGateway {
             : input.provider === 'paypal'
                 ? '/api/internal/v1/early-bird-checkouts'
                 : '/api/internal/v2/early-bird-checkouts';
+        const payerEmail = input.provider === 'mercado_pago'
+            ? normalizeMercadoPagoPayerEmail(input.payerEmail)
+            : null;
+        if (input.provider === 'mercado_pago' && !payerEmail) {
+            throw new ListenerCheckoutUnavailableError();
+        }
         const payload = environment === 'live' ? {
             schema_version: 'listener-checkout.checkout-create.v1',
             account_id: input.accountId,
             provider: input.provider,
-            payer_email: input.provider === 'mercado_pago' ? normalizedEmail(input.email) : null,
+            payer_email: payerEmail,
             return_url: input.returnUrl,
             cancel_url: input.cancelUrl,
         } : input.provider === 'paypal' ? {
@@ -232,7 +230,7 @@ export class HttpListenerCheckoutGateway {
             schema_version: 'early-bird-checkout.checkout-create.v2',
             account_id: input.accountId,
             provider: input.provider,
-            payer_email: normalizedEmail(input.email),
+            payer_email: payerEmail,
             return_url: input.returnUrl,
             cancel_url: input.cancelUrl,
         };

@@ -60,7 +60,7 @@ afterEach(() => {
 });
 
 describe('Listener sandbox checkout route', () => {
-    it('derives account, email and callbacks from the session and exact staging origin', async () => {
+    it('derives account and callbacks from the session without sending its email to PayPal', async () => {
         const response = await POST(request());
 
         expect(response.status).toBe(200);
@@ -71,13 +71,31 @@ describe('Listener sandbox checkout route', () => {
         });
         expect(createCheckout).toHaveBeenCalledWith({
             accountId: 'opaqueBetterAuthId',
-            email: 'listener@example.com',
+            payerEmail: undefined,
             provider: 'paypal',
             attemptId: ATTEMPT,
             returnUrl: `https://${HOST}/?checkout=returned`,
             cancelUrl: `https://${HOST}/?checkout=cancelled`,
             environment: 'staging',
         });
+    });
+
+    it('accepts a distinct normalized Mercado Pago payer email without changing Listener identity', async () => {
+        createCheckout.mockResolvedValue({
+            provider: 'mercado_pago',
+            approvalUrl: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=test',
+        });
+        const response = await POST(request({
+            provider: 'mercado_pago',
+            attemptId: ATTEMPT,
+            payerEmail: 'Ani.Billing@Example.com ',
+        }));
+        expect(response.status).toBe(200);
+        expect(createCheckout).toHaveBeenCalledWith(expect.objectContaining({
+            accountId: 'opaqueBetterAuthId',
+            provider: 'mercado_pago',
+            payerEmail: 'ani.billing@example.com',
+        }));
     });
 
     it('allows an explicitly enabled Live checkout only on the canonical Listener origin', async () => {
@@ -128,7 +146,9 @@ describe('Listener sandbox checkout route', () => {
         ['mercado_pago', 'BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED'],
     ] as const)('fails closed when %s is disabled', async (provider, variable) => {
         vi.stubEnv(variable, '0');
-        const response = await POST(request({ provider, attemptId: ATTEMPT }));
+        const response = await POST(request(provider === 'mercado_pago'
+            ? { provider, attemptId: ATTEMPT, payerEmail: 'buyer@example.com' }
+            : { provider, attemptId: ATTEMPT }));
         expect(response.status).toBe(404);
         expect(currentEarlyBirdSession).not.toHaveBeenCalled();
         expect(createCheckout).not.toHaveBeenCalled();
@@ -138,6 +158,9 @@ describe('Listener sandbox checkout route', () => {
         [{ provider: 'paypal', attemptId: 'not-a-uuid' }, 400],
         [{ provider: 'stripe', attemptId: ATTEMPT }, 400],
         [{ provider: 'paypal', attemptId: ATTEMPT, email: 'attacker@example.com' }, 400],
+        [{ provider: 'paypal', attemptId: ATTEMPT, payerEmail: 'attacker@example.com' }, 400],
+        [{ provider: 'mercado_pago', attemptId: ATTEMPT }, 400],
+        [{ provider: 'mercado_pago', attemptId: ATTEMPT, payerEmail: 'not-an-email' }, 400],
     ])('rejects malformed or client-supplied identity input', async (body, status) => {
         const response = await POST(request(body));
         expect(response.status).toBe(status);
