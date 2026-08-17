@@ -359,13 +359,13 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \^~ \/api\/early-birds\//);
   assert.equal(
     (app.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length,
-    10,
-    'server plus nine sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
+    11,
+    'server plus ten sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
   );
   assert.equal(
     (listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length,
-    9,
-    'server plus eight sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
+    10,
+    'server plus nine sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
   );
   assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location \/_next\/webpack-hmr \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Upgrade \$http_upgrade;[^}]*Connection "upgrade";/s);
@@ -379,6 +379,27 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location = \/listener\/privacy \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(listener, /location = \/api\/listener\/checkout \{[^}]*access_log off;[^}]*limit_req zone=listener_live_checkout burst=4 nodelay;[^}]*client_max_body_size 512;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;[^}]*Cache-Control "private, no-store"/s);
   assert.match(listener, /location = \/api\/listener\/membership\/action \{[^}]*access_log off;[^}]*limit_req zone=listener_membership_action burst=2 nodelay;[^}]*client_max_body_size 256;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
+  assert.match(listener, /limit_req_zone \$binary_remote_addr zone=listener_auth_recovery:1m rate=12r\/m;/);
+  assert.match(app, /limit_req_zone \$binary_remote_addr zone=listener_staging_auth_recovery:1m rate=12r\/m;/);
+  for (const [source, port, zone] of [
+    [listener, '13000', 'listener_auth_recovery'],
+    [app, '13001', 'listener_staging_auth_recovery'],
+  ]) {
+    const start = source.indexOf('location = /api/listener/auth/recover {');
+    assert.notEqual(start, -1);
+    const nextLocation = source.indexOf('\n\n    location ', start + 1);
+    const block = source.slice(start, nextLocation === -1 ? undefined : nextLocation);
+    assert.match(block, /request_method != POST/);
+    assert.match(block, /return 405;/);
+    assert.match(block, /access_log off;/);
+    assert.match(block, new RegExp(`limit_req zone=${zone} burst=3 nodelay;`));
+    assert.match(block, /client_max_body_size 64;/);
+    assert.match(block, new RegExp(`proxy_pass http://127\\.0\\.0\\.1:${port};`));
+    assert.match(block, /proxy_set_header X-Real-IP \$remote_addr;/);
+    assert.match(block, /proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;/);
+    assert.match(block, /Cache-Control "private, no-store"/);
+  }
+  assert.doesNotMatch(stream, /\/api\/listener\/auth\/recover/);
   assert.doesNotMatch(app, /location = \/api\/listener\/membership\/cancel/);
   assert.doesNotMatch(listener, /location = \/api\/listener\/membership\/cancel/);
   assert.match(listener, /location = \/listener\/terms \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
