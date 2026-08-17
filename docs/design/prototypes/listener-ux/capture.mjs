@@ -59,6 +59,13 @@ try {
             visibleStateNodes: [...document.querySelectorAll(`[data-show~="${currentState}"]`)].filter(isRendered).length,
             smallTargets,
             brokenImages: [...document.images].filter((image) => image.naturalWidth === 0).length,
+            headerMarks: document.querySelectorAll('.topbar .brand img[src="mark.svg"]').length,
+            mainMarks: document.querySelectorAll('main img[src="mark.svg"]').length,
+            navLinks: document.querySelectorAll(".nav-links a").length,
+            navLabels: [...document.querySelectorAll(".nav-links a")].map((link) => link.textContent?.trim()),
+            visibleNavLinks: [...document.querySelectorAll(".nav-links a")].filter(isRendered).length,
+            menuVisible: [...document.querySelectorAll(".nav-menu")].filter(isRendered).length,
+            accountControlsInHeader: document.querySelectorAll(".topbar .chip, .topbar .member-mark, .topbar .avatar").length,
           };
         }, state);
 
@@ -73,6 +80,19 @@ try {
         }
         if (geometry.brokenImages > 0) {
           throw new Error(`${concept}/${state}/${viewport.name}: ${geometry.brokenImages} broken images`);
+        }
+        if (geometry.headerMarks !== 1 || geometry.mainMarks !== 0) {
+          throw new Error(`${concept}/${state}/${viewport.name}: Lissajous must appear once in the header and never in main`);
+        }
+        const desktopNavigation = viewport.width > 1120;
+        if (geometry.navLinks !== 7 || geometry.visibleNavLinks !== (desktopNavigation ? 7 : 0) || geometry.menuVisible !== (desktopNavigation ? 0 : 1)) {
+          throw new Error(`${concept}/${state}/${viewport.name}: global navigation does not match its desktop/mobile contract`);
+        }
+        if (geometry.navLabels.join("|") !== "Events|Listen|News|Why it works|Team|HIT|Contact") {
+          throw new Error(`${concept}/${state}/${viewport.name}: global navigation labels/order drifted from the canonical asset`);
+        }
+        if (geometry.accountControlsInHeader !== 0) {
+          throw new Error(`${concept}/${state}/${viewport.name}: Listener account controls leaked into global navigation`);
         }
       }
 

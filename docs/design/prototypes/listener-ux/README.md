@@ -24,6 +24,8 @@ Each concept includes these static states:
 
 The controls only change the visual state in the document. Provider buttons, sign-in controls and transport controls have no external behavior.
 
+All three directions reproduce the same static global-navigation contract: seven desktop destinations plus EN/ES, and hamburger/brand/language on mobile. Listener quota, membership and profile controls live in a separate product strip below it. The Lissajous remains a small header mark only; the listening center uses an abstract signal nucleus rather than treating the logo as a visualization.
+
 ## Comparison
 
 | Concept | Core idea | Strengths | Risks | Mobile treatment |
