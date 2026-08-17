@@ -5,6 +5,9 @@ import { useRef, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
 import type { ListenerCheckoutProvider } from '@/lib/early-birds/checkout';
 import { earlyBirdCopy } from '@/lib/early-birds/copy';
+import { normalizeMercadoPagoPayerEmail } from '@/lib/early-birds/payer-email';
+
+import MercadoPagoPayerEmailField from './MercadoPagoPayerEmailField';
 
 const CSRF_HEADER = 'x-hb-listener-live-csrf';
 
@@ -22,12 +25,21 @@ export default function FoundingListenerLiveWorkbench({
     const copy = earlyBirdCopy[locale];
     const [busy, setBusy] = useState(false);
     const [failed, setFailed] = useState(false);
+    const [payerEmail, setPayerEmail] = useState('');
+    const [payerEmailInvalid, setPayerEmailInvalid] = useState(false);
     const attemptId = useRef<string | null>(null);
 
     if (!config) return null;
 
     async function start() {
         if (busy || !config) return;
+        const normalizedPayerEmail = config.provider === 'mercado_pago'
+            ? normalizeMercadoPagoPayerEmail(payerEmail)
+            : null;
+        if (config.provider === 'mercado_pago' && !normalizedPayerEmail) {
+            setPayerEmailInvalid(true);
+            return;
+        }
         setBusy(true);
         setFailed(false);
         attemptId.current ??= crypto.randomUUID();
@@ -40,7 +52,9 @@ export default function FoundingListenerLiveWorkbench({
                     'Content-Type': 'application/json',
                     [CSRF_HEADER]: config.csrfToken,
                 },
-                body: JSON.stringify({ attemptId: attemptId.current }),
+                body: JSON.stringify(config.provider === 'mercado_pago'
+                    ? { attemptId: attemptId.current, payerEmail: normalizedPayerEmail }
+                    : { attemptId: attemptId.current }),
             });
             const result = await response.json() as unknown;
             if (!response.ok || !result || typeof result !== 'object' || Array.isArray(result)) {
@@ -71,6 +85,18 @@ export default function FoundingListenerLiveWorkbench({
                     <a href="/listener/terms">{copy.checkoutTerms}</a>{' · '}
                     <a href="/listener/privacy">{copy.checkoutPrivacy}</a>
                 </p>
+                {config.provider === 'mercado_pago' && (
+                    <MercadoPagoPayerEmailField
+                        value={payerEmail}
+                        disabled={busy}
+                        invalid={payerEmailInvalid}
+                        onChange={(value) => {
+                            setPayerEmail(value);
+                            setPayerEmailInvalid(false);
+                            attemptId.current = null;
+                        }}
+                    />
+                )}
                 <button
                     type="button"
                     className="listener-button listener-button--secondary w-full"

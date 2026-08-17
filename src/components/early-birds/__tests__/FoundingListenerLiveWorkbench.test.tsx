@@ -28,7 +28,7 @@ describe('Founding Listener private Live workbench', () => {
         expect(container).toBeEmptyDOMElement();
     });
 
-    it('sends only an attempt and CSRF proof to the separate endpoint', async () => {
+    it('sends the explicit Mercado Pago payer email with the attempt and CSRF proof', async () => {
         const fetchMock = vi.fn().mockResolvedValue(new Response(
             JSON.stringify({ error: 'Checkout unavailable.' }),
             { status: 503, headers: { 'Content-Type': 'application/json' } },
@@ -44,18 +44,42 @@ describe('Founding Listener private Live workbench', () => {
         );
 
         fireEvent.click(screen.getByText('Become a member for full access'));
+        fireEvent.change(screen.getByLabelText('Email for your Mercado Pago account'), {
+            target: { value: 'Billing@Example.com' },
+        });
         fireEvent.click(screen.getByRole('button', { name: 'Continue with Mercado Pago' }));
         await screen.findByRole('alert');
 
         expect(fetchMock).toHaveBeenCalledTimes(1);
         const [, init] = fetchMock.mock.calls[0];
         expect(fetchMock.mock.calls[0][0]).toBe('/api/listener/checkout/live-workbench');
-        expect(JSON.parse(init.body)).toEqual({ attemptId });
+        expect(JSON.parse(init.body)).toEqual({ attemptId, payerEmail: 'billing@example.com' });
         expect(init.headers).toEqual(expect.objectContaining({
             'x-hb-listener-live-csrf': 'browser-csrf-proof',
         }));
-        expect(JSON.stringify({ url: fetchMock.mock.calls[0][0], init })).not.toMatch(
-            /opaque-account|listener@example|provider.*mercado_pago/i,
+        expect(JSON.stringify({ url: fetchMock.mock.calls[0][0], init }))
+            .not.toMatch(/opaque-account|listener@example|provider.*mercado_pago/i);
+    });
+
+    it('does not render or send a payer email for PayPal', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response(
+            JSON.stringify({ error: 'Checkout unavailable.' }),
+            { status: 503, headers: { 'Content-Type': 'application/json' } },
+        ));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <FoundingListenerLiveWorkbench config={{
+                    provider: 'paypal',
+                    csrfToken: 'browser-csrf-proof',
+                }} />
+            </LocaleProvider>,
         );
+
+        fireEvent.click(screen.getByText('Become a member for full access'));
+        expect(screen.queryByLabelText('Email for your Mercado Pago account')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue with PayPal' }));
+        await screen.findByRole('alert');
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ attemptId });
     });
 });

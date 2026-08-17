@@ -52,4 +52,38 @@ describe('Founding Listener sandbox checkout', () => {
         expect(second).toEqual(first);
         expect(JSON.stringify(first)).not.toMatch(/email|account|price|currency/i);
     });
+
+    it('asks separately for the Mercado Pago payer email and never derives it from Listener identity', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response(
+            JSON.stringify({ error: 'Checkout unavailable.' }),
+            { status: 503, headers: { 'Content-Type': 'application/json' } },
+        ));
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <LocaleProvider initialLocale="en">
+                <FoundingListenerCheckout available={{ paypal: true, mercadoPago: true }} />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(screen.getByText('Become a member for full access'));
+        expect(screen.getByLabelText('Email for your Mercado Pago account')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue with Mercado Pago' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Enter the email you use for Mercado Pago.');
+        expect(fetchMock).not.toHaveBeenCalled();
+
+        fireEvent.change(screen.getByLabelText('Email for your Mercado Pago account'), {
+            target: { value: 'Ani.Billing@Example.com ' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Continue with Mercado Pago' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+            provider: 'mercado_pago',
+            attemptId,
+            payerEmail: 'ani.billing@example.com',
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Continue with PayPal' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ provider: 'paypal', attemptId });
+    });
 });

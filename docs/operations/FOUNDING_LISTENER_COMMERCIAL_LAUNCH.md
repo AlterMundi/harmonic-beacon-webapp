@@ -124,9 +124,13 @@ deleting bindings, events, jobs or projections.
 - PayPal Live webhook: `POST /v1/webhooks/listener/paypal`.
 - Mercado Pago Live webhook: `POST /v1/webhooks/listener/mercado-pago`.
 - Every other authority route stays loopback/private. Event vhosts expose none of these routes.
-- The browser supplies only provider plus a random attempt ID for checkout, and only a random
-  attempt ID plus canonical action for membership management. Account, email, current provider and provider subscription ID are
-  server-derived. Provider IDs never enter the browser response.
+- The browser supplies provider plus a random attempt ID for checkout. Mercado Pago additionally
+  requires the payer email entered specifically for that provider; it may differ from the Listener
+  sign-in email, is forwarded without becoming profile identity and is retained only as keyed
+  evidence rather than readable PII. PayPal receives no payer email from Listener. Account,
+  current membership provider and provider subscription ID remain server-derived. Membership
+  management supplies only a random attempt ID plus canonical action. Provider IDs never enter the
+  browser response.
 
 For reversible cancellation before the service boundary, PayPal uses suspend/activate and Mercado
 Pago uses pause/reactivate. A terminal provider cancellation, lapse or adverse event is never

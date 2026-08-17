@@ -1934,6 +1934,27 @@ html[data-hb-surface='listener'] body {
 .listener-checkout__options p { line-height: 1.45; }
 .listener-checkout__options [role="alert"] { color: #fecaca; }
 
+.listener-checkout__payer-email {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.listener-checkout__payer-email > label {
+  color: var(--hb-bone);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.listener-checkout__payer-email > small {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.listener-checkout__payer-email > small[role="alert"] { color: #fecaca; }
+
 .listener-checkout__legal {
   color: var(--text-muted);
   font-size: 0.68rem;

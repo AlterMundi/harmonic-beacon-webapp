@@ -13,7 +13,6 @@ const config = {
 };
 const base = {
     accountId: 'betterAuthOpaqueId_123',
-    email: 'Listener@Example.COM ',
     attemptId: '123e4567-e89b-42d3-a456-426614174000',
     returnUrl: 'https://earlybirds-staging.harmonicbeacon.com/?checkout=returned',
     cancelUrl: 'https://earlybirds-staging.harmonicbeacon.com/?checkout=cancelled',
@@ -79,14 +78,18 @@ describe('Listener sandbox checkout gateway', () => {
             .toBe(requests[1].headers.get('idempotency-key'));
     });
 
-    it('creates Mercado Pago through v2 with only the normalized session email', async () => {
+    it('creates Mercado Pago through v2 with the normalized checkout-specific payer email', async () => {
         let captured: Request | null = null;
         const request = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
             captured = new Request(input, init);
             return Response.json(result('mercado_pago'));
         });
         const gateway = new HttpListenerCheckoutGateway(config, request as typeof fetch);
-        const created = await gateway.create({ ...base, provider: 'mercado_pago' });
+        const created = await gateway.create({
+            ...base,
+            provider: 'mercado_pago',
+            payerEmail: 'Billing@Example.COM ',
+        });
 
         expect(created).toEqual({
             provider: 'mercado_pago',
@@ -97,8 +100,26 @@ describe('Listener sandbox checkout gateway', () => {
             schema_version: 'early-bird-checkout.checkout-create.v2',
             account_id: base.accountId,
             provider: 'mercado_pago',
-            payer_email: 'listener@example.com',
+            payer_email: 'billing@example.com',
         }));
+    });
+
+    it('requires a payer email for Mercado Pago but never permits one to affect PayPal', async () => {
+        const request = vi.fn(async () => Response.json(result('mercado_pago')));
+        const gateway = new HttpListenerCheckoutGateway(config, request as typeof fetch);
+
+        await expect(gateway.create({ ...base, provider: 'mercado_pago' }))
+            .rejects.toBeInstanceOf(ListenerCheckoutUnavailableError);
+        expect(request).not.toHaveBeenCalled();
+
+        const paypalRequests: Request[] = [];
+        const paypalRequest = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+            paypalRequests.push(new Request(input, init));
+            return Response.json(result('paypal'));
+        });
+        const paypalGateway = new HttpListenerCheckoutGateway(config, paypalRequest as typeof fetch);
+        await paypalGateway.create({ ...base, provider: 'paypal', payerEmail: 'ignored@example.com' });
+        expect(JSON.stringify(await paypalRequests[0].json())).not.toMatch(/payer|email/i);
     });
 
     it.each([
