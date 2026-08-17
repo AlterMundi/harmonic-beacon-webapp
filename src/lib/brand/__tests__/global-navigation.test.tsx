@@ -3,7 +3,11 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { GlobalNavigation, GLOBAL_NAVIGATION_ASSET } from '@/components/brand/GlobalNavigation';
+import {
+    GlobalNavigation,
+    GLOBAL_NAVIGATION_ASSET,
+    GLOBAL_NAVIGATION_EMBED_GUARD,
+} from '@/components/brand/GlobalNavigation';
 import { globalNavigationSurface } from '@/lib/brand/global-navigation';
 
 describe('canonical Harmonic Beacon global navigation', () => {
@@ -34,5 +38,11 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(screen.getByRole('link', { name: 'Eventos' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('link', { name: 'Escuchar' })).toHaveAttribute('href', 'https://listen.harmonicbeacon.com/?lang=es');
         expect(screen.getByRole('link', { name: 'Novedades' })).toBeInTheDocument();
+    });
+
+    it('suppresses only the duplicate navigation inside the cockpit iframe', () => {
+        expect(GLOBAL_NAVIGATION_EMBED_GUARD).toContain('window.self === window.top');
+        expect(GLOBAL_NAVIGATION_EMBED_GUARD).toContain("get('surface') !== 'cockpit'");
+        expect(GLOBAL_NAVIGATION_EMBED_GUARD).toContain("hbEmbeddedSurface = 'cockpit'");
     });
 });
