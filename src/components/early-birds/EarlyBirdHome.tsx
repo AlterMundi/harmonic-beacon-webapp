@@ -1,6 +1,5 @@
 'use client';
 
-import HarmonicBeaconBrand from '@/components/brand/HarmonicBeaconBrand';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy, earlyBirdHomeCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
@@ -57,7 +56,6 @@ export default function EarlyBirdHome({
         <main className="listener-shell">
             <div className="listener-shell__frame listener-shell__frame--home">
                 <header className="listener-rail">
-                    <HarmonicBeaconBrand href={LISTENER_NAMESPACE.publicWebsite} />
                     <div className="listener-rail__actions">
                         {publicAccess && (
                             <FreeQuotaStatus serverNow={serverNow} unlimited="free-for-all" compact />

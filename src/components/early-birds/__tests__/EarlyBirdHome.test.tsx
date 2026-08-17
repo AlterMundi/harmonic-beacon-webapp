@@ -61,7 +61,7 @@ describe('EarlyBird Listener home access chrome', () => {
         container.remove();
     });
 
-    it('uses the canonical public brand link without exposing the Reactive Lab', () => {
+    it('leaves the global brand link to the shared layout without exposing the Reactive Lab', () => {
         render(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
@@ -72,9 +72,7 @@ describe('EarlyBird Listener home access chrome', () => {
             </LocaleProvider>,
         );
 
-        expect(screen.getByRole('link', { name: 'Harmonic Beacon' }))
-            .toHaveAttribute('href', 'https://harmonicbeacon.com/');
-        expect(document.querySelector('.hb-brand__mark path')).toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
         expect(screen.getByLabelText('listener-player'))
             .toHaveAttribute('data-reactive-initially-enabled', 'false');
     });

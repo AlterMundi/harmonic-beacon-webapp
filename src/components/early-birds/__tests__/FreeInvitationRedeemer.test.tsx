@@ -39,7 +39,7 @@ describe('EarlyBird free invitation redeemer', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent('This invitation is unavailable.');
         expect(screen.getByRole('button', { name: 'Activate invitation' })).toBeEnabled();
         expect(request).toHaveBeenCalledWith('/api/listener/free/redeem', { method: 'POST' });
-        expect(screen.getByRole('link', { name: 'Harmonic Beacon' })).toHaveAttribute('href', 'https://harmonicbeacon.com/');
+        expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
         expect(JSON.stringify(request.mock.calls)).not.toContain('invitation-token');
     });
 });

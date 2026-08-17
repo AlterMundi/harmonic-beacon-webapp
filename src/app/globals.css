@@ -1,5 +1,66 @@
 @import "tailwindcss";
 
+/* Accessible light-DOM fallback while the canonical cross-product web
+   component loads from harmonicbeacon.com. Once defined, its shadow DOM owns
+   the exact desktop/mobile rendering shared by all three products. */
+hb-global-nav:not(:defined) {
+  display: block;
+  min-height: 72px;
+  background: rgba(22, 18, 13, 0.98);
+  border-bottom: 1px solid rgba(244, 238, 226, 0.1);
+  color: #f4eee2;
+  font-family: var(--font-hb-inter), Inter, system-ui, sans-serif;
+}
+
+.hb-global-navigation-fallback {
+  min-height: 72px;
+  max-width: 1180px;
+  margin-inline: auto;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.hb-global-navigation-fallback__brand {
+  color: #f4eee2;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hb-global-navigation-fallback ul {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hb-global-navigation-fallback li a {
+  padding: 9px 8px;
+  color: #ada089;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hb-global-navigation-fallback li a[aria-current="page"] {
+  color: #c9a24e;
+}
+
+@media (max-width: 1120px) {
+  hb-global-nav:not(:defined) { min-height: 68px; }
+  .hb-global-navigation-fallback { min-height: 68px; padding-inline: 16px; }
+  .hb-global-navigation-fallback ul { display: none; }
+}
+
 /* ============================================
    HARMONIC PROJECTION — Design System
    Phase 5: Aligned with confirmation palette
@@ -1303,6 +1364,7 @@ html[data-hb-surface='listener'] body {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  margin-left: auto;
 }
 
 .listener-account {
