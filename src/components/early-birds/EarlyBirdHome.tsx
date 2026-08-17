@@ -104,7 +104,11 @@ export default function EarlyBirdHome({
                             snapshot={quota}
                             serverNow={serverNow}
                             compact
-                            showMembershipLink={!checkoutAvailability.paypal && !checkoutAvailability.mercadoPago}
+                            showMembershipLink={
+                                !checkoutAvailability.paypal
+                                && !checkoutAvailability.mercadoPago
+                                && !liveWorkbench
+                            }
                         />
                         <FoundingListenerCheckout
                             available={checkoutAvailability}

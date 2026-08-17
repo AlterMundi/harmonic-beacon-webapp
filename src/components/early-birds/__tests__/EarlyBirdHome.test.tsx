@@ -225,4 +225,37 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(footer).toContainElement(screen.getByRole('link', { name: 'Become a member for full access' }));
         expect(screen.getByLabelText('Account').closest('header')).not.toContainElement(footer);
     });
+
+    it('replaces the mail contact fallback with the private checkout action', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'none', state: 'none' }}
+                    accessKind="free-quota"
+                    serverNow="2026-08-07T15:00:00.000Z"
+                    quota={{
+                        policy: 'personal-7-day-v1',
+                        status: 'available',
+                        cycleStartedAt: '2026-08-07T15:00:00.000Z',
+                        cycleEndsAt: '2026-08-14T15:00:00.000Z',
+                        baseAllowanceMs: 10_800_000,
+                        bonusAllowanceMs: 0,
+                        consumedMs: 0,
+                        remainingMs: 10_800_000,
+                        activelyConsuming: false,
+                        exhaustsAt: null,
+                        nextCycleAt: '2026-08-14T15:00:00.000Z',
+                    }}
+                    dropIns={{ es: null, en: null }}
+                    liveWorkbench={{ provider: 'mercado_pago', csrfToken: 'csrf-proof' }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.queryByRole('link', { name: 'Become a member for full access' })).toBeNull();
+        expect(document.querySelector('details[data-listener-live-workbench="private"]'))
+            .toHaveTextContent('Become a member for full access');
+        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+    });
 });

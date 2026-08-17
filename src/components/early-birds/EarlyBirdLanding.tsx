@@ -164,6 +164,7 @@ export default function EarlyBirdLanding(props: Props) {
                                             showMembershipLink={
                                                 !props.checkoutAvailability?.paypal
                                                 && !props.checkoutAvailability?.mercadoPago
+                                                && !props.liveWorkbench
                                             }
                                         />
                                         <FoundingListenerCheckout available={props.checkoutAvailability ?? {
