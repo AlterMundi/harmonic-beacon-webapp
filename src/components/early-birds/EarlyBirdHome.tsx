@@ -102,10 +102,10 @@ export default function EarlyBirdHome({
                         </details>}
                     </div>
                 </header>
+                <div className="listener-static-field" data-testid="listener-static-field">
+                    <BeaconField phase="ready" />
+                </div>
                 <section className="listener-altar" aria-labelledby="listener-heading">
-                    <div className="listener-static-field" data-testid="listener-static-field">
-                        <BeaconField phase="ready" />
-                    </div>
                     <div className="listener-altar__heading" aria-hidden="true">
                         <p>{copy.eyebrow}</p>
                         <strong>{copy.heading}</strong>

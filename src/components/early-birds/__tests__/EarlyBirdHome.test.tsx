@@ -107,6 +107,11 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(container.querySelector('.listener-altar')).toContainElement(
             screen.getByLabelText('listener-player'),
         );
+        expect(container.querySelector('.listener-altar')).not.toContainElement(
+            screen.getByTestId('listener-static-field'),
+        );
+        expect(screen.getByTestId('listener-static-field').parentElement)
+            .toHaveClass('listener-shell__frame--home');
         expect(container.textContent).not.toMatch(/Presence|here now|Your listening space|Listening Altar/i);
         expect(screen.getByLabelText('listener-player'))
             .toHaveAttribute('data-reactive-initially-enabled', 'false');

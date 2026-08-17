@@ -93,6 +93,15 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
     it('keeps the real BeaconField visible through the warm translucent altars', () => {
         const css = readFileSync('src/app/globals.css', 'utf8');
 
+        const staticFieldStart = css.indexOf('.listener-static-field {');
+        const staticFieldEnd = css.indexOf('\n}', staticFieldStart);
+        const staticField = css.slice(staticFieldStart, staticFieldEnd);
+        expect(staticField).toContain('position: fixed;');
+        expect(css).toContain('.listener-shell__frame--home > .listener-static-field .listener-field {');
+        expect(css).toContain('.listener-public-hero > .listener-field {');
+        expect(css).not.toContain('.listener-altar > .listener-static-field .listener-field {');
+        expect(css).not.toContain('.listener-public-altar > .listener-field {');
+
         for (const selector of ['.listener-altar', '.listener-public-altar']) {
             const start = css.indexOf(`${selector} {`);
             const end = css.indexOf('\n}', start);

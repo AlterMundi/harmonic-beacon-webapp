@@ -138,8 +138,8 @@ export default function EarlyBirdLanding(props: Props) {
         <main className="listener-shell listener-shell--public">
             <div className="listener-shell__frame">
                 <section className="listener-public-hero" aria-labelledby="listener-public-title">
+                    <BeaconField phase="ready" />
                     <div className="listener-public-altar">
-                        <BeaconField phase="ready" />
                         <div className="listener-public-hero__copy">
                             <p>{copy.eyebrow}</p>
                             <h1 id="listener-public-title">
