@@ -3,7 +3,9 @@
 This is the bounded operator flow for the public **BOTÓN DE
 ARREPENTIMIENTO** and **BOTÓN DE BAJA DE SERVICIO**. It receives and tracks a request; it never calls PayPal,
 Mercado Pago or the membership authority and it never cancels or refunds by
-itself.
+itself. The ordinary signed-in membership action is separate: it automatically
+stops future renewals, preserves the already-paid period and never refunds it.
+Refund requests are exceptional cases that require manual provider review.
 
 ## Runtime boundary
 
@@ -53,8 +55,8 @@ Then, outside this application:
 1. inspect `requestKind`, then correlate the email/provider/date against the canonical provider and
    membership authority;
 2. contact the requester when evidence is insufficient;
-3. perform the authorized provider cancellation/refund, if applicable, using
-   its normal audited procedure;
+3. perform the authorized provider cancellation, or an exceptional manual
+   refund when independently justified, using the provider's audited procedure;
 4. confirm canonical membership convergence;
 5. record only the bounded result in this queue:
 

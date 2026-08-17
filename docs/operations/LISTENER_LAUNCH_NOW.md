@@ -1,6 +1,6 @@
 # Listener launch — current state
 
-Last reconciled: 2026-08-15
+Last reconciled: 2026-08-16
 
 This is the compact operational memory for Founding Listeners. Detailed evidence
 and rollback procedures live in `FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md` and
@@ -47,12 +47,15 @@ reconciliation and cancellation stay available. Mercado Pago remains on TEST
 with Live OFF.
 
 PayPal Sandbox has passed activation, pending cancellation, reactivation and
-terminal refund. Mercado Pago TEST has passed checkout, activation, pause,
-reactivation and reconciliation. Browser redirects never grant membership.
+terminal-event handling. Mercado Pago TEST has passed checkout, activation,
+pause, reactivation and reconciliation. Browser redirects never grant
+membership. Normal cancellation only disables future renewals: it preserves
+the already-paid service period and never issues a refund. Refunds are manual,
+exceptional provider operations, not a launch rehearsal or self-service flow.
 
 | Provider | Non-production lifecycle | Productive state |
 | --- | --- | --- |
-| PayPal | Sandbox activation, pending cancellation, reactivation and terminal refund accepted | Live catalog/webhook read-only preflight verified; lifecycle and real charge not yet rehearsed |
+| PayPal | Sandbox activation, pending cancellation, reactivation and terminal-event ingestion accepted | Live activation, cancellation and reactivation accepted; cancellation pending end preserves the paid period and no refund was issued |
 | Mercado Pago | TEST checkout, activation, pause, reactivation and reconciliation accepted | Live merchant/webhook read-only preflight verified; lifecycle and real charge not yet rehearsed |
 
 “Private rehearsal completed” currently means Sandbox/TEST only. A productive
@@ -77,16 +80,18 @@ backup. Only Listener and the disposable staging workbench were recreated.
 
 1. #304 — complete a physical 60-minute listen and record any watchdog recovery.
 2. #317 — final mobile/account-menu billing acceptance.
-3. #318 — record human ES/EN offer/legal/seller/refund/support and invoicing
+3. #318 — record human ES/EN offer/legal/seller/manual-exception refund/support and invoicing
    acceptance. The public no-login withdrawal and service-cancellation paths,
    dedicated secret, migration, private operator, metrics and 20h/24h alerts
    are deployed and smoke-tested.
-4. With a new explicit approval, create a fresh PayPal checkout for a
-   non-merchant buyer and execute supervised activation, cancellation and
-   refund evidence. Execute the corresponding supervised Mercado Pago Live
-   lifecycle separately.
-5. Confirm Founder activation, terminal Free fallback, metrics, alerts and the
-   absence of PII/secret leakage against those Live transactions.
+4. Execute the corresponding supervised Mercado Pago Live activation,
+   cancellation and reactivation lifecycle with a non-merchant buyer. Do not
+   create a real refund as an acceptance test.
+5. Confirm Founder activation, paid-through cancellation, metrics, alerts and
+   the absence of PII/secret leakage against those Live transactions. Terminal
+   refund/dispute handling remains covered synthetically and by provider-event
+   reconciliation; an exceptional real refund is handled manually if one ever
+   occurs.
 6. Obtain separate explicit approvals for merge to `main` and public checkout.
 
 ## Non-negotiable isolation

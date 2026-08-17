@@ -60,7 +60,7 @@ export const earlyBirdCopy = {
         membershipAccessThrough: 'Acceso Founder hasta {date}.',
         membershipCancel: 'Cancelar membresía',
         membershipCancelConfirmTitle: 'Confirmar cancelación',
-        membershipCancelConfirmDetail: 'Conservarás acceso hasta el fin del período ya pagado. Después perderás el precio Founder.',
+        membershipCancelConfirmDetail: 'Se detendrán los próximos cobros. No se reembolsa el período actual: conservarás acceso hasta que termine. Después perderás el precio Founder.',
         membershipCancelConfirm: 'Sí, cancelar al fin del período',
         membershipCancelWorking: 'Solicitando cancelación…',
         membershipKeep: 'Conservar membresía',
@@ -136,7 +136,7 @@ export const earlyBirdCopy = {
         membershipAccessThrough: 'Founder access through {date}.',
         membershipCancel: 'Cancel membership',
         membershipCancelConfirmTitle: 'Confirm cancellation',
-        membershipCancelConfirmDetail: 'You will keep access through the paid period. After that, Founder pricing ends.',
+        membershipCancelConfirmDetail: 'Future charges will stop. The current period is not refunded: you will keep access until it ends. After that, Founder pricing ends.',
         membershipCancelConfirm: 'Yes, cancel at period end',
         membershipCancelWorking: 'Requesting cancellation…',
         membershipKeep: 'Keep membership',
@@ -161,7 +161,7 @@ export const earlyBirdLegalCopy = {
         back: 'Volver a Listener',
         eyebrow: 'HARMONIC BEACON · FOUNDING LISTENER',
         title: 'Condiciones y privacidad del servicio Listener',
-        updated: 'Versión de lanzamiento · 13 de agosto de 2026',
+        updated: 'Versión de lanzamiento · 16 de agosto de 2026',
         sections: [
             {
                 title: 'Oferta',
@@ -174,8 +174,8 @@ export const earlyBirdLegalCopy = {
             {
                 title: 'Cancelación, fallos y reembolsos',
                 paragraphs: [
-                    'Puedes solicitar la cancelación desde tu perfil. Conservas acceso hasta el final del período ya pagado; el proveedor confirma el cambio y la app actualiza el estado canónico. Una nueva alta posterior usa la oferta pública vigente.',
-                    'Un reembolso, contracargo, disputa, fraude o terminación administrativa puede finalizar inmediatamente el acceso. Para pedir ayuda o revisar un cobro escribe a nicoechaniz@harmonicbeacon.com. La política legal aplicable y los derechos irrenunciables del consumidor prevalecen.',
+                    'Puedes cancelar desde tu perfil. La cancelación detiene cobros futuros, no reembolsa el período actual y conservas acceso hasta que termine ese período ya pagado. Una nueva alta posterior usa la oferta pública vigente.',
+                    'Los reembolsos no forman parte de la cancelación normal ni son automáticos. Si un caso legal o de soporte excepcional requiere uno, se procesa manualmente con el proveedor; su confirmación, un contracargo, una disputa, fraude o terminación administrativa puede finalizar inmediatamente el acceso. Para pedir ayuda o revisar un cobro escribe a nicoechaniz@harmonicbeacon.com. La política legal aplicable y los derechos irrenunciables del consumidor prevalecen.',
                 ],
             },
             {
@@ -198,7 +198,7 @@ export const earlyBirdLegalCopy = {
         back: 'Back to Listener',
         eyebrow: 'HARMONIC BEACON · FOUNDING LISTENER',
         title: 'Listener service terms and privacy',
-        updated: 'Launch version · August 13, 2026',
+        updated: 'Launch version · August 16, 2026',
         sections: [
             {
                 title: 'Offer',
@@ -211,8 +211,8 @@ export const earlyBirdLegalCopy = {
             {
                 title: 'Cancellation, failures and refunds',
                 paragraphs: [
-                    'You can request cancellation from your profile. Access continues through the paid period; the provider confirms the change and the app updates canonical status. A later signup uses the public offer available then.',
-                    'A refund, chargeback, dispute, fraud finding or administrative termination may end access immediately. For billing help or review, contact nicoechaniz@harmonicbeacon.com. Applicable law and non-waivable consumer rights prevail.',
+                    'You can cancel from your profile. Cancellation stops future charges, does not refund the current period, and access continues until that already-paid period ends. A later signup uses the public offer available then.',
+                    'Refunds are not part of normal cancellation and are never automatic. If an exceptional legal or support case requires one, it is processed manually with the provider; its confirmation, a chargeback, dispute, fraud finding or administrative termination may end access immediately. For billing help or review, contact nicoechaniz@harmonicbeacon.com. Applicable law and non-waivable consumer rights prevail.',
                 ],
             },
             {

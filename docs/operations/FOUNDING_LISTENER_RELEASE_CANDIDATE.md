@@ -18,7 +18,7 @@ The weekly-Free candidate has advanced to a complete Founding Listener pre-relea
 
 - canonical uninterrupted Founder continuity and USD 5/month offer;
 - PayPal Sandbox and Mercado Pago TEST browser acceptance;
-- self-service cancel/reactivate and terminal Free fallback;
+- self-service cancel/reactivate at the paid boundary and terminal Free fallback;
 - private paid-operation metrics, alerts, backup/restore and sales kill switches;
 - production provider adapters and public checkout present but fail-closed/default-off.
 
@@ -190,7 +190,7 @@ deployed image; later documentation-only commits do not require rebuilding it.
 - #211 is deployed. #212's accepted field is public; its technical laboratory
   remains default-off and can be re-enabled only on staging for later variants.
 - #199/#200 have fresh provider evidence: PayPal Sandbox completed USD 5
-  activation, cancel-pending-end, reversal and terminal refund; Mercado Pago TEST
+  activation, cancel-pending-end, reversal and terminal-event handling; Mercado Pago TEST
   completed checkout, pause, reactivation and reconciliation. Productive credentials are installed
   root-only. One PayPal Live approval intent exists without a subscription or charge; PayPal Live
   lifecycle ingestion stays ON while global new sales, both public checkout flags and Mercado Pago
@@ -201,8 +201,8 @@ deployed image; later documentation-only commits do not require rebuilding it.
 Use `docs/operations/EARLY_BIRDS_FREE_ACCEPTANCE.md` as the authoritative
 worksheet.
 
-1. Review and accept the final ES/EN offer, seller, cancellation/refund, privacy
-   and support copy.
+1. Review and accept the final ES/EN offer, seller, prospective cancellation,
+   manual-exception refund, privacy and support copy.
 2. Rotate the exposed Google OAuth client secret through the protected store and
    re-run callback/logout without printing it.
 3. Prove one controlled
