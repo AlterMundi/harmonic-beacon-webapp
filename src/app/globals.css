@@ -1363,10 +1363,10 @@ html[data-hb-surface='listener'] body {
   padding: clamp(1.1rem, 3vw, 2rem);
   border: 1px solid rgba(201, 162, 78, 0.24);
   border-radius: 2.15rem 2.15rem 1.15rem 1.15rem;
-  background: linear-gradient(160deg, rgba(36, 29, 21, 0.6), rgba(22, 18, 13, 0.74));
+  background: linear-gradient(160deg, rgba(36, 29, 21, 0.24), rgba(22, 18, 13, 0.44));
   box-shadow: 0 2.25rem 7rem rgba(0, 0, 0, 0.48), inset 0 1px rgba(244, 238, 226, 0.035);
-  -webkit-backdrop-filter: blur(16px) saturate(112%);
-  backdrop-filter: blur(16px) saturate(112%);
+  -webkit-backdrop-filter: blur(3px) saturate(105%);
+  backdrop-filter: blur(3px) saturate(105%);
 }
 
 .listener-altar::before,
@@ -1913,10 +1913,10 @@ html[data-hb-surface='listener'] body {
   padding: clamp(1.35rem, 4vw, 2.5rem);
   border: 1px solid rgba(201, 162, 78, 0.24);
   border-radius: 2.15rem 2.15rem 1.15rem 1.15rem;
-  background: linear-gradient(160deg, rgba(36, 29, 21, 0.6), rgba(22, 18, 13, 0.74));
+  background: linear-gradient(160deg, rgba(36, 29, 21, 0.24), rgba(22, 18, 13, 0.44));
   box-shadow: 0 2.25rem 7rem rgba(0, 0, 0, 0.48), inset 0 1px rgba(244, 238, 226, 0.035);
-  -webkit-backdrop-filter: blur(16px) saturate(112%);
-  backdrop-filter: blur(16px) saturate(112%);
+  -webkit-backdrop-filter: blur(3px) saturate(105%);
+  backdrop-filter: blur(3px) saturate(105%);
 }
 
 .listener-public-altar > * {

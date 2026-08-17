@@ -108,9 +108,9 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
             const rule = css.slice(start, end);
 
             expect(start, `${selector} must exist`).toBeGreaterThanOrEqual(0);
-            expect(rule).toContain('rgba(36, 29, 21, 0.6)');
-            expect(rule).toContain('rgba(22, 18, 13, 0.74)');
-            expect(rule).toContain('backdrop-filter: blur(16px) saturate(112%);');
+            expect(rule).toContain('rgba(36, 29, 21, 0.24)');
+            expect(rule).toContain('rgba(22, 18, 13, 0.44)');
+            expect(rule).toContain('backdrop-filter: blur(3px) saturate(105%);');
             expect(rule).toContain('overflow: hidden;');
         }
 
