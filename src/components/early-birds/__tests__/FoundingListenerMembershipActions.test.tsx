@@ -22,6 +22,22 @@ afterEach(() => {
 });
 
 describe('Founding Listener membership actions', () => {
+    it('renders the service boundary in an explicit server-stable timezone', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <FoundingListenerMembershipActions membership={{
+                    kind: 'founder',
+                    provider: 'paypal',
+                    state: 'active',
+                    serviceThrough: '2026-09-07T12:00:00.000Z',
+                }} />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByText('Current period through Sep 7, 2026, 12:00 PM UTC.'))
+            .toBeInTheDocument();
+    });
+
     it('requires explicit confirmation and sends no provider identity', async () => {
         const fetchMock = vi.fn().mockResolvedValue(Response.json({ status: 'queued' }, { status: 202 }));
         vi.stubGlobal('fetch', fetchMock);

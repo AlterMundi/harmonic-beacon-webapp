@@ -28,8 +28,13 @@ export default function FoundingListenerMembershipActions({
 
     const boundary = membership.serviceThrough
         ? new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-US', {
-            dateStyle: 'medium',
-            timeStyle: 'short',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'UTC',
+            timeZoneName: 'short',
         }).format(new Date(membership.serviceThrough))
         : null;
 

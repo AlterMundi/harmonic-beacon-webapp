@@ -40,6 +40,7 @@ describe('root document locale boundary', () => {
         expect(result.props.lang).toBe('en');
         expect(result.props['data-lang']).toBe('en');
         expect(result.props['data-hb-surface']).toBe('listener');
+        expect(result.props.suppressHydrationWarning).toBe(true);
         expect(mocks.requestLocale).not.toHaveBeenCalled();
     });
 
