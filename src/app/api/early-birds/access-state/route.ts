@@ -10,6 +10,7 @@ import {
     earlyBirdsFreeForAll,
     earlyBirdsUnavailableResponse,
 } from '@/lib/early-birds/enabled';
+import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({
             serverNow: access.serverNow.toISOString(),
             access: serializeEarlyBirdListeningAccess(access),
+            membershipState: listenerMembershipPresentation(
+                access.membership.projection,
+                access.serverNow,
+            ).state,
         }, { headers: PRIVATE_HEADERS });
     } catch {
         return NextResponse.json({ error: 'Listener access unavailable.' }, {

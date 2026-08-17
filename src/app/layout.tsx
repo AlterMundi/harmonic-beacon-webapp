@@ -101,6 +101,7 @@ export default async function RootLayout({
       data-lang={locale}
       data-hb-surface={listenerHost ? "listener" : undefined}
       className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}
+      suppressHydrationWarning
     >
       <body className="antialiased">
         <LocaleProvider initialLocale={locale}>

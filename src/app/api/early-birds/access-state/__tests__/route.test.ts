@@ -15,6 +15,9 @@ vi.mock('@/lib/early-birds/access', () => ({
         quota: access.quota,
     }),
 }));
+vi.mock('@/lib/early-birds/membership-presentation', () => ({
+    listenerMembershipPresentation: () => ({ kind: 'founder', provider: 'paypal', state: 'ending' }),
+}));
 import { GET } from '../route';
 
 const request = new NextRequest('https://listen.harmonicbeacon.com/api/early-birds/access-state');
@@ -30,10 +33,10 @@ describe('Listener access-state API', () => {
         mocks.currentEarlyBirdSession.mockResolvedValue({ user: { id: 'listener-1' } });
         mocks.getEarlyBirdListeningAccess.mockResolvedValue({
             allowed: true,
-            kind: 'free-quota',
-            allowedUntil: null,
-            membership: { allowed: false, projection: null },
-            quota: { policy: 'personal-7-day-v1', status: 'not-started' },
+            kind: 'membership',
+            allowedUntil: new Date('2026-09-07T12:00:00.000Z'),
+            membership: { allowed: true, projection: { state: 'CANCELLED_PENDING_END' } },
+            quota: null,
             serverNow: new Date('2026-08-07T15:31:00.000Z'),
         });
 
@@ -43,7 +46,8 @@ describe('Listener access-state API', () => {
         expect(response.headers.get('cache-control')).toContain('no-store');
         expect(payload).toMatchObject({
             serverNow: '2026-08-07T15:31:00.000Z',
-            access: { kind: 'free-quota', allowedUntil: null },
+            access: { kind: 'membership', allowedUntil: '2026-09-07T12:00:00.000Z' },
+            membershipState: 'ending',
         });
         expect(JSON.stringify(payload)).not.toContain('listener-1');
     });
