@@ -34,7 +34,9 @@ describe('Listener identity recovery boundary', () => {
         return new NextRequest('https://listen.example.test/api/listener/auth/recover', {
             method: 'POST',
             headers: {
+                host: 'listen.example.test',
                 origin,
+                'x-forwarded-proto': 'https',
                 cookie: '__Secure-hb_earlybird_session=opaque; hb_listener_invite=preserve-me',
             },
         });
@@ -83,7 +85,13 @@ describe('Listener identity recovery boundary', () => {
             }
             const crossOrigin = new NextRequest(
                 'https://listen.example.test/api/listener/auth/recover',
-                { method: 'POST', headers: origin ? { origin } : {} },
+                {
+                    method: 'POST',
+                    headers: {
+                        host: 'listen.example.test',
+                        ...(origin ? { origin } : {}),
+                    },
+                },
             );
             const response = await POST(crossOrigin);
             expect(response.status).toBe(403);
@@ -100,6 +108,14 @@ describe('Listener identity recovery boundary', () => {
         expect(await response.json()).toEqual({ recovered: true });
         expect(deleteSessions).not.toHaveBeenCalled();
         expect(response.headers.getSetCookie()).toHaveLength(6);
+    });
+
+    it('rejects a correct-looking origin unless the proxy attests HTTPS', async () => {
+        const insecure = request();
+        insecure.headers.set('x-forwarded-proto', 'http');
+        const response = await POST(insecure);
+        expect(response.status).toBe(403);
+        expect(currentSession).not.toHaveBeenCalled();
     });
 
     it('does not mutate identity through GET', () => {

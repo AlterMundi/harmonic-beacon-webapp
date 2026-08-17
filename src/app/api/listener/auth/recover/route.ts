@@ -18,10 +18,15 @@ const RESPONSE_HEADERS = {
 
 function exactTrustedOrigin(request: NextRequest): boolean {
     const origin = request.headers.get('origin');
-    if (!origin || origin !== request.nextUrl.origin) return false;
+    const host = request.headers.get('host')?.trim().toLowerCase();
+    const protocol = request.headers.get('x-forwarded-proto')?.trim().toLowerCase()
+        ?? request.nextUrl.protocol.replace(':', '');
+    if (!origin || !host || protocol !== 'https') return false;
+    const expected = `https://${host}`;
+    if (origin !== expected) return false;
     try {
         const configured = listenerRuntimeTrustedOrigins();
-        const allowed = configured.length > 0 ? configured : [request.nextUrl.origin];
+        const allowed = configured.length > 0 ? configured : [expected];
         return allowed.includes(origin);
     } catch {
         return false;
