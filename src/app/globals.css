@@ -16,6 +16,14 @@ html[data-hb-embedded-surface="cockpit"] hb-global-nav {
   display: none;
 }
 
+/* A cockpit drawer is a modal operational surface. Keep the shared product
+   header visible everywhere else, but remove it from the modal stacking and
+   pointer boundary while the drawer owns focus. */
+body:has(.live-ops-shell [role="dialog"]:not(.hidden)) > hb-global-nav {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .hb-global-navigation-fallback {
   min-height: 72px;
   max-width: 1180px;

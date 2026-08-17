@@ -67,12 +67,11 @@ const ROLE_NAMES: Record<StaffDashboardRole, string> = {
 };
 
 async function setLocale(page: Page, locale: UiLocale): Promise<void> {
-    await page.goto('/');
-    await page.context().addCookies([{
-        name: 'hb_locale',
-        value: locale,
-        url: new URL(page.url()).origin,
-    }]);
+    await page.goto(`/?lang=${locale}`);
+    await page.waitForFunction((expectedLocale) => (
+        document.documentElement.lang === expectedLocale
+        && new URL(window.location.href).searchParams.has('lang') === false
+    ), locale);
 }
 
 async function withPage<T>(browser: Browser, run: (page: Page) => Promise<T>): Promise<T> {
@@ -98,10 +97,13 @@ async function expectStaffIdentity(
     await expect(identity).toContainText(copy.description);
     await expect(page.locator('body')).not.toContainText(role);
 
+    const operationsNavigation = page.getByRole('navigation', {
+        name: locale === 'es' ? 'Operaciones de eventos' : 'Event operations',
+    });
     for (const label of locale === 'es'
         ? ['Eventos', 'Estado técnico', 'Entradas']
         : ['Events', 'System health', 'Admission']) {
-        await expect(page.getByRole('link', { name: label, exact: true })).toBeVisible();
+        await expect(operationsNavigation.getByRole('link', { name: label, exact: true })).toBeVisible();
     }
 }
 
