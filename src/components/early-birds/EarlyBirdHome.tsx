@@ -62,7 +62,11 @@ export default function EarlyBirdHome({
                         {publicAccess && (
                             <FreeQuotaStatus serverNow={serverNow} unlimited="free-for-all" compact />
                         )}
-                        {!publicAccess && <details className="listener-account">
+                        {!publicAccess && <details
+                            className="listener-account"
+                            // Browsers may restore native disclosure state before React hydrates.
+                            suppressHydrationWarning
+                        >
                             <summary aria-label={copy.account} title={copy.account}>
                                 {displayName.slice(0, 1).toUpperCase()}
                             </summary>

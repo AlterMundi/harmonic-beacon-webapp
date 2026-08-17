@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LocaleProvider } from '@/context/LocaleContext';
@@ -30,6 +32,35 @@ import EarlyBirdHome from '../EarlyBirdHome';
 afterEach(cleanup);
 
 describe('EarlyBird Listener home access chrome', () => {
+    it('tolerates browser-restored profile disclosure state during hydration', async () => {
+        const tree = (
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'invitation', state: 'active' }}
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>
+        );
+        const container = document.createElement('div');
+        container.innerHTML = renderToString(tree);
+        document.body.append(container);
+        const disclosure = container.querySelector('details.listener-account');
+        expect(disclosure).toBeInstanceOf(HTMLDetailsElement);
+        (disclosure as HTMLDetailsElement).open = true;
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        let root!: ReturnType<typeof hydrateRoot>;
+        await act(async () => {
+            root = hydrateRoot(container, tree);
+        });
+
+        expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/hydration|didn't match/i);
+        await act(async () => root.unmount());
+        consoleError.mockRestore();
+        container.remove();
+    });
+
     it('uses the canonical public brand link without exposing the Reactive Lab', () => {
         render(
             <LocaleProvider initialLocale="en">
