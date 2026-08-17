@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Listener prototype — Immersive Field</title>
+    <link rel="stylesheet" href="shared.css" />
+    <script src="prototype.js" defer></script>
+  </head>
+  <body data-state="listening">
+    <nav class="prototype-toolbar" aria-label="Prototype states">
+      <button data-state-button="visitor">Visitor</button><button data-state-button="free">Free</button>
+      <button data-state-button="founder">Founder</button><button data-state-button="listening">Listening</button>
+      <button data-state-button="paused">Paused</button><button data-state-button="profile">Profile</button>
+      <button data-state-button="checkout">Checkout</button>
+    </nav>
+    <div class="prototype concept-immersive">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Harmonic Beacon home"><img src="mark.svg" alt="" /><span>Harmonic Beacon</span></a>
+        <div class="top-actions">
+          <span class="chip" data-show="free listening paused"><span>Free</span><strong>2h 41m</strong></span>
+          <span class="member-mark" data-show="founder">Founding Listener</span>
+          <button class="icon-button avatar" data-open-state="profile" aria-label="Open profile">N</button>
+        </div>
+      </header>
+      <main class="immersive-layout">
+        <section class="immersive-intro" aria-labelledby="immersive-title">
+          <p class="eyebrow">Immersive Field</p>
+          <h1 class="heading" id="immersive-title">Listen from your <em>harmonic center.</em></h1>
+          <p class="lede">The Beacon fills the room. Access and controls stay quiet until they are needed.</p>
+          <div class="visitor-panel surface" data-show="visitor">
+            <p class="eyebrow">Enter the Beacon</p><h2>Begin listening</h2>
+            <label class="field-label">Email<input class="field-input" type="email" placeholder="you@example.com" /></label>
+            <button class="button">Continue with Google</button><button class="button button--ghost">Email me a link</button>
+          </div>
+        </section>
+        <section class="field-core" aria-label="Beacon field">
+          <div class="core-mark"><img src="mark.svg" alt="" /></div>
+          <div class="core-caption" data-show="free founder"><span>Ready when you are</span><strong>The Beacon is present</strong></div>
+          <div class="core-caption" data-show="listening"><span>Listening now</span><strong class="listening-time">18:42</strong></div>
+          <div class="core-caption" data-show="paused"><span>Session held</span><strong>Paused</strong></div>
+        </section>
+        <aside class="immersive-status surface--clear" data-show="free founder listening paused">
+          <div class="quota" data-show="free listening paused">
+            <p class="eyebrow">Weekly listening</p><div class="quota__line"><strong>2 h 41 min</strong><span>remaining</span></div>
+            <div class="quota__track" aria-hidden="true"></div><p class="meta">Renews Sunday, Aug 23 · 20:14</p>
+            <button class="member-link" data-open-state="checkout">Become a member for full access</button>
+          </div>
+          <div data-show="founder"><span class="member-mark">Founding Listener</span><p class="state-copy">Unlimited listening while your membership remains active.</p></div>
+        </aside>
+      </main>
+      <section class="immersive-dock surface" data-show="free founder">
+        <div class="dock-copy"><span>Beacon · continuous signal</span><strong>Ready to listen</strong></div><button class="button">Listen</button>
+      </section>
+      <section class="immersive-dock surface" data-show="listening">
+        <div class="dock-copy"><span>Beacon · continuous signal</span><strong>Listening <span class="listening-time">18:42</span></strong></div>
+        <div class="transport"><button class="button pause">Pause</button><button class="button button--danger stop" aria-label="Stop listening">■</button></div>
+      </section>
+      <section class="immersive-dock surface" data-show="paused">
+        <div class="dock-copy"><span>Session held</span><strong>Paused at 18:42</strong></div>
+        <div class="transport"><button class="button pause">Resume</button><button class="button button--danger stop" aria-label="Stop listening">■</button></div>
+      </section>
+      <section class="overlay" data-show="profile" aria-label="Profile preview"><div class="overlay__panel surface">
+        <div class="overlay__head"><div><p class="eyebrow">Your account</p><h2>Nico</h2></div><button class="icon-button" data-open-state="free" aria-label="Close">×</button></div>
+        <span class="member-mark">Founding Listener</span><div class="profile-grid"><div class="profile-row"><span>Total listening</span><strong>41 h 26 min</strong></div><div class="profile-row"><span>This session</span><strong>18 min 42 sec</strong></div><div class="profile-row"><span>Membership</span><strong>Active · $5/month</strong></div></div>
+      </div></section>
+      <section class="overlay" data-show="checkout" aria-label="Checkout preview"><div class="overlay__panel surface">
+        <div class="overlay__head"><div><p class="eyebrow">Full access</p><h2>Founding Listener</h2></div><button class="icon-button" data-open-state="free" aria-label="Close">×</button></div>
+        <p class="checkout-price">$5 <small>USD / month</small></p><ul class="checkout-list"><li>Unlimited Beacon listening</li><li>Founding Listener profile mark</li><li>Cancel whenever you need</li></ul>
+        <button class="button">Continue with PayPal</button><button class="button button--ghost">Continue with Mercado Pago</button>
+      </div></section>
+    </div>
+  </body>
+</html>
