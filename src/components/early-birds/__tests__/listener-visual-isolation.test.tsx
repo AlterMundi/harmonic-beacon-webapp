@@ -112,12 +112,11 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         expect(css).toContain('animation: listener-core-breathe 5.5s ease-in-out infinite;');
     });
 
-    it('uses the shared canonical Lissajous for Listener chrome and the field center', () => {
+    it('leaves chrome to the global layout and keeps the canonical field center', () => {
         const { container } = renderLanding();
 
-        expect(screen.getByRole('link', { name: 'Harmonic Beacon' }))
-            .toHaveAttribute('href', 'https://harmonicbeacon.com/');
-        expect(container.querySelectorAll('.hb-brand__mark path')).toHaveLength(2);
+        expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
+        expect(container.querySelectorAll('.hb-brand__mark path')).toHaveLength(1);
         expect(container.textContent).not.toContain('✦');
     });
 

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 
-import HarmonicBeaconBrand from '@/components/brand/HarmonicBeaconBrand';
 import { useLocale } from '@/context/LocaleContext';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
@@ -46,9 +45,6 @@ export default function FreeInvitationRedeemer() {
     return (
         <main className="listener-page-shell">
             <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center gap-8 px-6 py-12">
-                <header className="flex items-center justify-between gap-4">
-                    <HarmonicBeaconBrand href={LISTENER_NAMESPACE.publicWebsite} />
-                </header>
                 <section className="space-y-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-7 shadow-[var(--shadow-deep)]">
                     <p className="hb-eyebrow">{copy.eyebrow}</p>
                     <h1 className="hb-heading text-4xl leading-tight">{copy.heading}</h1>

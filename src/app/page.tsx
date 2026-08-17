@@ -3,7 +3,7 @@
  * Phase 5: Wider layout and bilingual control.
  *
  * Server component: fetches events from database.
- * Client components: LanguageControl, LoginClient.
+ * Client component: LoginClient.
  */
 
 import Link from "next/link";
@@ -12,8 +12,6 @@ import { prisma } from "@/lib/db";
 import { redactError } from "@/lib/redact";
 
 import LoginClient from "./login/LoginClient";
-import BrandLockup from "@/components/brand/BrandLockup";
-import LanguageControl from "@/components/brand/LanguageControl";
 import { messages } from "@/lib/i18n";
 import { requestLocale } from "@/lib/i18n-server";
 
@@ -97,12 +95,6 @@ export default async function LandingPage({
     return (
         <main className="event-shell">
             <div className="relative z-10 mx-auto flex min-h-screen max-w-[1120px] flex-col gap-10 px-6 py-12">
-                {/* Top bar */}
-                <header className="flex items-center justify-between">
-                    <BrandLockup />
-                    <LanguageControl />
-                </header>
-
                 {/* Hero */}
                 <section className="py-2 lg:py-6">
                     <div className="max-w-2xl space-y-5">

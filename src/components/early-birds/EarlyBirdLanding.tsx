@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 
-import HarmonicBeaconBrand from '@/components/brand/HarmonicBeaconBrand';
 import { useLocale } from '@/context/LocaleContext';
 import { earlyBirdAuthClient } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
@@ -96,10 +95,6 @@ export default function EarlyBirdLanding(props: Props) {
     return (
         <main className="listener-shell listener-shell--public">
             <div className="listener-shell__frame">
-                <header className="listener-rail">
-                    <HarmonicBeaconBrand href={LISTENER_NAMESPACE.publicWebsite} />
-                </header>
-
                 <section className="listener-public-hero">
                     <BeaconField phase="ready" />
                     <div className="listener-public-hero__copy">

@@ -2,8 +2,10 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { LocaleProvider } from "@/context/LocaleContext";
-import { requestLocale } from "@/lib/i18n-server";
-import { isCanonicalListenerHost, listenerLocaleForHeaders } from "@/lib/listener/public-discovery";
+import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
+import { globalNavigationSurface } from "@/lib/brand/global-navigation";
+import { requestBrowserLocale, requestLocale } from "@/lib/i18n-server";
+import { isCanonicalListenerHost } from "@/lib/listener/public-discovery";
 import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
@@ -87,12 +89,16 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const incomingHeaders = await headers();
-  // Listener content and metadata use the browser's primary language. Bind
-  // that behavior to the exact public host so event-language defaults on the
-  // rest of the application remain untouched.
+  // Listener content starts from the browser's primary language and then
+  // honors the shared navigation preference. Keep that policy bound to the
+  // exact public host so event-language defaults elsewhere remain untouched.
   const listenerHost = isCanonicalListenerHost(incomingHeaders);
+  // This application is the Live surface by default. Listener and its staging
+  // host opt into their own active item explicitly; local/E2E hosts continue
+  // to exercise the same global header as production Live.
+  const navigationSurface = globalNavigationSurface(incomingHeaders) ?? "events";
   const locale = listenerHost
-    ? listenerLocaleForHeaders(incomingHeaders)
+    ? await requestBrowserLocale(incomingHeaders)
     : await requestLocale();
 
   return (
@@ -104,6 +110,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className="antialiased">
+        <GlobalNavigation active={navigationSurface} locale={locale} />
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
           <div className="relative z-10">{children}</div>

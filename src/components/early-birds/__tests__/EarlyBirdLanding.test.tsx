@@ -66,9 +66,7 @@ describe('EarlyBird public landing', () => {
     it('keeps login in the compact hero and removes explanatory landing copy', () => {
         const { container } = renderLanding();
 
-        expect(screen.getByRole('link', { name: 'Harmonic Beacon' }))
-            .toHaveAttribute('href', 'https://harmonicbeacon.com/');
-        expect(container.querySelector('.hb-brand__mark path')).toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
         expect(container.querySelector('.listener-field__mark')).toHaveProperty('tagName', 'svg');
         expect(container.querySelector('.listener-public-hero .listener-access__card'))
             .toContainElement(screen.getByRole('button', { name: 'Continue with Google' }));

@@ -5,10 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     headers: vi.fn(),
     requestLocale: vi.fn(),
+    requestBrowserLocale: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: mocks.headers }));
-vi.mock('@/lib/i18n-server', () => ({ requestLocale: mocks.requestLocale }));
+vi.mock('@/lib/i18n-server', () => ({
+    requestLocale: mocks.requestLocale,
+    requestBrowserLocale: mocks.requestBrowserLocale,
+}));
 vi.mock('next/font/local', () => ({
     default: () => ({ variable: 'local-font' }),
 }));
@@ -34,6 +38,7 @@ describe('root document locale boundary', () => {
             'en-US,en;q=0.9,es;q=0.7',
         ));
         mocks.requestLocale.mockResolvedValue('es');
+        mocks.requestBrowserLocale.mockResolvedValue('en');
 
         const result = await RootLayout({ children: <main /> });
 
@@ -42,6 +47,7 @@ describe('root document locale boundary', () => {
         expect(result.props['data-hb-surface']).toBe('listener');
         expect(result.props.suppressHydrationWarning).toBe(true);
         expect(mocks.requestLocale).not.toHaveBeenCalled();
+        expect(mocks.requestBrowserLocale).toHaveBeenCalledOnce();
     });
 
     it('preserves the existing event locale decision on every non-Listener host', async () => {
@@ -57,6 +63,7 @@ describe('root document locale boundary', () => {
         expect(result.props['data-lang']).toBe('es');
         expect(result.props['data-hb-surface']).toBeUndefined();
         expect(mocks.requestLocale).toHaveBeenCalledOnce();
+        expect(mocks.requestBrowserLocale).not.toHaveBeenCalled();
     });
 
     it.each([
