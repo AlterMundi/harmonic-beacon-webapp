@@ -12,6 +12,10 @@ hb-global-nav:not(:defined) {
   font-family: var(--font-hb-inter), Inter, system-ui, sans-serif;
 }
 
+html[data-hb-embedded-surface="cockpit"] hb-global-nav {
+  display: none;
+}
+
 .hb-global-navigation-fallback {
   min-height: 72px;
   max-width: 1180px;

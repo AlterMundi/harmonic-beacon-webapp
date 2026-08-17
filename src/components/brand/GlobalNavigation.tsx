@@ -4,6 +4,12 @@ import Script from 'next/script';
 import type { UiLocale } from '@/lib/i18n';
 
 export const GLOBAL_NAVIGATION_ASSET = 'https://harmonicbeacon.com/assets/hb-global-nav.js';
+export const GLOBAL_NAVIGATION_EMBED_GUARD = `
+(() => {
+    if (window.self === window.top) return;
+    if (new URLSearchParams(window.location.search).get('surface') !== 'cockpit') return;
+    document.documentElement.dataset.hbEmbeddedSurface = 'cockpit';
+})();`;
 
 export type GlobalNavigationSurface = 'events' | 'listen';
 
@@ -52,6 +58,10 @@ export function GlobalNavigation({
 
     return (
         <>
+            <script
+                id="hb-global-navigation-embed-guard"
+                dangerouslySetInnerHTML={{ __html: GLOBAL_NAVIGATION_EMBED_GUARD }}
+            />
             {createElement('hb-global-nav', { 'data-surface': active }, fallback)}
             <Script src={GLOBAL_NAVIGATION_ASSET} strategy="afterInteractive" />
         </>
