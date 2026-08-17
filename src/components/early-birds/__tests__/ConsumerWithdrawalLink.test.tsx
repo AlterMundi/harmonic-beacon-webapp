@@ -35,17 +35,11 @@ describe('prominent consumer-withdrawal entry', () => {
         expect(screen.queryByRole('link')).toBeNull();
     });
 
-    it('keeps mobile consumer actions in document flow after Listener content', () => {
+    it('does not inject consumer-request links into every Listener screen', () => {
         const root = process.cwd();
         const layout = readFileSync(join(root, 'src/app/listener/layout.tsx'), 'utf8');
-        const css = readFileSync(join(root, 'src/app/globals.css'), 'utf8');
 
-        expect(layout.indexOf('{children}')).toBeGreaterThan(-1);
-        expect(layout.indexOf('{children}')).toBeLessThan(
-            layout.indexOf('className="listener-consumer-request-links"'),
-        );
-        expect(css).toMatch(
-            /@media \(max-width: 640px\)[\s\S]*?\.listener-consumer-request-links\s*\{[\s\S]*?position:\s*static;/,
-        );
+        expect(layout).not.toContain('ConsumerWithdrawalLink');
+        expect(layout).not.toContain('listener-consumer-request-links');
     });
 });
