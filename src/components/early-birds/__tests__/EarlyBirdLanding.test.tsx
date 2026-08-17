@@ -67,7 +67,8 @@ describe('EarlyBird public landing', () => {
         const { container } = renderLanding();
 
         expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
-        expect(container.querySelector('.listener-field__mark')).toHaveProperty('tagName', 'svg');
+        expect(container.querySelector('.listener-field__spark')).toHaveTextContent('✦');
+        expect(container.querySelector('.listener-field svg')).not.toBeInTheDocument();
         expect(container.querySelector('.listener-public-hero .listener-access__card'))
             .toContainElement(screen.getByRole('button', { name: 'Continue with Google' }));
         expect(screen.getByRole('heading', { name: 'Remember your harmonic center.' }))

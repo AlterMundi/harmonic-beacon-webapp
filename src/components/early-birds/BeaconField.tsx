@@ -1,5 +1,3 @@
-import HarmonicBeaconMark from '@/components/brand/HarmonicBeaconMark';
-
 import type { ListenerPresentationPhase } from './listener-presentation';
 
 const POINTS = [
@@ -15,7 +13,7 @@ export default function BeaconField({ phase }: { phase: ListenerPresentationPhas
             <div className="listener-field__orbit listener-field__orbit--outer" />
             <div className="listener-field__orbit listener-field__orbit--inner" />
             <div className="listener-field__core">
-                <HarmonicBeaconMark className="listener-field__mark" size={56} />
+                <span className="listener-field__spark">&#10022;</span>
             </div>
             <div className="listener-field__horizon" />
             {POINTS.map(([left, top], index) => (
