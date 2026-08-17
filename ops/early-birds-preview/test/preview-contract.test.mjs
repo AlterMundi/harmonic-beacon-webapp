@@ -123,6 +123,8 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
   assert.match(source, /set_env_file_value EARLY_BIRDS_FREE_FOR_ALL 0/);
   assert.match(source, /set_env_file_value BEACON_LISTENER_FREE_FOR_ALL 0/);
   assert.match(source, /set_env_file_value BEACON_GIT_SHA "\$PREVIEW_EXPECTED_SHA"/);
+  assert.match(source, /while IFS='=' read -r workbench_key workbench_value; do[\s\S]*set_env_file_value "\$workbench_key" "\$workbench_value"[\s\S]*done < <\(sudo cat "\$LIVE_WORKBENCH_ENV_FILE"\)/);
+  assert.doesNotMatch(source, /sudo cat "\$LIVE_WORKBENCH_ENV_FILE" >> "\$env_file"/);
   assert.match(source, /sudo stat -c '%u:%g:%a'/);
   assert.match(source, /workbench_container_started=1/);
   assert.match(source, /workbench_validated=1/);
