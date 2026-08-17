@@ -126,17 +126,17 @@ if docker container inspect "$DEV_CONTAINER" >/dev/null 2>&1; then
     docker rm -f "$DEV_CONTAINER" >/dev/null
 fi
 
+# Every disposable staging mode must initiate and receive authentication on
+# its own host. Inheriting the persistent Listener base URL sends OAuth back
+# to listen.harmonicbeacon.com, where the staging state cookie is absent.
+set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "$PREVIEW_ORIGIN"
+set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "$PREVIEW_ORIGIN"
+
 runtime_args=()
 command_args=()
 if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ] || [ "$PREVIEW_MERCADO_PAGO_CHECKOUT" = 1 ] || [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
     # Synthetic team entry is deliberately unavailable under NODE_ENV=development.
     # Payment rehearsal therefore runs the exact built release artifact.
-    # OAuth state and session cookies are host-only. The workbench must initiate
-    # and receive the callback on its own origin; inheriting the persistent
-    # Listener base URL sends Google back to listen.harmonicbeacon.com, where
-    # the staging state cookie is absent and Better Auth correctly rejects it.
-    set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "$PREVIEW_ORIGIN"
-    set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "$PREVIEW_ORIGIN"
     runtime_args=(-e NODE_ENV=production)
     command_args=(node server.js)
 else
@@ -184,8 +184,6 @@ if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
     set_env_file_value BEACON_LISTENER_MERCADO_PAGO_TEST_CHECKOUT_ENABLED 0
     set_env_file_value BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED 0
     set_env_file_value BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED 0
-    set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "$PREVIEW_ORIGIN"
-    set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "$PREVIEW_ORIGIN"
     # The inherited release env would otherwise override the selected image's
     # baked provenance with the persistent 13000 release SHA.
     set_env_file_value BEACON_GIT_SHA "$PREVIEW_EXPECTED_SHA"

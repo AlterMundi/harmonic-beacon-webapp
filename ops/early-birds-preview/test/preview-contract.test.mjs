@@ -103,6 +103,18 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
   assert.match(source, /PREVIEW_ORIGIN="https:\/\/earlybirds-staging\.harmonicbeacon\.com"/);
   assert.match(source, /set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "\$PREVIEW_ORIGIN"/);
   assert.match(source, /set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "\$PREVIEW_ORIGIN"/);
+  const authBaseIndex = source.indexOf('set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "$PREVIEW_ORIGIN"');
+  const paymentModeIndex = source.indexOf('if [ "$PREVIEW_PAYPAL_CHECKOUT" = 1 ]');
+  assert.ok(authBaseIndex > 0 && authBaseIndex < paymentModeIndex,
+    'staging auth base must be fixed before selecting ordinary or payment runtime mode');
+  assert.equal(
+    source.match(/set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "\$PREVIEW_ORIGIN"/g)?.length,
+    1,
+  );
+  assert.equal(
+    source.match(/set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "\$PREVIEW_ORIGIN"/g)?.length,
+    1,
+  );
   assert.match(source, /PREVIEW_LIVE_WORKBENCH="\$\{LISTENER_UI_PREVIEW_LIVE_WORKBENCH_ENABLED:-0\}"/);
   assert.match(source, /LIVE_WORKBENCH_ENV_FILE="\/etc\/harmonic-beacon\/listener-live-workbench\.env"/);
   assert.match(source, /harmonic-beacon\/earlybirds-preview-listener:\$\{PREVIEW_EXPECTED_SHA\}/);
