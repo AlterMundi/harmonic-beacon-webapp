@@ -52,8 +52,9 @@ function clearCookie(name: string): string {
 
 /**
  * Explicit recovery from a failed OAuth callback. No query value is accepted,
- * reflected or logged. A valid current session is revoked by Better Auth;
- * ambiguous/stale credentials are only removed from this browser.
+ * reflected or logged. A valid current session is resolved through Better Auth
+ * and revoked in the durable session table; ambiguous/stale credentials are
+ * only removed from this browser.
  */
 export async function POST(request: NextRequest): Promise<Response> {
     if (!exactTrustedOrigin(request)) {
