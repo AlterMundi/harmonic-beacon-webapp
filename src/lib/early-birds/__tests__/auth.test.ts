@@ -43,7 +43,14 @@ describe('EarlyBird Better Auth isolation', () => {
         } as unknown as NodeJS.ProcessEnv;
 
         expect(earlyBirdOAuthAvailability(environment)).toEqual({ google: true, apple: false });
-        expect(Object.keys(earlyBirdSocialProviders(environment))).toEqual(['google']);
+        expect(earlyBirdSocialProviders(environment)).toEqual({
+            google: {
+                clientId: 'google-id',
+                clientSecret: 'google-secret',
+                accessType: 'online',
+                prompt: 'select_account',
+            },
+        });
     });
 
     it('accepts canonical auth config without mixing credential generations', () => {
@@ -55,7 +62,11 @@ describe('EarlyBird Better Auth isolation', () => {
         } as unknown as NodeJS.ProcessEnv;
         expect(earlyBirdOAuthAvailability(canonical)).toEqual({ google: true, apple: false });
         expect(earlyBirdSocialProviders(canonical)).toMatchObject({
-            google: { clientId: 'canonical-google-id', clientSecret: 'canonical-google-secret' },
+            google: {
+                clientId: 'canonical-google-id',
+                clientSecret: 'canonical-google-secret',
+                prompt: 'select_account',
+            },
         });
         expect(earlyBirdTrustedOrigins(canonical)).toEqual([
             'https://listen.example.test',

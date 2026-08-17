@@ -96,6 +96,10 @@ export function earlyBirdSocialProviders(environment: NodeJS.ProcessEnv = proces
                 clientId: google.GOOGLE_CLIENT_ID,
                 clientSecret: google.GOOGLE_CLIENT_SECRET,
                 accessType: 'online' as const,
+                // Listener is commonly used on shared staff/test browsers. Do not
+                // let Google silently reuse the last account and strand the user
+                // behind an account_not_linked error with no way to switch.
+                prompt: 'select_account' as const,
             },
         } : {}),
         ...(apple ? {
