@@ -29,7 +29,9 @@ The cross-product header is intentionally not vendored. Listener and Live load
 the canonical web component directly from
 `https://harmonicbeacon.com/assets/hb-global-nav.js`, owned by
 `AlterMundi/harmonicbeacon.com` (introduced in main merge `9fa515f6` and last
-reviewed here at `51fe213b`). The local light-DOM links are an accessible,
+reviewed here at `28ab05d67b3dfe020a28b62c27ba4d2ee8bafe66`; the reviewed
+asset SHA-256 is `3761c4d497024093f0180863247ca39e7009ec1ff3a96bddeb1a833bfdc992bc`).
+The local light-DOM links are an accessible,
 same-destination fallback only; the shared runtime asset owns the visible
 desktop/mobile component so a navigation edit propagates to all three products.
 

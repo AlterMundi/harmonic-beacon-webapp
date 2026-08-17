@@ -11,9 +11,17 @@ const refresh = vi.hoisted(() => vi.fn());
 const signInSocial = vi.hoisted(() => vi.fn());
 const signInMagicLink = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
+const recoverIdentity = vi.hoisted(() => vi.fn());
+const markOAuthAttempt = vi.hoisted(() => vi.fn());
+const clearOAuthAttempt = vi.hoisted(() => vi.fn());
+const consumeOAuthAttempt = vi.hoisted(() => vi.fn(() => false));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 vi.mock('@/lib/early-birds/auth-client', () => ({
     earlyBirdAuthClient: { signIn: { social: signInSocial, magicLink: signInMagicLink }, signOut },
+    recoverListenerIdentity: recoverIdentity,
+    markListenerOAuthAttempt: markOAuthAttempt,
+    clearListenerOAuthAttempt: clearOAuthAttempt,
+    consumeListenerOAuthAttempt: consumeOAuthAttempt,
 }));
 import EarlyBirdLanding from '../EarlyBirdLanding';
 import EarlyBirdUnavailable from '../EarlyBirdUnavailable';
@@ -112,12 +120,41 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         expect(css).toContain('animation: listener-core-breathe 5.5s ease-in-out infinite;');
     });
 
-    it('leaves chrome to the global layout and keeps the canonical field center', () => {
+    it('keeps the field decorative, inert and inexpensive to composite', () => {
+        const css = readFileSync('src/app/globals.css', 'utf8');
+        const start = css.indexOf('\n.listener-field {\n') + 1;
+        const end = css.indexOf('\n}', start);
+        const rule = css.slice(start, end);
+
+        expect(rule).toContain('contain: layout paint;');
+        expect(rule).toContain('pointer-events: none;');
+        expect(rule).toContain('user-select: none;');
+    });
+
+    it('restores the warm pre-brand spark without a central Lissajous logo', () => {
         const { container } = renderLanding();
+        const field = container.querySelector('.listener-field');
 
         expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
-        expect(container.querySelectorAll('.hb-brand__mark path')).toHaveLength(1);
-        expect(container.textContent).not.toContain('✦');
+        expect(field).toHaveAttribute('aria-hidden', 'true');
+        expect(field?.querySelector('.listener-field__aurora')).toBeInTheDocument();
+        expect(field?.querySelectorAll('.listener-field__orbit')).toHaveLength(2);
+        expect(field?.querySelector('.listener-field__core .listener-field__spark'))
+            .toHaveTextContent('✦');
+        expect(field?.querySelector('.listener-field__horizon')).toBeInTheDocument();
+        expect(field?.querySelectorAll('.listener-field__point')).toHaveLength(12);
+        expect(field?.querySelector('svg, canvas, audio, video')).not.toBeInTheDocument();
+        expect(field?.querySelector('.hb-brand__mark')).not.toBeInTheDocument();
+    });
+
+    it('fully disables field motion when reduced motion is requested', () => {
+        const css = readFileSync('src/app/globals.css', 'utf8');
+        const reducedMotion = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+
+        expect(reducedMotion).toContain('.listener-field__aurora');
+        expect(reducedMotion).toContain('.listener-field__orbit');
+        expect(reducedMotion).toContain('.listener-field__core');
+        expect(reducedMotion).toContain('.listener-field__point { animation: none; }');
     });
 
     it('standalone Listener pages render the listener page shell, never the event shell', () => {

@@ -1,4 +1,5 @@
 import { headers as requestHeaders } from 'next/headers';
+import { createHash } from 'node:crypto';
 import { betterAuth } from 'better-auth/minimal';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { getCookies } from 'better-auth/cookies';
@@ -16,6 +17,7 @@ import { recordListenerSessionCookieObservation } from '@/lib/listener/session-c
 import { isCanonicalListenerHost } from '@/lib/listener/public-discovery';
 import {
     listenerRuntimeBundle,
+    listenerAppleOAuthConfiguration,
     listenerRuntimeFlag,
     listenerRuntimeTrustedOrigins,
     listenerRuntimeValue,
@@ -64,10 +66,7 @@ export function earlyBirdOAuthAvailability(environment: NodeJS.ProcessEnv = proc
         );
     } catch { /* An invalid pair is unavailable. */ }
     try {
-        apple = listenerRuntimeBundle(
-            ['APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'],
-            environment,
-        );
+        apple = listenerAppleOAuthConfiguration(environment);
     } catch { /* An invalid pair is unavailable. */ }
     return {
         google: google !== null,
@@ -85,10 +84,7 @@ export function earlyBirdSocialProviders(environment: NodeJS.ProcessEnv = proces
         );
     } catch { /* Do not expose a provider with mixed credentials. */ }
     try {
-        apple = listenerRuntimeBundle(
-            ['APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'],
-            environment,
-        );
+        apple = listenerAppleOAuthConfiguration(environment);
     } catch { /* Do not expose a provider with mixed credentials. */ }
     return {
         ...(google ? {
@@ -104,10 +100,37 @@ export function earlyBirdSocialProviders(environment: NodeJS.ProcessEnv = proces
         } : {}),
         ...(apple ? {
             apple: {
-                clientId: apple.APPLE_CLIENT_ID,
-                clientSecret: apple.APPLE_CLIENT_SECRET,
+                clientId: apple.clientId,
+                clientSecret: apple.clientSecret,
+                mapProfileToUser: listenerAppleProfileToUser,
             },
         } : {}),
+    };
+}
+
+type ListenerAppleProfile = {
+    sub: string;
+    email?: string | null;
+    email_verified?: boolean | string;
+    name?: string | null;
+};
+
+/**
+ * Apple may return name only on first consent and can omit email later. The
+ * provider subject remains authoritative; this non-deliverable, one-way
+ * fallback only satisfies the local user schema and never links providers.
+ */
+export function listenerAppleProfileToUser(profile: ListenerAppleProfile) {
+    if (!profile.sub) throw new Error('Apple profile subject unavailable');
+    const suppliedEmail = profile.email?.trim();
+    const opaqueSubject = createHash('sha256')
+        .update(`listener-apple:${profile.sub}`)
+        .digest('base64url');
+    return {
+        name: profile.name?.trim() || 'Listener',
+        email: suppliedEmail || `apple-${opaqueSubject}@identity.invalid`,
+        emailVerified: Boolean(suppliedEmail) &&
+            (profile.email_verified === true || profile.email_verified === 'true'),
     };
 }
 

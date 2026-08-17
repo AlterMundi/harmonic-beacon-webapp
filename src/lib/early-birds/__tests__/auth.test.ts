@@ -7,7 +7,23 @@ import {
     earlyBirdSocialProviders,
     earlyBirdTestLoginSecret,
     earlyBirdTrustedOrigins,
+    listenerAppleProfileToUser,
 } from '../auth';
+
+function appleClientSecret(clientId: string): string {
+    const now = Math.floor(Date.now() / 1000);
+    return [
+        Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'KEY123' })).toString('base64url'),
+        Buffer.from(JSON.stringify({
+            iss: 'TEAM123',
+            sub: clientId,
+            aud: 'https://appleid.apple.com',
+            iat: now - 10,
+            exp: now + 3600,
+        })).toString('base64url'),
+        'synthetic-signature',
+    ].join('.');
+}
 
 describe('EarlyBird Better Auth isolation', () => {
     it('uses only EarlyBird models/cookies and disables every linking path', () => {
@@ -39,7 +55,7 @@ describe('EarlyBird Better Auth isolation', () => {
         const environment = {
             EARLY_BIRDS_GOOGLE_CLIENT_ID: 'google-id',
             EARLY_BIRDS_GOOGLE_CLIENT_SECRET: 'google-secret',
-            EARLY_BIRDS_APPLE_CLIENT_ID: 'half-configured-apple',
+            BEACON_LISTENER_APPLE_CLIENT_ID: 'half-configured-apple',
         } as unknown as NodeJS.ProcessEnv;
 
         expect(earlyBirdOAuthAvailability(environment)).toEqual({ google: true, apple: false });
@@ -77,6 +93,45 @@ describe('EarlyBird Better Auth isolation', () => {
             BEACON_LISTENER_GOOGLE_CLIENT_ID: 'new-id',
             EARLY_BIRDS_GOOGLE_CLIENT_SECRET: 'old-secret',
         } as unknown as NodeJS.ProcessEnv).google).toBe(false);
+    });
+
+    it('keeps Apple explicitly default-off and maps repeat consent without email or name', () => {
+        const clientId = 'com.harmonicbeacon.listener';
+        const environment = {
+            BEACON_LISTENER_APPLE_ENABLED: '1',
+            BEACON_LISTENER_APPLE_CLIENT_ID: clientId,
+            BEACON_LISTENER_APPLE_CLIENT_SECRET: appleClientSecret(clientId),
+        } as unknown as NodeJS.ProcessEnv;
+        const providers = earlyBirdSocialProviders(environment);
+
+        expect(earlyBirdOAuthAvailability(environment)).toEqual({ google: false, apple: true });
+        expect(providers.apple).toMatchObject({ clientId });
+        expect(providers.apple?.mapProfileToUser).toBe(listenerAppleProfileToUser);
+        expect(earlyBirdOAuthAvailability({
+            ...environment,
+            BEACON_LISTENER_APPLE_ENABLED: '0',
+        } as unknown as NodeJS.ProcessEnv).apple).toBe(false);
+
+        const first = listenerAppleProfileToUser({
+            sub: 'stable-provider-subject',
+            email: 'relay@privaterelay.appleid.com',
+            email_verified: 'true',
+            name: 'First Consent Name',
+        });
+        const repeat = listenerAppleProfileToUser({ sub: 'stable-provider-subject' });
+        expect(first).toEqual({
+            name: 'First Consent Name',
+            email: 'relay@privaterelay.appleid.com',
+            emailVerified: true,
+        });
+        expect(repeat.name).toBe('Listener');
+        expect(repeat.email).toMatch(/^apple-[A-Za-z0-9_-]{43}@identity\.invalid$/);
+        expect(repeat.email).not.toContain('stable-provider-subject');
+        expect(repeat.emailVerified).toBe(false);
+        expect(listenerAppleProfileToUser({ sub: 'stable-provider-subject' }).email)
+            .toBe(repeat.email);
+        expect(() => listenerAppleProfileToUser({ sub: '' }))
+            .toThrow('Apple profile subject unavailable');
     });
 
     it('keeps the synthetic-login gate and secret in one generation', () => {

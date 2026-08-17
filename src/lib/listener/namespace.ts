@@ -14,6 +14,7 @@ export const LISTENER_NAMESPACE = {
         api: {
             accessState: '/api/listener/access-state',
             freeRedeem: '/api/listener/free/redeem',
+            authRecovery: '/api/listener/auth/recover',
         },
     },
     legacy: {

@@ -11,6 +11,7 @@ const BOUNDED_SUFFIXES = [
     'AUTH_SECRET',
     'GOOGLE_CLIENT_ID',
     'GOOGLE_CLIENT_SECRET',
+    'APPLE_ENABLED',
     'APPLE_CLIENT_ID',
     'APPLE_CLIENT_SECRET',
     'MAGIC_LINK_DELIVERY_URL',
@@ -157,6 +158,95 @@ function validateFlag(suffix: string, environment: Environment): boolean {
     return selected === '1';
 }
 
+const APPLE_CLIENT_SECRET_MAX_LIFETIME_SECONDS = 15_778_800;
+
+function decodeJwtObject(segment: string): Record<string, unknown> | null {
+    try {
+        const decoded = JSON.parse(Buffer.from(segment, 'base64url').toString('utf8')) as unknown;
+        return typeof decoded === 'object' && decoded !== null
+            ? decoded as Record<string, unknown>
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Validate the non-secret claims Apple documents for a Sign in with Apple
+ * client-secret JWT. Apple remains the cryptographic verifier; this readiness
+ * check catches expired, wrongly-scoped and accidentally pasted credentials
+ * before the provider is exposed.
+ */
+export function validateListenerAppleClientSecret(
+    clientId: string,
+    clientSecret: string,
+    nowSeconds = Math.floor(Date.now() / 1000),
+): boolean {
+    if (clientSecret.length > 8192) return false;
+    const segments = clientSecret.split('.');
+    if (segments.length !== 3 || segments.some((segment) => !segment)) return false;
+    const header = decodeJwtObject(segments[0]);
+    const claims = decodeJwtObject(segments[1]);
+    if (!header || !claims) return false;
+
+    const issuedAt = claims.iat;
+    const expiresAt = claims.exp;
+    return header.alg === 'ES256' &&
+        typeof header.kid === 'string' && header.kid.length > 0 && header.kid.length <= 128 &&
+        typeof claims.iss === 'string' && claims.iss.length > 0 && claims.iss.length <= 128 &&
+        claims.sub === clientId &&
+        claims.aud === 'https://appleid.apple.com' &&
+        typeof issuedAt === 'number' && Number.isInteger(issuedAt) &&
+        typeof expiresAt === 'number' && Number.isInteger(expiresAt) &&
+        issuedAt <= nowSeconds + 300 &&
+        expiresAt > nowSeconds + 300 &&
+        expiresAt > issuedAt &&
+        expiresAt - issuedAt <= APPLE_CLIENT_SECRET_MAX_LIFETIME_SECONDS;
+}
+
+export function listenerAppleOAuthConfiguration(
+    environment: Environment = process.env,
+    nowSeconds = Math.floor(Date.now() / 1000),
+): { clientId: string; clientSecret: string } | null {
+    const suffixes = ['APPLE_ENABLED', 'APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'] as const;
+    const legacyNames = suffixes.map((suffix) => names(suffix).legacy);
+    if (legacyNames.some((name) => normalized(environment[name]) !== undefined)) {
+        throw new ListenerRuntimeEnvironmentError(
+            `Unsupported legacy Listener Apple OAuth variables: ${legacyNames.join(', ')}`,
+        );
+    }
+    const enabledName = names('APPLE_ENABLED').canonical;
+    const clientIdName = names('APPLE_CLIENT_ID').canonical;
+    const clientSecretName = names('APPLE_CLIENT_SECRET').canonical;
+    const enabled = normalized(environment[enabledName]);
+    const clientId = normalized(environment[clientIdName]);
+    const clientSecret = normalized(environment[clientSecretName]);
+    if (enabled !== undefined && enabled !== '0' && enabled !== '1') {
+        throw new ListenerRuntimeEnvironmentError(
+            `Invalid Listener runtime flag: ${enabledName}`,
+        );
+    }
+    if (Boolean(clientId) !== Boolean(clientSecret)) {
+        throw new ListenerRuntimeEnvironmentError(
+            `Incomplete Listener runtime bundle: ${clientIdName}, ${clientSecretName}`,
+        );
+    }
+    if (enabled !== '1') return null;
+    if (!clientId || !clientSecret || !validateListenerAppleClientSecret(
+        clientId,
+        clientSecret,
+        nowSeconds,
+    )) {
+        throw new ListenerRuntimeEnvironmentError(
+            `Invalid Listener Apple OAuth configuration: ${clientIdName}, ${clientSecretName}`,
+        );
+    }
+    return {
+        clientId,
+        clientSecret,
+    };
+}
+
 function anyBoundedValue(environment: Environment): boolean {
     return BOUNDED_SUFFIXES.some((suffix) => {
         const variable = names(suffix);
@@ -181,7 +271,19 @@ export function validateListenerRuntimeEnvironment(
     const authSecret = listenerRuntimeValue('AUTH_SECRET', environment);
 
     listenerRuntimeBundle(['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'], environment);
-    listenerRuntimeBundle(['APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'], environment);
+    const apple = listenerAppleOAuthConfiguration(environment);
+    const appleEnabled = apple !== null;
+    if (appleEnabled) {
+        let secureAuthBase = false;
+        try {
+            secureAuthBase = baseURL !== undefined && new URL(baseURL).protocol === 'https:';
+        } catch { /* Report only the bounded variable names below. */ }
+        if (!secureAuthBase) {
+            throw new ListenerRuntimeEnvironmentError(
+                'Enabled Listener Apple OAuth requires an HTTPS BEACON_LISTENER_AUTH_BASE_URL',
+            );
+        }
+    }
     listenerRuntimeBundle([
         'MAGIC_LINK_DELIVERY_URL',
         'MAGIC_LINK_DELIVERY_TOKEN',

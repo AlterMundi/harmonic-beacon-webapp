@@ -5,8 +5,28 @@ import {
     listenerRuntimeBundle,
     listenerRuntimeFlag,
     listenerRuntimeValue,
+    listenerAppleOAuthConfiguration,
+    validateListenerAppleClientSecret,
     validateListenerRuntimeEnvironment,
 } from '../runtime-env';
+
+function appleClientSecret(
+    clientId: string,
+    overrides: Record<string, unknown> = {},
+): string {
+    return [
+        Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'KEY123' })).toString('base64url'),
+        Buffer.from(JSON.stringify({
+            iss: 'TEAM123',
+            sub: clientId,
+            aud: 'https://appleid.apple.com',
+            iat: 1_799_999_900,
+            exp: 1_800_003_600,
+            ...overrides,
+        })).toString('base64url'),
+        'synthetic-signature',
+    ].join('.');
+}
 
 describe('Listener runtime environment compatibility', () => {
     it('reads canonical-only, legacy-only and matching dual values', () => {
@@ -126,5 +146,74 @@ describe('Listener runtime environment compatibility', () => {
             BEACON_LISTENER_ENABLED: '0',
             BEACON_LISTENER_GOOGLE_CLIENT_ID: 'id-only',
         })).toThrow(/Incomplete Listener runtime bundle/);
+    });
+
+    it('exposes Apple only behind a valid explicit same-generation gate', () => {
+        const clientId = 'com.harmonicbeacon.listener';
+        const secret = appleClientSecret(clientId);
+        const enabled = {
+            BEACON_LISTENER_ENABLED: '1',
+            BEACON_LISTENER_AUTH_BASE_URL: 'https://listen.example.test',
+            BEACON_LISTENER_AUTH_SECRET: 'a'.repeat(32),
+            BEACON_LISTENER_APPLE_ENABLED: '1',
+            BEACON_LISTENER_APPLE_CLIENT_ID: clientId,
+            BEACON_LISTENER_APPLE_CLIENT_SECRET: secret,
+        };
+        expect(validateListenerAppleClientSecret(clientId, secret, 1_800_000_000)).toBe(true);
+        expect(listenerAppleOAuthConfiguration(enabled, 1_800_000_000)).toEqual({
+            clientId,
+            clientSecret: secret,
+        });
+
+        expect(listenerAppleOAuthConfiguration({
+            ...enabled,
+            BEACON_LISTENER_APPLE_ENABLED: '0',
+        }, 1_800_000_000)).toBeNull();
+        expect(() => listenerAppleOAuthConfiguration({
+            ...enabled,
+            BEACON_LISTENER_APPLE_CLIENT_SECRET: appleClientSecret('other-client'),
+        }, 1_800_000_000)).toThrow(/Invalid Listener Apple OAuth configuration/);
+        expect(() => listenerAppleOAuthConfiguration({
+            BEACON_LISTENER_APPLE_ENABLED: '1',
+            EARLY_BIRDS_APPLE_CLIENT_ID: clientId,
+            EARLY_BIRDS_APPLE_CLIENT_SECRET: secret,
+        }, 1_800_000_000)).toThrow(/Unsupported legacy Listener Apple OAuth variables/);
+    });
+
+    it('rejects stale, overlong and wrongly-scoped Apple client-secret JWTs', () => {
+        const clientId = 'com.harmonicbeacon.listener';
+        expect(validateListenerAppleClientSecret(
+            clientId,
+            appleClientSecret(clientId, { exp: 1_799_999_999 }),
+            1_800_000_000,
+        )).toBe(false);
+        expect(validateListenerAppleClientSecret(
+            clientId,
+            appleClientSecret(clientId, { exp: 1_900_000_000 }),
+            1_800_000_000,
+        )).toBe(false);
+        expect(validateListenerAppleClientSecret(
+            clientId,
+            appleClientSecret(clientId, { aud: 'https://attacker.invalid' }),
+            1_800_000_000,
+        )).toBe(false);
+        expect(validateListenerAppleClientSecret(clientId, 'not-a-jwt', 1_800_000_000))
+            .toBe(false);
+    });
+
+    it('fails readiness when enabled Apple OAuth is not HTTPS', () => {
+        const clientId = 'com.harmonicbeacon.listener';
+        const now = Math.floor(Date.now() / 1000);
+        expect(() => validateListenerRuntimeEnvironment({
+            BEACON_LISTENER_ENABLED: '1',
+            BEACON_LISTENER_AUTH_BASE_URL: 'http://listen.example.test',
+            BEACON_LISTENER_AUTH_SECRET: 'a'.repeat(32),
+            BEACON_LISTENER_APPLE_ENABLED: '1',
+            BEACON_LISTENER_APPLE_CLIENT_ID: clientId,
+            BEACON_LISTENER_APPLE_CLIENT_SECRET: appleClientSecret(clientId, {
+                iat: now - 10,
+                exp: now + 3600,
+            }),
+        })).toThrow(/requires an HTTPS/);
     });
 });

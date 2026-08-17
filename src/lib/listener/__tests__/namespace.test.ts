@@ -14,6 +14,7 @@ describe('Listener namespace contract', () => {
             api: {
                 accessState: '/api/listener/access-state',
                 freeRedeem: '/api/listener/free/redeem',
+                authRecovery: '/api/listener/auth/recover',
             },
         });
         expect(LISTENER_NAMESPACE.legacy.home).toBe('/early-birds');

@@ -27,6 +27,8 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     ['live hostname', 'EARLY_BIRDS_AUTH_BASE_URL=https://live.harmonicbeacon.com', /must be https:\/\/earlybirds-staging/],
     ['HTTP stream origin', 'EARLY_BIRDS_STREAM_ORIGIN=http://stream.harmonicbeacon.com', /must be https:\/\/stream/],
     ['half-configured OAuth seam', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=real-client-id', /configured together/],
+    ['unsafe Apple switch', 'BEACON_LISTENER_APPLE_ENABLED=true', /must be 0 or 1/],
+    ['enabled Apple without credentials', 'BEACON_LISTENER_APPLE_ENABLED=1', /requires its client ID/],
     ['event database identity', 'EARLYBIRDS_PREVIEW_DB_NAME=beacon', /must be earlybirds_preview/],
     ['unsafe kill switch value', 'EARLY_BIRDS_ENABLED=true', /must be 0 or 1/],
     ['unsafe free-for-all switch', 'EARLY_BIRDS_FREE_FOR_ALL=true', /must be 0 or 1/],
@@ -89,6 +91,17 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     assert.equal(runGuard(envFile).status, 0);
   });
 
+  await t.test('guarded staging Apple OAuth handoff remains on the staging callback host', async () => {
+    const envFile = path.join(temporary, 'staging-apple-oauth.env');
+    await fs.writeFile(envFile, source
+      .replace('BEACON_LISTENER_APPLE_ENABLED=0', 'BEACON_LISTENER_APPLE_ENABLED=1')
+      .replace('BEACON_LISTENER_APPLE_CLIENT_ID=', 'BEACON_LISTENER_APPLE_CLIENT_ID=services-id')
+      .replace('BEACON_LISTENER_APPLE_CLIENT_SECRET=', 'BEACON_LISTENER_APPLE_CLIENT_SECRET=synthetic-jwt'), {
+      mode: 0o600,
+    });
+    assert.equal(runGuard(envFile).status, 0);
+  });
+
   await t.test('mismatched Listener and origin artifacts fail closed', async () => {
     const envFile = path.join(temporary, 'mismatched-beacon.env');
     await fs.writeFile(envFile, `${source}\nEARLY_BIRDS_STREAM_ARTIFACT_ID=beacon-luz-20260624-2hs-aac320-v2\n`, { mode: 0o600 });
@@ -116,6 +129,13 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
     1,
   );
   assert.match(source, /PREVIEW_LIVE_WORKBENCH="\$\{LISTENER_UI_PREVIEW_LIVE_WORKBENCH_ENABLED:-0\}"/);
+  assert.match(source, /PREVIEW_APPLE="\$\{LISTENER_UI_PREVIEW_APPLE_ENABLED:-0\}"/);
+  assert.match(source, /Apple sign-in acceptance requires Free For All to be disabled/);
+  assert.match(source, /set_env_file_value BEACON_LISTENER_APPLE_ENABLED "\$PREVIEW_APPLE"/);
+  assert.equal(
+    source.match(/set_env_file_value BEACON_LISTENER_APPLE_ENABLED "\$PREVIEW_APPLE"/g)?.length,
+    1,
+  );
   assert.match(source, /LIVE_WORKBENCH_ENV_FILE="\/etc\/harmonic-beacon\/listener-live-workbench\.env"/);
   assert.match(source, /harmonic-beacon\/earlybirds-preview-listener:\$\{PREVIEW_EXPECTED_SHA\}/);
   assert.match(source, /grep -Fqx "BEACON_GIT_SHA=\$PREVIEW_EXPECTED_SHA"/);
@@ -346,13 +366,13 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \^~ \/api\/early-birds\//);
   assert.equal(
     (app.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length,
-    10,
-    'server plus nine sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
+    11,
+    'server plus ten sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
   );
   assert.equal(
     (listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length,
-    9,
-    'server plus eight sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
+    10,
+    'server plus nine sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
   );
   assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location \/_next\/webpack-hmr \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Upgrade \$http_upgrade;[^}]*Connection "upgrade";/s);
@@ -366,6 +386,27 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location = \/listener\/privacy \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(listener, /location = \/api\/listener\/checkout \{[^}]*access_log off;[^}]*limit_req zone=listener_live_checkout burst=4 nodelay;[^}]*client_max_body_size 512;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;[^}]*Cache-Control "private, no-store"/s);
   assert.match(listener, /location = \/api\/listener\/membership\/action \{[^}]*access_log off;[^}]*limit_req zone=listener_membership_action burst=2 nodelay;[^}]*client_max_body_size 256;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
+  assert.match(listener, /limit_req_zone \$binary_remote_addr zone=listener_auth_recovery:1m rate=12r\/m;/);
+  assert.match(app, /limit_req_zone \$binary_remote_addr zone=listener_staging_auth_recovery:1m rate=12r\/m;/);
+  for (const [source, port, zone] of [
+    [listener, '13000', 'listener_auth_recovery'],
+    [app, '13001', 'listener_staging_auth_recovery'],
+  ]) {
+    const start = source.indexOf('location = /api/listener/auth/recover {');
+    assert.notEqual(start, -1);
+    const nextLocation = source.indexOf('\n\n    location ', start + 1);
+    const block = source.slice(start, nextLocation === -1 ? undefined : nextLocation);
+    assert.match(block, /request_method != POST/);
+    assert.match(block, /return 405;/);
+    assert.match(block, /access_log off;/);
+    assert.match(block, new RegExp(`limit_req zone=${zone} burst=3 nodelay;`));
+    assert.match(block, /client_max_body_size 64;/);
+    assert.match(block, new RegExp(`proxy_pass http://127\\.0\\.0\\.1:${port};`));
+    assert.match(block, /proxy_set_header X-Real-IP \$remote_addr;/);
+    assert.match(block, /proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;/);
+    assert.match(block, /Cache-Control "private, no-store"/);
+  }
+  assert.doesNotMatch(stream, /\/api\/listener\/auth\/recover/);
   assert.doesNotMatch(app, /location = \/api\/listener\/membership\/cancel/);
   assert.doesNotMatch(listener, /location = \/api\/listener\/membership\/cancel/);
   assert.match(listener, /location = \/listener\/terms \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);

@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LocaleProvider } from '@/context/LocaleContext';
+
+const recoverIdentity = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/early-birds/auth-client', () => ({
+    recoverListenerIdentity: recoverIdentity,
+    clearListenerOAuthAttempt: vi.fn(),
+}));
 
 vi.mock('../ListenerPlayer', () => ({
     default: ({
@@ -29,9 +36,31 @@ vi.mock('next/navigation', () => ({
 }));
 import EarlyBirdHome from '../EarlyBirdHome';
 
-afterEach(cleanup);
+afterEach(() => {
+    cleanup();
+    recoverIdentity.mockReset();
+});
 
 describe('EarlyBird Listener home access chrome', () => {
+    it('routes logout and account switching through the bounded recovery endpoint', async () => {
+        recoverIdentity.mockResolvedValueOnce(false);
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'invitation', state: 'active' }}
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+        expect(recoverIdentity).toHaveBeenCalledOnce();
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'We could not prepare a new sign-in.',
+        );
+    });
+
     it('tolerates browser-restored profile disclosure state during hydration', async () => {
         const tree = (
             <LocaleProvider initialLocale="en">

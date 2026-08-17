@@ -1,0 +1,104 @@
+import type { NextRequest } from 'next/server';
+
+import {
+    EARLY_BIRD_COOKIE_PREFIX,
+    EARLY_BIRD_SESSION_COOKIE,
+    LISTENER_SESSION_COOKIE,
+    currentEarlyBirdSession,
+} from '@/lib/early-birds/auth';
+import { prisma } from '@/lib/db';
+import { listenerRuntimeTrustedOrigins } from '@/lib/listener/runtime-env';
+
+export const dynamic = 'force-dynamic';
+
+const RESPONSE_HEADERS = {
+    'Cache-Control': 'private, no-store',
+    'Referrer-Policy': 'no-referrer',
+};
+
+function exactTrustedOrigin(request: NextRequest): boolean {
+    const origin = request.headers.get('origin');
+    const host = request.headers.get('host')?.trim().toLowerCase();
+    const protocol = request.headers.get('x-forwarded-proto')?.trim().toLowerCase()
+        ?? request.nextUrl.protocol.replace(':', '');
+    if (!origin || !host || protocol !== 'https') return false;
+    const expected = `https://${host}`;
+    if (origin !== expected) return false;
+    try {
+        const configured = listenerRuntimeTrustedOrigins();
+        const allowed = configured.length > 0 ? configured : [expected];
+        return allowed.includes(origin);
+    } catch {
+        return false;
+    }
+}
+
+function recoveryCookieNames(): string[] {
+    return [...new Set([
+        `${EARLY_BIRD_COOKIE_PREFIX}.state`,
+        `__Secure-${EARLY_BIRD_COOKIE_PREFIX}.state`,
+        EARLY_BIRD_SESSION_COOKIE,
+        `__Secure-${EARLY_BIRD_SESSION_COOKIE}`,
+        LISTENER_SESSION_COOKIE,
+        `__Secure-${LISTENER_SESSION_COOKIE}`,
+    ])];
+}
+
+function clearCookie(name: string): string {
+    return [
+        `${name}=`,
+        'Max-Age=0',
+        'Path=/',
+        'HttpOnly',
+        'SameSite=Lax',
+        ...(name.startsWith('__Secure-') ? ['Secure'] : []),
+    ].join('; ');
+}
+
+/**
+ * Explicit recovery from a failed OAuth callback. No query value is accepted,
+ * reflected or logged. A valid current session is resolved through Better Auth
+ * and revoked in the durable session table; ambiguous/stale credentials are
+ * only removed from this browser.
+ */
+export async function POST(request: NextRequest): Promise<Response> {
+    if (!exactTrustedOrigin(request)) {
+        return Response.json({ error: 'Invalid request origin.' }, {
+            status: 403,
+            headers: RESPONSE_HEADERS,
+        });
+    }
+
+    let revocationFailed = false;
+    try {
+        // Better Auth deliberately turns adapter failures during sign-out into
+        // a successful HTTP response. Resolve the signed cookie through its
+        // normal authority, then delete the exact durable session ourselves so
+        // this endpoint never reports recovery while a bearer remains valid.
+        const session = await currentEarlyBirdSession(request.headers);
+        if (session) {
+            await prisma.earlyBirdAuthSession.deleteMany({
+                where: { id: session.session.id },
+            });
+        }
+    } catch {
+        revocationFailed = true;
+    }
+
+    const headers = new Headers(RESPONSE_HEADERS);
+    headers.set('content-type', 'application/json');
+    for (const name of recoveryCookieNames()) {
+        headers.append('set-cookie', clearCookie(name));
+    }
+    return new Response(JSON.stringify({ recovered: !revocationFailed }), {
+        status: revocationFailed ? 503 : 200,
+        headers,
+    });
+}
+
+export function GET(): Response {
+    return Response.json({ error: 'Method not allowed.' }, {
+        status: 405,
+        headers: { ...RESPONSE_HEADERS, Allow: 'POST' },
+    });
+}

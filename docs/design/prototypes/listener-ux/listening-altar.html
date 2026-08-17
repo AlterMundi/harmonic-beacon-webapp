@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Listener prototype — Listening Altar</title><link rel="stylesheet" href="shared.css" /><script src="prototype.js" defer></script></head>
+  <body data-state="listening">
+    <nav class="prototype-toolbar" aria-label="Prototype states"><button data-state-button="visitor">Visitor</button><button data-state-button="free">Free</button><button data-state-button="founder">Founder</button><button data-state-button="listening">Listening</button><button data-state-button="paused">Paused</button><button data-state-button="profile">Profile</button><button data-state-button="checkout">Checkout</button></nav>
+    <div class="prototype concept-altar">
+      <header class="topbar"><div class="global-nav"><button class="nav-menu" aria-label="Open navigation"><span></span><span></span></button><a class="brand" href="#" aria-label="Harmonic Beacon home"><img src="mark.svg" alt="" /><span>Harmonic Beacon</span></a><nav class="nav-links" aria-label="Primary navigation"><a href="#">Events</a><a href="#" aria-current="page">Listen</a><a href="#">News</a><a href="#">Why it works</a><a href="#">Team</a><a href="#">HIT</a><a href="#">Contact</a></nav><div class="nav-language" role="group" aria-label="Language"><button aria-pressed="true">EN</button><span>/</span><button aria-pressed="false">ES</button></div></div></header>
+      <div class="listener-context-bar" data-show="free founder listening paused"><div class="top-actions"><span class="chip" data-show="free listening paused"><span>Free</span><strong>2h 41m</strong></span><span class="member-mark" data-show="founder">Founding Listener</span><button class="icon-button avatar" data-open-state="profile" aria-label="Open profile">N</button></div></div>
+      <main class="altar-layout">
+        <aside class="altar-side"><p class="eyebrow">Listening Altar</p><h1 class="heading">A quiet place for the <em>Beacon.</em></h1><p class="lede">One deliberate action, a stable center and nothing that competes with listening.</p></aside>
+        <section class="altar-frame surface" aria-labelledby="altar-title">
+          <div class="altar-title"><p class="eyebrow">Continuous signal</p><h1 id="altar-title">The Beacon</h1></div>
+          <div class="altar-focus"><div class="altar-rings" aria-hidden="true"></div><div class="altar-mark signal-nucleus" aria-hidden="true"></div></div>
+          <div class="altar-readout" data-show="free founder"><span>Ready</span><strong>Remember your harmonic center.</strong></div>
+          <div class="altar-readout" data-show="listening"><span>Listening now</span><strong class="listening-time">18:42</strong></div>
+          <div class="altar-readout" data-show="paused"><span>Session held</span><strong>Paused</strong></div>
+          <div class="visitor-panel" data-show="visitor"><h2>Enter the Beacon</h2><label class="field-label">Email<input class="field-input" type="email" placeholder="you@example.com" /></label><button class="button">Continue with Google</button><button class="button button--ghost">Email me a link</button></div>
+          <div class="altar-shelf" data-show="free founder"><button class="button">Listen</button></div>
+          <div class="altar-shelf transport" data-show="listening"><button class="button pause">Pause</button><button class="button button--danger stop" aria-label="Stop listening">■</button></div>
+          <div class="altar-shelf transport" data-show="paused"><button class="button pause">Resume</button><button class="button button--danger stop" aria-label="Stop listening">■</button></div>
+          <p class="altar-note" data-show="free listening paused">Your server-authorized time stops when listening stops.</p>
+          <p class="altar-note" data-show="founder">Unlimited while your Founding Listener membership is active.</p>
+        </section>
+        <aside class="altar-side" data-show="free founder listening paused">
+          <div class="quota" data-show="free listening paused"><p class="eyebrow">This cycle</p><div class="quota__line"><strong>2 h 41 min</strong><span>left</span></div><div class="quota__track"></div><p class="meta">Renews Sunday, Aug 23 · 20:14</p><button class="member-link" data-open-state="checkout">Become a member for full access</button></div>
+          <div data-show="founder"><span class="member-mark">Founding Listener</span><p class="state-copy">Your listening is unlimited.</p></div>
+        </aside>
+      </main>
+      <section class="overlay" data-show="profile"><div class="overlay__panel surface"><div class="overlay__head"><div><p class="eyebrow">Your account</p><h2>Nico</h2></div><button class="icon-button" data-open-state="free" aria-label="Close">×</button></div><span class="member-mark">Founding Listener</span><div class="profile-grid"><div class="profile-row"><span>Total listening</span><strong>41 h 26 min</strong></div><div class="profile-row"><span>This session</span><strong>18 min 42 sec</strong></div><div class="profile-row"><span>Membership</span><strong>Active · $5/month</strong></div></div></div></section>
+      <section class="overlay" data-show="checkout"><div class="overlay__panel surface"><div class="overlay__head"><div><p class="eyebrow">Full access</p><h2>Founding Listener</h2></div><button class="icon-button" data-open-state="free" aria-label="Close">×</button></div><p class="checkout-price">$5 <small>USD / month</small></p><ul class="checkout-list"><li>Unlimited Beacon listening</li><li>Founding Listener profile mark</li><li>Cancel whenever you need</li></ul><button class="button">Continue with PayPal</button><button class="button button--ghost">Continue with Mercado Pago</button></div></section>
+    </div>
+  </body>
+</html>

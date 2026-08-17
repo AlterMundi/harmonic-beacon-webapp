@@ -1476,6 +1476,9 @@ html[data-hb-surface='listener'] body {
   margin: clamp(1rem, 3vh, 2rem) auto 0.5rem;
   position: relative;
   isolation: isolate;
+  contain: layout paint;
+  pointer-events: none;
+  user-select: none;
   --field-color: var(--listener-phase, var(--gold));
 }
 
@@ -1550,10 +1553,10 @@ html[data-hb-surface='listener'] body {
   animation: listener-core-breathe 5.5s ease-in-out infinite;
 }
 
-.listener-field__mark {
-  width: 58%;
-  height: auto;
-  filter: drop-shadow(0 0 0.9rem color-mix(in srgb, currentColor 45%, transparent));
+.listener-field__spark {
+  font-size: clamp(1.2rem, 4vw, 2rem);
+  line-height: 1;
+  text-shadow: 0 0 1.2rem currentColor;
 }
 
 .listener-field__horizon {
