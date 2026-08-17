@@ -65,6 +65,34 @@ describe('Founding Listener membership actions', () => {
         expect(JSON.stringify(sent)).not.toMatch(/paypal|subscription|account/i);
     });
 
+    it('reveals reactivation without a manual reload after cancellation converges', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(Response.json({ status: 'queued' }, { status: 202 }));
+        vi.stubGlobal('fetch', fetchMock);
+        const view = render(
+            <LocaleProvider initialLocale="en">
+                <FoundingListenerMembershipActions membership={{
+                    kind: 'founder', provider: 'paypal', state: 'active',
+                }} />
+            </LocaleProvider>,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel membership' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Yes, cancel at period end' }));
+        await screen.findByText(/We received the request/);
+
+        view.rerender(
+            <LocaleProvider initialLocale="en">
+                <FoundingListenerMembershipActions membership={{
+                    kind: 'founder', provider: 'paypal', state: 'ending',
+                }} />
+            </LocaleProvider>,
+        );
+
+        expect(await screen.findByRole('button', { name: 'Reactivate membership' }))
+            .toBeInTheDocument();
+        expect(screen.queryByText(/We received the request/)).not.toBeInTheDocument();
+    });
+
     it('offers provider-neutral reactivation while canonical state is ending', async () => {
         const fetchMock = vi.fn().mockResolvedValue(Response.json({ status: 'queued' }, { status: 202 }));
         vi.stubGlobal('fetch', fetchMock);

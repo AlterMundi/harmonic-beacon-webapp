@@ -21,10 +21,26 @@ export default function FoundingListenerMembershipActions({
     const attempt = useRef<{ action: 'cancel' | 'reactivate'; id: string } | null>(null);
     const refreshTimers = useRef<number[]>([]);
 
-    useEffect(() => () => {
+    function clearRefreshTimers() {
         for (const timer of refreshTimers.current) window.clearTimeout(timer);
         refreshTimers.current = [];
+    }
+
+    useEffect(() => () => {
+        clearRefreshTimers();
     }, []);
+
+    useEffect(() => {
+        const canonicalActionCompleted = status === 'queued' && (
+            (action === 'cancel' && membership.state === 'ending')
+            || (action === 'reactivate' && membership.state === 'active')
+        );
+        if (!canonicalActionCompleted) return;
+        clearRefreshTimers();
+        attempt.current = null;
+        setAction(null);
+        setStatus('idle');
+    }, [action, membership.state, status]);
 
     const boundary = membership.serviceThrough
         ? new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-US', {
@@ -60,7 +76,8 @@ export default function FoundingListenerMembershipActions({
             }
             setStatus('queued');
             setConfirming(false);
-            refreshTimers.current = [2_000, 5_000, 10_000, 20_000]
+            clearRefreshTimers();
+            refreshTimers.current = [2_000, 5_000, 10_000, 20_000, 40_000, 60_000, 90_000, 120_000]
                 .map((delay) => window.setTimeout(() => router.refresh(), delay));
         } catch {
             setStatus('failed');
