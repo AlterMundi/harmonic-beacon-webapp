@@ -137,17 +137,18 @@ export default function EarlyBirdLanding(props: Props) {
     return (
         <main className="listener-shell listener-shell--public">
             <div className="listener-shell__frame">
-                <section className="listener-public-hero">
-                    <BeaconField phase="ready" />
-                    <div className="listener-public-hero__copy">
-                        <p>{copy.eyebrow}</p>
-                        <h1>
-                            {copy.title}
-                        </h1>
-                        <p>{copy.intro}</p>
-                    </div>
-                    <div id="listener-access" className="listener-access">
-                        <div className="listener-access__card">
+                <section className="listener-public-hero" aria-labelledby="listener-public-title">
+                    <div className="listener-public-altar">
+                        <BeaconField phase="ready" />
+                        <div className="listener-public-hero__copy">
+                            <p>{copy.eyebrow}</p>
+                            <h1 id="listener-public-title">
+                                {copy.title}
+                            </h1>
+                            <p>{copy.intro}</p>
+                        </div>
+                        <div id="listener-access" className="listener-access">
+                            <div className="listener-access__card">
                         {error && (
                             <p role="alert" className="mb-5 rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-100">
                                 {copy.identityRecoveryFailed}
@@ -295,6 +296,7 @@ export default function EarlyBirdLanding(props: Props) {
                                 )}
                             </div>
                         )}
+                            </div>
                         </div>
                     </div>
                 </section>

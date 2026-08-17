@@ -91,7 +91,7 @@ describe('EarlyBird Listener home access chrome', () => {
     });
 
     it('leaves the global brand link to the shared layout without exposing the Reactive Lab', () => {
-        render(
+        const { container } = render(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
                     displayName="Nico"
@@ -102,6 +102,12 @@ describe('EarlyBird Listener home access chrome', () => {
         );
 
         expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
+        expect(container.querySelector('.listener-altar'))
+            .toHaveAttribute('aria-labelledby', 'listener-heading');
+        expect(container.querySelector('.listener-altar')).toContainElement(
+            screen.getByLabelText('listener-player'),
+        );
+        expect(container.textContent).not.toMatch(/Presence|here now|Your listening space|Listening Altar/i);
         expect(screen.getByLabelText('listener-player'))
             .toHaveAttribute('data-reactive-initially-enabled', 'false');
     });
