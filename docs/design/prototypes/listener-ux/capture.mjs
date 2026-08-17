@@ -52,6 +52,10 @@ try {
               return rect.width < 43.5 || rect.height < 43.5;
             })
             .map((node) => node.getAttribute("aria-label") || node.textContent?.trim() || node.tagName);
+          const navRect = (selector) => {
+            const rect = document.querySelector(selector)?.getBoundingClientRect();
+            return rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } : null;
+          };
 
           return {
             documentWidth: document.documentElement.scrollWidth,
@@ -66,6 +70,11 @@ try {
             visibleNavLinks: [...document.querySelectorAll(".nav-links a")].filter(isRendered).length,
             menuVisible: [...document.querySelectorAll(".nav-menu")].filter(isRendered).length,
             accountControlsInHeader: document.querySelectorAll(".topbar .chip, .topbar .member-mark, .topbar .avatar").length,
+            navPositions: {
+              brand: navRect(".global-nav .brand"),
+              language: navRect(".global-nav .nav-language"),
+              menu: navRect(".global-nav .nav-menu"),
+            },
           };
         }, state);
 
@@ -90,6 +99,12 @@ try {
         }
         if (geometry.navLabels.join("|") !== "Events|Listen|News|Why it works|Team|HIT|Contact") {
           throw new Error(`${concept}/${state}/${viewport.name}: global navigation labels/order drifted from the canonical asset`);
+        }
+        if (!desktopNavigation && !(geometry.navPositions.brand.right < geometry.navPositions.language.left && geometry.navPositions.language.right < geometry.navPositions.menu.left)) {
+          throw new Error(`${concept}/${state}/${viewport.name}: mobile navigation must render brand, language, then hamburger`);
+        }
+        if (!desktopNavigation && !(Math.abs(geometry.navPositions.brand.top - geometry.navPositions.language.top) < 2 && Math.abs(geometry.navPositions.language.top - geometry.navPositions.menu.top) < 2)) {
+          throw new Error(`${concept}/${state}/${viewport.name}: mobile navigation items must share one row`);
         }
         if (geometry.accountControlsInHeader !== 0) {
           throw new Error(`${concept}/${state}/${viewport.name}: Listener account controls leaked into global navigation`);
