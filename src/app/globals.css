@@ -1156,8 +1156,7 @@ html[data-hb-surface='listener'] body {
 }
 
 .listener-shell,
-.listener-page-shell,
-.listener-consumer-request-links {
+.listener-page-shell {
   --night: var(--hb-bg-0);
   --forest: var(--hb-bg-1);
   --forest-2: var(--hb-bg-2);
@@ -2119,15 +2118,6 @@ html[data-hb-surface='listener'] body {
   line-height: 1.65;
 }
 
-.listener-consumer-request-links {
-  position: fixed;
-  right: max(0.8rem, env(safe-area-inset-right));
-  bottom: max(0.8rem, env(safe-area-inset-bottom));
-  z-index: 90;
-  display: grid;
-  gap: 0.5rem;
-}
-
 .listener-withdrawal-link {
   display: grid;
   gap: 0.12rem;
@@ -2212,21 +2202,6 @@ html[data-hb-surface='listener'] body {
   background: var(--hb-gold-2);
   font-family: var(--font-space-mono), ui-monospace, monospace;
   font-size: clamp(0.72rem, 2.5vw, 0.95rem);
-}
-
-@media (max-width: 640px) {
-  .listener-consumer-request-links {
-    position: static;
-    width: auto;
-    max-width: none;
-    margin: 0 0.75rem;
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-  }
-
-  .listener-consumer-request-links .listener-withdrawal-link {
-    width: 100%;
-    max-width: none;
-  }
 }
 
 /* --------------------------------------------
