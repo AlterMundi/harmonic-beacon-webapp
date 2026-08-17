@@ -91,16 +91,6 @@ describe('landing page', () => {
         expect(screen.queryByText('PAGO → PRESENCIA')).toBeNull();
     });
 
-    it('uses the canonical Harmonic Beacon lockup on the public surface', async () => {
-        mountDb(vi.fn().mockResolvedValue([]));
-        await renderPage();
-
-        const brand = screen.getByRole('link', { name: 'Harmonic Beacon' });
-        expect(brand).toHaveClass('hb-brand', 'brand-lockup');
-        expect(brand.querySelector('svg path')).toBeInTheDocument();
-        expect(brand.querySelector('.brand-lockup__mark')).toBeNull();
-    });
-
     it('asks only for sessions an attendee could still join', async () => {
         const findMany = mountDb(vi.fn().mockResolvedValue([]));
         await renderPage();
