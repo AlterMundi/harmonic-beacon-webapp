@@ -51,7 +51,7 @@ async function resetStageRoom(): Promise<void> {
 stackTest.describe('visual baselines', () => {
     stackTest('landing', async ({ page }) => {
         await page.goto(ROUTES.landing);
-        await expect(page.locator('#ticket-code')).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(4);
         await expect(page).toHaveScreenshot('landing.png', { fullPage: true });
     });
 

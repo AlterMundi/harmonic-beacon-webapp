@@ -186,6 +186,11 @@ describe('landing page', () => {
         for (const [id] of dates) {
             expect(document.querySelector(`a[href="/api/public-sessions/${id}/enter"]`)).not.toBeNull();
         }
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Próximos encuentros.');
+        expect(screen.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
+            'href',
+            'https://proyecciondelmito.harmonicbeacon.com/',
+        );
     });
 
     it('renders the purchase link when one is configured', async () => {
@@ -246,8 +251,7 @@ describe('landing page', () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        expect(screen.getByText('The myth', { exact: false })).toBeInTheDocument();
-        expect(screen.getByText('is alive.')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Upcoming gatherings.');
         expect(screen.getByText('English')).toBeInTheDocument();
         expect(screen.getByText('Spanish')).toBeInTheDocument();
         expect(screen.getByText(/Saturday, August 8 at 0?8:30 AM CST/)).toBeInTheDocument();
