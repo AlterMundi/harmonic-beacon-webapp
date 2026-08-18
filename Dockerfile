@@ -59,6 +59,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/ops/beacon-account/database.stagi
 COPY --from=builder --chown=nextjs:nodejs /app/ops/beacon-account/account-mail-worker.production.env.example ./ops/beacon-account/account-mail-worker.production.env.example
 COPY --from=builder --chown=nextjs:nodejs /app/ops/beacon-account/account-mail-worker.staging.env.example ./ops/beacon-account/account-mail-worker.staging.env.example
 COPY --from=builder --chown=nextjs:nodejs /app/ops/listener-identity-staging/validate.mjs ./ops/listener-identity-staging/validate.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/ops/listener-identity-staging/intro-artifacts.sha256 ./ops/listener-identity-staging/intro-artifacts.sha256
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/provision-account-authority.ts ./scripts/provision-account-authority.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/process-account-mail-outbox.ts ./scripts/process-account-mail-outbox.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/event-stabilization.ts ./src/lib/event-stabilization.ts

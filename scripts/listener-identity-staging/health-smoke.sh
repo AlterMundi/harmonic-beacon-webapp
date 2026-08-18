@@ -6,6 +6,10 @@ deploy_file=${1:?usage: health-smoke.sh /etc/harmonic-beacon/listener-identity-s
 listener_staging_load "$deploy_file"
 listener_staging_wait_healthy
 
+docker exec listener-identity-staging-app sh -c \
+  'cd /media/artifacts && sha256sum -cs /app/ops/listener-identity-staging/intro-artifacts.sha256' ||
+  listener_staging_fail 'mounted Listener staging intros do not match the reviewed manifest'
+
 test "$(docker inspect listener-identity-staging-app --format '{{.Config.Image}}')" = \
   "harmonic-beacon/listener-identity-staging:$LISTENER_IDENTITY_STAGING_IMAGE_TAG" ||
   listener_staging_fail 'running app image does not match deploy contract'

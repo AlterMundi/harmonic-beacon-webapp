@@ -6,6 +6,7 @@ listener_staging_compose="$listener_staging_root/ops/listener-identity-staging/c
 listener_staging_nginx_source="$listener_staging_root/ops/early-birds-preview/nginx/earlybirds-staging.harmonicbeacon.com.conf.template"
 listener_staging_nginx_target=/etc/nginx/sites-available/earlybirds-staging.harmonicbeacon.com
 listener_staging_nginx_enabled=/etc/nginx/sites-enabled/earlybirds-staging.harmonicbeacon.com
+listener_staging_intro_manifest="$listener_staging_root/ops/listener-identity-staging/intro-artifacts.sha256"
 
 listener_staging_fail() {
   echo "listener-identity-staging: $*" >&2
@@ -88,6 +89,28 @@ listener_staging_restore_account_enabled() {
     listener_staging_fail 'restored app env does not match the prior Account mode'
 }
 
+listener_staging_restore_drop_ins() {
+  previous_file="$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-drop-ins"
+  test -f "$previous_file" || return 0
+  previous_es=$(awk -F= '$1 == "EARLY_BIRDS_DROPIN_ES_PATH" { count += 1; value = substr($0, index($0, "=") + 1) } END { if (count != 1) exit 1; print value }' "$previous_file") ||
+    listener_staging_fail 'recorded Spanish intro rollback state is invalid'
+  previous_en=$(awk -F= '$1 == "EARLY_BIRDS_DROPIN_EN_PATH" { count += 1; value = substr($0, index($0, "=") + 1) } END { if (count != 1) exit 1; print value }' "$previous_file") ||
+    listener_staging_fail 'recorded English intro rollback state is invalid'
+  temporary=$(mktemp "${LISTENER_IDENTITY_STAGING_APP_ENV_FILE}.tmp.XXXXXX")
+  if ! awk -v desired_es="$previous_es" -v desired_en="$previous_en" '
+    /^EARLY_BIRDS_DROPIN_ES_PATH=/ { es += 1; print "EARLY_BIRDS_DROPIN_ES_PATH=" desired_es; next }
+    /^EARLY_BIRDS_DROPIN_EN_PATH=/ { en += 1; print "EARLY_BIRDS_DROPIN_EN_PATH=" desired_en; next }
+    { print }
+    END { if (es != 1 || en != 1) exit 1 }
+  ' "$LISTENER_IDENTITY_STAGING_APP_ENV_FILE" > "$temporary"; then
+    rm -f "$temporary"
+    listener_staging_fail 'could not restore prior intro configuration atomically'
+  fi
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  mv "$temporary" "$LISTENER_IDENTITY_STAGING_APP_ENV_FILE"
+}
+
 listener_staging_assert_checkout() {
   test "$(git -C "$listener_staging_root" rev-parse HEAD)" = "$LISTENER_IDENTITY_STAGING_GIT_SHA" ||
     listener_staging_fail 'release checkout does not match the reviewed SHA'
@@ -105,6 +128,19 @@ listener_staging_assert_dependencies() {
   for path in "$BEACON_STREAM_ARTIFACTS_HOST_PATH" "$BEACON_LISTENER_GEOIP_HOST_PATH"; do
     test -e "$path" || listener_staging_fail "required read-only artifact is absent: $path"
   done
+  test -f "$listener_staging_intro_manifest" ||
+    listener_staging_fail 'reviewed intro checksum manifest is absent'
+  while read -r checksum relative; do
+    printf '%s\n' "$checksum" | grep -Eq '^[0-9a-f]{64}$' ||
+      listener_staging_fail 'intro checksum manifest contains an invalid digest'
+    printf '%s\n' "$relative" | grep -Eq '^drop-ins/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.m4a$' ||
+      listener_staging_fail 'intro checksum manifest contains an invalid relative path'
+    intro="$BEACON_STREAM_ARTIFACTS_HOST_PATH/$relative"
+    test -f "$intro" && test ! -L "$intro" ||
+      listener_staging_fail "approved intro artifact is absent or not a regular file: $relative"
+    test "$(sha256sum "$intro" | awk '{print $1}')" = "$checksum" ||
+      listener_staging_fail "approved intro artifact checksum mismatch: $relative"
+  done < "$listener_staging_intro_manifest"
 
   if docker network inspect listener_identity_staging_database >/dev/null 2>&1; then
     metadata=$(docker network inspect listener_identity_staging_database \
@@ -177,6 +213,7 @@ listener_staging_capture_previous() {
   # attempt. Never inherit a failed candidate from an earlier attempt.
   rm -f "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image" \
     "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-account-enabled" \
+    "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-drop-ins" \
     "$LISTENER_IDENTITY_STAGING_STATE_DIR/legacy-runtime"
   if docker inspect listener-identity-staging-app >/dev/null 2>&1; then
     running=$(docker inspect listener-identity-staging-app --format '{{.State.Running}}')
@@ -197,8 +234,20 @@ listener_staging_capture_previous() {
         ') || listener_staging_fail 'accepted staging app has an invalid Account mode'
       printf '%s\n' "$previous_account" > \
         "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-account-enabled"
+      docker inspect listener-identity-staging-app \
+        --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '
+          $1 == "EARLY_BIRDS_DROPIN_ES_PATH" { es += 1; es_value = substr($0, index($0, "=") + 1) }
+          $1 == "EARLY_BIRDS_DROPIN_EN_PATH" { en += 1; en_value = substr($0, index($0, "=") + 1) }
+          END {
+            if (es != 1 || en != 1) exit 1
+            print "EARLY_BIRDS_DROPIN_ES_PATH=" es_value
+            print "EARLY_BIRDS_DROPIN_EN_PATH=" en_value
+          }
+        ' > "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-drop-ins" ||
+        listener_staging_fail 'accepted staging app has invalid intro configuration'
       chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image" \
-        "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-account-enabled"
+        "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-account-enabled" \
+        "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-drop-ins"
     fi
   fi
   if docker inspect listener-ui-dev >/dev/null 2>&1; then

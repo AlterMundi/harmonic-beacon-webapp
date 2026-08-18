@@ -20,6 +20,11 @@ database, volume or database network.
   - `/etc/harmonic-beacon/listener-identity-staging.deploy.env`
   - `/etc/harmonic-beacon/listener-identity-staging.env`
   - `/etc/harmonic-beacon/listener-identity-staging-database.env`
+- Approved intros are selected only by the two exact container paths in
+  `app.env.example`. Their immutable hashes are pinned in
+  `intro-artifacts.sha256` and verified on the host and inside the read-only
+  `/media/artifacts` mount before acceptance. No audio is copied, transcoded or
+  changed by this lifecycle.
 
 The active Nginx vhost may predate the three exact Account RP routes. The
 lifecycle therefore backs up the active staging vhost, installs the reviewed
@@ -74,6 +79,20 @@ The lifecycle builds the exact reviewed image, verifies its embedded SHA, and
 uses that image in a networkless/read-only container to validate all three
 root-owned files before it starts PostgreSQL or changes runtime state.
 
+For an existing installation whose intro keys are empty, install the exact
+reviewed paths atomically before the candidate rollout. This command validates
+the already-mounted files and their pinned hashes; it never receives an
+operator-supplied filename and does not restart the runtime:
+
+```bash
+sudo scripts/listener-identity-staging/configure-intros.sh \
+  /etc/harmonic-beacon/listener-identity-staging.deploy.env
+```
+
+The subsequent `start.sh` captures the prior running container's ES/EN values
+before cutover, so an automatic or explicit rollback restores them before
+recreating the previous image.
+
 Confirm `earlybirds_stream_control_internal` and
 `earlybirds_authority_private` are internal bridges. Capture the current IDs of
 `earlybirds-preview-listener-1`, `earlybirds-preview-postgres-1` and all event
@@ -125,7 +144,9 @@ make this infrastructure smoke pass.
 
 Rollback restores the backed-up staging vhost before changing the staging app
 and atomically restores the prior accepted Account enablement flag before it
-recreates the previous immutable app. Secrets remain in the protected app env
+recreates the previous immutable app. It also restores the exact ES/EN intro
+paths observed in the previously healthy container, so enabling the mounted
+intros is independently reversible. Secrets remain in the protected app env
 and are never copied into rollback state. Rollback never downgrades the
 database. On the first cutover, with no previous
 immutable staging image, it stops the new app and restarts the retained
