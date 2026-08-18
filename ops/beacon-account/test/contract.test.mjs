@@ -219,3 +219,16 @@ test('nginx keeps Account hosts isolated and never logs token-bearing routes', (
     assert.doesNotMatch(nginx, /livekit|listener\/checkout|webhooks|events/);
   }
 });
+
+test('Account staging ACME bootstrap exposes only the certificate challenge', () => {
+  const nginx = fs.readFileSync(
+    path.join(ROOT, 'nginx/account-staging-acme-bootstrap.conf.template'),
+    'utf8',
+  );
+  assert.match(nginx, /server_name account-staging\.harmonicbeacon\.com;/);
+  assert.match(nginx, /access_log off;/);
+  assert.match(nginx, /location \^~ \/\.well-known\/acme-challenge\/ \{/);
+  assert.match(nginx, /root \/var\/www\/letsencrypt;/);
+  assert.match(nginx, /location \/ \{ return 503; \}/);
+  assert.doesNotMatch(nginx, /listen 443|ssl_certificate|proxy_pass|1300[0-9]/);
+});
