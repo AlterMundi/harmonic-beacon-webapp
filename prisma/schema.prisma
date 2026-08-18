@@ -120,6 +120,7 @@ model ScheduledSession {
   status        ScheduledSessionStatus @default(SCHEDULED)
   isTest        Boolean                @default(false) @map("is_test")
   paidMode      Boolean                @default(true) @map("paid_mode")
+  publicAccess  Boolean                @default(false) @map("public_access")
   attendeeCap   Int                    @default(150) @map("attendee_cap")
   maxPublishers Int                    @default(6) @map("max_publishers")
   facilitatorId String                 @map("facilitator_id") @db.Uuid

@@ -21,8 +21,11 @@ export const dynamic = "force-dynamic";
 
 type WeekendEvent = {
     id: string;
+    title: string;
+    description: string | null;
     language: "ENGLISH" | "SPANISH";
     scheduledAt: Date;
+    publicAccess: boolean;
 };
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
@@ -52,7 +55,14 @@ async function weekendEvents(): Promise<WeekendEvent[] | null> {
                 ],
             },
             orderBy: { scheduledAt: "asc" },
-            select: { id: true, language: true, scheduledAt: true },
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                language: true,
+                scheduledAt: true,
+                publicAccess: true,
+            },
         });
     } catch (error) {
         console.error(`[landing] could not load the event schedule: ${redactError(error)}`);
@@ -95,6 +105,7 @@ export default async function LandingPage({
         : null;
     const accountError = params.account_error === '1';
     const events = await weekendEvents();
+    const hasTicketedEvents = events === null || events.some((event) => !event.publicAccess);
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlSession2 = process.env.TICKET_PURCHASE_URL_SESSION_2 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlFor = (language: string) =>
@@ -145,6 +156,14 @@ export default async function LandingPage({
                                             <p className="event-card__label">
                                                 {event.language === "ENGLISH" ? copy.english : copy.spanish}
                                             </p>
+                                            {event.publicAccess && (
+                                                <>
+                                                    <h3 className="font-serif text-xl text-[var(--paper)]">{event.title}</h3>
+                                                    {event.description && (
+                                                        <p className="text-xs leading-relaxed text-[var(--text-muted)]">{event.description}</p>
+                                                    )}
+                                                </>
+                                            )}
                                             <p className="text-sm text-[var(--text-secondary)]">
                                                 <span className="font-medium text-[var(--paper)]">{copy.costaRica}: </span>
                                                 {formatEventTime(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
@@ -163,16 +182,20 @@ export default async function LandingPage({
                                                 {formatTimeOnly(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
                                             </p>
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
-                                                {event.language === "ENGLISH" ? "US $50" : "US $20"}
+                                                {event.publicAccess ? (locale === 'en' ? 'Free' : 'Gratis') : (event.language === "ENGLISH" ? "US $50" : "US $20")}
                                             </p>
                                         </div>
                                     </div>
 
                                     <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                                        <p className="text-xs text-[var(--text-secondary)]">
-                                            USD $50 {copy.globalNorth} · USD $20 {copy.globalSouth}
-                                        </p>
-                                        {purchaseUrlFor(event.language) ? (
+                                        {event.publicAccess ? (
+                                            <Link
+                                                href={account ? `/session/${event.id}` : `/api/account/login?flow=attendee&next=${encodeURIComponent(`/session/${event.id}`)}`}
+                                                className="event-button event-button--primary mt-3 inline-flex w-full text-center sm:w-auto"
+                                            >
+                                                {locale === 'en' ? 'Enter event' : 'Ingresar al evento'}
+                                            </Link>
+                                        ) : purchaseUrlFor(event.language) ? (
                                             <a
                                                 href={purchaseUrlFor(event.language)}
                                                 className="event-button event-button--primary mt-3 inline-flex w-full text-center sm:w-auto"
@@ -187,6 +210,11 @@ export default async function LandingPage({
                                                 {copy.salesSoon}
                                             </p>
                                         )}
+                                        {!event.publicAccess && (
+                                            <p className="mt-3 text-xs text-[var(--text-secondary)]">
+                                                USD $50 {copy.globalNorth} · USD $20 {copy.globalSouth}
+                                            </p>
+                                        )}
                                     </div>
                                 </li>
                             ))}
@@ -194,8 +222,8 @@ export default async function LandingPage({
                     )}
                 </section>
 
-                {/* Login */}
-                <section className="space-y-5" aria-labelledby="login-heading">
+                {/* Ticket login remains available only when a ticketed event is listed. */}
+                {hasTicketedEvents && <section className="space-y-5" aria-labelledby="login-heading">
                     <h2 id="login-heading" className="hb-section-label">
                         {copy.loginHeading}
                     </h2>
@@ -234,7 +262,7 @@ export default async function LandingPage({
                             </div>
                         )}
                     </div>
-                </section>
+                </section>}
 
                 {/* Footer */}
                 <footer className="mt-auto flex flex-wrap gap-x-5 gap-y-2 text-xs text-[var(--text-muted)]">

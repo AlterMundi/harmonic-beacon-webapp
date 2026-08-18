@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/db';
-import { principalFromToken } from '@/lib/principal';
+import { accountIdentityFromToken, principalFromToken } from '@/lib/principal';
+import { attachPublicSessionAccess } from '@/lib/public-session-access';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
@@ -16,10 +17,10 @@ export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const principal = await principalFromToken(
-        request.cookies.get(SESSION_COOKIE_NAME)?.value,
-    );
-    if (!principal) {
+    const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+    let principal = await principalFromToken(cookieValue);
+    const account = principal ? null : await accountIdentityFromToken(cookieValue);
+    if (!principal && !account) {
         return NextResponse.json(
             { error: 'Authentication required' },
             { status: 401 },
@@ -36,10 +37,19 @@ export async function GET(
             scheduledAt: true,
             status: true,
             facilitatorId: true,
+            publicAccess: true,
         },
     });
     if (!session) {
         return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    if (!principal && account && cookieValue && session.publicAccess) {
+        const attached = await attachPublicSessionAccess(cookieValue, session, account);
+        if (attached) principal = await principalFromToken(cookieValue);
+    }
+    if (!principal) {
+        return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
     if (principal.kind === 'attendee' && principal.scheduledSessionId !== session.id) {
