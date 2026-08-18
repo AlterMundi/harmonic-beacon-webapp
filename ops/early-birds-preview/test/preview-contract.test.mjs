@@ -193,7 +193,12 @@ test('Listener edges expose only the three exact Account RP browser routes', asy
       assert.match(block, new RegExp(`proxy_set_header Host ${host.replaceAll('.', '\\.')};`));
       assert.match(block, /proxy_set_header X-Forwarded-Proto https;/);
     }
-    assert.doesNotMatch(source, /location \^~ \/api\/account\//);
+    const closedPrefix = source.match(/location \^~ \/api\/account\/ \{([\s\S]*?)\n    \}/);
+    if (closedPrefix) {
+      assert.match(closedPrefix[1], /access_log off;/);
+      assert.match(closedPrefix[1], /return 404;/);
+      assert.doesNotMatch(closedPrefix[1], /proxy_pass/);
+    }
     assert.doesNotMatch(source, /location \/api\/account\//);
   }
 });

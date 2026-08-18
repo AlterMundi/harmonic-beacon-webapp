@@ -18,7 +18,9 @@ on:
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
+      - ops/listener-identity-staging/**
       - scripts/early-birds-preview/**
+      - scripts/listener-identity-staging/**
       - scripts/listener_container_observer.py
       - tools/early-birds-hls-load/**
       - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
@@ -45,7 +47,9 @@ on:
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
+      - ops/listener-identity-staging/**
       - scripts/early-birds-preview/**
+      - scripts/listener-identity-staging/**
       - scripts/listener_container_observer.py
       - tools/early-birds-hls-load/**
       - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
@@ -125,3 +129,6 @@ jobs:
       - run: npm --prefix ops/early-birds-preview run check
       - run: npm --prefix ops/early-birds-preview test
       - run: npm --prefix ops/early-birds-preview run validate:build
+      - run: npm --prefix ops/listener-identity-staging run check
+      - run: npm --prefix ops/listener-identity-staging test
+      - run: npm --prefix ops/listener-identity-staging run validate:example

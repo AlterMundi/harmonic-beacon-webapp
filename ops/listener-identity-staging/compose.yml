@@ -1,0 +1,95 @@
+name: listener-identity-staging
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    container_name: listener-identity-staging-postgres
+    restart: unless-stopped
+    env_file:
+      - ${LISTENER_IDENTITY_STAGING_DATABASE_ENV_FILE:?set_root_owned_database_env_file}
+    volumes:
+      - listener-identity-staging-postgres:/var/lib/postgresql/data
+    networks:
+      database:
+        aliases: [listener-identity-staging-postgres]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    security_opt: [no-new-privileges:true]
+    logging: &listener_staging_logging
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+  migrate:
+    image: harmonic-beacon/listener-identity-staging:${LISTENER_IDENTITY_STAGING_IMAGE_TAG:?exact_sha40_required}
+    container_name: listener-identity-staging-migrate
+    restart: "no"
+    command: ["npx", "prisma", "migrate", "deploy"]
+    env_file:
+      - ${LISTENER_IDENTITY_STAGING_APP_ENV_FILE:?set_root_owned_app_env_file}
+    networks: [database]
+    depends_on:
+      postgres: { condition: service_healthy }
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:size=32m,mode=1777]
+    logging: *listener_staging_logging
+
+  app:
+    image: harmonic-beacon/listener-identity-staging:${LISTENER_IDENTITY_STAGING_IMAGE_TAG:?exact_sha40_required}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        NEXT_PUBLIC_LIVEKIT_URL: https://livekit.example.invalid
+        BEACON_GIT_SHA: ${LISTENER_IDENTITY_STAGING_GIT_SHA:?exact_sha40_required}
+        BEACON_BUILD_TIME: ${LISTENER_IDENTITY_STAGING_BUILD_TIME:?iso_timestamp_required}
+        BEACON_DATABASE_SCHEMA_VERSION: ${LISTENER_IDENTITY_STAGING_SCHEMA_VERSION:?migration_name_required}
+    container_name: listener-identity-staging-app
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${LISTENER_IDENTITY_STAGING_APP_ENV_FILE:?set_root_owned_app_env_file}
+    ports:
+      - "127.0.0.1:${LISTENER_IDENTITY_STAGING_APP_PORT:-13001}:3000"
+    volumes:
+      - ${BEACON_STREAM_ARTIFACTS_HOST_PATH:?set_root_owned_artifact_path}:/media/artifacts:ro
+      - ${BEACON_LISTENER_GEOIP_HOST_PATH:?set_reviewed_geoip_path}:/data/geoip/dbip-country-lite.mmdb:ro
+    networks:
+      database: {}
+      app_egress: {}
+      stream_control: {}
+      authority_private:
+        aliases: [listener-identity-staging]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/api/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:size=64m,mode=1777]
+    logging: *listener_staging_logging
+
+networks:
+  database:
+    name: listener_identity_staging_database
+    internal: true
+  app_egress:
+    name: listener_identity_staging_egress
+  stream_control:
+    external: true
+    name: earlybirds_stream_control_internal
+  authority_private:
+    external: true
+    name: earlybirds_authority_private
+
+volumes:
+  listener-identity-staging-postgres:
+    name: listener-identity-staging-postgres
