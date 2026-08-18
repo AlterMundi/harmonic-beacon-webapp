@@ -1,0 +1,12 @@
+export const PUBLIC_CYCLE_SESSION_IDS = [
+    '50000000-0000-4000-8000-202608220001',
+    '50000000-0000-4000-8000-202608290001',
+    '50000000-0000-4000-8000-202609050001',
+    '50000000-0000-4000-8000-202609120001',
+] as const;
+
+const PUBLIC_CYCLE_SESSION_ID_SET = new Set<string>(PUBLIC_CYCLE_SESSION_IDS);
+
+export function isPublicCycleSession(sessionId: string): boolean {
+    return PUBLIC_CYCLE_SESSION_ID_SET.has(sessionId);
+}

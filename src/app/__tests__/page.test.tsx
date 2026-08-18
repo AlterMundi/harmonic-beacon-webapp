@@ -27,11 +27,15 @@ vi.mock('@/app/login/LoginClient', () => ({
 
 const SATURDAY = {
     id: 'session-1',
+    title: 'Saturday',
+    description: null,
     language: 'SPANISH' as const,
     scheduledAt: new Date('2026-08-08T14:30:00.000Z'),
 };
 const SESSION_2 = {
     id: 'session-2',
+    title: 'Session 2',
+    description: null,
     language: 'ENGLISH' as const,
     scheduledAt: new Date('2026-08-08T20:00:00.000Z'),
 };
@@ -112,7 +116,7 @@ describe('landing page', () => {
         );
         // No paid-mode or attendee-cap columns leak into the public page.
         const select = findMany.mock.calls[0][0].select;
-        expect(Object.keys(select).sort()).toEqual(['id', 'language', 'scheduledAt']);
+        expect(Object.keys(select).sort()).toEqual(['description', 'id', 'language', 'scheduledAt', 'title']);
     });
 
     it('fails closed when a missed lifecycle transition leaves an old session LIVE', async () => {
@@ -157,6 +161,31 @@ describe('landing page', () => {
         expect(screen.getByTestId('ticket-login-form')).toBeInTheDocument();
         expect(screen.getByText(/Los horarios no están disponibles/)).toBeInTheDocument();
         expect(error).toHaveBeenCalled();
+    });
+
+    it('publishes the four free Saturday rooms without ticket login', async () => {
+        const dates = [
+            ['50000000-0000-4000-8000-202608220001', '2026-08-22T14:00:00.000Z'],
+            ['50000000-0000-4000-8000-202608290001', '2026-08-29T14:00:00.000Z'],
+            ['50000000-0000-4000-8000-202609050001', '2026-09-05T14:00:00.000Z'],
+            ['50000000-0000-4000-8000-202609120001', '2026-09-12T14:00:00.000Z'],
+        ];
+        mountDb(vi.fn().mockResolvedValue(dates.map(([id, scheduledAt], index) => ({
+            id,
+            title: `Del otro lado del umbral — Encuentro ${index + 1} de 4`,
+            description: 'Ciclo gratuito en castellano',
+            language: 'SPANISH' as const,
+            scheduledAt: new Date(scheduledAt),
+        }))));
+
+        await renderPage();
+
+        expect(screen.getAllByText('Gratis')).toHaveLength(4);
+        expect(screen.getAllByRole('link', { name: 'Ingresar al evento' })).toHaveLength(4);
+        expect(screen.queryByTestId('ticket-login-form')).toBeNull();
+        for (const [id] of dates) {
+            expect(document.querySelector(`a[href="/api/public-sessions/${id}/enter"]`)).not.toBeNull();
+        }
     });
 
     it('renders the purchase link when one is configured', async () => {
