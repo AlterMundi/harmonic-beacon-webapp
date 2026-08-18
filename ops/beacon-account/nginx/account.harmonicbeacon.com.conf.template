@@ -57,6 +57,16 @@ server {
         proxy_pass http://127.0.0.1:13002;
     }
 
+    location = /assets/hb-global-nav.js {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13002;
+        add_header Cache-Control "public, max-age=300" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
     location = / {
         if ($request_method !~ ^(GET|HEAD)$) { return 405; }
         access_log off;

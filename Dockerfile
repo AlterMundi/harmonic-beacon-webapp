@@ -21,7 +21,8 @@ RUN npm run build
 
 FROM base AS runner
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    BEACON_ACCOUNT_NAV_ASSET=1
 
 ARG BEACON_GIT_SHA=unknown
 ARG BEACON_BUILD_TIME=unknown
