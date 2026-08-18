@@ -90,16 +90,16 @@ async function expectStaffIdentity(
     locale: UiLocale,
 ): Promise<void> {
     const copy = ROLE_COPY[locale][role];
-    const identity = page.locator('nav details');
+    const operationsNavigation = page.getByRole('navigation', {
+        name: locale === 'es' ? 'Operaciones de eventos' : 'Event operations',
+    });
+    const identity = operationsNavigation.locator('details');
     await expect(identity.locator('summary')).toContainText(name);
     await expect(identity.locator('summary')).toContainText(copy.label);
     await identity.locator('summary').click();
     await expect(identity).toContainText(copy.description);
     await expect(page.locator('body')).not.toContainText(role);
 
-    const operationsNavigation = page.getByRole('navigation', {
-        name: locale === 'es' ? 'Operaciones de eventos' : 'Event operations',
-    });
     for (const label of locale === 'es'
         ? ['Eventos', 'Estado técnico', 'Entradas']
         : ['Events', 'System health', 'Admission']) {

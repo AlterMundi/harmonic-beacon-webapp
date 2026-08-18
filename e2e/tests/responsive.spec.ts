@@ -164,6 +164,7 @@ stackTest.describe('responsive live surfaces', () => {
 
         for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
             const control = page.locator(`[data-signal="${signal}"]`);
+            await control.scrollIntoViewIfNeeded();
             const box = await control.boundingBox();
             expect(box, `${signal} has no layout box`).not.toBeNull();
             expect(box!.height).toBeGreaterThanOrEqual(44);
