@@ -12,4 +12,3 @@ export async function POST(request: Request): Promise<Response> {
         headers: { 'Cache-Control': 'private, no-store' },
     });
 }
-

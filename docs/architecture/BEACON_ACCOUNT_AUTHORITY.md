@@ -58,7 +58,7 @@ privilege env is DB/base URL, `BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN`, exact
 heartbeat path. The mode-0600 heartbeat is:
 
 ```json
-{"status":"ok|degraded|error","at":"RFC3339","delivered":0,"gitSha":"sha","pendingCount":0,"oldestPendingSeconds":0,"consecutiveErrors":0,"lastSuccessAt":"RFC3339|null"}
+{"status":"ok|degraded|error","at":"RFC3339","delivered":0,"gitSha":"sha","pendingCount":0,"oldestPendingSeconds":0,"consecutiveErrors":0,"maintenanceStatus":"ok|error","lastSuccessAt":"RFC3339|null"}
 ```
 
 ## OIDC relying-party contract

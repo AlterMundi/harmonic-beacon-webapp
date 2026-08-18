@@ -9,10 +9,8 @@ export async function accountAuthorityDatabaseReady(): Promise<boolean> {
         return marker?.issuer === accountOrigin();
     } catch { return false; }
 }
-
 export async function assertAccountAuthorityDatabase(): Promise<void> {
     if (!await accountAuthorityDatabaseReady()) {
         throw new Error('Account authority database issuer marker is absent or mismatched');
     }
 }
-

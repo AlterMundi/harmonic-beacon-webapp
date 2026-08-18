@@ -17,4 +17,3 @@ export async function GET(request: Request): Promise<Response> {
         });
     } catch { return Response.json({ error: 'identity_unavailable' }, { status: 503 }); }
 }
-

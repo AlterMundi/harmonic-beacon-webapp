@@ -7,6 +7,12 @@ import {
     processAccountMailOutboxBatch,
 } from '../src/lib/account/mail-outbox';
 import { cleanupAccountAuthorityRecords } from '../src/lib/account/maintenance';
+import {
+    accountMaintenanceDue,
+    accountWorkerStatus,
+    initialAccountMaintenanceState,
+    recordAccountMaintenanceAttempt,
+} from '../src/lib/account/worker-health';
 
 const WATCH = process.argv.includes('--watch');
 const HEARTBEAT = process.env.BEACON_ACCOUNT_MAIL_WORKER_HEARTBEAT_FILE?.trim() ||
@@ -14,20 +20,20 @@ const HEARTBEAT = process.env.BEACON_ACCOUNT_MAIL_WORKER_HEARTBEAT_FILE?.trim() 
 let stopping = false;
 let consecutiveErrors = 0;
 let lastSuccessAt: string | null = null;
-let lastMaintenanceAt = 0;
-const MAINTENANCE_INTERVAL_MS = 15 * 60_000;
+let maintenanceState = initialAccountMaintenanceState();
 process.once('SIGTERM', () => { stopping = true; });
 process.once('SIGINT', () => { stopping = true; });
 
 async function heartbeat(delivered: number) {
     const metrics = await accountMailOutboxMetrics();
-    const status = consecutiveErrors >= 3 ? 'error' : consecutiveErrors > 0 ? 'degraded' : 'ok';
+    const status = accountWorkerStatus(consecutiveErrors, maintenanceState);
     const temporary = `${HEARTBEAT}.${process.pid}.tmp`;
     await writeFile(temporary, JSON.stringify({
         status, at: new Date().toISOString(), delivered,
         gitSha: process.env.BEACON_GIT_SHA ?? 'unknown',
         ...metrics,
         consecutiveErrors,
+        maintenanceStatus: maintenanceState.failed ? 'error' : 'ok',
         lastSuccessAt,
     }), { mode: 0o600 });
     await rename(temporary, HEARTBEAT);
@@ -35,20 +41,23 @@ async function heartbeat(delivered: number) {
 
 async function once() {
     await assertAccountAuthorityDatabase();
-    let maintenanceFailed = false;
-    if (Date.now() - lastMaintenanceAt >= MAINTENANCE_INTERVAL_MS) {
-        lastMaintenanceAt = Date.now();
-        try { await cleanupAccountAuthorityRecords(); }
-        catch { maintenanceFailed = true; }
+    const now = Date.now();
+    if (accountMaintenanceDue(maintenanceState, now)) {
+        try {
+            await cleanupAccountAuthorityRecords();
+            maintenanceState = recordAccountMaintenanceAttempt(maintenanceState, now, true);
+        } catch {
+            maintenanceState = recordAccountMaintenanceAttempt(maintenanceState, now, false);
+        }
     }
     const batch = await processAccountMailOutboxBatch(50);
-    if (batch.failed > 0 || maintenanceFailed) consecutiveErrors += 1;
+    if (batch.failed > 0) consecutiveErrors += 1;
     else if (batch.attempted > 0 || (await accountMailOutboxMetrics()).pendingCount === 0) {
         consecutiveErrors = 0;
         lastSuccessAt = new Date().toISOString();
     }
     await heartbeat(batch.delivered);
-    return { ...batch, maintenanceFailed };
+    return { ...batch, maintenanceFailed: maintenanceState.failed };
 }
 
 async function main() {

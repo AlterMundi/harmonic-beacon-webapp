@@ -6,7 +6,6 @@ import { normalizeBeaconDisplayName } from '@/lib/account/profile';
 function noStore(body: unknown, status = 200) {
     return Response.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
 }
-
 export async function POST(request: Request): Promise<Response> {
     if (!isAccountHost(request.headers.get('host') ?? new URL(request.url).host)) {
         return new Response(null, { status: 404 });
@@ -29,4 +28,3 @@ export async function POST(request: Request): Promise<Response> {
     });
     return noStore(profile);
 }
-
