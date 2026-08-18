@@ -23,6 +23,20 @@ The upstream files and all vendored artifacts are SHA-256 pinned in
 and the path. Updating the brand requires an explicit snapshot, provenance,
 manifest and visual-review update together.
 
+## Global navigation
+
+Listener, Live and Account serve a byte-pinned local snapshot of the canonical
+web component rather than executing JavaScript supplied at runtime by another
+origin. The source is `AlterMundi/harmonicbeacon.com` commit
+`8770e6a844960c90768d08a03f3232a47123cac9`; the vendored
+`public/assets/hb-global-nav.js` SHA-256 is
+`a96e74bf4ad081769c533861df238b6a6b23d2bdc247530222cfddce67c62e10`.
+The local light-DOM markup remains the accessible, same-destination fallback.
+Both implementations keep Account out of the primary destination list and
+expose it from the user-icon menu. The enhanced navigation renders both the
+Beacon mark and user glyph locally; it does not embed Account in an iframe or
+fetch a cross-origin image.
+
 ## Font source and license
 
 Both families are covered by the SIL Open Font License 1.1; the relevant
@@ -40,4 +54,5 @@ Both families are covered by the SIL Open Font License 1.1; the relevant
   is pinned from the Google Fonts repository commit above, with trailing
   whitespace normalized for the repository gate.
 
-No font, brand source, analytics or other asset is fetched at runtime.
+No font, analytics or decorative brand asset is fetched at runtime. The global
+navigation is served as the byte-pinned local snapshot described above.

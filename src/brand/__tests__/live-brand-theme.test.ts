@@ -73,4 +73,15 @@ describe("Live canonical brand boundary", () => {
     expect(css).not.toMatch(/div:has\(> iframe\) \{[^}]*backdrop-filter/);
     expect(css).not.toMatch(/\.stage-tile__identity \{[^}]*backdrop-filter/);
   });
+
+  it("keeps modal operations above the shared product header", () => {
+    const css = source("src/app/globals.css");
+    const opsLayout = source("src/app/ops/layout.tsx");
+
+    expect(css).toMatch(
+      /body:has\(\.live-ops-shell \[role="dialog"\]:not\(\.hidden\)\) > hb-global-nav \{[\s\S]*?visibility: hidden;[\s\S]*?pointer-events: none;/,
+    );
+    expect(opsLayout).toContain("'Operaciones de eventos'");
+    expect(opsLayout).toContain("'Event operations'");
+  });
 });

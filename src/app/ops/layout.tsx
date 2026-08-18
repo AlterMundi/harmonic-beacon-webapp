@@ -36,7 +36,10 @@ export default async function OpsLayout({
 
     return (
         <div className="live-ops-shell min-h-screen bg-[var(--night)]">
-            <nav className="border-b border-[var(--border-subtle)] bg-[var(--forest)]/80 px-4 py-2.5">
+            <nav
+                aria-label={locale === 'es' ? 'Operaciones de eventos' : 'Event operations'}
+                className="border-b border-[var(--border-subtle)] bg-[var(--forest)]/80 px-4 py-2.5"
+            >
                 <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                     <Link
                         href="/ops/events"
