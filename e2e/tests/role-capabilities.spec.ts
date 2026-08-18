@@ -198,7 +198,7 @@ stackTest.describe('role capability contract', () => {
                 credentials: {
                     name: 'E2E Attendee ES',
                     email: 'e2e.attendee@altermundi.net',
-                    code: TICKETS.esIssuedA,
+                    code: TICKETS.esIssuedC,
                 },
                 capability: 'Participante · tu cámara y micrófono quedan bajo tu control; sólo entrás en escena después de aceptar una invitación.',
             },
@@ -207,7 +207,7 @@ stackTest.describe('role capability contract', () => {
                 credentials: {
                     name: 'E2E Attendee EN',
                     email: 'lifecycle-attendee-2@e2e.altermundi.net',
-                    code: TICKETS.enIssuedB,
+                    code: TICKETS.enIssuedC,
                 },
                 capability: 'Participant · your camera and microphone stay under your control; you enter the stage only after accepting an invitation.',
             },
