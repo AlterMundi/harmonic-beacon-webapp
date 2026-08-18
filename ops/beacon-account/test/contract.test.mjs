@@ -87,6 +87,9 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /flock -n 9/);
   assert.match(start, /account_backup_production/);
   assert.match(start, /account_restore_previous_runtime/);
+  assert.match(start, /account_require_internal_mail_network "\$environment"/);
+  assert.match(lib, /docker network inspect "\$network"/);
+  assert.match(lib, /must be an exact internal bridge/);
   assert.match(lib, /pg_dump --format=custom/);
   assert.match(lib, /database was not downgraded|account_restore_previous_runtime/);
   const migrationGuard = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/check-migrations.mjs'), 'utf8');

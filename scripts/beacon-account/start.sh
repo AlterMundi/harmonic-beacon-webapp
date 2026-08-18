@@ -11,6 +11,7 @@ account_load_deploy_env "$ACCOUNT_DEPLOY_FILE"
 exec 9>"/run/lock/beacon-account-$environment.lock"
 flock -n 9 || account_fail "another $environment deployment is active"
 account_validate
+account_require_internal_mail_network "$environment"
 root=$(account_repo_root)
 test "$(git -C "$root" rev-parse HEAD)" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'release checkout SHA mismatch'
 test -z "$(git -C "$root" status --porcelain)" || account_fail 'release checkout is dirty'

@@ -64,6 +64,15 @@ account_validate() {
     "$BEACON_ACCOUNT_STAGING_DB_ENV_FILE"
 }
 
+account_require_internal_mail_network() {
+  environment=$1
+  network="beacon_account_mail_$environment"
+  metadata=$(docker network inspect "$network" --format '{{.Name}} {{.Driver}} {{.Internal}}' 2>/dev/null) ||
+    account_fail "missing pre-created internal mail network: $network"
+  test "$metadata" = "$network bridge true" ||
+    account_fail "$network must be an exact internal bridge"
+}
+
 account_container_name() {
   case "$1" in
     production) echo beacon-account-account-production-1 ;;
