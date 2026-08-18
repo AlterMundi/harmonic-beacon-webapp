@@ -7,6 +7,22 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../.
 const SHA40 = /^[0-9a-f]{40}$/;
 const MIGRATION = /^[0-9]{14}_[a-z0-9_]+$/;
 const STAGING_ORIGIN = 'https://earlybirds-staging.harmonicbeacon.com';
+const INTRO_MANIFEST = path.join(ROOT, 'ops/listener-identity-staging/intro-artifacts.sha256');
+
+function approvedIntroPaths() {
+  const entries = fs.readFileSync(INTRO_MANIFEST, 'utf8').trim().split('\n').map((line) => {
+    const match = line.match(/^([0-9a-f]{64})  (drop-ins\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.m4a)$/);
+    if (!match) throw new Error('intro artifact manifest is invalid');
+    const language = match[2].match(/-([a-z]{2})-r[0-9]+-/)?.[1];
+    if (language !== 'es' && language !== 'en') throw new Error('intro artifact language is invalid');
+    return [language, `/media/artifacts/${match[2]}`];
+  });
+  const result = Object.fromEntries(entries);
+  if (entries.length !== 2 || Object.keys(result).length !== 2 || !result.es || !result.en) {
+    throw new Error('intro artifact manifest must contain exactly one ES and one EN artifact');
+  }
+  return result;
+}
 
 export function parseEnvFile(file) {
   const result = new Map();
@@ -172,6 +188,15 @@ function validateApplication(env, databasePassword, allowPlaceholders) {
   }
   validateSharedStreamSecret(required(env, 'EARLY_BIRDS_STREAM_SIGNING_SECRET'), allowPlaceholders);
   secret(env, 'EARLY_BIRDS_DEVICE_PEPPER', 32, allowPlaceholders);
+  const intros = approvedIntroPaths();
+  for (const [key, language] of [
+    ['EARLY_BIRDS_DROPIN_ES_PATH', 'es'],
+    ['EARLY_BIRDS_DROPIN_EN_PATH', 'en'],
+  ]) {
+    if (required(env, key) !== intros[language]) {
+      throw new Error(`${key} must select its approved mounted intro artifact`);
+    }
+  }
   exact(env, 'BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED', '0');
   exact(env, 'LISTENER_WITHDRAWAL_ENABLED', '0');
   exact(env, 'BEACON_LISTENER_PAYPAL_SANDBOX_CHECKOUT_ENABLED', '0');

@@ -8,6 +8,7 @@ exec 9>/run/lock/listener-identity-staging.lock
 flock -n 9 || listener_staging_fail 'another Listener staging operation is active'
 listener_staging_restore_edge
 listener_staging_restore_account_enabled
+listener_staging_restore_drop_ins
 
 previous_file="$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image"
 if test -f "$previous_file"; then

@@ -97,8 +97,37 @@ test('validator supports a reviewed Account staging cutover and rejects unsafe m
   );
 });
 
+test('staging selects only the two approved intros from the mounted immutable artifact set', () => {
+  const app = source(APP);
+  const manifest = source(path.join(ROOT, 'intro-artifacts.sha256'));
+  assert.match(app, /EARLY_BIRDS_DROPIN_EN_PATH=\/media\/artifacts\/drop-ins\/amara-sol-en-r2-approved-aac320-v1\.m4a/);
+  assert.match(app, /EARLY_BIRDS_DROPIN_ES_PATH=\/media\/artifacts\/drop-ins\/amara-sol-es-r2-approved-aac320-v1\.m4a/);
+  assert.match(manifest, /^86ce75249b506277651e632a671787827ddfc394a9777c56d9f3987d4fb7cd59  drop-ins\/amara-sol-en-r2-approved-aac320-v1\.m4a$/m);
+  assert.match(manifest, /^4d4b0ecf472a8a1d50468d2e673521b2974c7989d3c6dabe43705e1b68007c5d  drop-ins\/amara-sol-es-r2-approved-aac320-v1\.m4a$/m);
+
+  const unapproved = mutated(
+    APP,
+    '/media/artifacts/drop-ins/amara-sol-en-r2-approved-aac320-v1.m4a',
+    '/media/artifacts/drop-ins/amara-sol-en-r2-candidate-aac320-v1.m4a',
+  );
+  assert.throws(
+    () => validateFiles(DEPLOY, unapproved, DATABASE, true),
+    /must select its approved mounted intro artifact/,
+  );
+  const sameLanguage = mutated(
+    APP,
+    '/media/artifacts/drop-ins/amara-sol-es-r2-approved-aac320-v1.m4a',
+    '/media/artifacts/drop-ins/amara-sol-en-r2-approved-aac320-v1.m4a',
+  );
+  assert.throws(
+    () => validateFiles(DEPLOY, sameLanguage, DATABASE, true),
+    /must select its approved mounted intro artifact/,
+  );
+});
+
 test('compose has a private database plane and exact immutable application boundary', () => {
   const compose = source(path.join(ROOT, 'compose.yml'));
+  const dockerfile = source(path.join(REPO, 'Dockerfile'));
   assert.match(compose, /postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777/);
   assert.match(compose, /name: listener_identity_staging_database\n\s+internal: true/);
   assert.match(compose, /name: listener-identity-staging-postgres/);
@@ -114,6 +143,7 @@ test('compose has a private database plane and exact immutable application bound
   const beforeApp = compose.slice(0, compose.indexOf('\n  app:'));
   assert.doesNotMatch(beforeApp, /authority_private|listener-identity-staging\]/);
   assert.doesNotMatch(compose, /earlybirds_preview_db_internal|127\.0\.0\.1:13000|livekit:|playlist|tapestry|commerce/);
+  assert.match(dockerfile, /ops\/listener-identity-staging\/intro-artifacts\.sha256/);
 });
 
 test('compose renders from examples without reading a production file', () => {
@@ -141,6 +171,7 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   const smoke = source(path.join(REPO, 'scripts/listener-identity-staging/health-smoke.sh'));
   const edge = source(path.join(REPO, 'scripts/listener-identity-staging/edge-smoke.sh'));
   const rollback = source(path.join(REPO, 'scripts/listener-identity-staging/rollback.sh'));
+  const configureIntros = source(path.join(REPO, 'scripts/listener-identity-staging/configure-intros.sh'));
   assert.match(start, /build app/);
   assert.match(start, /listener_staging_validate_image/);
   assert.ok(start.indexOf('listener_staging_validate_image') < start.indexOf('up -d postgres'));
@@ -166,6 +197,9 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(lib, /\/app\/ops\/listener-identity-staging\/validate\.mjs/);
   assert.match(lib, /rm -f "\$LISTENER_IDENTITY_STAGING_STATE_DIR\/previous-image"/);
   assert.match(lib, /previous-account-enabled/);
+  assert.match(lib, /previous-drop-ins/);
+  assert.match(lib, /listener_staging_intro_manifest/);
+  assert.match(lib, /approved intro artifact checksum mismatch/);
   assert.match(lib, /accepted staging app has an invalid Account mode/);
   assert.match(lib, /listener_staging_restore_account_enabled\(\)/);
   assert.match(lib, /mv "\$temporary" "\$LISTENER_IDENTITY_STAGING_APP_ENV_FILE"/);
@@ -197,7 +231,15 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(lib, /systemctl reload nginx/);
   assert.match(rollback, /listener_staging_restore_edge/);
   assert.match(rollback, /listener_staging_restore_account_enabled/);
+  assert.match(rollback, /listener_staging_restore_drop_ins/);
   assert.ok(rollback.indexOf('listener_staging_restore_account_enabled') < rollback.indexOf('compose up'));
+  assert.ok(rollback.indexOf('listener_staging_restore_drop_ins') < rollback.indexOf('compose up'));
+  assert.match(smoke, /sha256sum -cs \/app\/ops\/listener-identity-staging\/intro-artifacts\.sha256/);
+  assert.match(configureIntros, /listener_staging_assert_dependencies/);
+  assert.match(configureIntros, /manifest_entry es/);
+  assert.match(configureIntros, /manifest_entry en/);
+  assert.match(configureIntros, /mv "\$temporary" "\$LISTENER_IDENTITY_STAGING_APP_ENV_FILE"/);
+  assert.doesNotMatch(configureIntros, /docker (?:restart|stop|rm)|compose up|EARLY_BIRDS_DROPIN_.*\$2/);
   assert.match(edge, /active staging vhost is not the reviewed template/);
   assert.match(edge, /sentinel/);
   assert.match(edge, /\/var\/log\/nginx/);
@@ -236,7 +278,7 @@ test('authority seam uses a dedicated staging identity in both directions', () =
 });
 
 test('shell entrypoints are executable and parse in POSIX sh', () => {
-  for (const name of ['lib.sh', 'start.sh', 'health-smoke.sh', 'edge-smoke.sh', 'rollback.sh']) {
+  for (const name of ['lib.sh', 'start.sh', 'health-smoke.sh', 'edge-smoke.sh', 'rollback.sh', 'configure-intros.sh']) {
     const file = path.join(REPO, 'scripts/listener-identity-staging', name);
     assert.ok((fs.statSync(file).mode & 0o111) !== 0, `${name} must be executable`);
     const parsed = spawnSync('sh', ['-n', file], { encoding: 'utf8' });

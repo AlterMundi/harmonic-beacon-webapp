@@ -178,7 +178,46 @@ describe('EarlyBird public landing', () => {
         });
 
         expect(screen.getByText('You have 2h 41m left this week')).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'Membership is not available for purchase right now.',
+        );
+        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
         expect(screen.queryByText(/daily time|first listen/i)).toBeNull();
+    });
+
+    it('shows the unavailable membership state in Spanish without inventing a contact action', () => {
+        render(
+            <LocaleProvider initialLocale="es">
+                <EarlyBirdLanding
+                    signedIn
+                    entitled={false}
+                    serviceUnavailable={null}
+                    invitationAvailable={false}
+                    authError={false}
+                    syntheticTeamEntryAvailable={false}
+                    membership={{ kind: 'none', state: 'none' }}
+                    serverNow="2026-08-07T15:00:00.000Z"
+                    quota={{
+                        policy: 'personal-7-day-v1',
+                        status: 'available',
+                        cycleStartedAt: '2026-08-07T15:00:00.000Z',
+                        cycleEndsAt: '2026-08-14T15:00:00.000Z',
+                        baseAllowanceMs: 10_800_000,
+                        bonusAllowanceMs: 0,
+                        consumedMs: 0,
+                        remainingMs: 10_800_000,
+                        activelyConsuming: false,
+                        exhaustsAt: null,
+                        nextCycleAt: '2026-08-14T15:00:00.000Z',
+                    }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'La membresía no está disponible para compra en este momento.',
+        );
+        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
     });
 
     it('uses the private checkout action instead of the mail contact fallback', () => {

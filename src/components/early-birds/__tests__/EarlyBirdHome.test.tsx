@@ -260,7 +260,9 @@ describe('EarlyBird Listener home access chrome', () => {
 
         const footer = screen.getByText('You have 3h left this week').closest('footer');
         expect(footer).toHaveClass('listener-listening-status');
-        expect(footer).toContainElement(screen.getByRole('link', { name: 'Become a member for full access' }));
+        expect(footer).toHaveTextContent('Membership is not available for purchase right now.');
+        expect(footer?.querySelector('a')).toBeNull();
+        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
         expect(screen.getByLabelText('Account').closest('header')).not.toContainElement(footer);
     });
 
@@ -294,6 +296,39 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(screen.queryByRole('link', { name: 'Become a member for full access' })).toBeNull();
         expect(document.querySelector('details[data-listener-live-workbench="private"]'))
             .toHaveTextContent('Become a member for full access');
+        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+    });
+
+    it('keeps an enabled provider actionable without showing the unavailable state', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    displayName="Nico"
+                    membership={{ kind: 'none', state: 'none' }}
+                    accessKind="free-quota"
+                    serverNow="2026-08-07T15:00:00.000Z"
+                    quota={{
+                        policy: 'personal-7-day-v1',
+                        status: 'available',
+                        cycleStartedAt: '2026-08-07T15:00:00.000Z',
+                        cycleEndsAt: '2026-08-14T15:00:00.000Z',
+                        baseAllowanceMs: 10_800_000,
+                        bonusAllowanceMs: 0,
+                        consumedMs: 0,
+                        remainingMs: 10_800_000,
+                        activelyConsuming: false,
+                        exhaustsAt: null,
+                        nextCycleAt: '2026-08-14T15:00:00.000Z',
+                    }}
+                    checkoutAvailability={{ paypal: true, mercadoPago: false }}
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByText('Become a member for full access')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeInTheDocument();
+        expect(screen.queryByText('Membership is not available for purchase right now.')).toBeNull();
         expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
     });
 });
