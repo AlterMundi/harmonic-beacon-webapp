@@ -2,7 +2,7 @@ name: hb-live-staging
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     container_name: hb-live-staging-postgres
     restart: unless-stopped
     env_file:
@@ -30,6 +30,33 @@ services:
         max-size: 10m
         max-file: "3"
 
+  migrate:
+    image: harmonic-beacon/live-staging:${BEACON_IMAGE_TAG:?exact git SHA required}
+    command: [npx, prisma, migrate, deploy]
+    restart: "no"
+    env_file:
+      - ${LIVE_STAGING_ENV_FILE:-/etc/harmonic-beacon/live-staging.env}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon_staging}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon_live_staging}?schema=public
+      BEACON_ACCOUNT_ENABLED: ${BEACON_ACCOUNT_ENABLED:-false}
+    networks:
+      - database
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
   app:
     image: harmonic-beacon/live-staging:${BEACON_IMAGE_TAG:?exact git SHA required}
     build:
@@ -49,7 +76,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-beacon_staging}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon_live_staging}?schema=public
       BEACON_ACCOUNT_ENABLED: ${BEACON_ACCOUNT_ENABLED:-false}
       TICKET_LOGIN_URL_PREFIX: https://live-staging.harmonicbeacon.com
-      E2E_DASHBOARD_ENABLED: "1"
+      E2E_DASHBOARD_ENABLED: ${E2E_DASHBOARD_ENABLED:-0}
       LIVEKIT_INTERNAL_URL: http://livekit-unavailable.invalid:7880
       TAPESTRY_PUBLIC_ENABLED: "false"
     ports:
@@ -58,8 +85,8 @@ services:
       - database
       - app_egress
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: [CMD, curl, --fail, http://localhost:3000/api/health/ready]
       interval: 15s

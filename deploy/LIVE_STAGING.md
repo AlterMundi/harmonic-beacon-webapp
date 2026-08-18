@@ -16,15 +16,18 @@ the event service. It is not a smaller production stack.
 - Environment: `/etc/harmonic-beacon/live-staging.env`, root-owned mode `0600`
 - Image: `harmonic-beacon/live-staging:<exact-commit-sha>`
 
-The stack has no LiveKit, playlist bot, tapestry or commerce worker. Remote
-acceptance covers the landing, synthetic login, profile/display-name and alias
-flows. Room and ticket behavior remain covered by the repository PostgreSQL +
-browser E2E suite. `/rtc` returns `503` intentionally. This boundary avoids
-borrowing event media credentials or suggesting that remote room audio was
-tested when it was not.
+The stack has no LiveKit, playlist bot, tapestry or commerce worker. The
+loopback deployment covers landing and health/readiness smoke only. Account
+login, profile/display-name and alias acceptance begins after dedicated DNS,
+TLS and Account staging are ready. Room and ticket behavior remain covered by
+the repository PostgreSQL + browser E2E suite. `/rtc` returns `503`
+intentionally. This boundary avoids borrowing event media credentials or
+suggesting that remote room audio was tested when it was not.
 
 Beacon Account is default-off. While it is off, every `/api/account/*` entry
-route remains dark. Enable it only after `account-staging.harmonicbeacon.com`,
+route remains dark. `/test-login` and `/api/test-login` are also denied at the
+vhost and disabled in the app environment. Enable Account only after
+`account-staging.harmonicbeacon.com`,
 the confidential `hb-live-staging` client, its secret and the exact callback +
 front-channel logout registrations exist.
 
@@ -61,16 +64,30 @@ docker exec -i hb-live-staging-postgres psql -v ON_ERROR_STOP=1 \
   -U beacon_staging -d beacon_live_staging < db/test-fixture.sql
 ```
 
-Build, migrate and start only the two staging services:
+Create a verified backup before every migration. On the first deployment this
+captures the restored synthetic fixture; later it captures the prior staging
+schema and data. The backup directory is staging-only and root-readable.
+
+```bash
+sudo install -d -o root -g root -m 0700 /mnt/beacon-data/live-staging/backups
+export BACKUP_PATH="/mnt/beacon-data/live-staging/backups/pre-${STAGING_SHA}-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+sudo docker exec hb-live-staging-postgres pg_dump \
+  -U beacon_staging -d beacon_live_staging | gzip -9 | sudo tee "$BACKUP_PATH" >/dev/null
+sudo chmod 0600 "$BACKUP_PATH"
+sudo gzip -t "$BACKUP_PATH"
+```
+
+Build, run the reproducible one-shot migration service and start only the
+staging app. Compose refuses to start the app unless `migrate` exits zero:
 
 ```bash
 docker compose --file deploy/live-staging.compose.yml \
   --env-file /etc/harmonic-beacon/live-staging.env build app
 docker compose --file deploy/live-staging.compose.yml \
-  --env-file /etc/harmonic-beacon/live-staging.env run --rm --no-deps \
-  app npx prisma migrate deploy
+  --env-file /etc/harmonic-beacon/live-staging.env \
+  up --abort-on-container-exit --exit-code-from migrate migrate
 docker compose --file deploy/live-staging.compose.yml \
-  --env-file /etc/harmonic-beacon/live-staging.env up -d --no-deps app
+  --env-file /etc/harmonic-beacon/live-staging.env up -d app
 ```
 
 Install `deploy/nginx-live-staging-loopback.conf` under the new, exact site
@@ -88,12 +105,16 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
   http://127.0.0.1:13200/api/account/login)" = 404
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
   --header 'Host: live-staging.harmonicbeacon.com' \
+  http://127.0.0.1:13200/api/test-login)" = 404
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  --header 'Host: live-staging.harmonicbeacon.com' \
   http://127.0.0.1:13200/rtc)" = 503
 ```
 
 Verify that `/api/health` reports the exact `STAGING_SHA`, readiness reports
-`database: ok` and `account: disabled`, and only then use `/test-login` for
-synthetic profile/alias acceptance.
+`database: ok` and `account: disabled`. Synthetic profile/alias acceptance
+continues in the local PostgreSQL + browser E2E environment; this vhost must
+keep both test-login paths dark before it can ever become public.
 
 ## Rollback
 
@@ -121,6 +142,10 @@ docker compose --file deploy/live-staging.compose.yml \
 
 After rollback, repeat the liveness/readiness smoke and confirm `/api/health`
 reports the previous SHA.
+
+The pre-migration backup is the recovery boundary for data. Restoring it is a
+separate, explicit maintenance operation after stopping only the staging app;
+it is never part of automatic image rollback and never targets production.
 
 Never run `compose down -v`, remove the staging data directory, reuse a
 production image tag, or point this compose file at a production environment.

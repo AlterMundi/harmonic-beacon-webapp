@@ -12,6 +12,9 @@ describe('isolated Live staging deploy contract', () => {
 
     it('uses staging-only names, storage, loopback ports and networks', () => {
         expect(compose).toContain('name: hb-live-staging');
+        expect(compose).toContain(
+            'postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777',
+        );
         expect(compose).toContain('container_name: hb-live-staging-app');
         expect(compose).toContain('container_name: hb-live-staging-postgres');
         expect(compose).toContain('/mnt/beacon-data/live-staging/postgres');
@@ -35,8 +38,17 @@ describe('isolated Live staging deploy contract', () => {
         expect(compose).toContain('BEACON_DATABASE_SCHEMA_VERSION: ${BEACON_DATABASE_SCHEMA_VERSION:?');
         expect(compose).toContain('BEACON_ACCOUNT_ENABLED: ${BEACON_ACCOUNT_ENABLED:-false}');
         expect(envExample).toContain('BEACON_ACCOUNT_ENABLED=false');
+        expect(envExample).toContain('E2E_DASHBOARD_ENABLED=0');
         expect(envExample).not.toMatch(/^BEACON_ACCOUNT_CLIENT_SECRET=/m);
         expect(runbook).toContain("grep -Fxq 'BEACON_ACCOUNT_ENABLED=false'");
+        expect(compose).toContain('E2E_DASHBOARD_ENABLED: ${E2E_DASHBOARD_ENABLED:-0}');
+    });
+
+    it('runs migrations once and gates app startup on their success', () => {
+        expect(compose).toMatch(/\n  migrate:\n/);
+        expect(compose).toContain('command: [npx, prisma, migrate, deploy]');
+        expect(compose).toMatch(/migrate:\n\s+condition: service_completed_successfully/);
+        expect(runbook).toContain('--exit-code-from migrate migrate');
     });
 
     it('does not deploy or borrow the production media/event stack', () => {
@@ -53,6 +65,13 @@ describe('isolated Live staging deploy contract', () => {
         expect(nginx).toContain('proxy_pass http://127.0.0.1:3200;');
         expect(nginx).toMatch(/location = \/api\/internal \{\n\s+return 404;/);
         expect(nginx).toMatch(/location \^~ \/api\/internal\/ \{\n\s+return 404;/);
+        expect(nginx).toMatch(/location = \/test-login \{\n\s+return 404;/);
+        expect(nginx).toMatch(/location = \/api\/test-login \{\n\s+return 404;/);
+        expect(nginx).toContain('if ($host != live-staging.harmonicbeacon.com) { return 444; }');
+        expect(nginx).toContain('client_max_body_size 64k;');
+        expect(nginx).toContain('limit_req zone=live_staging_general');
+        expect(nginx).toContain('limit_req zone=live_staging_auth');
+        expect(nginx).toContain('proxy_set_header Authorization "";');
         expect(nginx).not.toMatch(/listen (?:\[::\]:)?(?:80|443)/);
     });
 
@@ -60,7 +79,9 @@ describe('isolated Live staging deploy contract', () => {
         expect(runbook).toContain('test "$(git rev-parse HEAD)" = "$STAGING_SHA"');
         expect(runbook).toContain('test -z "$(git status --porcelain --untracked-files=no)"');
         expect(runbook).toContain('select count(*) from pg_catalog.pg_tables');
-        expect(runbook).toContain('npx prisma migrate deploy');
+        expect(runbook).toContain('pg_dump');
+        expect(runbook).toContain('gzip -t');
+        expect(runbook).toContain('Compose refuses to start the app unless `migrate` exits zero');
         expect(runbook).toContain('/api/health/ready');
         expect(runbook).toContain('/api/account/login)" = 404');
         expect(runbook).toContain('previous-image');
