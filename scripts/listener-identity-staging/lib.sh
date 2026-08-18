@@ -116,6 +116,19 @@ listener_staging_wait_healthy() {
   listener_staging_fail 'application did not become healthy'
 }
 
+listener_staging_wait_postgres() {
+  attempts=0
+  while test "$attempts" -lt 30; do
+    state=$(docker inspect listener-identity-staging-postgres \
+      --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)
+    test "$state" = healthy && return 0
+    test "$state" != exited || listener_staging_fail 'PostgreSQL exited before readiness'
+    attempts=$((attempts + 1))
+    sleep 2
+  done
+  listener_staging_fail 'PostgreSQL did not become healthy'
+}
+
 listener_staging_capture_previous() {
   install -d -o root -g root -m 0700 "$LISTENER_IDENTITY_STAGING_STATE_DIR"
   # Rollback state describes only the runtime observed at the start of this

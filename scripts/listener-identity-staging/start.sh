@@ -18,6 +18,7 @@ listener_staging_assert_port
 protected_before=$(listener_staging_fingerprint_protected)
 listener_staging_capture_previous
 listener_staging_compose up -d postgres
+listener_staging_wait_postgres
 listener_staging_backup
 
 cutover_started=0

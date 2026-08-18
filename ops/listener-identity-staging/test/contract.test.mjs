@@ -117,6 +117,10 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.ok(start.indexOf('listener_staging_validate_image') < start.indexOf('up -d postgres'));
   assert.ok(start.indexOf('listener_staging_validate_image') < start.indexOf('listener_staging_capture_previous'));
   assert.match(start, /up -d postgres/);
+  assert.match(start, /listener_staging_wait_postgres/);
+  assert.ok(start.indexOf('listener_staging_wait_postgres') < start.indexOf('listener_staging_backup'));
+  assert.match(lib, /listener_staging_wait_postgres\(\)/);
+  assert.match(lib, /listener-identity-staging-postgres/);
   assert.match(start, /listener_staging_backup/);
   assert.ok(start.indexOf('listener_staging_backup') < start.indexOf('docker stop listener-ui-dev'));
   assert.match(start, /up -d app/);
