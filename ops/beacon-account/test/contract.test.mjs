@@ -159,6 +159,8 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /account_capture_previous_worker/);
   assert.match(lib, /running mail worker SHA mismatch/);
   assert.match(lib, /Account mail worker must not publish ports/);
+  assert.match(lib, /account_wait_container=\$1/);
+  assert.doesNotMatch(lib, /account_wait_healthy\(\) \{\s+container=\$1/);
   assert.match(lib, /account_image_supports_mail_worker/);
   assert.match(lib, /scripts\/process-account-mail-outbox\.ts/);
   assert.match(rollback, /previous_worker_present=0/);

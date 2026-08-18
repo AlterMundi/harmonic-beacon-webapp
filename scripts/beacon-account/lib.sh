@@ -105,16 +105,16 @@ account_mail_worker_container_name() {
 }
 
 account_wait_healthy() {
-  container=$1
-  attempts=0
-  while [ "$attempts" -lt 60 ]; do
-    state=$(docker inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)
+  account_wait_container=$1
+  account_wait_attempts=0
+  while [ "$account_wait_attempts" -lt 60 ]; do
+    state=$(docker inspect "$account_wait_container" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)
     [ "$state" = healthy ] && return 0
-    [ "$state" = exited ] && account_fail "$container exited before readiness"
-    attempts=$((attempts + 1))
+    [ "$state" = exited ] && account_fail "$account_wait_container exited before readiness"
+    account_wait_attempts=$((account_wait_attempts + 1))
     sleep 2
   done
-  account_fail "$container did not become healthy"
+  account_fail "$account_wait_container did not become healthy"
 }
 
 account_verify_running() {
