@@ -8,6 +8,7 @@ import {
   globalNavigationAccountHref,
   globalNavigationSurface,
 } from "@/lib/brand/global-navigation";
+import { locallyKnownLiveAccountSession } from "@/lib/brand/account-navigation-state";
 import { requestLocale } from "@/lib/i18n-server";
 import "@/styles/hb-brand.css";
 import "./globals.css";
@@ -81,6 +82,9 @@ export default async function RootLayout({
   const locale = await requestLocale();
   const navigationSurface = globalNavigationSurface(incomingHeaders) ?? "events";
   const accountHref = globalNavigationAccountHref(incomingHeaders);
+  const accountSignedIn = accountHref === "https://account-staging.harmonicbeacon.com/account"
+    ? await locallyKnownLiveAccountSession(incomingHeaders)
+    : false;
 
   return (
     <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
@@ -89,6 +93,7 @@ export default async function RootLayout({
           active={navigationSurface}
           locale={locale}
           accountHref={accountHref}
+          accountSignedIn={accountSignedIn}
         />
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}

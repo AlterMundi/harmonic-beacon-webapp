@@ -79,6 +79,24 @@ body:has(.live-ops-shell [role="dialog"]:not(.hidden)) > hb-global-nav {
   cursor: pointer;
 }
 
+.hb-global-navigation-fallback__account-control[data-account-signed-in] summary {
+  position: relative;
+  border-color: rgba(201, 162, 78, 0.72);
+  background: rgba(201, 162, 78, 0.1);
+}
+
+.hb-global-navigation-fallback__account-control[data-account-signed-in] summary::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid #16120d;
+  border-radius: 999px;
+  background: #c9a24e;
+}
+
 .hb-global-navigation-fallback__account-control summary::-webkit-details-marker {
   display: none;
 }
