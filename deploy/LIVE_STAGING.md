@@ -157,6 +157,70 @@ Recreate only `hb-live-staging-app` with the feature still off, then repeat the
 ordinary smoke. The expected readiness remains `account: disabled` and all
 three Account RP routes remain `404`. This is the safe rollback checkpoint.
 
+## Bind an existing staging staff user to Account
+
+This optional one-shot utility provisions only the explicit one-to-one bridge
+between an existing local `staffUserId` and an opaque Account staging subject.
+It never runs the seed, searches by email, creates staff, changes roles, issues
+sessions, or reads or writes events and tickets. It is disabled unless each
+invocation supplies both staging guard variables.
+
+Obtain the exact opaque `sub` from the Account staging operator surface and the
+existing staff UUID from the isolated Live staging database. Do not put either
+value on a command line. Copy
+`deploy/live-staging-staff-binding.env.example` to the fixed host path below,
+edit it with a root-owned editor, and verify ownership before mounting it:
+
+```bash
+sudo install -d -o root -g root -m 0700 /etc/harmonic-beacon/live-staging-secrets
+sudo install -o root -g root -m 0600 \
+  deploy/live-staging-staff-binding.env.example \
+  /etc/harmonic-beacon/live-staging-secrets/staff-account-binding.env
+sudoedit /etc/harmonic-beacon/live-staging-secrets/staff-account-binding.env
+test "$(sudo stat -c '%U:%G %a' /etc/harmonic-beacon/live-staging-secrets/staff-account-binding.env)" = \
+  'root:root 600'
+```
+
+Run the read-only preflight first. The one-shot uses the already-migrated image
+and the internal database network only; it receives neither the Account client
+secret nor application egress. The fixed mount destination prevents an
+operator-controlled path from entering the utility.
+
+```bash
+docker compose --file deploy/live-staging.compose.yml \
+  --env-file /etc/harmonic-beacon/live-staging.env \
+  run --rm --no-deps --user 0:0 \
+  -e LIVE_STAGING_STAFF_BINDING_ENABLED=1 \
+  -e LIVE_STAGING_ENVIRONMENT=live-staging \
+  -v /etc/harmonic-beacon/live-staging-secrets/staff-account-binding.env:/run/harmonic-beacon/staff-account-binding.env:ro \
+  migrate npx tsx /app/scripts/live-staging/bind-staff-account.ts --dry-run
+```
+
+Proceed only when the single sanitized JSON line reports `would-create` (or
+`already-bound` for an exact replay). Apply with the same immutable image and
+mount, changing only the final mode:
+
+```bash
+docker compose --file deploy/live-staging.compose.yml \
+  --env-file /etc/harmonic-beacon/live-staging.env \
+  run --rm --no-deps --user 0:0 \
+  -e LIVE_STAGING_STAFF_BINDING_ENABLED=1 \
+  -e LIVE_STAGING_ENVIRONMENT=live-staging \
+  -v /etc/harmonic-beacon/live-staging-secrets/staff-account-binding.env:/run/harmonic-beacon/staff-account-binding.env:ro \
+  migrate npx tsx /app/scripts/live-staging/bind-staff-account.ts --apply
+```
+
+The apply is a serializable transaction: binding and audit record commit
+together, exact retries are no-ops, and conflicting or disabled mappings fail
+closed. Output contains only the staff UUID and a short one-way subject digest.
+Remove the input after recording the audit row; rollback is an explicit audited
+disable/revoke operation, never a database delete or reuse of this provisioning
+utility.
+
+```bash
+sudo shred -u /etc/harmonic-beacon/live-staging-secrets/staff-account-binding.env
+```
+
 ## Public edge and Account activation
 
 Do not execute this section until the prepared checkpoint above is green.
