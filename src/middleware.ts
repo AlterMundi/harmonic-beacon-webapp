@@ -124,6 +124,7 @@ export default function middleware(request: NextRequest): NextResponse {
             const allowed = pathname === '/' || pathname === '/account' ||
                 pathname.startsWith('/account/') || pathname === '/verify-email' ||
                 pathname === '/reset-password' || pathname === '/nav-slot' ||
+                pathname === '/assets/hb-global-nav.js' ||
                 pathname.startsWith('/.well-known/') || pathname.startsWith('/api/account/') ||
                 pathname.startsWith('/_next/') || pathname === '/favicon.ico';
             if (!allowed) return new NextResponse(null, { status: 404 });
