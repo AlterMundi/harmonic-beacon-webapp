@@ -7,8 +7,14 @@ const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 describe('isolated Live staging deploy contract', () => {
     const compose = read('deploy/live-staging.compose.yml');
     const envExample = read('deploy/live-staging.env.example');
+    const accountEnvExample = read('deploy/live-staging-account.env.example');
     const nginx = read('deploy/nginx-live-staging-loopback.conf');
+    const nginxAcme = read('deploy/nginx-live-staging-acme-bootstrap.conf');
+    const nginxPublic = read('deploy/nginx-live-staging-public.conf');
     const runbook = read('deploy/LIVE_STAGING.md');
+    const dockerfile = read('Dockerfile');
+    const accountSecretSync = read('scripts/live-staging/account-secret-sync.mjs');
+    const accountPreflight = read('scripts/live-staging/account-preflight.mjs');
 
     it('uses staging-only names, storage, loopback ports and networks', () => {
         expect(compose).toContain('name: hb-live-staging');
@@ -40,8 +46,43 @@ describe('isolated Live staging deploy contract', () => {
         expect(envExample).toContain('BEACON_ACCOUNT_ENABLED=false');
         expect(envExample).toContain('E2E_DASHBOARD_ENABLED=0');
         expect(envExample).not.toMatch(/^BEACON_ACCOUNT_CLIENT_SECRET=/m);
+        expect(accountEnvExample).toContain('BEACON_ACCOUNT_CLIENT_SECRET=<');
         expect(runbook).toContain("grep -Fxq 'BEACON_ACCOUNT_ENABLED=false'");
         expect(compose).toContain('E2E_DASHBOARD_ENABLED: ${E2E_DASHBOARD_ENABLED:-0}');
+    });
+
+    it('mounts the optional confidential RP bundle only into the app', () => {
+        const postgres = compose.match(/\n  postgres:\n([\s\S]*?)\n  migrate:/)?.[1] ?? '';
+        const migrate = compose.match(/\n  migrate:\n([\s\S]*?)\n  app:/)?.[1] ?? '';
+        const app = compose.match(/\n  app:\n([\s\S]*?)\nnetworks:/)?.[1] ?? '';
+        const secretPath = '/etc/harmonic-beacon/live-staging-secrets/account.env';
+        expect(postgres).not.toContain(secretPath);
+        expect(migrate).not.toContain(secretPath);
+        expect(app).toContain(secretPath);
+        expect(app).toMatch(/live-staging-secrets\/account\.env\}\n\s+required: false/);
+        expect(dockerfile).toContain('/app/scripts/live-staging ./scripts/live-staging');
+    });
+
+    it('syncs and verifies the exact staging client without printing secrets', () => {
+        for (const script of [accountSecretSync, accountPreflight]) {
+            expect(script).toContain('/etc/harmonic-beacon/account.staging.env');
+            expect(script).toContain('/etc/harmonic-beacon/live-staging.env');
+            expect(script).toContain('/etc/harmonic-beacon/live-staging-secrets/account.env');
+            expect(script).not.toContain('console.log');
+        }
+        expect(accountSecretSync).toContain('BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE_STAGING');
+        expect(accountSecretSync).toContain('BEACON_ACCOUNT_ENABLED must remain false');
+        expect(accountSecretSync).toContain('this command accepts no paths or secret values');
+        expect(accountPreflight).toContain('https://account-staging.harmonicbeacon.com');
+        expect(accountPreflight).toContain("const CLIENT_ID = 'hb-live-staging'");
+        expect(accountPreflight).toContain('/.well-known/openid-configuration');
+        expect(accountPreflight).toContain('/.well-known/jwks.json');
+        expect(accountPreflight).toContain('/api/account/session-status');
+        expect(accountPreflight).toContain("body: new URLSearchParams({ sid: 'live-staging-preflight', sub: 'live-staging-preflight' })");
+        expect(accountPreflight).toContain("status.active !== false");
+        expect(accountPreflight).toContain("includes('no-store')");
+        expect(runbook).toContain('one-shot, networkless container');
+        expect(runbook).toContain('node /app/scripts/live-staging/account-preflight.mjs public');
     });
 
     it('runs migrations once and gates app startup on their success', () => {
@@ -98,6 +139,33 @@ describe('isolated Live staging deploy contract', () => {
         expect(nginx).toMatch(/location \^~ \/api\/account\/ \{\n\s+access_log off;\n\s+return 404;/);
         expect(nginx).not.toContain('proxy_pass http://127.0.0.1:3200/api/account');
         expect(nginx).not.toMatch(/listen (?:\[::\]:)?(?:80|443)/);
+    });
+
+    it('provides a fail-closed ACME bootstrap and reviewed public TLS edge', () => {
+        expect(nginxAcme).toContain('server_name live-staging.harmonicbeacon.com;');
+        expect(nginxAcme).toContain('location ^~ /.well-known/acme-challenge/');
+        expect(nginxAcme).toContain('location / { return 503; }');
+        expect(nginxAcme).not.toContain('proxy_pass');
+
+        expect(nginxPublic).toContain('listen 443 ssl http2;');
+        expect(nginxPublic).toContain('/etc/letsencrypt/live/live-staging.harmonicbeacon.com/fullchain.pem');
+        expect(nginxPublic).toContain('Strict-Transport-Security "max-age=31536000; includeSubDomains" always;');
+        expect(nginxPublic).toMatch(/location \^~ \/rtc \{ return 503; \}/);
+        expect(nginxPublic).toMatch(/location = \/api\/test-login \{ return 404; \}/);
+        expect(nginxPublic).toMatch(/location \^~ \/api\/internal\/ \{ return 404; \}/);
+        for (const route of [
+            '/api/account/login',
+            '/api/account/callback',
+            '/api/account/frontchannel-logout',
+        ]) {
+            const escaped = route.replaceAll('/', '\\/');
+            expect(nginxPublic).toMatch(
+                new RegExp(`location = ${escaped} \\{[\\s\\S]*?access_log off;[\\s\\S]*?proxy_pass http:\\/\\/127\\.0\\.0\\.1:3200;`),
+            );
+        }
+        expect(nginxPublic).toMatch(/location \^~ \/api\/account\/ \{\n\s+access_log off;\n\s+return 404;/);
+        expect(runbook).toContain('nginx-live-staging-acme-bootstrap.conf');
+        expect(runbook).toContain('nginx-live-staging-public.conf');
     });
 
     it('documents a non-destructive first deploy, exact smoke and rollback', () => {

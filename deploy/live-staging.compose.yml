@@ -70,7 +70,13 @@ services:
     container_name: hb-live-staging-app
     restart: unless-stopped
     env_file:
-      - ${LIVE_STAGING_ENV_FILE:-/etc/harmonic-beacon/live-staging.env}
+      - path: ${LIVE_STAGING_ENV_FILE:-/etc/harmonic-beacon/live-staging.env}
+        required: true
+      # Staging-only confidential RP material. Keeping this optional preserves
+      # the default-off deploy and gives only the app (never PostgreSQL or the
+      # migration container) access to the client secret.
+      - path: ${LIVE_STAGING_ACCOUNT_ENV_FILE:-/etc/harmonic-beacon/live-staging-secrets/account.env}
+        required: false
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-beacon_staging}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon_live_staging}?schema=public
