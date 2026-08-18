@@ -107,10 +107,6 @@ hb-global-nav:not(:defined) {
 @media (prefers-reduced-motion: reduce) {
   .account-shell *, .account-shell *::before, .account-shell *::after { scroll-behavior: auto !important; transition: none !important; }
 }
-html:has(.account-nav-slot), body:has(.account-nav-slot) { width: 44px; height: 44px; overflow: hidden; background: transparent; }
-body:has(.account-nav-slot) > hb-global-nav { display: none !important; }
-body:has(.account-nav-slot) > .relative { width: 44px; height: 44px; }
-
 .hb-global-navigation-fallback {
   min-height: 72px;
   max-width: 1180px;
@@ -164,6 +160,21 @@ body:has(.account-nav-slot) > .relative { width: 44px; height: 44px; }
   color: #e9e0d0;
   background: rgba(22, 18, 13, .82);
   cursor: pointer;
+}
+.hb-global-navigation-fallback__account-control--signed-in summary {
+  border-color: rgba(201, 162, 78, .72);
+  background: rgba(201, 162, 78, .1);
+}
+.hb-global-navigation-fallback__account-control--signed-in summary::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid #16120d;
+  border-radius: 999px;
+  background: #c9a24e;
 }
 
 .hb-global-navigation-fallback__account-control summary::-webkit-details-marker { display: none; }

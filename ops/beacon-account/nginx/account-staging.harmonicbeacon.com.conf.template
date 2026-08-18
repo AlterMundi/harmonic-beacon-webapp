@@ -117,16 +117,6 @@ server {
         add_header Referrer-Policy "no-referrer" always;
     }
 
-    location = /nav-slot {
-        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
-        access_log off;
-        proxy_pass http://127.0.0.1:13003;
-        add_header Cache-Control "private, no-store" always;
-        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header Referrer-Policy "no-referrer" always;
-    }
-
     location = /api/account/health/ready {
         if ($request_method !~ ^(GET|HEAD)$) { return 405; }
         access_log off;

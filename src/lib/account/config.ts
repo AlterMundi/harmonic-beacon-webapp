@@ -176,15 +176,6 @@ export const ACCOUNT_NAV_RETURN_TO = new Set([
     'https://live-staging.harmonicbeacon.com/',
 ]);
 
-export const ACCOUNT_FRAME_ANCESTORS = [
-    "'self'",
-    'https://harmonicbeacon.com',
-    'https://listen.harmonicbeacon.com',
-    'https://earlybirds-staging.harmonicbeacon.com',
-    'https://live.harmonicbeacon.com',
-    'https://live-staging.harmonicbeacon.com',
-].join(' ');
-
 export function isAccountHost(host: string | null): boolean {
     const normalized = host?.split(':', 1)[0]?.toLowerCase();
     return normalized === new URL(ACCOUNT_ORIGIN).hostname ||

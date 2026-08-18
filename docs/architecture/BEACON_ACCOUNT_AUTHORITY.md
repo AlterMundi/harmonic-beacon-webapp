@@ -43,9 +43,9 @@ revoke sessions plus OAuth access/refresh tokens.
 
 ## Browser and mail flows
 
-Public Account pages are `/account`, `/verify-email`, `/reset-password` and the
-display-only `/nav-slot`. Root `/` leads to Account. `/nav-slot` is transparent,
-44x44, iframe-scoped to exact Harmonic Beacon ancestors and exposes no PII or
+Public Account pages are `/account`, `/verify-email` and `/reset-password`.
+Root `/` leads to Account. The byte-pinned local navigation receives at most a
+server-derived boolean session hint; it uses no iframe and exposes no PII or
 tokens. `return_to` is an exact product-root allowlist.
 
 Credential signup is two-step. Verification, reset and email-change tokens are

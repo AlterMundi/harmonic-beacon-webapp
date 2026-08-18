@@ -6,12 +6,20 @@ const mocks = vi.hoisted(() => ({
     headers: vi.fn(),
     requestLocale: vi.fn(),
     requestBrowserLocale: vi.fn(),
+    locallyKnownAccountSession: vi.fn(),
+    locallyKnownListenerAccountSession: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: mocks.headers }));
 vi.mock('@/lib/i18n-server', () => ({
     requestLocale: mocks.requestLocale,
     requestBrowserLocale: mocks.requestBrowserLocale,
+}));
+vi.mock('@/lib/account/auth', () => ({
+    locallyKnownAccountSession: mocks.locallyKnownAccountSession,
+}));
+vi.mock('@/lib/listener/account-rp', () => ({
+    locallyKnownListenerAccountSession: mocks.locallyKnownListenerAccountSession,
 }));
 vi.mock('next/font/local', () => ({
     default: () => ({ variable: 'local-font' }),
@@ -30,6 +38,8 @@ function requestHeaders(host: string, acceptLanguage: string): Headers {
 describe('root document locale boundary', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.locallyKnownAccountSession.mockResolvedValue(false);
+        mocks.locallyKnownListenerAccountSession.mockResolvedValue(false);
     });
 
     it('matches the canonical Listener SSR document to browser-language content', async () => {
@@ -80,20 +90,49 @@ describe('root document locale boundary', () => {
         expect(mocks.requestBrowserLocale).not.toHaveBeenCalled();
     });
 
-    it.each([
-        ['0', true],
-        ['1', false],
-    ])('enhances Account navigation except inside the isolated avatar slot (%s)', async (slot, expected) => {
+    it('enhances Account staging navigation and reflects only a local signed-in boolean', async () => {
         const incoming = requestHeaders('account-staging.harmonicbeacon.com', 'en-US');
         incoming.set('x-hb-account-locale', 'en');
-        incoming.set('x-hb-account-nav-slot', slot);
         mocks.headers.mockResolvedValue(incoming);
+        mocks.locallyKnownAccountSession.mockResolvedValue(true);
 
         const result = await RootLayout({ children: <main /> });
         const body = result.props.children;
         const navigation = body.props.children[0];
-        expect(navigation.props.allowRemoteEnhancement).toBe(expected);
         expect(navigation.props.accountHref).toBe('https://account-staging.harmonicbeacon.com/account');
+        expect(navigation.props.accountSignedIn).toBe(true);
+        expect(mocks.locallyKnownAccountSession).toHaveBeenCalledOnce();
+        expect(mocks.locallyKnownListenerAccountSession).not.toHaveBeenCalled();
+    });
+
+    it('uses only the local Listener projection for the signed-in navigation hint', async () => {
+        mocks.headers.mockResolvedValue(requestHeaders(
+            'earlybirds-staging.harmonicbeacon.com',
+            'en-US',
+        ));
+        mocks.requestBrowserLocale.mockResolvedValue('en');
+        mocks.locallyKnownListenerAccountSession.mockResolvedValue(true);
+
+        const result = await RootLayout({ children: <main /> });
+        const navigation = result.props.children.props.children[0];
+
+        expect(navigation.props.accountHref).toBe('https://account-staging.harmonicbeacon.com/account');
+        expect(navigation.props.accountSignedIn).toBe(true);
+        expect(mocks.locallyKnownListenerAccountSession).toHaveBeenCalledOnce();
+        expect(mocks.locallyKnownAccountSession).not.toHaveBeenCalled();
+    });
+
+    it('does not expose an Account control on production before Account production exists', async () => {
+        mocks.headers.mockResolvedValue(requestHeaders('listen.harmonicbeacon.com', 'en-US'));
+        mocks.requestBrowserLocale.mockResolvedValue('en');
+
+        const result = await RootLayout({ children: <main /> });
+        const navigation = result.props.children.props.children[0];
+
+        expect(navigation.props.accountHref).toBeNull();
+        expect(navigation.props.accountSignedIn).toBe(false);
+        expect(mocks.locallyKnownListenerAccountSession).not.toHaveBeenCalled();
+        expect(mocks.locallyKnownAccountSession).not.toHaveBeenCalled();
     });
 
     it.each([
