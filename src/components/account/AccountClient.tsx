@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import {
     ACCOUNT_PASSWORD_MAX_LENGTH,
@@ -80,21 +80,35 @@ export default function AccountClient({
     const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
     const [message, setMessage] = useState('');
     const [busy, setBusy] = useState(false);
+    const [signupAccepted, setSignupAccepted] = useState(false);
+    const [feedbackFocusRevision, setFeedbackFocusRevision] = useState(0);
     const feedbackRef = useRef<HTMLParagraphElement>(null);
+    const signupConfirmationRef = useRef<HTMLElement>(null);
     const credentialSubmissionInFlight = useRef(false);
+
+    useEffect(() => {
+        if (feedbackFocusRevision === 0) return;
+        const target = signupAccepted ? signupConfirmationRef.current : feedbackRef.current;
+        target?.focus({ preventScroll: true });
+        target?.scrollIntoView?.({ block: 'nearest' });
+    }, [feedbackFocusRevision, signupAccepted]);
 
     function announceCredentialResult(nextMessage: string) {
         setMessage(nextMessage);
-        queueMicrotask(() => {
-            feedbackRef.current?.focus({ preventScroll: true });
-            feedbackRef.current?.scrollIntoView?.({ block: 'nearest' });
-        });
+        setFeedbackFocusRevision((revision) => revision + 1);
+    }
+
+    function selectMode(nextMode: 'signin' | 'signup' | 'forgot') {
+        setMode(nextMode);
+        setMessage('');
+        setSignupAccepted(false);
     }
 
     async function submitCredentials(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         if (credentialSubmissionInFlight.current) return;
-        const form = new FormData(event.currentTarget);
+        const formElement = event.currentTarget;
+        const form = new FormData(formElement);
         const email = String(form.get('email') ?? '');
         const password = String(form.get('password') ?? '');
         if (mode !== 'forgot' && !accountPasswordLengthValid(password)) {
@@ -110,7 +124,10 @@ export default function AccountClient({
             return;
         }
         credentialSubmissionInFlight.current = true;
-        setBusy(true); setMessage('');
+        setBusy(true);
+        setMessage(mode === 'signup'
+            ? (es ? 'Creando tu cuenta…' : 'Creating your account…')
+            : '');
         try {
             if (mode === 'forgot') {
                 const response = await post('/api/account/password/reset/request', locale, { email });
@@ -129,11 +146,20 @@ export default function AccountClient({
                 callbackURL,
                 oauth_query: oauthQuery(),
             });
-            const result = await response.json().catch(() => null) as { redirect?: string } | null;
+            const result = await response.json().catch(() => null) as {
+                redirect?: string;
+                status?: string;
+            } | null;
             if (mode === 'signup') {
-                announceCredentialResult(response.ok
-                    ? (es ? 'Revisá tu correo para verificar la cuenta y después ingresá.' : 'Check your email to verify the account, then sign in.')
-                    : (es ? 'No se pudo crear la cuenta. Revisá los datos e intentá nuevamente.' : 'Account could not be created. Check the details and try again.'));
+                if (response.status === 202 && result?.status === 'accepted') {
+                    formElement.reset();
+                    setSignupAccepted(true);
+                    announceCredentialResult(es
+                        ? 'Te enviamos un correo. Confirmá tu dirección para activar la cuenta y después ingresá.'
+                        : 'We sent you an email. Confirm your address to activate the account, then sign in.');
+                } else {
+                    announceCredentialResult(credentialFailure);
+                }
             } else if (response.ok) {
                 window.location.replace(result?.redirect ?? callbackURL);
             } else {
@@ -225,11 +251,30 @@ export default function AccountClient({
             : 'Sign-out could not be completed. Try again.');
     }
 
+    if (!session && signupAccepted) return (
+        <div className="account-card">
+            <section
+                ref={signupConfirmationRef}
+                className="account-signup-confirmation"
+                role="status"
+                aria-live="polite"
+                tabIndex={-1}
+            >
+                <span className="account-signup-confirmation__mark" aria-hidden="true">&#10003;</span>
+                <h2>{es ? 'Confirmá tu correo' : 'Confirm your email'}</h2>
+                <p>{message}</p>
+            </section>
+            <button className="account-primary" type="button" onClick={() => selectMode('signin')}>
+                {es ? 'Ir al ingreso' : 'Go to sign in'}
+            </button>
+        </div>
+    );
+
     if (!session) return (
         <div className="account-card">
             <div className="account-mode" role="group" aria-label={es ? 'Acción de cuenta' : 'Account action'}>
-                <button type="button" disabled={busy} aria-pressed={mode === 'signin'} onClick={() => setMode('signin')}>{es ? 'Ingresar' : 'Sign in'}</button>
-                <button type="button" disabled={busy} aria-pressed={mode === 'signup'} onClick={() => setMode('signup')}>{es ? 'Crear cuenta' : 'Create account'}</button>
+                <button type="button" disabled={busy} aria-pressed={mode === 'signin'} onClick={() => selectMode('signin')}>{es ? 'Ingresar' : 'Sign in'}</button>
+                <button type="button" disabled={busy} aria-pressed={mode === 'signup'} onClick={() => selectMode('signup')}>{es ? 'Crear cuenta' : 'Create account'}</button>
             </div>
             <div className="account-providers">
                 {providers.google && <button disabled={busy} onClick={() => social('google')}>{es ? 'Continuar con Google' : 'Continue with Google'}</button>}
@@ -270,9 +315,13 @@ export default function AccountClient({
                 />}
                 {mode === 'signup' && <p id="account-password-policy" className="account-muted">{passwordHint}</p>}
                 <p ref={feedbackRef} className="account-message" role="status" aria-live="polite" tabIndex={-1} hidden={!message}>{message}</p>
-                <button className="account-primary" disabled={busy}>{mode === 'signin' ? (es ? 'Ingresar' : 'Sign in') : mode === 'signup' ? (es ? 'Crear cuenta' : 'Create account') : (es ? 'Enviar correo' : 'Send reset email')}</button>
+                <button className="account-primary" disabled={busy}>{mode === 'signin'
+                    ? (es ? 'Ingresar' : 'Sign in')
+                    : mode === 'signup'
+                        ? busy ? (es ? 'Creando…' : 'Creating…') : (es ? 'Crear cuenta' : 'Create account')
+                        : (es ? 'Enviar correo' : 'Send reset email')}</button>
             </form>
-            <button className="account-link" type="button" onClick={() => setMode(mode === 'forgot' ? 'signin' : 'forgot')}>
+            <button className="account-link" type="button" onClick={() => selectMode(mode === 'forgot' ? 'signin' : 'forgot')}>
                 {mode === 'forgot' ? (es ? 'Volver al ingreso' : 'Back to sign in') : (es ? '¿Olvidaste tu contraseña?' : 'Forgot password?')}
             </button>
         </div>

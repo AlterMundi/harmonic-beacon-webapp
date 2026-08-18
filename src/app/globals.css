@@ -103,6 +103,31 @@ hb-global-nav:not(:defined) {
 .account-mode { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 .account-mode button[aria-pressed="true"] { color: #16120d; background: #c9a24e; }
 .account-muted, .account-message { color: rgba(244, 238, 226, .7); line-height: 1.55; }
+.account-signup-confirmation {
+  display: grid;
+  justify-items: center;
+  gap: .75rem;
+  margin-bottom: 1.25rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(201, 162, 78, .45);
+  border-radius: 18px;
+  color: #f4eee2;
+  text-align: center;
+  background: rgba(201, 162, 78, .08);
+}
+.account-signup-confirmation:focus-visible { outline: 2px solid #e0bd69; outline-offset: 3px; }
+.account-signup-confirmation__mark {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid rgba(201, 162, 78, .65);
+  border-radius: 999px;
+  color: #e0bd69;
+  font-size: 1.25rem;
+}
+.account-signup-confirmation h2, .account-signup-confirmation p { margin: 0; }
+.account-signup-confirmation p { line-height: 1.55; }
 .account-link { margin-top: 1rem; border: 0 !important; padding-inline: 0 !important; }
 @media (prefers-reduced-motion: reduce) {
   .account-shell *, .account-shell *::before, .account-shell *::after { scroll-behavior: auto !important; transition: none !important; }
