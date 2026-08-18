@@ -82,6 +82,19 @@ describe('isolated Live staging deploy contract', () => {
                 new RegExp(`location = ${escaped} \\{[\\s\\S]*?access_log off;[\\s\\S]*?proxy_pass http:\\/\\/127\\.0\\.0\\.1:3200;`),
             );
         }
+        for (const route of ['/api/account/login', '/api/account/callback']) {
+            const escaped = route.replaceAll('/', '\\/');
+            expect(nginx).toMatch(
+                new RegExp(`location = ${escaped} \\{[\\s\\S]*?add_header X-Content-Type-Options "nosniff" always;[\\s\\S]*?add_header X-Frame-Options "SAMEORIGIN" always;[\\s\\S]*?add_header X-Harmonic-Beacon-Environment "live-staging" always;[\\s\\S]*?proxy_pass`),
+            );
+        }
+        const frontchannel = nginx.match(
+            /location = \/api\/account\/frontchannel-logout \{([\s\S]*?)\n    \}/,
+        )?.[1] ?? '';
+        expect(frontchannel).toContain('add_header X-Content-Type-Options "nosniff" always;');
+        expect(frontchannel).toContain('add_header X-Harmonic-Beacon-Environment "live-staging" always;');
+        expect(frontchannel).not.toContain('add_header X-Frame-Options');
+        expect(frontchannel).toContain('CSP frame-ancestors');
         expect(nginx).toMatch(/location \^~ \/api\/account\/ \{\n\s+access_log off;\n\s+return 404;/);
         expect(nginx).not.toContain('proxy_pass http://127.0.0.1:3200/api/account');
         expect(nginx).not.toMatch(/listen (?:\[::\]:)?(?:80|443)/);
