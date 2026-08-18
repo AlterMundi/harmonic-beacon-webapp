@@ -42,6 +42,21 @@ function secret(env, key, minimum, allowPlaceholders) {
   return value;
 }
 
+export function validateSharedStreamSecret(value, allowPlaceholders = false) {
+  if (value.length < 32) throw new Error('EARLY_BIRDS_STREAM_SIGNING_SECRET is missing or too short');
+  if (allowPlaceholders) return value;
+  if (value.startsWith('synthetic-')) {
+    if (!/^synthetic-[0-9a-f]{64}$/.test(value)) {
+      throw new Error('EARLY_BIRDS_STREAM_SIGNING_SECRET synthetic prefix requires 64 random hex characters');
+    }
+    return value;
+  }
+  if (/^(?:replace|example|changeme)(?:-|_|$)/i.test(value)) {
+    throw new Error('EARLY_BIRDS_STREAM_SIGNING_SECRET is still a placeholder');
+  }
+  return value;
+}
+
 function exactRootPath(env, key, expected) {
   const value = required(env, key);
   if (value !== expected || !path.isAbsolute(value)) throw new Error(`${key} must be ${expected}`);
@@ -149,7 +164,7 @@ function validateApplication(env, databasePassword, allowPlaceholders) {
   ].includes(required(env, 'EARLY_BIRDS_STREAM_ARTIFACT_ID'))) {
     throw new Error('stream artifact is not an approved Listener artifact');
   }
-  secret(env, 'EARLY_BIRDS_STREAM_SIGNING_SECRET', 32, allowPlaceholders);
+  validateSharedStreamSecret(required(env, 'EARLY_BIRDS_STREAM_SIGNING_SECRET'), allowPlaceholders);
   secret(env, 'EARLY_BIRDS_DEVICE_PEPPER', 32, allowPlaceholders);
   exact(env, 'BEACON_LISTENER_REACTIVE_FIELD_LAB_ENABLED', '0');
   exact(env, 'LISTENER_WITHDRAWAL_ENABLED', '0');

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { validateFiles } from '../validate.mjs';
+import { validateFiles, validateSharedStreamSecret } from '../validate.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const REPO = path.resolve(ROOT, '../..');
@@ -29,6 +29,21 @@ function mutated(file, from, to) {
 test('example contract is internally consistent and explicitly placeholder-only', () => {
   assert.doesNotThrow(() => validateFiles(DEPLOY, APP, DATABASE, true));
   assert.throws(() => validateFiles(DEPLOY, APP, DATABASE), /placeholder/);
+});
+
+test('shared preview stream secret accepts only the deployed random synthetic form', () => {
+  const strongSharedSecret = `synthetic-${'a1'.repeat(32)}`;
+  assert.equal(validateSharedStreamSecret(strongSharedSecret), strongSharedSecret);
+  assert.throws(
+    () => validateSharedStreamSecret('synthetic-preview-stream-signing-secret-at-least-32-characters'),
+    /64 random hex/,
+  );
+  assert.throws(() => validateSharedStreamSecret(`synthetic-${'a'.repeat(63)}`), /64 random hex/);
+  assert.throws(() => validateSharedStreamSecret(`synthetic-${'z'.repeat(64)}`), /64 random hex/);
+  assert.throws(
+    () => validateSharedStreamSecret('replace-listener-staging-stream-secret-at-least-32-characters'),
+    /placeholder/,
+  );
 });
 
 test('validator rejects production, shared database and unsafe Account cutovers', () => {
