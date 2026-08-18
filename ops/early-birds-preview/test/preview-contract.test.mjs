@@ -406,17 +406,35 @@ test('nginx templates isolate staging, stream and the constrained public Listene
   assert.match(app, /location \^~ \/api\/early-birds\//);
   assert.equal(
     (app.match(/X-Harmonic-Beacon-Environment "early-birds-staging"/g) ?? []).length,
-    11,
-    'server plus ten sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
+    12,
+    'server plus eleven sensitive HTTPS staging locations retain the environment attestation when add_header inheritance stops',
   );
   assert.equal(
     (listener.match(/X-Harmonic-Beacon-Environment "listener-public-free"/g) ?? []).length,
-    10,
-    'server plus nine sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
+    11,
+    'server plus ten sensitive HTTPS locations retain the environment attestation when add_header inheritance stops',
   );
   assert.match(app, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;/s);
   assert.match(app, /location \/_next\/webpack-hmr \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Upgrade \$http_upgrade;[^}]*Connection "upgrade";/s);
   assert.match(app, /location \/_next\/static\/ \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
+  for (const [source, host, port, environment] of [
+    [listener, 'listen.harmonicbeacon.com', '13000', 'listener-public-free'],
+    [app, 'earlybirds-staging.harmonicbeacon.com', '13001', 'early-birds-staging'],
+  ]) {
+    const marker = 'location = /assets/hb-global-nav.js {';
+    assert.equal(source.split(marker).length - 1, 1);
+    const block = source.slice(source.indexOf(marker), source.indexOf('\n    }', source.indexOf(marker)) + 6);
+    assert.match(block, /request_method !~ \^\(GET\|HEAD\)\$/);
+    assert.match(block, /access_log off;/);
+    assert.match(block, new RegExp(`proxy_pass http://127\\.0\\.0\\.1:${port};`));
+    assert.match(block, new RegExp(`proxy_set_header Host ${host.replaceAll('.', '\\.')};`));
+    assert.match(block, /Cache-Control "public, max-age=300"/);
+    assert.match(block, /X-Content-Type-Options nosniff/);
+    assert.match(block, /Referrer-Policy "no-referrer"/);
+    assert.match(block, new RegExp(`X-Harmonic-Beacon-Environment "${environment}"`));
+  }
+  assert.doesNotMatch(app, /location \^~ \/assets\//);
+  assert.doesNotMatch(listener, /location \^~ \/assets\//);
   assert.match(app, /location = \/api\/listener\/analysis\/frame \{[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
   assert.match(app, /location = \/api\/listener\/checkout \{[^}]*access_log off;[^}]*client_max_body_size 512;[^}]*limit_req zone=listener_checkout burst=4 nodelay;[^}]*limit_req_status 429;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
   assert.match(app, /location = \/api\/listener\/checkout\/live-workbench \{[^}]*access_log off;[^}]*client_max_body_size 256;[^}]*limit_req zone=listener_checkout burst=2 nodelay;[^}]*limit_req_status 429;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13001;[^}]*Cache-Control "private, no-store"/s);
