@@ -45,8 +45,21 @@ CROSS JOIN facilitator_source;
 
 DO $$
 DECLARE
+    source_count integer;
     target_count integer;
 BEGIN
+    SELECT count(*) INTO source_count
+    FROM (
+        SELECT "id"
+        FROM "users"
+        WHERE "disabled_at" IS NULL
+          AND "role" IN (
+              'FACILITATOR'::"StaffRole",
+              'FACILITATOR_OP'::"StaffRole"
+          )
+        LIMIT 1
+    ) AS source;
+
     SELECT count(*) INTO target_count
     FROM "scheduled_sessions"
     WHERE "id" IN (
@@ -59,7 +72,7 @@ BEGIN
       AND "language" = 'SPANISH'::"SessionLanguage"
       AND "status" = 'SCHEDULED'::"ScheduledSessionStatus";
 
-    IF target_count <> 4 THEN
+    IF target_count <> source_count * 4 THEN
         RAISE EXCEPTION 'Four-Saturday public cycle could not be created safely';
     END IF;
 END $$;
