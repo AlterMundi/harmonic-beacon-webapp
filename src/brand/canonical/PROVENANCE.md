@@ -28,12 +28,14 @@ manifest and visual-review update together.
 Listener, Live and Account serve a byte-pinned local snapshot of the canonical
 web component rather than executing JavaScript supplied at runtime by another
 origin. The source is `AlterMundi/harmonicbeacon.com` commit
-`ae3608e3ec603b424efb729373dddd8d3a7f6e93`; the vendored
+`ab453af247e31362fddd6bc2a91c7f266cf2b7ae`; the vendored
 `public/assets/hb-global-nav.js` SHA-256 is
-`be7fa241f393ec37b335756408897a47c16e86aaf30eb23a24fb7912a5ebb58f`.
+`65773aaf87e1112204b470d793f92b34ae9e2dae06929c6559458420f5045cc2`.
 The local light-DOM markup remains the accessible, same-destination fallback.
 Both implementations keep Account out of the primary destination list and
-expose it from the user-icon menu.
+expose it from the user-icon menu. The enhanced navigation renders both the
+Beacon mark and user glyph locally; it does not embed Account in an iframe or
+fetch a cross-origin image.
 
 ## Font source and license
 
@@ -52,5 +54,5 @@ Both families are covered by the SIL Open Font License 1.1; the relevant
   is pinned from the Google Fonts repository commit above, with trailing
   whitespace normalized for the repository gate.
 
-No font, analytics or decorative brand asset is fetched at runtime. The single
-global-navigation component above is the deliberate exception.
+No font, analytics or decorative brand asset is fetched at runtime. The global
+navigation is served as the byte-pinned local snapshot described above.

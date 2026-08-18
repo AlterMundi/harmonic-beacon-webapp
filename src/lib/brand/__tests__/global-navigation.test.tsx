@@ -57,7 +57,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('ae3608e3ec603b424efb729373dddd8d3a7f6e93');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('ab453af247e31362fddd6bc2a91c7f266cf2b7ae');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
@@ -66,9 +66,14 @@ describe('canonical Harmonic Beacon global navigation', () => {
             .toBe(GLOBAL_NAVIGATION_SHA256);
         const source = bytes.toString('utf8');
         expect(source).toContain('class="account-trigger"');
+        expect(source).toContain('beaconMarkPath()');
+        expect(source).toContain('<svg class="mark"');
+        expect(source).toContain('<circle cx="12" cy="8" r="3.25">');
         expect(source).toContain('aria-haspopup="menu"');
         expect(source).toContain('class="account-menu"');
         expect(source).not.toContain('class="account-link"');
+        expect(source).not.toContain('<iframe');
+        expect(source).not.toContain('/favicon.svg');
     });
 
     it('renders the same destinations in Spanish', () => {

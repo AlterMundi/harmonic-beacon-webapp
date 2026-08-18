@@ -114,12 +114,6 @@
     return MAIN_ORIGIN + '/';
   }
 
-  function accountSlotHref(language) {
-    var url = new URL('/nav-slot', accountOrigin());
-    url.searchParams.set('lang', language);
-    return url.toString();
-  }
-
   function accountPageHref(language) {
     var url = new URL('/account', accountOrigin());
     url.searchParams.set('lang', language);
@@ -131,6 +125,17 @@
     return language === 'es' ? item.es : item.en;
   }
 
+  function beaconMarkPath() {
+    var points = [];
+    for (var index = 0; index <= 180; index += 1) {
+      var angle = Math.PI * 2 * index / 180;
+      var x = 100 + 92 * Math.cos(angle);
+      var y = 100 + 92 * Math.sin(angle * 3);
+      points.push((index === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2));
+    }
+    return points.join(' ');
+  }
+
   var style = `
     :host { display:block; height:72px; color:#E9E0D0; font-family:Inter,system-ui,-apple-system,sans-serif; }
     :host([overlay]) { height:0; }
@@ -139,7 +144,8 @@
     .nav { position:fixed; inset:0 0 auto; z-index:2147483000; min-height:72px; border-bottom:1px solid rgba(244,238,226,.08); background:rgba(22,18,13,.82); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
     .inner { width:100%; max-width:1180px; min-height:72px; margin:0 auto; padding:12px 24px; display:flex; align-items:center; justify-content:space-between; gap:18px; }
     .brand { display:flex; align-items:center; gap:10px; flex:0 0 auto; border-radius:8px; }
-    .mark { width:30px; height:30px; display:block; filter:drop-shadow(0 2px 14px rgba(201,162,78,.18)); }
+    .mark { width:30px; height:30px; display:block; color:#C9A24E; filter:drop-shadow(0 2px 14px rgba(201,162,78,.18)); }
+    .mark path { fill:none; stroke:currentColor; stroke-width:3.4; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
     .wordmark { color:#F4EEE2; font-size:12px; font-weight:600; letter-spacing:.18em; text-transform:uppercase; white-space:nowrap; }
     .links { display:flex; align-items:center; justify-content:flex-end; gap:1px; margin:0; padding:0; list-style:none; }
     .links a { position:relative; display:block; padding:9px 8px; border-radius:999px; color:#ADA089; font-size:10.5px; font-weight:500; letter-spacing:.12em; line-height:1.2; text-transform:uppercase; white-space:nowrap; transition:color .25s ease,background .25s ease; }
@@ -150,8 +156,9 @@
     .language strong { color:#C9A24E; font-weight:600; }
     .sep { opacity:.42; padding:0 2px; }
     .account-control { position:relative; width:44px; height:44px; flex:0 0 44px; }
-    .account { position:relative; z-index:1; display:block; width:44px; height:44px; border:0; border-radius:999px; pointer-events:none; background:transparent; color-scheme:dark; }
-    .account-trigger { position:absolute; z-index:2; inset:0; width:44px; height:44px; padding:0; border:0; border-radius:999px; background:transparent; cursor:pointer; }
+    .account-trigger { position:absolute; z-index:2; inset:0; display:grid; place-items:center; width:44px; height:44px; padding:0; border:1px solid rgba(201,162,78,.32); border-radius:999px; color:#E9E0D0; background:rgba(244,238,226,.045); cursor:pointer; transition:color .2s ease,border-color .2s ease,background .2s ease; }
+    .account-trigger:hover,.account-trigger[aria-expanded=true] { color:#F4EEE2; border-color:rgba(201,162,78,.62); background:rgba(201,162,78,.12); }
+    .account-trigger svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
     .account-menu { position:absolute; z-index:4; top:calc(100% + 8px); right:0; min-width:164px; padding:6px; border:1px solid rgba(201,162,78,.34); border-radius:12px; background:#16120D; box-shadow:0 18px 48px rgba(0,0,0,.34); }
     .account-menu[hidden] { display:none; }
     .account-menu a { display:flex; min-height:44px; align-items:center; padding:10px 12px; border-radius:8px; color:#E9E0D0; font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; }
@@ -221,14 +228,13 @@
       this.shadowRoot.innerHTML = '<style>' + style + '</style>' +
         '<header class="nav"><div class="inner">' +
           '<a class="brand" href="' + brandHref + '" aria-label="Harmonic Beacon">' +
-            '<img class="mark" src="' + MAIN_ORIGIN + '/favicon.svg" alt="">' +
+            '<svg class="mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><path d="' + beaconMarkPath() + '"></path></svg>' +
             '<span class="wordmark">Harmonic Beacon</span></a>' +
           '<nav aria-label="' + navLabel + '"><ul class="links">' + items + '</ul></nav>' +
           '<div style="display:flex;align-items:center;gap:2px">' +
             '<button class="language" type="button" aria-label="Language / Idioma"><span class="en">EN</span><span class="sep">/</span><span class="es">ES</span></button>' +
             '<div class="account-control">' +
-              '<iframe class="account" src="' + accountSlotHref(language) + '" title="' + accountLabel + '" aria-hidden="true" tabindex="-1" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin"></iframe>' +
-              '<button class="account-trigger" type="button" aria-label="' + userMenuLabel + '" aria-haspopup="menu" aria-controls="hb-account-menu" aria-expanded="false"></button>' +
+              '<button class="account-trigger" type="button" aria-label="' + userMenuLabel + '" aria-haspopup="menu" aria-controls="hb-account-menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.75 19c.6-3.25 2.7-5 6.25-5s5.65 1.75 6.25 5"></path></svg></button>' +
               '<div class="account-menu" id="hb-account-menu" role="menu" hidden><a role="menuitem" href="' + accountPageHref(language) + '">' + accountLabel + '</a></div>' +
             '</div>' +
             '<button class="toggle" type="button" aria-label="' + menuLabel + '" aria-expanded="false"><span></span><span></span><span></span></button>' +
