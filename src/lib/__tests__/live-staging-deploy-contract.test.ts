@@ -48,7 +48,7 @@ describe('isolated Live staging deploy contract', () => {
         expect(compose).toMatch(/\n  migrate:\n/);
         expect(compose).toContain('command: [npx, prisma, migrate, deploy]');
         expect(compose).toMatch(/migrate:\n\s+condition: service_completed_successfully/);
-        expect(runbook).toContain('--exit-code-from migrate migrate');
+        expect(runbook).toContain("docker inspect hb-live-staging-migrate-1 --format '{{.State.ExitCode}}'");
     });
 
     it('does not deploy or borrow the production media/event stack', () => {
@@ -106,7 +106,7 @@ describe('isolated Live staging deploy contract', () => {
         expect(runbook).toContain('select count(*) from pg_catalog.pg_tables');
         expect(runbook).toContain('pg_dump');
         expect(runbook).toContain('gzip -t');
-        expect(runbook).toContain('Compose refuses to start the app unless `migrate` exits zero');
+        expect(runbook).toContain('refuses to start the app unless it exits zero');
         expect(runbook).toContain('/api/health/ready');
         expect(runbook).toContain('/api/account/login)" = 404');
         expect(runbook).toContain('previous-image');

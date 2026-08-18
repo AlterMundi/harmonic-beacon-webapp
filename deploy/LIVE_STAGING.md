@@ -80,17 +80,15 @@ sudo chmod 0600 "$BACKUP_PATH"
 sudo gzip -t "$BACKUP_PATH"
 ```
 
-Build, run the reproducible one-shot migration service and start only the
-staging app. Compose refuses to start the app unless `migrate` exits zero:
+Build and start only the staging app. Compose runs the reproducible one-shot
+`migrate` service first and refuses to start the app unless it exits zero:
 
 ```bash
 docker compose --file deploy/live-staging.compose.yml \
   --env-file /etc/harmonic-beacon/live-staging.env build app
 docker compose --file deploy/live-staging.compose.yml \
-  --env-file /etc/harmonic-beacon/live-staging.env \
-  up --abort-on-container-exit --exit-code-from migrate migrate
-docker compose --file deploy/live-staging.compose.yml \
   --env-file /etc/harmonic-beacon/live-staging.env up -d app
+test "$(docker inspect hb-live-staging-migrate-1 --format '{{.State.ExitCode}}')" = 0
 ```
 
 Install `deploy/nginx-live-staging-loopback.conf` under the new, exact site
