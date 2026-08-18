@@ -74,6 +74,22 @@ describe('middleware', () => {
                 expect(accountRequest('/api/account/health/ready', hostname).status).toBe(404);
             });
 
+        it('trusts the exact HTTP Host behind the loopback proxy, not the internal request URL', () => {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '1');
+            vi.stubEnv('BEACON_ACCOUNT_BASE_URL', 'https://account.harmonicbeacon.com');
+            const proxied = new NextRequest('http://127.0.0.1:3000/api/account/health/ready', {
+                headers: { host: 'account.harmonicbeacon.com' },
+            });
+            expect(middleware(proxied).status).toBe(200);
+            const direct = new NextRequest('http://127.0.0.1:3000/api/account/health/ready', {
+                headers: {
+                    host: 'account-production:3000',
+                    'x-forwarded-host': 'account.harmonicbeacon.com',
+                },
+            });
+            expect(middleware(direct).status).toBe(404);
+        });
+
         it('does not expose authority UI/actions from a product runtime', () => {
             vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '0');
             for (const pathname of ['/account', '/nav-slot', '/.well-known/openid-configuration',
@@ -99,6 +115,21 @@ describe('middleware', () => {
                 method: 'POST', headers,
             });
             expect(middleware(mutation).status).toBe(expected);
+        });
+
+        it('uses the canonical Account origin for proxied same-origin mutations', () => {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '1');
+            vi.stubEnv('BEACON_ACCOUNT_BASE_URL', 'https://account.harmonicbeacon.com');
+            const mutation = new NextRequest('http://127.0.0.1:3000/api/account/profile', {
+                method: 'POST',
+                headers: {
+                    host: 'account.harmonicbeacon.com',
+                    origin: 'https://account.harmonicbeacon.com',
+                    'sec-fetch-site': 'same-origin',
+                    'content-type': 'application/json',
+                },
+            });
+            expect(middleware(mutation).status).toBe(200);
         });
 
         it('forwards one allowlisted explicit Account locale to the document boundary', () => {

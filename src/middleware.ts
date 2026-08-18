@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
     ACCOUNT_FRAME_ANCESTORS,
+    accountOrigin,
     isAccountHost,
     isCurrentAccountHost,
 } from '@/lib/account/config';
@@ -88,7 +89,8 @@ function scrubEarlyBirdInvitation(request: NextRequest): NextResponse | null {
 export default function middleware(request: NextRequest): NextResponse {
     const { pathname } = request.nextUrl;
     const accountRuntime = process.env.BEACON_ACCOUNT_RUNTIME === '1';
-    const authorityHost = accountRuntime && isCurrentAccountHost(request.nextUrl.host);
+    const requestHost = request.headers.get('host') ?? request.nextUrl.host;
+    const authorityHost = accountRuntime && isCurrentAccountHost(requestHost);
 
     // The dedicated Account container is the same standalone Next image. Its
     // runtime marker is therefore the top-level deny-default boundary: a
@@ -96,7 +98,7 @@ export default function middleware(request: NextRequest): NextResponse {
     // Listener, commerce or LiveKit routes.
     if (accountRuntime) {
         if (!authorityHost) return new NextResponse(null, { status: 404 });
-        if (!isAccountHost(request.nextUrl.host)) {
+        if (!isAccountHost(requestHost)) {
             return new NextResponse(null, { status: 404 });
         }
         {
@@ -115,7 +117,7 @@ export default function middleware(request: NextRequest): NextResponse {
                 pathname === '/api/account/auth/sign-in/social'
             );
             if (browserMutation && (
-                request.headers.get('origin') !== request.nextUrl.origin ||
+                request.headers.get('origin') !== accountOrigin() ||
                 request.headers.get('sec-fetch-site') !== 'same-origin' ||
                 request.headers.get('content-type') !== 'application/json'
             )) return new NextResponse(null, { status: 403, headers: { 'Cache-Control': 'no-store' } });
@@ -149,7 +151,7 @@ export default function middleware(request: NextRequest): NextResponse {
         }
     }
 
-    if (isAccountHost(request.nextUrl.host)) {
+    if (isAccountHost(requestHost)) {
         if (!accountRuntime) {
             return new NextResponse('Account service unavailable', {
                 status: 503, headers: { 'Cache-Control': 'no-store' },
