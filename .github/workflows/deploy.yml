@@ -13,6 +13,8 @@ jobs:
   # Postgres + LiveKit + browser stack before mona can run any release step.
   release-e2e:
     uses: ./.github/workflows/e2e.yml
+    with:
+      use_runner_chrome: true
 
   deploy:
     needs: release-e2e

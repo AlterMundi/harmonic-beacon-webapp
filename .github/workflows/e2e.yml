@@ -25,6 +25,12 @@ on:
       - 'docs/**'
       - '**/*.md'
   workflow_call:
+    inputs:
+      use_runner_chrome:
+        description: Use the Google Chrome already installed on the hosted runner.
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: e2e-${{ github.head_ref || github.run_id }}
@@ -55,6 +61,7 @@ jobs:
       E2E_LIVEKIT_URL: ws://localhost:7880
       E2E_LIVEKIT_API_KEY: devkey
       E2E_LIVEKIT_API_SECRET: secret
+      PLAYWRIGHT_CHROME_EXECUTABLE: ${{ inputs.use_runner_chrome && '/usr/bin/google-chrome' || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,7 +77,8 @@ jobs:
 
       - run: npm ci
 
-      - run: npx playwright install --with-deps chromium
+      - if: ${{ !inputs.use_runner_chrome }}
+        run: npx playwright install --with-deps chromium
 
       - name: Start LiveKit dev server
         run: |
@@ -142,15 +150,19 @@ jobs:
           --project=android-chrome
 
       - name: Install Firefox after Chromium screenshot gates
+        if: ${{ !inputs.use_runner_chrome }}
         run: npx playwright install --with-deps firefox
 
       - name: Run Firefox functional and accessibility gates
+        if: ${{ !inputs.use_runner_chrome }}
         run: npx playwright test --project=firefox
 
       - name: Install WebKit after Chromium screenshot gates
+        if: ${{ !inputs.use_runner_chrome }}
         run: npx playwright install --with-deps webkit
 
       - name: Run iPhone/WebKit media gate
+        if: ${{ !inputs.use_runner_chrome }}
         run: npx playwright test e2e/tests/media-continuity.spec.ts --project=iphone-webkit
 
       - name: Verify commerce transaction and durable outbox contract
