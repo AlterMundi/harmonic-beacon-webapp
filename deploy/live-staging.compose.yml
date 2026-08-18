@@ -1,0 +1,86 @@
+name: hb-live-staging
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hb-live-staging-postgres
+    restart: unless-stopped
+    env_file:
+      - ${LIVE_STAGING_ENV_FILE:-/etc/harmonic-beacon/live-staging.env}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beacon_staging}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:-beacon_live_staging}
+    volumes:
+      - ${LIVE_STAGING_POSTGRES_DIR:-/mnt/beacon-data/live-staging/postgres}:/var/lib/postgresql/data
+    networks:
+      - database
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-beacon_staging} -d ${POSTGRES_DB:-beacon_live_staging}
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  app:
+    image: harmonic-beacon/live-staging:${BEACON_IMAGE_TAG:?exact git SHA required}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:-wss://live-staging.harmonicbeacon.com/rtc}
+        BEACON_GIT_SHA: ${BEACON_GIT_SHA:?exact git SHA required}
+        BEACON_BUILD_TIME: ${BEACON_BUILD_TIME:?build timestamp required}
+        BEACON_DATABASE_SCHEMA_VERSION: ${BEACON_DATABASE_SCHEMA_VERSION:?schema version required}
+    container_name: hb-live-staging-app
+    restart: unless-stopped
+    env_file:
+      - ${LIVE_STAGING_ENV_FILE:-/etc/harmonic-beacon/live-staging.env}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon_staging}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon_live_staging}?schema=public
+      BEACON_ACCOUNT_ENABLED: ${BEACON_ACCOUNT_ENABLED:-false}
+      TICKET_LOGIN_URL_PREFIX: https://live-staging.harmonicbeacon.com
+      E2E_DASHBOARD_ENABLED: "1"
+      LIVEKIT_INTERNAL_URL: http://livekit-unavailable.invalid:7880
+      TAPESTRY_PUBLIC_ENABLED: "false"
+    ports:
+      - 127.0.0.1:3200:3000
+    networks:
+      - database
+      - app_egress
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, http://localhost:3000/api/health/ready]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  database:
+    name: hb_live_staging_database
+    internal: true
+  app_egress:
+    name: hb_live_staging_app_egress
