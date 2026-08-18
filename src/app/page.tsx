@@ -15,6 +15,7 @@ import LoginClient from "./login/LoginClient";
 import { messages } from "@/lib/i18n";
 import { requestLocale } from "@/lib/i18n-server";
 import { isPublicCycleSession } from "@/lib/public-cycle";
+import { EventLocalTime, EventSchedule } from "@/components/events/EventSchedule";
 
 export const dynamic = "force-dynamic";
 
@@ -65,26 +66,6 @@ async function weekendEvents(): Promise<WeekendEvent[] | null> {
         console.error(`[landing] could not load the event schedule: ${redactError(error)}`);
         return null;
     }
-}
-
-function formatEventTime(at: Date, locale: string, timeZone: string): string {
-    return new Intl.DateTimeFormat(locale, {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone,
-        timeZoneName: "short",
-    }).format(at);
-}
-
-function formatTimeOnly(at: Date, locale: string, timeZone: string): string {
-    return new Intl.DateTimeFormat(locale, {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone,
-    }).format(at);
 }
 
 export default async function LandingPage({
@@ -139,9 +120,10 @@ export default async function LandingPage({
                             {copy.noSessions}
                         </div>
                     ) : (
-                        <ul className="grid gap-4 md:grid-cols-2">
-                            {events.map((event) => (
-                                <li key={event.id} className="event-card">
+                        <EventSchedule locale={locale}>
+                            <ul className="grid gap-4 md:grid-cols-2">
+                                {events.map((event) => (
+                                    <li key={event.id} className="event-card">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="space-y-2">
                                             <p className="event-card__label">
@@ -155,23 +137,9 @@ export default async function LandingPage({
                                                     )}
                                                 </>
                                             )}
-                                            <p className="text-sm text-[var(--text-secondary)]">
-                                                <span className="font-medium text-[var(--paper)]">{copy.costaRica}: </span>
-                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
-                                            </p>
-                                            <p className="text-xs text-[var(--text-muted)]">
-                                                <span className="font-medium">{copy.argentina}: </span>
-                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-GB" : "es-AR", "America/Argentina/Buenos_Aires")}
-                                            </p>
-                                            <p className="text-xs text-[var(--text-muted)]">
-                                                <span className="font-medium">UTC: </span>
-                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-GB" : "es-AR", "UTC")}
-                                            </p>
+                                            <EventLocalTime at={event.scheduledAt.toISOString()} />
                                         </div>
                                         <div className="text-right">
-                                            <p className="whitespace-nowrap font-mono text-lg font-normal text-[var(--gold)]">
-                                                {formatTimeOnly(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
-                                            </p>
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
                                                 {isPublicCycleSession(event.id) ? (locale === "en" ? "Free" : "Gratis") : (event.language === "ENGLISH" ? "US $50" : "US $20")}
                                             </p>
@@ -207,9 +175,10 @@ export default async function LandingPage({
                                             </p>
                                         )}
                                     </div>
-                                </li>
-                            ))}
-                        </ul>
+                                    </li>
+                                ))}
+                            </ul>
+                        </EventSchedule>
                     )}
                 </section>
 
@@ -224,7 +193,7 @@ export default async function LandingPage({
                                 {copy.experienceBody}
                             </p>
                             <a
-                                href="https://proyecciondelmito.harmonicbeacon.com/"
+                                href="https://harmonicbeacon.com/proyeccion-armonica-del-mito/"
                                 className="event-button event-button--secondary inline-flex w-full sm:w-auto"
                                 rel="noreferrer noopener"
                                 target="_blank"

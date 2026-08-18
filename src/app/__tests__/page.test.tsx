@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 /**
  * The public landing page: the two event times, where to buy, and the code +
@@ -70,20 +70,27 @@ describe('landing page', () => {
         vi.useRealTimers();
     });
 
-    it('shows both sessions with their language and time', async () => {
+    it('shows both sessions and changes their local time by country', async () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
         expect(screen.getByText('Inglés')).toBeInTheDocument();
         expect(screen.getByText('Español')).toBeInTheDocument();
 
-        // The event's advertised Costa Rica time comes first, with operator and
-        // universal references explicitly labelled below it.
-        expect(screen.getAllByText(/Costa Rica:/)).toHaveLength(2);
-        expect(screen.getByText(/sábado, 8 de agosto.*08:30.*GMT-6/)).toBeInTheDocument();
-        expect(screen.getByText(/sábado, 8 de agosto.*02:00 p\. m\..*GMT-6/)).toBeInTheDocument();
-        expect(screen.getAllByText(/Argentina:/)).toHaveLength(2);
-        expect(screen.getAllByText(/UTC:/)).toHaveLength(2);
+        const country = screen.getByLabelText('Ver horarios para');
+        expect(country).toHaveValue('America/Argentina/Buenos_Aires');
+        expect(Array.from(document.querySelectorAll('.event-local-time__primary')).map((node) => node.textContent)).toEqual([
+            expect.stringMatching(/Argentina: sábado, 8 de agosto, 11:30 (ART|GMT-3)/),
+            expect.stringMatching(/Argentina: sábado, 8 de agosto, 17:00 (ART|GMT-3)/),
+        ]);
+        expect(screen.getAllByText(/Referencia universal:/)).toHaveLength(2);
+
+        fireEvent.change(country, { target: { value: 'America/Costa_Rica' } });
+
+        expect(Array.from(document.querySelectorAll('.event-local-time__primary')).map((node) => node.textContent)).toEqual([
+            expect.stringMatching(/Costa Rica: sábado, 8 de agosto, 08:30 GMT-6/),
+            expect.stringMatching(/Costa Rica: sábado, 8 de agosto, 14:00 GMT-6/),
+        ]);
     });
 
     it('does not place an animated purchase metaphor before complimentary access', async () => {
@@ -189,8 +196,18 @@ describe('landing page', () => {
         expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Próximos encuentros.');
         expect(screen.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
             'href',
-            'https://proyecciondelmito.harmonicbeacon.com/',
+            'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',
         );
+
+        fireEvent.change(screen.getByLabelText('Ver horarios para'), {
+            target: { value: 'America/Santiago' },
+        });
+        expect(Array.from(document.querySelectorAll('.event-local-time__clock')).map((node) => node.textContent)).toEqual([
+            '10:00',
+            '10:00',
+            '10:00',
+            '11:00',
+        ]);
     });
 
     it('renders the purchase link when one is configured', async () => {
@@ -254,7 +271,10 @@ describe('landing page', () => {
         expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Upcoming gatherings.');
         expect(screen.getByText('English')).toBeInTheDocument();
         expect(screen.getByText('Spanish')).toBeInTheDocument();
-        expect(screen.getByText(/Saturday, August 8 at 0?8:30 AM CST/)).toBeInTheDocument();
+        expect(screen.getByLabelText('Show times for')).toHaveValue('America/Argentina/Buenos_Aires');
+        expect(document.querySelector('.event-local-time__primary')).toHaveTextContent(
+            /Argentina: Saturday 8 August at 11:30 (GMT-3|ART)/,
+        );
         expect(screen.queryByText(/El mito/)).toBeNull();
     });
 });
