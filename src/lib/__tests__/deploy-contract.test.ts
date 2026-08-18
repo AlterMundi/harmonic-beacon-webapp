@@ -154,7 +154,7 @@ describe('production deploy contract', () => {
 
   it('audits the production dependencies of both deployable packages', () => {
     for (const contents of [ciWorkflow, workflow]) {
-      expect(contents).toContain('npm audit --omit=dev --audit-level=high');
+      expect(contents).toContain('npm run audit:production');
       expect(contents).toContain(
         'npm audit --omit=dev --prefix services/tapestry --audit-level=high',
       );
