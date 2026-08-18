@@ -55,6 +55,7 @@ describe('middleware', () => {
 
         it.each([
             '/', '/account', '/verify-email', '/reset-password', '/nav-slot',
+            '/assets/hb-global-nav.js',
             '/.well-known/openid-configuration', '/api/account/health/ready',
             '/_next/static/chunk.js',
         ])('allows only the exact Account route inventory: %s', (pathname) => {
@@ -63,6 +64,7 @@ describe('middleware', () => {
 
         it.each([
             '/listener', '/early-birds', '/session/active', '/ops',
+            '/assets/other.js', '/assets/hb-global-nav.js/extra',
             '/api/early-birds/stream', '/api/livekit/token',
             '/api/founding-listeners/checkout', '/api/auth/ticket',
         ])('404s product/event/media route %s in the Account container', (pathname) => {
