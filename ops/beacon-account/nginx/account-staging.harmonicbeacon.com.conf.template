@@ -1,0 +1,143 @@
+limit_req_zone $binary_remote_addr zone=beacon_account_staging_auth:10m rate=30r/m;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name account-staging.harmonicbeacon.com;
+    access_log off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+    }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name account-staging.harmonicbeacon.com;
+
+    ssl_certificate /etc/letsencrypt/live/account-staging.harmonicbeacon.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/account-staging.harmonicbeacon.com/privkey.pem;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    proxy_hide_header X-Powered-By;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_http_version 1.1;
+
+    location = /.well-known/openid-configuration {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "public, max-age=300" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location = /.well-known/jwks.json {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "public, max-age=300" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location ^~ /_next/ {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+    }
+
+    location = / {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "private, no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location = /account {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "private, no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location ^~ /account/ {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "private, no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location = /verify-email {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "private, no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location = /reset-password {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "private, no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location = /nav-slot {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "private, no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location = /api/account/health/ready {
+        if ($request_method !~ ^(GET|HEAD)$) { return 405; }
+        access_log off;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location ^~ /api/account/ {
+        if ($request_method !~ ^(GET|HEAD|POST)$) { return 405; }
+        access_log off;
+        limit_req zone=beacon_account_staging_auth burst=10 nodelay;
+        client_max_body_size 16k;
+        proxy_pass http://127.0.0.1:13003;
+        add_header Cache-Control "private, no-store" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
+    location / { return 404; }
+}

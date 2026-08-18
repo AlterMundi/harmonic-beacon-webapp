@@ -50,10 +50,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/weekend-stabilize.ts ./sc
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/commerce-media-worker.ts ./scripts/commerce-media-worker.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-quiesce-for-free-for-all.ts ./scripts/listener-quiesce-for-free-for-all.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-withdrawal-operator.ts ./scripts/listener-withdrawal-operator.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/beacon-account/check-migrations.mjs ./scripts/beacon-account/check-migrations.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/provision-account-authority.ts ./scripts/provision-account-authority.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/event-stabilization.ts ./src/lib/event-stabilization.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/redact.ts ./src/lib/redact.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/commerce-media-reconciler.ts ./src/lib/commerce-media-reconciler.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/db.ts ./src/lib/db.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/session-auth.ts ./src/lib/session-auth.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/account ./src/lib/account
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/listener/consumer-withdrawal.ts ./src/lib/listener/consumer-withdrawal.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/early-birds/account-id.ts ./src/lib/early-birds/account-id.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/early-birds/access.ts ./src/lib/early-birds/access.ts
