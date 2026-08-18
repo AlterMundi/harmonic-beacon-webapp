@@ -1,6 +1,8 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
+import { accountPasswordLengthValid } from '@/lib/account/password-policy';
+
 export const SESSION_COOKIE_NAME = 'hb_session';
 export const DEFAULT_SESSION_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
@@ -8,9 +10,6 @@ const SESSION_TOKEN_BYTES = 32;
 const SHA256_HEX_LENGTH = 64;
 const SCRYPT_KEY_LENGTH = 32;
 const scryptAsync = promisify(scrypt);
-
-export const ACCOUNT_PASSWORD_MIN_LENGTH = 12;
-export const ACCOUNT_PASSWORD_MAX_LENGTH = 128;
 
 export type IssuedSessionToken = {
     cookieValue: string;
@@ -71,8 +70,7 @@ export async function verifyStaffPassword(
 
 /** Shared credential format for Account password identities. */
 export async function hashAccountPassword(password: string): Promise<string> {
-    if (password.length < ACCOUNT_PASSWORD_MIN_LENGTH ||
-        password.length > ACCOUNT_PASSWORD_MAX_LENGTH) {
+    if (!accountPasswordLengthValid(password)) {
         throw new Error('Account password length is outside the accepted range');
     }
     const salt = randomBytes(16);
@@ -84,8 +82,7 @@ export async function verifyAccountPassword(input: {
     hash: string;
     password: string;
 }): Promise<boolean> {
-    if (input.password.length < ACCOUNT_PASSWORD_MIN_LENGTH ||
-        input.password.length > ACCOUNT_PASSWORD_MAX_LENGTH) return false;
+    if (!accountPasswordLengthValid(input.password)) return false;
     const match = /^scrypt-v1\$([A-Za-z0-9_-]+)\$([A-Za-z0-9_-]+)$/.exec(input.hash);
     if (!match) return false;
     const salt = Buffer.from(match[1], 'base64url');

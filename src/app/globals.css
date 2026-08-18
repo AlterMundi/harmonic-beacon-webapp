@@ -55,6 +55,9 @@ hb-global-nav:not(:defined) {
   border: 1px solid rgba(244, 238, 226, .22);
   border-radius: 10px;
 }
+.account-password-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .45rem; align-items: stretch; }
+.account-password-field input { min-width: 0; }
+.account-password-toggle { min-width: 4.5rem; padding-inline: .7rem !important; }
 .account-form input:focus-visible, .account-card button:focus-visible, .account-card a:focus-visible {
   outline: 2px solid #e0bd69;
   outline-offset: 3px;

@@ -41,8 +41,11 @@ async function genericCredentialResponse(response: Response, path: string): Prom
     const signup = path === '/api/account/auth/sign-up/email';
     const successful = response.ok;
     const headers = new Headers({ 'Cache-Control': 'private, no-store' });
-    const cookie = response.headers.get('set-cookie');
-    if (successful && cookie) headers.set('Set-Cookie', cookie);
+    if (successful) {
+        for (const cookie of response.headers.getSetCookie()) {
+            headers.append('Set-Cookie', cookie);
+        }
+    }
     const redirect = successful && !signup ? await safeRPRedirect(response) : null;
     return Response.json({
         status: signup ? 'accepted' : successful ? 'authenticated' : 'unavailable',
@@ -60,14 +63,33 @@ async function credentialSignInRevisionStillValid(input: {
     securityRevision: number;
 }): Promise<boolean> {
     if (!input.response.ok) return true;
-    const setCookie = input.response.headers.get('set-cookie') ?? '';
-    const escaped = ACCOUNT_SESSION_COOKIE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const token = setCookie.match(new RegExp(`(?:^|,\\s*)${escaped}=([^;,\\s]+)`))?.[1];
+    const sessionCookies = input.response.headers.getSetCookie().filter((cookie) =>
+        cookie.startsWith(`${ACCOUNT_SESSION_COOKIE}=`));
+    const body = await input.response.clone().json().catch(() => null) as { token?: unknown } | null;
+    const bodyToken = typeof body?.token === 'string' && body.token.length <= 512
+        ? body.token : null;
+    if (sessionCookies.length !== 1) {
+        if (bodyToken) {
+            await prisma.earlyBirdAuthSession.deleteMany({ where: { token: bodyToken } })
+                .catch(() => undefined);
+        }
+        return false;
+    }
+    const token = sessionCookies[0].slice(ACCOUNT_SESSION_COOKIE.length + 1).split(';', 1)[0];
     if (!token) return false;
     const headers = new Headers(input.request.headers);
     headers.set('cookie', `${ACCOUNT_SESSION_COOKIE}=${token}`);
     const created = await accountAuth().api.getSession({ headers }).catch(() => null);
-    if (!created || created.user.id !== input.accountId) return false;
+    if (!created || created.user.id !== input.accountId) {
+        // Better Auth may have persisted a session before an output seam
+        // failed. Delete only the exact token it just returned; never revoke
+        // pre-existing sessions for the account.
+        if (bodyToken) {
+            await prisma.earlyBirdAuthSession.deleteMany({ where: { token: bodyToken } })
+                .catch(() => undefined);
+        }
+        return false;
+    }
     return prisma.$transaction(async (transaction) => {
         // This lock gives reset/change a total order with the final sign-in
         // check. If sign-in wins, the later mutation revokes this session; if

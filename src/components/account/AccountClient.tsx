@@ -1,6 +1,13 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
+
+import {
+    ACCOUNT_PASSWORD_MAX_LENGTH,
+    ACCOUNT_PASSWORD_MIN_LENGTH,
+    accountPasswordLengthValid,
+} from '@/lib/account/password-policy';
+import { AccountPasswordField } from './AccountPasswordField';
 
 type AccountSession = {
     user: { email: string | null; emailVerified: boolean; accessMethod: 'email' | 'google' | 'apple' };
@@ -51,6 +58,18 @@ export default function AccountClient({
     returnTo: string | null;
 }) {
     const es = locale === 'es';
+    const passwordHint = es
+        ? `Usá entre ${ACCOUNT_PASSWORD_MIN_LENGTH} y ${ACCOUNT_PASSWORD_MAX_LENGTH} caracteres. No se exige ningún formato especial.`
+        : `Use ${ACCOUNT_PASSWORD_MIN_LENGTH} to ${ACCOUNT_PASSWORD_MAX_LENGTH} characters. No special format is required.`;
+    const passwordLengthError = es
+        ? `La contraseña debe tener entre ${ACCOUNT_PASSWORD_MIN_LENGTH} y ${ACCOUNT_PASSWORD_MAX_LENGTH} caracteres.`
+        : `Password must be ${ACCOUNT_PASSWORD_MIN_LENGTH} to ${ACCOUNT_PASSWORD_MAX_LENGTH} characters.`;
+    const credentialFailure = es
+        ? 'No se pudo completar la solicitud. Revisá los datos e intentá nuevamente.'
+        : 'The request could not be completed. Check the details and try again.';
+    const passwordMismatch = es ? 'Las contraseñas no coinciden.' : 'Passwords do not match.';
+    const showPassword = es ? 'Mostrar contraseña' : 'Show password';
+    const hidePassword = es ? 'Ocultar contraseña' : 'Hide password';
     const callbackURL = `/account?lang=${locale}${returnTo ? `&return_to=${encodeURIComponent(returnTo)}` : ''}`;
     const oauthQuery = () => {
         const params = new URLSearchParams(window.location.search);
@@ -61,17 +80,43 @@ export default function AccountClient({
     const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
     const [message, setMessage] = useState('');
     const [busy, setBusy] = useState(false);
+    const feedbackRef = useRef<HTMLParagraphElement>(null);
+    const credentialSubmissionInFlight = useRef(false);
+
+    function announceCredentialResult(nextMessage: string) {
+        setMessage(nextMessage);
+        queueMicrotask(() => {
+            feedbackRef.current?.focus({ preventScroll: true });
+            feedbackRef.current?.scrollIntoView?.({ block: 'nearest' });
+        });
+    }
 
     async function submitCredentials(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        if (credentialSubmissionInFlight.current) return;
         const form = new FormData(event.currentTarget);
         const email = String(form.get('email') ?? '');
         const password = String(form.get('password') ?? '');
+        if (mode !== 'forgot' && !accountPasswordLengthValid(password)) {
+            setMessage(passwordLengthError);
+            const input = event.currentTarget.elements.namedItem('password');
+            if (input instanceof HTMLElement) input.focus();
+            return;
+        }
+        if (mode === 'signup' && password !== String(form.get('confirmPassword') ?? '')) {
+            setMessage(passwordMismatch);
+            const input = event.currentTarget.elements.namedItem('confirmPassword');
+            if (input instanceof HTMLElement) input.focus();
+            return;
+        }
+        credentialSubmissionInFlight.current = true;
         setBusy(true); setMessage('');
         try {
             if (mode === 'forgot') {
-                await post('/api/account/password/reset/request', locale, { email });
-                setMessage(es ? 'Si la dirección es válida, el correo ya está en camino.' : 'If the address is eligible, an email is on its way.');
+                const response = await post('/api/account/password/reset/request', locale, { email });
+                announceCredentialResult(response.ok
+                    ? (es ? 'Si la dirección es válida, el correo ya está en camino.' : 'If the address is eligible, an email is on its way.')
+                    : credentialFailure);
                 return;
             }
             const endpoint = mode === 'signup'
@@ -86,13 +131,20 @@ export default function AccountClient({
             });
             const result = await response.json().catch(() => null) as { redirect?: string } | null;
             if (mode === 'signup') {
-                setMessage(es ? 'Revisá tu correo para verificar la cuenta y después ingresá.' : 'Check your email to verify the account, then sign in.');
+                announceCredentialResult(response.ok
+                    ? (es ? 'Revisá tu correo para verificar la cuenta y después ingresá.' : 'Check your email to verify the account, then sign in.')
+                    : (es ? 'No se pudo crear la cuenta. Revisá los datos e intentá nuevamente.' : 'Account could not be created. Check the details and try again.'));
             } else if (response.ok) {
                 window.location.replace(result?.redirect ?? callbackURL);
             } else {
-                setMessage(es ? 'No se pudo ingresar. Revisá los datos e intentá nuevamente.' : 'Sign-in could not be completed. Check the details and try again.');
+                announceCredentialResult(es ? 'No se pudo ingresar. Revisá los datos e intentá nuevamente.' : 'Sign-in could not be completed. Check the details and try again.');
             }
-        } finally { setBusy(false); }
+        } catch {
+            announceCredentialResult(credentialFailure);
+        } finally {
+            credentialSubmissionInFlight.current = false;
+            setBusy(false);
+        }
     }
 
     async function social(provider: 'google' | 'apple') {
@@ -126,9 +178,18 @@ export default function AccountClient({
     async function changePassword(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
+        const newPassword = String(form.get('newPassword') ?? '');
+        if (!accountPasswordLengthValid(newPassword)) {
+            setMessage(passwordLengthError);
+            return;
+        }
+        if (newPassword !== String(form.get('confirmPassword') ?? '')) {
+            setMessage(passwordMismatch);
+            return;
+        }
         const response = await post('/api/account/password/change', locale, {
             currentPassword: String(form.get('currentPassword') ?? ''),
-            newPassword: String(form.get('newPassword') ?? ''),
+            newPassword,
         });
         if (response.ok) window.location.replace('/account');
         else setMessage(es ? 'No se pudo cambiar la contraseña.' : 'Password could not be changed.');
@@ -167,23 +228,53 @@ export default function AccountClient({
     if (!session) return (
         <div className="account-card">
             <div className="account-mode" role="group" aria-label={es ? 'Acción de cuenta' : 'Account action'}>
-                <button type="button" aria-pressed={mode === 'signin'} onClick={() => setMode('signin')}>{es ? 'Ingresar' : 'Sign in'}</button>
-                <button type="button" aria-pressed={mode === 'signup'} onClick={() => setMode('signup')}>{es ? 'Crear cuenta' : 'Create account'}</button>
+                <button type="button" disabled={busy} aria-pressed={mode === 'signin'} onClick={() => setMode('signin')}>{es ? 'Ingresar' : 'Sign in'}</button>
+                <button type="button" disabled={busy} aria-pressed={mode === 'signup'} onClick={() => setMode('signup')}>{es ? 'Crear cuenta' : 'Create account'}</button>
             </div>
             <div className="account-providers">
                 {providers.google && <button disabled={busy} onClick={() => social('google')}>{es ? 'Continuar con Google' : 'Continue with Google'}</button>}
                 {providers.apple && <button disabled={busy} onClick={() => social('apple')}>{es ? 'Continuar con Apple' : 'Continue with Apple'}</button>}
             </div>
-            <form onSubmit={submitCredentials} className="account-form">
+            <form onSubmit={submitCredentials} className="account-form" aria-busy={busy} onInvalid={(event) => {
+                const input = event.target;
+                if (input instanceof HTMLInputElement &&
+                    (input.name === 'password' || input.name === 'confirmPassword') &&
+                    !accountPasswordLengthValid(input.value)) {
+                    event.preventDefault();
+                    setMessage(passwordLengthError);
+                    input.focus();
+                }
+            }}>
                 {mode === 'signup' && <label>{es ? 'Nombre visible' : 'Display name'}<input name="displayName" required minLength={1} maxLength={60} autoComplete="nickname" /></label>}
                 <label>{es ? 'Correo' : 'Email'}<input name="email" type="email" required autoComplete="email" /></label>
-                {mode !== 'forgot' && <label>{es ? 'Contraseña' : 'Password'}<input name="password" type="password" required minLength={12} maxLength={128} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} /></label>}
+                {mode !== 'forgot' && <AccountPasswordField
+                    label={es ? 'Contraseña' : 'Password'}
+                    showLabel={showPassword}
+                    hideLabel={hidePassword}
+                    name="password"
+                    required
+                    minLength={ACCOUNT_PASSWORD_MIN_LENGTH}
+                    maxLength={ACCOUNT_PASSWORD_MAX_LENGTH}
+                    aria-describedby={mode === 'signup' ? 'account-password-policy' : undefined}
+                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                />}
+                {mode === 'signup' && <AccountPasswordField
+                    label={es ? 'Repetir contraseña' : 'Repeat password'}
+                    showLabel={showPassword}
+                    hideLabel={hidePassword}
+                    name="confirmPassword"
+                    required
+                    minLength={ACCOUNT_PASSWORD_MIN_LENGTH}
+                    maxLength={ACCOUNT_PASSWORD_MAX_LENGTH}
+                    autoComplete="new-password"
+                />}
+                {mode === 'signup' && <p id="account-password-policy" className="account-muted">{passwordHint}</p>}
+                <p ref={feedbackRef} className="account-message" role="status" aria-live="polite" tabIndex={-1} hidden={!message}>{message}</p>
                 <button className="account-primary" disabled={busy}>{mode === 'signin' ? (es ? 'Ingresar' : 'Sign in') : mode === 'signup' ? (es ? 'Crear cuenta' : 'Create account') : (es ? 'Enviar correo' : 'Send reset email')}</button>
             </form>
             <button className="account-link" type="button" onClick={() => setMode(mode === 'forgot' ? 'signin' : 'forgot')}>
                 {mode === 'forgot' ? (es ? 'Volver al ingreso' : 'Back to sign in') : (es ? '¿Olvidaste tu contraseña?' : 'Forgot password?')}
             </button>
-            {message && <p className="account-message" role="status">{message}</p>}
         </div>
     );
 
@@ -201,13 +292,15 @@ export default function AccountClient({
             {session.user.accessMethod === 'email' && <section className="account-card">
                 <h2>{es ? 'Seguridad' : 'Security'}</h2>
                 <form onSubmit={changePassword} className="account-form">
-                    <label>{es ? 'Contraseña actual' : 'Current password'}<input name="currentPassword" type="password" required autoComplete="current-password" /></label>
-                    <label>{es ? 'Contraseña nueva' : 'New password'}<input name="newPassword" type="password" required minLength={12} maxLength={128} autoComplete="new-password" /></label>
+                    <AccountPasswordField label={es ? 'Contraseña actual' : 'Current password'} showLabel={showPassword} hideLabel={hidePassword} name="currentPassword" required autoComplete="current-password" />
+                    <AccountPasswordField label={es ? 'Contraseña nueva' : 'New password'} showLabel={showPassword} hideLabel={hidePassword} name="newPassword" required minLength={ACCOUNT_PASSWORD_MIN_LENGTH} maxLength={ACCOUNT_PASSWORD_MAX_LENGTH} aria-describedby="account-new-password-policy" autoComplete="new-password" />
+                    <AccountPasswordField label={es ? 'Repetir contraseña nueva' : 'Repeat new password'} showLabel={showPassword} hideLabel={hidePassword} name="confirmPassword" required minLength={ACCOUNT_PASSWORD_MIN_LENGTH} maxLength={ACCOUNT_PASSWORD_MAX_LENGTH} autoComplete="new-password" />
+                    <p id="account-new-password-policy" className="account-muted">{passwordHint}</p>
                     <button>{es ? 'Cambiar contraseña' : 'Change password'}</button>
                 </form>
                 <form onSubmit={changeEmail} className="account-form">
                     <label>{es ? 'Correo nuevo' : 'New email'}<input name="email" type="email" required autoComplete="email" /></label>
-                    <label>{es ? 'Contraseña actual' : 'Current password'}<input name="password" type="password" required autoComplete="current-password" /></label>
+                    <AccountPasswordField label={es ? 'Contraseña actual' : 'Current password'} showLabel={showPassword} hideLabel={hidePassword} name="password" required autoComplete="current-password" />
                     <button>{es ? 'Cambiar correo' : 'Change email'}</button>
                 </form>
             </section>}
