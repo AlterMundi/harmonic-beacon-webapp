@@ -25,15 +25,15 @@ manifest and visual-review update together.
 
 ## Global navigation
 
-The cross-product header is intentionally not vendored. Listener and Live load
-the canonical web component directly from
-`https://harmonicbeacon.com/assets/hb-global-nav.js`, owned by
-`AlterMundi/harmonicbeacon.com` (introduced in main merge `9fa515f6` and last
-reviewed here at `28ab05d67b3dfe020a28b62c27ba4d2ee8bafe66`; the reviewed
-asset SHA-256 is `3761c4d497024093f0180863247ca39e7009ec1ff3a96bddeb1a833bfdc992bc`).
-The local light-DOM links are an accessible,
-same-destination fallback only; the shared runtime asset owns the visible
-desktop/mobile component so a navigation edit propagates to all three products.
+Listener, Live and Account serve a byte-pinned local snapshot of the canonical
+web component rather than executing JavaScript supplied at runtime by another
+origin. The source is `AlterMundi/harmonicbeacon.com` commit
+`ae3608e3ec603b424efb729373dddd8d3a7f6e93`; the vendored
+`public/assets/hb-global-nav.js` SHA-256 is
+`be7fa241f393ec37b335756408897a47c16e86aaf30eb23a24fb7912a5ebb58f`.
+The local light-DOM markup remains the accessible, same-destination fallback.
+Both implementations keep Account out of the primary destination list and
+expose it from the user-icon menu.
 
 ## Font source and license
 

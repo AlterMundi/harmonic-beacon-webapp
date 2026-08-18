@@ -149,8 +149,13 @@
     .language { min-width:60px; min-height:44px; padding:0 5px; border:0; border-radius:999px; color:#8A7F6B; background:transparent; cursor:pointer; font:500 11px/1 Inter,system-ui,sans-serif; letter-spacing:.1em; }
     .language strong { color:#C9A24E; font-weight:600; }
     .sep { opacity:.42; padding:0 2px; }
-    .account-link { display:block; width:44px; height:44px; border-radius:999px; }
-    .account { display:block; width:44px; height:44px; border:0; border-radius:999px; pointer-events:none; background:transparent; color-scheme:dark; }
+    .account-control { position:relative; width:44px; height:44px; flex:0 0 44px; }
+    .account { position:relative; z-index:1; display:block; width:44px; height:44px; border:0; border-radius:999px; pointer-events:none; background:transparent; color-scheme:dark; }
+    .account-trigger { position:absolute; z-index:2; inset:0; width:44px; height:44px; padding:0; border:0; border-radius:999px; background:transparent; cursor:pointer; }
+    .account-menu { position:absolute; z-index:4; top:calc(100% + 8px); right:0; min-width:164px; padding:6px; border:1px solid rgba(201,162,78,.34); border-radius:12px; background:#16120D; box-shadow:0 18px 48px rgba(0,0,0,.34); }
+    .account-menu[hidden] { display:none; }
+    .account-menu a { display:flex; min-height:44px; align-items:center; padding:10px 12px; border-radius:8px; color:#E9E0D0; font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; }
+    .account-menu a:hover { color:#F4EEE2; background:rgba(201,162,78,.1); }
     .toggle { display:none; width:44px; height:44px; padding:0 10px; border:0; background:transparent; cursor:pointer; }
     .toggle span { display:block; height:1.5px; margin:5px 0; background:#ADA089; transition:transform .25s ease,opacity .2s ease; }
     .toggle[aria-expanded=true] span:nth-child(1) { transform:translateY(6.5px) rotate(45deg); }
@@ -198,6 +203,7 @@
 
     disconnectedCallback() {
       if (this.observer) this.observer.disconnect();
+      if (this.outsideClick) document.removeEventListener('click', this.outsideClick);
     }
 
     render() {
@@ -210,7 +216,8 @@
       var brandHref = localizedHref(MAIN_ORIGIN + '/', language);
       var menuLabel = language === 'es' ? 'Menú' : 'Menu';
       var navLabel = language === 'es' ? 'Navegación principal' : 'Primary navigation';
-      var accountLabel = language === 'es' ? 'Cuenta y perfil de Harmonic Beacon' : 'Harmonic Beacon account and profile';
+      var userMenuLabel = language === 'es' ? 'Menú de usuario' : 'User menu';
+      var accountLabel = language === 'es' ? 'Cuenta' : 'Account';
       this.shadowRoot.innerHTML = '<style>' + style + '</style>' +
         '<header class="nav"><div class="inner">' +
           '<a class="brand" href="' + brandHref + '" aria-label="Harmonic Beacon">' +
@@ -219,9 +226,11 @@
           '<nav aria-label="' + navLabel + '"><ul class="links">' + items + '</ul></nav>' +
           '<div style="display:flex;align-items:center;gap:2px">' +
             '<button class="language" type="button" aria-label="Language / Idioma"><span class="en">EN</span><span class="sep">/</span><span class="es">ES</span></button>' +
-            '<a class="account-link" href="' + accountPageHref(language) + '" aria-label="' + accountLabel + '">' +
+            '<div class="account-control">' +
               '<iframe class="account" src="' + accountSlotHref(language) + '" title="' + accountLabel + '" aria-hidden="true" tabindex="-1" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin"></iframe>' +
-            '</a>' +
+              '<button class="account-trigger" type="button" aria-label="' + userMenuLabel + '" aria-haspopup="menu" aria-controls="hb-account-menu" aria-expanded="false"></button>' +
+              '<div class="account-menu" id="hb-account-menu" role="menu" hidden><a role="menuitem" href="' + accountPageHref(language) + '">' + accountLabel + '</a></div>' +
+            '</div>' +
             '<button class="toggle" type="button" aria-label="' + menuLabel + '" aria-expanded="false"><span></span><span></span><span></span></button>' +
           '</div>' +
         '</div><nav class="mobile" aria-label="' + navLabel + '"><ul>' + items + '</ul></nav></header>';
@@ -235,6 +244,34 @@
         this.render();
         if (location.hostname !== 'harmonicbeacon.com' && location.hostname !== 'www.harmonicbeacon.com') location.reload();
       });
+      var accountTrigger = this.shadowRoot.querySelector('.account-trigger');
+      var accountMenu = this.shadowRoot.querySelector('.account-menu');
+      var accountMenuLink = accountMenu.querySelector('a');
+      var setAccountMenuOpen = function (open) {
+        accountTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        accountMenu.hidden = !open;
+      };
+      accountTrigger.addEventListener('click', function () {
+        setAccountMenuOpen(accountTrigger.getAttribute('aria-expanded') !== 'true');
+      });
+      accountTrigger.addEventListener('keydown', function (event) {
+        if (event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        setAccountMenuOpen(true);
+        accountMenuLink.focus();
+      });
+      [accountTrigger, accountMenuLink].forEach(function (control) {
+        control.addEventListener('keydown', function (event) {
+          if (event.key !== 'Escape') return;
+          setAccountMenuOpen(false);
+          accountTrigger.focus();
+        });
+      });
+      if (this.outsideClick) document.removeEventListener('click', this.outsideClick);
+      this.outsideClick = function (event) {
+        if (event.target !== this) setAccountMenuOpen(false);
+      }.bind(this);
+      document.addEventListener('click', this.outsideClick);
       var toggle = this.shadowRoot.querySelector('.toggle');
       var mobile = this.shadowRoot.querySelector('.mobile');
       toggle.addEventListener('click', function () {

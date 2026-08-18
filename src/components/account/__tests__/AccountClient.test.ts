@@ -112,9 +112,14 @@ describe('Account cross-product logout completion', () => {
         const repeated = screen.getByLabelText('Repeat password');
         fireEvent.change(password, { target: { value: '12345678' } });
         fireEvent.change(repeated, { target: { value: '87654321' } });
-        fireEvent.click(screen.getAllByRole('button', { name: 'Show password' })[0]);
+        const reveal = screen.getAllByRole('button', { name: 'Show password' })[0];
+        expect(reveal).toHaveTextContent('');
+        expect(reveal.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+        fireEvent.click(reveal);
         expect(password).toHaveAttribute('type', 'text');
-        expect(screen.getByRole('button', { name: 'Hide password' })).toHaveAttribute('aria-pressed', 'true');
+        const conceal = screen.getByRole('button', { name: 'Hide password' });
+        expect(conceal).toHaveAttribute('aria-pressed', 'true');
+        expect(conceal).toHaveTextContent('');
         fireEvent.submit(password.closest('form')!);
         expect(fetchMock).not.toHaveBeenCalled();
         expect(screen.getByRole('status')).toHaveTextContent('Passwords do not match.');

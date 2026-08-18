@@ -81,6 +81,22 @@ describe('root document locale boundary', () => {
     });
 
     it.each([
+        ['0', true],
+        ['1', false],
+    ])('enhances Account navigation except inside the isolated avatar slot (%s)', async (slot, expected) => {
+        const incoming = requestHeaders('account-staging.harmonicbeacon.com', 'en-US');
+        incoming.set('x-hb-account-locale', 'en');
+        incoming.set('x-hb-account-nav-slot', slot);
+        mocks.headers.mockResolvedValue(incoming);
+
+        const result = await RootLayout({ children: <main /> });
+        const body = result.props.children;
+        const navigation = body.props.children[0];
+        expect(navigation.props.allowRemoteEnhancement).toBe(expected);
+        expect(navigation.props.accountHref).toBe('https://account-staging.harmonicbeacon.com/account');
+    });
+
+    it.each([
         ['listen.harmonicbeacon.com', '#16120D'],
         ['listen.harmonicbeacon.com:443', '#16120D'],
         ['live.harmonicbeacon.com', '#07120f'],

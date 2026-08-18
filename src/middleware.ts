@@ -136,10 +136,15 @@ export default function middleware(request: NextRequest): NextResponse {
                     : request.cookies.get('hb_locale')?.value === 'es' ? 'es'
                         : request.headers.get('accept-language')?.toLowerCase().startsWith('es') ? 'es' : 'en';
             forwarded.set('x-hb-account-locale', accountLocale);
+            // RootLayout may load the pinned navigation asset on every Account
+            // page except the isolated 44px avatar document itself. Overwrite
+            // this internal marker so a browser-supplied value cannot create or
+            // suppress the cross-origin iframe boundary.
+            forwarded.set('x-hb-account-nav-slot', pathname === '/nav-slot' ? '1' : '0');
             forwarded.set('x-nonce', nonce);
             const csp = pathname === '/nav-slot'
                 ? `default-src 'none'; style-src 'unsafe-inline'; frame-ancestors ${ACCOUNT_FRAME_ANCESTORS}`
-                : `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src https://listen.harmonicbeacon.com https://earlybirds-staging.harmonicbeacon.com https://live.harmonicbeacon.com https://live-staging.harmonicbeacon.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'`;
+                : `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self' https://listen.harmonicbeacon.com https://earlybirds-staging.harmonicbeacon.com https://live.harmonicbeacon.com https://live-staging.harmonicbeacon.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'`;
             forwarded.set('Content-Security-Policy', csp);
             const response = pathname === '/'
                 ? NextResponse.rewrite(new URL('/account', request.url), { request: { headers: forwarded } })
