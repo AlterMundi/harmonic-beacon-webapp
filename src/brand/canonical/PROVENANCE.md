@@ -28,9 +28,9 @@ manifest and visual-review update together.
 Listener, Live and Account serve a byte-pinned local snapshot of the canonical
 web component rather than executing JavaScript supplied at runtime by another
 origin. The source is `AlterMundi/harmonicbeacon.com` commit
-`10de81fd576aa9d65ec8c3861cc38903403a63f0`; the vendored
+`8770e6a844960c90768d08a03f3232a47123cac9`; the vendored
 `public/assets/hb-global-nav.js` SHA-256 is
-`7637edccfc2250615274ff7c6b5464e2532fff0081ab0d2e76ec0413c0097d10`.
+`a96e74bf4ad081769c533861df238b6a6b23d2bdc247530222cfddce67c62e10`.
 The local light-DOM markup remains the accessible, same-destination fallback.
 Both implementations keep Account out of the primary destination list and
 expose it from the user-icon menu. The enhanced navigation renders both the
