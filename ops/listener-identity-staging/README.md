@@ -29,9 +29,10 @@ checks its SHA-256, runs `nginx -t`, reloads only Nginx and restores the prior
 file automatically if validation, reload or edge smoke fails. The template
 sends this hostname to loopback port `13001`; production Listener remains on
 `13000`. Account staging is prepared as confidential client
-`hb-listener-staging`, but `BEACON_LISTENER_ACCOUNT_ENABLED=0` is an invariant
-of this first cutover. Production Account secrets are forbidden in the staging
-environment.
+`hb-listener-staging`. It defaults off; a reviewed second cutover may set
+`BEACON_LISTENER_ACCOUNT_ENABLED=1` only after the staging authority, mail and
+RP secrets pass their independent gates. Production Account secrets are always
+forbidden in the staging environment.
 
 The canonical membership authority remains an external service, but this stack
 does not reuse its production Listener credential. Before Free/membership
@@ -66,8 +67,9 @@ sudo install -o root -g root -m 0600 \
 
 Set image tag and Git SHA to the same lowercase 40-character commit, build time
 to UTC ISO-8601 and schema version to the newest reviewed migration. Listener
-itself is enabled for public staging; leave Account, Free For All, payments,
-withdrawal and test access off. Mona intentionally has no host Node runtime.
+itself is enabled for public staging; leave Account off for the first cutover,
+and always leave Free For All, payments, withdrawal and test access off. Mona
+intentionally has no host Node runtime.
 The lifecycle builds the exact reviewed image, verifies its embedded SHA, and
 uses that image in a networkless/read-only container to validate all three
 root-owned files before it starts PostgreSQL or changes runtime state.
@@ -111,12 +113,13 @@ sudo scripts/listener-identity-staging/edge-smoke.sh \
 ```
 
 The public response must report the exact SHA. Readiness must report the
-dedicated database and Listener runtime healthy and must not report Account
-enabled. The edge smoke proves the three exact Account routes reach the app's
-Account-off behavior, an unknown suffix returns 404, and synthetic callback
-values do not appear in Nginx access logs. Google, Account, payments and
-synthetic login are separate supervised acceptance gates; never turn them on
-merely to make this infrastructure smoke pass.
+dedicated database and Listener runtime healthy. With Account off it must omit
+the Account check; with Account on it must report `listenerAccount=ok`. The edge
+smoke verifies either the fail-closed off behavior or an exact redirect to the
+staging issuer, while unknown suffixes remain 404 and synthetic callback values
+never appear in Nginx access logs. Google, Account, payments and synthetic
+login are separate supervised acceptance gates; never turn them on merely to
+make this infrastructure smoke pass.
 
 ## Rollback
 

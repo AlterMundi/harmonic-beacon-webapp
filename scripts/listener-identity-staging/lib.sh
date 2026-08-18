@@ -46,6 +46,17 @@ listener_staging_compose() {
     -f "$listener_staging_compose" "$@"
 }
 
+listener_staging_account_enabled() {
+  awk -F= '
+    $1 == "BEACON_LISTENER_ACCOUNT_ENABLED" { count += 1; value = $2 }
+    END {
+      if (count != 1 || (value != "0" && value != "1")) exit 1
+      print value
+    }
+  ' "$LISTENER_IDENTITY_STAGING_APP_ENV_FILE" ||
+    listener_staging_fail 'Account enablement must be one exact 0/1 assignment in the protected app env'
+}
+
 listener_staging_assert_checkout() {
   test "$(git -C "$listener_staging_root" rev-parse HEAD)" = "$LISTENER_IDENTITY_STAGING_GIT_SHA" ||
     listener_staging_fail 'release checkout does not match the reviewed SHA'

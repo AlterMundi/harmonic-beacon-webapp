@@ -46,11 +46,27 @@ test('shared preview stream secret accepts only the deployed random synthetic fo
   );
 });
 
-test('validator rejects production, shared database and unsafe Account cutovers', () => {
+test('validator supports a reviewed Account staging cutover and rejects unsafe modes', () => {
+  const withClientSecret = mutated(
+    APP,
+    'BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING=',
+    'BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING=replace-staging-account-client-secret-at-least-32-characters',
+  );
+  const withAccountSecrets = mutated(
+    withClientSecret,
+    'BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING=',
+    'BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING=replace-staging-account-state-secret-at-least-32-characters',
+  );
+  const accountEnabled = mutated(
+    withAccountSecrets,
+    'BEACON_LISTENER_ACCOUNT_ENABLED=0',
+    'BEACON_LISTENER_ACCOUNT_ENABLED=1',
+  );
+  assert.doesNotThrow(() => validateFiles(DEPLOY, accountEnabled, DATABASE, true));
   const cases = [
     [DEPLOY, 'LISTENER_IDENTITY_STAGING_APP_PORT=13001', 'LISTENER_IDENTITY_STAGING_APP_PORT=13000', /must be 13001/],
     [APP, '@listener-identity-staging-postgres:', '@earlybirds-preview-postgres:', /dedicated staging PostgreSQL/],
-    [APP, 'BEACON_LISTENER_ACCOUNT_ENABLED=0', 'BEACON_LISTENER_ACCOUNT_ENABLED=1', /must be 0/],
+    [APP, 'BEACON_LISTENER_ACCOUNT_ENABLED=0', 'BEACON_LISTENER_ACCOUNT_ENABLED=2', /must be 0 or 1/],
     [APP, 'BEACON_LISTENER_FREE_FOR_ALL=0', 'BEACON_LISTENER_FREE_FOR_ALL=1', /must be 0/],
     [APP, 'BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED=0', 'BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED=1', /must be 0/],
   ];
@@ -69,6 +85,16 @@ test('validator rejects production, shared database and unsafe Account cutovers'
     'BEACON_LISTENER_ACCOUNT_CLIENT_SECRET=forbidden-production-secret\nBEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING=',
   );
   assert.throws(() => validateFiles(DEPLOY, withProductionSecret, DATABASE, true), /production secret must be absent/);
+
+  const enabledWithoutSecrets = mutated(
+    APP,
+    'BEACON_LISTENER_ACCOUNT_ENABLED=0',
+    'BEACON_LISTENER_ACCOUNT_ENABLED=1',
+  );
+  assert.throws(
+    () => validateFiles(DEPLOY, enabledWithoutSecrets, DATABASE, true),
+    /secrets are required when Account is enabled/,
+  );
 });
 
 test('compose has a private database plane and exact immutable application boundary', () => {
@@ -144,10 +170,14 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(lib, /database network exists outside the reviewed project/);
   assert.match(lib, /PostgreSQL volume exists outside the reviewed project/);
   assert.match(smoke, /listener-identity-staging-migrate/);
+  assert.match(smoke, /listener_staging_account_enabled/);
+  assert.match(smoke, /\.checks\.listenerAccount == "ok"/);
   assert.match(smoke, /has\("listenerAccount"\) \| not/);
   assert.match(smoke, /\.checks\.listenerRuntime == "ok"/);
   assert.match(smoke, /jq --exit-status/);
   assert.match(edge, /jq --exit-status/);
+  assert.match(edge, /account-staging\\\.harmonicbeacon\\\.com/);
+  assert.match(edge, /Account-on front-channel logout accepted an unsigned request/);
   assert.doesNotMatch(`${smoke}\n${edge}`, /\bnode\b/);
   assert.match(start, /listener_staging_install_edge/);
   assert.match(start, /edge-smoke\.sh/);

@@ -15,6 +15,7 @@ curl_edge() {
 }
 
 health=$(curl_edge --fail --max-time 5 "$origin/api/health")
+account_enabled=$(listener_staging_account_enabled)
 printf '%s\n' "$health" | jq --exit-status \
   --arg sha "$LISTENER_IDENTITY_STAGING_GIT_SHA" \
   '.status == "ok" and .gitSha == $sha' >/dev/null ||
@@ -27,20 +28,32 @@ trap 'rm -f "$headers" "$body"' EXIT HUP INT TERM
 
 login_code=$(curl_edge --max-time 5 --dump-header "$headers" --output "$body" \
   --write-out '%{http_code}' "$origin/api/account/login")
-test "$login_code" = 503 || listener_staging_fail 'Account-off login did not fail closed in the app'
+if test "$account_enabled" = 1; then
+  test "$login_code" = 302 || listener_staging_fail 'Account-on login did not redirect to the staging issuer'
+  grep -Eiq '^location: https://account-staging\.harmonicbeacon\.com/api/account/auth/oauth2/authorize\?' "$headers" ||
+    listener_staging_fail 'Account-on login escaped the exact staging issuer authorization endpoint'
+  grep -Eiq '^set-cookie: __Host-hb_listener_account_attempt=.*Path=/;.*HttpOnly;.*Secure;.*SameSite=Lax' "$headers" ||
+    listener_staging_fail 'Account-on login lost its host-only OAuth attempt cookie contract'
+else
+  test "$login_code" = 503 || listener_staging_fail 'Account-off login did not fail closed in the app'
+fi
 grep -Eiq '^cache-control:.*no-store' "$headers" || listener_staging_fail 'Account login lost no-store'
 grep -Eiq '^referrer-policy: no-referrer' "$headers" || listener_staging_fail 'Account login lost no-referrer'
 
 callback_code=$(curl_edge --max-time 5 --dump-header "$headers" --output "$body" \
   --write-out '%{http_code}' "$origin/api/account/callback?code=${sentinel}-code&state=${sentinel}-state")
-test "$callback_code" = 302 || listener_staging_fail 'Account-off callback did not return its bounded error redirect'
-grep -Eiq '^location: /\?authError=1' "$headers" || listener_staging_fail 'Account-off callback redirect is not bounded'
+test "$callback_code" = 302 || listener_staging_fail 'malformed Account callback did not return its bounded error redirect'
+grep -Eiq '^location: /\?authError=1' "$headers" || listener_staging_fail 'malformed Account callback redirect is not bounded'
 grep -Eiq '^cache-control:.*no-store' "$headers" || listener_staging_fail 'Account callback lost no-store'
 grep -Eiq '^referrer-policy: no-referrer' "$headers" || listener_staging_fail 'Account callback lost no-referrer'
 
 frontchannel_code=$(curl_edge --max-time 5 --dump-header "$headers" --output "$body" \
   --write-out '%{http_code}' "$origin/api/account/frontchannel-logout")
-test "$frontchannel_code" = 500 || listener_staging_fail 'Account-off front-channel logout did not fail closed in the app'
+if test "$account_enabled" = 1; then
+  test "$frontchannel_code" = 400 || listener_staging_fail 'Account-on front-channel logout accepted an unsigned request'
+else
+  test "$frontchannel_code" = 500 || listener_staging_fail 'Account-off front-channel logout did not fail closed in the app'
+fi
 grep -Eiq '^cache-control:.*no-store' "$headers" || listener_staging_fail 'Account front-channel logout lost no-store'
 
 for route in login callback frontchannel-logout; do
@@ -56,4 +69,4 @@ if find /var/log/nginx -maxdepth 1 -type f -name '*access*.log' \
   -exec grep -F "$sentinel" {} + | grep -q .; then
   listener_staging_fail 'Account callback state leaked into an access log'
 fi
-echo 'Listener identity staging edge smoke passed: exact vhost, Account-off proxy boundary and log redaction.'
+echo "Listener identity staging edge smoke passed: exact vhost, Account mode $account_enabled and log redaction."

@@ -127,7 +127,10 @@ function validateApplication(env, databasePassword, allowPlaceholders) {
   exact(env, 'BEACON_LISTENER_STAGING_TEAM_ENTRY_ENABLED', '0');
   exact(env, 'BEACON_LISTENER_STAGING_TEAM_ENTRY_HOSTS', 'earlybirds-staging.harmonicbeacon.com');
 
-  exact(env, 'BEACON_LISTENER_ACCOUNT_ENABLED', '0');
+  const accountEnabled = required(env, 'BEACON_LISTENER_ACCOUNT_ENABLED');
+  if (!['0', '1'].includes(accountEnabled)) {
+    throw new Error('BEACON_LISTENER_ACCOUNT_ENABLED must be 0 or 1');
+  }
   exact(env, 'BEACON_LISTENER_ACCOUNT_ENVIRONMENT', 'staging');
   for (const forbidden of [
     'BEACON_LISTENER_ACCOUNT_CLIENT_SECRET',
@@ -141,6 +144,9 @@ function validateApplication(env, databasePassword, allowPlaceholders) {
     'BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING',
     'staging Account RP',
   );
+  if (accountEnabled === '1' && account.some((value) => !value)) {
+    throw new Error('staging Account RP secrets are required when Account is enabled');
+  }
   if (account.some((value) => value && value.length < 32) || (account[0] && account[0] === account[1])) {
     throw new Error('staging Account RP secrets must be distinct and at least 32 characters');
   }
