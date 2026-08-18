@@ -26,6 +26,30 @@ headers=$(mktemp)
 body=$(mktemp)
 trap 'rm -f "$headers" "$body"' EXIT HUP INT TERM
 
+nav_code=$(curl_edge --max-time 5 --dump-header "$headers" --output "$body" \
+  --write-out '%{http_code}' "$origin/assets/hb-global-nav.js")
+test "$nav_code" = 200 || listener_staging_fail 'canonical navigation asset is not available at the exact edge path'
+expected_nav_sha=$(docker exec listener-identity-staging-app \
+  sha256sum /app/public/assets/hb-global-nav.js | awk '{print $1}')
+test "$(sha256sum "$body" | awk '{print $1}')" = "$expected_nav_sha" ||
+  listener_staging_fail 'public navigation asset differs from the verified app image'
+grep -Eiq '^cache-control: public, max-age=300' "$headers" ||
+  listener_staging_fail 'navigation asset lost bounded public caching'
+grep -Eiq '^x-content-type-options: nosniff' "$headers" ||
+  listener_staging_fail 'navigation asset lost nosniff'
+grep -Eiq '^referrer-policy: no-referrer' "$headers" ||
+  listener_staging_fail 'navigation asset lost no-referrer'
+if grep -Fq '<iframe' "$body"; then
+  listener_staging_fail 'navigation asset unexpectedly embeds an iframe'
+fi
+if grep -Fq '/favicon.svg' "$body"; then
+  listener_staging_fail 'navigation asset unexpectedly fetches the remote favicon'
+fi
+for asset_path in /assets/other.js /assets/hb-global-nav.js/extra; do
+  code=$(curl_edge --max-time 5 --output /dev/null --write-out '%{http_code}' "$origin$asset_path")
+  test "$code" = 404 || listener_staging_fail "unexpected asset path escaped deny-default: $asset_path"
+done
+
 login_code=$(curl_edge --max-time 5 --dump-header "$headers" --output "$body" \
   --write-out '%{http_code}' "$origin/api/account/login")
 if test "$account_enabled" = 1; then
