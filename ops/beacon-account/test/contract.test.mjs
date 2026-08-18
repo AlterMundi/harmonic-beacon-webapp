@@ -79,6 +79,7 @@ test('compose exposes only fixed loopback ports and keeps the DB external', () =
 test('lifecycle verifies immutable provenance and does not downgrade schemas', () => {
   const start = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/start.sh'), 'utf8');
   const lib = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/lib.sh'), 'utf8');
+  const smoke = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/health-smoke.sh'), 'utf8');
   assert.match(start, /git -C "\$root" rev-parse HEAD/);
   assert.match(start, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
   assert.match(start, /account_compose up -d "account-\$environment"/);
@@ -91,7 +92,13 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(lib, /docker network inspect "\$network"/);
   assert.match(lib, /must be an exact internal bridge/);
   assert.match(lib, /pg_dump --format=custom/);
+  assert.match(lib, /openssl enc -aes-256-cbc -salt -pbkdf2/);
+  assert.match(lib, /openssl enc -d -aes-256-cbc/);
+  assert.doesNotMatch(lib, /> "\$backup_dir\/\$backup_name"\s*$/m);
   assert.match(lib, /database was not downgraded|account_restore_previous_runtime/);
+  assert.match(smoke, /ready\.status !== 'ok'/);
+  assert.match(smoke, /discovery\.issuer !== issuer/);
+  assert.match(smoke, /jwks\.keys\.length < 1/);
   const migrationGuard = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/check-migrations.mjs'), 'utf8');
   assert.match(migrationGuard, /pending migrations differ from the reviewed Account-only list/);
   assert.match(migrationGuard, /unresolved migration/);
