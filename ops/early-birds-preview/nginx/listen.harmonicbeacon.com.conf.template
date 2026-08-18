@@ -134,6 +134,49 @@ server {
         proxy_read_timeout 5s;
     }
 
+    # Exact Account RP browser endpoints. No Account authority prefix or
+    # wildcard is exposed on Listener.
+    location = /api/account/login {
+        access_log off;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host listen.harmonicbeacon.com;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host listen.harmonicbeacon.com;
+    }
+
+    location = /api/account/callback {
+        access_log off;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host listen.harmonicbeacon.com;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host listen.harmonicbeacon.com;
+    }
+
+    location = /api/account/frontchannel-logout {
+        access_log off;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        proxy_pass http://127.0.0.1:13000;
+        proxy_http_version 1.1;
+        proxy_set_header Host listen.harmonicbeacon.com;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host listen.harmonicbeacon.com;
+    }
+
     # Public, coarse and privacy-bounded Listener presence. The application
     # returns only qualitative macro-region bands and caches the response.
     location = /api/listener/presence {

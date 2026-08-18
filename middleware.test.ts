@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { SESSION_COOKIE_NAME } from './src/lib/session-auth';
@@ -44,6 +44,104 @@ function location(response: NextResponse): URL {
 }
 
 describe('middleware', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    describe('dedicated Account runtime boundary', () => {
+        function accountRequest(pathname: string, hostname = 'account.harmonicbeacon.com') {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '1');
+            vi.stubEnv('BEACON_ACCOUNT_BASE_URL', 'https://account.harmonicbeacon.com');
+            return middleware(request(pathname, undefined, hostname));
+        }
+
+        it.each([
+            '/', '/account', '/verify-email', '/reset-password', '/nav-slot',
+            '/.well-known/openid-configuration', '/api/account/health/ready',
+            '/_next/static/chunk.js',
+        ])('allows only the exact Account route inventory: %s', (pathname) => {
+            expect(accountRequest(pathname).status).toBe(200);
+        });
+
+        it.each([
+            '/listener', '/early-birds', '/session/active', '/ops',
+            '/api/early-birds/stream', '/api/livekit/token',
+            '/api/founding-listeners/checkout', '/api/auth/ticket',
+        ])('404s product/event/media route %s in the Account container', (pathname) => {
+            expect(accountRequest(pathname).status).toBe(404);
+        });
+
+        it.each(['account-production', '127.0.0.1', 'account-staging.harmonicbeacon.com'])
+            ('404s every direct or wrong-environment Host: %s', (hostname) => {
+                expect(accountRequest('/api/account/health/ready', hostname).status).toBe(404);
+            });
+
+        it('trusts the exact HTTP Host behind the loopback proxy, not the internal request URL', () => {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '1');
+            vi.stubEnv('BEACON_ACCOUNT_BASE_URL', 'https://account.harmonicbeacon.com');
+            const proxied = new NextRequest('http://127.0.0.1:3000/api/account/health/ready', {
+                headers: { host: 'account.harmonicbeacon.com' },
+            });
+            expect(middleware(proxied).status).toBe(200);
+            const direct = new NextRequest('http://127.0.0.1:3000/api/account/health/ready', {
+                headers: {
+                    host: 'account-production:3000',
+                    'x-forwarded-host': 'account.harmonicbeacon.com',
+                },
+            });
+            expect(middleware(direct).status).toBe(404);
+        });
+
+        it('does not expose authority UI/actions from a product runtime', () => {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '0');
+            for (const pathname of ['/account', '/nav-slot', '/.well-known/openid-configuration',
+                '/api/account/profile', '/api/account/session-status']) {
+                expect(middleware(request(pathname, undefined, 'listen.harmonicbeacon.com')).status)
+                    .toBe(404);
+            }
+            for (const pathname of ['/api/account/login', '/api/account/callback',
+                '/api/account/frontchannel-logout']) {
+                expect(middleware(request(pathname, undefined, 'listen.harmonicbeacon.com')).status)
+                    .toBe(200);
+            }
+        });
+
+        it.each([
+            [{}, 403],
+            [{ origin: 'https://listen.harmonicbeacon.com', 'sec-fetch-site': 'same-site', 'content-type': 'application/json' }, 403],
+            [{ origin: 'https://account.harmonicbeacon.com', 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' }, 200],
+        ])('enforces exact same-origin JSON on Account browser mutations', (headers, expected) => {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '1');
+            vi.stubEnv('BEACON_ACCOUNT_BASE_URL', 'https://account.harmonicbeacon.com');
+            const mutation = new NextRequest('https://account.harmonicbeacon.com/api/account/profile', {
+                method: 'POST', headers,
+            });
+            expect(middleware(mutation).status).toBe(expected);
+        });
+
+        it('uses the canonical Account origin for proxied same-origin mutations', () => {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '1');
+            vi.stubEnv('BEACON_ACCOUNT_BASE_URL', 'https://account.harmonicbeacon.com');
+            const mutation = new NextRequest('http://127.0.0.1:3000/api/account/profile', {
+                method: 'POST',
+                headers: {
+                    host: 'account.harmonicbeacon.com',
+                    origin: 'https://account.harmonicbeacon.com',
+                    'sec-fetch-site': 'same-origin',
+                    'content-type': 'application/json',
+                },
+            });
+            expect(middleware(mutation).status).toBe(200);
+        });
+
+        it('forwards one allowlisted explicit Account locale to the document boundary', () => {
+            vi.stubEnv('BEACON_ACCOUNT_RUNTIME', '1');
+            vi.stubEnv('BEACON_ACCOUNT_BASE_URL', 'https://account.harmonicbeacon.com');
+            const response = middleware(new NextRequest(
+                'https://account.harmonicbeacon.com/account?lang=en',
+                { headers: { 'accept-language': 'es-AR,es;q=0.9' } },
+            ));
+            expect(response.headers.get('x-middleware-request-x-hb-account-locale')).toBe('en');
+        });
+    });
     describe('EarlyBird invitation URL scrubbing', () => {
         it.each([
             ['/listener', 'invite'],
@@ -254,15 +352,8 @@ describe('middleware', () => {
     });
 
     describe('matcher', () => {
-        it('runs only on invitation entry and the two protected surfaces', () => {
-            expect(config.matcher).toEqual([
-                '/listener',
-                '/listener/redeem',
-                '/early-birds',
-                '/early-birds/redeem',
-                '/session/:path*',
-                '/ops/:path*',
-            ]);
+        it('runs on the full host so the Account container can deny by default', () => {
+            expect(config.matcher).toBe('/:path*');
         });
     });
 });

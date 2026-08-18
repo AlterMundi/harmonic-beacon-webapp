@@ -1,16 +1,5 @@
 'use client';
 
-import { createAuthClient } from 'better-auth/react';
-import { magicLinkClient } from 'better-auth/client/plugins';
-
-import { EARLY_BIRD_AUTH_BASE_PATH } from './auth-contract';
-import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
-
-export const earlyBirdAuthClient = createAuthClient({
-    basePath: EARLY_BIRD_AUTH_BASE_PATH,
-    plugins: [magicLinkClient()],
-});
-
 export const LISTENER_OAUTH_RECOVERY_MARKER = 'hb.listener.oauth-attempt.v1';
 const OAUTH_ATTEMPT_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_ATTEMPT_CLOCK_SKEW_MS = 60 * 1000;
@@ -64,14 +53,21 @@ export function consumeListenerOAuthAttempt(now = Date.now()): boolean {
 /** Revoke the current Listener session and discard only failed OAuth state. */
 export async function recoverListenerIdentity(): Promise<boolean> {
     try {
-        const response = await fetch(LISTENER_NAMESPACE.canonical.api.authRecovery, {
-            method: 'POST',
-            credentials: 'same-origin',
-            cache: 'no-store',
-            headers: { 'content-type': 'application/json' },
-            body: '{}',
+        const response = await fetch('/api/listener/auth/recover', {
+            method: 'POST', credentials: 'same-origin', cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mode: 'current',
+                locale: document.documentElement.lang === 'es' ? 'es' : 'en',
+            }),
         });
-        return response.ok;
+        const result = await response.json().catch(() => null) as { url?: unknown } | null;
+        if (!response.ok || typeof result?.url !== 'string') return false;
+        const target = new URL(result.url);
+        if (!['https://account.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com']
+            .includes(target.origin) || target.pathname !== '/account/logout') return false;
+        window.location.assign(target.toString());
+        return true;
     } catch {
         return false;
     }

@@ -9,7 +9,6 @@ import {
 } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy, earlyBirdHomeCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
-import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import BeaconField from './BeaconField';
 import FreeQuotaStatus from './FreeQuotaStatus';
@@ -57,11 +56,7 @@ export default function EarlyBirdHome({
 
     async function signOut() {
         setSignOutError(false);
-        if (await recoverListenerIdentity()) {
-            window.location.replace(LISTENER_NAMESPACE.canonical.home);
-            return;
-        }
-        setSignOutError(true);
+        if (!await recoverListenerIdentity()) setSignOutError(true);
     }
 
     return (

@@ -22,7 +22,7 @@ jobs:
       - run: npm ci
       - name: Reject high-severity production dependency regressions
         run: |
-          npm audit --omit=dev --audit-level=high
+          npm run audit:production
           npm audit --omit=dev --prefix services/tapestry --audit-level=high
           npm audit --omit=dev --prefix services/playlist-bot --audit-level=high
       - run: npm run lint

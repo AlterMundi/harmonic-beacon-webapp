@@ -3,16 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
-import {
-    clearListenerOAuthAttempt,
-    consumeListenerOAuthAttempt,
-    earlyBirdAuthClient,
-    markListenerOAuthAttempt,
-    recoverListenerIdentity,
-} from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
+import {
+    consumeListenerOAuthAttempt,
+    markListenerOAuthAttempt,
+    recoverListenerIdentity,
+} from '@/lib/early-birds/auth-client';
 
 import BeaconField from './BeaconField';
 import FreeQuotaStatus from './FreeQuotaStatus';
@@ -29,8 +27,6 @@ type Props = {
     serviceUnavailable: 'identity' | 'access' | null;
     invitationAvailable: boolean;
     authError: boolean;
-    providers: { google: boolean; apple: boolean };
-    emailMagicLinkAvailable: boolean;
     syntheticTeamEntryAvailable: boolean;
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
     membership: ListenerMembershipPresentation;
@@ -43,96 +39,35 @@ type Props = {
 export default function EarlyBirdLanding(props: Props) {
     const { locale } = useLocale();
     const copy = earlyBirdCopy[locale];
-    const [busy, setBusy] = useState<'google' | 'apple' | 'email' | 'recovery' | null>(null);
+    const [busy, setBusy] = useState<'recovery' | null>(null);
     const [error, setError] = useState(false);
-    const [email, setEmail] = useState('');
-    const [emailRequested, setEmailRequested] = useState(false);
-    const automaticRecoveryStarted = useRef(false);
+    const recoveryStarted = useRef(false);
     const membership = listenerMembershipPresentationCopy(copy, props.membership);
     const callbackURL = props.invitationAvailable
         ? LISTENER_NAMESPACE.canonical.redeem
         : LISTENER_NAMESPACE.canonical.home;
 
-    async function signIn(provider: 'google' | 'apple') {
-        if (busy || !props.providers[provider]) return;
-        setBusy(provider);
-        setError(false);
-        markListenerOAuthAttempt();
-        try {
-            const result = await earlyBirdAuthClient.signIn.social({
-                provider,
-                callbackURL,
-                errorCallbackURL: LISTENER_NAMESPACE.canonical.authError,
-                requestSignUp: true,
-            });
-            if (!result.error) return;
-        } catch {}
-        clearListenerOAuthAttempt();
-        setBusy(null);
-        setError(true);
-    }
-
     async function recoverIdentity() {
         if (busy) return;
         setBusy('recovery');
         setError(false);
-        if (await recoverListenerIdentity()) {
-            clearListenerOAuthAttempt();
-            window.location.replace(LISTENER_NAMESPACE.canonical.home);
-            return;
-        }
-        setBusy(null);
-        setError(true);
-    }
-
-    useEffect(() => {
-        if (!props.authError || automaticRecoveryStarted.current) return;
-        automaticRecoveryStarted.current = true;
-        if (!consumeListenerOAuthAttempt()) return;
-
-        setBusy('recovery');
-        setError(false);
-        void recoverListenerIdentity().then((recovered) => {
-            if (recovered) {
-                window.location.replace(LISTENER_NAMESPACE.canonical.home);
-                return;
-            }
+        if (!await recoverListenerIdentity()) {
             setBusy(null);
             setError(true);
-        });
-    }, [props.authError]);
-
-    useEffect(() => {
-        if (!props.authError) clearListenerOAuthAttempt();
-    }, [props.authError]);
+        }
+    }
 
     async function signOut() {
         await recoverIdentity();
     }
 
-    async function requestMagicLink(event: React.FormEvent<HTMLFormElement>) {
-        event.preventDefault();
-        if (busy || !props.emailMagicLinkAvailable) return;
-        setBusy('email');
-        setError(false);
-        try {
-            await earlyBirdAuthClient.signIn.magicLink({
-                email,
-                callbackURL,
-                errorCallbackURL: LISTENER_NAMESPACE.canonical.authError,
-                metadata: { locale },
-            });
-            // The same response is intentionally shown for unknown accounts,
-            // throttled requests and provider delivery uncertainty.
-            setEmailRequested(true);
-            setEmail('');
-        } catch {
-            setEmailRequested(true);
-            setEmail('');
-        } finally {
-            setBusy(null);
-        }
-    }
+    useEffect(() => {
+        if (!props.authError || recoveryStarted.current || !consumeListenerOAuthAttempt()) return;
+        recoveryStarted.current = true;
+        void recoverIdentity();
+    // Recovery is intentionally a one-shot reaction to the initial callback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [props.authError]);
 
     return (
         <main className="listener-shell listener-shell--public">
@@ -239,55 +174,13 @@ export default function EarlyBirdLanding(props: Props) {
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {(['google', 'apple'] as const).filter((provider) => props.providers[provider]).map((provider) => (
-                                    <button
-                                        key={provider}
-                                        type="button"
-                                        onClick={() => signIn(provider)}
-                                        disabled={busy !== null}
-                                        className="listener-button listener-button--secondary w-full"
-                                    >
-                                        {busy === provider
-                                            ? copy.signingIn
-                                            : provider === 'google' ? copy.signInGoogle : copy.signInApple}
-                                    </button>
-                                ))}
-                                {props.emailMagicLinkAvailable && (
-                                    <div className="listener-email-access">
-                                        {(props.providers.google || props.providers.apple) && (
-                                            <p className="listener-email-access__divider">
-                                                <span>{copy.magicLinkDivider}</span>
-                                            </p>
-                                        )}
-                                        {emailRequested ? (
-                                            <p role="status" className="listener-email-access__status">
-                                                {copy.magicLinkSent}
-                                            </p>
-                                        ) : (
-                                            <form onSubmit={requestMagicLink} className="listener-email-access__form">
-                                                <label htmlFor="listener-email">{copy.magicLinkEmail}</label>
-                                                <input
-                                                    id="listener-email"
-                                                    name="email"
-                                                    type="email"
-                                                    inputMode="email"
-                                                    autoComplete="email"
-                                                    required
-                                                    value={email}
-                                                    onChange={(event) => setEmail(event.target.value)}
-                                                    placeholder={copy.magicLinkPlaceholder}
-                                                />
-                                                <button
-                                                    type="submit"
-                                                    disabled={busy !== null}
-                                                    className="listener-button listener-button--secondary w-full"
-                                                >
-                                                    {busy === 'email' ? copy.magicLinkSending : copy.magicLinkSend}
-                                                </button>
-                                            </form>
-                                        )}
-                                    </div>
-                                )}
+                                <a
+                                    href="/api/account/login"
+                                    onClick={() => markListenerOAuthAttempt()}
+                                    className="listener-button listener-button--secondary w-full"
+                                >
+                                    {locale === 'es' ? 'Ingresar o crear una cuenta' : 'Sign in or create an account'}
+                                </a>
                                 {props.syntheticTeamEntryAvailable && (
                                     <SyntheticTeamEntryForm
                                         authOnly={props.invitationAvailable}

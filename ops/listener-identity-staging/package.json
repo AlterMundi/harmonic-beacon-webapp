@@ -1,0 +1,10 @@
+{
+  "name": "harmonic-beacon-listener-identity-staging",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check validate.mjs && sh -n ../../scripts/listener-identity-staging/lib.sh ../../scripts/listener-identity-staging/start.sh ../../scripts/listener-identity-staging/health-smoke.sh ../../scripts/listener-identity-staging/edge-smoke.sh ../../scripts/listener-identity-staging/rollback.sh",
+    "test": "node --test test/*.test.mjs",
+    "validate:example": "node validate.mjs --allow-placeholders deploy.env.example app.env.example database.env.example"
+  }
+}

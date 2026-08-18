@@ -1,104 +1,63 @@
-import type { NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 
-import {
-    EARLY_BIRD_COOKIE_PREFIX,
-    EARLY_BIRD_SESSION_COOKIE,
-    LISTENER_SESSION_COOKIE,
-    currentEarlyBirdSession,
-} from '@/lib/early-birds/auth';
 import { prisma } from '@/lib/db';
-import { listenerRuntimeTrustedOrigins } from '@/lib/listener/runtime-env';
+import { signAccountLogoutInitiation } from '@/lib/account/frontchannel-token';
+import {
+    listenerAccountCookie,
+    listenerAccountRPConfig,
+    readListenerAccountCookie,
+} from '@/lib/listener/account-rp';
+import { isCanonicalListenerHost, isListenerStagingHost } from '@/lib/listener/public-discovery';
+import { digestSessionToken } from '@/lib/session-auth';
 
-export const dynamic = 'force-dynamic';
-
-const RESPONSE_HEADERS = {
-    'Cache-Control': 'private, no-store',
-    'Referrer-Policy': 'no-referrer',
-};
-
-function exactTrustedOrigin(request: NextRequest): boolean {
-    const origin = request.headers.get('origin');
-    const host = request.headers.get('host')?.trim().toLowerCase();
-    const protocol = request.headers.get('x-forwarded-proto')?.trim().toLowerCase()
-        ?? request.nextUrl.protocol.replace(':', '');
-    if (!origin || !host || protocol !== 'https') return false;
-    const expected = `https://${host}`;
-    if (origin !== expected) return false;
-    try {
-        const configured = listenerRuntimeTrustedOrigins();
-        const allowed = configured.length > 0 ? configured : [expected];
-        return allowed.includes(origin);
-    } catch {
-        return false;
-    }
-}
-
-function recoveryCookieNames(): string[] {
-    return [...new Set([
-        `${EARLY_BIRD_COOKIE_PREFIX}.state`,
-        `__Secure-${EARLY_BIRD_COOKIE_PREFIX}.state`,
-        EARLY_BIRD_SESSION_COOKIE,
-        `__Secure-${EARLY_BIRD_SESSION_COOKIE}`,
-        LISTENER_SESSION_COOKIE,
-        `__Secure-${LISTENER_SESSION_COOKIE}`,
-    ])];
-}
-
-function clearCookie(name: string): string {
-    return [
-        `${name}=`,
-        'Max-Age=0',
-        'Path=/',
-        'HttpOnly',
-        'SameSite=Lax',
-        ...(name.startsWith('__Secure-') ? ['Secure'] : []),
-    ].join('; ');
-}
-
-/**
- * Explicit recovery from a failed OAuth callback. No query value is accepted,
- * reflected or logged. A valid current session is resolved through Better Auth
- * and revoked in the durable session table; ambiguous/stale credentials are
- * only removed from this browser.
- */
 export async function POST(request: NextRequest): Promise<Response> {
-    if (!exactTrustedOrigin(request)) {
-        return Response.json({ error: 'Invalid request origin.' }, {
-            status: 403,
-            headers: RESPONSE_HEADERS,
+    const headers = new Headers(request.headers);
+    const listenerHost = isCanonicalListenerHost(headers) || isListenerStagingHost(headers);
+    if (!listenerHost || request.headers.get('origin') !== request.nextUrl.origin ||
+        request.headers.get('sec-fetch-site') !== 'same-origin' ||
+        request.headers.get('content-type') !== 'application/json') {
+        return new Response(null, { status: 403, headers: { 'Cache-Control': 'private, no-store' } });
+    }
+    const body = await request.json().catch(() => null) as { mode?: unknown; locale?: unknown } | null;
+    const mode = body?.mode === 'all' ? 'all' as const : 'current' as const;
+    const locale = body?.locale === 'es' ? 'es' : 'en';
+    const raw = readListenerAccountCookie(request.headers);
+    const config = listenerAccountRPConfig(headers);
+    const local = raw ? await prisma.listenerAccountSession.findUnique({
+        where: { tokenDigest: digestSessionToken(raw) },
+        select: { id: true, issuer: true, sid: true },
+    }) : null;
+    const responseHeaders = new Headers({
+        'Cache-Control': 'private, no-store',
+        'Set-Cookie': listenerAccountCookie('', 0),
+    });
+    const returnTo = isListenerStagingHost(headers)
+        ? 'https://earlybirds-staging.harmonicbeacon.com/'
+        : 'https://listen.harmonicbeacon.com/';
+    if (!local || local.issuer !== config.issuer) {
+        // Without a local sid Account must ask for an explicit confirmation;
+        // a cross-site navigation can never auto-revoke the central session.
+        const confirmation = new URL('/account/logout', config.issuer);
+        confirmation.searchParams.set('mode', mode);
+        confirmation.searchParams.set('return_to', returnTo);
+        confirmation.searchParams.set('lang', locale);
+        return NextResponse.json({ url: confirmation.toString(), confirmation: true }, {
+            headers: responseHeaders,
         });
     }
-
-    let revocationFailed = false;
-    try {
-        // Better Auth deliberately turns adapter failures during sign-out into
-        // a successful HTTP response. Resolve the signed cookie through its
-        // normal authority, then delete the exact durable session ourselves so
-        // this endpoint never reports recovery while a bearer remains valid.
-        const session = await currentEarlyBirdSession(request.headers);
-        if (session) {
-            await prisma.earlyBirdAuthSession.deleteMany({
-                where: { id: session.session.id },
-            });
-        }
-    } catch {
-        revocationFailed = true;
-    }
-
-    const headers = new Headers(RESPONSE_HEADERS);
-    headers.set('content-type', 'application/json');
-    for (const name of recoveryCookieNames()) {
-        headers.append('set-cookie', clearCookie(name));
-    }
-    return new Response(JSON.stringify({ recovered: !revocationFailed }), {
-        status: revocationFailed ? 503 : 200,
-        headers,
+    await prisma.listenerAccountSession.deleteMany({ where: { id: local.id, sid: local.sid } });
+    const initiation = signAccountLogoutInitiation({
+        issuer: config.issuer, clientId: config.clientId, clientSecret: config.clientSecret,
+        sid: local.sid, mode, returnTo,
     });
+    const target = new URL('/account/logout', config.issuer);
+    target.searchParams.set('mode', mode);
+    target.searchParams.set('return_to', returnTo);
+    target.searchParams.set('lang', locale);
+    target.searchParams.set('initiation', initiation);
+    return NextResponse.json({ url: target.toString() }, { headers: responseHeaders });
 }
 
 export function GET(): Response {
-    return Response.json({ error: 'Method not allowed.' }, {
-        status: 405,
-        headers: { ...RESPONSE_HEADERS, Allow: 'POST' },
-    });
+    return new Response(null, { status: 405, headers: { Allow: 'POST', 'Cache-Control': 'private, no-store' } });
 }

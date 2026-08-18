@@ -49,7 +49,10 @@ describe('Listener OAuth recovery marker', () => {
     });
 
     it('calls only the exact same-origin recovery endpoint', async () => {
-        const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+        document.documentElement.lang = 'en';
+        const fetchMock = vi.fn().mockResolvedValue(Response.json({
+            url: 'https://account.harmonicbeacon.com/account/logout?mode=current',
+        }));
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(recoverListenerIdentity()).resolves.toBe(true);
@@ -57,8 +60,15 @@ describe('Listener OAuth recovery marker', () => {
             method: 'POST',
             credentials: 'same-origin',
             cache: 'no-store',
-            headers: { 'content-type': 'application/json' },
-            body: '{}',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'current', locale: 'en' }),
         });
+    });
+
+    it('rejects a recovery response that points outside the exact Account logout surface', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
+            url: 'https://evil.example/account/logout',
+        })));
+        await expect(recoverListenerIdentity()).resolves.toBe(false);
     });
 });

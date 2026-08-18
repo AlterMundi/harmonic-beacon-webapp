@@ -12,6 +12,81 @@ hb-global-nav:not(:defined) {
   font-family: var(--font-hb-inter), Inter, system-ui, sans-serif;
 }
 
+/* Central Account authority. Bound to its own route/host; event and Listener
+   product styling remain untouched. */
+.account-shell {
+  min-height: 100svh;
+  padding: clamp(5rem, 10vw, 8rem) clamp(1rem, 5vw, 4rem) 3rem;
+  color: var(--hb-bone, #f4eee2);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(201, 162, 78, 0.14), transparent 42rem),
+    #16120d;
+  font-family: var(--font-hb-inter), Inter, system-ui, sans-serif;
+}
+.account-shell--center { display: grid; place-items: center; }
+.account-hero, .account-grid { width: min(64rem, 100%); margin-inline: auto; }
+.account-hero { margin-bottom: 2rem; }
+.account-brand, .account-link { color: #c9a24e; text-decoration: none; }
+.account-eyebrow { color: #c9a24e; text-transform: uppercase; letter-spacing: .16em; font-size: .72rem; }
+.account-hero h1, .account-card h1, .account-card h2 {
+  margin: .4rem 0;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(2rem, 6vw, 3.7rem);
+}
+.account-card h2 { font-size: 2rem; }
+.account-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.account-card {
+  width: min(34rem, 100%);
+  padding: clamp(1.1rem, 4vw, 2rem);
+  border: 1px solid rgba(201, 162, 78, .24);
+  border-radius: 18px;
+  background: rgba(30, 24, 18, .92);
+  box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, .28);
+}
+.account-grid .account-card { width: 100%; }
+.account-form, .account-providers, .account-actions { display: grid; gap: .75rem; margin-top: 1rem; }
+.account-form label { display: grid; gap: .35rem; font-size: .82rem; color: rgba(244, 238, 226, .78); }
+.account-form input {
+  min-height: 44px;
+  padding: .7rem .8rem;
+  color: #f4eee2;
+  background: #16120d;
+  border: 1px solid rgba(244, 238, 226, .22);
+  border-radius: 10px;
+}
+.account-form input:focus-visible, .account-card button:focus-visible, .account-card a:focus-visible {
+  outline: 2px solid #e0bd69;
+  outline-offset: 3px;
+}
+.account-card button, .account-primary {
+  min-height: 44px;
+  padding: .7rem 1rem;
+  border: 1px solid rgba(201, 162, 78, .45);
+  border-radius: 999px;
+  color: #f4eee2;
+  background: transparent;
+  cursor: pointer;
+}
+.account-card button:hover { background: rgba(201, 162, 78, .1); }
+.account-card button:disabled { opacity: .55; cursor: wait; }
+.account-card .account-primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #16120d; background: #c9a24e; font-weight: 600; text-decoration: none;
+}
+.account-inline { margin-top: 1rem; }
+.account-return { width: fit-content; margin-top: 1rem; }
+.account-mode { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.account-mode button[aria-pressed="true"] { color: #16120d; background: #c9a24e; }
+.account-muted, .account-message { color: rgba(244, 238, 226, .7); line-height: 1.55; }
+.account-link { margin-top: 1rem; border: 0 !important; padding-inline: 0 !important; }
+@media (prefers-reduced-motion: reduce) {
+  .account-shell *, .account-shell *::before, .account-shell *::after { scroll-behavior: auto !important; transition: none !important; }
+}
+html:has(.account-nav-slot), body:has(.account-nav-slot) { width: 44px; height: 44px; overflow: hidden; background: transparent; }
+body:has(.account-nav-slot) > hb-global-nav { display: none !important; }
+body:has(.account-nav-slot) > .relative { width: 44px; height: 44px; }
+
 .hb-global-navigation-fallback {
   min-height: 72px;
   max-width: 1180px;

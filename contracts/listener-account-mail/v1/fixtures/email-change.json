@@ -1,0 +1,8 @@
+{
+  "contract_version": "listener-email-change.v1",
+  "purpose": "change_email",
+  "recipient": "new-address@example.test",
+  "locale": "en",
+  "action_url": "https://account-staging.harmonicbeacon.com/verify-email?token=opaque_example_token_123456",
+  "expires_at": "2026-08-17T16:15:00Z"
+}

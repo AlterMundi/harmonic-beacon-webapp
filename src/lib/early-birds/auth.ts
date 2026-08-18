@@ -8,13 +8,10 @@ import { magicLink } from 'better-auth/plugins';
 import { prisma } from '@/lib/db';
 import {
     LISTENER_SESSION_COOKIE,
-    inspectListenerSessionCookie,
     listenerSessionAuthHandler,
     listenerSessionCookieNames,
     type ListenerSessionCookieNames,
 } from '@/lib/listener/session-cookie-bridge';
-import { recordListenerSessionCookieObservation } from '@/lib/listener/session-cookie-observability';
-import { isCanonicalListenerHost } from '@/lib/listener/public-discovery';
 import {
     listenerRuntimeBundle,
     listenerAppleOAuthConfiguration,
@@ -29,6 +26,7 @@ import {
     earlyBirdMagicLinkSessionAllowed,
     hashEarlyBirdMagicLinkToken,
 } from '@/lib/early-birds/magic-link';
+import { currentListenerAccountSession } from '@/lib/listener/account-rp';
 
 export const EARLY_BIRD_AUTH_BASE_PATH = '/api/early-birds/auth';
 export const EARLY_BIRD_COOKIE_PREFIX = 'hb_earlybird';
@@ -324,35 +322,5 @@ export async function currentEarlyBirdSession(
     suppliedHeaders?: Headers,
 ): Promise<EarlyBirdSession | null> {
     const resolvedHeaders = suppliedHeaders ?? new Headers(await requestHeaders());
-    // The same strict inbound policy as the route handler: ambiguous
-    // session-cookie states never reach Better Auth, they fail closed here.
-    // Exactly one aggregate observation is recorded per resolver invocation;
-    // the metric counts invocations, not unique users, browsers or sessions,
-    // so multiple observations per navigation are expected. Recording is
-    // fail-soft and can never change the fail-closed outcome below.
-    const inspection = inspectListenerSessionCookie(
-        resolvedHeaders.get('cookie'),
-        earlyBirdSessionCookieNames(),
-    );
-    if (isCanonicalListenerHost(resolvedHeaders)) {
-        try {
-            recordListenerSessionCookieObservation(inspection.state);
-        } catch { /* Observation must never affect session resolution. */ }
-    }
-    if (inspection.resolution.kind === 'reject') return null;
-    const result = await earlyBirdAuth().api.getSession({ headers: resolvedHeaders });
-    if (!result) return null;
-
-    return {
-        user: {
-            id: result.user.id,
-            name: result.user.name,
-            email: result.user.email,
-            image: result.user.image,
-        },
-        session: {
-            id: result.session.id,
-            expiresAt: result.session.expiresAt,
-        },
-    };
+    return currentListenerAccountSession(resolvedHeaders);
 }

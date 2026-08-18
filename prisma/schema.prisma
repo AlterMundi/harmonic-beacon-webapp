@@ -458,22 +458,32 @@ model SessionContribution {
 // EarlyBirds is a deliberately separate identity and entitlement domain. None
 // of these rows can authorize weekend event, staff, LiveKit, or chat surfaces.
 model EarlyBirdUser {
-  id            String   @id
-  name          String
-  email         String   @unique
-  emailVerified Boolean  @default(false) @map("email_verified")
-  image         String?
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id               String   @id
+  name             String
+  email            String   @unique
+  emailVerified    Boolean  @default(false) @map("email_verified")
+  image            String?
+  securityRevision Int      @default(1) @map("security_revision")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
-  identities         EarlyBirdIdentity[]
-  authSessions       EarlyBirdAuthSession[]
-  membership         EarlyBirdMembershipProjection?
-  freeSchedule       EarlyBirdFreeSchedule?
-  welcomeAccess      EarlyBirdWelcomeAccess?
-  streamLeases       EarlyBirdStreamLease[]
-  listeningQuota     EarlyBirdListeningQuotaCursor?
-  listeningBonuses   EarlyBirdListeningBonusGrant[]
+  identities              EarlyBirdIdentity[]
+  authSessions            EarlyBirdAuthSession[]
+  beaconProfile           BeaconProfile?
+  oauthClients            BeaconOAuthClient[]
+  oauthRefreshTokens      BeaconOAuthRefreshToken[]
+  oauthAccessTokens       BeaconOAuthAccessToken[]
+  oauthConsents           BeaconOAuthConsent[]
+  accountActionTokens     BeaconAccountActionToken[]
+  accountMailOutbox       BeaconAccountMailOutbox[]
+  listenerAccountSubject  ListenerAccountSubject?
+  listenerAccountSessions ListenerAccountSession[]
+  membership              EarlyBirdMembershipProjection?
+  freeSchedule            EarlyBirdFreeSchedule?
+  welcomeAccess           EarlyBirdWelcomeAccess?
+  streamLeases            EarlyBirdStreamLease[]
+  listeningQuota          EarlyBirdListeningQuotaCursor?
+  listeningBonuses        EarlyBirdListeningBonusGrant[]
 
   @@map("early_bird_users")
 }
@@ -495,24 +505,37 @@ model EarlyBirdIdentity {
   updatedAt             DateTime      @updatedAt @map("updated_at")
 
   @@unique([providerId, accountId])
-  @@index([userId])
+  @@unique([userId])
   @@map("early_bird_identities")
 }
 
 model EarlyBirdAuthSession {
-  id        String        @id
-  userId    String        @map("user_id")
-  user      EarlyBirdUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String        @unique
-  expiresAt DateTime      @map("expires_at")
-  ipAddress String?       @map("ip_address")
-  userAgent String?       @map("user_agent")
-  createdAt DateTime      @default(now()) @map("created_at")
-  updatedAt DateTime      @updatedAt @map("updated_at")
+  id                   String        @id
+  userId               String        @map("user_id")
+  user                 EarlyBirdUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token                String        @unique
+  expiresAt            DateTime      @map("expires_at")
+  ipAddress            String?       @map("ip_address")
+  userAgent            String?       @map("user_agent")
+  securityRevision     Int           @default(1) @map("security_revision")
+  authorityEnvironment String        @default("legacy") @map("authority_environment")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  oauthRefreshTokens BeaconOAuthRefreshToken[]
+  oauthAccessTokens  BeaconOAuthAccessToken[]
 
   @@index([userId])
   @@index([expiresAt])
   @@map("early_bird_auth_sessions")
+}
+
+model BeaconAccountAuthorityEnvironment {
+  id        String   @id
+  issuer    String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("beacon_account_authority_environment")
 }
 
 model EarlyBirdVerification {
@@ -528,15 +551,237 @@ model EarlyBirdVerification {
   @@map("early_bird_verifications")
 }
 
+// Provider-independent private Beacon profile. Provider metadata may seed a
+// profile once, but never overwrites it after creation.
+model BeaconProfile {
+  accountId   String        @id @map("account_id")
+  account     EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  displayName String        @map("display_name") @db.VarChar(60)
+  revision    Int           @default(1)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@map("beacon_profiles")
+}
+
+model BeaconAccountActionToken {
+  id          String        @id @default(uuid()) @db.Uuid
+  tokenDigest String        @unique @map("token_digest") @db.Char(64)
+  purpose     String
+  accountId   String        @map("account_id")
+  account     EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  targetEmail String?       @map("target_email")
+  locale      String        @default("en")
+  expiresAt   DateTime      @map("expires_at")
+  consumedAt  DateTime?     @map("consumed_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@index([accountId, purpose, expiresAt])
+  @@index([expiresAt])
+  @@index([consumedAt])
+  @@map("beacon_account_action_tokens")
+}
+
+// Raw email/network values never enter this table. Keys are HMAC digests made
+// with a deployment secret separate from the Account authentication secret.
+model BeaconAccountAuthThrottle {
+  key             String    @id
+  kind            String
+  windowStartedAt DateTime  @map("window_started_at")
+  attempts        Int       @default(0)
+  blockedUntil    DateTime? @map("blocked_until")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("beacon_account_auth_throttles")
+}
+
+model BeaconAccountMailOutbox {
+  id                  String        @id @default(uuid()) @db.Uuid
+  accountId           String        @map("account_id")
+  account             EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  purpose             String        @default("verify_email")
+  locale              String        @default("en")
+  recipient           String
+  targetEmail         String?       @map("target_email")
+  sealedToken         String?       @map("sealed_token") @db.Text
+  tokenExpiresAt      DateTime?     @map("token_expires_at")
+  idempotencyKey      String?       @map("idempotency_key")
+  deliveryAttemptedAt DateTime?     @map("delivery_attempted_at")
+  attempts            Int           @default(0)
+  generation          Int           @default(1)
+  nextAttemptAt       DateTime      @default(now()) @map("next_attempt_at")
+  lockedAt            DateTime?     @map("locked_at")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  @@unique([accountId, purpose, generation])
+  @@index([nextAttemptAt, lockedAt])
+  @@map("beacon_account_mail_outbox")
+}
+
+model ListenerAccountSession {
+  id                     String        @id @default(uuid()) @db.Uuid
+  tokenDigest            String        @unique @map("token_digest") @db.Char(64)
+  accountId              String        @map("account_id")
+  account                EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  issuer                 String
+  subject                String
+  sid                    String
+  expiresAt              DateTime      @map("expires_at")
+  lastCheckedAt          DateTime      @map("last_checked_at")
+  revalidationLeaseUntil DateTime?     @map("revalidation_lease_until")
+  synthetic              Boolean       @default(false)
+  createdAt              DateTime      @default(now()) @map("created_at")
+
+  @@index([accountId])
+  @@index([issuer, subject])
+  @@index([issuer, sid])
+  @@index([expiresAt])
+  @@index([revalidationLeaseUntil])
+  @@map("listener_account_sessions")
+}
+
+model ListenerAccountSubject {
+  accountId String        @id @map("account_id")
+  account   EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  issuer    String
+  subject   String
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@unique([issuer, subject])
+  @@map("listener_account_subjects")
+}
+
+// Better Auth OAuth Provider storage. Clients are provisioned from the exact
+// static contract; dynamic registration remains disabled.
+model BeaconOAuthClient {
+  id                      String         @id
+  clientId                String         @unique @map("client_id")
+  clientSecret            String?        @map("client_secret") @db.Text
+  disabled                Boolean        @default(false)
+  skipConsent             Boolean?       @map("skip_consent")
+  enableEndSession        Boolean?       @map("enable_end_session")
+  subjectType             String?        @map("subject_type")
+  scopes                  String[]
+  userId                  String?        @map("user_id")
+  user                    EarlyBirdUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt               DateTime       @default(now()) @map("created_at")
+  updatedAt               DateTime       @updatedAt @map("updated_at")
+  name                    String?
+  uri                     String?
+  icon                    String?
+  contacts                String[]
+  tos                     String?
+  policy                  String?
+  softwareId              String?        @map("software_id")
+  softwareVersion         String?        @map("software_version")
+  softwareStatement       String?        @map("software_statement") @db.Text
+  redirectUris            String[]       @map("redirect_uris")
+  postLogoutRedirectUris  String[]       @map("post_logout_redirect_uris")
+  tokenEndpointAuthMethod String?        @map("token_endpoint_auth_method")
+  grantTypes              String[]       @map("grant_types")
+  responseTypes           String[]       @map("response_types")
+  public                  Boolean        @default(false)
+  type                    String?
+  requirePKCE             Boolean        @default(true) @map("require_pkce")
+  referenceId             String?        @map("reference_id")
+  metadata                Json?
+
+  refreshTokens BeaconOAuthRefreshToken[]
+  accessTokens  BeaconOAuthAccessToken[]
+  consents      BeaconOAuthConsent[]
+
+  @@index([userId])
+  @@map("beacon_oauth_clients")
+}
+
+model BeaconOAuthRefreshToken {
+  id          String                @id
+  token       String                @unique @db.Text
+  clientId    String                @map("client_id")
+  client      BeaconOAuthClient     @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  sessionId   String?               @map("session_id")
+  session     EarlyBirdAuthSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId      String                @map("user_id")
+  user        EarlyBirdUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceId String?               @map("reference_id")
+  expiresAt   DateTime              @map("expires_at")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  revoked     DateTime?
+  authTime    DateTime?             @map("auth_time")
+  scopes      String[]
+
+  accessTokens BeaconOAuthAccessToken[]
+
+  @@index([clientId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revoked])
+  @@map("beacon_oauth_refresh_tokens")
+}
+
+model BeaconOAuthAccessToken {
+  id          String                   @id
+  token       String                   @unique @db.Text
+  clientId    String                   @map("client_id")
+  client      BeaconOAuthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  sessionId   String?                  @map("session_id")
+  session     EarlyBirdAuthSession?    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId      String?                  @map("user_id")
+  user        EarlyBirdUser?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  referenceId String?                  @map("reference_id")
+  refreshId   String?                  @map("refresh_id")
+  refresh     BeaconOAuthRefreshToken? @relation(fields: [refreshId], references: [id], onDelete: SetNull)
+  expiresAt   DateTime                 @map("expires_at")
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  scopes      String[]
+
+  @@index([clientId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([refreshId])
+  @@index([expiresAt])
+  @@map("beacon_oauth_access_tokens")
+}
+
+model BeaconOAuthConsent {
+  id          String            @id
+  clientId    String            @map("client_id")
+  client      BeaconOAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId      String?           @map("user_id")
+  user        EarlyBirdUser?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceId String?           @map("reference_id")
+  scopes      String[]
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  @@index([clientId])
+  @@index([userId])
+  @@map("beacon_oauth_consents")
+}
+
+model BeaconJwks {
+  id         String    @id
+  publicKey  String    @map("public_key") @db.Text
+  privateKey String    @map("private_key") @db.Text
+  createdAt  DateTime  @map("created_at")
+  expiresAt  DateTime? @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("beacon_jwks")
+}
+
 // HMAC-keyed abuse buckets for the Listener email fallback. Neither raw email
 // addresses nor raw network addresses are persisted here.
 model EarlyBirdMagicLinkThrottle {
-  key             String   @id
+  key             String    @id
   kind            String
-  windowStartedAt DateTime @map("window_started_at")
-  attempts        Int      @default(0)
+  windowStartedAt DateTime  @map("window_started_at")
+  attempts        Int       @default(0)
   blockedUntil    DateTime? @map("blocked_until")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   @@index([updatedAt])
   @@map("early_bird_magic_link_throttles")
@@ -644,16 +889,16 @@ model EarlyBirdStreamLease {
 // anchor is created only when an ordinary-Free account is first observed in
 // LISTENING presence and is never moved after that.
 model EarlyBirdListeningQuotaCursor {
-  accountId       String        @id @map("account_id")
-  account         EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  policyVersion   String        @map("policy_version") @db.VarChar(32)
-  cycleAnchorAt   DateTime?     @map("cycle_anchor_at")
-  cycleStartedAt  DateTime?     @map("cycle_started_at")
-  cycleEndsAt     DateTime?     @map("cycle_ends_at")
-  baseConsumedMs  Int           @default(0) @map("base_consumed_ms")
-  settledThrough  DateTime?     @map("settled_through")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
+  accountId      String        @id @map("account_id")
+  account        EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  policyVersion  String        @map("policy_version") @db.VarChar(32)
+  cycleAnchorAt  DateTime?     @map("cycle_anchor_at")
+  cycleStartedAt DateTime?     @map("cycle_started_at")
+  cycleEndsAt    DateTime?     @map("cycle_ends_at")
+  baseConsumedMs Int           @default(0) @map("base_consumed_ms")
+  settledThrough DateTime?     @map("settled_through")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
 
   @@index([cycleEndsAt])
   @@map("early_bird_listening_quota_cursors")
@@ -698,24 +943,24 @@ model EarlyBirdListenerAuthorityPolicy {
 // account; operators must verify the payment in the canonical provider before
 // taking any action. Receipt codes are never stored in plaintext.
 model ListenerWithdrawalRequest {
-  id              String                     @id @default(uuid()) @db.Uuid
-  receiptDigest   String                     @unique @map("receipt_digest") @db.Char(64)
-  receiptLastFour String                     @map("receipt_last_four") @db.Char(4)
-  idempotencyKey  String                     @unique @map("idempotency_key") @db.Uuid
-  requestHash     String                     @map("request_hash") @db.Char(64)
-  contactEmail    String                     @map("contact_email") @db.VarChar(254)
+  id              String                      @id @default(uuid()) @db.Uuid
+  receiptDigest   String                      @unique @map("receipt_digest") @db.Char(64)
+  receiptLastFour String                      @map("receipt_last_four") @db.Char(4)
+  idempotencyKey  String                      @unique @map("idempotency_key") @db.Uuid
+  requestHash     String                      @map("request_hash") @db.Char(64)
+  contactEmail    String                      @map("contact_email") @db.VarChar(254)
   requestKind     ListenerConsumerRequestKind @map("request_kind")
   provider        ListenerWithdrawalProvider
-  purchaseDate    DateTime?                  @map("purchase_date") @db.Date
-  locale          String                     @db.Char(2)
-  status          ListenerWithdrawalStatus   @default(RECEIVED)
-  acknowledgedAt  DateTime?                  @map("acknowledged_at")
-  acknowledgedBy  String?                    @map("acknowledged_by") @db.VarChar(64)
-  resolvedAt      DateTime?                  @map("resolved_at")
-  resolvedBy      String?                    @map("resolved_by") @db.VarChar(64)
-  resolutionCode  String?                    @map("resolution_code") @db.VarChar(64)
-  createdAt       DateTime                   @default(now()) @map("created_at")
-  updatedAt       DateTime                   @updatedAt @map("updated_at")
+  purchaseDate    DateTime?                   @map("purchase_date") @db.Date
+  locale          String                      @db.Char(2)
+  status          ListenerWithdrawalStatus    @default(RECEIVED)
+  acknowledgedAt  DateTime?                   @map("acknowledged_at")
+  acknowledgedBy  String?                     @map("acknowledged_by") @db.VarChar(64)
+  resolvedAt      DateTime?                   @map("resolved_at")
+  resolvedBy      String?                     @map("resolved_by") @db.VarChar(64)
+  resolutionCode  String?                     @map("resolution_code") @db.VarChar(64)
+  createdAt       DateTime                    @default(now()) @map("created_at")
+  updatedAt       DateTime                    @updatedAt @map("updated_at")
 
   @@index([status, createdAt])
   @@index([createdAt])

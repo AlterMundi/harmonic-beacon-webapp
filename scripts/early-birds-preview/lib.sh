@@ -100,6 +100,11 @@ require_synthetic_env() {
   apple_enabled=$(preview_env_value BEACON_LISTENER_APPLE_ENABLED "$env_file")
   apple_client_id=$(preview_env_value BEACON_LISTENER_APPLE_CLIENT_ID "$env_file")
   apple_client_secret=$(preview_env_value BEACON_LISTENER_APPLE_CLIENT_SECRET "$env_file")
+  account_enabled=$(preview_env_value BEACON_LISTENER_ACCOUNT_ENABLED "$env_file")
+  account_client_prod=$(preview_env_value BEACON_LISTENER_ACCOUNT_CLIENT_SECRET "$env_file")
+  account_client_staging=$(preview_env_value BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING "$env_file")
+  account_state_prod=$(preview_env_value BEACON_LISTENER_ACCOUNT_STATE_SECRET "$env_file")
+  account_state_staging=$(preview_env_value BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING "$env_file")
   if { test -n "$google_client_id" && test -z "$google_client_secret"; } || \
      { test -z "$google_client_id" && test -n "$google_client_secret"; }; then
     preview_fail 'Google OAuth client ID and secret must be configured together'
@@ -111,6 +116,14 @@ require_synthetic_env() {
   case "$apple_enabled" in 0|1) ;; *) preview_fail 'BEACON_LISTENER_APPLE_ENABLED must be 0 or 1' ;; esac
   if test "$apple_enabled" = 1 && { test -z "$apple_client_id" || test -z "$apple_client_secret"; }; then
     preview_fail 'enabled Apple OAuth requires its client ID and client-secret JWT'
+  fi
+  case "$account_enabled" in 0|1) ;; *) preview_fail 'BEACON_LISTENER_ACCOUNT_ENABLED must be 0 or 1' ;; esac
+  if test "$account_enabled" = 1; then
+    for account_secret in "$account_client_prod" "$account_client_staging" "$account_state_prod" "$account_state_staging"; do
+      test "${#account_secret}" -ge 32 || preview_fail 'Listener Account RP secrets must contain at least 32 characters'
+    done
+    test "$account_client_prod" != "$account_client_staging" || preview_fail 'Listener Account client secrets must differ by environment'
+    test "$account_state_prod" != "$account_state_staging" || preview_fail 'Listener Account state secrets must differ by environment'
   fi
   if test -n "$google_client_id" || test -n "$apple_client_id"; then
     oauth_auth_base=$(preview_env_value EARLY_BIRDS_AUTH_BASE_URL "$env_file")

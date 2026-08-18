@@ -1,0 +1,16 @@
+# Temporary HTTP-only bootstrap for the Account staging certificate.
+# Install this file only while the certificate is absent. It never proxies
+# Account, Listener, Live, event, media or internal application traffic.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name account-staging.harmonicbeacon.com;
+    access_log off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+    }
+
+    location / { return 503; }
+}

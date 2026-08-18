@@ -1,127 +1,83 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const currentSession = vi.hoisted(() => vi.fn());
-const deleteSessions = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/early-birds/auth', () => {
-    return {
-        EARLY_BIRD_COOKIE_PREFIX: 'hb_earlybird',
-        EARLY_BIRD_SESSION_COOKIE: 'hb_earlybird_session',
-        LISTENER_SESSION_COOKIE: 'hb_listener_session',
-        currentEarlyBirdSession: currentSession,
-    };
-});
-vi.mock('@/lib/db', () => ({
-    prisma: { earlyBirdAuthSession: { deleteMany: deleteSessions } },
-}));
+const db = vi.hoisted(() => ({ findUnique: vi.fn(), deleteMany: vi.fn() }));
+vi.mock('@/lib/db', () => ({ prisma: { listenerAccountSession: db } }));
 
 import { GET, POST } from '../route';
 
-describe('Listener identity recovery boundary', () => {
+function request(origin = 'https://earlybirds-staging.harmonicbeacon.com') {
+    return new NextRequest('https://earlybirds-staging.harmonicbeacon.com/api/listener/auth/recover', {
+        method: 'POST',
+        headers: {
+            host: 'earlybirds-staging.harmonicbeacon.com', origin,
+            'sec-fetch-site': origin.includes('earlybirds-staging') ? 'same-origin' : 'same-site',
+            'content-type': 'application/json',
+            cookie: '__Host-hb_listener_account=local-cookie',
+        },
+        body: JSON.stringify({ mode: 'current', locale: 'es' }),
+    });
+}
+
+describe('Listener same-origin central logout initiation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.stubEnv('BEACON_LISTENER_AUTH_BASE_URL', 'https://listen.example.test');
-        vi.stubEnv('BEACON_LISTENER_TRUSTED_ORIGINS', 'https://listen.example.test');
-        currentSession.mockResolvedValue({
-            user: { id: 'account-1', name: 'Listener', email: 'listener@example.test' },
-            session: { id: 'session-1', expiresAt: new Date('2030-01-01T00:00:00Z') },
-        });
-        deleteSessions.mockResolvedValue({ count: 1 });
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING', 's'.repeat(32));
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING', 'b'.repeat(32));
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_ENABLED', '1');
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_ENVIRONMENT', 'staging');
+        db.deleteMany.mockResolvedValue({ count: 1 });
     });
     afterEach(() => vi.unstubAllEnvs());
 
-    function request(origin = 'https://listen.example.test') {
-        return new NextRequest('https://listen.example.test/api/listener/auth/recover', {
-            method: 'POST',
-            headers: {
-                host: 'listen.example.test',
-                origin,
-                'x-forwarded-proto': 'https',
-                cookie: '__Secure-hb_earlybird_session=opaque; hb_listener_invite=preserve-me',
-            },
+    it('deletes the local RP session before returning a signed Account initiation', async () => {
+        db.findUnique.mockResolvedValue({
+            id: 'local-session', issuer: 'https://account-staging.harmonicbeacon.com', sid: 'central-sid',
         });
-    }
-
-    it('revokes a valid session then clears only OAuth state and Listener sessions', async () => {
         const response = await POST(request());
-        const cookies = response.headers.getSetCookie();
-
+        const result = await response.json() as { url: string };
+        const target = new URL(result.url);
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ recovered: true });
-        expect(currentSession).toHaveBeenCalledOnce();
-        expect(deleteSessions).toHaveBeenCalledWith({ where: { id: 'session-1' } });
-        expect(cookies).toHaveLength(6);
-        expect(cookies.map((cookie) => cookie.split('=', 1)[0]).sort()).toEqual([
-            '__Secure-hb_earlybird.state',
-            '__Secure-hb_earlybird_session',
-            '__Secure-hb_listener_session',
-            'hb_earlybird.state',
-            'hb_earlybird_session',
-            'hb_listener_session',
-        ]);
-        expect(cookies.every((cookie) => cookie.includes('Max-Age=0'))).toBe(true);
-        expect(cookies.join(';')).not.toContain('preserve-me');
-        expect(cookies.join(';')).not.toContain('invite');
-        expect(response.headers.get('cache-control')).toBe('private, no-store');
-        expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+        expect(target.origin).toBe('https://account-staging.harmonicbeacon.com');
+        expect(target.pathname).toBe('/account/logout');
+        expect(target.searchParams.get('initiation')).toBeTruthy();
+        expect(target.searchParams.get('lang')).toBe('es');
+        expect(db.deleteMany).toHaveBeenCalledWith({
+            where: { id: 'local-session', sid: 'central-sid' },
+        });
+        expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
     });
 
-    it('clears fixed browser credentials but does not claim success if revocation fails', async () => {
-        deleteSessions.mockRejectedValueOnce(new Error('database unavailable'));
+    it('offers human confirmation when state_mismatch left no local RP session', async () => {
+        db.findUnique.mockResolvedValue(null);
         const response = await POST(request());
-        expect(response.status).toBe(503);
-        expect(await response.json()).toEqual({ recovered: false });
-        expect(response.headers.getSetCookie()).toHaveLength(6);
-    });
-
-    it.each([null, 'https://attacker.invalid', 'https://staging.example.test'])(
-        'rejects missing, cross-site and merely trusted cross-host origins: %s',
-        async (origin) => {
-            if (origin === 'https://staging.example.test') {
-                vi.stubEnv(
-                    'BEACON_LISTENER_TRUSTED_ORIGINS',
-                    'https://listen.example.test,https://staging.example.test',
-                );
-            }
-            const crossOrigin = new NextRequest(
-                'https://listen.example.test/api/listener/auth/recover',
-                {
-                    method: 'POST',
-                    headers: {
-                        host: 'listen.example.test',
-                        ...(origin ? { origin } : {}),
-                    },
-                },
-            );
-            const response = await POST(crossOrigin);
-            expect(response.status).toBe(403);
-            expect(response.headers.getSetCookie()).toEqual([]);
-            expect(currentSession).not.toHaveBeenCalled();
-            expect(deleteSessions).not.toHaveBeenCalled();
-        },
-    );
-
-    it('clears a stale browser cookie without inventing a durable session', async () => {
-        currentSession.mockResolvedValueOnce(null);
-        const response = await POST(request());
+        const result = await response.json() as { url: string; confirmation: boolean };
+        const target = new URL(result.url);
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ recovered: true });
-        expect(deleteSessions).not.toHaveBeenCalled();
-        expect(response.headers.getSetCookie()).toHaveLength(6);
+        expect(result.confirmation).toBe(true);
+        expect(target.searchParams.has('initiation')).toBe(false);
+        expect(target.searchParams.get('return_to'))
+            .toBe('https://earlybirds-staging.harmonicbeacon.com/');
+        expect(db.deleteMany).not.toHaveBeenCalled();
     });
 
-    it('rejects a correct-looking origin unless the proxy attests HTTPS', async () => {
-        const insecure = request();
-        insecure.headers.set('x-forwarded-proto', 'http');
-        const response = await POST(insecure);
-        expect(response.status).toBe(403);
-        expect(currentSession).not.toHaveBeenCalled();
+    it('treats malformed or duplicate RP cookies as absent without throwing or querying by token', async () => {
+        for (const cookie of [
+            '__Host-hb_listener_account=%',
+            '__Host-hb_listener_account=one; __Host-hb_listener_account=two',
+        ]) {
+            const malformed = request();
+            malformed.headers.set('cookie', cookie);
+            const response = await POST(malformed);
+            expect(response.status).toBe(200);
+            expect(await response.json()).toMatchObject({ confirmation: true });
+        }
+        expect(db.findUnique).not.toHaveBeenCalled();
     });
 
-    it('does not mutate identity through GET', () => {
-        const response = GET();
-        expect(response.status).toBe(405);
-        expect(response.headers.get('allow')).toBe('POST');
-        expect(response.headers.getSetCookie()).toEqual([]);
+    it('rejects sibling-origin POSTs and every GET', async () => {
+        expect((await POST(request('https://listen.harmonicbeacon.com'))).status).toBe(403);
+        expect(GET().status).toBe(405);
+        expect(db.findUnique).not.toHaveBeenCalled();
     });
 });
