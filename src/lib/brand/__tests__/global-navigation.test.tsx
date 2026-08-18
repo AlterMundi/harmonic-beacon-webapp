@@ -56,7 +56,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
         const source = asset.toString('utf8');
         const digest = createHash('sha256').update(asset).digest('hex');
 
-        expect(manifest.globalNavigation.commit).toBe('70400675b807ba90988517eb28871ad81c6ac369');
+        expect(manifest.globalNavigation.commit).toBe('ceeea30a94417331450c420fbfb8fc2e6a0a9b2d');
         expect(manifest.globalNavigation.sourceFile).toBe('assets/hb-global-nav.js');
         expect(digest).toBe(manifest.globalNavigation.sha256);
         const snapshotKey = manifest.globalNavigation.snapshotFile as keyof typeof manifest.snapshots;

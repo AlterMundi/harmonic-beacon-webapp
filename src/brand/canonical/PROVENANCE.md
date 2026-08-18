@@ -27,8 +27,8 @@ manifest and visual-review update together.
 
 The cross-product header is vendored byte-for-byte at
 `public/assets/hb-global-nav.js` from `AlterMundi/harmonicbeacon.com` commit
-`70400675b807ba90988517eb28871ad81c6ac369`, with SHA-256
-`8dce4c2b234ef1369730e839c9d93e1bbc4134c86afb1619b63369981cbb67b0`.
+`ceeea30a94417331450c420fbfb8fc2e6a0a9b2d`, with SHA-256
+`16f17fdd9dfde76e5d574dd0e408a5b533d9138f222910821a4425169e147151`.
 Live serves that reviewed snapshot from its own `/assets/hb-global-nav.js` path;
 it never executes navigation JavaScript fetched from another origin with Live
 cookies in scope. The local light-DOM links remain an accessible,

@@ -4,7 +4,9 @@
 
   var MAIN_ORIGIN = 'https://harmonicbeacon.com';
   var LISTENER_ORIGIN = 'https://listen.harmonicbeacon.com';
+  var LISTENER_STAGING_ORIGIN = 'https://earlybirds-staging.harmonicbeacon.com';
   var LIVE_ORIGIN = 'https://live.harmonicbeacon.com';
+  var LIVE_STAGING_ORIGIN = 'https://live-staging.harmonicbeacon.com';
   var ACCOUNT_ORIGIN = 'https://account.harmonicbeacon.com';
   var ACCOUNT_STAGING_ORIGIN = 'https://account-staging.harmonicbeacon.com';
   var ELEMENT_NAME = 'hb-global-nav';
@@ -94,7 +96,9 @@
   }
 
   function accountOrigin() {
-    return location.hostname === 'earlybirds-staging.harmonicbeacon.com'
+    return (location.hostname === 'earlybirds-staging.harmonicbeacon.com' ||
+      location.hostname === 'live-staging.harmonicbeacon.com' ||
+      location.hostname === 'account-staging.harmonicbeacon.com')
       ? ACCOUNT_STAGING_ORIGIN
       : ACCOUNT_ORIGIN;
   }
@@ -103,8 +107,9 @@
     var host = location.hostname.toLowerCase();
     if (host === 'listen.harmonicbeacon.com') return LISTENER_ORIGIN + '/';
     if (host === 'earlybirds-staging.harmonicbeacon.com') {
-      return 'https://earlybirds-staging.harmonicbeacon.com/';
+      return LISTENER_STAGING_ORIGIN + '/';
     }
+    if (host === 'live-staging.harmonicbeacon.com') return LIVE_STAGING_ORIGIN + '/';
     if (host === 'live.harmonicbeacon.com') return LIVE_ORIGIN + '/';
     return MAIN_ORIGIN + '/';
   }
