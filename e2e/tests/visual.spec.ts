@@ -104,15 +104,16 @@ stackTest.describe('visual baselines', () => {
         await expect(page.getByTestId('conductor-cockpit')).toBeVisible();
         await expect(page.locator('[data-signal="stage"]')).toHaveAttribute('data-loaded', 'true');
         await expect(page.locator('[data-signal="health"]')).toContainText('green', { timeout: 15_000 });
+        const persistentRoom = page.locator('iframe[data-testid="persistent-room"]');
+        await expect(persistentRoom).toBeVisible();
+        // The embedded room has its own connected-state visual baseline. Hide
+        // it here so LiveKit timing cannot switch this cockpit snapshot between
+        // the frame's loading overlay and its loaded room UI.
+        await page.addStyleTag({
+            content: 'iframe[data-testid="persistent-room"] { visibility: hidden !important; }',
+        });
         await expect(page).toHaveScreenshot('conductor-cockpit.png', {
             fullPage: true,
-            mask: [
-                page
-                    .frameLocator('iframe[data-testid="persistent-room"]')
-                    .getByTestId('connection-state')
-                    .locator('..'),
-            ],
-            maskColor: '#16120d',
         });
     });
 
