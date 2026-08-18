@@ -167,7 +167,7 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /account_require_internal_mail_network "\$environment"/);
   assert.match(lib, /docker network inspect "\$network"/);
   assert.match(lib, /must be an exact internal bridge/);
-  assert.match(lib, /docker run --rm --network none --read-only --cap-drop ALL/);
+  assert.match(lib, /docker run --rm --network none --read-only --cap-drop ALL --user 0:0/);
   assert.match(lib, /\/app\/ops\/beacon-account\/validate\.mjs/);
   assert.doesNotMatch(lib, /\n\s*node "\$root\/ops\/beacon-account\/validate\.mjs"/);
   assert.match(lib, /pg_dump --format=custom/);

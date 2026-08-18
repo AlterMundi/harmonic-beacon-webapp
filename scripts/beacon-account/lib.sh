@@ -65,7 +65,7 @@ account_validate() {
   image="harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG"
   docker image inspect "$image" >/dev/null 2>&1 ||
     account_fail "missing exact Account image for validation: $image"
-  docker run --rm --network none --read-only --cap-drop ALL \
+  docker run --rm --network none --read-only --cap-drop ALL --user 0:0 \
     --security-opt no-new-privileges \
     --mount "type=bind,src=$BEACON_ACCOUNT_PRODUCTION_ENV_FILE,dst=/run/account-production.env,readonly" \
     --mount "type=bind,src=$BEACON_ACCOUNT_STAGING_ENV_FILE,dst=/run/account-staging.env,readonly" \
