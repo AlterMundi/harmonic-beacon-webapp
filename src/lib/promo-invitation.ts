@@ -7,6 +7,8 @@ import {
     newSessionToken,
     webSessionExpiry,
 } from '@/lib/principal';
+import type { AccountIdentity } from '@/lib/account-rp';
+import { digestSessionToken } from '@/lib/session-auth';
 import { ticketCodePepper, ticketCodeStorage } from '@/lib/ticket-code';
 
 export const PROMO_CODE_PATTERN = /^[A-Z0-9](?:[A-Z0-9-]{4,13}[A-Z0-9])$/;
@@ -41,11 +43,14 @@ export function digestPromoCode(
 }
 
 export function promoRedeemerDigest(
-    email: string,
+    redeemer: string | { accountIssuer: string; accountId: string },
     pepper = ticketCodePepper(),
 ): string {
+    const material = typeof redeemer === 'string'
+        ? `promo-redeemer:v1:${normalizeEmail(redeemer)}`
+        : `promo-redeemer:v2:account:${redeemer.accountIssuer}:${redeemer.accountId}`;
     return createHmac('sha256', pepper)
-        .update(`promo-redeemer:v1:${normalizeEmail(email)}`, 'utf8')
+        .update(material, 'utf8')
         .digest('hex');
 }
 
@@ -76,13 +81,41 @@ export type PromoTermsAcceptance = {
  */
 export async function redeemPromoInvitation(
     code: string,
-    email: string,
+    redeemer: string | { accountIssuer: string; accountId: string },
     displayName: string,
     now = new Date(),
     termsAcceptance?: PromoTermsAcceptance,
+    account?: AccountIdentity,
+    sourceSessionToken?: string,
 ): Promise<PromoRedemptionAttempt> {
     const codeDigest = digestPromoCode(code);
-    const redeemerDigest = promoRedeemerDigest(email);
+    return redeemPromoInvitationByDigest(
+        codeDigest,
+        redeemer,
+        displayName,
+        now,
+        termsAcceptance,
+        account,
+        sourceSessionToken,
+    );
+}
+
+export async function redeemPromoInvitationByDigest(
+    codeDigest: string,
+    redeemer: string | { accountIssuer: string; accountId: string },
+    displayName: string,
+    now = new Date(),
+    termsAcceptance?: PromoTermsAcceptance,
+    account?: AccountIdentity,
+    sourceSessionToken?: string,
+): Promise<PromoRedemptionAttempt> {
+    if (!/^[0-9a-f]{64}$/.test(codeDigest)) {
+        return { ok: false, reason: 'unavailable' };
+    }
+    const redeemerDigest = promoRedeemerDigest(redeemer);
+    const accountId = typeof redeemer === 'string' ? null : redeemer.accountId;
+    const accountIssuer = typeof redeemer === 'string' ? null : redeemer.accountIssuer;
+    const email = typeof redeemer === 'string' ? normalizeEmail(redeemer) : null;
 
     return prisma.$transaction(async (tx) => {
         const candidate = await tx.promoInvitation.findUnique({
@@ -123,7 +156,9 @@ export async function redeemPromoInvitation(
                 entitlement.state !== 'BOUND' ||
                 entitlement.revokedAt !== null ||
                 entitlement.expiresAt <= now ||
-                entitlement.boundEmail !== normalizeEmail(email)
+                (accountId
+                    ? entitlement.accountId !== accountId || entitlement.accountIssuer !== accountIssuer
+                    : entitlement.boundEmail !== email)
             ) {
                 return { ok: false, reason: 'unavailable' } as const;
             }
@@ -155,7 +190,9 @@ export async function redeemPromoInvitation(
                     ...ticketCodeStorage(internalCredential),
                     tier: 'COMP',
                     state: 'BOUND',
-                    boundEmail: normalizeEmail(email),
+                    boundEmail: email,
+                    accountId,
+                    accountIssuer,
                     boundAt: now,
                     expiresAt: ticketExpiresAt(invitation.scheduledSession.scheduledAt, now),
                     issuedByUserId: invitation.issuedByUserId,
@@ -191,10 +228,26 @@ export async function redeemPromoInvitation(
                 tokenDigest: issued.database.tokenDigest,
                 displayName,
                 ticketEntitlementId: entitlement.id,
+                ...(account ? {
+                    accountIssuer: account.issuer,
+                    accountSubject: account.subject,
+                    accountSessionId: account.sessionId,
+                    accountDisplayName: account.displayName,
+                    accountValidatedAt: account.validatedAt,
+                } : {}),
                 expiresAt: webSessionExpiry(now),
                 lastSeenAt: now,
             },
         });
+        if (account && sourceSessionToken) {
+            await tx.webSession.updateMany({
+                where: {
+                    tokenDigest: digestSessionToken(sourceSessionToken),
+                    revokedAt: null,
+                },
+                data: { revokedAt: now, revocationReason: 'account_ticket_attached' },
+            });
+        }
 
         if (termsAcceptance) {
             await tx.auditLog.create({

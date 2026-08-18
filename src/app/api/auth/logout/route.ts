@@ -14,14 +14,30 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { clearedSessionCookie, revokeWebSessionByToken } from '@/lib/principal';
+import {
+    accountIdentityFromToken,
+    clearedSessionCookie,
+    revokeWebSessionByToken,
+} from '@/lib/principal';
+import {
+    accountLogoutUrl,
+    beaconAccountEnabled,
+    revokeAllAccountSessions,
+} from '@/lib/account-rp';
 import { redactError } from '@/lib/redact';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
     const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const account = beaconAccountEnabled()
+        ? await accountIdentityFromToken(token, new Date(), false).catch(() => null)
+        : null;
+    const allDevices = request.nextUrl.searchParams.get('scope') === 'all';
 
     try {
+        if (account && allDevices) {
+            await revokeAllAccountSessions(account.issuer, account.subject);
+        }
         await revokeWebSessionByToken(token);
     } catch (error) {
         // The cookie still gets cleared: a database blip must not leave someone
@@ -29,7 +45,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         console.error(`[auth] logout could not revoke the session row: ${redactError(error)}`);
     }
 
-    const response = NextResponse.json({ ok: true });
+    let issuerLogoutUrl: string | null = null;
+    if (account) {
+        try {
+            issuerLogoutUrl = await accountLogoutUrl(request.nextUrl.origin);
+        } catch (error) {
+            console.error(`[auth] account logout discovery failed: ${redactError(error)}`);
+        }
+    }
+    const response = NextResponse.json({
+        ok: true,
+        ...(issuerLogoutUrl ? { issuerLogoutUrl } : {}),
+    });
     response.cookies.set(clearedSessionCookie());
     return response;
 }

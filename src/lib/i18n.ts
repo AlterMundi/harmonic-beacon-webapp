@@ -51,6 +51,11 @@ export type Messages = {
         globalSouth: string;
     };
     ticketLogin: {
+        accountRequired: string;
+        accountContinue: string;
+        accountConnected: string;
+        accountError: string;
+        accountReconnectHint: string;
         displayName: string;
         ticketCode: string;
         ticketCodeHint: string;
@@ -78,6 +83,7 @@ export type Messages = {
         required: string;
         signingIn: string;
         signIn: string;
+        accountSignIn: string;
         attendeeSignIn: string;
     };
     session: {
@@ -541,6 +547,11 @@ export const messages: Record<UiLocale, Messages> = {
             globalSouth: 'Sur Global',
         },
         ticketLogin: {
+            accountRequired: 'Primero ingresá con tu cuenta de Harmonic Beacon. Después vinculás tu entrada una sola vez.',
+            accountContinue: 'Continuar con Beacon Account',
+            accountConnected: 'Cuenta de Harmonic Beacon conectada',
+            accountError: 'No pudimos confirmar tu cuenta. Intentá de nuevo.',
+            accountReconnectHint: 'Tu entrada admite a una persona. El mismo código funciona de nuevo si recargás o se corta la conexión.',
             displayName: 'Nombre visible en la sala',
             ticketCode: 'Código de entrada',
             ticketCodeHint: 'Exactamente como aparece en tu entrada o invitación',
@@ -568,6 +579,7 @@ export const messages: Record<UiLocale, Messages> = {
             required: 'Ingresá tu correo del equipo y tu contraseña.',
             signingIn: 'Ingresando…',
             signIn: 'Ingresar',
+            accountSignIn: 'Ingresar con Beacon Account',
             attendeeSignIn: 'Ingreso de participantes',
         },
         session: {
@@ -1086,6 +1098,11 @@ export const messages: Record<UiLocale, Messages> = {
             globalSouth: 'Global South',
         },
         ticketLogin: {
+            accountRequired: 'Sign in with your Harmonic Beacon account first. Then bind your ticket once.',
+            accountContinue: 'Continue with Beacon Account',
+            accountConnected: 'Harmonic Beacon account connected',
+            accountError: 'We could not confirm your account. Try again.',
+            accountReconnectHint: 'Your ticket admits one person. The same code works again after a refresh or a dropped connection.',
             displayName: 'Name shown in the room',
             ticketCode: 'Ticket code',
             ticketCodeHint: 'Exactly as it appears on your ticket or invitation',
@@ -1113,6 +1130,7 @@ export const messages: Record<UiLocale, Messages> = {
             required: 'Enter your staff email and password.',
             signingIn: 'Signing in…',
             signIn: 'Sign in',
+            accountSignIn: 'Sign in with Beacon Account',
             attendeeSignIn: 'Attendee sign-in',
         },
         session: {

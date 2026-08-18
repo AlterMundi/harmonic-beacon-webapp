@@ -1,11 +1,12 @@
 /**
- * Attendee login: ticket code + email.
+ * Attendee login: Beacon Account + ticket code when the central Account RP is
+ * enabled; legacy ticket code + email only while the migration flag is off.
  *
- * The whole attendee identity model lives in this handler. First successful use
- * binds the ticket to `trim(email).toLowerCase()` inside one transaction with a
- * conditional update, so two people who somehow hold the same code cannot both
- * claim it; every later use — after a refresh, a browser restart, or a dropped
- * connection mid-event — succeeds for that same normalized email and no other.
+ * The whole attendee authorization bridge lives in this handler. First
+ * successful use binds the ticket inside one transaction with a conditional
+ * update, so two people who somehow hold the same code cannot both claim it.
+ * Account mode binds exact issuer + opaque subject; legacy mode binds a
+ * normalized provider email while the rollout flag is off.
  *
  * Every failure returns the same status and message. A distinguishable "no such
  * code" would turn this endpoint into a code oracle, and a distinguishable
@@ -19,6 +20,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { clientAddress } from '@/lib/client-address';
 import {
+    accountIdentityFromToken,
     isPlausibleEmail,
     isValidDisplayName,
     newSessionToken,
@@ -27,19 +29,28 @@ import {
     sessionCookie,
     webSessionExpiry,
 } from '@/lib/principal';
+import {
+    beaconAccountEnabled,
+    startAccountAuthorization,
+    type AccountIdentity,
+} from '@/lib/account-rp';
 import { authFailureLimiter } from '@/lib/rate-limit';
 import { redactError } from '@/lib/redact';
 import {
     isPlausiblePromoCode,
+    digestPromoCode,
     promoInvitationsEnabled,
     redeemPromoInvitation,
 } from '@/lib/promo-invitation';
 import { digestTicketCode, normalizeTicketCode } from '@/lib/ticket-code';
+import { SESSION_COOKIE_NAME, digestSessionToken } from '@/lib/session-auth';
 
 /** One message for every rejection. See the module comment. */
 const GENERIC_REJECTION = 'That ticket code and email do not match an active ticket.';
+const GENERIC_ACCOUNT_REJECTION = 'That ticket code does not match an active ticket for this account.';
 const RATE_LIMITED = 'Too many attempts. Please wait and try again.';
 const MALFORMED_REQUEST = 'A display name, ticket code and email address are required.';
+const MALFORMED_ACCOUNT_REQUEST = 'A display name and ticket code are required.';
 const INVITATION_TERMS_VERSION = 'personal-invitation-v2';
 const INVITATION_RETURN_URL = 'https://harmonicbeacon.com/invitacion/';
 const PUBLIC_APP_ORIGIN = 'https://live.harmonicbeacon.com';
@@ -62,7 +73,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const isInvitationForm = request.headers.get('content-type')
         ?.toLowerCase()
         .includes('application/x-www-form-urlencoded') ?? false;
-
+    const accountEnabled = beaconAccountEnabled();
+    const sourceSessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const account = accountEnabled
+        ? await accountIdentityFromToken(sourceSessionToken).catch(() => null)
+        : null;
     if (authFailureLimiter.isLimited(address)) {
         // Nothing about the attempt is examined once the budget is gone, so a
         // limited client learns nothing by continuing to guess.
@@ -95,11 +110,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const promoCandidate = isPlausiblePromoCode(code);
     if (
         (!promoCandidate && code.length < 16) ||
-        !isPlausibleEmail(email) ||
+        (!accountEnabled && !isPlausibleEmail(email)) ||
         !isValidDisplayName(displayName) ||
         (isInvitationForm && (!promoCandidate || !acceptedInvitationTerms))
     ) {
         return reject(address, 'malformed_request', isInvitationForm);
+    }
+
+    if (accountEnabled && !account) {
+        if (isInvitationForm && promoCandidate && acceptedInvitationTerms) {
+            try {
+                const now = new Date();
+                const started = await startAccountAuthorization({
+                    flow: 'attendee',
+                    origin: request.nextUrl.origin,
+                    pendingInvitation: {
+                        promoDigest: digestPromoCode(code),
+                        displayName,
+                        termsVersion: INVITATION_TERMS_VERSION,
+                        termsAcceptedAt: now,
+                    },
+                    now,
+                });
+                const response = NextResponse.redirect(started.authorizationUrl, { status: 303 });
+                response.cookies.set(started.stateCookie);
+                response.headers.set('Cache-Control', 'private, no-store');
+                response.headers.set('Referrer-Policy', 'no-referrer');
+                return response;
+            } catch (error) {
+                console.error(`[auth] invitation Account start failed: ${redactError(error)}`);
+                return invitationFailure('unavailable');
+            }
+        }
+        return NextResponse.json(
+            { error: 'A current Beacon Account session is required.' },
+            { status: 401, headers: { 'Cache-Control': 'private, no-store' } },
+        );
     }
 
     let attempt: Attempt;
@@ -110,20 +156,47 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             }
             const now = new Date();
             const promoAttempt = isInvitationForm
-                ? await redeemPromoInvitation(
-                    code,
-                    email,
-                    displayName,
-                    now,
-                    { version: INVITATION_TERMS_VERSION, acceptedAt: now },
-                )
-                : await redeemPromoInvitation(code, email, displayName);
+                ? accountEnabled
+                    ? await redeemPromoInvitation(
+                        code,
+                        { accountIssuer: account!.issuer, accountId: account!.subject },
+                        displayName,
+                        now,
+                        { version: INVITATION_TERMS_VERSION, acceptedAt: now },
+                        account!,
+                        sourceSessionToken,
+                    )
+                    : await redeemPromoInvitation(
+                        code,
+                        email,
+                        displayName,
+                        now,
+                        { version: INVITATION_TERMS_VERSION, acceptedAt: now },
+                    )
+                : accountEnabled
+                    ? await redeemPromoInvitation(
+                        code,
+                        { accountIssuer: account!.issuer, accountId: account!.subject },
+                        displayName,
+                        undefined,
+                        undefined,
+                        account!,
+                        sourceSessionToken,
+                    )
+                    : await redeemPromoInvitation(code, email, displayName);
             attempt = promoAttempt.ok
                 ? promoAttempt
                 : { ok: false, reason: 'promo_unavailable' };
         } else {
             const codeDigest = digestTicketCode(code);
-            attempt = await redeem(codeDigest, email, displayName);
+            attempt = await redeem(
+                codeDigest,
+                email,
+                displayName,
+                undefined,
+                account ?? undefined,
+                sourceSessionToken,
+            );
         }
     } catch (error) {
         // Missing/invalid secret configuration is an outage, never evidence
@@ -134,7 +207,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (!attempt.ok) {
-        return reject(address, attempt.reason, isInvitationForm);
+        return reject(address, attempt.reason, isInvitationForm, accountEnabled);
     }
 
     // Ticket id and last four are the admission-support handles the roadmap
@@ -153,14 +226,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return response;
 }
 
-function reject(address: string, reason: FailureReason, invitationForm = false): NextResponse {
+function reject(
+    address: string,
+    reason: FailureReason,
+    invitationForm = false,
+    accountEnabled = beaconAccountEnabled(),
+): NextResponse {
     authFailureLimiter.recordFailure(address);
     // `reason` is a fixed enum: useful to an operator reading container logs,
     // and free of the code, the email, and any hint of which exists.
     console.warn(`[auth] ticket login rejected: reason=${reason} client=${address}`);
     if (invitationForm) return invitationFailure(reason === 'malformed_request' ? 'invalid' : 'unavailable');
     return NextResponse.json(
-        { error: reason === 'malformed_request' ? MALFORMED_REQUEST : GENERIC_REJECTION },
+        {
+            error: reason === 'malformed_request'
+                ? accountEnabled ? MALFORMED_ACCOUNT_REQUEST : MALFORMED_REQUEST
+                : accountEnabled ? GENERIC_ACCOUNT_REJECTION : GENERIC_REJECTION,
+        },
         { status: reason === 'malformed_request' ? 400 : 401 },
     );
 }
@@ -174,22 +256,21 @@ function invitationFailure(reason: 'invalid' | 'limited' | 'unavailable'): NextR
 /**
  * Bind on first use and issue a session, in one transaction.
  *
- * The race that matters: two first-use requests with different emails arriving
- * together. Both read `boundEmail = null`, then both attempt the conditional
- * update. Postgres serializes the two row updates; the second re-evaluates its
- * `boundEmail: null` predicate against the winner's committed row, matches
- * nothing, and reports `count = 0`. Re-reading then shows an email that is not
- * its own, so the loser is rejected exactly like a nonexistent code — one
- * winner, no partial state, and no session issued to the loser.
+ * The race that matters is two first-use requests arriving together. Both read
+ * an unbound row, then both attempt the conditional update. Postgres serializes
+ * the updates; the loser re-reads the winner's issuer/subject (or legacy email)
+ * binding and is rejected exactly like a nonexistent code.
  *
- * The same path also handles the ordinary repeat login: `count = 0` with a
- * matching email is a re-entry, not a conflict.
+ * The same path handles an ordinary repeat login: `count = 0` with the same
+ * canonical binding is re-entry, not conflict.
  */
 async function redeem(
     codeDigest: string,
     email: string,
     displayName: string,
     now = new Date(),
+    account?: AccountIdentity,
+    sourceSessionToken?: string,
 ): Promise<Attempt> {
     return prisma.$transaction(async (tx) => {
         // Shared commerce mutex: provisioning/revocation updates this same row.
@@ -206,6 +287,8 @@ async function redeem(
                 codeLastFour: true,
                 state: true,
                 boundEmail: true,
+                accountId: true,
+                accountIssuer: true,
                 expiresAt: true,
                 revokedAt: true,
             },
@@ -221,7 +304,39 @@ async function redeem(
             return { ok: false, reason: 'expired' };
         }
 
-        if (entitlement.boundEmail === null) {
+        if (account && entitlement.accountId === null && entitlement.accountIssuer === null) {
+            const bound = await tx.ticketEntitlement.updateMany({
+                where: {
+                    id: entitlement.id,
+                    accountId: null,
+                    accountIssuer: null,
+                    state: { in: ['ISSUED', 'BOUND'] },
+                    revokedAt: null,
+                },
+                data: {
+                    accountId: account.subject,
+                    accountIssuer: account.issuer,
+                    boundAt: now,
+                    state: 'BOUND',
+                },
+            });
+            if (bound.count !== 1) {
+                const current = await tx.ticketEntitlement.findUnique({
+                    where: { id: entitlement.id },
+                    select: { accountId: true, accountIssuer: true },
+                });
+                if (current?.accountId == null) return { ok: false, reason: 'binding_lost' };
+                if (
+                    current.accountId !== account.subject ||
+                    current.accountIssuer !== account.issuer
+                ) return { ok: false, reason: 'email_mismatch' };
+            }
+        } else if (account && (
+            entitlement.accountId !== account.subject ||
+            entitlement.accountIssuer !== account.issuer
+        )) {
+            return { ok: false, reason: 'email_mismatch' };
+        } else if (!account && entitlement.boundEmail === null) {
             const bound = await tx.ticketEntitlement.updateMany({
                 where: { id: entitlement.id, boundEmail: null, state: 'ISSUED', revokedAt: null },
                 data: { boundEmail: email, boundAt: now, state: 'BOUND' },
@@ -241,7 +356,7 @@ async function redeem(
                     return { ok: false, reason: 'email_mismatch' };
                 }
             }
-        } else if (entitlement.boundEmail !== email) {
+        } else if (!account && entitlement.boundEmail !== email) {
             return { ok: false, reason: 'email_mismatch' };
         }
 
@@ -251,10 +366,26 @@ async function redeem(
                 tokenDigest: issued.database.tokenDigest,
                 displayName,
                 ticketEntitlementId: entitlement.id,
+                ...(account ? {
+                    accountIssuer: account.issuer,
+                    accountSubject: account.subject,
+                    accountSessionId: account.sessionId,
+                    accountDisplayName: account.displayName,
+                    accountValidatedAt: account.validatedAt,
+                } : {}),
                 expiresAt: webSessionExpiry(now),
                 lastSeenAt: now,
             },
         });
+        if (account && sourceSessionToken) {
+            await tx.webSession.updateMany({
+                where: {
+                    tokenDigest: digestSessionToken(sourceSessionToken),
+                    revokedAt: null,
+                },
+                data: { revokedAt: now, revocationReason: 'account_ticket_attached' },
+            });
+        }
 
         return {
             ok: true,

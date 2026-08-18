@@ -80,6 +80,8 @@ describe('principalFromToken', () => {
     afterEach(() => {
         vi.doUnmock('@/lib/db');
         vi.doUnmock('next/headers');
+        vi.unstubAllEnvs();
+        vi.unstubAllGlobals();
     });
 
     it('resolves an attendee from their bound ticket without touching their email', async () => {
@@ -205,6 +207,66 @@ describe('principalFromToken', () => {
         const { principalFromToken } = await importPrincipal();
 
         expect(await principalFromToken(TOKEN, NOW)).toBeNull();
+    });
+
+    it('requires a fresh issuer-isolated Account binding when the RP feature is enabled', async () => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        vi.stubEnv('BEACON_ACCOUNT_ISSUER_URL', 'https://account.harmonicbeacon.com');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_ID', 'hb-live');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET', 'test-secret-that-is-at-least-32-characters');
+        const account = {
+            accountIssuer: 'https://account.harmonicbeacon.com',
+            accountSubject: 'acct_opaque_123',
+            accountSessionId: 'central-sid',
+            accountDisplayName: 'Ana',
+            accountValidatedAt: NOW,
+        };
+        withWebSession({
+            ...attendeeSession({
+                accountId: 'acct_opaque_123',
+                accountIssuer: 'https://account.harmonicbeacon.com',
+            }),
+            ...account,
+        });
+        const { principalFromToken } = await importPrincipal();
+        expect(await principalFromToken(TOKEN, NOW)).toMatchObject({
+            kind: 'attendee',
+            accountId: 'acct_opaque_123',
+        });
+
+        vi.resetModules();
+        withWebSession({
+            ...attendeeSession({
+                accountId: 'acct_opaque_123',
+                accountIssuer: 'https://account-staging.harmonicbeacon.com',
+            }),
+            ...account,
+        });
+        expect(await (await importPrincipal()).principalFromToken(TOKEN, NOW)).toBeNull();
+
+        vi.resetModules();
+        withWebSession({
+            ...attendeeSession({
+                accountId: 'acct_opaque_123',
+                accountIssuer: 'https://account-staging.harmonicbeacon.com',
+            }),
+            ...account,
+            accountIssuer: 'https://account-staging.harmonicbeacon.com',
+        });
+        expect(await (await importPrincipal()).principalFromToken(TOKEN, NOW)).toBeNull();
+
+        vi.resetModules();
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Account unavailable')));
+        withWebSession({
+            ...attendeeSession({
+                accountId: 'acct_opaque_123',
+                accountIssuer: 'https://account.harmonicbeacon.com',
+            }),
+            ...account,
+            accountValidatedAt: new Date(NOW.getTime() - 15 * 60_000 - 1),
+        });
+        expect(await (await importPrincipal()).principalFromToken(TOKEN, NOW)).toBeNull();
+        vi.unstubAllEnvs();
     });
 });
 
