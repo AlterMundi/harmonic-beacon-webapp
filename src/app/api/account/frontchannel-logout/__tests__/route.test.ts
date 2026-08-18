@@ -59,8 +59,10 @@ describe('Listener signed frontchannel logout boundary', () => {
             issuer: 'https://account.harmonicbeacon.com', audience: 'hb-listener',
             sid: 'central-session', clientSecret: 'p'.repeat(32),
         });
+        const [payload, signature] = valid.split('.');
+        const tampered = `${payload}.${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`;
         const response = await GET(new Request(
-            `https://listen.harmonicbeacon.com/api/account/frontchannel-logout?logout_token=${valid.slice(0, -1)}x`,
+            `https://listen.harmonicbeacon.com/api/account/frontchannel-logout?logout_token=${tampered}`,
             { headers: { host: 'listen.harmonicbeacon.com' } },
         ));
         expect(response.status).toBe(400);

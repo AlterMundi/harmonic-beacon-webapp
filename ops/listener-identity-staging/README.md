@@ -67,14 +67,10 @@ sudo install -o root -g root -m 0600 \
 Set image tag and Git SHA to the same lowercase 40-character commit, build time
 to UTC ISO-8601 and schema version to the newest reviewed migration. Listener
 itself is enabled for public staging; leave Account, Free For All, payments,
-withdrawal and test access off. Validate before any container change:
-
-```bash
-sudo node ops/listener-identity-staging/validate.mjs \
-  /etc/harmonic-beacon/listener-identity-staging.deploy.env \
-  /etc/harmonic-beacon/listener-identity-staging.env \
-  /etc/harmonic-beacon/listener-identity-staging-database.env
-```
+withdrawal and test access off. Mona intentionally has no host Node runtime.
+The lifecycle builds the exact reviewed image, verifies its embedded SHA, and
+uses that image in a networkless/read-only container to validate all three
+root-owned files before it starts PostgreSQL or changes runtime state.
 
 Confirm `earlybirds_stream_control_internal` and
 `earlybirds_authority_private` are internal bridges. Capture the current IDs of

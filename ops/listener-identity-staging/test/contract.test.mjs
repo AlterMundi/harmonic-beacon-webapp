@@ -122,8 +122,11 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(lib, /database network exists outside the reviewed project/);
   assert.match(lib, /PostgreSQL volume exists outside the reviewed project/);
   assert.match(smoke, /listener-identity-staging-migrate/);
-  assert.match(smoke, /'listenerAccount' in/);
-  assert.match(smoke, /listenerRuntime !== 'ok'/);
+  assert.match(smoke, /has\("listenerAccount"\) \| not/);
+  assert.match(smoke, /\.checks\.listenerRuntime == "ok"/);
+  assert.match(smoke, /jq --exit-status/);
+  assert.match(edge, /jq --exit-status/);
+  assert.doesNotMatch(`${smoke}\n${edge}`, /\bnode\b/);
   assert.match(start, /listener_staging_install_edge/);
   assert.match(start, /edge-smoke\.sh/);
   assert.match(lib, /nginx-previous\.conf/);

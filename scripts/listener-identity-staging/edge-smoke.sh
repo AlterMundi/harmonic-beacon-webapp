@@ -15,10 +15,10 @@ curl_edge() {
 }
 
 health=$(curl_edge --fail --max-time 5 "$origin/api/health")
-HEALTH_BODY=$health node - "$LISTENER_IDENTITY_STAGING_GIT_SHA" <<'NODE'
-const health = JSON.parse(process.env.HEALTH_BODY);
-if (health.status !== 'ok' || health.gitSha !== process.argv[2]) process.exit(1);
-NODE
+printf '%s\n' "$health" | jq --exit-status \
+  --arg sha "$LISTENER_IDENTITY_STAGING_GIT_SHA" \
+  '.status == "ok" and .gitSha == $sha' >/dev/null ||
+  listener_staging_fail 'public edge health provenance mismatch'
 
 sentinel="listener-account-edge-${LISTENER_IDENTITY_STAGING_GIT_SHA}"
 headers=$(mktemp)
