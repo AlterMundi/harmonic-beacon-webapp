@@ -17,6 +17,9 @@ const eslintConfig = defineConfig([
     // regardless of whether Playwright ran first.
     "playwright-report/**",
     "test-results/**",
+    // Byte-exact canonical snapshot. Its digest is the source-of-truth gate;
+    // lint fixes would make the vendored bytes diverge from upstream.
+    "public/assets/hb-global-nav.js",
     // Compiled output of the playlist-bot, checked in so the deploy does not
     // need a build step for it. It is generated CommonJS, so linting it reports
     // `require()` against a rule written for our source — five errors that no

@@ -3,7 +3,7 @@ import Script from 'next/script';
 
 import type { UiLocale } from '@/lib/i18n';
 
-export const GLOBAL_NAVIGATION_ASSET = 'https://harmonicbeacon.com/assets/hb-global-nav.js';
+export const GLOBAL_NAVIGATION_ASSET = '/assets/hb-global-nav.js';
 export const GLOBAL_NAVIGATION_EMBED_GUARD = `
 (() => {
     if (window.self === window.top) return;

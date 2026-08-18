@@ -25,13 +25,19 @@ manifest and visual-review update together.
 
 ## Global navigation
 
-The cross-product header is intentionally not vendored. Listener and Live load
-the canonical web component directly from
-`https://harmonicbeacon.com/assets/hb-global-nav.js`, owned by
-`AlterMundi/harmonicbeacon.com` (introduced in main merge `9fa515f6` and last
-reviewed here at `51fe213b`). The local light-DOM links are an accessible,
-same-destination fallback only; the shared runtime asset owns the visible
-desktop/mobile component so a navigation edit propagates to all three products.
+The cross-product header is vendored byte-for-byte at
+`public/assets/hb-global-nav.js` from `AlterMundi/harmonicbeacon.com` commit
+`70400675b807ba90988517eb28871ad81c6ac369`, with SHA-256
+`8dce4c2b234ef1369730e839c9d93e1bbc4134c86afb1619b63369981cbb67b0`.
+Live serves that reviewed snapshot from its own `/assets/hb-global-nav.js` path;
+it never executes navigation JavaScript fetched from another origin with Live
+cookies in scope. The local light-DOM links remain an accessible,
+same-destination fallback while the component initializes.
+
+The snapshot is intentionally updated, reviewed and deployed rather than
+silently tracking upstream. `manifest.json` and the brand contract test pin the
+canonical commit, source path, local path and identical digest. A navigation
+sync must update the asset, provenance and manifest together.
 
 ## Font source and license
 
@@ -50,5 +56,7 @@ Both families are covered by the SIL Open Font License 1.1; the relevant
   is pinned from the Google Fonts repository commit above, with trailing
   whitespace normalized for the repository gate.
 
-No font, analytics or decorative brand asset is fetched at runtime. The single
-global-navigation component above is the deliberate exception.
+No font, brand source, analytics or navigation script is fetched from another
+origin at runtime. The navigation may still display the isolated cross-origin
+Account slot and canonical mark; its sandbox prevents the parent navigation
+script from reading Account state.
