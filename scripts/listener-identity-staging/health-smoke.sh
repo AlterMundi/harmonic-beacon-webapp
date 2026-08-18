@@ -27,6 +27,37 @@ if test "$account_enabled" = 1; then
     '.status == "ok" and .checks.database == "ok" and
      .checks.listenerRuntime == "ok" and .checks.listenerAccount == "ok"' >/dev/null ||
     listener_staging_fail 'readiness or Account-on boundary mismatch'
+
+  account_origin=https://account-staging.harmonicbeacon.com
+  account_ready=$(curl --fail --silent --show-error --max-time 5 --proto '=https' \
+    "$account_origin/api/account/health/ready")
+  discovery=$(curl --fail --silent --show-error --max-time 5 --proto '=https' \
+    "$account_origin/.well-known/openid-configuration")
+  jwks=$(curl --fail --silent --show-error --max-time 5 --proto '=https' \
+    "$account_origin/.well-known/jwks.json")
+  printf '%s\n' "$account_ready" | jq --exit-status '
+    .status == "ok" and
+    (.gitSha | type == "string" and test("^[0-9a-f]{40}$")) and
+    (.schemaVersion | type == "string" and test("^[0-9]{14}_[a-z0-9_]+$")) and
+    .checks.database == "ok" and .checks.mail == "ok" and
+    .checks.issuer == "ok" and .checks.jwks == "ok" and
+    .checks.clients == "ok" and .checks.providers == "ok"
+  ' >/dev/null || listener_staging_fail 'Account staging authority is not ready'
+  printf '%s\n' "$discovery" | jq --exit-status --arg issuer "$account_origin" '
+    .issuer == $issuer and
+    .jwks_uri == ($issuer + "/.well-known/jwks.json") and
+    .authorization_endpoint == ($issuer + "/api/account/auth/oauth2/authorize") and
+    .token_endpoint == ($issuer + "/api/account/auth/oauth2/token") and
+    .response_types_supported == ["code"] and
+    .code_challenge_methods_supported == ["S256"] and
+    .token_endpoint_auth_methods_supported == ["client_secret_basic"]
+  ' >/dev/null || listener_staging_fail 'Account staging OIDC discovery drifted from its exact issuer'
+  printf '%s\n' "$jwks" | jq --exit-status '
+    (.keys | type == "array" and length > 0) and
+    all(.keys[]; (.kid | type == "string" and length > 0) and
+      (.kty | type == "string" and length > 0) and
+      (.alg | type == "string" and length > 0))
+  ' >/dev/null || listener_staging_fail 'Account staging JWKS has no usable verification key'
 else
   printf '%s\n' "$ready" | jq --exit-status \
     '.status == "ok" and .checks.database == "ok" and

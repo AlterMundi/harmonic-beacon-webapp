@@ -176,6 +176,11 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(smoke, /listener-identity-staging-migrate/);
   assert.match(smoke, /listener_staging_account_enabled/);
   assert.match(smoke, /\.checks\.listenerAccount == "ok"/);
+  assert.match(smoke, /account_origin=https:\/\/account-staging\.harmonicbeacon\.com/);
+  assert.match(smoke, /\$account_origin\/\.well-known\/openid-configuration/);
+  assert.match(smoke, /\.jwks_uri == \(\$issuer \+ "\/\.well-known\/jwks\.json"\)/);
+  assert.match(smoke, /\.code_challenge_methods_supported == \["S256"\]/);
+  assert.match(smoke, /Account staging JWKS has no usable verification key/);
   assert.match(smoke, /has\("listenerAccount"\) \| not/);
   assert.match(smoke, /\.checks\.listenerRuntime == "ok"/);
   assert.match(smoke, /jq --exit-status/);
