@@ -124,7 +124,10 @@ make this infrastructure smoke pass.
 ## Rollback
 
 Rollback restores the backed-up staging vhost before changing the staging app
-and never downgrades the database. On the first cutover, with no previous
+and atomically restores the prior accepted Account enablement flag before it
+recreates the previous immutable app. Secrets remain in the protected app env
+and are never copied into rollback state. Rollback never downgrades the
+database. On the first cutover, with no previous
 immutable staging image, it stops the new app and restarts the retained
 `listener-ui-dev` container.
 

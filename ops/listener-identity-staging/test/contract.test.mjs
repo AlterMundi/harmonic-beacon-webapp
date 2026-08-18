@@ -165,6 +165,10 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(lib, /--security-opt no-new-privileges/);
   assert.match(lib, /\/app\/ops\/listener-identity-staging\/validate\.mjs/);
   assert.match(lib, /rm -f "\$LISTENER_IDENTITY_STAGING_STATE_DIR\/previous-image"/);
+  assert.match(lib, /previous-account-enabled/);
+  assert.match(lib, /accepted staging app has an invalid Account mode/);
+  assert.match(lib, /listener_staging_restore_account_enabled\(\)/);
+  assert.match(lib, /mv "\$temporary" "\$LISTENER_IDENTITY_STAGING_APP_ENV_FILE"/);
   assert.match(lib, /test "\$running" = true && test "\$health" = healthy/);
   assert.match(lib, /earlybirds-preview-listener-1 earlybirds-preview-postgres-1/);
   assert.match(lib, /database network exists outside the reviewed project/);
@@ -187,6 +191,8 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(lib, /nginx -t/);
   assert.match(lib, /systemctl reload nginx/);
   assert.match(rollback, /listener_staging_restore_edge/);
+  assert.match(rollback, /listener_staging_restore_account_enabled/);
+  assert.ok(rollback.indexOf('listener_staging_restore_account_enabled') < rollback.indexOf('compose up'));
   assert.match(edge, /active staging vhost is not the reviewed template/);
   assert.match(edge, /sentinel/);
   assert.match(edge, /\/var\/log\/nginx/);
