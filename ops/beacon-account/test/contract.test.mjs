@@ -149,6 +149,7 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   const smoke = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/health-smoke.sh'), 'utf8');
   assert.match(start, /git -C "\$root" rev-parse HEAD/);
   assert.match(start, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
+  assert.match(start, /account_compose build account-production[\s\S]*account_validate/);
   assert.match(start, /account_compose up -d "account-mail-worker-\$environment" "account-\$environment"/);
   assert.match(start, /account_check_production_migrations before/);
   assert.match(start, /account_check_production_migrations after/);
@@ -166,6 +167,9 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /account_require_internal_mail_network "\$environment"/);
   assert.match(lib, /docker network inspect "\$network"/);
   assert.match(lib, /must be an exact internal bridge/);
+  assert.match(lib, /docker run --rm --network none --read-only --cap-drop ALL/);
+  assert.match(lib, /\/app\/ops\/beacon-account\/validate\.mjs/);
+  assert.doesNotMatch(lib, /\n\s*node "\$root\/ops\/beacon-account\/validate\.mjs"/);
   assert.match(lib, /pg_dump --format=custom/);
   assert.match(lib, /openssl enc -aes-256-cbc -salt -pbkdf2/);
   assert.match(lib, /openssl enc -d -aes-256-cbc/);
@@ -178,6 +182,8 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(migrationGuard, /pending migrations differ from the reviewed Account-only list/);
   assert.match(migrationGuard, /unresolved migration/);
   assert.doesNotMatch(`${start}\n${lib}`, /migrate reset|migrate down|docker compose down|volume rm|prune/);
+  const dockerfile = fs.readFileSync(path.resolve(ROOT, '../../Dockerfile'), 'utf8');
+  assert.match(dockerfile, /ops\/beacon-account\/validate\.mjs/);
 });
 
 test('nginx keeps Account hosts isolated and never logs token-bearing routes', () => {

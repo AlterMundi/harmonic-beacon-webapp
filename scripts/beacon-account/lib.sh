@@ -62,12 +62,21 @@ account_compose() {
 }
 
 account_validate() {
-  root=$(account_repo_root)
-  node "$root/ops/beacon-account/validate.mjs" \
-    "$BEACON_ACCOUNT_PRODUCTION_ENV_FILE" "$BEACON_ACCOUNT_STAGING_ENV_FILE" \
-    "$BEACON_ACCOUNT_STAGING_DB_ENV_FILE" \
-    "$BEACON_ACCOUNT_MAIL_WORKER_PRODUCTION_ENV_FILE" \
-    "$BEACON_ACCOUNT_MAIL_WORKER_STAGING_ENV_FILE"
+  image="harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG"
+  docker image inspect "$image" >/dev/null 2>&1 ||
+    account_fail "missing exact Account image for validation: $image"
+  docker run --rm --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --mount "type=bind,src=$BEACON_ACCOUNT_PRODUCTION_ENV_FILE,dst=/run/account-production.env,readonly" \
+    --mount "type=bind,src=$BEACON_ACCOUNT_STAGING_ENV_FILE,dst=/run/account-staging.env,readonly" \
+    --mount "type=bind,src=$BEACON_ACCOUNT_STAGING_DB_ENV_FILE,dst=/run/account-staging-database.env,readonly" \
+    --mount "type=bind,src=$BEACON_ACCOUNT_MAIL_WORKER_PRODUCTION_ENV_FILE,dst=/run/account-mail-worker-production.env,readonly" \
+    --mount "type=bind,src=$BEACON_ACCOUNT_MAIL_WORKER_STAGING_ENV_FILE,dst=/run/account-mail-worker-staging.env,readonly" \
+    --entrypoint node "$image" /app/ops/beacon-account/validate.mjs \
+      /run/account-production.env /run/account-staging.env \
+      /run/account-staging-database.env \
+      /run/account-mail-worker-production.env \
+      /run/account-mail-worker-staging.env
 }
 
 account_require_internal_mail_network() {
