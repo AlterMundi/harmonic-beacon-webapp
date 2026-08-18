@@ -11,11 +11,19 @@ import { useLocale } from "@/context/LocaleContext";
 
 type MessageKey = "rejected" | "rateLimited" | "unavailable" | "required";
 
-export default function LoginClient({ next }: { next?: string }) {
+export default function LoginClient({
+    next,
+    accountEnabled = false,
+    defaultDisplayName = '',
+}: {
+    next?: string;
+    accountEnabled?: boolean;
+    defaultDisplayName?: string;
+}) {
     const router = useRouter();
     const { copy } = useLocale();
     const messages = copy.ticketLogin;
-    const [name, setName] = useState("");
+    const [name, setName] = useState(defaultDisplayName);
     const [code, setCode] = useState("");
     const [email, setEmail] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -32,7 +40,7 @@ export default function LoginClient({ next }: { next?: string }) {
             const response = await fetch("/api/auth/ticket", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name, code, email }),
+                body: JSON.stringify(accountEnabled ? { name, code } : { name, code, email }),
             });
 
             if (response.ok) {
@@ -99,7 +107,7 @@ export default function LoginClient({ next }: { next?: string }) {
                 </p>
             </div>
 
-            <div className="space-y-1.5">
+            {!accountEnabled && <div className="space-y-1.5">
                 <label htmlFor="ticket-email" className="block text-sm font-medium text-[var(--paper)]">
                     {messages.email}
                 </label>
@@ -114,7 +122,7 @@ export default function LoginClient({ next }: { next?: string }) {
                     spellCheck={false}
                     className="event-field"
                 />
-            </div>
+            </div>}
 
             {error && (
                 <div role="alert" className="event-alert event-alert--danger">
@@ -132,7 +140,9 @@ export default function LoginClient({ next }: { next?: string }) {
             </button>
 
             <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                {messages.reconnectHint}
+                {accountEnabled
+                    ? messages.accountReconnectHint
+                    : messages.reconnectHint}
             </p>
         </form>
     );

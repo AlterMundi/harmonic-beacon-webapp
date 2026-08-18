@@ -162,6 +162,28 @@ for the lifetime of one isolated target:
 - `LOAD_TEST_API_KEY` and `LOAD_TEST_API_SECRET`: credentials generated only
   for that disposable node. Never copy production LiveKit credentials.
 
+Before publishing those secrets or dispatching generators, prove that the
+disposable target can carry real media from outside the host:
+
+1. Run the container with host networking and restrict `rtc.ips.includes` (or
+   `rtc.interfaces.includes`) to the intended public interface. The top-level
+   `bind_addresses` setting controls the HTTP/API listener but does not, by
+   itself, prevent LiveKit from enumerating Docker bridge addresses as RTC
+   candidates.
+2. Check the startup record for the expected node IP and ports, then use `ss`
+   to verify that the UDP mux is bound only to the intended address. A healthy
+   WebSocket endpoint is not evidence that ICE is reachable.
+3. From a separate host, run one audio publisher plus one subscriber and one
+   VP8 publisher plus one subscriber with the exact load-test binary and target
+   credentials. Both probes must connect without timeout and report every
+   expected subscribed track before the GitHub environment receives secrets.
+
+A short VP8 preflight proves ICE and media reachability, not the packet-loss
+threshold: startup can account for one or more packets in a tiny sample. Only
+the complete synchronized profile may be classified as capacity evidence. If
+the preflight fails, preserve the target log and ICE candidate-pair stats, fix
+the isolated topology, and do not launch distributed traffic.
+
 Start the target-local monitor first, then dispatch with a unique synthetic run
 ID and at least a 15-minute setup delay:
 

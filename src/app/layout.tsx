@@ -4,7 +4,11 @@ import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { LocaleProvider } from "@/context/LocaleContext";
-import { globalNavigationSurface } from "@/lib/brand/global-navigation";
+import {
+  globalNavigationAccountHref,
+  globalNavigationSurface,
+} from "@/lib/brand/global-navigation";
+import { locallyKnownLiveAccountSession } from "@/lib/brand/account-navigation-state";
 import { requestLocale } from "@/lib/i18n-server";
 import "@/styles/hb-brand.css";
 import "./globals.css";
@@ -77,11 +81,20 @@ export default async function RootLayout({
   const incomingHeaders = await headers();
   const locale = await requestLocale();
   const navigationSurface = globalNavigationSurface(incomingHeaders) ?? "events";
+  const accountHref = globalNavigationAccountHref(incomingHeaders);
+  const accountSignedIn = accountHref === "https://account-staging.harmonicbeacon.com/account"
+    ? await locallyKnownLiveAccountSession(incomingHeaders)
+    : false;
 
   return (
     <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
-        <GlobalNavigation active={navigationSurface} locale={locale} />
+        <GlobalNavigation
+          active={navigationSurface}
+          locale={locale}
+          accountHref={accountHref}
+          accountSignedIn={accountSignedIn}
+        />
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
           <div className="relative z-10">{children}</div>

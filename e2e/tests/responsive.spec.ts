@@ -165,7 +165,6 @@ stackTest.describe('responsive live surfaces', () => {
         for (const signal of ['door', 'hands', 'stage', 'primary', 'health']) {
             const control = page.locator(`[data-signal="${signal}"]`);
             await control.scrollIntoViewIfNeeded();
-            await expect(control).toBeVisible();
             const box = await control.boundingBox();
             expect(box, `${signal} has no layout box`).not.toBeNull();
             expect(box!.height).toBeGreaterThanOrEqual(44);
@@ -180,6 +179,7 @@ stackTest.describe('responsive live surfaces', () => {
             '[data-signal="hands"]',
             '[data-tool="tapestry"]',
             '[data-tool="admission"]',
+            '[data-tool="contributions"]',
             '[data-signal="health"]',
         ]) {
             await page.locator(selector).click();

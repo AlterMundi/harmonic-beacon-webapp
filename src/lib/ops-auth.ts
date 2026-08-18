@@ -17,6 +17,10 @@ import type { StaffRole } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { SESSION_COOKIE_NAME, digestSessionToken } from '@/lib/session-auth';
+import {
+    beaconAccountEnabled,
+    validatedAccountIdentity,
+} from '@/lib/account-rp';
 
 export type { StaffRole } from '@prisma/client';
 
@@ -50,6 +54,21 @@ export async function resolveStaffByToken(token: string | undefined): Promise<St
     }
     if (session.staffUser.disabledAt !== null) {
         return null;
+    }
+    if (beaconAccountEnabled()) {
+        const account = await validatedAccountIdentity(session);
+        const binding = await prisma.staffAccountBinding.findUnique({
+            where: { staffUserId: session.staffUser.id },
+        });
+        if (
+            !account ||
+            !binding ||
+            binding.disabledAt !== null ||
+            binding.accountIssuer !== account.issuer ||
+            binding.accountSubject !== account.subject
+        ) {
+            return null;
+        }
     }
 
     return {

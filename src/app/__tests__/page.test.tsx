@@ -27,13 +27,19 @@ vi.mock('@/app/login/LoginClient', () => ({
 
 const SATURDAY = {
     id: 'session-1',
+    title: 'Saturday',
+    description: null,
     language: 'SPANISH' as const,
     scheduledAt: new Date('2026-08-08T14:30:00.000Z'),
+    publicAccess: false,
 };
 const SESSION_2 = {
     id: 'session-2',
+    title: 'Session 2',
+    description: null,
     language: 'ENGLISH' as const,
     scheduledAt: new Date('2026-08-08T20:00:00.000Z'),
+    publicAccess: false,
 };
 const NOW = new Date('2026-08-05T12:00:00.000Z');
 
@@ -112,7 +118,9 @@ describe('landing page', () => {
         );
         // No paid-mode or attendee-cap columns leak into the public page.
         const select = findMany.mock.calls[0][0].select;
-        expect(Object.keys(select).sort()).toEqual(['id', 'language', 'scheduledAt']);
+        expect(Object.keys(select).sort()).toEqual([
+            'description', 'id', 'language', 'publicAccess', 'scheduledAt', 'title',
+        ]);
     });
 
     it('fails closed when a missed lifecycle transition leaves an old session LIVE', async () => {
@@ -168,6 +176,25 @@ describe('landing page', () => {
         expect(links[0]).toHaveAttribute('href', 'https://tickets.example.invalid/harmonic-beacon');
         expect(links[0]).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
         expect(screen.getAllByText(/USD \$50 Norte Global.*USD \$20 Sur Global/)).toHaveLength(2);
+    });
+
+    it('presents a public event as free direct app access without ticket commerce', async () => {
+        mountDb(vi.fn().mockResolvedValue([{
+            ...SATURDAY,
+            title: 'Del otro lado del umbral — Encuentro 1 de 4',
+            description: 'Cuerpo, sonido y símbolo',
+            publicAccess: true,
+        }]));
+        await renderPage();
+
+        expect(screen.getByText('Del otro lado del umbral — Encuentro 1 de 4')).toBeInTheDocument();
+        expect(screen.getByText('Gratis')).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Ingresar al evento' })).toHaveAttribute(
+            'href',
+            '/api/account/login?flow=attendee&next=%2Fsession%2Fsession-1',
+        );
+        expect(screen.queryByRole('link', { name: /Comprar entrada/ })).toBeNull();
+        expect(screen.queryByTestId('ticket-login-form')).toBeNull();
     });
 
     it('says sales open shortly while the external platform is still TBD', async () => {

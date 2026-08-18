@@ -10,12 +10,13 @@ import type { HealthLevel } from '@/lib/ops-health';
 
 import AdmissionConsole from './AdmissionConsole';
 import OpsTapestry from './OpsTapestry';
+import SessionContributionsStaff from './SessionContributionsStaff';
 import SessionLifecycleControl from './SessionLifecycleControl';
 import SpotlightConsole, { type SpotlightSummary } from './SpotlightConsole';
 import TapestryArrange from './TapestryArrange';
 
 type EventStatus = 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
-type Drawer = 'doors' | 'scene' | 'tapestry' | 'admission' | 'health';
+type Drawer = 'doors' | 'scene' | 'tapestry' | 'admission' | 'health' | 'contributions';
 
 type AdmissionEvent = {
     id: string;
@@ -40,6 +41,7 @@ type Props = {
     spotlightCopy: Messages['ops']['spotlight'];
     healthCopy: Messages['ops']['healthPanel'];
     admissionCopy: Messages['ops']['admissionPanel'];
+    contributionsCopy: Messages['ops']['contributionsPanel'];
     tapestryCopy: Messages['ops']['tapestryArrange'];
     opsTapestryCopy: Messages['ops']['opsTapestry'];
     staffRoleLabels: Messages['staffRoles'];
@@ -70,6 +72,7 @@ export default function ConductorCockpit({
     spotlightCopy,
     healthCopy,
     admissionCopy,
+    contributionsCopy,
     tapestryCopy,
     opsTapestryCopy,
     staffRoleLabels,
@@ -156,7 +159,9 @@ export default function ConductorCockpit({
             ? copy.tapestryPanel
             : drawer === 'admission'
               ? copy.admissionPanel
-              : copy.healthPanel;
+              : drawer === 'contributions'
+                ? copy.contributionsPanel
+                : copy.healthPanel;
 
     return (
         <div className="space-y-4" data-testid="conductor-cockpit">
@@ -256,6 +261,14 @@ export default function ConductorCockpit({
                     >
                         {copy.admissionPanel}
                     </button>
+                    <button
+                        type="button"
+                        className="event-button event-button--secondary"
+                        data-tool="contributions"
+                        onClick={(event) => openDrawer('contributions', event.currentTarget)}
+                    >
+                        {copy.contributionsPanel}
+                    </button>
                 </div>
             </header>
 
@@ -334,6 +347,14 @@ export default function ConductorCockpit({
                             events={admissionEvents}
                             locale={locale}
                             copy={admissionCopy}
+                        />
+                    </div>
+                    <div hidden={drawer !== 'contributions'}>
+                        <SessionContributionsStaff
+                            sessionId={session.id}
+                            copy={contributionsCopy}
+                            active={drawer === 'contributions'}
+                            locale={locale}
                         />
                     </div>
                     <div hidden={drawer !== 'health'}>

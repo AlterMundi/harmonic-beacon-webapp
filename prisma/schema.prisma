@@ -103,6 +103,7 @@ model User {
   participations       SessionParticipant[] @relation("StaffParticipation")
   grantedParticipants  SessionParticipant[] @relation("StageGrantActor")
   auditEntries         AuditLog[]           @relation("AuditActor")
+  accountBinding       StaffAccountBinding?
 
   @@map("users")
 }
@@ -119,6 +120,7 @@ model ScheduledSession {
   status        ScheduledSessionStatus @default(SCHEDULED)
   isTest        Boolean                @default(false) @map("is_test")
   paidMode      Boolean                @default(true) @map("paid_mode")
+  publicAccess  Boolean                @default(false) @map("public_access")
   attendeeCap   Int                    @default(150) @map("attendee_cap")
   maxPublishers Int                    @default(6) @map("max_publishers")
   facilitatorId String                 @map("facilitator_id") @db.Uuid
@@ -145,6 +147,10 @@ model TicketEntitlement {
   tier               TicketTier
   state              TicketEntitlementState @default(ISSUED)
   boundEmail         String?                @map("bound_email")
+  // Central Beacon Account subject. This is the authorization binding when
+  // BEACON_ACCOUNT_ENABLED=true; boundEmail remains a provider audit snapshot.
+  accountId          String?                @map("account_id")
+  accountIssuer      String?                @map("account_issuer")
   boundAt            DateTime?              @map("bound_at")
   expiresAt          DateTime               @map("expires_at")
   issuedByUserId     String?                @map("issued_by_user_id") @db.Uuid
@@ -163,6 +169,7 @@ model TicketEntitlement {
 
   @@index([scheduledSessionId, state])
   @@index([boundEmail])
+  @@index([accountIssuer, accountId])
   @@index([codeLastFour])
   @@map("ticket_entitlements")
 }
@@ -307,6 +314,11 @@ model WebSession {
   id                  String             @id @default(uuid()) @db.Uuid
   tokenDigest         String             @unique @map("token_digest")
   displayName         String?            @map("display_name")
+  accountIssuer       String?            @map("account_issuer")
+  accountSubject      String?            @map("account_subject")
+  accountSessionId    String?            @map("account_session_id")
+  accountDisplayName  String?            @map("account_display_name")
+  accountValidatedAt  DateTime?          @map("account_validated_at")
   staffUserId         String?            @map("staff_user_id") @db.Uuid
   staffUser           User?              @relation("StaffWebSessions", fields: [staffUserId], references: [id], onDelete: Cascade)
   ticketEntitlementId String?            @map("ticket_entitlement_id") @db.Uuid
@@ -322,7 +334,45 @@ model WebSession {
   @@index([staffUserId])
   @@index([ticketEntitlementId])
   @@index([expiresAt])
+  @@index([accountIssuer, accountSubject])
+  @@index([accountIssuer, accountSessionId])
   @@map("web_sessions")
+}
+
+/// Explicit, operator-provisioned bridge from a central Beacon Account to an
+/// existing local staff authority. Email is deliberately absent: roles remain
+/// local and changing an Account email cannot create or transfer staff access.
+model StaffAccountBinding {
+  id             String    @id @default(uuid()) @db.Uuid
+  accountIssuer  String    @map("account_issuer")
+  accountSubject String    @map("account_subject")
+  staffUserId    String    @unique @map("staff_user_id") @db.Uuid
+  staffUser      User      @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  disabledAt     DateTime? @map("disabled_at")
+
+  @@unique([accountIssuer, accountSubject])
+  @@map("staff_account_bindings")
+}
+
+/// One-use OAuth authorization transaction. Only opaque protocol material is
+/// persisted; provider tokens and profile/email claims never enter this table.
+model AccountLoginAttempt {
+  stateDigest  String    @id @map("state_digest") @db.Char(64)
+  codeVerifier String    @map("code_verifier")
+  nonce        String
+  flow         String    @db.VarChar(16)
+  returnTo     String    @map("return_to")
+  pendingPromoDigest     String?   @map("pending_promo_digest") @db.Char(64)
+  pendingDisplayName     String?   @map("pending_display_name")
+  pendingTermsVersion    String?   @map("pending_terms_version")
+  pendingTermsAcceptedAt DateTime? @map("pending_terms_accepted_at")
+  expiresAt    DateTime  @map("expires_at")
+  consumedAt   DateTime? @map("consumed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("account_login_attempts")
 }
 
 model SessionParticipant {
@@ -330,6 +380,8 @@ model SessionParticipant {
   scheduledSessionId   String             @map("scheduled_session_id") @db.Uuid
   scheduledSession     ScheduledSession   @relation(fields: [scheduledSessionId], references: [id], onDelete: Cascade)
   participantIdentity  String             @map("participant_identity")
+  // Event alias captured when this participation is first materialized.
+  displayName          String?            @map("display_name")
   ticketEntitlementId  String?            @map("ticket_entitlement_id") @db.Uuid
   ticketEntitlement    TicketEntitlement? @relation(fields: [ticketEntitlementId], references: [id], onDelete: Cascade)
   staffUserId          String?            @map("staff_user_id") @db.Uuid

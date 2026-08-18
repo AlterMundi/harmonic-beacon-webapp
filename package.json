@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build --webpack",
+    "audit:production": "tsx scripts/audit-production-dependencies.ts",
     "start": "next start",
     "lint": "eslint",
     "prepare": "husky",
@@ -32,6 +33,7 @@
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "dotenv": "^17.2.4",
+    "jose": "6.1.2",
     "livekit-client": "^2.17.0",
     "livekit-server-sdk": "^2.15.0",
     "next": "16.2.12",
@@ -72,8 +74,6 @@
     "vitest": "^4.0.18"
   },
   "overrides": {
-    "deepmerge-ts": "8.0.1",
-    "esbuild": "0.28.2",
     "playwright-core": "1.61.0",
     "next": {
       "postcss": "8.5.25",

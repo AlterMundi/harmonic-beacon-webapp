@@ -20,7 +20,19 @@ export type StaffDefinition = {
     name: string;
     passwordDigest: string;
     role: WeekendStaffRole;
+    accountSubject?: string;
 };
+
+function accountSubject(env: NodeJS.ProcessEnv, name: string): string | undefined {
+    const value = env[name]?.trim();
+    if (env.BEACON_ACCOUNT_ENABLED === 'true' && !value) {
+        throw new Error(`Missing required seed environment variable: ${name}`);
+    }
+    if (value && (value.length > 512 || !/^[\x21-\x7e]+$/.test(value))) {
+        throw new Error(`${name} must be an opaque printable subject of at most 512 characters`);
+    }
+    return value || undefined;
+}
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
     const value = env[name]?.trim();
@@ -99,24 +111,28 @@ export function loadSeedContract(
             email: required(env, 'STAFF_FACILITATOR_EMAIL').toLowerCase(),
             passwordDigest: parseCredentialDigest(env, 'STAFF_FACILITATOR_PASSWORD_DIGEST'),
             role: facilitatorRole(env),
+            accountSubject: accountSubject(env, 'STAFF_FACILITATOR_ACCOUNT_SUBJECT'),
         },
         {
             name: required(env, 'STAFF_OPERATOR_ONE_NAME'),
             email: required(env, 'STAFF_OPERATOR_ONE_EMAIL').toLowerCase(),
             passwordDigest: parseCredentialDigest(env, 'STAFF_OPERATOR_ONE_PASSWORD_DIGEST'),
             role: 'OPERATOR',
+            accountSubject: accountSubject(env, 'STAFF_OPERATOR_ONE_ACCOUNT_SUBJECT'),
         },
         {
             name: required(env, 'STAFF_OPERATOR_TWO_NAME'),
             email: required(env, 'STAFF_OPERATOR_TWO_EMAIL').toLowerCase(),
             passwordDigest: parseCredentialDigest(env, 'STAFF_OPERATOR_TWO_PASSWORD_DIGEST'),
             role: 'OPERATOR',
+            accountSubject: accountSubject(env, 'STAFF_OPERATOR_TWO_ACCOUNT_SUBJECT'),
         },
         {
             name: required(env, 'STAFF_ADMIN_NAME'),
             email: required(env, 'STAFF_ADMIN_EMAIL').toLowerCase(),
             passwordDigest: parseCredentialDigest(env, 'STAFF_ADMIN_PASSWORD_DIGEST'),
             role: 'ADMIN',
+            accountSubject: accountSubject(env, 'STAFF_ADMIN_ACCOUNT_SUBJECT'),
         },
     ];
 
@@ -125,6 +141,10 @@ export function loadSeedContract(
     }
     if (new Set(staff.map(({ passwordDigest }) => passwordDigest)).size !== staff.length) {
         throw new Error('Staff credential digests must use unique per-user salts');
+    }
+    const configuredSubjects = staff.flatMap(({ accountSubject }) => accountSubject ? [accountSubject] : []);
+    if (new Set(configuredSubjects).size !== configuredSubjects.length) {
+        throw new Error('Staff Beacon Account subjects must be unique');
     }
 
     const configuredTtl = Number(required(env, 'SESSION_COOKIE_TTL_SECONDS'));

@@ -51,6 +51,11 @@ export type Messages = {
         globalSouth: string;
     };
     ticketLogin: {
+        accountRequired: string;
+        accountContinue: string;
+        accountConnected: string;
+        accountError: string;
+        accountReconnectHint: string;
         displayName: string;
         ticketCode: string;
         ticketCodeHint: string;
@@ -78,6 +83,7 @@ export type Messages = {
         required: string;
         signingIn: string;
         signIn: string;
+        accountSignIn: string;
         attendeeSignIn: string;
     };
     session: {
@@ -126,6 +132,15 @@ export type Messages = {
         masterVolume: string;
         mix: string;
         sessionChannel: string;
+        guidance: {
+            label: string;
+            intention: string;
+            volume: string;
+            balance: string;
+            balanceFullBeacon: string;
+            cameraMic: string;
+            control: string;
+        };
         beaconRoom: string;
         playlist: string;
         live: string;
@@ -197,6 +212,32 @@ export type Messages = {
         shareSnapshot: string;
         permissionDenied: string;
         raisedHands: string;
+    };
+    contributions: {
+        heading: string;
+        prompt: string;
+        placeholder: string;
+        share: string;
+        shareAnonymous: string;
+        anonymityNote: string;
+        sending: string;
+        published: string;
+        retry: string;
+        charLimit: string;
+        rateLimited: string;
+        error: string;
+        loadError: string;
+        empty: string;
+        anonymousAuthor: string;
+        newMessages: string;
+        keyboardHint: string;
+        offline: string;
+        reconnecting: string;
+        sessionEnded: string;
+        loading: string;
+        loadingEarlier: string;
+        collapse: string;
+        expand: string;
     };
     staffRoles: Record<LocalizedStaffRole, string>;
     staffRoleDescriptions: Record<LocalizedStaffRole, string>;
@@ -467,9 +508,17 @@ export type Messages = {
             tapestryPanel: string;
             admissionPanel: string;
             healthPanel: string;
+            contributionsPanel: string;
             closePanel: string;
             returnToRoom: string;
             tools: string;
+        };
+        contributionsPanel: {
+            loading: string;
+            empty: string;
+            error: string;
+            retry: string;
+            anonymousBadge: string;
         };
     };
 };
@@ -498,6 +547,11 @@ export const messages: Record<UiLocale, Messages> = {
             globalSouth: 'Sur Global',
         },
         ticketLogin: {
+            accountRequired: 'Primero ingresá con tu cuenta de Harmonic Beacon. Después vinculás tu entrada una sola vez.',
+            accountContinue: 'Continuar con Beacon Account',
+            accountConnected: 'Cuenta de Harmonic Beacon conectada',
+            accountError: 'No pudimos confirmar tu cuenta. Intentá de nuevo.',
+            accountReconnectHint: 'Tu entrada admite a una persona. El mismo código funciona de nuevo si recargás o se corta la conexión.',
             displayName: 'Nombre visible en la sala',
             ticketCode: 'Código de entrada',
             ticketCodeHint: 'Exactamente como aparece en tu entrada o invitación',
@@ -525,6 +579,7 @@ export const messages: Record<UiLocale, Messages> = {
             required: 'Ingresá tu correo del equipo y tu contraseña.',
             signingIn: 'Ingresando…',
             signIn: 'Ingresar',
+            accountSignIn: 'Ingresar con Beacon Account',
             attendeeSignIn: 'Ingreso de participantes',
         },
         session: {
@@ -573,6 +628,15 @@ export const messages: Record<UiLocale, Messages> = {
             masterVolume: 'Volumen general de la sala',
             mix: 'Balance Beacon / Sesión',
             sessionChannel: 'Sesión',
+            guidance: {
+                label: 'Cómo funciona la escucha',
+                intention: 'La experiencia te invita a buscar una pregunta, no una respuesta.',
+                volume: 'El volumen general controla todo lo que escuchás en la sala.',
+                balance: 'El balance elige cuánto escuchás del Beacon y cuánto de la sesión.',
+                balanceFullBeacon: 'Si llevás el balance completamente hacia Beacon, podés quedarte solo con su sonido y dejar la voz de la sesión en cero.',
+                cameraMic: 'Apagar la cámara no apaga tu micrófono. Cada control funciona por separado.',
+                control: 'Tu cámara y tu micrófono permanecen siempre bajo tu control.',
+            },
             beaconRoom: 'Sala Beacon',
             playlist: 'Playlist',
             live: 'En vivo',
@@ -644,6 +708,32 @@ export const messages: Record<UiLocale, Messages> = {
             shareSnapshot: 'Compartir una imagen de cámara',
             permissionDenied: 'No se otorgó permiso para usar la cámara. Igual podés participar de la sesión.',
             raisedHands: 'Manos levantadas: {names}',
+        },
+        contributions: {
+            heading: 'Preguntas y emociones',
+            prompt: 'Compartí una pregunta o una emoción con la sala',
+            placeholder: 'Escribí tu pregunta o emoción…',
+            share: 'Compartir',
+            shareAnonymous: 'Compartir anónimo',
+            anonymityNote: 'Con “Compartir anónimo” la sala no verá tu nombre. El equipo facilitador sí puede ver quién lo escribió, para cuidar el espacio.',
+            sending: 'Enviando…',
+            published: 'Publicado',
+            retry: 'Reintentar',
+            charLimit: 'Llegaste al máximo de 1000 caracteres',
+            rateLimited: 'Esperá {seconds} s antes de compartir de nuevo',
+            error: 'No se pudo publicar. Tu texto sigue acá, probá de nuevo.',
+            loadError: 'No se pudo cargar la conversación.',
+            empty: 'Todavía no hay preguntas ni emociones. Sé la primera voz.',
+            anonymousAuthor: 'Anónimo',
+            newMessages: 'Hay mensajes nuevos ↓',
+            keyboardHint: 'Elegí cómo compartir con uno de los botones',
+            offline: 'Sin conexión. Tu texto está a salvo; retomamos al volver.',
+            reconnecting: 'Reconectando con la sala…',
+            sessionEnded: 'La sesión terminó. La conversación queda en solo lectura.',
+            loading: 'Cargando la conversación…',
+            loadingEarlier: 'Cargando mensajes anteriores…',
+            collapse: 'Ocultar preguntas y emociones',
+            expand: 'Mostrar preguntas y emociones',
         },
         staffRoles: {
             FACILITATOR: 'Facilitador/a',
@@ -971,9 +1061,17 @@ export const messages: Record<UiLocale, Messages> = {
                 tapestryPanel: 'Composición del tapiz',
                 admissionPanel: 'Soporte de entradas',
                 healthPanel: 'Estado técnico',
+                contributionsPanel: 'Preguntas y emociones',
                 closePanel: 'Cerrar herramienta',
                 returnToRoom: 'Volver a la sala en vivo',
                 tools: 'Herramientas',
+            },
+            contributionsPanel: {
+                loading: 'Cargando la conversación…',
+                empty: 'Todavía no hay contribuciones.',
+                error: 'No se pudo cargar la conversación.',
+                retry: 'Reintentar',
+                anonymousBadge: 'Anónimo para la audiencia',
             },
         },
     },
@@ -1000,6 +1098,11 @@ export const messages: Record<UiLocale, Messages> = {
             globalSouth: 'Global South',
         },
         ticketLogin: {
+            accountRequired: 'Sign in with your Harmonic Beacon account first. Then bind your ticket once.',
+            accountContinue: 'Continue with Beacon Account',
+            accountConnected: 'Harmonic Beacon account connected',
+            accountError: 'We could not confirm your account. Try again.',
+            accountReconnectHint: 'Your ticket admits one person. The same code works again after a refresh or a dropped connection.',
             displayName: 'Name shown in the room',
             ticketCode: 'Ticket code',
             ticketCodeHint: 'Exactly as it appears on your ticket or invitation',
@@ -1027,6 +1130,7 @@ export const messages: Record<UiLocale, Messages> = {
             required: 'Enter your staff email and password.',
             signingIn: 'Signing in…',
             signIn: 'Sign in',
+            accountSignIn: 'Sign in with Beacon Account',
             attendeeSignIn: 'Attendee sign-in',
         },
         session: {
@@ -1075,6 +1179,15 @@ export const messages: Record<UiLocale, Messages> = {
             masterVolume: 'Overall room volume',
             mix: 'Beacon / Session balance',
             sessionChannel: 'Session',
+            guidance: {
+                label: 'How listening works',
+                intention: 'The experience invites you to look for a question, not an answer.',
+                volume: 'Overall volume controls everything you hear in the room.',
+                balance: 'The balance chooses how much of the Beacon and how much of the session you hear.',
+                balanceFullBeacon: 'Move the balance fully toward Beacon to hear only the Beacon and bring the session voice to zero.',
+                cameraMic: 'Turning off your camera does not turn off your microphone. Each control works independently.',
+                control: 'Your camera and microphone always remain under your control.',
+            },
             beaconRoom: 'Beacon room',
             playlist: 'Playlist',
             live: 'Live',
@@ -1146,6 +1259,32 @@ export const messages: Record<UiLocale, Messages> = {
             shareSnapshot: 'Share a camera snapshot',
             permissionDenied: 'Camera permission was not granted. You can still take part in the session.',
             raisedHands: 'Raised hands: {names}',
+        },
+        contributions: {
+            heading: 'Questions and emotions',
+            prompt: 'Share a question or an emotion with the room',
+            placeholder: 'Write your question or emotion…',
+            share: 'Share',
+            shareAnonymous: 'Share anonymously',
+            anonymityNote: 'With “Share anonymously” the room will not see your name. The facilitation team can still see who wrote it, to keep the space safe.',
+            sending: 'Sending…',
+            published: 'Published',
+            retry: 'Retry',
+            charLimit: 'You reached the 1000-character limit',
+            rateLimited: 'Wait {seconds} s before sharing again',
+            error: 'Could not publish. Your text is still here, try again.',
+            loadError: 'Could not load the conversation.',
+            empty: 'No questions or emotions yet. Be the first voice.',
+            anonymousAuthor: 'Anonymous',
+            newMessages: 'New messages ↓',
+            keyboardHint: 'Choose how to share with one of the buttons',
+            offline: 'You are offline. Your text is safe; we resume when you are back.',
+            reconnecting: 'Reconnecting with the room…',
+            sessionEnded: 'The session has ended. The conversation is read-only.',
+            loading: 'Loading the conversation…',
+            loadingEarlier: 'Loading earlier messages…',
+            collapse: 'Hide questions and emotions',
+            expand: 'Show questions and emotions',
         },
         staffRoles: {
             FACILITATOR: 'Facilitator',
@@ -1473,9 +1612,17 @@ export const messages: Record<UiLocale, Messages> = {
                 tapestryPanel: 'Tapestry composition',
                 admissionPanel: 'Admission support',
                 healthPanel: 'System health',
+                contributionsPanel: 'Questions and emotions',
                 closePanel: 'Close tool',
                 returnToRoom: 'Return to the live room',
                 tools: 'Tools',
+            },
+            contributionsPanel: {
+                loading: 'Loading the conversation…',
+                empty: 'No contributions yet.',
+                error: 'Could not load the conversation.',
+                retry: 'Retry',
+                anonymousBadge: 'Anonymous to the audience',
             },
         },
     },

@@ -38,11 +38,41 @@ async function main() {
     try {
         await prisma.$transaction(async (tx) => {
             for (const member of staff) {
-                await tx.user.upsert({
+                const { accountSubject, ...staffRecord } = member;
+                const user = await tx.user.upsert({
                     where: { email: member.email },
-                    update: member,
-                    create: member,
+                    update: staffRecord,
+                    create: staffRecord,
                 });
+                if (accountSubject) {
+                    const accountIssuer = process.env.BEACON_ACCOUNT_ISSUER_URL?.trim().replace(/\/$/, '');
+                    if (!accountIssuer) throw new Error('BEACON_ACCOUNT_ISSUER_URL is required for staff Account bindings');
+                    const previous = await tx.staffAccountBinding.findUnique({
+                        where: { staffUserId: user.id },
+                        select: { accountIssuer: true, accountSubject: true, disabledAt: true },
+                    });
+                    const binding = await tx.staffAccountBinding.upsert({
+                        where: { staffUserId: user.id },
+                        update: { accountIssuer, accountSubject, disabledAt: null },
+                        create: { accountIssuer, accountSubject, staffUserId: user.id },
+                    });
+                    if (
+                        !previous ||
+                        previous.accountIssuer !== accountIssuer ||
+                        previous.accountSubject !== accountSubject ||
+                        previous.disabledAt !== null
+                    ) {
+                        await tx.auditLog.create({
+                            data: {
+                                actorUserId: null,
+                                action: 'account.staff.binding.upsert',
+                                targetType: 'STAFF_ACCOUNT_BINDING',
+                                targetId: binding.id,
+                                metadata: { accountIssuer },
+                            },
+                        });
+                    }
+                }
             }
 
             const facilitator = await tx.user.findUniqueOrThrow({

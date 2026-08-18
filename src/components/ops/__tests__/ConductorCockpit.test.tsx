@@ -35,6 +35,9 @@ vi.mock('../TapestryArrange', () => ({
 vi.mock('../AdmissionConsole', () => ({
     default: () => <div data-testid="admission-panel">Admission</div>,
 }));
+vi.mock('../SessionContributionsStaff', () => ({
+    default: () => <div data-testid="contributions-panel">Contributions</div>,
+}));
 vi.mock('@/app/ops/health/OpsHealthClient', () => ({
     default: ({
         onLevelChange,
@@ -67,6 +70,7 @@ const props = {
     spotlightCopy: messages.en.ops.spotlight,
     healthCopy: messages.en.ops.healthPanel,
     admissionCopy: messages.en.ops.admissionPanel,
+    contributionsCopy: messages.en.ops.contributionsPanel,
     tapestryCopy: messages.en.ops.tapestryArrange,
     opsTapestryCopy: messages.en.ops.opsTapestry,
     staffRoleLabels: messages.en.staffRoles,
@@ -98,6 +102,17 @@ describe('ConductorCockpit', () => {
             expect(screen.queryByRole('dialog')).toBeNull();
             expect(screen.getByTestId('persistent-room')).toBe(room);
         }
+
+        // The contributions tool lives with the header tools (no live signal);
+        // its drawer opens and closes without replacing the room as well.
+        const contributionsTool = document.querySelector<HTMLButtonElement>('[data-tool="contributions"]');
+        expect(contributionsTool).not.toBeNull();
+        if (!contributionsTool) throw new Error('Missing contributions tool');
+        fireEvent.click(contributionsTool);
+        expect(screen.getByTestId('contributions-panel')).toBeVisible();
+        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Return to the live room/ }));
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(screen.getByTestId('persistent-room')).toBe(room);
     });
 
     it('turns live queue and health data into glanceable signals', async () => {
