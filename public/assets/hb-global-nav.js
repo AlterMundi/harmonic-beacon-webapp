@@ -127,10 +127,10 @@
 
   function beaconMarkPath() {
     var points = [];
-    for (var index = 0; index <= 180; index += 1) {
-      var angle = Math.PI * 2 * index / 180;
-      var x = 100 + 92 * Math.cos(angle);
-      var y = 100 + 92 * Math.sin(angle * 3);
+    for (var index = 0; index <= 280; index += 1) {
+      var angle = Math.PI * 2 * index / 280;
+      var x = 100 + 92 * Math.cos(angle * 3);
+      var y = 100 + 92 * Math.sin(angle * 2);
       points.push((index === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2));
     }
     return points.join(' ');
