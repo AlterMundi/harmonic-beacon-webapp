@@ -119,21 +119,23 @@ account_wait_healthy() {
 
 account_verify_running() {
   environment=$1
+  expected_sha=${2:-$BEACON_ACCOUNT_GIT_SHA}
+  expected_image_tag=${3:-$BEACON_ACCOUNT_IMAGE_TAG}
   container=$(account_container_name "$environment")
   worker=$(account_mail_worker_container_name "$environment")
   account_wait_healthy "$container"
   account_wait_healthy "$worker"
   image=$(docker inspect "$container" --format '{{.Config.Image}}')
-  test "$image" = "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" || account_fail 'running image mismatch'
+  test "$image" = "harmonic-beacon/account:$expected_image_tag" || account_fail 'running image mismatch'
   worker_image=$(docker inspect "$worker" --format '{{.Config.Image}}')
-  test "$worker_image" = "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" ||
+  test "$worker_image" = "harmonic-beacon/account:$expected_image_tag" ||
     account_fail 'running mail worker image mismatch'
   running_sha=$(docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}' |
     sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
-  test "$running_sha" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'running SHA mismatch'
+  test "$running_sha" = "$expected_sha" || account_fail 'running SHA mismatch'
   worker_sha=$(docker inspect "$worker" --format '{{range .Config.Env}}{{println .}}{{end}}' |
     sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
-  test "$worker_sha" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'running mail worker SHA mismatch'
+  test "$worker_sha" = "$expected_sha" || account_fail 'running mail worker SHA mismatch'
   published=$(docker inspect "$container" --format '{{json .HostConfig.PortBindings}}')
   expected_port=13002
   [ "$environment" = staging ] && expected_port=13003

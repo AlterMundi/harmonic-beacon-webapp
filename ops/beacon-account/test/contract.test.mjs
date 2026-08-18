@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,10 @@ const STAGING = path.join(ROOT, 'account.staging.env.example');
 const STAGING_DB = path.join(ROOT, 'database.staging.env.example');
 const PROD_WORKER = path.join(ROOT, 'account-mail-worker.production.env.example');
 const STAGING_WORKER = path.join(ROOT, 'account-mail-worker.staging.env.example');
+const HEALTH_JSON_VERIFY = path.resolve(ROOT, '../../scripts/beacon-account/verify-health-json.sh');
+const HEALTH_ISSUER = 'https://account-staging.harmonicbeacon.com';
+const HEALTH_SHA = 'a'.repeat(40);
+const HEALTH_SCHEMA = '20260818010000_beacon_account_authority';
 
 function mutate(source, from, to) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'beacon-account-contract-'));
@@ -30,6 +35,45 @@ function composeService(source, name) {
   const next = remainder.search(/\n  [a-z0-9][a-z0-9-]*:\n/);
   return next < 0 ? remainder : remainder.slice(0, next);
 }
+
+function verifyHealthFixture({ jwks, ready = {}, discovery = {} }) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'beacon-account-health-'));
+  const write = (name, value) => fs.writeFileSync(
+    path.join(directory, `${name}.json`), JSON.stringify(value),
+  );
+  write('ready', {
+    status: 'ok', gitSha: HEALTH_SHA, schemaVersion: HEALTH_SCHEMA,
+    checks: {
+      database: 'ok', mail: 'ok', issuer: 'ok', jwks: 'ok', clients: 'ok', providers: 'ok',
+    },
+    ...ready,
+  });
+  write('discovery', {
+    issuer: HEALTH_ISSUER,
+    jwks_uri: `${HEALTH_ISSUER}/.well-known/jwks.json`,
+    authorization_endpoint: `${HEALTH_ISSUER}/api/account/auth/oauth2/authorize`,
+    token_endpoint: `${HEALTH_ISSUER}/api/account/auth/oauth2/token`,
+    userinfo_endpoint: `${HEALTH_ISSUER}/api/account/auth/oauth2/userinfo`,
+    introspection_endpoint: `${HEALTH_ISSUER}/api/account/auth/oauth2/introspect`,
+    revocation_endpoint: `${HEALTH_ISSUER}/api/account/auth/oauth2/revoke`,
+    end_session_endpoint: `${HEALTH_ISSUER}/api/account/auth/oauth2/end-session`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic'],
+    ...discovery,
+  });
+  write('jwks', jwks);
+  const result = spawnSync('sh', [
+    HEALTH_JSON_VERIFY, directory, HEALTH_ISSUER, HEALTH_SHA, HEALTH_SCHEMA,
+  ], { encoding: 'utf8' });
+  fs.rmSync(directory, { recursive: true, force: true });
+  return result;
+}
+
+const publicEd25519Key = {
+  kid: 'staging-ed25519-key', kty: 'OKP', alg: 'EdDSA', crv: 'Ed25519', x: 'A'.repeat(43),
+};
 
 test('production and staging examples are isolated and fail closed', () => {
   validatePair(PROD, STAGING, STAGING_DB, true);
@@ -151,6 +195,8 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
   assert.match(start, /account_compose build account-production[\s\S]*account_validate/);
   assert.match(start, /account_compose up -d "account-mail-worker-\$environment" "account-\$environment"/);
+  assert.match(start, /health-smoke\.sh" "\$environment" "\$ACCOUNT_DEPLOY_FILE"/);
+  assert.ok(start.indexOf('health-smoke.sh') < start.lastIndexOf('cutover_started=0'));
   assert.match(start, /account_check_production_migrations before/);
   assert.match(start, /account_check_production_migrations after/);
   assert.match(start, /flock -n 9/);
@@ -160,11 +206,14 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(lib, /running mail worker SHA mismatch/);
   assert.match(lib, /Account mail worker must not publish ports/);
   assert.match(lib, /account_wait_container=\$1/);
+  assert.match(lib, /expected_sha=\$\{2:-\$BEACON_ACCOUNT_GIT_SHA\}/);
+  assert.match(lib, /expected_image_tag=\$\{3:-\$BEACON_ACCOUNT_IMAGE_TAG\}/);
   assert.doesNotMatch(lib, /account_wait_healthy\(\) \{\s+container=\$1/);
   assert.match(lib, /account_image_supports_mail_worker/);
   assert.match(lib, /scripts\/process-account-mail-outbox\.ts/);
   assert.match(rollback, /previous_worker_present=0/);
   assert.match(rollback, /account_image_supports_mail_worker/);
+  assert.match(rollback, /health-smoke\.sh" "\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$previous_sha"/);
   assert.doesNotMatch(rollback, /account_restore_previous_runtime "\$environment" "\$previous_sha" 1/);
   assert.match(start, /account_require_internal_mail_network "\$environment"/);
   assert.match(lib, /docker network inspect "\$network"/);
@@ -177,9 +226,8 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(lib, /openssl enc -d -aes-256-cbc/);
   assert.doesNotMatch(lib, /> "\$backup_dir\/\$backup_name"\s*$/m);
   assert.match(lib, /database was not downgraded|account_restore_previous_runtime/);
-  assert.match(smoke, /ready\.status !== 'ok'/);
-  assert.match(smoke, /discovery\.issuer !== issuer/);
-  assert.match(smoke, /jwks\.keys\.length < 1/);
+  assert.match(smoke, /verify-health-json\.sh/);
+  assert.doesNotMatch(smoke, /\bnode\b/);
   const migrationGuard = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/check-migrations.mjs'), 'utf8');
   assert.match(migrationGuard, /pending migrations differ from the reviewed Account-only list/);
   assert.match(migrationGuard, /unresolved migration/);
@@ -195,6 +243,43 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   ]) {
     assert.match(dockerfile, new RegExp(`ops/beacon-account/${fixture.replaceAll('.', '\\\.')}`));
   }
+});
+
+test('health verifier accepts the exact public Ed25519 contract without optional use', () => {
+  assert.equal(verifyHealthFixture({ jwks: { keys: [publicEd25519Key] } }).status, 0);
+  assert.equal(verifyHealthFixture({
+    jwks: { keys: [{ ...publicEd25519Key, use: 'sig', key_ops: ['verify'] }] },
+  }).status, 0);
+});
+
+test('health verifier rejects unusable, private or ambiguous JWKS material', () => {
+  const invalid = [
+    ['empty set', { keys: [] }],
+    ['wrong use', { keys: [{ ...publicEd25519Key, use: 'enc' }] }],
+    ['wrong operations', { keys: [{ ...publicEd25519Key, key_ops: ['sign'] }] }],
+    ['wrong type', { keys: [{ ...publicEd25519Key, kty: 'EC' }] }],
+    ['wrong algorithm', { keys: [{ ...publicEd25519Key, alg: 'ES256' }] }],
+    ['wrong curve', { keys: [{ ...publicEd25519Key, crv: 'X25519' }] }],
+    ['missing public material', { keys: [{ ...publicEd25519Key, x: undefined }] }],
+    ['invalid public material', { keys: [{ ...publicEd25519Key, x: `${'A'.repeat(42)}=` }] }],
+    ['equivalent noncanonical public material', { keys: [{ ...publicEd25519Key, x: `${'A'.repeat(42)}B` }] }],
+    ['private material', { keys: [{ ...publicEd25519Key, d: 'B'.repeat(43) }] }],
+    ['missing key id', { keys: [{ ...publicEd25519Key, kid: '' }] }],
+    ['duplicate key id', { keys: [publicEd25519Key, { ...publicEd25519Key }] }],
+  ];
+  for (const [label, jwks] of invalid) {
+    assert.notEqual(verifyHealthFixture({ jwks }).status, 0, label);
+  }
+});
+
+test('health verifier rejects readiness provenance and OIDC contract drift', () => {
+  assert.notEqual(verifyHealthFixture({
+    jwks: { keys: [publicEd25519Key] }, ready: { gitSha: 'b'.repeat(40) },
+  }).status, 0);
+  assert.notEqual(verifyHealthFixture({
+    jwks: { keys: [publicEd25519Key] },
+    discovery: { token_endpoint_auth_methods_supported: ['client_secret_post'] },
+  }).status, 0);
 });
 
 test('nginx keeps Account hosts isolated and never logs token-bearing routes', () => {
