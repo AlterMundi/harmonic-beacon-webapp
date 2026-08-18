@@ -412,7 +412,6 @@ test('nginx keeps Account hosts isolated and never logs token-bearing routes', (
     for (const route of [
       '/verify-email',
       '/reset-password',
-      '/nav-slot',
       '/assets/hb-global-nav.js',
     ]) {
       const start = nginx.indexOf(`location = ${route} {`);

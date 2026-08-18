@@ -322,6 +322,26 @@ export async function currentListenerAccountSession(
     return listenerSessionView(session);
 }
 
+/**
+ * A boolean-only navigation hint derived from the host-local RP session.
+ * It never revalidates with Account, mutates the session, or exposes identity.
+ */
+export async function locallyKnownListenerAccountSession(
+    headers: Headers,
+    now = new Date(),
+): Promise<boolean> {
+    const raw = readListenerAccountCookie(headers);
+    if (!raw) return false;
+    let config: RPConfig;
+    try { config = listenerAccountRPConfig(headers); } catch { return false; }
+    const session = await prisma.listenerAccountSession.findUnique({
+        where: { tokenDigest: digestSessionToken(raw) },
+        select: { issuer: true, subject: true, sid: true, synthetic: true, expiresAt: true },
+    });
+    return Boolean(session && !session.synthetic && session.issuer === config.issuer &&
+        session.subject.length > 0 && session.sid.length > 0 && session.expiresAt > now);
+}
+
 type ListenerSessionWithAccount = Prisma.ListenerAccountSessionGetPayload<{
     include: { account: { include: { beaconProfile: true } } };
 }>;

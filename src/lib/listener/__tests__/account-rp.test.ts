@@ -9,6 +9,7 @@ import {
     currentListenerAccountSession,
     LISTENER_ACCOUNT_COOKIE,
     listenerAccountRPConfig,
+    locallyKnownListenerAccountSession,
     localListenerAccountId,
     readListenerAccountCookie,
     readListenerAccountAttemptCookie,
@@ -47,6 +48,12 @@ describe('Listener Account host-bound secret selection', () => {
 });
 
 describe('Listener Account RP subject namespace', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+        vi.clearAllMocks();
+    });
+
     it('accepts exactly one bounded cookie and fails malformed or duplicate cookies closed', () => {
         expect(readListenerAccountCookie(new Headers({
             cookie: `${LISTENER_ACCOUNT_COOKIE}=opaque%2Dtoken`,
@@ -80,6 +87,50 @@ describe('Listener Account RP subject namespace', () => {
         expect(staging).not.toBe(prod);
         expect(localListenerAccountId('https://account-staging.harmonicbeacon.com', 'same-sub'))
             .toBe(staging);
+    });
+
+    it('derives the navigation hint from an exact unexpired local session without network or writes', async () => {
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_ENABLED', '1');
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_ENVIRONMENT', 'staging');
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING', 's'.repeat(32));
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING', 'b'.repeat(32));
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        const now = new Date('2026-08-18T12:00:00.000Z');
+        sessions.findUnique.mockResolvedValue({
+            issuer: 'https://account-staging.harmonicbeacon.com',
+            subject: 'opaque-account',
+            sid: 'central-sid',
+            synthetic: false,
+            expiresAt: new Date('2026-08-18T12:05:00.000Z'),
+        });
+        const headers = new Headers({
+            host: 'earlybirds-staging.harmonicbeacon.com',
+            cookie: `${LISTENER_ACCOUNT_COOKIE}=opaque-session-token`,
+        });
+
+        await expect(locallyKnownListenerAccountSession(headers, now)).resolves.toBe(true);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(sessions.update).not.toHaveBeenCalled();
+        expect(sessions.updateMany).not.toHaveBeenCalled();
+        expect(sessions.delete).not.toHaveBeenCalled();
+
+        sessions.findUnique.mockResolvedValueOnce({
+            issuer: 'https://account-staging.harmonicbeacon.com',
+            subject: 'opaque-account', sid: 'central-sid', synthetic: false,
+            expiresAt: now,
+        }).mockResolvedValueOnce({
+            issuer: 'https://account-staging.harmonicbeacon.com',
+            subject: 'opaque-account', sid: 'central-sid', synthetic: true,
+            expiresAt: new Date('2026-08-18T12:05:00.000Z'),
+        }).mockResolvedValueOnce({
+            issuer: 'https://account.harmonicbeacon.com',
+            subject: 'opaque-account', sid: 'central-sid', synthetic: false,
+            expiresAt: new Date('2026-08-18T12:05:00.000Z'),
+        });
+        await expect(locallyKnownListenerAccountSession(headers, now)).resolves.toBe(false);
+        await expect(locallyKnownListenerAccountSession(headers, now)).resolves.toBe(false);
+        await expect(locallyKnownListenerAccountSession(headers, now)).resolves.toBe(false);
     });
 });
 

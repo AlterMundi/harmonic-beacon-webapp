@@ -8,8 +8,10 @@ import {
   globalNavigationSurface,
 } from "@/lib/brand/global-navigation";
 import { requestBrowserLocale, requestLocale } from "@/lib/i18n-server";
-import { isCanonicalListenerHost } from "@/lib/listener/public-discovery";
+import { isCanonicalListenerHost, isListenerStagingHost } from "@/lib/listener/public-discovery";
 import { isAccountHost } from "@/lib/account/config";
+import { locallyKnownAccountSession } from "@/lib/account/auth";
+import { locallyKnownListenerAccountSession } from "@/lib/listener/account-rp";
 import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
@@ -114,9 +116,17 @@ export default async function RootLayout({
   // honors the shared navigation preference. Keep that policy bound to the
   // exact public host so event-language defaults elsewhere remain untouched.
   const listenerHost = isCanonicalListenerHost(incomingHeaders);
+  const listenerAccountHost = listenerHost || isListenerStagingHost(incomingHeaders);
   const accountHost = isAccountHost(incomingHeaders.get('host'));
-  const accountNavSlot = accountHost && incomingHeaders.get('x-hb-account-nav-slot') === '1';
   const accountHref = globalNavigationAccountHref(incomingHeaders);
+  const localHeaders = new Headers(incomingHeaders);
+  const accountSignedIn = accountHref
+      ? accountHost
+      ? await locallyKnownAccountSession(localHeaders).catch(() => false)
+      : listenerAccountHost
+        ? await locallyKnownListenerAccountSession(localHeaders).catch(() => false)
+        : false
+    : false;
   // This application is the Live surface by default. Listener and its staging
   // host opt into their own active item explicitly; local/E2E hosts continue
   // to exercise the same global header as production Live.
@@ -140,8 +150,8 @@ export default async function RootLayout({
         <GlobalNavigation
           active={navigationSurface}
           locale={locale}
-          allowRemoteEnhancement={!accountNavSlot}
           accountHref={accountHref}
+          accountSignedIn={accountSignedIn}
         />
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}

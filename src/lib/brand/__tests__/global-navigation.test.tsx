@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -35,8 +35,9 @@ describe('canonical Harmonic Beacon global navigation', () => {
         ['account-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
         ['earlybirds-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
         ['live-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
-        ['listen.harmonicbeacon.com', 'https://account.harmonicbeacon.com/account'],
-        ['earlybirds-staging.harmonicbeacon.com, account.harmonicbeacon.com', 'https://account.harmonicbeacon.com/account'],
+        ['listen.harmonicbeacon.com', null],
+        ['account.harmonicbeacon.com', null],
+        ['earlybirds-staging.harmonicbeacon.com, account.harmonicbeacon.com', null],
     ] as const)('maps the exact host %s to Account href %s', (host, expected) => {
         expect(globalNavigationAccountHref(new Headers({ host }))).toBe(expected);
     });
@@ -48,16 +49,12 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', 'https://live.harmonicbeacon.com/?lang=en');
         expect(screen.getByRole('link', { name: 'Listen' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('link', { name: 'News' })).toHaveAttribute('href', 'https://harmonicbeacon.com/eventos/?lang=en');
-        const userMenu = screen.getByLabelText('User menu');
-        expect(userMenu.tagName).toBe('SUMMARY');
-        const account = screen.getByRole('menuitem', { name: 'Account' });
-        expect(account).toHaveAttribute('href', 'https://account.harmonicbeacon.com/account?lang=en');
-        expect(account.closest('[role="menu"]')).toBeTruthy();
-        expect(account.closest('li')).toBeNull();
+        expect(screen.queryByLabelText('User menu')).toBeNull();
+        expect(screen.queryByRole('menuitem', { name: 'Account' })).toBeNull();
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('8770e6a844960c90768d08a03f3232a47123cac9');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('ed7421616429681a37836f4698c73cf01799b75e');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
@@ -65,7 +62,11 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(manifest.snapshots[manifest.globalNavigation.path as keyof typeof manifest.snapshots])
             .toBe(GLOBAL_NAVIGATION_SHA256);
         const source = bytes.toString('utf8');
-        expect(source).toContain('class="account-trigger"');
+        expect(source).toContain('class="account-trigger');
+        expect(source).toContain("'data-account-signed-in'");
+        expect(source).toContain("this.hasAttribute('data-account-signed-in')");
+        expect(source).toContain('User menu, signed in');
+        expect(source).toContain('Menú de usuario, sesión iniciada');
         expect(source).toContain('beaconMarkPath()');
         expect(source).toContain('Math.cos(angle * 3)');
         expect(source).toContain('Math.sin(angle * 2)');
@@ -94,22 +95,27 @@ describe('canonical Harmonic Beacon global navigation', () => {
             locale="en"
             allowRemoteEnhancement={false}
             accountHref="https://account-staging.harmonicbeacon.com/account"
+            accountSignedIn
         />);
         const account = within(view.container).getByRole('menuitem', { name: 'Account' });
         expect(account)
             .toHaveAttribute('href', 'https://account-staging.harmonicbeacon.com/account?lang=en');
         expect(account).toHaveAttribute('aria-current', 'page');
-        expect(within(view.container).getByLabelText('User menu').querySelector('svg')).toBeTruthy();
+        expect(within(view.container).getByLabelText('User menu, signed in').querySelector('svg')).toBeTruthy();
+        expect(view.container.querySelector('[data-account-signed-in]')).toBeTruthy();
+        expect(view.container.querySelector('.hb-global-navigation-fallback__account-control--signed-in'))
+            .toBeTruthy();
         expect(view.container.querySelector('script')).toBeNull();
     });
 
-    it('opens Account from the enhanced user menu instead of the primary links', () => {
+    it('keeps Account absent from production even when the local signed-in hint is present', () => {
         document.body.innerHTML = '';
         document.documentElement.lang = 'en';
         const source = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'), 'utf8');
         window.eval(source);
 
         const navigation = document.querySelector('hb-global-nav');
+        navigation?.setAttribute('data-account-signed-in', '');
         const shadow = navigation?.shadowRoot;
         expect(shadow).toBeTruthy();
         expect(shadow?.querySelector('iframe')).toBeNull();
@@ -118,16 +124,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(markPath?.match(/[ML]/g)).toHaveLength(281);
         expect(shadow?.querySelector('.links')?.textContent).not.toContain('Account');
 
-        const trigger = shadow?.querySelector<HTMLButtonElement>('.account-trigger');
-        const menu = shadow?.querySelector<HTMLElement>('.account-menu');
-        const account = menu?.querySelector<HTMLAnchorElement>('a');
-        expect(trigger).toHaveAttribute('aria-label', 'User menu');
-        expect(trigger).toHaveAttribute('aria-expanded', 'false');
-        expect(menu).toHaveAttribute('hidden');
-        expect(account?.textContent).toBe('Account');
-
-        fireEvent.click(trigger!);
-        expect(trigger).toHaveAttribute('aria-expanded', 'true');
-        expect(menu).not.toHaveAttribute('hidden');
+        expect(shadow?.querySelector('.account-trigger')).toBeNull();
+        expect(shadow?.querySelector('.account-menu')).toBeNull();
     });
 });

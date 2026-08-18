@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { headers as requestHeaders } from 'next/headers';
 
 import { oauthProvider } from '@better-auth/oauth-provider';
@@ -19,6 +19,7 @@ import {
     accountSocialProviderConfiguration,
     accountTokenPrefixes,
     accountTrustedOrigins,
+    isCurrentAccountHost,
 } from '@/lib/account/config';
 import {
     ACCOUNT_PASSWORD_MAX_LENGTH,
@@ -287,6 +288,56 @@ export type CurrentAccountSession = {
     session: { id: string; expiresAt: Date };
     profile: { accountId: string; displayName: string; revision: number };
 };
+
+function accountSessionToken(headers: Headers): string | null {
+    const cookieHeader = headers.get('cookie') ?? '';
+    if (cookieHeader.length > 8192) return null;
+    const values = cookieHeader.split(';').flatMap((part) => {
+        const [name, ...raw] = part.trim().split('=');
+        return name === ACCOUNT_SESSION_COOKIE ? [raw.join('=')] : [];
+    });
+    if (values.length !== 1 || values[0].length > 1024) return null;
+    let signed: string;
+    try { signed = decodeURIComponent(values[0]); } catch { return null; }
+    const separator = signed.lastIndexOf('.');
+    if (separator < 1) return null;
+    const token = signed.slice(0, separator);
+    const signature = signed.slice(separator + 1);
+    if (!token || token.length > 512 || signature.length !== 44 || !signature.endsWith('=')) {
+        return null;
+    }
+    const expected = createHmac('sha256', accountSecret()).update(token).digest('base64');
+    const presentedBytes = Buffer.from(signature);
+    const expectedBytes = Buffer.from(expected);
+    return presentedBytes.length === expectedBytes.length &&
+        timingSafeEqual(presentedBytes, expectedBytes) ? token : null;
+}
+
+/**
+ * Boolean-only, read-only navigation hint from the Account host's durable
+ * session. Unlike Better Auth getSession this never refreshes or deletes a
+ * session while rendering a decorative global control.
+ */
+export async function locallyKnownAccountSession(
+    headers: Headers,
+    now = new Date(),
+): Promise<boolean> {
+    if (!isCurrentAccountHost(headers.get('host'))) return false;
+    const token = accountSessionToken(headers);
+    if (!token) return false;
+    const session = await prisma.earlyBirdAuthSession.findUnique({
+        where: { token },
+        select: {
+            expiresAt: true,
+            securityRevision: true,
+            authorityEnvironment: true,
+            user: { select: { securityRevision: true } },
+        },
+    });
+    return Boolean(session && session.expiresAt > now &&
+        session.securityRevision === session.user.securityRevision &&
+        session.authorityEnvironment === accountEnvironment());
+}
 
 export async function currentAccountSession(headers?: Headers): Promise<CurrentAccountSession | null> {
     const incoming = headers ?? new Headers(await requestHeaders());

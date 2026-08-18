@@ -54,7 +54,7 @@ describe('middleware', () => {
         }
 
         it.each([
-            '/', '/account', '/verify-email', '/reset-password', '/nav-slot',
+            '/', '/account', '/verify-email', '/reset-password',
             '/assets/hb-global-nav.js',
             '/.well-known/openid-configuration', '/api/account/health/ready',
             '/_next/static/chunk.js',
@@ -64,6 +64,7 @@ describe('middleware', () => {
 
         it.each([
             '/listener', '/early-birds', '/session/active', '/ops',
+            '/nav-slot',
             '/assets/other.js', '/assets/hb-global-nav.js/extra',
             '/api/early-birds/stream', '/api/livekit/token',
             '/api/founding-listeners/checkout', '/api/auth/ticket',
@@ -144,16 +145,11 @@ describe('middleware', () => {
             expect(response.headers.get('x-middleware-request-x-hb-account-locale')).toBe('en');
         });
 
-        it.each([
-            ['/account', '0'],
-            ['/verify-email', '0'],
-            ['/nav-slot', '1'],
-        ])('marks only the isolated avatar document as the navigation slot: %s', (pathname, expected) => {
-            const response = accountRequest(pathname);
-            expect(response.headers.get('x-middleware-request-x-hb-account-nav-slot')).toBe(expected);
-            if (pathname !== '/nav-slot') {
-                expect(response.headers.get('content-security-policy')).toContain("frame-src 'self'");
-            }
+        it('serves the local navigation on Account pages without an iframe slot seam', () => {
+            const response = accountRequest('/account');
+            expect(response.headers.get('x-middleware-request-x-hb-account-nav-slot')).toBeNull();
+            expect(response.headers.get('content-security-policy')).toContain("frame-src 'self'");
+            expect(accountRequest('/nav-slot').status).toBe(404);
         });
     });
     describe('EarlyBird invitation URL scrubbing', () => {
