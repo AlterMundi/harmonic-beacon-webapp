@@ -10,6 +10,7 @@ import manifest from '@/brand/canonical/manifest.json';
 import {
     GlobalNavigation,
     GLOBAL_NAVIGATION_ASSET,
+    GLOBAL_NAVIGATION_EMBED_GUARD,
     GLOBAL_NAVIGATION_PROVENANCE,
     GLOBAL_NAVIGATION_SHA256,
 } from '@/components/brand/GlobalNavigation';
@@ -22,6 +23,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
     it.each([
         ['live.harmonicbeacon.com', 'events'],
         ['live.harmonicbeacon.com:443', 'events'],
+        ['live-staging.harmonicbeacon.com', 'events'],
         ['listen.harmonicbeacon.com', 'listen'],
         ['earlybirds-staging.harmonicbeacon.com', 'listen'],
         ['harmonicbeacon.com', null],
@@ -87,6 +89,12 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(screen.getByRole('link', { name: 'Novedades' })).toBeInTheDocument();
     });
 
+    it('suppresses only the duplicate navigation inside the cockpit embed', () => {
+        expect(GLOBAL_NAVIGATION_EMBED_GUARD).toContain('window.self === window.top');
+        expect(GLOBAL_NAVIGATION_EMBED_GUARD).toContain("get('surface') !== 'cockpit'");
+        expect(GLOBAL_NAVIGATION_EMBED_GUARD).toContain("hbEmbeddedSurface = 'cockpit'");
+    });
+
     it('keeps the non-enhanced Account staging fallback inside staging', () => {
         const view = render(<GlobalNavigation
             active="account"
@@ -99,7 +107,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
             .toHaveAttribute('href', 'https://account-staging.harmonicbeacon.com/account?lang=en');
         expect(account).toHaveAttribute('aria-current', 'page');
         expect(within(view.container).getByLabelText('User menu').querySelector('svg')).toBeTruthy();
-        expect(view.container.querySelector('script')).toBeNull();
+        expect(view.container.querySelector('script[src]')).toBeNull();
     });
 
     it('opens Account from the enhanced user menu instead of the primary links', () => {

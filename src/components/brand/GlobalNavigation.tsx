@@ -8,6 +8,12 @@ import type { UiLocale } from '@/lib/i18n';
 export const GLOBAL_NAVIGATION_ASSET = '/assets/hb-global-nav.js';
 export const GLOBAL_NAVIGATION_PROVENANCE = '10de81fd576aa9d65ec8c3861cc38903403a63f0';
 export const GLOBAL_NAVIGATION_SHA256 = '7637edccfc2250615274ff7c6b5464e2532fff0081ab0d2e76ec0413c0097d10';
+export const GLOBAL_NAVIGATION_EMBED_GUARD = `
+(() => {
+    if (window.self === window.top) return;
+    if (new URLSearchParams(window.location.search).get('surface') !== 'cockpit') return;
+    document.documentElement.dataset.hbEmbeddedSurface = 'cockpit';
+})();`;
 
 export type GlobalNavigationSurface = 'events' | 'listen' | 'account';
 
@@ -83,6 +89,10 @@ export function GlobalNavigation({
 
     return (
         <>
+            <script
+                id="hb-global-navigation-embed-guard"
+                dangerouslySetInnerHTML={{ __html: GLOBAL_NAVIGATION_EMBED_GUARD }}
+            />
             {createElement('hb-global-nav', { 'data-surface': active }, fallback)}
             {allowRemoteEnhancement && (
                 <Script src={`${GLOBAL_NAVIGATION_ASSET}?v=${GLOBAL_NAVIGATION_PROVENANCE}`} strategy="afterInteractive" />
