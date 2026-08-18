@@ -3,15 +3,13 @@ import Script from 'next/script';
 
 import type { UiLocale } from '@/lib/i18n';
 
+// Byte-pinned local snapshot of harmonicbeacon.com@ab453af. Protected product
+// origins never execute remotely supplied JavaScript with their host cookies.
 export const GLOBAL_NAVIGATION_ASSET = '/assets/hb-global-nav.js';
-export const GLOBAL_NAVIGATION_EMBED_GUARD = `
-(() => {
-    if (window.self === window.top) return;
-    if (new URLSearchParams(window.location.search).get('surface') !== 'cockpit') return;
-    document.documentElement.dataset.hbEmbeddedSurface = 'cockpit';
-})();`;
+export const GLOBAL_NAVIGATION_PROVENANCE = 'ab453af247e31362fddd6bc2a91c7f266cf2b7ae';
+export const GLOBAL_NAVIGATION_SHA256 = '65773aaf87e1112204b470d793f92b34ae9e2dae06929c6559458420f5045cc2';
 
-export type GlobalNavigationSurface = 'events' | 'listen';
+export type GlobalNavigationSurface = 'events' | 'listen' | 'account';
 
 const links = [
     { key: 'events', href: 'https://live.harmonicbeacon.com/', en: 'Events', es: 'Eventos' },
@@ -28,42 +26,67 @@ function withLanguage(href: string, locale: UiLocale): string {
     url.searchParams.set('lang', locale);
     return url.toString();
 }
+
 export function GlobalNavigation({
     active,
     locale,
+    allowRemoteEnhancement = true,
+    accountHref,
 }: {
     active: GlobalNavigationSurface;
     locale: UiLocale;
+    allowRemoteEnhancement?: boolean;
+    accountHref?: 'https://account.harmonicbeacon.com/account' | 'https://account-staging.harmonicbeacon.com/account';
 }) {
     const navLabel = locale === 'es' ? 'Navegación principal' : 'Primary navigation';
+    const userMenuLabel = locale === 'es' ? 'Menú de usuario' : 'User menu';
+    const accountLabel = locale === 'es' ? 'Cuenta' : 'Account';
+    const resolvedAccountHref = accountHref ?? 'https://account.harmonicbeacon.com/account';
     const fallback = (
         <nav className="hb-global-navigation-fallback" aria-label={navLabel}>
             <a className="hb-global-navigation-fallback__brand" href={withLanguage('https://harmonicbeacon.com/', locale)}>
                 Harmonic Beacon
             </a>
-            <ul>
-                {links.map((link) => (
-                    <li key={link.key}>
+            <div className="hb-global-navigation-fallback__actions">
+                <ul>
+                    {links.map((link) => (
+                        <li key={link.key}>
+                            <a
+                                href={withLanguage(link.href, locale)}
+                                aria-current={link.key === active ? 'page' : undefined}
+                            >
+                                {locale === 'es' ? link.es : link.en}
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+                <details className="hb-global-navigation-fallback__account-control">
+                    <summary aria-label={userMenuLabel}>
+                        <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                            <circle cx="12" cy="8" r="3.25" />
+                            <path d="M5.75 19c.6-3.25 2.7-5 6.25-5s5.65 1.75 6.25 5" />
+                        </svg>
+                    </summary>
+                    <div className="hb-global-navigation-fallback__account-menu" role="menu">
                         <a
-                            href={withLanguage(link.href, locale)}
-                            aria-current={link.key === active ? 'page' : undefined}
+                            href={withLanguage(resolvedAccountHref, locale)}
+                            role="menuitem"
+                            aria-current={active === 'account' ? 'page' : undefined}
                         >
-                            {locale === 'es' ? link.es : link.en}
+                            {accountLabel}
                         </a>
-                    </li>
-                ))}
-            </ul>
+                    </div>
+                </details>
+            </div>
         </nav>
     );
 
     return (
         <>
-            <script
-                id="hb-global-navigation-embed-guard"
-                dangerouslySetInnerHTML={{ __html: GLOBAL_NAVIGATION_EMBED_GUARD }}
-            />
             {createElement('hb-global-nav', { 'data-surface': active }, fallback)}
-            <Script src={GLOBAL_NAVIGATION_ASSET} strategy="afterInteractive" />
+            {allowRemoteEnhancement && (
+                <Script src={`${GLOBAL_NAVIGATION_ASSET}?v=${GLOBAL_NAVIGATION_PROVENANCE}`} strategy="afterInteractive" />
+            )}
         </>
     );
 }

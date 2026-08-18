@@ -25,19 +25,17 @@ manifest and visual-review update together.
 
 ## Global navigation
 
-The cross-product header is vendored byte-for-byte at
-`public/assets/hb-global-nav.js` from `AlterMundi/harmonicbeacon.com` commit
-`70400675b807ba90988517eb28871ad81c6ac369`, with SHA-256
-`8dce4c2b234ef1369730e839c9d93e1bbc4134c86afb1619b63369981cbb67b0`.
-Live serves that reviewed snapshot from its own `/assets/hb-global-nav.js` path;
-it never executes navigation JavaScript fetched from another origin with Live
-cookies in scope. The local light-DOM links remain an accessible,
-same-destination fallback while the component initializes.
-
-The snapshot is intentionally updated, reviewed and deployed rather than
-silently tracking upstream. `manifest.json` and the brand contract test pin the
-canonical commit, source path, local path and identical digest. A navigation
-sync must update the asset, provenance and manifest together.
+Listener, Live and Account serve a byte-pinned local snapshot of the canonical
+web component rather than executing JavaScript supplied at runtime by another
+origin. The source is `AlterMundi/harmonicbeacon.com` commit
+`ab453af247e31362fddd6bc2a91c7f266cf2b7ae`; the vendored
+`public/assets/hb-global-nav.js` SHA-256 is
+`65773aaf87e1112204b470d793f92b34ae9e2dae06929c6559458420f5045cc2`.
+The local light-DOM markup remains the accessible, same-destination fallback.
+Both implementations keep Account out of the primary destination list and
+expose it from the user-icon menu. The enhanced navigation renders both the
+Beacon mark and user glyph locally; it does not embed Account in an iframe or
+fetch a cross-origin image.
 
 ## Font source and license
 
@@ -56,7 +54,5 @@ Both families are covered by the SIL Open Font License 1.1; the relevant
   is pinned from the Google Fonts repository commit above, with trailing
   whitespace normalized for the repository gate.
 
-No font, brand source, analytics or navigation script is fetched from another
-origin at runtime. The navigation may still display the isolated cross-origin
-Account slot and canonical mark; its sandbox prevents the parent navigation
-script from reading Account state.
+No font, analytics or decorative brand asset is fetched at runtime. The global
+navigation is served as the byte-pinned local snapshot described above.
