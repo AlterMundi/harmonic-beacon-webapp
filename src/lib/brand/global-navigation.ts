@@ -4,6 +4,8 @@ const PUBLIC_SURFACES: Record<string, GlobalNavigationSurface> = {
     'live.harmonicbeacon.com': 'events',
     'listen.harmonicbeacon.com': 'listen',
     'earlybirds-staging.harmonicbeacon.com': 'listen',
+    'account.harmonicbeacon.com': 'account',
+    'account-staging.harmonicbeacon.com': 'account',
 };
 
 function normalizedHost(value: string | null): string | null {
@@ -19,4 +21,3 @@ export function globalNavigationSurface(headers: Pick<Headers, 'get'>): GlobalNa
     const host = normalizedHost(headers.get('host'));
     return host ? (PUBLIC_SURFACES[host] ?? null) : null;
 }
-

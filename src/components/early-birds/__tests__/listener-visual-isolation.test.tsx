@@ -40,8 +40,6 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 serviceUnavailable={null}
                 invitationAvailable={false}
                 authError={false}
-                providers={{ google: true, apple: true }}
-                emailMagicLinkAvailable={false}
                 syntheticTeamEntryAvailable={false}
                 membership={{ kind: 'none', state: 'none' }}
                 serverNow="2026-08-07T15:00:00.000Z"
@@ -272,7 +270,7 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
 
     it('the public landing actions use listener button classes and keep one contextual primary action', () => {
         const anonymous = renderLanding();
-        expect(screen.getByRole('button', { name: 'Continue with Google' }))
+        expect(screen.getByRole('link', { name: 'Sign in or create an account' }))
             .toHaveClass('listener-button', 'listener-button--secondary');
         expect(anonymous.container.innerHTML).not.toMatch(EVENT_VISUAL_CLASS);
         // Identity providers remain equivalent and do not compete with a product action.

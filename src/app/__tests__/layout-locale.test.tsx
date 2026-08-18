@@ -66,6 +66,20 @@ describe('root document locale boundary', () => {
         expect(mocks.requestBrowserLocale).not.toHaveBeenCalled();
     });
 
+    it('matches the Account document language to the middleware-resolved explicit locale', async () => {
+        const incoming = requestHeaders('account.harmonicbeacon.com', 'es-AR,es;q=0.9');
+        incoming.set('x-hb-account-locale', 'en');
+        mocks.headers.mockResolvedValue(incoming);
+        mocks.requestBrowserLocale.mockResolvedValue('es');
+
+        const result = await RootLayout({ children: <main /> });
+
+        expect(result.props.lang).toBe('en');
+        expect(result.props['data-hb-surface']).toBe('account');
+        expect(mocks.requestLocale).not.toHaveBeenCalled();
+        expect(mocks.requestBrowserLocale).not.toHaveBeenCalled();
+    });
+
     it.each([
         ['listen.harmonicbeacon.com', '#16120D'],
         ['listen.harmonicbeacon.com:443', '#16120D'],

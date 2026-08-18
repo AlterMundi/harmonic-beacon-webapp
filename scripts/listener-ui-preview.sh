@@ -22,6 +22,7 @@ PREVIEW_LIVE_WORKBENCH="${LISTENER_UI_PREVIEW_LIVE_WORKBENCH_ENABLED:-0}"
 PREVIEW_APPLE="${LISTENER_UI_PREVIEW_APPLE_ENABLED:-0}"
 PREVIEW_EXPECTED_SHA="${LISTENER_UI_PREVIEW_EXPECTED_SHA:-}"
 LIVE_WORKBENCH_ENV_FILE="/etc/harmonic-beacon/listener-live-workbench.env"
+ACCOUNT_STAGING_ENV_FILE="/etc/harmonic-beacon/listener-account-staging.env"
 PREVIEW_ORIGIN="https://earlybirds-staging.harmonicbeacon.com"
 
 for switch in "$PREVIEW_FREE_FOR_ALL" "$PREVIEW_REACTIVE_FIELD_LAB" "$PREVIEW_PAYPAL_CHECKOUT" \
@@ -84,7 +85,7 @@ sync_source() {
 }
 
 start_remote() {
-    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_REACTIVE_FIELD_LAB='$PREVIEW_REACTIVE_FIELD_LAB' PREVIEW_DROPIN_ES_PATH='$PREVIEW_DROPIN_ES_PATH' PREVIEW_DROPIN_EN_PATH='$PREVIEW_DROPIN_EN_PATH' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' PREVIEW_MERCADO_PAGO_CHECKOUT='$PREVIEW_MERCADO_PAGO_CHECKOUT' PREVIEW_LIVE_WORKBENCH='$PREVIEW_LIVE_WORKBENCH' PREVIEW_APPLE='$PREVIEW_APPLE' PREVIEW_EXPECTED_SHA='$PREVIEW_EXPECTED_SHA' LIVE_WORKBENCH_ENV_FILE='$LIVE_WORKBENCH_ENV_FILE' PREVIEW_ORIGIN='$PREVIEW_ORIGIN' bash -s" <<'REMOTE'
+    ssh "$PREVIEW_HOST" "REMOTE_SOURCE='$REMOTE_SOURCE' REMOTE_NEXT='$REMOTE_NEXT' DEV_CONTAINER='$DEV_CONTAINER' RELEASE_CONTAINER='$RELEASE_CONTAINER' PREVIEW_FREE_FOR_ALL='$PREVIEW_FREE_FOR_ALL' PREVIEW_REACTIVE_FIELD_LAB='$PREVIEW_REACTIVE_FIELD_LAB' PREVIEW_DROPIN_ES_PATH='$PREVIEW_DROPIN_ES_PATH' PREVIEW_DROPIN_EN_PATH='$PREVIEW_DROPIN_EN_PATH' PREVIEW_PAYPAL_CHECKOUT='$PREVIEW_PAYPAL_CHECKOUT' PREVIEW_MERCADO_PAGO_CHECKOUT='$PREVIEW_MERCADO_PAGO_CHECKOUT' PREVIEW_LIVE_WORKBENCH='$PREVIEW_LIVE_WORKBENCH' PREVIEW_APPLE='$PREVIEW_APPLE' PREVIEW_EXPECTED_SHA='$PREVIEW_EXPECTED_SHA' LIVE_WORKBENCH_ENV_FILE='$LIVE_WORKBENCH_ENV_FILE' ACCOUNT_STAGING_ENV_FILE='$ACCOUNT_STAGING_ENV_FILE' PREVIEW_ORIGIN='$PREVIEW_ORIGIN' bash -s" <<'REMOTE'
 set -euo pipefail
 
 if [ "$PREVIEW_LIVE_WORKBENCH" = 1 ]; then
@@ -117,6 +118,10 @@ set_env_file_value() {
     printf '%s=%s\n' "$key" "$value" >> "$env_file"
 }
 
+unset_env_file_value() {
+    sed -i "/^${1}=/d" "$env_file"
+}
+
 if [ -n "$PREVIEW_DROPIN_EN_PATH" ]; then
     set_env_file_value EARLY_BIRDS_DROPIN_EN_PATH "$PREVIEW_DROPIN_EN_PATH"
 fi
@@ -137,6 +142,35 @@ fi
 # to listen.harmonicbeacon.com, where the staging state cookie is absent.
 set_env_file_value BEACON_LISTENER_AUTH_BASE_URL "$PREVIEW_ORIGIN"
 set_env_file_value EARLY_BIRDS_AUTH_BASE_URL "$PREVIEW_ORIGIN"
+# The disposable 13001 runtime is staging-bound and must never inherit the
+# 13000 production RP secrets copied from the release container.
+unset_env_file_value BEACON_LISTENER_ACCOUNT_CLIENT_SECRET
+unset_env_file_value BEACON_LISTENER_ACCOUNT_STATE_SECRET
+unset_env_file_value BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING
+unset_env_file_value BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING
+set_env_file_value BEACON_LISTENER_ACCOUNT_ENVIRONMENT staging
+if sudo test -f "$ACCOUNT_STAGING_ENV_FILE" && ! sudo test -L "$ACCOUNT_STAGING_ENV_FILE" &&
+   test "$(sudo stat -c '%U:%G:%a' "$ACCOUNT_STAGING_ENV_FILE")" = root:root:600; then
+    staging_keys=$(sudo awk -F= 'NF { print $1 }' "$ACCOUNT_STAGING_ENV_FILE" | LC_ALL=C sort)
+    expected_staging_keys=$(printf '%s\n' \
+        BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING \
+        BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING | LC_ALL=C sort)
+    test "$staging_keys" = "$expected_staging_keys" || {
+        echo 'Staging Account RP secret file must contain exactly the two approved keys.' >&2
+        exit 1
+    }
+    staging_client=$(sudo sed -n 's/^BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING=//p' "$ACCOUNT_STAGING_ENV_FILE")
+    staging_state=$(sudo sed -n 's/^BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING=//p' "$ACCOUNT_STAGING_ENV_FILE")
+    test "${#staging_client}" -ge 32 && test "${#staging_state}" -ge 32 || {
+        echo 'Staging Account RP secret file is incomplete.' >&2
+        exit 1
+    }
+    set_env_file_value BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING "$staging_client"
+    set_env_file_value BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING "$staging_state"
+    set_env_file_value BEACON_LISTENER_ACCOUNT_ENABLED 1
+else
+    set_env_file_value BEACON_LISTENER_ACCOUNT_ENABLED 0
+fi
 # Never inherit a future public Apple enablement accidentally. Credentials can
 # be installed dormant in the root-owned release environment; staging exposes
 # Apple only through its own explicit preview switch.

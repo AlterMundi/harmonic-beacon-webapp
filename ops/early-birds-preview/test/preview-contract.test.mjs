@@ -157,10 +157,45 @@ test('payment workbench keeps OAuth state and callback on the staging origin', a
   assert.match(source, /\^\/media\/artifacts\/drop-ins\/\[A-Za-z0-9\]/);
   assert.match(source, /set_env_file_value EARLY_BIRDS_DROPIN_EN_PATH "\$PREVIEW_DROPIN_EN_PATH"/);
   assert.match(source, /set_env_file_value EARLY_BIRDS_DROPIN_ES_PATH "\$PREVIEW_DROPIN_ES_PATH"/);
+  assert.match(source, /ACCOUNT_STAGING_ENV_FILE="\/etc\/harmonic-beacon\/listener-account-staging\.env"/);
+  assert.match(source, /unset_env_file_value BEACON_LISTENER_ACCOUNT_CLIENT_SECRET/);
+  assert.match(source, /unset_env_file_value BEACON_LISTENER_ACCOUNT_STATE_SECRET/);
+  assert.match(source, /set_env_file_value BEACON_LISTENER_ACCOUNT_ENVIRONMENT staging/);
+  assert.match(source, /BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING/);
+  assert.match(source, /BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING/);
+  assert.match(source, /root:root:600/);
+  assert.match(source, /must contain exactly the two approved keys/);
+  assert.doesNotMatch(source, /ACCOUNT_CLIENT_SECRET_STAGING[^\n]*ssh/);
   assert.match(source, /docker network connect earlybirds_stream_control_internal "\$DEV_CONTAINER"/);
   assert.match(source, /api\/health\/ready/);
   assert.match(source, /npm run dev -- --webpack --hostname 0\.0\.0\.0 --port 3000/);
   assert.doesNotMatch(source, /PREVIEW_ORIGIN="https:\/\/listen\.harmonicbeacon\.com"/);
+});
+
+test('Listener edges expose only the three exact Account RP browser routes', async () => {
+  for (const [name, host, port] of [
+    ['listen.harmonicbeacon.com.conf.template', 'listen.harmonicbeacon.com', '13000'],
+    ['earlybirds-staging.harmonicbeacon.com.conf.template', 'earlybirds-staging.harmonicbeacon.com', '13001'],
+  ]) {
+    const source = await readPreview(`nginx/${name}`);
+    for (const route of ['login', 'callback', 'frontchannel-logout']) {
+      const marker = `location = /api/account/${route} {`;
+      assert.equal(source.split(marker).length - 1, 1, `${name} must expose ${route} exactly once`);
+      const block = source.slice(source.indexOf(marker), source.indexOf('\n    }', source.indexOf(marker)) + 6);
+      assert.match(block, /access_log off;/);
+      assert.match(block, /Cache-Control "private, no-store"/);
+      assert.match(block, /Referrer-Policy "no-referrer"/);
+      assert.match(block, /Strict-Transport-Security "max-age=31536000; includeSubDomains"/);
+      assert.match(block, /X-Content-Type-Options nosniff/);
+      if (route === 'frontchannel-logout') assert.doesNotMatch(block, /X-Frame-Options/);
+      else assert.match(block, /X-Frame-Options SAMEORIGIN/);
+      assert.match(block, new RegExp(`proxy_pass http:\\/\\/127\\.0\\.0\\.1:${port};`));
+      assert.match(block, new RegExp(`proxy_set_header Host ${host.replaceAll('.', '\\.')};`));
+      assert.match(block, /proxy_set_header X-Forwarded-Proto https;/);
+    }
+    assert.doesNotMatch(source, /location \^~ \/api\/account\//);
+    assert.doesNotMatch(source, /location \/api\/account\//);
+  }
 });
 
 test('compose gates the loopback Listener on a forward-only isolated database migration', async () => {

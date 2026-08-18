@@ -6,7 +6,6 @@ import EarlyBirdHome from '@/components/early-birds/EarlyBirdHome';
 import EarlyBirdUnavailable from '@/components/early-birds/EarlyBirdUnavailable';
 import {
     currentEarlyBirdSession,
-    earlyBirdOAuthAvailability,
 } from '@/lib/early-birds/auth';
 import { getEarlyBirdListeningAccess } from '@/lib/early-birds/access';
 import { earlyBirdsEnabled, earlyBirdsFreeForAll } from '@/lib/early-birds/enabled';
@@ -15,7 +14,7 @@ import {
 } from '@/lib/early-birds/invitation-cookie';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
-import { earlyBirdMagicLinkAvailable } from '@/lib/early-birds/magic-link';
+import { listenerAccountRPConfig } from '@/lib/listener/account-rp';
 import { serializeEarlyBirdQuotaSnapshot } from '@/lib/early-birds/quota';
 import { listenerCheckoutAvailability } from '@/lib/early-birds/checkout';
 import {
@@ -139,14 +138,12 @@ export default async function EarlyBirdsPage({
         );
     }
 
-    const providers = earlyBirdOAuthAvailability();
-    const emailMagicLinkAvailable = earlyBirdMagicLinkAvailable();
+    let accountIdentityAvailable = true;
+    try { listenerAccountRPConfig(incomingHeaders); } catch { accountIdentityAvailable = false; }
     const syntheticTeamEntryAvailable = syntheticTeamEntryAllowed({ headers: incomingHeaders });
     const identityUnavailable = sessionResolution.unavailable || (
         !session
-        && !providers.google
-        && !providers.apple
-        && !emailMagicLinkAvailable
+        && !accountIdentityAvailable
         && !syntheticTeamEntryAvailable
     );
 
@@ -157,8 +154,6 @@ export default async function EarlyBirdsPage({
             serviceUnavailable={identityUnavailable ? 'identity' : accessResolution.unavailable ? 'access' : null}
             invitationAvailable={invitationAvailable}
             authError={params.authError === '1'}
-            providers={providers}
-            emailMagicLinkAvailable={emailMagicLinkAvailable}
             syntheticTeamEntryAvailable={syntheticTeamEntryAvailable}
             quota={access?.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
             checkoutAvailability={checkoutAvailability}

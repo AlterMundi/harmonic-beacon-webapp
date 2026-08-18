@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.harmonicbeacon.com/listener-account-mail/v1/email-change.schema.json",
+  "title": "Listener Account email change delivery v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "purpose",
+    "recipient",
+    "locale",
+    "action_url",
+    "expires_at"
+  ],
+  "properties": {
+    "contract_version": { "const": "listener-email-change.v1" },
+    "purpose": { "const": "change_email" },
+    "recipient": {
+      "type": "string",
+      "format": "email",
+      "minLength": 3,
+      "maxLength": 320,
+      "pattern": "^[^\\s@]+@[^\\s@]+$"
+    },
+    "locale": { "enum": ["es", "en"] },
+    "action_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://account(?:-staging)?\\.harmonicbeacon\\.com/verify-email\\?token=[A-Za-z0-9._~-]{20,2048}$"
+    },
+    "expires_at": { "type": "string", "format": "date-time" }
+  }
+}

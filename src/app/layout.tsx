@@ -6,6 +6,7 @@ import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { globalNavigationSurface } from "@/lib/brand/global-navigation";
 import { requestBrowserLocale, requestLocale } from "@/lib/i18n-server";
 import { isCanonicalListenerHost } from "@/lib/listener/public-discovery";
+import { isAccountHost } from "@/lib/account/config";
 import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
@@ -76,10 +77,11 @@ export const metadata: Metadata = {
 
 export async function generateViewport(): Promise<Viewport> {
   const incomingHeaders = await headers();
+  const accountHost = isAccountHost(incomingHeaders.get('host'));
   return {
     width: "device-width",
     initialScale: 1,
-    themeColor: isCanonicalListenerHost(incomingHeaders) ? "#16120D" : "#07120f",
+    themeColor: isCanonicalListenerHost(incomingHeaders) || accountHost ? "#16120D" : "#07120f",
   };
 }
 
@@ -93,24 +95,37 @@ export default async function RootLayout({
   // honors the shared navigation preference. Keep that policy bound to the
   // exact public host so event-language defaults elsewhere remain untouched.
   const listenerHost = isCanonicalListenerHost(incomingHeaders);
+  const accountHost = isAccountHost(incomingHeaders.get('host'));
+  const accountHref = incomingHeaders.get('host')?.toLowerCase().split(':')[0] ===
+    'account-staging.harmonicbeacon.com'
+    ? 'https://account-staging.harmonicbeacon.com/account' as const
+    : 'https://account.harmonicbeacon.com/account' as const;
   // This application is the Live surface by default. Listener and its staging
   // host opt into their own active item explicitly; local/E2E hosts continue
   // to exercise the same global header as production Live.
   const navigationSurface = globalNavigationSurface(incomingHeaders) ?? "events";
-  const locale = listenerHost
-    ? await requestBrowserLocale(incomingHeaders)
+  const accountLocale = incomingHeaders.get('x-hb-account-locale');
+  const locale = listenerHost || accountHost
+    ? accountHost && (accountLocale === 'es' || accountLocale === 'en')
+      ? accountLocale
+      : await requestBrowserLocale(incomingHeaders)
     : await requestLocale();
 
   return (
     <html
       lang={locale}
       data-lang={locale}
-      data-hb-surface={listenerHost ? "listener" : undefined}
+      data-hb-surface={listenerHost ? "listener" : accountHost ? "account" : undefined}
       className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}
       suppressHydrationWarning
     >
       <body className="antialiased">
-        <GlobalNavigation active={navigationSurface} locale={locale} />
+        <GlobalNavigation
+          active={navigationSurface}
+          locale={locale}
+          allowRemoteEnhancement={!accountHost}
+          accountHref={accountHost ? accountHref : undefined}
+        />
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
           <div className="relative z-10">{children}</div>
@@ -120,13 +135,13 @@ export default async function RootLayout({
             position="top-center"
             toastOptions={{
               style: {
-                background: listenerHost ? "rgba(27, 21, 15, 0.97)" : "rgba(7, 18, 15, 0.96)",
+                background: listenerHost || accountHost ? "rgba(27, 21, 15, 0.97)" : "rgba(7, 18, 15, 0.96)",
                 backdropFilter: "blur(16px)",
-                border: listenerHost
+                border: listenerHost || accountHost
                   ? "1px solid rgba(201, 162, 78, 0.22)"
                   : "1px solid rgba(238, 245, 233, 0.12)",
-                color: listenerHost ? "#F4EEE2" : "#fff9e9",
-                fontFamily: listenerHost
+                color: listenerHost || accountHost ? "#F4EEE2" : "#fff9e9",
+                fontFamily: listenerHost || accountHost
                   ? "var(--font-hb-inter), Inter, system-ui, sans-serif"
                   : "var(--font-syne), system-ui, sans-serif",
                 fontSize: "13px",

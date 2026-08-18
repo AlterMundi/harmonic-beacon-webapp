@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import {
+    ACCOUNT_FRAME_ANCESTORS,
+    isAccountHost,
+    isCurrentAccountHost,
+} from '@/lib/account/config';
 
 import {
     canonicalEarlyBirdInvitation,
@@ -82,6 +87,87 @@ function scrubEarlyBirdInvitation(request: NextRequest): NextResponse | null {
 
 export default function middleware(request: NextRequest): NextResponse {
     const { pathname } = request.nextUrl;
+    const accountRuntime = process.env.BEACON_ACCOUNT_RUNTIME === '1';
+    const authorityHost = accountRuntime && isCurrentAccountHost(request.nextUrl.host);
+
+    // The dedicated Account container is the same standalone Next image. Its
+    // runtime marker is therefore the top-level deny-default boundary: a
+    // direct container/service Host can never fall through to event, media,
+    // Listener, commerce or LiveKit routes.
+    if (accountRuntime) {
+        if (!authorityHost) return new NextResponse(null, { status: 404 });
+        if (!isAccountHost(request.nextUrl.host)) {
+            return new NextResponse(null, { status: 404 });
+        }
+        {
+            const nonce = crypto.randomUUID().replaceAll('-', '');
+            const browserMutation = request.method === 'POST' && (
+                pathname === '/api/account/profile' ||
+                pathname === '/api/account/logout/current' ||
+                pathname === '/api/account/logout/all' ||
+                pathname === '/api/account/password/change' ||
+                pathname === '/api/account/password/reset/request' ||
+                pathname === '/api/account/password/reset/complete' ||
+                pathname === '/api/account/email-action' ||
+                pathname === '/api/account/email/change/request' ||
+                pathname === '/api/account/auth/sign-up/email' ||
+                pathname === '/api/account/auth/sign-in/email' ||
+                pathname === '/api/account/auth/sign-in/social'
+            );
+            if (browserMutation && (
+                request.headers.get('origin') !== request.nextUrl.origin ||
+                request.headers.get('sec-fetch-site') !== 'same-origin' ||
+                request.headers.get('content-type') !== 'application/json'
+            )) return new NextResponse(null, { status: 403, headers: { 'Cache-Control': 'no-store' } });
+            const allowed = pathname === '/' || pathname === '/account' ||
+                pathname.startsWith('/account/') || pathname === '/verify-email' ||
+                pathname === '/reset-password' || pathname === '/nav-slot' ||
+                pathname.startsWith('/.well-known/') || pathname.startsWith('/api/account/') ||
+                pathname.startsWith('/_next/') || pathname === '/favicon.ico';
+            if (!allowed) return new NextResponse(null, { status: 404 });
+            const forwarded = new Headers(request.headers);
+            const explicitLocale = request.nextUrl.searchParams.getAll('lang');
+            const accountLocale = explicitLocale.length === 1 &&
+                (explicitLocale[0] === 'es' || explicitLocale[0] === 'en')
+                ? explicitLocale[0]
+                : request.cookies.get('hb_locale')?.value === 'en' ? 'en'
+                    : request.cookies.get('hb_locale')?.value === 'es' ? 'es'
+                        : request.headers.get('accept-language')?.toLowerCase().startsWith('es') ? 'es' : 'en';
+            forwarded.set('x-hb-account-locale', accountLocale);
+            forwarded.set('x-nonce', nonce);
+            const csp = pathname === '/nav-slot'
+                ? `default-src 'none'; style-src 'unsafe-inline'; frame-ancestors ${ACCOUNT_FRAME_ANCESTORS}`
+                : `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src https://listen.harmonicbeacon.com https://earlybirds-staging.harmonicbeacon.com https://live.harmonicbeacon.com https://live-staging.harmonicbeacon.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'`;
+            forwarded.set('Content-Security-Policy', csp);
+            const response = pathname === '/'
+                ? NextResponse.rewrite(new URL('/account', request.url), { request: { headers: forwarded } })
+                : NextResponse.next({ request: { headers: forwarded } });
+            response.headers.set('Referrer-Policy', 'no-referrer');
+            response.headers.set('X-Content-Type-Options', 'nosniff');
+            response.headers.set('Content-Security-Policy', csp);
+            return response;
+        }
+    }
+
+    if (isAccountHost(request.nextUrl.host)) {
+        if (!accountRuntime) {
+            return new NextResponse('Account service unavailable', {
+                status: 503, headers: { 'Cache-Control': 'no-store' },
+            });
+        }
+    }
+
+    // Product runtimes expose only their three RP endpoints under
+    // /api/account; authority UI/actions must not leak onto Listener or Live.
+    const productAccountRoute = pathname === '/api/account/login' ||
+        pathname === '/api/account/callback' ||
+        pathname === '/api/account/frontchannel-logout';
+    if ((pathname === '/account' || pathname.startsWith('/account/') ||
+        pathname === '/verify-email' || pathname === '/reset-password' ||
+        pathname === '/nav-slot' || pathname.startsWith('/.well-known/') ||
+        pathname.startsWith('/api/account/')) && !productAccountRoute) {
+        return new NextResponse(null, { status: 404 });
+    }
 
     const invitationRedirect = scrubEarlyBirdInvitation(request);
     if (invitationRedirect) return invitationRedirect;
@@ -107,12 +193,5 @@ export default function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-    matcher: [
-        '/listener',
-        '/listener/redeem',
-        '/early-birds',
-        '/early-birds/redeem',
-        '/session/:path*',
-        '/ops/:path*',
-    ],
+    matcher: '/:path*',
 };

@@ -273,8 +273,6 @@ describe('EarlyBird Listener page', () => {
         expect(result.props).toMatchObject({
             signedIn: true,
             entitled: false,
-            providers: { google: true, apple: false },
-            emailMagicLinkAvailable: true,
             quota: expect.objectContaining({
                 status: 'exhausted',
                 remainingMs: 0,

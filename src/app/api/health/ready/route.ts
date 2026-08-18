@@ -20,6 +20,7 @@ import {
     earlyBirdStreamControlOrigin,
     EarlyBirdStreamIssuerUnavailableError,
 } from '@/lib/early-birds/stream';
+import { validateListenerAccountRPEnvironment } from '@/lib/listener/account-rp';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,7 @@ const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
 export async function GET() {
     let listenerRuntimeConfigured = false;
     let listenerWithdrawalConfigured = false;
+    let listenerAccountConfigured = false;
     try {
         listenerRuntimeConfigured = validateListenerRuntimeEnvironment();
         if (listenerRuntimeFlag('ENABLED')) {
@@ -45,6 +47,7 @@ export async function GET() {
         }
         validateListenerLiveWorkbenchEnvironment();
         listenerWithdrawalConfigured = listenerWithdrawalConfiguration().enabled;
+        listenerAccountConfigured = validateListenerAccountRPEnvironment();
     } catch (error) {
         const diagnostic = error instanceof ListenerRuntimeEnvironmentError ||
             error instanceof ListenerLiveWorkbenchConfigurationError ||
@@ -84,6 +87,7 @@ export async function GET() {
                     database: 'ok',
                     ...(listenerRuntimeConfigured ? { listenerRuntime: 'ok' } : {}),
                     ...(listenerWithdrawalConfigured ? { listenerWithdrawal: 'ok' } : {}),
+                    ...(listenerAccountConfigured ? { listenerAccount: 'ok' } : {}),
                 },
             },
             { headers: NO_STORE_HEADERS },

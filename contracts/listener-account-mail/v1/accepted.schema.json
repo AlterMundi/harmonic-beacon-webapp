@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.harmonicbeacon.com/listener-account-mail/v1/accepted.schema.json",
+  "title": "Listener Account mail accepted response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status"],
+  "properties": {
+    "status": { "const": "accepted" }
+  }
+}
