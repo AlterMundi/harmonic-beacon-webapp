@@ -50,7 +50,9 @@ export async function loginAttendeeWithTicket(
     page: Page,
     credentials: { name: string; email: string; code: string },
 ): Promise<void> {
-    await page.goto('/');
+    // Public events can intentionally occupy the landing without rendering a
+    // ticket form. The durable ticket-entry surface always lives at /login.
+    await page.goto('/login');
     await page.locator('#display-name').fill(credentials.name);
     await page.locator('#ticket-code').fill(credentials.code);
     await page.locator('#ticket-email').fill(credentials.email);

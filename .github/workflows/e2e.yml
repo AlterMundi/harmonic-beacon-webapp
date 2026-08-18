@@ -139,6 +139,7 @@ jobs:
           DATABASE_URL="$CLEAN_URL" npx prisma migrate deploy
 
       - name: Run Chromium and Android gates
+        if: ${{ !inputs.use_runner_chrome }}
         run: >-
           npx playwright test
           --project=chromium
@@ -148,6 +149,26 @@ jobs:
           --project=w390
           --project=w320
           --project=android-chrome
+
+      - name: Run release Chromium and Android functional gates
+        if: ${{ inputs.use_runner_chrome }}
+        run: >-
+          npx playwright test
+          --project=chromium
+          --project=android-chrome
+
+      - name: Run release public responsive and visual gates
+        if: ${{ inputs.use_runner_chrome }}
+        run: >-
+          npx playwright test
+          e2e/tests/responsive.spec.ts
+          e2e/tests/visual.spec.ts
+          --project=w1440
+          --project=w1024
+          --project=w768
+          --project=w390
+          --project=w320
+          --grep 'responsive public surfaces|visual baselines.*landing'
 
       - name: Install Firefox after Chromium screenshot gates
         if: ${{ !inputs.use_runner_chrome }}
