@@ -36,10 +36,8 @@ listener_staging_load() {
   : "${LISTENER_IDENTITY_STAGING_DATABASE_ENV_FILE:?missing database env path}"
   listener_staging_require_private_file "$LISTENER_IDENTITY_STAGING_APP_ENV_FILE"
   listener_staging_require_private_file "$LISTENER_IDENTITY_STAGING_DATABASE_ENV_FILE"
-  node "$listener_staging_root/ops/listener-identity-staging/validate.mjs" \
-    "$LISTENER_IDENTITY_STAGING_DEPLOY_FILE" \
-    "$LISTENER_IDENTITY_STAGING_APP_ENV_FILE" \
-    "$LISTENER_IDENTITY_STAGING_DATABASE_ENV_FILE"
+  : "${LISTENER_IDENTITY_STAGING_IMAGE_TAG:?missing immutable image tag}"
+  : "${LISTENER_IDENTITY_STAGING_GIT_SHA:?missing reviewed git SHA}"
 }
 
 listener_staging_compose() {
@@ -120,12 +118,21 @@ listener_staging_wait_healthy() {
 
 listener_staging_capture_previous() {
   install -d -o root -g root -m 0700 "$LISTENER_IDENTITY_STAGING_STATE_DIR"
+  # Rollback state describes only the runtime observed at the start of this
+  # attempt. Never inherit a failed candidate from an earlier attempt.
+  rm -f "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image" \
+    "$LISTENER_IDENTITY_STAGING_STATE_DIR/legacy-runtime"
   if docker inspect listener-identity-staging-app >/dev/null 2>&1; then
-    previous=$(docker inspect listener-identity-staging-app --format '{{.Config.Image}}')
-    printf '%s\n' "$previous" | grep -Eq '^harmonic-beacon/listener-identity-staging:[0-9a-f]{40}$' ||
-      listener_staging_fail 'running staging app is not an immutable Listener image'
-    printf '%s\n' "$previous" > "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image"
-    chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image"
+    running=$(docker inspect listener-identity-staging-app --format '{{.State.Running}}')
+    health=$(docker inspect listener-identity-staging-app \
+      --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+    if test "$running" = true && test "$health" = healthy; then
+      previous=$(docker inspect listener-identity-staging-app --format '{{.Config.Image}}')
+      printf '%s\n' "$previous" | grep -Eq '^harmonic-beacon/listener-identity-staging:[0-9a-f]{40}$' ||
+        listener_staging_fail 'healthy staging app is not an immutable Listener image'
+      printf '%s\n' "$previous" > "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image"
+      chmod 0600 "$LISTENER_IDENTITY_STAGING_STATE_DIR/previous-image"
+    fi
   fi
   if docker inspect listener-ui-dev >/dev/null 2>&1; then
     docker inspect listener-ui-dev --format '{{.Id}} {{.Config.Image}}' \
@@ -190,4 +197,22 @@ listener_staging_verify_image() {
     sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
   test "$actual" = "$LISTENER_IDENTITY_STAGING_GIT_SHA" ||
     listener_staging_fail 'image provenance does not match its immutable tag'
+}
+
+listener_staging_validate_image() {
+  image="harmonic-beacon/listener-identity-staging:$LISTENER_IDENTITY_STAGING_IMAGE_TAG"
+  docker run --rm \
+    --user 0:0 \
+    --network none \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --tmpfs /tmp:size=16m,mode=1777 \
+    --mount "type=bind,src=$LISTENER_IDENTITY_STAGING_DEPLOY_FILE,dst=/run/listener-deploy.env,readonly" \
+    --mount "type=bind,src=$LISTENER_IDENTITY_STAGING_APP_ENV_FILE,dst=/run/listener-app.env,readonly" \
+    --mount "type=bind,src=$LISTENER_IDENTITY_STAGING_DATABASE_ENV_FILE,dst=/run/listener-database.env,readonly" \
+    --entrypoint node \
+    "$image" \
+    /app/ops/listener-identity-staging/validate.mjs \
+    /run/listener-deploy.env /run/listener-app.env /run/listener-database.env
 }

@@ -7,14 +7,16 @@ listener_staging_load "$deploy_file"
 exec 9>/run/lock/listener-identity-staging.lock
 flock -n 9 || listener_staging_fail 'another Listener staging operation is active'
 listener_staging_assert_checkout
+listener_staging_compose config --quiet
+listener_staging_compose build app
+listener_staging_verify_image
+# Mona intentionally has no host Node runtime. Validate the protected files
+# with the exact reviewed image, before any database or runtime mutation.
+listener_staging_validate_image
 listener_staging_assert_dependencies
 listener_staging_assert_port
 protected_before=$(listener_staging_fingerprint_protected)
 listener_staging_capture_previous
-
-listener_staging_compose config --quiet
-listener_staging_compose build app
-listener_staging_verify_image
 listener_staging_compose up -d postgres
 listener_staging_backup
 

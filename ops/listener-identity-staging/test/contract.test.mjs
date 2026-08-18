@@ -98,6 +98,9 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   const edge = source(path.join(REPO, 'scripts/listener-identity-staging/edge-smoke.sh'));
   const rollback = source(path.join(REPO, 'scripts/listener-identity-staging/rollback.sh'));
   assert.match(start, /build app/);
+  assert.match(start, /listener_staging_validate_image/);
+  assert.ok(start.indexOf('listener_staging_validate_image') < start.indexOf('up -d postgres'));
+  assert.ok(start.indexOf('listener_staging_validate_image') < start.indexOf('listener_staging_capture_previous'));
   assert.match(start, /up -d postgres/);
   assert.match(start, /listener_staging_backup/);
   assert.ok(start.indexOf('listener_staging_backup') < start.indexOf('docker stop listener-ui-dev'));
@@ -105,6 +108,16 @@ test('lifecycle is forward-only, provenance checked and scoped away from product
   assert.match(start, /protected_before=.*listener_staging_fingerprint_protected/);
   assert.match(start, /test "\$protected_before" = "\$protected_after"/);
   assert.match(lib, /image provenance does not match its immutable tag/);
+  assert.doesNotMatch(lib.match(/listener_staging_load\(\) \{[\s\S]*?\n\}/)?.[0] ?? '', /\bnode\b/);
+  assert.match(lib, /listener_staging_validate_image\(\)/);
+  assert.match(lib, /--user 0:0/);
+  assert.match(lib, /--network none/);
+  assert.match(lib, /--read-only/);
+  assert.match(lib, /--cap-drop ALL/);
+  assert.match(lib, /--security-opt no-new-privileges/);
+  assert.match(lib, /\/app\/ops\/listener-identity-staging\/validate\.mjs/);
+  assert.match(lib, /rm -f "\$LISTENER_IDENTITY_STAGING_STATE_DIR\/previous-image"/);
+  assert.match(lib, /test "\$running" = true && test "\$health" = healthy/);
   assert.match(lib, /earlybirds-preview-listener-1 earlybirds-preview-postgres-1/);
   assert.match(lib, /database network exists outside the reviewed project/);
   assert.match(lib, /PostgreSQL volume exists outside the reviewed project/);
