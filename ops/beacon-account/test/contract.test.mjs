@@ -184,6 +184,15 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.doesNotMatch(`${start}\n${lib}`, /migrate reset|migrate down|docker compose down|volume rm|prune/);
   const dockerfile = fs.readFileSync(path.resolve(ROOT, '../../Dockerfile'), 'utf8');
   assert.match(dockerfile, /ops\/beacon-account\/validate\.mjs/);
+  for (const fixture of [
+    'account.production.env.example',
+    'account.staging.env.example',
+    'database.staging.env.example',
+    'account-mail-worker.production.env.example',
+    'account-mail-worker.staging.env.example',
+  ]) {
+    assert.match(dockerfile, new RegExp(`ops/beacon-account/${fixture.replaceAll('.', '\\\.')}`));
+  }
 });
 
 test('nginx keeps Account hosts isolated and never logs token-bearing routes', () => {
