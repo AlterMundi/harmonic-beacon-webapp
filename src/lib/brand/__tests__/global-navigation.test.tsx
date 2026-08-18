@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import manifest from '@/brand/canonical/manifest.json';
 import {
     GlobalNavigation,
     GLOBAL_NAVIGATION_ASSET,
     GLOBAL_NAVIGATION_PROVENANCE,
     GLOBAL_NAVIGATION_SHA256,
 } from '@/components/brand/GlobalNavigation';
-import { globalNavigationSurface } from '@/lib/brand/global-navigation';
+import {
+    globalNavigationAccountHref,
+    globalNavigationSurface,
+} from '@/lib/brand/global-navigation';
 
 describe('canonical Harmonic Beacon global navigation', () => {
     it.each([
@@ -27,6 +31,16 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(globalNavigationSurface(new Headers({ host }))).toBe(expected);
     });
 
+    it.each([
+        ['account-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
+        ['earlybirds-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
+        ['live-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
+        ['listen.harmonicbeacon.com', 'https://account.harmonicbeacon.com/account'],
+        ['earlybirds-staging.harmonicbeacon.com, account.harmonicbeacon.com', 'https://account.harmonicbeacon.com/account'],
+    ] as const)('maps the exact host %s to Account href %s', (host, expected) => {
+        expect(globalNavigationAccountHref(new Headers({ host }))).toBe(expected);
+    });
+
     it('keeps an accessible same-destination fallback while the shared asset loads', () => {
         render(<GlobalNavigation active="listen" locale="en" />);
 
@@ -34,12 +48,27 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', 'https://live.harmonicbeacon.com/?lang=en');
         expect(screen.getByRole('link', { name: 'Listen' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('link', { name: 'News' })).toHaveAttribute('href', 'https://harmonicbeacon.com/eventos/?lang=en');
+        const userMenu = screen.getByLabelText('User menu');
+        expect(userMenu.tagName).toBe('SUMMARY');
+        const account = screen.getByRole('menuitem', { name: 'Account' });
+        expect(account).toHaveAttribute('href', 'https://account.harmonicbeacon.com/account?lang=en');
+        expect(account.closest('[role="menu"]')).toBeTruthy();
+        expect(account.closest('li')).toBeNull();
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('ceeea30a94417331450c420fbfb8fc2e6a0a9b2d');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('ae3608e3ec603b424efb729373dddd8d3a7f6e93');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
+        expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
+        expect(manifest.globalNavigation.sha256).toBe(GLOBAL_NAVIGATION_SHA256);
+        expect(manifest.snapshots[manifest.globalNavigation.path as keyof typeof manifest.snapshots])
+            .toBe(GLOBAL_NAVIGATION_SHA256);
+        const source = bytes.toString('utf8');
+        expect(source).toContain('class="account-trigger"');
+        expect(source).toContain('aria-haspopup="menu"');
+        expect(source).toContain('class="account-menu"');
+        expect(source).not.toContain('class="account-link"');
     });
 
     it('renders the same destinations in Spanish', () => {
@@ -57,8 +86,35 @@ describe('canonical Harmonic Beacon global navigation', () => {
             allowRemoteEnhancement={false}
             accountHref="https://account-staging.harmonicbeacon.com/account"
         />);
-        expect(within(view.container).getByRole('link', { name: 'Account' }))
+        const account = within(view.container).getByRole('menuitem', { name: 'Account' });
+        expect(account)
             .toHaveAttribute('href', 'https://account-staging.harmonicbeacon.com/account?lang=en');
+        expect(account).toHaveAttribute('aria-current', 'page');
+        expect(within(view.container).getByLabelText('User menu').querySelector('svg')).toBeTruthy();
         expect(view.container.querySelector('script')).toBeNull();
+    });
+
+    it('opens Account from the enhanced user menu instead of the primary links', () => {
+        document.body.innerHTML = '';
+        document.documentElement.lang = 'en';
+        const source = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'), 'utf8');
+        window.eval(source);
+
+        const navigation = document.querySelector('hb-global-nav');
+        const shadow = navigation?.shadowRoot;
+        expect(shadow).toBeTruthy();
+        expect(shadow?.querySelector('.links')?.textContent).not.toContain('Account');
+
+        const trigger = shadow?.querySelector<HTMLButtonElement>('.account-trigger');
+        const menu = shadow?.querySelector<HTMLElement>('.account-menu');
+        const account = menu?.querySelector<HTMLAnchorElement>('a');
+        expect(trigger).toHaveAttribute('aria-label', 'User menu');
+        expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        expect(menu).toHaveAttribute('hidden');
+        expect(account?.textContent).toBe('Account');
+
+        fireEvent.click(trigger!);
+        expect(trigger).toHaveAttribute('aria-expanded', 'true');
+        expect(menu).not.toHaveAttribute('hidden');
     });
 });

@@ -3,7 +3,10 @@ import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
-import { globalNavigationSurface } from "@/lib/brand/global-navigation";
+import {
+  globalNavigationAccountHref,
+  globalNavigationSurface,
+} from "@/lib/brand/global-navigation";
 import { requestBrowserLocale, requestLocale } from "@/lib/i18n-server";
 import { isCanonicalListenerHost } from "@/lib/listener/public-discovery";
 import { isAccountHost } from "@/lib/account/config";
@@ -112,10 +115,8 @@ export default async function RootLayout({
   // exact public host so event-language defaults elsewhere remain untouched.
   const listenerHost = isCanonicalListenerHost(incomingHeaders);
   const accountHost = isAccountHost(incomingHeaders.get('host'));
-  const accountHref = incomingHeaders.get('host')?.toLowerCase().split(':')[0] ===
-    'account-staging.harmonicbeacon.com'
-    ? 'https://account-staging.harmonicbeacon.com/account' as const
-    : 'https://account.harmonicbeacon.com/account' as const;
+  const accountNavSlot = accountHost && incomingHeaders.get('x-hb-account-nav-slot') === '1';
+  const accountHref = globalNavigationAccountHref(incomingHeaders);
   // This application is the Live surface by default. Listener and its staging
   // host opt into their own active item explicitly; local/E2E hosts continue
   // to exercise the same global header as production Live.
@@ -139,8 +140,8 @@ export default async function RootLayout({
         <GlobalNavigation
           active={navigationSurface}
           locale={locale}
-          allowRemoteEnhancement={!accountHost}
-          accountHref={accountHost ? accountHref : undefined}
+          allowRemoteEnhancement={!accountNavSlot}
+          accountHref={accountHref}
         />
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}

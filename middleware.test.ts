@@ -141,6 +141,18 @@ describe('middleware', () => {
             ));
             expect(response.headers.get('x-middleware-request-x-hb-account-locale')).toBe('en');
         });
+
+        it.each([
+            ['/account', '0'],
+            ['/verify-email', '0'],
+            ['/nav-slot', '1'],
+        ])('marks only the isolated avatar document as the navigation slot: %s', (pathname, expected) => {
+            const response = accountRequest(pathname);
+            expect(response.headers.get('x-middleware-request-x-hb-account-nav-slot')).toBe(expected);
+            if (pathname !== '/nav-slot') {
+                expect(response.headers.get('content-security-policy')).toContain("frame-src 'self'");
+            }
+        });
     });
     describe('EarlyBird invitation URL scrubbing', () => {
         it.each([
