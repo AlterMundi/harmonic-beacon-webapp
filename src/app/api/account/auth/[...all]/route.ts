@@ -41,7 +41,7 @@ async function genericCredentialResponse(response: Response, path: string): Prom
     const signup = path === '/api/account/auth/sign-up/email';
     const successful = response.ok;
     const headers = new Headers({ 'Cache-Control': 'private, no-store' });
-    if (successful) {
+    if (successful && !signup) {
         for (const cookie of response.headers.getSetCookie()) {
             headers.append('Set-Cookie', cookie);
         }

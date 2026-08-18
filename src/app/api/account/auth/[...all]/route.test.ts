@@ -7,12 +7,21 @@ const revokeAccountSession = vi.hoisted(() => vi.fn());
 const userFindUnique = vi.hoisted(() => vi.fn());
 const sessionFindUnique = vi.hoisted(() => vi.fn());
 const sessionDeleteMany = vi.hoisted(() => vi.fn());
+const ensureVerificationMailQueued = vi.hoisted(() => vi.fn());
+const processVerificationMailOutbox = vi.hoisted(() => vi.fn());
+const after = vi.hoisted(() => vi.fn());
+vi.mock('next/server', () => ({ after }));
 vi.mock('@/lib/account/auth', () => ({
     accountAuth: () => ({ handler: authHandler, api: { getSession } }),
 }));
 vi.mock('@/lib/account/authority-db', () => ({ accountAuthorityDatabaseReady: () => true }));
 vi.mock('@/lib/account/revocation', () => ({ revokeAccountSession }));
 vi.mock('@/lib/account/rate-limit', () => ({ consumeAccountRateLimit: () => true }));
+vi.mock('@/lib/account/mail-outbox', () => ({
+    ensureVerificationMailQueued,
+    processVerificationMailOutbox,
+}));
+vi.mock('@/lib/account/timing', () => ({ enforceAccountCredentialFloor: vi.fn() }));
 vi.mock('@/lib/db', () => ({
     prisma: {
         $transaction: transaction,
@@ -50,6 +59,8 @@ describe('Account catch-all route confidential OAuth boundary', () => {
         transaction.mockImplementation(async (callback) => callback({}));
         revokeAccountSession.mockResolvedValue(undefined);
         sessionDeleteMany.mockResolvedValue({ count: 0 });
+        ensureVerificationMailQueued.mockResolvedValue(undefined);
+        processVerificationMailOutbox.mockResolvedValue(undefined);
     });
     afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
@@ -107,6 +118,34 @@ describe('Account catch-all route confidential OAuth boundary', () => {
         expect(response.headers.getSetCookie().join('\n')).not.toContain('__Secure-__Host-');
         expect(getSession.mock.calls[1]?.[0]?.headers.get('cookie'))
             .toBe('__Host-hb_account_session=opaque-session');
+    });
+
+    it.each([
+        ['underlying success', 200],
+        ['underlying rejection', 422],
+    ])('returns the same exact cookie-free signup acceptance for %s', async (_label, status) => {
+        const headers = new Headers({ 'Content-Type': 'application/json' });
+        headers.append('Set-Cookie', '__Host-hb_account_session=must-not-leave-signup; Path=/; HttpOnly; Secure');
+        authHandler.mockResolvedValueOnce(Response.json({ token: 'opaque' }, { status, headers }));
+
+        const response = await POST(new Request(`${origin}/api/account/auth/sign-up/email`, {
+            method: 'POST',
+            headers: {
+                host: 'account.harmonicbeacon.com', origin,
+                'sec-fetch-site': 'same-origin', 'content-type': 'application/json',
+                'x-hb-locale': 'es',
+            },
+            body: JSON.stringify({
+                name: 'Test Listener', email: 'listener@example.invalid', password: '12345678',
+            }),
+        }));
+
+        expect(response.status).toBe(202);
+        expect(await response.json()).toEqual({ status: 'accepted' });
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
+        expect(response.headers.getSetCookie()).toEqual([]);
+        expect(ensureVerificationMailQueued).toHaveBeenCalledWith('listener@example.invalid', 'es');
+        expect(after).toHaveBeenCalledOnce();
     });
 
     it('rejects an unforwardable successful sign-in and removes only its exact new session token', async () => {

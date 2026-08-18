@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -126,28 +127,46 @@ describe('Account cross-product logout completion', () => {
         expect(repeated).toHaveFocus();
     });
 
-    it('submits an eight-character signup and shows check-email only on success', async () => {
-        const fetchMock = vi.fn().mockResolvedValue(new Response('{}', {
+    it.each([
+        ['en' as const, 'Check your email', 'If the request is eligible, check your email to continue.', 'Go to sign in'],
+        ['es' as const, 'Revisá tu correo', 'Si la solicitud es elegible, revisá tu correo para continuar.', 'Ir al ingreso'],
+    ])('submits an eight-character %s signup and replaces the form with focused confirmation', async (
+        locale, heading, copy, returnLabel,
+    ) => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response('{"status":"accepted"}', {
             status: 202, headers: { 'Content-Type': 'application/json' },
         }));
         vi.stubGlobal('fetch', fetchMock);
         render(createElement(AccountClient, {
             initialSession: null,
             providers: { google: false, apple: false },
-            locale: 'en',
+            locale,
             returnTo: null,
         }));
-        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
-        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Test Listener' } });
-        fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
-        const password = screen.getByLabelText('Password');
+        const createLabel = locale === 'es' ? 'Crear cuenta' : 'Create account';
+        fireEvent.click(screen.getAllByRole('button', { name: createLabel })[0]);
+        fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Nombre visible' : 'Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Correo' : 'Email'), { target: { value: 'listener@example.invalid' } });
+        const password = screen.getByLabelText(locale === 'es' ? 'Contraseña' : 'Password');
         fireEvent.change(password, { target: { value: '12345678' } });
-        fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: '12345678' } });
+        fireEvent.change(screen.getByLabelText(locale === 'es' ? 'Repetir contraseña' : 'Repeat password'), { target: { value: '12345678' } });
         fireEvent.submit(password.closest('form')!);
         await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
         const feedback = screen.getByRole('status');
-        expect(feedback).toHaveTextContent('Check your email to verify the account');
+        expect(feedback).toHaveTextContent(heading);
+        expect(feedback).toHaveTextContent(copy);
         await waitFor(() => expect(feedback).toHaveFocus());
+        expect(screen.queryByRole('button', { name: createLabel })).toBeNull();
+        expect(document.body).not.toHaveTextContent('listener@example.invalid');
+        const returnButton = screen.getByRole('button', { name: returnLabel });
+        expect(returnButton).toBeVisible();
+        const user = userEvent.setup();
+        await user.tab();
+        expect(returnButton).toHaveFocus();
+        await user.keyboard('{Enter}');
+        await waitFor(() => expect(screen.getByRole('textbox', {
+            name: locale === 'es' ? 'Correo' : 'Email',
+        })).toHaveFocus());
     });
 
     it('shows an enumeration-neutral server failure and always restores the submit button', async () => {
@@ -170,11 +189,36 @@ describe('Account cross-product logout completion', () => {
         fireEvent.submit(password.closest('form')!);
         const feedback = await screen.findByRole('status');
         await waitFor(() => expect(feedback).toHaveTextContent(
-            'Account could not be created. Check the details and try again.',
+            'The request could not be completed. Check the details and try again.',
         ));
         expect(feedback).toHaveFocus();
         expect(screen.getAllByRole('button', { name: 'Create account' }).at(-1)).toBeEnabled();
-        expect(screen.queryByText(/Check your email to verify/)).toBeNull();
+        expect(screen.queryByText(/request is eligible/)).toBeNull();
+    });
+
+    it.each([
+        [200, '{"status":"accepted"}'],
+        [202, '{"status":"unexpected"}'],
+    ])('rejects malformed signup success status/body (%s) instead of showing a false confirmation', async (status, body) => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response(body, {
+            status, headers: { 'Content-Type': 'application/json' },
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: null,
+            providers: { google: false, apple: false },
+            locale: 'en',
+            returnTo: null,
+        }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
+        fireEvent.change(screen.getByLabelText('Password'), { target: { value: '12345678' } });
+        fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: '12345678' } });
+        fireEvent.submit(screen.getByLabelText('Password').closest('form')!);
+        const feedback = await screen.findByRole('status');
+        await waitFor(() => expect(feedback).toHaveTextContent('The request could not be completed.'));
+        expect(screen.queryByRole('heading', { name: 'Check your email' })).toBeNull();
     });
 
     it('coalesces duplicate credential submits while the first request is pending', async () => {
@@ -199,11 +243,16 @@ describe('Account cross-product logout completion', () => {
         fireEvent.submit(form);
         fireEvent.submit(form);
         expect(fetchMock).toHaveBeenCalledOnce();
-        expect(screen.getAllByRole('button', { name: 'Create account' }).at(-1)).toBeDisabled();
-        resolveFetch(new Response('{}', {
+        expect(screen.getByRole('status')).toHaveTextContent('Creating your account…');
+        expect(screen.getByRole('button', { name: 'Creating…' })).toBeDisabled();
+        resolveFetch(new Response('{"status":"accepted"}', {
             status: 202, headers: { 'Content-Type': 'application/json' },
         }));
-        await waitFor(() => expect(screen.getAllByRole('button', { name: 'Create account' }).at(-1)).toBeEnabled());
+        await screen.findByRole('heading', { name: 'Check your email' });
+        expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
+        expect(fetchMock).toHaveBeenCalledOnce();
+        fireEvent.click(screen.getByRole('button', { name: 'Go to sign in' }));
+        expect(screen.getAllByRole('button', { name: 'Sign in' })).toHaveLength(2);
     });
 
     it('blocks a signed-in password change when the repeated value differs', () => {
