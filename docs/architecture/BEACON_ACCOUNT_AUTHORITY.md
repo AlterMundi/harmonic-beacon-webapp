@@ -19,6 +19,11 @@ The canonical production account ID remains the existing opaque
 cutover. Staging materializes a deterministic issuer-bound local ID instead.
 Email/provider identity is never staff, event, membership or payment authority.
 
+The reviewed sibling-origin and dangling-record inventory is maintained in
+[`docs/security/BEACON_SUBDOMAIN_INVENTORY.md`](../security/BEACON_SUBDOMAIN_INVENTORY.md).
+It is a production Account gate. DNS changes remain a human/operator action;
+repository automation must never modify DNSExit.
+
 ## Fixed access method and Beacon profile
 
 Every account has exactly one access method: `email`, `google` or `apple`.
