@@ -3,11 +3,11 @@ import Script from 'next/script';
 
 import type { UiLocale } from '@/lib/i18n';
 
-// Byte-pinned local snapshot of harmonicbeacon.com@ab453af. Protected product
+// Byte-pinned local snapshot of harmonicbeacon.com@10de81f. Protected product
 // origins never execute remotely supplied JavaScript with their host cookies.
 export const GLOBAL_NAVIGATION_ASSET = '/assets/hb-global-nav.js';
-export const GLOBAL_NAVIGATION_PROVENANCE = 'ab453af247e31362fddd6bc2a91c7f266cf2b7ae';
-export const GLOBAL_NAVIGATION_SHA256 = '65773aaf87e1112204b470d793f92b34ae9e2dae06929c6559458420f5045cc2';
+export const GLOBAL_NAVIGATION_PROVENANCE = '10de81fd576aa9d65ec8c3861cc38903403a63f0';
+export const GLOBAL_NAVIGATION_SHA256 = '7637edccfc2250615274ff7c6b5464e2532fff0081ab0d2e76ec0413c0097d10';
 
 export type GlobalNavigationSurface = 'events' | 'listen' | 'account';
 

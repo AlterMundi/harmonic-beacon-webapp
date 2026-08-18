@@ -11,13 +11,13 @@
   },
   "globalNavigation": {
     "repository": "https://github.com/AlterMundi/harmonicbeacon.com",
-    "commit": "ab453af247e31362fddd6bc2a91c7f266cf2b7ae",
+    "commit": "10de81fd576aa9d65ec8c3861cc38903403a63f0",
     "source": "assets/hb-global-nav.js",
     "path": "public/assets/hb-global-nav.js",
-    "sha256": "65773aaf87e1112204b470d793f92b34ae9e2dae06929c6559458420f5045cc2"
+    "sha256": "7637edccfc2250615274ff7c6b5464e2532fff0081ab0d2e76ec0413c0097d10"
   },
   "snapshots": {
-    "public/assets/hb-global-nav.js": "65773aaf87e1112204b470d793f92b34ae9e2dae06929c6559458420f5045cc2",
+    "public/assets/hb-global-nav.js": "7637edccfc2250615274ff7c6b5464e2532fff0081ab0d2e76ec0413c0097d10",
     "src/brand/canonical/hb-brand-root.css": "9a4b97ef7545de47c99f37704a86c2317ea77e9b2c8c0bb078dda0be546ab89d",
     "src/brand/canonical/hb-mark.ts": "f832213a4ac29023a38dca3bdc0e0a8d5db9f324f8b3e119538b9aa2c3dcd881"
   },
