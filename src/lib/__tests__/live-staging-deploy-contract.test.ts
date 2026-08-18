@@ -72,6 +72,18 @@ describe('isolated Live staging deploy contract', () => {
         expect(nginx).toContain('limit_req zone=live_staging_general');
         expect(nginx).toContain('limit_req zone=live_staging_auth');
         expect(nginx).toContain('proxy_set_header Authorization "";');
+        for (const route of [
+            '/api/account/login',
+            '/api/account/callback',
+            '/api/account/frontchannel-logout',
+        ]) {
+            const escaped = route.replaceAll('/', '\\/');
+            expect(nginx).toMatch(
+                new RegExp(`location = ${escaped} \\{[\\s\\S]*?access_log off;[\\s\\S]*?proxy_pass http:\\/\\/127\\.0\\.0\\.1:3200;`),
+            );
+        }
+        expect(nginx).toMatch(/location \^~ \/api\/account\/ \{\n\s+access_log off;\n\s+return 404;/);
+        expect(nginx).not.toContain('proxy_pass http://127.0.0.1:3200/api/account');
         expect(nginx).not.toMatch(/listen (?:\[::\]:)?(?:80|443)/);
     });
 

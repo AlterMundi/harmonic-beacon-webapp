@@ -29,7 +29,10 @@ route remains dark. `/test-login` and `/api/test-login` are also denied at the
 vhost and disabled in the app environment. Enable Account only after
 `account-staging.harmonicbeacon.com`,
 the confidential `hb-live-staging` client, its secret and the exact callback +
-front-channel logout registrations exist.
+front-channel logout registrations exist. The three exact Account routes are
+rate-limited and excluded from access logs; every `/api/account/*` suffix or
+unknown route fails closed at Nginx so OAuth codes, state and sid values cannot
+fall through the general request log.
 
 ## First deployment
 
