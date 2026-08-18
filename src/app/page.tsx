@@ -16,6 +16,8 @@ import BrandLockup from "@/components/brand/BrandLockup";
 import LanguageControl from "@/components/brand/LanguageControl";
 import { messages } from "@/lib/i18n";
 import { requestLocale } from "@/lib/i18n-server";
+import { beaconAccountEnabled } from "@/lib/account-rp";
+import { currentAccountIdentity } from "@/lib/principal";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +89,13 @@ export default async function LandingPage({
 }) {
     const locale = await requestLocale();
     const copy = messages[locale].landing;
-    const next = safeNext((await searchParams).next);
+    const params = await searchParams;
+    const next = safeNext(params.next);
+    const accountEnabled = beaconAccountEnabled();
+    const account = accountEnabled
+        ? await currentAccountIdentity().catch(() => null)
+        : null;
+    const accountError = params.account_error === '1';
     const events = await weekendEvents();
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlSession2 = process.env.TICKET_PURCHASE_URL_SESSION_2 || process.env.TICKET_PURCHASE_URL;
@@ -200,7 +208,39 @@ export default async function LandingPage({
                         {copy.loginHeading}
                     </h2>
                     <div className="event-card max-w-xl">
-                        <LoginClient next={next} />
+                        {accountEnabled && !account ? (
+                            <div className="space-y-4">
+                                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                                    {copy && messages[locale].ticketLogin.accountRequired}
+                                </p>
+                                {accountError && (
+                                    <div role="alert" className="event-alert event-alert--danger">
+                                        {messages[locale].ticketLogin.accountError}
+                                    </div>
+                                )}
+                                <a
+                                    className="event-button event-button--primary inline-flex w-full"
+                                    href={`/api/account/login?flow=attendee${next ? `&next=${encodeURIComponent(next)}` : ''}`}
+                                >
+                                    {messages[locale].ticketLogin.accountContinue}
+                                </a>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {accountEnabled && (
+                                    <p className="text-xs text-[var(--text-muted)]">
+                                        {messages[locale].ticketLogin.accountConnected}
+                                    </p>
+                                )}
+                                <LoginClient
+                                    next={next}
+                                    {...(accountEnabled ? {
+                                        accountEnabled: true,
+                                        defaultDisplayName: account?.displayName ?? '',
+                                    } : {})}
+                                />
+                            </div>
+                        )}
                     </div>
                 </section>
 

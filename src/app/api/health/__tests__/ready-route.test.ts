@@ -15,7 +15,10 @@ describe('GET /api/health/ready', () => {
         const { status, body } = await parseResponse(response);
 
         expect(status).toBe(200);
-        expect(body).toEqual({ status: 'ok', checks: { database: 'ok' } });
+        expect(body).toEqual({
+            status: 'ok',
+            checks: { database: 'ok', account: 'disabled' },
+        });
         expect(response.headers.get('cache-control')).toBe('no-store');
     });
 

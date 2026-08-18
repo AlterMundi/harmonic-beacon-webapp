@@ -6,6 +6,10 @@ import { prisma } from '@/lib/db';
 import { stableRoomIdentity } from '@/lib/livekit-server';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
 import {
+    beaconAccountEnabled,
+    validatedAccountIdentity,
+} from '@/lib/account-rp';
+import {
     SESSION_COOKIE_NAME,
     digestSessionToken,
 } from '@/lib/session-auth';
@@ -46,6 +50,7 @@ type RoomAccessBase = {
     staffUserId: string | null;
     existingParticipant: {
         id: string;
+        displayName: string | null;
         publishGrantedAt: Date | null;
         publishRevokedAt: Date | null;
     } | null;
@@ -122,7 +127,13 @@ async function resolveRoomAccess(
     const webSession = await prisma.webSession.findUnique({
         where: { tokenDigest: digestSessionToken(cookieValue) },
         select: {
+            id: true,
             displayName: true,
+            accountIssuer: true,
+            accountSubject: true,
+            accountSessionId: true,
+            accountDisplayName: true,
+            accountValidatedAt: true,
             expiresAt: true,
             revokedAt: true,
             staffUser: {
@@ -131,6 +142,13 @@ async function resolveRoomAccess(
                     name: true,
                     role: true,
                     disabledAt: true,
+                    accountBinding: {
+                        select: {
+                            accountIssuer: true,
+                            accountSubject: true,
+                            disabledAt: true,
+                        },
+                    },
                 },
             },
             ticketEntitlement: {
@@ -139,6 +157,8 @@ async function resolveRoomAccess(
                     scheduledSessionId: true,
                     state: true,
                     boundEmail: true,
+                    accountId: true,
+                    accountIssuer: true,
                     expiresAt: true,
                     revokedAt: true,
                     commerceEntitlement: {
@@ -154,6 +174,13 @@ async function resolveRoomAccess(
         webSession.revokedAt ||
         webSession.expiresAt <= now
     ) {
+        return { ok: false, status: 401, error: 'Authentication required' };
+    }
+    const accountRequired = beaconAccountEnabled();
+    const account = accountRequired
+        ? await validatedAccountIdentity(webSession, now)
+        : null;
+    if (accountRequired && !account) {
         return { ok: false, status: 401, error: 'Authentication required' };
     }
 
@@ -194,7 +221,10 @@ async function resolveRoomAccess(
             scheduledSession.status !== 'LIVE' ||
             ticket.scheduledSessionId !== scheduledSession.id ||
             ticket.state !== 'BOUND' ||
-            !ticket.boundEmail ||
+            (accountRequired
+                ? ticket.accountId !== account?.subject ||
+                    ticket.accountIssuer !== account?.issuer
+                : !ticket.boundEmail) ||
             ticket.revokedAt ||
             ticket.expiresAt <= now
         ) {
@@ -212,6 +242,12 @@ async function resolveRoomAccess(
         if (
             !staff ||
             staff.disabledAt ||
+            (accountRequired && (
+                !staff.accountBinding ||
+                staff.accountBinding.disabledAt ||
+                staff.accountBinding.accountIssuer !== account?.issuer ||
+                staff.accountBinding.accountSubject !== account?.subject
+            )) ||
             (scheduledSession.status !== 'SCHEDULED' &&
                 scheduledSession.status !== 'LIVE')
         ) {
@@ -257,7 +293,12 @@ async function resolveRoomAccess(
                 ? { ticketEntitlementId }
                 : { staffUserId: staffUserId! }),
         },
-        select: { id: true, publishGrantedAt: true, publishRevokedAt: true },
+        select: {
+            id: true,
+            displayName: true,
+            publishGrantedAt: true,
+            publishRevokedAt: true,
+        },
     });
 
     return {
@@ -271,7 +312,7 @@ async function resolveRoomAccess(
                 startedAt: scheduledSession.startedAt,
             },
             identity,
-            displayName,
+            displayName: existingParticipant?.displayName?.trim() || displayName,
             role,
             isAssignedFacilitator,
             canPublishInitially,
@@ -352,6 +393,7 @@ export async function resolveRoomPrincipal(
                 where: { id: existingParticipant.id },
                 data: {
                     participantIdentity: access.identity,
+                    // Preserve the alias already captured for this participation.
                     leftAt: null,
                 },
                 select: {
@@ -369,6 +411,7 @@ export async function resolveRoomPrincipal(
                 create: {
                     scheduledSessionId: scheduledSessionId,
                     participantIdentity: access.identity,
+                    displayName: access.displayName,
                     ticketEntitlementId: access.ticketEntitlementId,
                     staffUserId: access.staffUserId,
                     publishGrantedAt: access.canPublishInitially ? now : null,

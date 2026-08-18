@@ -159,4 +159,54 @@ integration('promotion invitation PostgreSQL contract', () => {
             },
         });
     });
+
+    it('binds an Account invitation to issuer plus opaque subject without an email', async () => {
+        const issuer = 'https://account.harmonicbeacon.com';
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        vi.stubEnv('BEACON_ACCOUNT_ISSUER_URL', issuer);
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_ID', 'hb-live');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET', 'integration-secret-that-is-at-least-32-characters');
+        await prisma.promoInvitation.create({
+            data: {
+                id: '50000000-0000-4000-8000-000000000002',
+                scheduledSessionId: SESSION_ID,
+                codeDigest: digestPromoCode('ACCT100', PEPPER),
+                label: 'Synthetic Account guest campaign',
+                expiresAt: new Date('2026-08-03T12:00:00.000Z'),
+                maxRedemptions: 1,
+                issuedByUserId: ISSUER_ID,
+            },
+        });
+        const account = {
+            issuer,
+            subject: 'acct_opaque_integration_1',
+            sessionId: 'central-device-integration-1',
+            displayName: 'Account profile',
+            validatedAt: NOW,
+        };
+        const result = await redeemPromoInvitation(
+            'ACCT100',
+            { accountIssuer: issuer, accountId: account.subject },
+            'Event alias',
+            NOW,
+            undefined,
+            account,
+        );
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error('expected Account invitation redemption');
+
+        await expect(prisma.ticketEntitlement.findUniqueOrThrow({
+            where: { id: result.entitlementId },
+        })).resolves.toMatchObject({
+            state: 'BOUND',
+            boundEmail: null,
+            accountIssuer: issuer,
+            accountId: account.subject,
+        });
+        await expect(principalFromToken(result.cookieValue, NOW)).resolves.toMatchObject({
+            kind: 'attendee',
+            accountId: account.subject,
+            scheduledSessionId: SESSION_ID,
+        });
+    });
 });

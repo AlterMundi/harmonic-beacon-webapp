@@ -22,11 +22,22 @@ export default function StaffIdentityMenu({
     async function logout() {
         if (busy) return;
         setBusy(true);
+        let leavingForIssuer = false;
         try {
-            await fetch('/api/auth/logout', { method: 'POST' });
+            const response = await fetch('/api/auth/logout', { method: 'POST' });
+            const body = response.ok && typeof response.json === 'function'
+                ? await response.json() as { issuerLogoutUrl?: unknown }
+                : null;
+            if (typeof body?.issuerLogoutUrl === 'string') {
+                leavingForIssuer = true;
+                window.location.assign(body.issuerLogoutUrl);
+                return;
+            }
         } finally {
-            router.replace('/staff/login');
-            router.refresh();
+            if (!leavingForIssuer) {
+                router.replace('/staff/login');
+                router.refresh();
+            }
         }
     }
 

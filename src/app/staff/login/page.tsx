@@ -18,12 +18,14 @@ import { messages } from "@/lib/i18n";
 import { requestLocale } from "@/lib/i18n-server";
 import { staffRoleLabel } from "@/lib/i18n";
 import { resolveStaffLanding } from "@/lib/staff-navigation";
+import { beaconAccountEnabled } from "@/lib/account-rp";
 
 export const dynamic = "force-dynamic";
 
 export default async function StaffLoginPage() {
     const locale = await requestLocale();
     const copy = messages[locale].staffLogin;
+    const accountEnabled = beaconAccountEnabled();
     const principal = await currentPrincipal().catch(() => null);
     const signedInRole = principal?.kind === "staff" ? principal.role : null;
     const signedInLanding = principal?.kind === "staff"
@@ -62,6 +64,13 @@ export default async function StaffLoginPage() {
                             {copy.controls}
                         </Link>
                     </div>
+                ) : accountEnabled ? (
+                    <a
+                        href="/api/account/login?flow=staff&next=%2Fops%2Fevents"
+                        className="event-button event-button--primary inline-flex w-full"
+                    >
+                        {copy.accountSignIn}
+                    </a>
                 ) : (
                     <StaffLoginClient />
                 )}
