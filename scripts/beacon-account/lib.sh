@@ -121,29 +121,41 @@ account_verify_running() {
   environment=$1
   expected_sha=${2:-$BEACON_ACCOUNT_GIT_SHA}
   expected_image_tag=${3:-$BEACON_ACCOUNT_IMAGE_TAG}
+  expected_worker_present=${4:-1}
+  case "$expected_worker_present" in 0|1) ;; *) account_fail 'expected worker presence must be 0 or 1' ;; esac
   container=$(account_container_name "$environment")
   worker=$(account_mail_worker_container_name "$environment")
   account_wait_healthy "$container"
-  account_wait_healthy "$worker"
+  if [ "$expected_worker_present" -eq 1 ]; then
+    account_wait_healthy "$worker"
+  else
+    worker_state=$(docker inspect "$worker" --format '{{.State.Status}}' 2>/dev/null || true)
+    case "$worker_state" in
+      ''|created|exited|dead) ;;
+      *) account_fail 'Account mail worker must not be running for this image' ;;
+    esac
+  fi
   image=$(docker inspect "$container" --format '{{.Config.Image}}')
   test "$image" = "harmonic-beacon/account:$expected_image_tag" || account_fail 'running image mismatch'
-  worker_image=$(docker inspect "$worker" --format '{{.Config.Image}}')
-  test "$worker_image" = "harmonic-beacon/account:$expected_image_tag" ||
-    account_fail 'running mail worker image mismatch'
   running_sha=$(docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}' |
     sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
   test "$running_sha" = "$expected_sha" || account_fail 'running SHA mismatch'
-  worker_sha=$(docker inspect "$worker" --format '{{range .Config.Env}}{{println .}}{{end}}' |
-    sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
-  test "$worker_sha" = "$expected_sha" || account_fail 'running mail worker SHA mismatch'
   published=$(docker inspect "$container" --format '{{json .HostConfig.PortBindings}}')
   expected_port=13002
   [ "$environment" = staging ] && expected_port=13003
   echo "$published" | grep -Fq "127.0.0.1" || account_fail 'Account must bind loopback only'
   echo "$published" | grep -Fq "$expected_port" || account_fail 'Account port mismatch'
-  worker_published=$(docker inspect "$worker" --format '{{json .HostConfig.PortBindings}}')
-  test "$worker_published" = null || test "$worker_published" = '{}' ||
-    account_fail 'Account mail worker must not publish ports'
+  if [ "$expected_worker_present" -eq 1 ]; then
+    worker_image=$(docker inspect "$worker" --format '{{.Config.Image}}')
+    test "$worker_image" = "harmonic-beacon/account:$expected_image_tag" ||
+      account_fail 'running mail worker image mismatch'
+    worker_sha=$(docker inspect "$worker" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+      sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
+    test "$worker_sha" = "$expected_sha" || account_fail 'running mail worker SHA mismatch'
+    worker_published=$(docker inspect "$worker" --format '{{json .HostConfig.PortBindings}}')
+    test "$worker_published" = null || test "$worker_published" = '{}' ||
+      account_fail 'Account mail worker must not publish ports'
+  fi
 }
 
 account_check_production_migrations() {

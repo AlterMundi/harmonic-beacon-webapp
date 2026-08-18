@@ -42,7 +42,8 @@ cutover_started=1
 account_compose up -d "account-mail-worker-$environment" "account-$environment"
 [ "$environment" != production ] || account_check_production_migrations after
 account_verify_running "$environment"
-"$root/scripts/beacon-account/health-smoke.sh" "$environment" "$ACCOUNT_DEPLOY_FILE"
+"$root/scripts/beacon-account/health-smoke.sh" \
+  "$environment" "$ACCOUNT_DEPLOY_FILE" "$BEACON_ACCOUNT_GIT_SHA" 1
 cutover_started=0
 trap - EXIT HUP INT TERM
 echo "Beacon Account $environment is healthy at exact SHA $BEACON_ACCOUNT_GIT_SHA."

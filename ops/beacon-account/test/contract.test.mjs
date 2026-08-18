@@ -14,6 +14,7 @@ const STAGING_DB = path.join(ROOT, 'database.staging.env.example');
 const PROD_WORKER = path.join(ROOT, 'account-mail-worker.production.env.example');
 const STAGING_WORKER = path.join(ROOT, 'account-mail-worker.staging.env.example');
 const HEALTH_JSON_VERIFY = path.resolve(ROOT, '../../scripts/beacon-account/verify-health-json.sh');
+const ACCOUNT_LIFECYCLE_LIB = path.resolve(ROOT, '../../scripts/beacon-account/lib.sh');
 const HEALTH_ISSUER = 'https://account-staging.harmonicbeacon.com';
 const HEALTH_SHA = 'a'.repeat(40);
 const HEALTH_SCHEMA = '20260818010000_beacon_account_authority';
@@ -67,6 +68,64 @@ function verifyHealthFixture({ jwks, ready = {}, discovery = {} }) {
   const result = spawnSync('sh', [
     HEALTH_JSON_VERIFY, directory, HEALTH_ISSUER, HEALTH_SHA, HEALTH_SCHEMA,
   ], { encoding: 'utf8' });
+  fs.rmSync(directory, { recursive: true, force: true });
+  return result;
+}
+
+function verifyRunningFixture({ expectedWorkerPresent, actualWorkerPresent }) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'beacon-account-runtime-'));
+  const docker = path.join(directory, 'docker');
+  fs.writeFileSync(docker, `#!/bin/sh
+set -eu
+test "$1" = inspect
+target=$2
+format=$4
+is_worker=0
+case "$target" in *mail-worker*) is_worker=1 ;; esac
+case "$format" in
+  *State.Health*)
+    if [ "$is_worker" -eq 1 ] && [ "$MOCK_WORKER_PRESENT" -eq 0 ]; then
+      echo exited
+    else
+      echo healthy
+    fi
+    ;;
+  *State.Status*)
+    if [ "$is_worker" -eq 1 ] && [ "$MOCK_WORKER_PRESENT" -eq 0 ]; then
+      exit 1
+    fi
+    echo running
+    ;;
+  *Config.Image*) echo "harmonic-beacon/account:$MOCK_SHA" ;;
+  *Config.Env*) echo "BEACON_GIT_SHA=$MOCK_SHA" ;;
+  *HostConfig.PortBindings*)
+    if [ "$is_worker" -eq 1 ]; then
+      echo null
+    else
+      echo '{"3000/tcp":[{"HostIp":"127.0.0.1","HostPort":"13003"}]}'
+    fi
+    ;;
+  *) echo "unexpected docker inspect format: $format" >&2; exit 2 ;;
+esac
+`);
+  fs.chmodSync(docker, 0o755);
+  const sha = 'c'.repeat(40);
+  const result = spawnSync('sh', ['-c', `
+    . "$ACCOUNT_LIFECYCLE_LIB"
+    BEACON_ACCOUNT_GIT_SHA="$MOCK_SHA"
+    BEACON_ACCOUNT_IMAGE_TAG="$MOCK_SHA"
+    account_verify_running staging "$MOCK_SHA" "$MOCK_SHA" "$EXPECTED_WORKER_PRESENT"
+  `], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${directory}:${process.env.PATH}`,
+      ACCOUNT_LIFECYCLE_LIB,
+      EXPECTED_WORKER_PRESENT: String(expectedWorkerPresent),
+      MOCK_WORKER_PRESENT: String(actualWorkerPresent),
+      MOCK_SHA: sha,
+    },
+  });
   fs.rmSync(directory, { recursive: true, force: true });
   return result;
 }
@@ -195,7 +254,7 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
   assert.match(start, /account_compose build account-production[\s\S]*account_validate/);
   assert.match(start, /account_compose up -d "account-mail-worker-\$environment" "account-\$environment"/);
-  assert.match(start, /health-smoke\.sh" "\$environment" "\$ACCOUNT_DEPLOY_FILE"/);
+  assert.match(start, /health-smoke\.sh"[\s\\]+"\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$BEACON_ACCOUNT_GIT_SHA" 1/);
   assert.ok(start.indexOf('health-smoke.sh') < start.lastIndexOf('cutover_started=0'));
   assert.match(start, /account_check_production_migrations before/);
   assert.match(start, /account_check_production_migrations after/);
@@ -208,12 +267,13 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(lib, /account_wait_container=\$1/);
   assert.match(lib, /expected_sha=\$\{2:-\$BEACON_ACCOUNT_GIT_SHA\}/);
   assert.match(lib, /expected_image_tag=\$\{3:-\$BEACON_ACCOUNT_IMAGE_TAG\}/);
+  assert.match(lib, /expected_worker_present=\$\{4:-1\}/);
   assert.doesNotMatch(lib, /account_wait_healthy\(\) \{\s+container=\$1/);
   assert.match(lib, /account_image_supports_mail_worker/);
   assert.match(lib, /scripts\/process-account-mail-outbox\.ts/);
   assert.match(rollback, /previous_worker_present=0/);
   assert.match(rollback, /account_image_supports_mail_worker/);
-  assert.match(rollback, /health-smoke\.sh" "\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$previous_sha"/);
+  assert.match(rollback, /health-smoke\.sh"[\s\\]+"\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$previous_sha" "\$previous_worker_present"/);
   assert.doesNotMatch(rollback, /account_restore_previous_runtime "\$environment" "\$previous_sha" 1/);
   assert.match(start, /account_require_internal_mail_network "\$environment"/);
   assert.match(lib, /docker network inspect "\$network"/);
@@ -227,6 +287,8 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.doesNotMatch(lib, /> "\$backup_dir\/\$backup_name"\s*$/m);
   assert.match(lib, /database was not downgraded|account_restore_previous_runtime/);
   assert.match(smoke, /verify-health-json\.sh/);
+  assert.match(smoke, /--connect-timeout 3 --max-time 8/);
+  assert.equal((smoke.match(/--proto '=https'/g) ?? []).length, 2);
   assert.doesNotMatch(smoke, /\bnode\b/);
   const migrationGuard = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/check-migrations.mjs'), 'utf8');
   assert.match(migrationGuard, /pending migrations differ from the reviewed Account-only list/);
@@ -243,6 +305,19 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   ]) {
     assert.match(dockerfile, new RegExp(`ops/beacon-account/${fixture.replaceAll('.', '\\\.')}`));
   }
+});
+
+test('runtime verification preserves the pre-worker rollback boundary', () => {
+  assert.equal(verifyRunningFixture({ expectedWorkerPresent: 0, actualWorkerPresent: 0 }).status, 0);
+  assert.equal(verifyRunningFixture({ expectedWorkerPresent: 1, actualWorkerPresent: 1 }).status, 0);
+  assert.notEqual(
+    verifyRunningFixture({ expectedWorkerPresent: 0, actualWorkerPresent: 1 }).status,
+    0,
+  );
+  assert.notEqual(
+    verifyRunningFixture({ expectedWorkerPresent: 1, actualWorkerPresent: 0 }).status,
+    0,
+  );
 });
 
 test('health verifier accepts the exact public Ed25519 contract without optional use', () => {
