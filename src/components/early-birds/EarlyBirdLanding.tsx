@@ -151,7 +151,7 @@ export default function EarlyBirdLanding(props: Props) {
                                         <FreeQuotaStatus
                                             snapshot={props.quota}
                                             serverNow={props.serverNow}
-                                            showMembershipLink={
+                                            showMembershipUnavailable={
                                                 !props.checkoutAvailability?.paypal
                                                 && !props.checkoutAvailability?.mercadoPago
                                                 && !props.liveWorkbench

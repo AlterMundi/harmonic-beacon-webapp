@@ -63,20 +63,24 @@ describe('Listener weekly quota presentation', () => {
         expect(screen.queryByText(/167h/)).toBeNull();
     });
 
-    it('offers an honest membership contact action when requested by the Free surface', () => {
+    it.each([
+        ['en', 'Membership is not available for purchase right now.'],
+        ['es', 'La membresía no está disponible para compra en este momento.'],
+    ] as const)('shows a non-actionable membership state in %s when checkout is unavailable', (locale, message) => {
         render(
-            <LocaleProvider initialLocale="en">
+            <LocaleProvider initialLocale={locale}>
                 <FreeQuotaStatus
                     snapshot={snapshot}
                     serverNow="2026-08-07T15:00:00.000Z"
                     compact
-                    showMembershipLink
+                    showMembershipUnavailable
                 />
             </LocaleProvider>,
         );
 
-        expect(screen.getByRole('link', { name: 'Become a member for full access' }))
-            .toHaveAttribute('href', 'mailto:projection@harmonicbeacon.com?subject=Founding%20Listener');
+        expect(screen.getByRole('status')).toHaveTextContent(message);
+        expect(screen.queryByRole('link')).toBeNull();
+        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
     });
 
     it('never fabricates an allowance from an incomplete snapshot', () => {

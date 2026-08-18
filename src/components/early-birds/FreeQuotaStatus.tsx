@@ -21,10 +21,8 @@ type Props = {
     serverNow: string;
     compact?: boolean;
     unlimited?: 'membership' | 'free-for-all' | null;
-    showMembershipLink?: boolean;
+    showMembershipUnavailable?: boolean;
 };
-
-const FOUNDING_LISTENER_CONTACT = 'mailto:projection@harmonicbeacon.com?subject=Founding%20Listener';
 
 function monotonicNow() {
     return typeof performance !== 'undefined' ? performance.now() : 0;
@@ -41,7 +39,7 @@ export default function FreeQuotaStatus({
     serverNow,
     compact = false,
     unlimited = null,
-    showMembershipLink = false,
+    showMembershipUnavailable = false,
 }: Props) {
     const { locale } = useLocale();
     const copy = earlyBirdCopy[locale];
@@ -194,8 +192,10 @@ export default function FreeQuotaStatus({
             {!unlimited && untilRenewal !== null && (
                 <small>{copy.freeQuotaResetsIn.replace('{time}', formatQuotaRenewalDuration(untilRenewal, locale))}</small>
             )}
-            {showMembershipLink && !unlimited && (
-                <a href={FOUNDING_LISTENER_CONTACT}>{copy.freeQuotaMembershipCta}</a>
+            {showMembershipUnavailable && !unlimited && (
+                <small className="listener-quota__membership-unavailable" role="status">
+                    {copy.membershipPurchaseUnavailable}
+                </small>
             )}
         </section>
     );
