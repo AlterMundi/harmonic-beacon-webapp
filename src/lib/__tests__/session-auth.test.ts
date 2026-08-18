@@ -9,7 +9,14 @@ import {
     sessionCookieOptions,
     sessionTokenMatchesDigest,
     verifyStaffPassword,
+    hashAccountPassword,
+    verifyAccountPassword,
 } from '../session-auth';
+import {
+    ACCOUNT_PASSWORD_MAX_LENGTH,
+    ACCOUNT_PASSWORD_MIN_LENGTH,
+    accountPasswordLengthValid,
+} from '@/lib/account/password-policy';
 
 describe('opaque web sessions', () => {
     it('returns plaintext only for the cookie and a one-way digest for persistence', () => {
@@ -54,5 +61,27 @@ describe('opaque web sessions', () => {
         await expect(verifyStaffPassword('strong test password', encoded)).resolves.toBe(true);
         await expect(verifyStaffPassword('wrong password', encoded)).resolves.toBe(false);
         await expect(verifyStaffPassword('strong test password', 'malformed')).resolves.toBe(false);
+    });
+});
+
+describe('Account password policy', () => {
+    it('accepts every composition at 8–128 characters and rejects only length boundaries', () => {
+        expect(ACCOUNT_PASSWORD_MIN_LENGTH).toBe(8);
+        expect(ACCOUNT_PASSWORD_MAX_LENGTH).toBe(128);
+        expect(accountPasswordLengthValid('12345678')).toBe(true);
+        expect(accountPasswordLengthValid('        ')).toBe(true);
+        expect(accountPasswordLengthValid('a'.repeat(128))).toBe(true);
+        expect(accountPasswordLengthValid('1234567')).toBe(false);
+        expect(accountPasswordLengthValid('a'.repeat(129))).toBe(false);
+    });
+
+    it('keeps the versioned scrypt credential interoperable at the new minimum', async () => {
+        const password = '12345678';
+        const digest = await hashAccountPassword(password);
+        expect(digest).toMatch(/^scrypt-v1\$/);
+        await expect(verifyAccountPassword({ hash: digest, password })).resolves.toBe(true);
+        await expect(verifyAccountPassword({ hash: digest, password: '1234567' })).resolves.toBe(false);
+        await expect(hashAccountPassword('1234567')).rejects.toThrow('outside the accepted range');
+        await expect(hashAccountPassword('a'.repeat(129))).rejects.toThrow('outside the accepted range');
     });
 });

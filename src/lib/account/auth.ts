@@ -23,9 +23,8 @@ import {
 import {
     ACCOUNT_PASSWORD_MAX_LENGTH,
     ACCOUNT_PASSWORD_MIN_LENGTH,
-    hashAccountPassword,
-    verifyAccountPassword,
-} from '@/lib/session-auth';
+} from '@/lib/account/password-policy';
+import { hashAccountPassword, verifyAccountPassword } from '@/lib/session-auth';
 import { normalizeBeaconDisplayName } from '@/lib/account/profile';
 
 function normalizedDisplayName(value: unknown): string {
@@ -257,7 +256,10 @@ function buildAccountAuth() {
         advanced: {
             cookiePrefix: ACCOUNT_COOKIE_PREFIX,
             cookies: { session_token: { name: ACCOUNT_SESSION_COOKIE } },
-            useSecureCookies: baseURL.startsWith('https://'),
+            // Better Auth prepends `__Secure-` when this flag is true, even to
+            // an explicit `__Host-` custom name. Attributes below provide the
+            // HTTPS guarantees without producing an invalid double prefix.
+            useSecureCookies: false,
             defaultCookieAttributes: {
                 httpOnly: true,
                 secure: baseURL.startsWith('https://'),

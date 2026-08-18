@@ -51,9 +51,10 @@ tokens. `return_to` is an exact product-root allowlist.
 Credential signup is two-step. Verification, reset and email-change tokens are
 hashed, one-use, at most 15 minutes, and consumed in the same Serializable
 transaction as their mutation. Pages capture the query token client-side,
-immediately scrub history, and send no referrer. Passwords are 12–128 chars and
-use the single Better Auth scrypt implementation. Public outcomes and durable
-HMAC rate buckets resist enumeration and distributed abuse.
+immediately scrub history, and send no referrer. Passwords are 8–128 characters
+with no composition or complexity rules and use the single Better Auth scrypt
+implementation. Verification-before-access, reauthentication, durable HMAC rate
+buckets and session revocation remain independent security boundaries.
 
 Mail uses the byte-pinned `contracts/listener-account-mail/v1` contract and a
 durable AES-GCM outbox. Retry reuses the same sealed token and exact 64-lowercase

@@ -60,4 +60,169 @@ describe('Account cross-product logout completion', () => {
         await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
         expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ 'X-HB-Locale': 'en' });
     });
+
+    it.each([
+        ['en' as const, 'Use 8 to 128 characters. No special format is required.'],
+        ['es' as const, 'Usá entre 8 y 128 caracteres. No se exige ningún formato especial.'],
+    ])('renders the provider-independent %s signup policy without complexity rules', (locale, hint) => {
+        render(createElement(AccountClient, {
+            initialSession: null,
+            providers: { google: false, apple: false },
+            locale,
+            returnTo: null,
+        }));
+        fireEvent.click(screen.getAllByRole('button', {
+            name: locale === 'es' ? 'Crear cuenta' : 'Create account',
+        })[0]);
+        const password = screen.getByLabelText(locale === 'es' ? 'Contraseña' : 'Password');
+        expect(password).toHaveAttribute('minlength', '8');
+        expect(password).toHaveAttribute('maxlength', '128');
+        expect(password).toHaveAccessibleDescription(hint);
+    });
+
+    it('rejects a seven-character signup visibly before fetch and focuses the password', () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: null,
+            providers: { google: false, apple: false },
+            locale: 'en',
+            returnTo: null,
+        }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        const password = screen.getByLabelText('Password');
+        fireEvent.change(password, { target: { value: '1234567' } });
+        fireEvent.submit(password.closest('form')!);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(screen.getByRole('status')).toHaveTextContent('Password must be 8 to 128 characters.');
+        expect(password).toHaveFocus();
+    });
+
+    it('blocks mismatched repeated passwords and exposes an accessible reveal control', () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: null,
+            providers: { google: false, apple: false },
+            locale: 'en',
+            returnTo: null,
+        }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        const password = screen.getByLabelText('Password');
+        const repeated = screen.getByLabelText('Repeat password');
+        fireEvent.change(password, { target: { value: '12345678' } });
+        fireEvent.change(repeated, { target: { value: '87654321' } });
+        fireEvent.click(screen.getAllByRole('button', { name: 'Show password' })[0]);
+        expect(password).toHaveAttribute('type', 'text');
+        expect(screen.getByRole('button', { name: 'Hide password' })).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.submit(password.closest('form')!);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(screen.getByRole('status')).toHaveTextContent('Passwords do not match.');
+        expect(repeated).toHaveFocus();
+    });
+
+    it('submits an eight-character signup and shows check-email only on success', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response('{}', {
+            status: 202, headers: { 'Content-Type': 'application/json' },
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: null,
+            providers: { google: false, apple: false },
+            locale: 'en',
+            returnTo: null,
+        }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
+        const password = screen.getByLabelText('Password');
+        fireEvent.change(password, { target: { value: '12345678' } });
+        fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: '12345678' } });
+        fireEvent.submit(password.closest('form')!);
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+        const feedback = screen.getByRole('status');
+        expect(feedback).toHaveTextContent('Check your email to verify the account');
+        await waitFor(() => expect(feedback).toHaveFocus());
+    });
+
+    it('shows an enumeration-neutral server failure and always restores the submit button', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response('{}', {
+            status: 400, headers: { 'Content-Type': 'application/json' },
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: null,
+            providers: { google: false, apple: false },
+            locale: 'en',
+            returnTo: null,
+        }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
+        const password = screen.getByLabelText('Password');
+        fireEvent.change(password, { target: { value: '12345678' } });
+        fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: '12345678' } });
+        fireEvent.submit(password.closest('form')!);
+        const feedback = await screen.findByRole('status');
+        await waitFor(() => expect(feedback).toHaveTextContent(
+            'Account could not be created. Check the details and try again.',
+        ));
+        expect(feedback).toHaveFocus();
+        expect(screen.getAllByRole('button', { name: 'Create account' }).at(-1)).toBeEnabled();
+        expect(screen.queryByText(/Check your email to verify/)).toBeNull();
+    });
+
+    it('coalesces duplicate credential submits while the first request is pending', async () => {
+        let resolveFetch!: (response: Response) => void;
+        const fetchMock = vi.fn().mockReturnValue(new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: null,
+            providers: { google: false, apple: false },
+            locale: 'en',
+            returnTo: null,
+        }));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Create account' })[0]);
+        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Test Listener' } });
+        fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'listener@example.invalid' } });
+        const password = screen.getByLabelText('Password');
+        fireEvent.change(password, { target: { value: '12345678' } });
+        fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: '12345678' } });
+        const form = password.closest('form')!;
+        fireEvent.submit(form);
+        fireEvent.submit(form);
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(screen.getAllByRole('button', { name: 'Create account' }).at(-1)).toBeDisabled();
+        resolveFetch(new Response('{}', {
+            status: 202, headers: { 'Content-Type': 'application/json' },
+        }));
+        await waitFor(() => expect(screen.getAllByRole('button', { name: 'Create account' }).at(-1)).toBeEnabled());
+    });
+
+    it('blocks a signed-in password change when the repeated value differs', () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        render(createElement(AccountClient, {
+            initialSession: {
+                user: { email: 'listener@example.invalid', emailVerified: true, accessMethod: 'email' },
+                profile: { displayName: 'Test Listener', revision: 1 },
+            },
+            providers: { google: false, apple: false },
+            locale: 'en',
+            returnTo: null,
+        }));
+        fireEvent.change(screen.getAllByLabelText('Current password')[0], {
+            target: { value: 'old-password' },
+        });
+        const password = screen.getByLabelText('New password');
+        fireEvent.change(password, { target: { value: '12345678' } });
+        fireEvent.change(screen.getByLabelText('Repeat new password'), {
+            target: { value: '87654321' },
+        });
+        fireEvent.submit(password.closest('form')!);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(screen.getByRole('status')).toHaveTextContent('Passwords do not match.');
+    });
 });

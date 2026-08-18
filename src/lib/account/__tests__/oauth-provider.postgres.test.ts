@@ -13,6 +13,8 @@ const email = `${accountId}@example.invalid`;
 const password = 'correct horse beacon battery staple';
 let prisma: PrismaClient;
 let handler: (request: Request) => Promise<Response>;
+let accountRoutePOST: (request: Request) => Promise<Response>;
+let currentAccountSession: typeof import('../auth').currentAccountSession;
 
 function jsonRequest(path: string, body: unknown) {
     return new Request(`${issuer}${path}`, {
@@ -33,6 +35,8 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         const { hashAccountPassword } = await import('@/lib/session-auth');
         const { hashAccountClientSecret } = await import('../client-secret');
         const { accountAuth } = await import('../auth');
+        ({ currentAccountSession } = await import('../auth'));
+        ({ POST: accountRoutePOST } = await import('@/app/api/account/auth/[...all]/route'));
         handler = accountAuth().handler;
         await prisma.beaconAccountAuthorityEnvironment.upsert({
             where: { id: 'authority' },
@@ -68,10 +72,21 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
     });
 
     it('exchanges an auth code and introspects using the provisioned full secret', async () => {
-        const signIn = await handler(jsonRequest('/api/account/auth/sign-in/email', { email, password }));
+        const signIn = await accountRoutePOST(jsonRequest('/api/account/auth/sign-in/email', { email, password }));
         expect(signIn.status).toBe(200);
-        const sessionCookie = signIn.headers.get('set-cookie');
-        expect(sessionCookie).toBeTruthy();
+        const setCookies = signIn.headers.getSetCookie();
+        const sessionCookies = setCookies.filter((entry) =>
+            entry.startsWith('__Host-hb_account_session='));
+        expect(sessionCookies).toHaveLength(1);
+        expect(setCookies.join('\n')).not.toContain('__Secure-__Host-');
+        expect(sessionCookies[0]).toContain('Path=/');
+        expect(sessionCookies[0]).toContain('HttpOnly');
+        expect(sessionCookies[0]).toContain('Secure');
+        expect(sessionCookies[0]).toContain('SameSite=Lax');
+        expect(sessionCookies[0]).not.toContain('Domain=');
+        const sessionCookie = setCookies.map((entry) => entry.split(';', 1)[0]).join('; ');
+        const resolved = await currentAccountSession(new Headers({ cookie: sessionCookie }));
+        expect(resolved).toMatchObject({ user: { id: accountId, accessMethod: 'email' } });
 
         const verifier = randomBytes(48).toString('base64url');
         const challenge = createHash('sha256').update(verifier).digest('base64url');
@@ -84,7 +99,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             code_challenge: challenge, code_challenge_method: 'S256',
         }).toString();
         const authorize = await handler(new Request(authorizeURL, {
-            headers: { host: 'account.harmonicbeacon.com', cookie: sessionCookie! },
+            headers: { host: 'account.harmonicbeacon.com', cookie: sessionCookie },
         }));
         expect(authorize.status).toBeGreaterThanOrEqual(300);
         expect(authorize.status).toBeLessThan(400);
