@@ -5,7 +5,7 @@ import {
     beaconAccountEnabled,
     clearedAccountStateCookie,
     completeAccountAuthorization,
-    trustedLiveOrigin,
+    trustedLiveRequestOrigin,
 } from '@/lib/account-rp';
 import { redactError } from '@/lib/redact';
 import { redeemPromoInvitationByDigest } from '@/lib/promo-invitation';
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const state = request.nextUrl.searchParams.get('state') ?? '';
     let origin: string;
     try {
-        origin = trustedLiveOrigin(request.nextUrl.origin);
+        origin = trustedLiveRequestOrigin(request);
     } catch {
         return NextResponse.json({ error: 'Invalid callback origin' }, { status: 400 });
     }

@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { lstat, readFile } from 'node:fs/promises';
 
 const ISSUER = 'https://account-staging.harmonicbeacon.com';
 const LIVE_ORIGIN = 'https://live-staging.harmonicbeacon.com';
 const CLIENT_ID = 'hb-live-staging';
-const AUTHORITY_ENV = '/etc/harmonic-beacon/account.staging.env';
-const LIVE_ENV = '/etc/harmonic-beacon/live-staging.env';
 const SECRET_ENV = '/etc/harmonic-beacon/live-staging-secrets/account.env';
 
 function fail(message) {
@@ -37,12 +34,6 @@ async function rootOnlyEnv(path) {
     return parseEnv(await readFile(path, 'utf8'));
 }
 
-function equalSecret(left, right) {
-    const a = createHash('sha256').update(left, 'utf8').digest();
-    const b = createHash('sha256').update(right, 'utf8').digest();
-    return timingSafeEqual(a, b);
-}
-
 async function jsonResponse(url, init) {
     const response = await fetch(url, { ...init, cache: 'no-store', signal: AbortSignal.timeout(8_000) });
     const body = await response.json().catch(() => fail(`${url} did not return JSON`));
@@ -55,21 +46,9 @@ async function main() {
     if (!['prepared', 'public'].includes(mode) || process.argv.length > 3) {
         fail('usage: account-preflight.mjs [prepared|public]');
     }
-    const authority = await rootOnlyEnv(AUTHORITY_ENV);
-    const live = await rootOnlyEnv(LIVE_ENV);
     const rp = await rootOnlyEnv(SECRET_ENV);
-    const authoritySecret = authority.get('BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE_STAGING') ?? '';
     const rpSecret = rp.get('BEACON_ACCOUNT_CLIENT_SECRET') ?? '';
-    if (authoritySecret.length < 32 || rpSecret.length < 32 || !equalSecret(authoritySecret, rpSecret)) {
-        fail('Live and Account staging client secrets do not match');
-    }
-    if (live.get('BEACON_ACCOUNT_ISSUER_URL') !== ISSUER || live.get('BEACON_ACCOUNT_CLIENT_ID') !== CLIENT_ID) {
-        fail('Live staging issuer/client configuration mismatch');
-    }
-    const expectedFlag = mode === 'public' ? 'true' : 'false';
-    if (live.get('BEACON_ACCOUNT_ENABLED') !== expectedFlag) {
-        fail(`BEACON_ACCOUNT_ENABLED must be ${expectedFlag} for ${mode} preflight`);
-    }
+    if (rpSecret.length < 32 || /[\r\n\0]/.test(rpSecret)) fail('Live staging client secret is invalid');
 
     const { response: discoveryResponse, body: discovery } = await jsonResponse(
         `${ISSUER}/.well-known/openid-configuration`,

@@ -23,6 +23,7 @@ import {
     accountLogoutUrl,
     beaconAccountEnabled,
     revokeAllAccountSessions,
+    trustedLiveRequestOrigin,
 } from '@/lib/account-rp';
 import { redactError } from '@/lib/redact';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let issuerLogoutUrl: string | null = null;
     if (account) {
         try {
-            issuerLogoutUrl = await accountLogoutUrl(request.nextUrl.origin);
+            issuerLogoutUrl = await accountLogoutUrl(trustedLiveRequestOrigin(request));
         } catch (error) {
             console.error(`[auth] account logout discovery failed: ${redactError(error)}`);
         }

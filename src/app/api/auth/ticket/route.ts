@@ -32,6 +32,7 @@ import {
 import {
     beaconAccountEnabled,
     startAccountAuthorization,
+    trustedLiveRequestOrigin,
     type AccountIdentity,
 } from '@/lib/account-rp';
 import { authFailureLimiter } from '@/lib/rate-limit';
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 const now = new Date();
                 const started = await startAccountAuthorization({
                     flow: 'attendee',
-                    origin: request.nextUrl.origin,
+                    origin: trustedLiveRequestOrigin(request),
                     pendingInvitation: {
                         promoDigest: digestPromoCode(code),
                         displayName,

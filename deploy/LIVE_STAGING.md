@@ -137,16 +137,17 @@ test "$(sudo stat -c '%U:%G %a' /etc/harmonic-beacon/live-staging-secrets/accoun
 grep -Fxq 'BEACON_ACCOUNT_ENABLED=false' /etc/harmonic-beacon/live-staging.env
 ```
 
-Run the authenticated backchannel preflight. It compares the two secrets in
-constant time, validates exact discovery endpoints and proves
-`client_secret_basic` against `/api/account/session-status` with an unknown
-synthetic SID/subject. Success must be `{active:false}` plus `no-store`; the
-command never emits either secret.
+Run the authenticated backchannel preflight. The network-enabled candidate
+receives only its dedicated app secret bundle; it never sees the Account
+authority environment, database credentials, ticket pepper, mail/social
+secrets or the general Live environment. Exact issuer/client configuration is
+compiled into the reviewed script. The `/api/account/session-status` request
+with an unknown synthetic SID/subject proves that the mounted value is the
+registered confidential RP secret. Success must be `{active:false}` plus
+`no-store`; the command never emits the secret.
 
 ```bash
 sudo docker run --rm --read-only --user 0:0 \
-  --mount type=bind,src=/etc/harmonic-beacon/account.staging.env,dst=/etc/harmonic-beacon/account.staging.env,readonly \
-  --mount type=bind,src=/etc/harmonic-beacon/live-staging.env,dst=/etc/harmonic-beacon/live-staging.env,readonly \
   --mount type=bind,src=/etc/harmonic-beacon/live-staging-secrets/account.env,dst=/etc/harmonic-beacon/live-staging-secrets/account.env,readonly \
   "harmonic-beacon/live-staging:$STAGING_SHA" \
   node /app/scripts/live-staging/account-preflight.mjs prepared
@@ -180,8 +181,6 @@ container.
 
 ```bash
 sudo docker run --rm --read-only --user 0:0 \
-  --mount type=bind,src=/etc/harmonic-beacon/account.staging.env,dst=/etc/harmonic-beacon/account.staging.env,readonly \
-  --mount type=bind,src=/etc/harmonic-beacon/live-staging.env,dst=/etc/harmonic-beacon/live-staging.env,readonly \
   --mount type=bind,src=/etc/harmonic-beacon/live-staging-secrets/account.env,dst=/etc/harmonic-beacon/live-staging-secrets/account.env,readonly \
   "harmonic-beacon/live-staging:$STAGING_SHA" \
   node /app/scripts/live-staging/account-preflight.mjs public

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
     beaconAccountEnabled,
     startAccountAuthorization,
+    trustedLiveRequestOrigin,
 } from '@/lib/account-rp';
 import { redactError } from '@/lib/redact';
 
@@ -14,10 +15,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
     const flow = request.nextUrl.searchParams.get('flow') === 'staff' ? 'staff' : 'attendee';
     try {
+        const origin = trustedLiveRequestOrigin(request);
         const started = await startAccountAuthorization({
             flow,
             returnTo: request.nextUrl.searchParams.get('next'),
-            origin: request.nextUrl.origin,
+            origin,
         });
         const response = NextResponse.redirect(started.authorizationUrl, { status: 303 });
         response.cookies.set(started.stateCookie);

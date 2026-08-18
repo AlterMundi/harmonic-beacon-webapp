@@ -179,15 +179,19 @@ export function accountCallbackUrl(origin: string): string {
     return new URL('/api/account/callback', trustedLiveOrigin(origin)).href;
 }
 
+function configuredLiveOrigin(): string | null {
+    const configuredLoginOrigin = process.env.TICKET_LOGIN_URL_PREFIX?.trim();
+    if (!configuredLoginOrigin) return null;
+    const pinned = new URL(configuredLoginOrigin);
+    if (pinned.protocol !== 'https:' || pinned.username || pinned.password) {
+        throw new Error('TICKET_LOGIN_URL_PREFIX must be a credential-free HTTPS URL');
+    }
+    return pinned.origin;
+}
+
 export function trustedLiveOrigin(raw: string): string {
     const url = new URL(raw);
-    const configuredLoginOrigin = process.env.TICKET_LOGIN_URL_PREFIX?.trim();
-    let pinnedOrigin: string | null = null;
-    if (configuredLoginOrigin) {
-        const pinned = new URL(configuredLoginOrigin);
-        if (pinned.protocol !== 'https:') throw new Error('TICKET_LOGIN_URL_PREFIX must use HTTPS');
-        pinnedOrigin = pinned.origin;
-    }
+    const pinnedOrigin = configuredLiveOrigin();
     const allowedProduction = url.protocol === 'https:' && (
         url.hostname === 'live.harmonicbeacon.com' ||
         url.hostname === 'live-staging.harmonicbeacon.com' ||
@@ -199,6 +203,28 @@ export function trustedLiveOrigin(raw: string): string {
         throw new Error('Untrusted Live origin');
     }
     return url.origin;
+}
+
+/**
+ * Resolve the browser-visible Live origin at the reverse-proxy boundary.
+ *
+ * NextRequest.nextUrl can retain the loopback upstream URL even though nginx
+ * forwarded the exact public Host. Prefer the operator-pinned URL when it is
+ * configured; otherwise accept only the ordinary Host header after applying
+ * the same strict Live-origin allowlist. X-Forwarded-Host is deliberately not
+ * consulted because it is attacker-controlled outside the trusted edge.
+ */
+export function trustedLiveRequestOrigin(
+    request: Pick<Request, 'headers'> & { nextUrl: URL },
+): string {
+    const pinnedOrigin = configuredLiveOrigin();
+    if (pinnedOrigin) return pinnedOrigin;
+
+    const host = request.headers.get('host')?.trim();
+    if (!host) throw new Error('Missing Live Host');
+    const publicHost = host === 'live.harmonicbeacon.com' || host === 'live-staging.harmonicbeacon.com';
+    const protocol = publicHost ? 'https:' : request.nextUrl.protocol;
+    return trustedLiveOrigin(`${protocol}//${host}`);
 }
 
 function digest(value: string): string {

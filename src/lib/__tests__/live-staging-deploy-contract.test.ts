@@ -63,13 +63,14 @@ describe('isolated Live staging deploy contract', () => {
         expect(dockerfile).toContain('/app/scripts/live-staging ./scripts/live-staging');
     });
 
-    it('syncs and verifies the exact staging client without printing secrets', () => {
-        for (const script of [accountSecretSync, accountPreflight]) {
-            expect(script).toContain('/etc/harmonic-beacon/account.staging.env');
-            expect(script).toContain('/etc/harmonic-beacon/live-staging.env');
-            expect(script).toContain('/etc/harmonic-beacon/live-staging-secrets/account.env');
-            expect(script).not.toContain('console.log');
-        }
+    it('syncs offline and verifies the exact staging client with least-privilege egress', () => {
+        expect(accountSecretSync).toContain('/etc/harmonic-beacon/account.staging.env');
+        expect(accountSecretSync).toContain('/etc/harmonic-beacon/live-staging.env');
+        expect(accountSecretSync).toContain('/etc/harmonic-beacon/live-staging-secrets/account.env');
+        expect(accountPreflight).toContain('/etc/harmonic-beacon/live-staging-secrets/account.env');
+        expect(accountPreflight).not.toContain('/etc/harmonic-beacon/account.staging.env');
+        expect(accountPreflight).not.toContain('/etc/harmonic-beacon/live-staging.env');
+        for (const script of [accountSecretSync, accountPreflight]) expect(script).not.toContain('console.log');
         expect(accountSecretSync).toContain('BEACON_ACCOUNT_CLIENT_SECRET_HB_LIVE_STAGING');
         expect(accountSecretSync).toContain('BEACON_ACCOUNT_ENABLED must remain false');
         expect(accountSecretSync).toContain('this command accepts no paths or secret values');
@@ -83,6 +84,19 @@ describe('isolated Live staging deploy contract', () => {
         expect(accountPreflight).toContain("includes('no-store')");
         expect(runbook).toContain('one-shot, networkless container');
         expect(runbook).toContain('node /app/scripts/live-staging/account-preflight.mjs public');
+        const preparedCommand = runbook.match(
+            /sudo docker run --rm --read-only --user 0:0 \\\n([\s\S]*?)account-preflight\.mjs prepared/,
+        )?.[1] ?? '';
+        const publicCommand = runbook.match(
+            /sudo docker run --rm --read-only --user 0:0 \\\n([\s\S]*?)account-preflight\.mjs public/,
+        )?.[1] ?? '';
+        for (const command of [preparedCommand, publicCommand]) {
+            expect(command).toContain('/etc/harmonic-beacon/live-staging-secrets/account.env');
+            expect(command).not.toContain('src=/etc/harmonic-beacon/account.staging.env,');
+            expect(command).not.toContain('src=/etc/harmonic-beacon/live-staging.env,');
+        }
+        expect(runbook).toContain('never sees the Account');
+        expect(runbook).toContain('ticket pepper');
     });
 
     it('runs migrations once and gates app startup on their success', () => {

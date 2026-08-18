@@ -115,9 +115,54 @@ afterEach(() => {
     delete process.env.BEACON_ACCOUNT_ISSUER_URL;
     delete process.env.BEACON_ACCOUNT_CLIENT_ID;
     delete process.env.BEACON_ACCOUNT_CLIENT_SECRET;
+    delete process.env.TICKET_LOGIN_URL_PREFIX;
 });
 
 describe('Beacon Account OAuth 2.1 RP', () => {
+    it('uses the pinned public origin behind a loopback proxy and ignores forwarded host input', async () => {
+        process.env.TICKET_LOGIN_URL_PREFIX = 'https://live-staging.harmonicbeacon.com/';
+        const { trustedLiveRequestOrigin } = await import('../account-rp');
+        const request = {
+            nextUrl: new URL('http://127.0.0.1:3000/api/account/login'),
+            headers: new Headers({
+                host: 'live-staging.harmonicbeacon.com',
+                'x-forwarded-host': 'attacker.example',
+            }),
+        };
+
+        expect(trustedLiveRequestOrigin(request)).toBe('https://live-staging.harmonicbeacon.com');
+    });
+
+    it('derives an HTTPS public origin from the exact validated Host behind a loopback proxy', async () => {
+        const { trustedLiveRequestOrigin } = await import('../account-rp');
+        const request = {
+            nextUrl: new URL('http://127.0.0.1:3000/api/account/callback?code=private&state=private'),
+            headers: new Headers({
+                host: 'live-staging.harmonicbeacon.com',
+                'x-forwarded-host': 'attacker.example',
+            }),
+        };
+
+        expect(trustedLiveRequestOrigin(request)).toBe('https://live-staging.harmonicbeacon.com');
+    });
+
+    it('rejects missing or untrusted Host values and never falls back to X-Forwarded-Host', async () => {
+        const { trustedLiveRequestOrigin } = await import('../account-rp');
+        const internalUrl = new URL('http://127.0.0.1:3000/api/account/login');
+
+        expect(() => trustedLiveRequestOrigin({
+            nextUrl: internalUrl,
+            headers: new Headers({ 'x-forwarded-host': 'live-staging.harmonicbeacon.com' }),
+        })).toThrow('Missing Live Host');
+        expect(() => trustedLiveRequestOrigin({
+            nextUrl: internalUrl,
+            headers: new Headers({
+                host: 'attacker.example',
+                'x-forwarded-host': 'live-staging.harmonicbeacon.com',
+            }),
+        })).toThrow('Untrusted Live origin');
+    });
+
     it('starts a one-use confidential-client authorization with PKCE, nonce and safe return', async () => {
         const fetchMock = vi.fn().mockResolvedValue(json(discovery()));
         vi.stubGlobal('fetch', fetchMock);
