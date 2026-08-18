@@ -59,7 +59,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('10de81fd576aa9d65ec8c3861cc38903403a63f0');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('8770e6a844960c90768d08a03f3232a47123cac9');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
@@ -72,6 +72,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(source).toContain('Math.cos(angle * 3)');
         expect(source).toContain('Math.sin(angle * 2)');
         expect(source).toContain('index <= 280');
+        expect(source).toContain('@media (max-width:365px) { .wordmark { display:none; } }');
         expect(source).toContain('<svg class="mark"');
         expect(source).toContain('<circle cx="12" cy="8" r="3.25">');
         expect(source).toContain('aria-haspopup="menu"');
