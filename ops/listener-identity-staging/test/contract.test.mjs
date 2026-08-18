@@ -93,7 +93,7 @@ test('compose has a private database plane and exact immutable application bound
 test('compose renders from examples without reading a production file', () => {
   const result = spawnSync('docker', [
     'compose', '--project-name', 'listener-identity-staging',
-    '--env-file', DEPLOY, '-f', path.join(ROOT, 'compose.yml'), 'config', '--quiet',
+    '--env-file', DEPLOY, '-f', path.join(ROOT, 'compose.yml'), 'config', '--format', 'json',
   ], {
     cwd: REPO,
     env: {
@@ -104,6 +104,9 @@ test('compose renders from examples without reading a production file', () => {
     encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr);
+  const rendered = JSON.parse(result.stdout);
+  assert.deepEqual(rendered.services.migrate.tmpfs, ['/tmp:size=32m,mode=1777']);
+  assert.deepEqual(rendered.services.app.tmpfs, ['/tmp:size=64m,mode=1777']);
 });
 
 test('lifecycle is forward-only, provenance checked and scoped away from production', () => {
