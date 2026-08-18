@@ -1,6 +1,7 @@
 # Harmonic Beacon subdomain and takeover inventory
 
-Status: reviewed snapshot for the Account production security gate.
+Status: reviewed snapshot; the Ticket Tailor tenant-claim gate below remains
+open and therefore this document does not yet clear Account production.
 
 Last read-only verification: 2026-08-18 UTC. No DNS record, DNSExit setting,
 provider configuration or runtime was changed while producing this inventory.
@@ -37,7 +38,7 @@ so there is no wildcard DNS fallback.
 | `live-staging.harmonicbeacon.com` | no record | Isolated Live staging; Nginx prepared on Mona | Reserved and intentionally private/loopback. Public SSO acceptance requires a human-managed DNS/TLS cutover. |
 | `stream.harmonicbeacon.com` | Mona A | Stream edge | Host is controlled by Mona and currently returns HTTPS 404 at `/`; no external provider delegation. |
 | `bot.harmonicbeacon.com` | Mona A | Bot edge | Host is controlled by Mona and currently returns HTTPS 404 at `/`; no external provider delegation. |
-| `tickets.harmonicbeacon.com` | CNAME `custom.tickettailor.com` | Ticket Tailor custom domain | Active target resolves and answers HTTPS. External-SaaS claim must be verified before every identity/event rollout and retained until DNS is removed. |
+| `tickets.harmonicbeacon.com` | CNAME `custom.tickettailor.com` | Ticket Tailor custom domain | DNS resolves, but the public endpoint returns a Cloudflare 403 and does **not** prove tenant ownership. An authenticated human must confirm this exact custom domain is still claimed by the controlled Ticket Tailor tenant before production. Gate open. |
 | `proyecciondelmito.harmonicbeacon.com` | CNAME `altermundi.github.io` | [`AlterMundi/proyeccionDelMito`](https://github.com/AlterMundi/proyeccionDelMito) | Active, HTTPS 200. GitHub Pages API reports this exact custom domain. |
 | `psicopompo.harmonicbeacon.com` | CNAME `sairaasua.github.io` | [`SairaAsua/psicopompoweb`](https://github.com/SairaAsua/psicopompoweb) | Active, HTTPS 200. GitHub Pages API reports this exact custom domain. |
 
@@ -45,15 +46,22 @@ Repository references to `app`, `contracts` and `status` do not currently have
 public A, AAAA or CNAME records. They are not treated as deployed origins.
 Certificate Transparency enumeration additionally found only the active or
 reserved names listed above; it is an observation aid, not the authority for
-DNS ownership.
+DNS ownership. Historical source references to `proyecciones`, `send`,
+`_dmarc` and `resend._domainkey` have no current public records and are not
+deployed origins.
 
 ## Findings
 
-- No dangling CNAME or wildcard record was observed.
+- No wildcard record was observed. No GitHub Pages CNAME is dangling. The
+  Ticket Tailor CNAME cannot be declared safe until its authenticated tenant
+  claim is confirmed; Account production remains gated on that evidence.
 - The two GitHub Pages subdomains have an exact repository/custom-domain claim,
   rather than merely a resolving shared Pages target.
 - Ticket Tailor is the only current third-party SaaS CNAME outside GitHub
-  Pages. It is an event dependency, never an Account identity authority.
+  Pages. It is an event dependency, never an Account identity authority. Record
+  only the tenant/account owner, exact domain, UTC verification time and a
+  redacted screenshot or provider export; never copy provider credentials into
+  this repository or an issue.
 - Direct Mona records do not delegate control to a claimable external tenant.
   Their risk is instead the ordinary Nginx/runtime and server-access boundary.
 - `account.harmonicbeacon.com` and `live-staging.harmonicbeacon.com` are absent,
