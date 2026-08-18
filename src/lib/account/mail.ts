@@ -2,6 +2,7 @@ import { accountOrigin } from '@/lib/account/config';
 
 export const ACCOUNT_MAIL_DELIVERY_PATH = '/api/internal/v1/listener-account-mail/deliver';
 export const ACCOUNT_MAIL_DELIVERY_URL = `http://listener-mail-api:8765${ACCOUNT_MAIL_DELIVERY_PATH}`;
+export const ACCOUNT_MAIL_READINESS_URL = 'http://listener-mail-api:8765/ready';
 
 type AccountMailPurpose = 'verify_email' | 'reset_password' | 'change_email';
 
@@ -13,8 +14,24 @@ function mailConfiguration(environment: NodeJS.ProcessEnv = process.env) {
     return { url: ACCOUNT_MAIL_DELIVERY_URL, token };
 }
 
-export function accountMailReady(environment: NodeJS.ProcessEnv = process.env): boolean {
-    try { return mailConfiguration(environment) !== null; } catch { return false; }
+export async function accountMailReady(
+    environment: NodeJS.ProcessEnv = process.env,
+    request: typeof fetch = fetch,
+): Promise<boolean> {
+    try {
+        if (!mailConfiguration(environment)) return false;
+        const response = await request(ACCOUNT_MAIL_READINESS_URL, {
+            method: 'GET',
+            cache: 'no-store',
+            redirect: 'error',
+            signal: AbortSignal.timeout(2_000),
+        });
+        if (!response.ok) return false;
+        const body = await response.json().catch(() => null) as { status?: unknown } | null;
+        return body?.status === 'ready';
+    } catch {
+        return false;
+    }
 }
 
 export async function deliverAccountActionEmail(input: {

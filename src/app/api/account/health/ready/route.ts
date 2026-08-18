@@ -20,7 +20,7 @@ export async function GET(request: Request): Promise<Response> {
         runtime: process.env.BEACON_ACCOUNT_RUNTIME === '1',
         authSecret: false,
         rateSecret: accountRateSecret() !== null,
-        mail: accountMailReady() && accountMailOutboxReady(),
+        mail: (await accountMailReady()) && accountMailOutboxReady(),
         databaseIssuer: await accountAuthorityDatabaseReady(),
         clients: false,
         jwks: false,
