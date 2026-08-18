@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -127,8 +128,8 @@ describe('Account cross-product logout completion', () => {
     });
 
     it.each([
-        ['en' as const, 'Confirm your email', 'We sent you an email. Confirm your address to activate the account, then sign in.', 'Go to sign in'],
-        ['es' as const, 'Confirmá tu correo', 'Te enviamos un correo. Confirmá tu dirección para activar la cuenta y después ingresá.', 'Ir al ingreso'],
+        ['en' as const, 'Check your email', 'If the request is eligible, check your email to continue.', 'Go to sign in'],
+        ['es' as const, 'Revisá tu correo', 'Si la solicitud es elegible, revisá tu correo para continuar.', 'Ir al ingreso'],
     ])('submits an eight-character %s signup and replaces the form with focused confirmation', async (
         locale, heading, copy, returnLabel,
     ) => {
@@ -156,8 +157,16 @@ describe('Account cross-product logout completion', () => {
         expect(feedback).toHaveTextContent(copy);
         await waitFor(() => expect(feedback).toHaveFocus());
         expect(screen.queryByRole('button', { name: createLabel })).toBeNull();
-        expect(screen.getByRole('button', { name: returnLabel })).toBeVisible();
         expect(document.body).not.toHaveTextContent('listener@example.invalid');
+        const returnButton = screen.getByRole('button', { name: returnLabel });
+        expect(returnButton).toBeVisible();
+        const user = userEvent.setup();
+        await user.tab();
+        expect(returnButton).toHaveFocus();
+        await user.keyboard('{Enter}');
+        await waitFor(() => expect(screen.getByRole('textbox', {
+            name: locale === 'es' ? 'Correo' : 'Email',
+        })).toHaveFocus());
     });
 
     it('shows an enumeration-neutral server failure and always restores the submit button', async () => {
@@ -184,7 +193,7 @@ describe('Account cross-product logout completion', () => {
         ));
         expect(feedback).toHaveFocus();
         expect(screen.getAllByRole('button', { name: 'Create account' }).at(-1)).toBeEnabled();
-        expect(screen.queryByText(/We sent you an email/)).toBeNull();
+        expect(screen.queryByText(/request is eligible/)).toBeNull();
     });
 
     it.each([
@@ -209,7 +218,7 @@ describe('Account cross-product logout completion', () => {
         fireEvent.submit(screen.getByLabelText('Password').closest('form')!);
         const feedback = await screen.findByRole('status');
         await waitFor(() => expect(feedback).toHaveTextContent('The request could not be completed.'));
-        expect(screen.queryByRole('heading', { name: 'Confirm your email' })).toBeNull();
+        expect(screen.queryByRole('heading', { name: 'Check your email' })).toBeNull();
     });
 
     it('coalesces duplicate credential submits while the first request is pending', async () => {
@@ -239,7 +248,7 @@ describe('Account cross-product logout completion', () => {
         resolveFetch(new Response('{"status":"accepted"}', {
             status: 202, headers: { 'Content-Type': 'application/json' },
         }));
-        await screen.findByRole('heading', { name: 'Confirm your email' });
+        await screen.findByRole('heading', { name: 'Check your email' });
         expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
         expect(fetchMock).toHaveBeenCalledOnce();
         fireEvent.click(screen.getByRole('button', { name: 'Go to sign in' }));

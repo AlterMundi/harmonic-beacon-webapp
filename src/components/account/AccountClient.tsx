@@ -84,6 +84,8 @@ export default function AccountClient({
     const [feedbackFocusRevision, setFeedbackFocusRevision] = useState(0);
     const feedbackRef = useRef<HTMLParagraphElement>(null);
     const signupConfirmationRef = useRef<HTMLElement>(null);
+    const signInEmailRef = useRef<HTMLInputElement>(null);
+    const signInFocusRequested = useRef(false);
     const credentialSubmissionInFlight = useRef(false);
 
     useEffect(() => {
@@ -92,6 +94,13 @@ export default function AccountClient({
         target?.focus({ preventScroll: true });
         target?.scrollIntoView?.({ block: 'nearest' });
     }, [feedbackFocusRevision, signupAccepted]);
+
+    useEffect(() => {
+        if (!signInFocusRequested.current || mode !== 'signin' || signupAccepted) return;
+        signInFocusRequested.current = false;
+        signInEmailRef.current?.focus({ preventScroll: true });
+        signInEmailRef.current?.scrollIntoView?.({ block: 'nearest' });
+    }, [mode, signupAccepted]);
 
     function announceCredentialResult(nextMessage: string) {
         setMessage(nextMessage);
@@ -102,6 +111,11 @@ export default function AccountClient({
         setMode(nextMode);
         setMessage('');
         setSignupAccepted(false);
+    }
+
+    function returnToSignIn() {
+        signInFocusRequested.current = true;
+        selectMode('signin');
     }
 
     async function submitCredentials(event: FormEvent<HTMLFormElement>) {
@@ -155,8 +169,8 @@ export default function AccountClient({
                     formElement.reset();
                     setSignupAccepted(true);
                     announceCredentialResult(es
-                        ? 'Te enviamos un correo. Confirmá tu dirección para activar la cuenta y después ingresá.'
-                        : 'We sent you an email. Confirm your address to activate the account, then sign in.');
+                        ? 'Si la solicitud es elegible, revisá tu correo para continuar.'
+                        : 'If the request is eligible, check your email to continue.');
                 } else {
                     announceCredentialResult(credentialFailure);
                 }
@@ -261,10 +275,10 @@ export default function AccountClient({
                 tabIndex={-1}
             >
                 <span className="account-signup-confirmation__mark" aria-hidden="true">&#10003;</span>
-                <h2>{es ? 'Confirmá tu correo' : 'Confirm your email'}</h2>
+                <h2>{es ? 'Revisá tu correo' : 'Check your email'}</h2>
                 <p>{message}</p>
             </section>
-            <button className="account-primary" type="button" onClick={() => selectMode('signin')}>
+            <button className="account-primary" type="button" onClick={returnToSignIn}>
                 {es ? 'Ir al ingreso' : 'Go to sign in'}
             </button>
         </div>
@@ -291,7 +305,13 @@ export default function AccountClient({
                 }
             }}>
                 {mode === 'signup' && <label>{es ? 'Nombre visible' : 'Display name'}<input name="displayName" required minLength={1} maxLength={60} autoComplete="nickname" /></label>}
-                <label>{es ? 'Correo' : 'Email'}<input name="email" type="email" required autoComplete="email" /></label>
+                <label>{es ? 'Correo' : 'Email'}<input
+                    ref={mode === 'signin' ? signInEmailRef : undefined}
+                    name="email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                /></label>
                 {mode !== 'forgot' && <AccountPasswordField
                     label={es ? 'Contraseña' : 'Password'}
                     showLabel={showPassword}
