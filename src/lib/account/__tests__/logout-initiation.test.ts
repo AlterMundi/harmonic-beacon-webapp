@@ -31,7 +31,8 @@ describe('signed RP → Account logout initiation', () => {
 
     it('rejects tamper, wrong signer and expired tokens', () => {
         const token = signed();
-        expect(verify(`${token.slice(0, -1)}x`)).toBe(false);
+        const replacement = token.endsWith('A') ? 'B' : 'A';
+        expect(verify(`${token.slice(0, -1)}${replacement}`)).toBe(false);
         expect(verify(token, { clientSecret: 'wrong-secret-with-at-least-32-characters' })).toBe(false);
         expect(verify(token, { now: new Date(now.getTime() + 121_000) })).toBe(false);
     });

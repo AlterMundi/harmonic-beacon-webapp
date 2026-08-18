@@ -21,7 +21,7 @@ vi.mock('@/context/LocaleContext', () => ({
 }));
 vi.mock('sonner', () => ({ Toaster: () => null }));
 
-import RootLayout, { generateViewport } from '../layout';
+import RootLayout, { generateMetadata, generateViewport } from '../layout';
 
 function requestHeaders(host: string, acceptLanguage: string): Headers {
     return new Headers({ host, 'accept-language': acceptLanguage });
@@ -94,6 +94,19 @@ describe('root document locale boundary', () => {
             initialScale: 1,
             themeColor,
         });
+    });
+
+    it.each([
+        ['account.harmonicbeacon.com', 'Account | Harmonic Beacon'],
+        ['account-staging.harmonicbeacon.com', 'Account | Harmonic Beacon'],
+        ['live.harmonicbeacon.com', 'Harmonic Projection | Harmonic Beacon'],
+    ])('scopes document metadata for %s', async (host, title) => {
+        mocks.headers.mockResolvedValue(requestHeaders(host, 'en-US'));
+
+        const result = await generateMetadata();
+
+        expect(result.title).toBe(title);
+        expect(result.openGraph?.title).toBe(title);
     });
 
     it('pins warm overscroll and Inter to the exact Listener document marker', () => {

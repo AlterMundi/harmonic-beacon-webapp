@@ -61,7 +61,7 @@ const spaceMono = localFont({
   display: "swap",
 });
 
-export const metadata: Metadata = {
+const eventMetadata: Metadata = {
   title: "Harmonic Projection | Harmonic Beacon",
   description:
     "A live online experience to enter your inner landscape through body, sound and the images already living inside you.",
@@ -74,6 +74,22 @@ export const metadata: Metadata = {
     type: "website",
   },
 };
+
+const accountMetadata: Metadata = {
+  title: "Account | Harmonic Beacon",
+  description: "Manage your Harmonic Beacon identity, profile and sign-in methods.",
+  authors: [{ name: "Harmonic Beacon" }],
+  openGraph: {
+    title: "Account | Harmonic Beacon",
+    description: "Manage your Harmonic Beacon identity, profile and sign-in methods.",
+    type: "website",
+  },
+};
+
+export async function generateMetadata(): Promise<Metadata> {
+  const incomingHeaders = await headers();
+  return isAccountHost(incomingHeaders.get('host')) ? accountMetadata : eventMetadata;
+}
 
 export async function generateViewport(): Promise<Viewport> {
   const incomingHeaders = await headers();

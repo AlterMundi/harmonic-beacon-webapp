@@ -26,6 +26,12 @@ function signature(encoded: string, secret: string): Buffer {
     return createHmac('sha256', secret).update(encoded, 'utf8').digest();
 }
 
+function canonicalBase64Url(value: string): Buffer | null {
+    if (!/^[A-Za-z0-9_-]+$/.test(value)) return null;
+    const decoded = Buffer.from(value, 'base64url');
+    return decoded.toString('base64url') === value ? decoded : null;
+}
+
 export function signAccountFrontchannelLogout(input: {
     issuer: string;
     audience: string;
@@ -53,10 +59,12 @@ export function verifyAccountFrontchannelLogout(input: {
     try {
         const [encoded, presented, extra] = input.token.split('.');
         if (!encoded || !presented || extra) return null;
+        const payloadBytes = canonicalBase64Url(encoded);
+        const actual = canonicalBase64Url(presented);
+        if (!payloadBytes || !actual) return null;
         const expected = signature(encoded, input.clientSecret);
-        const actual = Buffer.from(presented, 'base64url');
         if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
-        const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as FrontchannelPayload;
+        const payload = JSON.parse(payloadBytes.toString('utf8')) as FrontchannelPayload;
         const now = Math.floor((input.now ?? new Date()).getTime() / 1_000);
         if (payload.v !== 1 || payload.iss !== input.issuer || payload.aud !== input.audience ||
             typeof payload.sid !== 'string' || payload.sid.length < 1 || payload.sid.length > 128 ||
@@ -112,10 +120,12 @@ export function verifyAccountLogoutInitiation(input: {
     try {
         const [encoded, presented, extra] = input.token.split('.');
         if (!encoded || !presented || extra) return false;
+        const payloadBytes = canonicalBase64Url(encoded);
+        const actual = canonicalBase64Url(presented);
+        if (!payloadBytes || !actual) return false;
         const expected = signature(encoded, input.clientSecret);
-        const actual = Buffer.from(presented, 'base64url');
         if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return false;
-        const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as LogoutInitiationPayload;
+        const payload = JSON.parse(payloadBytes.toString('utf8')) as LogoutInitiationPayload;
         const now = Math.floor((input.now ?? new Date()).getTime() / 1_000);
         return payload.v === 1 && payload.iss === input.issuer && payload.client_id === input.clientId &&
             payload.sid === input.sid && payload.mode === input.mode && payload.return_to === input.returnTo &&
