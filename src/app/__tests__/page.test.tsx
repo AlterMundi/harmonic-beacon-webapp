@@ -197,6 +197,18 @@ describe('landing page', () => {
         expect(screen.queryByTestId('ticket-login-form')).toBeNull();
     });
 
+    it('makes upcoming gatherings the primary landing promise and links the wider experience below', async () => {
+        mountDb(vi.fn().mockResolvedValue([{ ...SATURDAY, publicAccess: true }]));
+        await renderPage();
+
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Próximos encuentros.');
+        expect(screen.getByText(/Cuatro sábados para participar desde cualquier lugar/)).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
+            'href',
+            'https://proyecciondelmito.harmonicbeacon.com/',
+        );
+    });
+
     it('says sales open shortly while the external platform is still TBD', async () => {
         vi.stubEnv('TICKET_PURCHASE_URL', '');
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
@@ -244,8 +256,8 @@ describe('landing page', () => {
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         await renderPage();
 
-        expect(screen.getByText('The myth', { exact: false })).toBeInTheDocument();
-        expect(screen.getByText('is alive.')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Upcoming gatherings.');
+        expect(screen.getByText(/Four Saturdays to join from anywhere/)).toBeInTheDocument();
         expect(screen.getByText('English')).toBeInTheDocument();
         expect(screen.getByText('Spanish')).toBeInTheDocument();
         expect(screen.getByText(/Saturday, August 8 at 0?8:30 AM CST/)).toBeInTheDocument();

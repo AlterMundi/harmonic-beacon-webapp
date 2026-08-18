@@ -49,6 +49,10 @@ export type Messages = {
         spanish: string;
         globalNorth: string;
         globalSouth: string;
+        experienceEyebrow: string;
+        experienceHeading: string;
+        experienceBody: string;
+        experienceLink: string;
     };
     ticketLogin: {
         accountRequired: string;
@@ -527,11 +531,11 @@ export const messages: Record<UiLocale, Messages> = {
     es: {
         language: { label: 'Idioma', spanish: 'Español', english: 'Inglés' },
         landing: {
-            eyebrow: 'PROYECCIÓN ARMÓNICA · SESIÓN VIRTUAL',
-            heroLead: 'El mito',
-            heroAccent: 'está vivo.',
-            lead: 'Una experiencia online en vivo para entrar en tu paisaje interior a través del cuerpo, el sonido y las imágenes que ya viven dentro tuyo.',
-            sessionsHeading: 'ELEGÍ TU PORTAL',
+            eyebrow: 'HARMONIC BEACON · EN VIVO',
+            heroLead: 'Próximos',
+            heroAccent: 'encuentros.',
+            lead: 'Cuatro sábados para participar desde cualquier lugar. Encuentros gratuitos, virtuales y sincrónicos en castellano.',
+            sessionsHeading: 'DEL OTRO LADO DEL UMBRAL · CICLO DE 4 ENCUENTROS',
             loginHeading: '¿YA TENÉS TU ENTRADA?',
             terms: 'Términos y privacidad',
             staff: 'Ingreso del equipo',
@@ -545,6 +549,10 @@ export const messages: Record<UiLocale, Messages> = {
             spanish: 'Español',
             globalNorth: 'Norte Global',
             globalSouth: 'Sur Global',
+            experienceEyebrow: 'LA EXPERIENCIA',
+            experienceHeading: 'Proyección del Mito Personal',
+            experienceBody: 'Conocé la práctica que inspira este ciclo: un recorrido guiado a través del cuerpo, el sonido y el lenguaje simbólico de tus propias imágenes.',
+            experienceLink: 'Conocer la Proyección del Mito',
         },
         ticketLogin: {
             accountRequired: 'Primero ingresá con tu cuenta de Harmonic Beacon. Después vinculás tu entrada una sola vez.',
@@ -1078,11 +1086,11 @@ export const messages: Record<UiLocale, Messages> = {
     en: {
         language: { label: 'Language', spanish: 'Spanish', english: 'English' },
         landing: {
-            eyebrow: 'HARMONIC PROJECTION · VIRTUAL SESSION',
-            heroLead: 'The myth',
-            heroAccent: 'is alive.',
-            lead: 'A live online experience to enter your inner landscape through body, sound, and the images already living inside you.',
-            sessionsHeading: 'CHOOSE YOUR PORTAL',
+            eyebrow: 'HARMONIC BEACON · LIVE',
+            heroLead: 'Upcoming',
+            heroAccent: 'gatherings.',
+            lead: 'Four Saturdays to join from anywhere. Free, live online gatherings held in Spanish.',
+            sessionsHeading: 'BEYOND THE THRESHOLD · A 4-GATHERING CYCLE',
             loginHeading: 'ALREADY HAVE A TICKET?',
             terms: 'Terms & privacy',
             staff: 'Staff sign-in',
@@ -1096,6 +1104,10 @@ export const messages: Record<UiLocale, Messages> = {
             spanish: 'Spanish',
             globalNorth: 'Global North',
             globalSouth: 'Global South',
+            experienceEyebrow: 'THE EXPERIENCE',
+            experienceHeading: 'Personal Myth Projection',
+            experienceBody: 'Discover the practice behind this cycle: a guided journey through the body, sound, and the symbolic language of your own images.',
+            experienceLink: 'Explore Personal Myth Projection',
         },
         ticketLogin: {
             accountRequired: 'Sign in with your Harmonic Beacon account first. Then bind your ticket once.',

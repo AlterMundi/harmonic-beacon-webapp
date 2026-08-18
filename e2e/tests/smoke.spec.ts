@@ -14,12 +14,15 @@ import { requireDirectDb, withSessionStatus } from '../fixtures/db';
  */
 
 test.describe('public surfaces (no stack required)', () => {
-    test('landing renders the bilingual brand and entry form', async ({ page }) => {
+    test('landing renders the four-gathering cycle and its wider practice', async ({ page }) => {
         await page.goto(ROUTES.landing);
         await expect(page).toHaveTitle(/harmonic beacon/i);
-        await expect(page.locator('#display-name')).toBeVisible();
-        await expect(page.locator('#ticket-code')).toBeVisible();
-        await expect(page.locator('#ticket-email')).toBeVisible();
+        await expect(page.getByRole('heading', { level: 1 })).toContainText(/Próximos\s+encuentros/i);
+        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(4);
+        await expect(page.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
+            'href',
+            'https://proyecciondelmito.harmonicbeacon.com/',
+        );
     });
 
     test('staff login renders and links are reachable by keyboard', async ({ page }) => {
@@ -28,18 +31,15 @@ test.describe('public surfaces (no stack required)', () => {
         await expect(page.locator('#staff-password')).toBeVisible();
     });
 
-    test('keyboard-only path through the attendee login form keeps visible focus', async ({
+    test('keyboard-only path through the public event choices keeps visible focus', async ({
         page,
     }) => {
         await page.goto(ROUTES.landing);
-        await page.locator('#display-name').focus();
-
-        // Tab order through the form: name -> code -> email -> submit.
+        const entries = page.getByRole('link', { name: 'Ingresar al evento' });
+        await entries.first().focus();
+        await expect(entries.first()).toBeFocused();
         await page.keyboard.press('Tab');
-        await expect(page.locator('#ticket-code')).toBeFocused();
-        await page.keyboard.press('Tab');
-        await expect(page.locator('#ticket-email')).toBeFocused();
-        await page.keyboard.press('Tab');
+        await expect(entries.nth(1)).toBeFocused();
 
         // Focus must be on a visible, operable control — never lost to body.
         const focused = page.locator(':focus');

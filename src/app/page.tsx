@@ -122,7 +122,7 @@ export default async function LandingPage({
                             {copy.eyebrow}
                         </p>
                         <h1 className="font-serif text-[clamp(2.8rem,8vw,5rem)] font-normal leading-[0.9] tracking-[-0.025em] text-[var(--paper)]">
-                            {copy.heroLead}<br />
+                            {copy.heroLead}<br />{" "}
                             <em className="event-hero-accent not-italic">
                                 {copy.heroAccent}
                             </em>
@@ -178,7 +178,7 @@ export default async function LandingPage({
                                             </p>
                                         </div>
                                         <div className="text-right">
-                                            <p className="font-mono text-lg font-normal text-[var(--gold)]">
+                                            <p className="whitespace-nowrap font-mono text-lg font-normal text-[var(--gold)]">
                                                 {formatTimeOnly(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
                                             </p>
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
@@ -220,6 +220,30 @@ export default async function LandingPage({
                             ))}
                         </ul>
                     )}
+                </section>
+
+                {/* The wider practice, secondary to the current event cycle. */}
+                <section className="space-y-5" aria-labelledby="experience-heading">
+                    <p className="hb-section-label">{copy.experienceEyebrow}</p>
+                    <div className="event-card max-w-3xl">
+                        <div className="max-w-2xl space-y-4">
+                            <h2 id="experience-heading" className="font-serif text-3xl text-[var(--paper)] sm:text-4xl">
+                                {copy.experienceHeading}
+                            </h2>
+                            <p className="text-sm leading-[1.75] text-[var(--text-secondary)]">
+                                {copy.experienceBody}
+                            </p>
+                            <a
+                                href="https://proyecciondelmito.harmonicbeacon.com/"
+                                className="event-button event-button--secondary inline-flex w-full sm:w-auto"
+                                rel="noreferrer noopener"
+                                target="_blank"
+                            >
+                                {copy.experienceLink}
+                                <span aria-hidden="true" className="text-base">↗</span>
+                            </a>
+                        </div>
+                    </div>
                 </section>
 
                 {/* Ticket login remains available only when a ticketed event is listed. */}

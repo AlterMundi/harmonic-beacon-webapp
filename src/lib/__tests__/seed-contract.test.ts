@@ -142,6 +142,24 @@ describe('weekend seed contract', () => {
         expect(migration).not.toMatch(/ticket.?tailor|purchase/i);
     });
 
+    it('ensures an initialized installation cannot silently create zero public sessions', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260818163000_ensure_four_saturday_public_cycle/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain(`'FACILITATOR_OP'::"StaffRole"`);
+        expect(migration).toContain('facilitator_count = 0');
+        expect(migration).toContain('target_count <> 4');
+        expect(migration).toContain("'2026-08-22 14:00:00'::timestamp");
+        expect(migration).toContain('ON CONFLICT ("id") DO UPDATE SET');
+        expect(migration).toContain('requires an active facilitator');
+        expect(migration).toContain('must contain exactly four reviewed sessions');
+    });
+
     it('marks production and fixture events explicitly without title inference', () => {
         expect(loadSeedContract(validEnvironment()).events.every((event) => event.isTest === false))
             .toBe(true);

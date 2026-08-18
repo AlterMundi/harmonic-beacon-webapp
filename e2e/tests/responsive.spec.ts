@@ -29,24 +29,25 @@ test.describe('responsive public surfaces', () => {
         await page.goto(ROUTES.landing);
         await expectNoHorizontalScroll(page);
         // Long bilingual strings must not break the layout either.
-        await expect(page.locator('#display-name')).toBeVisible();
-        await expect(page.locator('#ticket-code')).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(4);
     });
 
-    test('login controls stay reachable inside the viewport', async ({ page }) => {
+    test('event entry controls stay reachable inside the viewport', async ({ page }) => {
         await page.goto(ROUTES.landing);
         const viewport = page.viewportSize();
         expect(viewport).not.toBeNull();
 
-        for (const selector of ['#display-name', '#ticket-code', '#ticket-email']) {
-            const control = page.locator(selector);
-            // boundingBox does not auto-wait; the login form hydrates async.
+        const entries = page.getByRole('link', { name: 'Ingresar al evento' });
+        await expect(entries).toHaveCount(4);
+        for (let index = 0; index < 4; index += 1) {
+            const control = entries.nth(index);
             await expect(control).toBeVisible();
             const box = await control.boundingBox();
-            expect(box, `${selector} has no layout box`).not.toBeNull();
+            expect(box, `event entry ${index + 1} has no layout box`).not.toBeNull();
             expect(box!.x).toBeGreaterThanOrEqual(0);
             // Fully inside the horizontal viewport: no off-screen reach.
             expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 1);
+            expect(box!.height).toBeGreaterThanOrEqual(44);
         }
     });
 
