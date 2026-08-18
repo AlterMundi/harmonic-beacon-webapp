@@ -53,6 +53,16 @@ function assertRealSecret(value, key, allowPlaceholders) {
   }
 }
 
+function assertBase64Url32(value, key) {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(value)) {
+    throw new Error(`${key} must be unpadded base64url for exactly 32 bytes`);
+  }
+  const decoded = Buffer.from(value, 'base64url');
+  if (decoded.length !== 32 || decoded.toString('base64url') !== value) {
+    throw new Error(`${key} must be canonical unpadded base64url for exactly 32 bytes`);
+  }
+}
+
 function validateEnvironment(env, kind, allowPlaceholders, stagingDatabaseEnv) {
   const production = kind === 'production';
   const origin = production ? PROD_ORIGIN : STAGING_ORIGIN;
@@ -64,10 +74,14 @@ function validateEnvironment(env, kind, allowPlaceholders, stagingDatabaseEnv) {
   if (required(env, 'BEACON_ACCOUNT_TRUSTED_ORIGINS') !== origin) {
     throw new Error(`${kind} trusted origins must contain only its own origin`);
   }
-  for (const key of ['BEACON_ACCOUNT_AUTH_SECRET', 'BEACON_ACCOUNT_RATE_SECRET', 'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN']) {
+  for (const key of [
+    'BEACON_ACCOUNT_AUTH_SECRET', 'BEACON_ACCOUNT_RATE_SECRET',
+    'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN', 'BEACON_ACCOUNT_MAIL_OUTBOX_KEY',
+  ]) {
     const secret = required(env, key, 32);
     assertRealSecret(secret, key, allowPlaceholders);
   }
+  assertBase64Url32(required(env, 'BEACON_ACCOUNT_MAIL_OUTBOX_KEY'), 'BEACON_ACCOUNT_MAIL_OUTBOX_KEY');
   if (required(env, 'BEACON_ACCOUNT_MAIL_DELIVERY_URL') !== MAIL_URL) {
     throw new Error('Account mail URL must use the exact private endpoint');
   }
@@ -109,7 +123,7 @@ function validateEnvironment(env, kind, allowPlaceholders, stagingDatabaseEnv) {
   }
   const secretKeys = [
     'BEACON_ACCOUNT_AUTH_SECRET', 'BEACON_ACCOUNT_RATE_SECRET',
-    'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN', ...active,
+    'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN', 'BEACON_ACCOUNT_MAIL_OUTBOX_KEY', ...active,
     ...['GOOGLE', 'APPLE'].flatMap((provider) =>
       (env.get(`BEACON_ACCOUNT_${provider}_ENABLED`) === '1'
         ? [`BEACON_ACCOUNT_${provider}_CLIENT_SECRET`] : [])),
@@ -125,14 +139,53 @@ function validateEnvironment(env, kind, allowPlaceholders, stagingDatabaseEnv) {
   return database.identity;
 }
 
-export function validatePair(productionFile, stagingFile, stagingDatabaseFile, allowPlaceholders = false) {
+const WORKER_KEYS = new Set([
+  'DATABASE_URL',
+  'BEACON_ACCOUNT_BASE_URL',
+  'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN',
+  'BEACON_ACCOUNT_MAIL_OUTBOX_KEY',
+]);
+
+function validateWorkerEnvironment(worker, application, kind, allowPlaceholders) {
+  for (const key of worker.keys()) {
+    if (!WORKER_KEYS.has(key)) throw new Error(`${kind} mail worker contains forbidden key ${key}`);
+  }
+  for (const key of WORKER_KEYS) {
+    const value = required(worker, key, key.includes('TOKEN') || key.includes('KEY') ? 32 : 1);
+    if (value !== application.get(key)) {
+      throw new Error(`${kind} mail worker ${key} must match the Account application value`);
+    }
+  }
+  assertRealSecret(required(worker, 'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN', 32),
+    'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN', allowPlaceholders);
+  assertRealSecret(required(worker, 'BEACON_ACCOUNT_MAIL_OUTBOX_KEY', 32),
+    'BEACON_ACCOUNT_MAIL_OUTBOX_KEY', allowPlaceholders);
+  assertBase64Url32(required(worker, 'BEACON_ACCOUNT_MAIL_OUTBOX_KEY'),
+    'BEACON_ACCOUNT_MAIL_OUTBOX_KEY');
+}
+
+export function validatePair(
+  productionFile,
+  stagingFile,
+  stagingDatabaseFile,
+  allowPlaceholders = false,
+  productionWorkerFile = path.join(ROOT, 'account-mail-worker.production.env.example'),
+  stagingWorkerFile = path.join(ROOT, 'account-mail-worker.staging.env.example'),
+) {
   const production = parseEnvFile(productionFile);
   const staging = parseEnvFile(stagingFile);
   const stagingDatabaseEnvironment = parseEnvFile(stagingDatabaseFile);
+  const productionWorker = parseEnvFile(productionWorkerFile);
+  const stagingWorker = parseEnvFile(stagingWorkerFile);
   const productionDatabase = validateEnvironment(production, 'production', allowPlaceholders, null);
   const stagingDatabase = validateEnvironment(staging, 'staging', allowPlaceholders, stagingDatabaseEnvironment);
+  validateWorkerEnvironment(productionWorker, production, 'production', allowPlaceholders);
+  validateWorkerEnvironment(stagingWorker, staging, 'staging', allowPlaceholders);
   if (productionDatabase === stagingDatabase) throw new Error('production and staging DATABASE_URL must be isolated');
-  for (const key of ['BEACON_ACCOUNT_AUTH_SECRET', 'BEACON_ACCOUNT_RATE_SECRET', 'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN']) {
+  for (const key of [
+    'BEACON_ACCOUNT_AUTH_SECRET', 'BEACON_ACCOUNT_RATE_SECRET',
+    'BEACON_ACCOUNT_MAIL_DELIVERY_TOKEN', 'BEACON_ACCOUNT_MAIL_OUTBOX_KEY',
+  ]) {
     if (production.get(key) === staging.get(key)) throw new Error(`${key} must differ between issuers`);
   }
   const productionSecrets = new Map([...production]
@@ -149,12 +202,21 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
   const productionFile = process.argv[2] ?? path.join(ROOT, 'account.production.env.example');
   const stagingFile = process.argv[3] ?? path.join(ROOT, 'account.staging.env.example');
   const stagingDatabaseFile = process.argv[4] ?? path.join(ROOT, 'database.staging.env.example');
+  const productionWorkerFile = process.argv[5] ?? path.join(ROOT, 'account-mail-worker.production.env.example');
+  const stagingWorkerFile = process.argv[6] ?? path.join(ROOT, 'account-mail-worker.staging.env.example');
   const canonicalExamples = [
     path.join(ROOT, 'account.production.env.example'),
     path.join(ROOT, 'account.staging.env.example'),
     path.join(ROOT, 'database.staging.env.example'),
+    path.join(ROOT, 'account-mail-worker.production.env.example'),
+    path.join(ROOT, 'account-mail-worker.staging.env.example'),
   ].map((value) => fs.realpathSync(value));
-  const requestedFiles = [productionFile, stagingFile, stagingDatabaseFile].map((value) => fs.realpathSync(value));
+  const requestedFiles = [
+    productionFile, stagingFile, stagingDatabaseFile, productionWorkerFile, stagingWorkerFile,
+  ].map((value) => fs.realpathSync(value));
   const examples = requestedFiles.every((value, index) => value === canonicalExamples[index]);
-  validatePair(productionFile, stagingFile, stagingDatabaseFile, examples);
+  validatePair(
+    productionFile, stagingFile, stagingDatabaseFile, examples,
+    productionWorkerFile, stagingWorkerFile,
+  );
 }

@@ -10,6 +10,8 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const PROD = path.join(ROOT, 'account.production.env.example');
 const STAGING = path.join(ROOT, 'account.staging.env.example');
 const STAGING_DB = path.join(ROOT, 'database.staging.env.example');
+const PROD_WORKER = path.join(ROOT, 'account-mail-worker.production.env.example');
+const STAGING_WORKER = path.join(ROOT, 'account-mail-worker.staging.env.example');
 
 function mutate(source, from, to) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'beacon-account-contract-'));
@@ -18,6 +20,15 @@ function mutate(source, from, to) {
   assert.ok(content.includes(from), `fixture does not include ${from}`);
   fs.writeFileSync(target, content.replace(from, to));
   return target;
+}
+
+function composeService(source, name) {
+  const marker = `\n  ${name}:\n`;
+  const start = source.indexOf(marker);
+  assert.ok(start >= 0, `missing Compose service ${name}`);
+  const remainder = source.slice(start + marker.length);
+  const next = remainder.search(/\n  [a-z0-9][a-z0-9-]*:\n/);
+  return next < 0 ? remainder : remainder.slice(0, next);
 }
 
 test('production and staging examples are isolated and fail closed', () => {
@@ -42,7 +53,45 @@ test('validator rejects reused active RP secrets across issuers', () => {
     'BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER_STAGING=replace-staging-listener-client-secret-32-random',
     'BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER_STAGING=replace-production-listener-client-secret-32-random',
   );
-  assert.throws(() => validatePair(PROD, bad, STAGING_DB, true), /must differ from production/);
+  assert.throws(() => validatePair(PROD, bad, STAGING_DB, true), /must differ (?:from production|between issuers)/);
+});
+
+test('validator rejects a reused mail outbox encryption key across issuers', () => {
+  const badApplication = mutate(
+    STAGING,
+    'BEACON_ACCOUNT_MAIL_OUTBOX_KEY=replaceStagingOutboxKeyAAAAAAAAAAAAAAAAAAAA',
+    'BEACON_ACCOUNT_MAIL_OUTBOX_KEY=replaceProdOutboxKeyAAAAAAAAAAAAAAAAAAAAAAA',
+  );
+  const badWorker = mutate(
+    STAGING_WORKER,
+    'BEACON_ACCOUNT_MAIL_OUTBOX_KEY=replaceStagingOutboxKeyAAAAAAAAAAAAAAAAAAAA',
+    'BEACON_ACCOUNT_MAIL_OUTBOX_KEY=replaceProdOutboxKeyAAAAAAAAAAAAAAAAAAAAAAA',
+  );
+  assert.throws(
+    () => validatePair(PROD, badApplication, STAGING_DB, true, PROD_WORKER, badWorker),
+    /must differ (?:from production|between issuers)/,
+  );
+});
+
+test('validator rejects a mail outbox key that is not canonical base64url32', () => {
+  const bad = mutate(
+    STAGING,
+    'BEACON_ACCOUNT_MAIL_OUTBOX_KEY=replaceStagingOutboxKeyAAAAAAAAAAAAAAAAAAAA',
+    'BEACON_ACCOUNT_MAIL_OUTBOX_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.',
+  );
+  assert.throws(() => validatePair(PROD, bad, STAGING_DB, true), /base64url for exactly 32 bytes/);
+});
+
+test('mail worker env rejects browser and OAuth secrets', () => {
+  const badWorker = mutate(
+    STAGING_WORKER,
+    '# This file deliberately excludes browser auth, OAuth provider and RP secrets.',
+    'BEACON_ACCOUNT_AUTH_SECRET=forbidden-worker-auth-secret-32-random',
+  );
+  assert.throws(
+    () => validatePair(PROD, STAGING, STAGING_DB, true, PROD_WORKER, badWorker),
+    /mail worker contains forbidden key BEACON_ACCOUNT_AUTH_SECRET/,
+  );
 });
 
 test('runtime validation rejects copied placeholder secrets', () => {
@@ -73,21 +122,47 @@ test('compose exposes only fixed loopback ports and keeps the DB external', () =
   assert.match(compose, /beacon-account-staging-postgres:\s+name: beacon-account-staging-postgres/s);
   assert.match(compose, /provision-production:[\s\S]*account:provision/);
   assert.match(compose, /provision-staging:[\s\S]*account:provision/);
+  assert.match(compose, /account-mail-worker-production:[\s\S]*account:mail-worker/);
+  assert.match(compose, /account-mail-worker-staging:[\s\S]*account:mail-worker/);
+  assert.match(compose, /account-mail-worker-production:[\s\S]*networks: \[account_production_db, account_mail_production\]/);
+  assert.match(compose, /account-mail-worker-staging:[\s\S]*networks: \[account_staging_db, account_mail_staging\]/);
+  for (const worker of ['account-mail-worker-production', 'account-mail-worker-staging']) {
+    const block = composeService(compose, worker);
+    assert.doesNotMatch(block, /\n\s+ports:/);
+    assert.doesNotMatch(block, /account_egress/);
+    assert.match(block, /ACCOUNT_MAIL_WORKER_(?:PRODUCTION|STAGING)_ENV_FILE/);
+    assert.doesNotMatch(block, /ACCOUNT_(?:PRODUCTION|STAGING)_ENV_FILE/);
+  }
+  assert.match(compose, /BEACON_ACCOUNT_MAIL_WORKER_HEARTBEAT_FILE/);
+  assert.match(compose, /Date\.now\(\)-Date\.parse\(h\.at\)>120000/);
+  assert.match(compose, /h\.oldestPendingSeconds>300/);
+  assert.match(compose, /h\.consecutiveErrors!==0/);
+  const dockerfile = fs.readFileSync(path.resolve(ROOT, '../../Dockerfile'), 'utf8');
+  assert.match(dockerfile, /scripts\/process-account-mail-outbox\.ts/);
   assert.doesNotMatch(compose, /(?:^|\s)ports:\s*\n[^\n]*(?:postgres|5432)/m);
 });
 
 test('lifecycle verifies immutable provenance and does not downgrade schemas', () => {
   const start = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/start.sh'), 'utf8');
   const lib = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/lib.sh'), 'utf8');
+  const rollback = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/rollback-app.sh'), 'utf8');
   const smoke = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/health-smoke.sh'), 'utf8');
   assert.match(start, /git -C "\$root" rev-parse HEAD/);
   assert.match(start, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
-  assert.match(start, /account_compose up -d "account-\$environment"/);
+  assert.match(start, /account_compose up -d "account-mail-worker-\$environment" "account-\$environment"/);
   assert.match(start, /account_check_production_migrations before/);
   assert.match(start, /account_check_production_migrations after/);
   assert.match(start, /flock -n 9/);
   assert.match(start, /account_backup_production/);
   assert.match(start, /account_restore_previous_runtime/);
+  assert.match(start, /account_capture_previous_worker/);
+  assert.match(lib, /running mail worker SHA mismatch/);
+  assert.match(lib, /Account mail worker must not publish ports/);
+  assert.match(lib, /account_image_supports_mail_worker/);
+  assert.match(lib, /scripts\/process-account-mail-outbox\.ts/);
+  assert.match(rollback, /previous_worker_present=0/);
+  assert.match(rollback, /account_image_supports_mail_worker/);
+  assert.doesNotMatch(rollback, /account_restore_previous_runtime "\$environment" "\$previous_sha" 1/);
   assert.match(start, /account_require_internal_mail_network "\$environment"/);
   assert.match(lib, /docker network inspect "\$network"/);
   assert.match(lib, /must be an exact internal bridge/);

@@ -52,6 +52,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-quiesce-for-free
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-withdrawal-operator.ts ./scripts/listener-withdrawal-operator.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/beacon-account/check-migrations.mjs ./scripts/beacon-account/check-migrations.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/provision-account-authority.ts ./scripts/provision-account-authority.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/process-account-mail-outbox.ts ./scripts/process-account-mail-outbox.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/event-stabilization.ts ./src/lib/event-stabilization.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/redact.ts ./src/lib/redact.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/commerce-media-reconciler.ts ./src/lib/commerce-media-reconciler.ts

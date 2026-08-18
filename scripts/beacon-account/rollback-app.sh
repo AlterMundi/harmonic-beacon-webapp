@@ -13,5 +13,9 @@ account_load_deploy_env "$ACCOUNT_DEPLOY_FILE"
 exec 9>"/run/lock/beacon-account-$environment.lock"
 flock -n 9 || account_fail "another $environment deployment is active"
 docker image inspect "harmonic-beacon/account:$previous_sha" >/dev/null || account_fail 'previous image is unavailable'
-account_restore_previous_runtime "$environment" "$previous_sha"
-echo "Beacon Account $environment app rolled back to $previous_sha; database was not downgraded."
+previous_worker_present=0
+if account_image_supports_mail_worker "$previous_sha"; then
+  previous_worker_present=1
+fi
+account_restore_previous_runtime "$environment" "$previous_sha" "$previous_worker_present"
+echo "Beacon Account $environment runtime rolled back to $previous_sha; database was not downgraded."

@@ -33,6 +33,8 @@ account_load_deploy_env() {
   : "${BEACON_ACCOUNT_EXPECTED_PENDING_MIGRATIONS:?missing reviewed migration list}"
   : "${BEACON_ACCOUNT_PRODUCTION_ENV_FILE:?missing production env path}"
   : "${BEACON_ACCOUNT_STAGING_ENV_FILE:?missing staging env path}"
+  : "${BEACON_ACCOUNT_MAIL_WORKER_PRODUCTION_ENV_FILE:?missing production mail worker env path}"
+  : "${BEACON_ACCOUNT_MAIL_WORKER_STAGING_ENV_FILE:?missing staging mail worker env path}"
   : "${BEACON_ACCOUNT_STAGING_DB_ENV_FILE:?missing staging database env path}"
   : "${BEACON_ACCOUNT_BACKUP_DIR:?missing production backup directory}"
   : "${BEACON_ACCOUNT_BACKUP_KEY_FILE:?missing production backup encryption key file}"
@@ -43,6 +45,8 @@ account_load_deploy_env() {
   test "${BEACON_ACCOUNT_STAGING_PORT:-13003}" = 13003 || account_fail 'staging port must be 13003'
   account_require_private_file "$BEACON_ACCOUNT_PRODUCTION_ENV_FILE"
   account_require_private_file "$BEACON_ACCOUNT_STAGING_ENV_FILE"
+  account_require_private_file "$BEACON_ACCOUNT_MAIL_WORKER_PRODUCTION_ENV_FILE"
+  account_require_private_file "$BEACON_ACCOUNT_MAIL_WORKER_STAGING_ENV_FILE"
   account_require_private_file "$BEACON_ACCOUNT_STAGING_DB_ENV_FILE"
   test "$BEACON_ACCOUNT_BACKUP_DIR" = /var/backups/harmonic-beacon/account ||
     account_fail 'unexpected backup directory'
@@ -61,7 +65,9 @@ account_validate() {
   root=$(account_repo_root)
   node "$root/ops/beacon-account/validate.mjs" \
     "$BEACON_ACCOUNT_PRODUCTION_ENV_FILE" "$BEACON_ACCOUNT_STAGING_ENV_FILE" \
-    "$BEACON_ACCOUNT_STAGING_DB_ENV_FILE"
+    "$BEACON_ACCOUNT_STAGING_DB_ENV_FILE" \
+    "$BEACON_ACCOUNT_MAIL_WORKER_PRODUCTION_ENV_FILE" \
+    "$BEACON_ACCOUNT_MAIL_WORKER_STAGING_ENV_FILE"
 }
 
 account_require_internal_mail_network() {
@@ -77,6 +83,14 @@ account_container_name() {
   case "$1" in
     production) echo beacon-account-account-production-1 ;;
     staging) echo beacon-account-account-staging-1 ;;
+    *) account_fail 'environment must be production or staging' ;;
+  esac
+}
+
+account_mail_worker_container_name() {
+  case "$1" in
+    production) echo beacon-account-account-mail-worker-production-1 ;;
+    staging) echo beacon-account-account-mail-worker-staging-1 ;;
     *) account_fail 'environment must be production or staging' ;;
   esac
 }
@@ -97,17 +111,28 @@ account_wait_healthy() {
 account_verify_running() {
   environment=$1
   container=$(account_container_name "$environment")
+  worker=$(account_mail_worker_container_name "$environment")
   account_wait_healthy "$container"
+  account_wait_healthy "$worker"
   image=$(docker inspect "$container" --format '{{.Config.Image}}')
   test "$image" = "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" || account_fail 'running image mismatch'
+  worker_image=$(docker inspect "$worker" --format '{{.Config.Image}}')
+  test "$worker_image" = "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" ||
+    account_fail 'running mail worker image mismatch'
   running_sha=$(docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}' |
     sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
   test "$running_sha" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'running SHA mismatch'
+  worker_sha=$(docker inspect "$worker" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+    sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
+  test "$worker_sha" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'running mail worker SHA mismatch'
   published=$(docker inspect "$container" --format '{{json .HostConfig.PortBindings}}')
   expected_port=13002
   [ "$environment" = staging ] && expected_port=13003
   echo "$published" | grep -Fq "127.0.0.1" || account_fail 'Account must bind loopback only'
   echo "$published" | grep -Fq "$expected_port" || account_fail 'Account port mismatch'
+  worker_published=$(docker inspect "$worker" --format '{{json .HostConfig.PortBindings}}')
+  test "$worker_published" = null || test "$worker_published" = '{}' ||
+    account_fail 'Account mail worker must not publish ports'
 }
 
 account_check_production_migrations() {
@@ -169,15 +194,50 @@ account_capture_previous_runtime() {
   printf '%s\n' "$previous_sha"
 }
 
+account_capture_previous_worker() {
+  environment=$1
+  previous_sha=$2
+  worker=$(account_mail_worker_container_name "$environment")
+  if ! docker inspect "$worker" >/dev/null 2>&1; then
+    printf '0\n'
+    return 0
+  fi
+  test -n "$previous_sha" || account_fail 'mail worker exists without prior Account runtime'
+  worker_tag=$(docker inspect "$worker" --format '{{.Config.Image}}' | sed 's#^harmonic-beacon/account:##')
+  worker_sha=$(docker inspect "$worker" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+    sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
+  test "$worker_tag" = "$previous_sha" || account_fail 'previous mail worker image differs from app'
+  test "$worker_sha" = "$previous_sha" || account_fail 'previous mail worker SHA differs from app'
+  printf '1\n'
+}
+
+account_image_supports_mail_worker() {
+  sha=$1
+  docker run --rm --entrypoint sh "harmonic-beacon/account:$sha" -ec \
+    'test -f scripts/process-account-mail-outbox.ts && node -e "const p=require(\"./package.json\");if(!p.scripts?.[\"account:mail-worker\"])process.exit(1)"' \
+    >/dev/null 2>&1
+}
+
 account_restore_previous_runtime() {
   environment=$1
   previous_sha=$2
+  previous_worker_present=${3:-1}
   container=$(account_container_name "$environment")
+  worker=$(account_mail_worker_container_name "$environment")
   if [ -z "$previous_sha" ]; then
     docker rm -f "$container" >/dev/null 2>&1 || true
+    docker rm -f "$worker" >/dev/null 2>&1 || true
     return 0
   fi
-  BEACON_ACCOUNT_IMAGE_TAG=$previous_sha BEACON_ACCOUNT_GIT_SHA=$previous_sha \
-    account_compose up -d --no-deps --no-build "account-$environment"
+  if [ "$previous_worker_present" -eq 1 ]; then
+    BEACON_ACCOUNT_IMAGE_TAG=$previous_sha BEACON_ACCOUNT_GIT_SHA=$previous_sha \
+      account_compose up -d --no-deps --no-build \
+        "account-mail-worker-$environment" "account-$environment"
+    account_wait_healthy "$worker"
+  else
+    docker rm -f "$worker" >/dev/null 2>&1 || true
+    BEACON_ACCOUNT_IMAGE_TAG=$previous_sha BEACON_ACCOUNT_GIT_SHA=$previous_sha \
+      account_compose up -d --no-deps --no-build "account-$environment"
+  fi
   account_wait_healthy "$container"
 }

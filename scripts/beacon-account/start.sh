@@ -16,13 +16,14 @@ root=$(account_repo_root)
 test "$(git -C "$root" rev-parse HEAD)" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'release checkout SHA mismatch'
 test -z "$(git -C "$root" status --porcelain)" || account_fail 'release checkout is dirty'
 previous_sha=$(account_capture_previous_runtime "$environment")
+previous_worker_present=$(account_capture_previous_worker "$environment" "$previous_sha")
 cutover_started=0
 rollback_on_failure() {
   status=$?
   trap - EXIT HUP INT TERM
   if [ "$status" -ne 0 ] && [ "$cutover_started" -eq 1 ]; then
     echo "beacon-account: cutover failed; restoring prior app image without downgrading the database" >&2
-    account_restore_previous_runtime "$environment" "$previous_sha" || true
+    account_restore_previous_runtime "$environment" "$previous_sha" "$previous_worker_present" || true
   fi
   exit "$status"
 }
@@ -38,7 +39,7 @@ test "$baked_sha" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'built image prove
 [ "$environment" != production ] || account_check_production_migrations before
 [ "$environment" != production ] || account_backup_production >/dev/null
 cutover_started=1
-account_compose up -d "account-$environment"
+account_compose up -d "account-mail-worker-$environment" "account-$environment"
 [ "$environment" != production ] || account_check_production_migrations after
 account_verify_running "$environment"
 cutover_started=0

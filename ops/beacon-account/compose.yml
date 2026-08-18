@@ -74,6 +74,61 @@ services:
       resources:
         limits: { cpus: "0.5", memory: 512M }
 
+  account-mail-worker-production:
+    image: harmonic-beacon/account:${BEACON_ACCOUNT_IMAGE_TAG:?set_exact_account_image_tag}
+    restart: unless-stopped
+    init: true
+    command: ["npm", "run", "account:mail-worker"]
+    env_file:
+      - ${BEACON_ACCOUNT_MAIL_WORKER_PRODUCTION_ENV_FILE:?set_root_owned_production_mail_worker_env_file}
+    environment:
+      NODE_ENV: production
+      BEACON_GIT_SHA: ${BEACON_ACCOUNT_GIT_SHA:?set_exact_account_git_sha}
+      BEACON_BUILD_TIME: ${BEACON_ACCOUNT_BUILD_TIME:?set_account_build_time}
+      BEACON_DATABASE_SCHEMA_VERSION: ${BEACON_ACCOUNT_SCHEMA_VERSION:?set_account_schema_version}
+      BEACON_ACCOUNT_MAIL_WORKER_HEARTBEAT_FILE: /tmp/beacon-account-mail-worker-heartbeat
+    networks: [account_production_db, account_mail_production]
+    depends_on:
+      provision-production: { condition: service_completed_successfully }
+    healthcheck: &mail_worker_health
+      test:
+        - CMD-SHELL
+        - >-
+          test -s /tmp/beacon-account-mail-worker-heartbeat &&
+          node -e "const fs=require('node:fs');const p='/tmp/beacon-account-mail-worker-heartbeat';const h=JSON.parse(fs.readFileSync(p,'utf8'));if(h.status!=='ok'||h.gitSha!==process.env.BEACON_GIT_SHA||Date.now()-Date.parse(h.at)>120000||!Number.isInteger(h.pendingCount)||h.pendingCount<0||h.oldestPendingSeconds>300||h.consecutiveErrors!==0)process.exit(1)"
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+        reservations: { cpus: "0.05", memory: 96M }
+    logging: *account_logging
+
+  account-mail-worker-staging:
+    image: harmonic-beacon/account:${BEACON_ACCOUNT_IMAGE_TAG:?set_exact_account_image_tag}
+    restart: unless-stopped
+    init: true
+    command: ["npm", "run", "account:mail-worker"]
+    env_file:
+      - ${BEACON_ACCOUNT_MAIL_WORKER_STAGING_ENV_FILE:?set_root_owned_staging_mail_worker_env_file}
+    environment:
+      NODE_ENV: production
+      BEACON_GIT_SHA: ${BEACON_ACCOUNT_GIT_SHA:?set_exact_account_git_sha}
+      BEACON_BUILD_TIME: ${BEACON_ACCOUNT_BUILD_TIME:?set_account_build_time}
+      BEACON_DATABASE_SCHEMA_VERSION: ${BEACON_ACCOUNT_SCHEMA_VERSION:?set_account_schema_version}
+      BEACON_ACCOUNT_MAIL_WORKER_HEARTBEAT_FILE: /tmp/beacon-account-mail-worker-heartbeat
+    networks: [account_staging_db, account_mail_staging]
+    depends_on:
+      provision-staging: { condition: service_completed_successfully }
+    healthcheck: *mail_worker_health
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+        reservations: { cpus: "0.05", memory: 96M }
+    logging: *account_logging
+
   account-production:
     image: harmonic-beacon/account:${BEACON_ACCOUNT_IMAGE_TAG:?set_exact_account_image_tag}
     build:
@@ -98,6 +153,7 @@ services:
     networks: [account_production_db, account_mail_production, account_egress_production]
     depends_on:
       provision-production: { condition: service_completed_successfully }
+      account-mail-worker-production: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "-H", "Host: account.harmonicbeacon.com", "http://127.0.0.1:3000/api/account/health/ready"]
       interval: 15s
@@ -126,6 +182,7 @@ services:
     networks: [account_staging_db, account_mail_staging, account_egress_staging]
     depends_on:
       provision-staging: { condition: service_completed_successfully }
+      account-mail-worker-staging: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "-H", "Host: account-staging.harmonicbeacon.com", "http://127.0.0.1:3000/api/account/health/ready"]
       interval: 15s
