@@ -176,6 +176,7 @@
     :focus-visible { outline:2px solid #C9A24E; outline-offset:3px; }
     @media (max-width:1120px) { .links { display:none; } .toggle { display:block; } .inner { min-height:68px; padding-top:10px; padding-bottom:10px; } :host { height:68px; } :host([overlay]) { height:0; } }
     @media (max-width:430px) { .inner { padding-left:16px; padding-right:12px; } .wordmark { font-size:10.5px; letter-spacing:.14em; } .mark { width:27px; height:27px; } .language { min-width:54px; } }
+    @media (max-width:365px) { .wordmark { display:none; } }
     @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; transition:none !important; } }
     @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) { .nav { background:#16120D; } }
   `;
