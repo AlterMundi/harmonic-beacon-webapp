@@ -2,8 +2,8 @@
 set -eu
 . "$(dirname -- "$0")/lib.sh"
 
-environment=${1:?usage: health-smoke.sh staging|production /secure/deploy.env [expected-sha40] [worker-present]}
-ACCOUNT_DEPLOY_FILE=${2:?usage: health-smoke.sh staging|production /secure/deploy.env [expected-sha40] [worker-present]}
+environment=${1:?usage: health-smoke.sh staging|production /secure/deploy.env [expected-sha40] [worker-present] [nav-asset-present]}
+ACCOUNT_DEPLOY_FILE=${2:?usage: health-smoke.sh staging|production /secure/deploy.env [expected-sha40] [worker-present] [nav-asset-present]}
 export ACCOUNT_DEPLOY_FILE
 account_load_deploy_env "$ACCOUNT_DEPLOY_FILE"
 expected_sha=${3:-$BEACON_ACCOUNT_GIT_SHA}
@@ -14,10 +14,17 @@ if [ -z "$expected_worker_present" ]; then
   account_image_supports_mail_worker "$expected_sha" && expected_worker_present=1
 fi
 case "$expected_worker_present" in 0|1) ;; *) account_fail 'worker presence must be 0 or 1' ;; esac
+expected_nav_asset_present=${5:-}
+if [ -z "$expected_nav_asset_present" ]; then
+  expected_nav_asset_present=0
+  account_image_supports_navigation_asset "$expected_sha" && expected_nav_asset_present=1
+fi
+case "$expected_nav_asset_present" in 0|1) ;; *) account_fail 'navigation asset presence must be 0 or 1' ;; esac
 account_validate
 account_verify_running "$environment" "$expected_sha" "$expected_sha" "$expected_worker_present"
 command -v curl >/dev/null 2>&1 || account_fail 'curl is required for Account health smoke'
 command -v jq >/dev/null 2>&1 || account_fail 'jq is required for Account health smoke'
+command -v sha256sum >/dev/null 2>&1 || account_fail 'sha256sum is required for Account health smoke'
 
 port=13002
 origin=https://account.harmonicbeacon.com
@@ -31,6 +38,15 @@ curl --fail --silent --show-error --proto '=https' --connect-timeout 3 --max-tim
   "$origin/.well-known/openid-configuration" > "$tmp/discovery.json"
 curl --fail --silent --show-error --proto '=https' --connect-timeout 3 --max-time 8 \
   "$origin/.well-known/jwks.json" > "$tmp/jwks.json"
+if [ "$expected_nav_asset_present" -eq 1 ]; then
+  curl --fail --silent --show-error --proto '=https' --connect-timeout 3 --max-time 8 \
+    "$origin/assets/hb-global-nav.js?v=$expected_sha" > "$tmp/hb-global-nav.js"
+  container=$(account_container_name "$environment")
+  expected_nav_sha=$(docker exec "$container" sha256sum /app/public/assets/hb-global-nav.js | awk '{print $1}')
+  echo "$expected_nav_sha" | grep -Eq '^[0-9a-f]{64}$' || account_fail 'running navigation asset digest is invalid'
+  actual_nav_sha=$(sha256sum "$tmp/hb-global-nav.js" | awk '{print $1}')
+  test "$actual_nav_sha" = "$expected_nav_sha" || account_fail 'public navigation asset differs from running image'
+fi
 "$(dirname -- "$0")/verify-health-json.sh" \
   "$tmp" "$origin" "$expected_sha" "$BEACON_ACCOUNT_SCHEMA_VERSION"
 echo "Beacon Account $environment loopback and HTTPS discovery are healthy."

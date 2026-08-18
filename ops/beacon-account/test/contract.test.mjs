@@ -130,6 +130,38 @@ esac
   return result;
 }
 
+function navigationAssetCapabilityFixture(present) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'beacon-account-nav-capability-'));
+  const docker = path.join(directory, 'docker');
+  fs.writeFileSync(docker, `#!/bin/sh
+set -eu
+test "$1" = image
+test "$2" = inspect
+if [ "$MOCK_NAV_ASSET_PRESENT" -eq 1 ]; then
+  echo BEACON_ACCOUNT_NAV_ASSET=1
+else
+  echo NODE_ENV=production
+fi
+`);
+  fs.chmodSync(docker, 0o755);
+  const result = spawnSync('sh', ['-c', `
+    . "$ACCOUNT_LIFECYCLE_LIB"
+    actual=0
+    account_image_supports_navigation_asset "${'d'.repeat(40)}" && actual=1
+    test "$actual" = "$MOCK_NAV_ASSET_PRESENT"
+  `], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${directory}:${process.env.PATH}`,
+      ACCOUNT_LIFECYCLE_LIB,
+      MOCK_NAV_ASSET_PRESENT: present ? '1' : '0',
+    },
+  });
+  fs.rmSync(directory, { recursive: true, force: true });
+  return result;
+}
+
 const publicEd25519Key = {
   kid: 'staging-ed25519-key', kty: 'OKP', alg: 'EdDSA', crv: 'Ed25519', x: 'A'.repeat(43),
 };
@@ -254,7 +286,7 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
   assert.match(start, /account_compose build account-production[\s\S]*account_validate/);
   assert.match(start, /account_compose up -d "account-mail-worker-\$environment" "account-\$environment"/);
-  assert.match(start, /health-smoke\.sh"[\s\\]+"\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$BEACON_ACCOUNT_GIT_SHA" 1/);
+  assert.match(start, /health-smoke\.sh"[\s\\]+"\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$BEACON_ACCOUNT_GIT_SHA" 1 1/);
   assert.ok(start.indexOf('health-smoke.sh') < start.lastIndexOf('cutover_started=0'));
   assert.match(start, /account_check_production_migrations before/);
   assert.match(start, /account_check_production_migrations after/);
@@ -271,9 +303,12 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.doesNotMatch(lib, /account_wait_healthy\(\) \{\s+container=\$1/);
   assert.match(lib, /account_image_supports_mail_worker/);
   assert.match(lib, /scripts\/process-account-mail-outbox\.ts/);
+  assert.match(lib, /account_image_supports_navigation_asset/);
   assert.match(rollback, /previous_worker_present=0/);
   assert.match(rollback, /account_image_supports_mail_worker/);
-  assert.match(rollback, /health-smoke\.sh"[\s\\]+"\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$previous_sha" "\$previous_worker_present"/);
+  assert.match(rollback, /previous_nav_asset_present=0/);
+  assert.match(rollback, /account_image_supports_navigation_asset/);
+  assert.match(rollback, /health-smoke\.sh"[\s\\]+"\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$previous_sha" "\$previous_worker_present"[\s\\]+"\$previous_nav_asset_present"/);
   assert.doesNotMatch(rollback, /account_restore_previous_runtime "\$environment" "\$previous_sha" 1/);
   assert.match(start, /account_require_internal_mail_network "\$environment"/);
   assert.match(lib, /docker network inspect "\$network"/);
@@ -288,13 +323,17 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(lib, /database was not downgraded|account_restore_previous_runtime/);
   assert.match(smoke, /verify-health-json\.sh/);
   assert.match(smoke, /--connect-timeout 3 --max-time 8/);
-  assert.equal((smoke.match(/--proto '=https'/g) ?? []).length, 2);
+  assert.match(smoke, /\/assets\/hb-global-nav\.js\?v=\$expected_sha/);
+  assert.match(smoke, /docker exec "\$container" sha256sum \/app\/public\/assets\/hb-global-nav\.js/);
+  assert.match(smoke, /public navigation asset differs from running image/);
+  assert.equal((smoke.match(/--proto '=https'/g) ?? []).length, 3);
   assert.doesNotMatch(smoke, /\bnode\b/);
   const migrationGuard = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/check-migrations.mjs'), 'utf8');
   assert.match(migrationGuard, /pending migrations differ from the reviewed Account-only list/);
   assert.match(migrationGuard, /unresolved migration/);
   assert.doesNotMatch(`${start}\n${lib}`, /migrate reset|migrate down|docker compose down|volume rm|prune/);
   const dockerfile = fs.readFileSync(path.resolve(ROOT, '../../Dockerfile'), 'utf8');
+  assert.match(dockerfile, /BEACON_ACCOUNT_NAV_ASSET=1/);
   assert.match(dockerfile, /ops\/beacon-account\/validate\.mjs/);
   for (const fixture of [
     'account.production.env.example',
@@ -318,6 +357,11 @@ test('runtime verification preserves the pre-worker rollback boundary', () => {
     verifyRunningFixture({ expectedWorkerPresent: 1, actualWorkerPresent: 0 }).status,
     0,
   );
+});
+
+test('navigation asset smoke preserves the pre-asset rollback boundary', () => {
+  assert.equal(navigationAssetCapabilityFixture(false).status, 0);
+  assert.equal(navigationAssetCapabilityFixture(true).status, 0);
 });
 
 test('health verifier accepts the exact public Ed25519 contract without optional use', () => {
@@ -365,7 +409,12 @@ test('nginx keeps Account hosts isolated and never logs token-bearing routes', (
     const nginx = fs.readFileSync(path.join(ROOT, 'nginx', name), 'utf8');
     assert.match(nginx, new RegExp(`proxy_pass http://127\\.0\\.0\\.1:${port}`));
     assert.match(nginx, new RegExp(`limit_req zone=${zone}`));
-    for (const route of ['/verify-email', '/reset-password', '/nav-slot']) {
+    for (const route of [
+      '/verify-email',
+      '/reset-password',
+      '/nav-slot',
+      '/assets/hb-global-nav.js',
+    ]) {
       const start = nginx.indexOf(`location = ${route} {`);
       assert.ok(start >= 0, `${route} must be exact`);
       assert.match(nginx.slice(start, nginx.indexOf('\n    }', start)), /access_log off;/);
@@ -374,6 +423,7 @@ test('nginx keeps Account hosts isolated and never logs token-bearing routes', (
     }
     const redirectServer = nginx.slice(0, nginx.indexOf('server {', nginx.indexOf('server {') + 1));
     assert.match(redirectServer, /access_log off;/);
+    assert.doesNotMatch(nginx, /location \^~ \/assets\//);
     assert.match(nginx, /location \/ \{ return 404; \}/);
     assert.doesNotMatch(nginx, /proxy_pass http:\/\/127\.0\.0\.1:(?!13002|13003)/);
     assert.doesNotMatch(nginx, /livekit|listener\/checkout|webhooks|events/);

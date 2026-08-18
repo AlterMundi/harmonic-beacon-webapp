@@ -241,6 +241,13 @@ account_image_supports_mail_worker() {
     >/dev/null 2>&1
 }
 
+account_image_supports_navigation_asset() {
+  sha=$1
+  docker image inspect "harmonic-beacon/account:$sha" \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' |
+    grep -Fxq 'BEACON_ACCOUNT_NAV_ASSET=1'
+}
+
 account_restore_previous_runtime() {
   environment=$1
   previous_sha=$2
