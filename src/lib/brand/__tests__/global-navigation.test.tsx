@@ -57,7 +57,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('ae3608e3ec603b424efb729373dddd8d3a7f6e93');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('10de81fd576aa9d65ec8c3861cc38903403a63f0');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
@@ -66,9 +66,17 @@ describe('canonical Harmonic Beacon global navigation', () => {
             .toBe(GLOBAL_NAVIGATION_SHA256);
         const source = bytes.toString('utf8');
         expect(source).toContain('class="account-trigger"');
+        expect(source).toContain('beaconMarkPath()');
+        expect(source).toContain('Math.cos(angle * 3)');
+        expect(source).toContain('Math.sin(angle * 2)');
+        expect(source).toContain('index <= 280');
+        expect(source).toContain('<svg class="mark"');
+        expect(source).toContain('<circle cx="12" cy="8" r="3.25">');
         expect(source).toContain('aria-haspopup="menu"');
         expect(source).toContain('class="account-menu"');
         expect(source).not.toContain('class="account-link"');
+        expect(source).not.toContain('<iframe');
+        expect(source).not.toContain('/favicon.svg');
     });
 
     it('renders the same destinations in Spanish', () => {
@@ -103,6 +111,10 @@ describe('canonical Harmonic Beacon global navigation', () => {
         const navigation = document.querySelector('hb-global-nav');
         const shadow = navigation?.shadowRoot;
         expect(shadow).toBeTruthy();
+        expect(shadow?.querySelector('iframe')).toBeNull();
+        const markPath = shadow?.querySelector<SVGPathElement>('.mark path')?.getAttribute('d');
+        expect(markPath).toMatch(/^M192\.00 100\.00 L191\.79 104\.13/);
+        expect(markPath?.match(/[ML]/g)).toHaveLength(281);
         expect(shadow?.querySelector('.links')?.textContent).not.toContain('Account');
 
         const trigger = shadow?.querySelector<HTMLButtonElement>('.account-trigger');
