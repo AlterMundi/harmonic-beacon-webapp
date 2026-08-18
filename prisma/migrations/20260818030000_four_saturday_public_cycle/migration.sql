@@ -1,10 +1,16 @@
 -- Four free, synchronous Spanish-language gatherings. These are new rooms;
 -- historical events are never repurposed.
 WITH facilitator_source AS (
-    SELECT "facilitator_id"
-    FROM "scheduled_sessions"
-    WHERE "is_test" = false
-    ORDER BY "scheduled_at" DESC
+    SELECT "id" AS "facilitator_id"
+    FROM "users"
+    WHERE "disabled_at" IS NULL
+      AND "role" IN (
+          'FACILITATOR'::"StaffRole",
+          'FACILITATOR_OP'::"StaffRole"
+      )
+    ORDER BY
+        CASE WHEN "role" = 'FACILITATOR'::"StaffRole" THEN 0 ELSE 1 END,
+        "created_at" ASC
     LIMIT 1
 ), cycle_sessions (
     "id", "title", "room_name", "scheduled_at"

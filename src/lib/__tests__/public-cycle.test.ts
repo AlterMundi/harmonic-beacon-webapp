@@ -28,6 +28,8 @@ describe('public four-Saturday cycle', () => {
             expect(migration).toContain(`'${date} 14:00:00'::timestamp`);
         }
         expect(migration).toContain("'SCHEDULED'::\"ScheduledSessionStatus\"");
+        expect(migration).toContain('FROM "users"');
+        expect(migration).toContain("'FACILITATOR'::\"StaffRole\"");
         expect(migration).toContain('target_count <> 4');
         expect(migration).not.toMatch(/UPDATE\s+"scheduled_sessions"/i);
     });
