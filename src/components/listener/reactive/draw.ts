@@ -122,6 +122,32 @@ function smoothstep(value: number): number {
     return bounded * bounded * (3 - 2 * bounded);
 }
 
+export function innerRibbonOpacityStops(
+    bodyAlpha: number,
+    endAlpha: number,
+): ReadonlyArray<readonly [offset: number, alpha: number]> {
+    const body = Math.max(0, Math.min(1, bodyAlpha));
+    const end = Math.max(0, Math.min(1, endAlpha));
+    return [
+        [0, 0],
+        [0.16, body * 0.12],
+        [0.36, body * 0.72],
+        [0.52, body],
+        [1, end],
+    ];
+}
+
+function applyInnerRibbonOpacityRamp(
+    gradient: CanvasGradient,
+    color: readonly number[],
+    bodyAlpha: number,
+    endAlpha: number,
+) {
+    for (const [offset, alpha] of innerRibbonOpacityStops(bodyAlpha, endAlpha)) {
+        gradient.addColorStop(offset, rgba(color, alpha));
+    }
+}
+
 /**
  * A small deterministic cloth model: the inner edge is pinned and two slow
  * waves travel toward the free edge. Absolute energy and measured variation
@@ -433,8 +459,20 @@ function drawRadialRibbon(
             ghost.angle + ghost.bend,
         );
         const ghostWidth = (1.4 + ghost.weight * 2.6) * ribbonScale;
-        context.fillStyle = rgba(color, ghost.opacity * filament.visibility);
         if (innerDriven) {
+            const ghostGradient = context.createLinearGradient(
+                ghostStart[0],
+                ghostStart[1],
+                ghostEnd[0],
+                ghostEnd[1],
+            );
+            applyInnerRibbonOpacityRamp(
+                ghostGradient,
+                color,
+                ghost.opacity * filament.visibility,
+                ghost.opacity * 0.62 * filament.visibility,
+            );
+            context.fillStyle = ghostGradient;
             const ghostAge = filament.impulseAgeSeconds === null
                 ? null
                 : Math.max(0, filament.impulseAgeSeconds - (
@@ -455,6 +493,7 @@ function drawRadialRibbon(
                 ghost.wiggle,
             );
         } else {
+            context.fillStyle = rgba(color, ghost.opacity * filament.visibility);
             fillClothRibbon(
                 context,
                 ghostStart,
@@ -473,19 +512,13 @@ function drawRadialRibbon(
     const width = (1.8 + filament.weight * 3.2) * ribbonScale;
     const leafGradient = context.createLinearGradient(start[0], start[1], end[0], end[1]);
     if (innerDriven) {
-        leafGradient.addColorStop(0, rgba(
+        applyInnerRibbonOpacityRamp(
+            leafGradient,
             color,
-            (0.035 + filament.opacity * 0.78 + filament.activation * 0.18)
+            (0.025 + filament.opacity * 0.68 + filament.activation * 0.12)
                 * filament.visibility,
-        ));
-        leafGradient.addColorStop(0.42, rgba(
-            color,
-            (0.025 + filament.opacity * 0.68) * filament.visibility,
-        ));
-        leafGradient.addColorStop(1, rgba(
-            color,
             (0.012 + filament.opacity * 0.44) * filament.visibility,
-        ));
+        );
     } else {
         leafGradient.addColorStop(0, rgba(
             color,

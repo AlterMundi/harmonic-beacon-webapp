@@ -7,6 +7,7 @@ import {
     buildInnerDrivenRibbonPoints,
     centerFieldStrokeWidth,
     drawMinimalReactivePulse,
+    innerRibbonOpacityStops,
     innerKelpRotationAt,
     scaledCenterFieldRadius,
 } from '../draw';
@@ -113,6 +114,16 @@ describe('inner-anchor kelp', () => {
         expect(scaledCenterFieldRadius(200, { centerFieldScalePercent: 100 })).toBe(200);
         expect(centerFieldStrokeWidth(1, { centerRibbonWidth: 0.5 })).toBe(2.25);
         expect(centerFieldStrokeWidth(1, { centerRibbonWidth: 2 })).toBe(9);
+    });
+
+    it('fades every kelp ribbon completely out at its inner anchor', () => {
+        const stops = innerRibbonOpacityStops(0.8, 0.4);
+
+        expect(stops[0]).toEqual([0, 0]);
+        expect(stops[1][1]).toBeGreaterThan(0);
+        expect(stops[2][1]).toBeGreaterThan(stops[1][1]);
+        expect(stops[3]).toEqual([0.52, 0.8]);
+        expect(stops.at(-1)).toEqual([1, 0.4]);
     });
 });
 
