@@ -16,12 +16,6 @@ import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entr
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
 import { listenerAccountRPConfig } from '@/lib/listener/account-rp';
 import { serializeEarlyBirdQuotaSnapshot } from '@/lib/early-birds/quota';
-import { listenerCheckoutAvailability } from '@/lib/early-birds/checkout';
-import {
-    createListenerLiveWorkbenchCsrfToken,
-    listenerLiveWorkbenchConfig,
-} from '@/lib/early-birds/live-workbench';
-import { listenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 import {
     isCanonicalListenerHost,
     isListenerStagingHost,
@@ -55,10 +49,6 @@ export default async function EarlyBirdsPage({
     // Public playback uses the inert CSS field. Remote analysis remains
     // available only inside the explicitly enabled staging laboratory.
     const reactiveVisualizationAvailable = reactiveFieldLabAvailable;
-    const checkoutEnvironment = canonicalListenerHost ? 'live' : 'staging';
-    const checkoutAvailability = (listenerStagingHost || canonicalListenerHost)
-        ? listenerCheckoutAvailability(process.env, checkoutEnvironment)
-        : { paypal: false, mercadoPago: false };
     const params = await searchParams;
     const paypalReturn = params.paypal;
     const checkoutReturn = params.checkout;
@@ -80,7 +70,6 @@ export default async function EarlyBirdsPage({
                 publicAccess
                 reactiveVisualizationAvailable={reactiveVisualizationAvailable}
                 reactiveFieldLabAvailable={reactiveFieldLabAvailable}
-                membership={listenerMembershipPresentation(null)}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
                     en: configuredEarlyBirdDropIn('en'),
@@ -93,19 +82,6 @@ export default async function EarlyBirdsPage({
         .then((session) => ({ session, unavailable: false as const }))
         .catch(() => ({ session: null, unavailable: true as const }));
     const session = sessionResolution.session;
-    const liveWorkbenchConfig = listenerStagingHost
-        ? listenerLiveWorkbenchConfig()
-        : null;
-    const liveWorkbenchToken = session && liveWorkbenchConfig
-        ? createListenerLiveWorkbenchCsrfToken({
-            config: liveWorkbenchConfig,
-            accountId: session.user.id,
-            sessionId: session.session.id,
-        })
-        : null;
-    const liveWorkbench = liveWorkbenchConfig && liveWorkbenchToken
-        ? { provider: liveWorkbenchConfig.provider, csrfToken: liveWorkbenchToken }
-        : null;
     const accessResolution = session
         ? await getEarlyBirdListeningAccess(session.user.id)
             .then((access) => ({ access, unavailable: false as const }))
@@ -121,12 +97,8 @@ export default async function EarlyBirdsPage({
             <EarlyBirdHome
                 reactiveVisualizationAvailable={reactiveVisualizationAvailable}
                 reactiveFieldLabAvailable={reactiveFieldLabAvailable}
-                membership={listenerMembershipPresentation(access.membership.projection)}
                 accessKind={access.kind === 'free-quota' ? 'free-quota' : 'membership'}
                 quota={access.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
-                checkoutAvailability={checkoutAvailability}
-                checkoutEnvironment={checkoutEnvironment}
-                liveWorkbench={liveWorkbench}
                 serverNow={access.serverNow.toISOString()}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
@@ -144,7 +116,6 @@ export default async function EarlyBirdsPage({
         && !accountIdentityAvailable
         && !syntheticTeamEntryAvailable
     );
-
     return (
         <EarlyBirdLanding
             signedIn={Boolean(session)}
@@ -154,10 +125,6 @@ export default async function EarlyBirdsPage({
             authError={params.authError === '1'}
             syntheticTeamEntryAvailable={syntheticTeamEntryAvailable}
             quota={access?.quota ? serializeEarlyBirdQuotaSnapshot(access.quota) : null}
-            checkoutAvailability={checkoutAvailability}
-            checkoutEnvironment={checkoutEnvironment}
-            liveWorkbench={liveWorkbench}
-            membership={listenerMembershipPresentation(access?.membership.projection ?? null)}
             serverNow={access?.serverNow.toISOString() ?? new Date().toISOString()}
         />
     );

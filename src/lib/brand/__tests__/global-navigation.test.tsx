@@ -98,6 +98,10 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(within(slot as HTMLElement).getByText('Nico')).toBeInTheDocument();
         expect(within(slot as HTMLElement).getByRole('menuitem', { name: 'Sign out' }))
             .toBeInTheDocument();
+        expect(within(view.container).getAllByRole('menuitem', { name: 'Membership' }))
+            .toHaveLength(1);
+        expect(within(view.container).getByRole('menuitem', { name: 'Membership' }))
+            .toHaveAttribute('href', '/listener/membership');
     });
 
     it('renders the same destinations in Spanish', () => {

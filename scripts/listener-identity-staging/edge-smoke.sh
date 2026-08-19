@@ -50,6 +50,16 @@ for asset_path in /assets/other.js /assets/hb-global-nav.js/extra; do
   test "$code" = 404 || listener_staging_fail "unexpected asset path escaped deny-default: $asset_path"
 done
 
+membership_code=$(curl_edge --max-time 5 --dump-header "$headers" --output "$body" \
+  --write-out '%{http_code}' "$origin/listener/membership")
+test "$membership_code" = 307 || listener_staging_fail 'signed-out membership page did not return its bounded Listener redirect'
+grep -Eiq '^location: /listener' "$headers" || listener_staging_fail 'membership sign-in redirect escaped Listener'
+grep -Eiq '^cache-control:.*no-store' "$headers" || listener_staging_fail 'membership page lost no-store'
+grep -Eiq '^referrer-policy: no-referrer' "$headers" || listener_staging_fail 'membership page lost no-referrer'
+membership_suffix_code=$(curl_edge --max-time 5 --output /dev/null --write-out '%{http_code}' \
+  "$origin/listener/membership/extra")
+test "$membership_suffix_code" = 404 || listener_staging_fail 'membership page suffix escaped the exact route boundary'
+
 login_code=$(curl_edge --max-time 5 --dump-header "$headers" --output "$body" \
   --write-out '%{http_code}' "$origin/api/account/login")
 if test "$account_enabled" = 1; then

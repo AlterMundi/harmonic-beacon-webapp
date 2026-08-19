@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
-import { earlyBirdCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
-import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
+import { earlyBirdCopy } from '@/lib/early-birds/copy';
 import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 import {
     consumeListenerOAuthAttempt,
@@ -14,10 +13,6 @@ import {
 
 import BeaconField from './BeaconField';
 import FreeQuotaStatus from './FreeQuotaStatus';
-import FoundingListenerCheckout from './FoundingListenerCheckout';
-import FoundingListenerLiveWorkbench, {
-    type ListenerLiveWorkbenchClientConfig,
-} from './FoundingListenerLiveWorkbench';
 import SyntheticTeamEntryForm from './SyntheticTeamEntryForm';
 import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 
@@ -29,11 +24,7 @@ type Props = {
     authError: boolean;
     syntheticTeamEntryAvailable: boolean;
     quota?: SerializedEarlyBirdQuotaSnapshot | null;
-    membership: ListenerMembershipPresentation;
     serverNow: string;
-    checkoutAvailability?: { paypal: boolean; mercadoPago: boolean };
-    checkoutEnvironment?: 'staging' | 'live';
-    liveWorkbench?: ListenerLiveWorkbenchClientConfig | null;
 };
 
 export default function EarlyBirdLanding(props: Props) {
@@ -42,7 +33,6 @@ export default function EarlyBirdLanding(props: Props) {
     const [busy, setBusy] = useState<'recovery' | null>(null);
     const [error, setError] = useState(false);
     const recoveryStarted = useRef(false);
-    const membership = listenerMembershipPresentationCopy(copy, props.membership);
     const callbackURL = props.invitationAvailable
         ? LISTENER_NAMESPACE.canonical.redeem
         : LISTENER_NAMESPACE.canonical.home;
@@ -142,26 +132,16 @@ export default function EarlyBirdLanding(props: Props) {
                                     </a>
                                 ) : (
                                     <>
-                                        {membership && props.membership.state !== 'active' && (
-                                            <div className="listener-membership-status" role="status">
-                                                <strong>{membership.title}</strong>
-                                                {membership.detail && <p>{membership.detail}</p>}
-                                            </div>
-                                        )}
                                         <FreeQuotaStatus
                                             snapshot={props.quota}
                                             serverNow={props.serverNow}
-                                            showMembershipUnavailable={
-                                                !props.checkoutAvailability?.paypal
-                                                && !props.checkoutAvailability?.mercadoPago
-                                                && !props.liveWorkbench
-                                            }
                                         />
-                                        <FoundingListenerCheckout available={props.checkoutAvailability ?? {
-                                            paypal: false,
-                                            mercadoPago: false,
-                                        }} environment={props.checkoutEnvironment ?? 'staging'} />
-                                        <FoundingListenerLiveWorkbench config={props.liveWorkbench ?? null} />
+                                        <a
+                                            href={LISTENER_NAMESPACE.canonical.membership}
+                                            className="listener-button listener-button--secondary inline-flex w-full"
+                                        >
+                                            {copy.membershipManageAction}
+                                        </a>
                                     </>
                                 )}
                                 <button

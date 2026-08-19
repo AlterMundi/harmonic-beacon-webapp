@@ -25,6 +25,10 @@ describe('Listener canonical navigation Account menu', () => {
             'href',
             'https://account-staging.harmonicbeacon.com/account?lang=en',
         );
+        expect(screen.getByRole('menuitem', { name: 'Membership' })).toHaveAttribute(
+            'href',
+            '/listener/membership',
+        );
         await userEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }));
         expect(recover).toHaveBeenCalledOnce();
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -39,6 +43,10 @@ describe('Listener canonical navigation Account menu', () => {
         />);
 
         await userEvent.click(screen.getByRole('menuitem', { name: 'Cerrar sesión' }));
+        expect(screen.getByRole('menuitem', { name: 'Membresía' })).toHaveAttribute(
+            'href',
+            '/listener/membership',
+        );
         expect(screen.getByRole('alert')).toHaveTextContent(
             'No pudimos preparar un nuevo ingreso.',
         );

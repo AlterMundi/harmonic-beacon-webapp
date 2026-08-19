@@ -31,222 +31,49 @@ vi.mock('../ListenerPlayer', () => ({
 vi.mock('next/navigation', () => ({
     useRouter: () => ({ refresh: vi.fn() }),
 }));
+
 import EarlyBirdHome from '../EarlyBirdHome';
 
-afterEach(() => {
-    cleanup();
-});
+const quota = {
+    policy: 'personal-7-day-v1' as const,
+    status: 'available' as const,
+    cycleStartedAt: '2026-08-07T15:00:00.000Z',
+    cycleEndsAt: '2026-08-14T15:00:00.000Z',
+    baseAllowanceMs: 10_800_000,
+    bonusAllowanceMs: 0,
+    consumedMs: 0,
+    remainingMs: 10_800_000,
+    activelyConsuming: false,
+    exhaustsAt: null,
+    nextCycleAt: '2026-08-14T15:00:00.000Z',
+};
+
+afterEach(() => cleanup());
 
 describe('EarlyBird Listener home access chrome', () => {
-    it('keeps identity actions in the global navbar and presents membership as page content', () => {
-        render(
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'invitation', state: 'active' }}
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>,
-        );
-
-        expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
-        expect(document.querySelector('details.listener-account')).toBeNull();
-        expect(screen.getByText('Invitation access')).toBeInTheDocument();
-        expect(screen.getByText('Invitation access').closest('.listener-home-membership-status'))
-            .toBeTruthy();
-    });
-
-    it('hydrates the noninteractive membership status without disclosure state', async () => {
-        const tree = (
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'invitation', state: 'active' }}
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>
-        );
-        const container = document.createElement('div');
-        container.innerHTML = renderToString(tree);
-        document.body.append(container);
-        expect(container.querySelector('details.listener-account')).toBeNull();
-        expect(container.querySelector('.listener-home-membership-status')).toBeTruthy();
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-
-        let root!: ReturnType<typeof hydrateRoot>;
-        await act(async () => {
-            root = hydrateRoot(container, tree);
-        });
-
-        expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/hydration|didn't match/i);
-        await act(async () => root.unmount());
-        consoleError.mockRestore();
-        container.remove();
-    });
-
-    it('leaves the global brand link to the shared layout without exposing the Reactive Lab', () => {
+    it('keeps membership, payment, provider and identity controls out of the player', () => {
         const { container } = render(
             <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'invitation', state: 'active' }}
-                    dropIns={{ es: null, en: null }}
-                />
+                <EarlyBirdHome dropIns={{ es: null, en: null }} />
             </LocaleProvider>,
         );
 
-        expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).not.toBeInTheDocument();
-        expect(container.querySelector('.listener-altar'))
-            .toHaveAttribute('aria-labelledby', 'listener-heading');
-        expect(container.querySelector('.listener-altar')).toContainElement(
-            screen.getByLabelText('listener-player'),
-        );
-        expect(container.querySelector('.listener-altar')).not.toContainElement(
-            screen.getByTestId('listener-static-field'),
-        );
-        expect(screen.getByTestId('listener-static-field').parentElement)
-            .toHaveClass('listener-shell__frame--home');
-        expect(container.textContent).not.toMatch(/Presence|here now|Your listening space|Listening Altar/i);
-        expect(screen.getByLabelText('listener-player'))
-            .toHaveAttribute('data-reactive-initially-enabled', 'false');
-    });
-
-    it('labels a canonically active paid membership as Founding Listener', () => {
-        render(
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'founder', provider: 'paypal', state: 'active' }}
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>,
-        );
-
-        expect(screen.getByText('Founding Listener · USD 5/month')).toBeInTheDocument();
-        expect(screen.queryByText('Preview access')).not.toBeInTheDocument();
-    });
-
-    it('does not duplicate the navbar user control for a membership-backed Listener', () => {
-        render(
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'invitation', state: 'active' }}
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>,
-        );
-
-        expect(screen.queryByLabelText('Account')).not.toBeInTheDocument();
-        expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
-        expect(screen.getByText('Invitation access')).toBeInTheDocument();
-        expect(screen.queryByText('FREE')).not.toBeInTheDocument();
-    });
-
-    it('does not imply an account or expose sign-out in public mode', () => {
-        render(
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    publicAccess
-                    displayName=""
-                    membership={{ kind: 'none', state: 'none' }}
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>,
-        );
-
-        expect(screen.queryByLabelText('Account')).not.toBeInTheDocument();
-        expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
-        expect(screen.queryByRole('group', { name: /language|idioma/i })).not.toBeInTheDocument();
         expect(screen.getByLabelText('listener-player')).toBeInTheDocument();
-        expect(screen.getByTestId('listener-static-field')).toBeInTheDocument();
+        expect(container.querySelector('.listener-home-membership-status')).toBeNull();
+        expect(container.querySelector('.listener-membership-actions')).toBeNull();
+        expect(container.querySelector('.listener-checkout')).toBeNull();
+        expect(screen.queryByText(/Founding Listener|PayPal|Mercado Pago|USD 5/i)).toBeNull();
+        expect(screen.queryByRole('button', { name: /cancel membership/i })).toBeNull();
+        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
     });
 
-    it('passes the reactive experiment capability only to the isolated player', () => {
-        const view = render(
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'invitation', state: 'active' }}
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>,
-        );
-
-        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'false');
-        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-initially-enabled', 'false');
-        view.rerender(
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    reactiveVisualizationAvailable
-                    reactiveFieldLabAvailable
-                    displayName="Nico"
-                    membership={{ kind: 'invitation', state: 'active' }}
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>,
-        );
-
-        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'true');
-        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-initially-enabled', 'false');
-        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-lab', 'true');
-    });
-
-    it('presents a normalized Founder status and provider without raw membership source', () => {
+    it('keeps only the compact Free listening allowance below the player', () => {
         render(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'founder', provider: 'mercado-pago', state: 'ending' }}
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>,
-        );
-
-        expect(screen.getByText('Founding Listener · USD 5/month · active through period end')).toBeInTheDocument();
-        expect(screen.getByText('Mercado Pago')).toBeInTheDocument();
-        expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
-    });
-
-    it('shows a terminal paid status while keeping the account on Free access', () => {
-        render(
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'paid-status', provider: 'paypal', state: 'refunded' }}
-                    accessKind="free-quota"
-                    dropIns={{ es: null, en: null }}
-                />
-            </LocaleProvider>,
-        );
-
-        expect(screen.getByText('The payment was refunded and Founder access has ended.')).toBeInTheDocument();
-        expect(screen.getByText('You can continue with the Free listening available to your account.')).toBeInTheDocument();
-        expect(screen.queryByText('Founder access')).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Cancel membership' })).not.toBeInTheDocument();
-    });
-
-    it('places Free allowance and membership action below the listening surface', () => {
-        render(
-            <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'none', state: 'none' }}
                     accessKind="free-quota"
                     serverNow="2026-08-07T15:00:00.000Z"
-                    quota={{
-                        policy: 'personal-7-day-v1',
-                        status: 'available',
-                        cycleStartedAt: '2026-08-07T15:00:00.000Z',
-                        cycleEndsAt: '2026-08-14T15:00:00.000Z',
-                        baseAllowanceMs: 10_800_000,
-                        bonusAllowanceMs: 0,
-                        consumedMs: 0,
-                        remainingMs: 10_800_000,
-                        activelyConsuming: false,
-                        exhaustsAt: null,
-                        nextCycleAt: '2026-08-14T15:00:00.000Z',
-                    }}
+                    quota={quota}
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
@@ -254,76 +81,78 @@ describe('EarlyBird Listener home access chrome', () => {
 
         const footer = screen.getByText('You have 3h left this week').closest('footer');
         expect(footer).toHaveClass('listener-listening-status');
-        expect(footer).toHaveTextContent('Membership is not available for purchase right now.');
-        expect(footer?.querySelector('a')).toBeNull();
-        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+        expect(footer?.querySelector('.listener-quota--compact')).not.toBeNull();
+        expect(footer?.querySelector('a, button, details')).toBeNull();
+        expect(footer).not.toHaveTextContent('Membership is not available');
+    });
+
+    it('hydrates without adding a membership disclosure to the listening surface', async () => {
+        const tree = (
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome dropIns={{ es: null, en: null }} />
+            </LocaleProvider>
+        );
+        const container = document.createElement('div');
+        container.innerHTML = renderToString(tree);
+        document.body.append(container);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        let root!: ReturnType<typeof hydrateRoot>;
+        await act(async () => { root = hydrateRoot(container, tree); });
+
+        expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/hydration|didn't match/i);
+        expect(container.querySelector('.listener-checkout, .listener-membership-actions')).toBeNull();
+        await act(async () => root.unmount());
+        consoleError.mockRestore();
+        container.remove();
+    });
+
+    it('leaves the global brand and user menu to the shared layout', () => {
+        const { container } = render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+
+        expect(screen.queryByRole('link', { name: 'Harmonic Beacon' })).toBeNull();
+        expect(screen.queryByText('Sign out')).toBeNull();
         expect(screen.queryByLabelText('Account')).toBeNull();
-        expect(document.querySelector('details.listener-account')).toBeNull();
+        expect(container.querySelector('.listener-altar')).toContainElement(
+            screen.getByLabelText('listener-player'),
+        );
     });
 
-    it('replaces the mail contact fallback with the private checkout action', () => {
+    it('does not imply an account in public mode', () => {
         render(
             <LocaleProvider initialLocale="en">
-                <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'none', state: 'none' }}
-                    accessKind="free-quota"
-                    serverNow="2026-08-07T15:00:00.000Z"
-                    quota={{
-                        policy: 'personal-7-day-v1',
-                        status: 'available',
-                        cycleStartedAt: '2026-08-07T15:00:00.000Z',
-                        cycleEndsAt: '2026-08-14T15:00:00.000Z',
-                        baseAllowanceMs: 10_800_000,
-                        bonusAllowanceMs: 0,
-                        consumedMs: 0,
-                        remainingMs: 10_800_000,
-                        activelyConsuming: false,
-                        exhaustsAt: null,
-                        nextCycleAt: '2026-08-14T15:00:00.000Z',
-                    }}
-                    dropIns={{ es: null, en: null }}
-                    liveWorkbench={{ provider: 'mercado_pago', csrfToken: 'csrf-proof' }}
-                />
+                <EarlyBirdHome publicAccess dropIns={{ es: null, en: null }} />
             </LocaleProvider>,
         );
 
-        expect(screen.queryByRole('link', { name: 'Become a member for full access' })).toBeNull();
-        expect(document.querySelector('details[data-listener-live-workbench="private"]'))
-            .toHaveTextContent('Become a member for full access');
-        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+        expect(screen.getByText('Open access')).toBeInTheDocument();
+        expect(screen.queryByText('Sign out')).toBeNull();
+        expect(screen.getByLabelText('listener-player')).toBeInTheDocument();
     });
 
-    it('keeps an enabled provider actionable without showing the unavailable state', () => {
-        render(
+    it('passes the reactive experiment capability only to the isolated player', () => {
+        const view = render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome dropIns={{ es: null, en: null }} />
+            </LocaleProvider>,
+        );
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'false');
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-initially-enabled', 'false');
+
+        view.rerender(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
-                    displayName="Nico"
-                    membership={{ kind: 'none', state: 'none' }}
-                    accessKind="free-quota"
-                    serverNow="2026-08-07T15:00:00.000Z"
-                    quota={{
-                        policy: 'personal-7-day-v1',
-                        status: 'available',
-                        cycleStartedAt: '2026-08-07T15:00:00.000Z',
-                        cycleEndsAt: '2026-08-14T15:00:00.000Z',
-                        baseAllowanceMs: 10_800_000,
-                        bonusAllowanceMs: 0,
-                        consumedMs: 0,
-                        remainingMs: 10_800_000,
-                        activelyConsuming: false,
-                        exhaustsAt: null,
-                        nextCycleAt: '2026-08-14T15:00:00.000Z',
-                    }}
-                    checkoutAvailability={{ paypal: true, mercadoPago: false }}
+                    reactiveVisualizationAvailable
+                    reactiveFieldLabAvailable
                     dropIns={{ es: null, en: null }}
                 />
             </LocaleProvider>,
         );
-
-        expect(screen.getByText('Become a member for full access')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeInTheDocument();
-        expect(screen.queryByText('Membership is not available for purchase right now.')).toBeNull();
-        expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-available', 'true');
+        expect(screen.getByLabelText('listener-player')).toHaveAttribute('data-reactive-lab', 'true');
     });
 });

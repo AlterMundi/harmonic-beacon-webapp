@@ -10,6 +10,7 @@ describe('Listener namespace contract', () => {
         expect(LISTENER_NAMESPACE.canonical).toEqual({
             home: '/listener',
             redeem: '/listener/redeem',
+            membership: '/listener/membership',
             authError: '/listener?authError=1',
             api: {
                 accessState: '/api/listener/access-state',

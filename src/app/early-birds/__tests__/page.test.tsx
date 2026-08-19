@@ -87,9 +87,9 @@ describe('EarlyBird Listener page', () => {
         expect(result.type).toBe(EarlyBirdHome);
         expect(result.props).toMatchObject({
             publicAccess: true,
-            membership: { kind: 'none', state: 'none' },
             dropIns: { es: null, en: '/api/early-birds/drop-ins/en' },
         });
+        expect(result.props).not.toHaveProperty('membership');
         expect(mocks.currentEarlyBirdSession).not.toHaveBeenCalled();
         expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
     });
@@ -150,14 +150,15 @@ describe('EarlyBird Listener page', () => {
 
         expect(result.type).toBe(EarlyBirdHome);
         expect(result.props).toMatchObject({
-            membership: { kind: 'none', state: 'none' },
             accessKind: 'free-quota',
             quota: expect.objectContaining({ remainingMs: 10_800_000 }),
             serverNow: '2026-08-08T15:00:00.000Z',
         });
+        expect(result.props).not.toHaveProperty('membership');
+        expect(result.props).not.toHaveProperty('checkoutAvailability');
     });
 
-    it('exposes one server-selected Live workbench only to its staging allowlist account', async () => {
+    it('keeps checkout and private workbench material out of a denied landing', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
         vi.stubEnv('BEACON_LISTENER_STAGING_LIVE_WORKBENCH_ENABLED', '1');
@@ -174,27 +175,21 @@ describe('EarlyBird Listener page', () => {
             session: { id: 'session-1', expiresAt: new Date('2026-09-01T00:00:00Z') },
         });
         mocks.getEarlyBirdListeningAccess.mockResolvedValue({
-            allowed: true,
-            kind: 'free-quota',
+            allowed: false,
+            kind: 'denied',
             membership: { allowed: false, projection: null },
-            quota: availableQuota,
+            quota: { ...availableQuota, status: 'exhausted', remainingMs: 0 },
             allowedUntil: null,
             serverNow: new Date('2026-08-13T15:00:00.000Z'),
         });
 
         const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
-        expect(result.props.liveWorkbench).toEqual({
-            provider: 'mercado_pago',
-            csrfToken: expect.stringMatching(/^\d{10}\.[A-Za-z0-9_-]{32}\.[A-Za-z0-9_-]{43}$/),
-        });
-        expect(result.props.checkoutEnvironment).toBe('staging');
-
-        mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
-        const publicResult = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
-        expect(publicResult.props.liveWorkbench).toBeNull();
+        expect(result.props).not.toHaveProperty('liveWorkbench');
+        expect(result.props).not.toHaveProperty('checkoutEnvironment');
+        expect(result.props).not.toHaveProperty('checkoutAvailability');
     });
 
-    it('derives a sanitized Founder presentation on the server', async () => {
+    it('keeps canonical Founder and provider details out of the player props', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
         mocks.headers.mockResolvedValue(new Headers());
@@ -234,13 +229,10 @@ describe('EarlyBird Listener page', () => {
         const result = await EarlyBirdsPage({ searchParams: Promise.resolve({}) });
 
         expect(result.type).toBe(EarlyBirdHome);
-        expect(result.props.membership).toEqual({
-            kind: 'founder',
-            provider: 'mercado-pago',
-            state: 'ending',
-            serviceThrough: '2026-08-31T00:00:00.000Z',
-        });
-        expect(JSON.stringify(result.props.membership)).not.toMatch(/PRIVATE_REASON|internal-provider-value|MERCADO_PAGO/);
+        expect(result.props).not.toHaveProperty('membership');
+        expect(result.props).not.toHaveProperty('checkoutAvailability');
+        expect(result.props).not.toHaveProperty('liveWorkbench');
+        expect(JSON.stringify(result.props)).not.toMatch(/PRIVATE_REASON|internal-provider-value|MERCADO_PAGO/);
     });
 
     it('shows exhausted quota rather than fabricating membership', async () => {
