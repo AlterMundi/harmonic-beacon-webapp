@@ -85,6 +85,6 @@ small human functional smoke; it does block claiming 150-person capacity.
 | Disconnect/rejoin and stale-state removal | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 | End session for everyone | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 
-Go/no-go owner: PENDING  
-Execution timestamp: PENDING  
+Go/no-go owner: PENDING
+Execution timestamp: PENDING
 Decision: PENDING HUMAN EXECUTION

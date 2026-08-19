@@ -55,7 +55,7 @@ fixture invariant is corrected, the full release gate passes and public health
 reports that exact candidate. This decision does not classify the older
 production build as unhealthy.
 
-Go/no-go owner: PENDING  
-Timestamp: PENDING  
+Go/no-go owner: PENDING
+Timestamp: PENDING
 Follow-up issues: #41 (release/schedule invariant), #99 (capacity evidence),
 #24 (human rehearsal umbrella).
