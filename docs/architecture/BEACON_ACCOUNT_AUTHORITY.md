@@ -154,6 +154,10 @@ never the `.p8`; generate/rotate it outside Git from Team ID, Key ID, Services
 ID and `.p8`. Exact callbacks are
 `https://account.harmonicbeacon.com/api/account/auth/callback/apple` and
 `https://account-staging.harmonicbeacon.com/api/account/auth/callback/apple`.
+The exact Google/Apple registration, staging activation, human acceptance,
+rollback, and rotation procedure is
+`docs/operations/BEACON_ACCOUNT_SOCIAL_PROVIDERS.md`. The older direct-Listener
+provider runbook is not the central Account contract.
 The raw one-use Account action token exists only in its exact HTTPS mail action
 URL; that surface is `no-referrer` and scrubs the query client-side before any
 submission. Secrets, provider tokens and raw action tokens never enter Git,
