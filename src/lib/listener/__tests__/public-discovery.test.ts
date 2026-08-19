@@ -9,6 +9,7 @@ import {
     listenerLocaleForHeaders,
     listenerRobotsText,
     listenerSitemapXml,
+    trustedListenerRequestOrigin,
 } from '../public-discovery';
 
 function requestHeaders(host: string | null): Headers {
@@ -35,6 +36,16 @@ describe('Listener public discovery', () => {
         expect(isListenerStagingHost(requestHeaders('listen.harmonicbeacon.com'))).toBe(false);
         expect(isListenerStagingHost(requestHeaders('live.harmonicbeacon.com'))).toBe(false);
         expect(isListenerStagingHost(requestHeaders('earlybirds-staging.harmonicbeacon.com.evil.test'))).toBe(false);
+    });
+
+    it('derives the browser origin from the exact Host and ignores forwarded hosts', () => {
+        const staging = requestHeaders('earlybirds-staging.harmonicbeacon.com');
+        staging.set('x-forwarded-host', 'attacker.example');
+        expect(trustedListenerRequestOrigin(staging))
+            .toBe('https://earlybirds-staging.harmonicbeacon.com');
+        expect(trustedListenerRequestOrigin(requestHeaders('listen.harmonicbeacon.com')))
+            .toBe('https://listen.harmonicbeacon.com');
+        expect(trustedListenerRequestOrigin(requestHeaders('127.0.0.1:3000'))).toBeNull();
     });
 
     it('uses the same browser-language decision for public content and document metadata', () => {

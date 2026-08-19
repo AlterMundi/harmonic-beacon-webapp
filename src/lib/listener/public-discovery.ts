@@ -5,6 +5,7 @@ import { localeForBrowserLanguage, type UiLocale } from '@/lib/i18n';
 export const LISTENER_PUBLIC_HOST = 'listen.harmonicbeacon.com';
 export const LISTENER_STAGING_HOST = 'earlybirds-staging.harmonicbeacon.com';
 export const LISTENER_PUBLIC_ORIGIN = `https://${LISTENER_PUBLIC_HOST}`;
+export const LISTENER_STAGING_ORIGIN = `https://${LISTENER_STAGING_HOST}`;
 export const LISTENER_CANONICAL_URL = `${LISTENER_PUBLIC_ORIGIN}/`;
 
 const localizedMetadata: Record<UiLocale, { title: string; description: string }> = {
@@ -39,6 +40,19 @@ export function isCanonicalListenerHost(headers: Pick<Headers, 'get'>): boolean 
 /** Experimental presentation controls exist only on the disposable UI workbench. */
 export function isListenerStagingHost(headers: Pick<Headers, 'get'>): boolean {
     return normalizedHost(headers.get('host')) === LISTENER_STAGING_HOST;
+}
+
+/**
+ * Resolve the browser origin only from the validated public Host contract.
+ * Next's request URL may contain the loopback upstream origin behind nginx;
+ * forwarded host/proto headers are intentionally not trusted here.
+ */
+export function trustedListenerRequestOrigin(
+    headers: Pick<Headers, 'get'>,
+): typeof LISTENER_PUBLIC_ORIGIN | typeof LISTENER_STAGING_ORIGIN | null {
+    if (isCanonicalListenerHost(headers)) return LISTENER_PUBLIC_ORIGIN;
+    if (isListenerStagingHost(headers)) return LISTENER_STAGING_ORIGIN;
+    return null;
 }
 
 export function listenerLocaleForHeaders(headers: Pick<Headers, 'get'>): UiLocale {

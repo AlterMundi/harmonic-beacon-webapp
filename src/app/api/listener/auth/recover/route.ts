@@ -7,13 +7,16 @@ import {
     listenerAccountRPConfig,
     readListenerAccountCookie,
 } from '@/lib/listener/account-rp';
-import { isCanonicalListenerHost, isListenerStagingHost } from '@/lib/listener/public-discovery';
+import {
+    isListenerStagingHost,
+    trustedListenerRequestOrigin,
+} from '@/lib/listener/public-discovery';
 import { digestSessionToken } from '@/lib/session-auth';
 
 export async function POST(request: NextRequest): Promise<Response> {
     const headers = new Headers(request.headers);
-    const listenerHost = isCanonicalListenerHost(headers) || isListenerStagingHost(headers);
-    if (!listenerHost || request.headers.get('origin') !== request.nextUrl.origin ||
+    const listenerOrigin = trustedListenerRequestOrigin(headers);
+    if (!listenerOrigin || request.headers.get('origin') !== listenerOrigin ||
         request.headers.get('sec-fetch-site') !== 'same-origin' ||
         request.headers.get('content-type') !== 'application/json') {
         return new Response(null, { status: 403, headers: { 'Cache-Control': 'private, no-store' } });
