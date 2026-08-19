@@ -19,8 +19,10 @@ on:
       - ops/early-birds/**
       - ops/early-birds-preview/**
       - ops/listener-identity-staging/**
+      - ops/listener-account-production/**
       - scripts/early-birds-preview/**
       - scripts/listener-identity-staging/**
+      - scripts/listener-account-production/**
       - scripts/listener_container_observer.py
       - tools/early-birds-hls-load/**
       - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
@@ -48,8 +50,10 @@ on:
       - ops/early-birds/**
       - ops/early-birds-preview/**
       - ops/listener-identity-staging/**
+      - ops/listener-account-production/**
       - scripts/early-birds-preview/**
       - scripts/listener-identity-staging/**
+      - scripts/listener-account-production/**
       - scripts/listener_container_observer.py
       - tools/early-birds-hls-load/**
       - docs/ops/LISTENER_FIRST_EXTERNAL_HLS_SMOKE.md
@@ -132,3 +136,5 @@ jobs:
       - run: npm --prefix ops/listener-identity-staging run check
       - run: npm --prefix ops/listener-identity-staging test
       - run: npm --prefix ops/listener-identity-staging run validate:example
+      - run: npm --prefix ops/listener-account-production run check
+      - run: npm --prefix ops/listener-account-production test

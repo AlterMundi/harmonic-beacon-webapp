@@ -91,6 +91,38 @@ test('synthetic guard accepts the example and rejects unsafe effective values', 
     assert.equal(runGuard(envFile).status, 0);
   });
 
+  await t.test('guarded production Account handoff uses only production secrets', async () => {
+    const envFile = path.join(temporary, 'production-account.env');
+    await fs.writeFile(envFile, source
+      .replace(
+        'EARLY_BIRDS_AUTH_BASE_URL=https://earlybirds-staging.harmonicbeacon.com',
+        'EARLY_BIRDS_AUTH_BASE_URL=https://listen.harmonicbeacon.com',
+      )
+      .replace(
+        'EARLY_BIRDS_TRUSTED_ORIGINS=https://earlybirds-staging.harmonicbeacon.com',
+        'EARLY_BIRDS_TRUSTED_ORIGINS=https://listen.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com',
+      )
+      .replace('BEACON_LISTENER_ACCOUNT_ENABLED=0', 'BEACON_LISTENER_ACCOUNT_ENABLED=1')
+      .replace('BEACON_LISTENER_ACCOUNT_CLIENT_SECRET=', `BEACON_LISTENER_ACCOUNT_CLIENT_SECRET=${'c'.repeat(64)}`)
+      .replace('BEACON_LISTENER_ACCOUNT_STATE_SECRET=', `BEACON_LISTENER_ACCOUNT_STATE_SECRET=${'s'.repeat(64)}`), {
+      mode: 0o600,
+    });
+    assert.equal(runGuard(envFile).status, 0);
+
+    await fs.appendFile(envFile, `BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING=${'x'.repeat(64)}\n`);
+    const result = runGuard(envFile);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /must not contain staging Account secrets/);
+  });
+
+  await t.test('disabled Listener rejects dormant Account secrets in its runtime env', async () => {
+    const envFile = path.join(temporary, 'disabled-account-with-secret.env');
+    await fs.writeFile(envFile, `${source}\nBEACON_LISTENER_ACCOUNT_CLIENT_SECRET=${'c'.repeat(64)}\n`, { mode: 0o600 });
+    const result = runGuard(envFile);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /disabled Listener must not carry Account RP secrets/);
+  });
+
   await t.test('guarded staging Apple OAuth handoff remains on the staging callback host', async () => {
     const envFile = path.join(temporary, 'staging-apple-oauth.env');
     await fs.writeFile(envFile, source
