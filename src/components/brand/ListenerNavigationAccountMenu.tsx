@@ -30,6 +30,9 @@ export function ListenerNavigationAccountMenu({
             <a role="menuitem" href={accountURL.toString()}>
                 {es ? 'Cuenta' : 'Account'}
             </a>
+            <a role="menuitem" href="/listener/membership">
+                {es ? 'Membresía' : 'Membership'}
+            </a>
             <button type="button" role="menuitem" onClick={signOut}>
                 {es ? 'Cerrar sesión' : 'Sign out'}
             </button>

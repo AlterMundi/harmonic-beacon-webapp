@@ -1687,20 +1687,6 @@ html[data-hb-surface='listener'] body {
   margin-left: auto;
 }
 
-.listener-home-membership-status {
-  display: grid;
-  width: min(100%, 30rem);
-  gap: 0.45rem;
-  margin: 1rem auto 0;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--hb-radius-card);
-  background: rgba(27, 21, 15, 0.72);
-  text-align: left;
-}
-.listener-home-membership-status > p { color: var(--hb-bone); font-size: 0.84rem; font-weight: 600; }
-.listener-home-membership-status > small { color: var(--text-muted); font-size: 0.72rem; line-height: 1.45; }
-
 .listener-experience {
   width: 100%;
   align-self: center;
@@ -2267,6 +2253,70 @@ html[data-hb-surface='listener'] body {
 .listener-listening-status .listener-quota--compact small {
   font-size: 0.7rem;
 }
+
+.listener-membership-page {
+  width: min(100%, 42rem);
+  margin: auto;
+  padding: clamp(2rem, 8vh, 6rem) clamp(1rem, 4vw, 2rem) 3rem;
+  position: relative;
+  z-index: 2;
+}
+
+.listener-membership-page__back {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--hb-gold-2);
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+.listener-membership-page > header {
+  margin-top: clamp(1.5rem, 5vh, 3.5rem);
+}
+
+.listener-membership-page > header > p:first-child {
+  color: var(--hb-gold);
+  font-size: 0.68rem;
+  letter-spacing: var(--hb-track-eyebrow);
+}
+
+.listener-membership-page h1 {
+  margin-top: 0.6rem;
+  color: var(--hb-bone);
+  font-family: var(--hb-font-serif);
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-weight: 400;
+  line-height: 0.95;
+}
+
+.listener-membership-page > header > p:last-child {
+  max-width: 34rem;
+  margin-top: 1rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.listener-membership-page__card {
+  display: grid;
+  gap: 1.1rem;
+  margin-top: 2rem;
+  padding: clamp(1rem, 4vw, 1.5rem);
+  border: 1px solid var(--hb-hair);
+  border-radius: var(--hb-radius-card);
+  background: rgba(27, 21, 15, 0.78);
+  box-shadow: var(--hb-shadow-card);
+}
+
+.listener-membership-page__status {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.listener-membership-page__status strong { color: var(--hb-bone); font-weight: 500; }
+.listener-membership-page__status p,
+.listener-membership-page__checkout > p { color: var(--text-secondary); font-size: 0.78rem; line-height: 1.55; }
+.listener-membership-page__checkout .listener-checkout { margin-top: 0; }
 
 .listener-checkout {
   margin-top: 0.65rem;

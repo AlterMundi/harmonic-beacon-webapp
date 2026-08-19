@@ -76,6 +76,11 @@ export function GlobalNavigation({
                         >
                             {accountLabel}
                         </a>
+                        {accountSignedIn && active === 'listen' && (
+                            <a href="/listener/membership" role="menuitem">
+                                {locale === 'es' ? 'Membresía' : 'Membership'}
+                            </a>
+                        )}
                     </div>
                 </details>}
             </div>

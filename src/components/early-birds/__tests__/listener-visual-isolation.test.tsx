@@ -41,7 +41,6 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 invitationAvailable={false}
                 authError={false}
                 syntheticTeamEntryAvailable={false}
-                membership={{ kind: 'none', state: 'none' }}
                 serverNow="2026-08-07T15:00:00.000Z"
                 {...overrides}
             />

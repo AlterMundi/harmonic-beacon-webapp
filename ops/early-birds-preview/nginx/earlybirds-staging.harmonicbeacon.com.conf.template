@@ -46,6 +46,14 @@ server {
         return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
     }
 
+    location = /listener/membership {
+        if ($request_method != GET) { return 405; }
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        return 302 https://earlybirds-staging.harmonicbeacon.com$request_uri;
+    }
+
     location = /listener/redeem {
         access_log off;
         add_header Cache-Control "private, no-store" always;
@@ -275,6 +283,24 @@ server {
         add_header Cache-Control "private, no-store" always;
         add_header Referrer-Policy "no-referrer" always;
         return 302 /$is_args$args;
+    }
+
+    # Signed-in membership management is one exact HTML surface. Provider
+    # mutations remain confined to their separately rate-limited APIs below.
+    location = /listener/membership {
+        if ($request_method != GET) { return 405; }
+        access_log off;
+        add_header Cache-Control "private, no-store" always;
+        add_header Referrer-Policy "no-referrer" always;
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
     }
 
     # The preview hostname exists only for this product, so keep its public

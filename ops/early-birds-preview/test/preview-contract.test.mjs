@@ -559,6 +559,21 @@ test('nginx templates isolate staging, stream and the constrained public Listene
       's',
     ));
   }
+  for (const [sourceName, sourceText, port] of [
+    ['public', listener, '13000'],
+    ['staging', app, '13001'],
+  ]) {
+    const membershipPages = [...sourceText.matchAll(/location = \/listener\/membership \{([\s\S]*?)\n    \}/g)];
+    assert.equal(membershipPages.length, 2, `${sourceName} HTTP and HTTPS membership pages must be exact`);
+    assert.ok(membershipPages.every((match) => (
+      /request_method != GET/.test(match[1])
+      && /access_log off;/.test(match[1])
+      && /Cache-Control "private, no-store"/.test(match[1])
+      && /Referrer-Policy "no-referrer"/.test(match[1])
+    )));
+    assert.match(membershipPages[1][1], new RegExp(`proxy_pass http://127\\.0\\.0\\.1:${port};`));
+    assert.doesNotMatch(sourceText, /location \^~ \/listener\/|location \/listener\/membership/);
+  }
   assert.match(listener, /location = \/ \{[^}]*access_log off;[^}]*rewrite \^ \/listener break;[^}]*proxy_pass http:\/\/127\.0\.0\.1:13000;/s);
   assert.match(listener, /location = \/api\/listener\/access-state/);
   assert.match(listener, /location = \/api\/early-birds\/access-state/);

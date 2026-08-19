@@ -27,7 +27,6 @@ function renderLanding(overrides: Partial<React.ComponentProps<typeof EarlyBirdL
                 invitationAvailable={false}
                 authError={false}
                 syntheticTeamEntryAvailable={false}
-                membership={{ kind: 'none', state: 'none' }}
                 serverNow="2026-08-07T15:00:00.000Z"
                 {...overrides}
             />
@@ -119,7 +118,6 @@ describe('EarlyBird public landing', () => {
                     invitationAvailable={false}
                     authError
                     syntheticTeamEntryAvailable={false}
-                    membership={{ kind: 'none', state: 'none' }}
                     serverNow="2026-08-07T15:00:00.000Z"
                 />
             </LocaleProvider>,
@@ -178,9 +176,9 @@ describe('EarlyBird public landing', () => {
         });
 
         expect(screen.getByText('You have 2h 41m left this week')).toBeInTheDocument();
-        expect(screen.getByRole('status')).toHaveTextContent(
-            'Membership is not available for purchase right now.',
-        );
+        expect(screen.getByRole('link', { name: 'Manage membership' }))
+            .toHaveAttribute('href', '/listener/membership');
+        expect(screen.queryByText(/PayPal|Mercado Pago|USD 5/)).toBeNull();
         expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
         expect(screen.queryByText(/daily time|first listen/i)).toBeNull();
     });
@@ -195,7 +193,6 @@ describe('EarlyBird public landing', () => {
                     invitationAvailable={false}
                     authError={false}
                     syntheticTeamEntryAvailable={false}
-                    membership={{ kind: 'none', state: 'none' }}
                     serverNow="2026-08-07T15:00:00.000Z"
                     quota={{
                         policy: 'personal-7-day-v1',
@@ -214,38 +211,19 @@ describe('EarlyBird public landing', () => {
             </LocaleProvider>,
         );
 
-        expect(screen.getByRole('status')).toHaveTextContent(
-            'La membresía no está disponible para compra en este momento.',
-        );
+        expect(screen.getByRole('link', { name: 'Administrar membresía' }))
+            .toHaveAttribute('href', '/listener/membership');
         expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
     });
 
-    it('uses the private checkout action instead of the mail contact fallback', () => {
-        renderLanding({
-            signedIn: true,
-            liveWorkbench: { provider: 'mercado_pago', csrfToken: 'csrf-proof' },
-        });
+    it('keeps checkout and terminal provider detail behind the membership page', () => {
+        const { container } = renderLanding({ signedIn: true });
 
-        expect(screen.queryByRole('link', { name: 'Become a member for full access' })).toBeNull();
-        expect(document.querySelector('details[data-listener-live-workbench="private"]'))
-            .toHaveTextContent('Become a member for full access');
+        expect(screen.getByRole('link', { name: 'Manage membership' })).toBeInTheDocument();
+        expect(container.querySelector('.listener-checkout')).toBeNull();
+        expect(container.querySelector('.listener-membership-status')).toBeNull();
+        expect(container.textContent).not.toMatch(/PayPal|Mercado Pago|USD 5|refunded/i);
         expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
-    });
-
-    it('explains terminal Founder access and returns the account to truthful Free choices', () => {
-        renderLanding({
-            signedIn: true,
-            membership: { kind: 'founder', provider: 'mercado-pago', state: 'refunded' },
-        });
-
-        expect(screen.getByRole('status')).toHaveTextContent(
-            'The payment was refunded and Founder access has ended.',
-        );
-        expect(screen.getByRole('status')).toHaveTextContent(
-            'You can continue with the Free listening available to your account.',
-        );
-        expect(screen.queryByText(/daily time|first listen/i)).toBeNull();
-        expect(screen.queryByText('MERCADO_PAGO')).not.toBeInTheDocument();
     });
 
     it('uses neutral Listener positioning in both languages', () => {

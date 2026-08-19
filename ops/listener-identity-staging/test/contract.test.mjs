@@ -266,6 +266,16 @@ test('existing public staging vhost targets only the staging app and authority',
   assert.ok(wildcard, 'unknown Account suffixes need an explicit fail-closed prefix');
   assert.match(wildcard[1], /access_log off;/);
   assert.match(wildcard[1], /return 404;/);
+  const membershipPages = [...nginx.matchAll(/location = \/listener\/membership \{([\s\S]*?)\n    \}/g)];
+  assert.equal(membershipPages.length, 2, 'HTTP and HTTPS membership pages must be exact');
+  assert.ok(membershipPages.every((match) => (
+    /request_method != GET/.test(match[1])
+    && /access_log off;/.test(match[1])
+    && /Cache-Control "private, no-store"/.test(match[1])
+    && /Referrer-Policy "no-referrer"/.test(match[1])
+  )));
+  assert.match(membershipPages[1][1], /proxy_pass http:\/\/127\.0\.0\.1:13001;/);
+  assert.doesNotMatch(nginx, /location \^~ \/listener\/|location \/listener\/membership/);
 });
 
 test('authority seam uses a dedicated staging identity in both directions', () => {
