@@ -78,6 +78,7 @@ describe('isolated Live staging deploy contract', () => {
         expect(accountPreflight).toContain("const CLIENT_ID = 'hb-live-staging'");
         expect(accountPreflight).toContain('/.well-known/openid-configuration');
         expect(accountPreflight).toContain('/.well-known/jwks.json');
+        expect(accountPreflight).toContain("userinfo_endpoint: '/api/account/auth/oauth2/userinfo'");
         expect(accountPreflight).toContain('/api/account/session-status');
         expect(accountPreflight).toContain("body: new URLSearchParams({ sid: 'live-staging-preflight', sub: 'live-staging-preflight' })");
         expect(accountPreflight).toContain("status.active !== false");

@@ -59,6 +59,7 @@ async function main() {
         authorization_endpoint: '/api/account/auth/oauth2/authorize',
         token_endpoint: '/api/account/auth/oauth2/token',
         jwks_uri: '/.well-known/jwks.json',
+        userinfo_endpoint: '/api/account/auth/oauth2/userinfo',
         introspection_endpoint: '/api/account/auth/oauth2/introspect',
         end_session_endpoint: '/api/account/auth/oauth2/end-session',
     };
