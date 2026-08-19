@@ -21,7 +21,7 @@ test.describe('public surfaces (no stack required)', () => {
         await expect(page.getByRole('link', { name: 'Ingresar al evento' })).toHaveCount(4);
         await expect(page.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
             'href',
-            'https://proyecciondelmito.harmonicbeacon.com/',
+            'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',
         );
     });
 
