@@ -1,13 +1,13 @@
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import Script from 'next/script';
 
 import type { UiLocale } from '@/lib/i18n';
 
-// Byte-pinned local snapshot of harmonicbeacon.com@ed74216. Protected product
+// Byte-pinned local snapshot of harmonicbeacon.com@7e27303. Protected product
 // origins never execute remotely supplied JavaScript with their host cookies.
 export const GLOBAL_NAVIGATION_ASSET = '/assets/hb-global-nav.js';
-export const GLOBAL_NAVIGATION_PROVENANCE = 'ed7421616429681a37836f4698c73cf01799b75e';
-export const GLOBAL_NAVIGATION_SHA256 = '4a8a18fea07e279c0f757abd3be61bd715b0c6e647e6bc389d84c228c312e691';
+export const GLOBAL_NAVIGATION_PROVENANCE = '7e2730344e543e6c6ff5abde6d8133fc198214ae';
+export const GLOBAL_NAVIGATION_SHA256 = 'ec27014086a96c5e2187967dde0f96f238ef95a49c9382a6028af1d59e6deb08';
 export const GLOBAL_NAVIGATION_EMBED_GUARD = `
 (() => {
     if (window.self === window.top) return;
@@ -39,12 +39,14 @@ export function GlobalNavigation({
     allowRemoteEnhancement = true,
     accountHref,
     accountSignedIn = false,
+    accountMenu,
 }: {
     active: GlobalNavigationSurface;
     locale: UiLocale;
     allowRemoteEnhancement?: boolean;
     accountHref?: 'https://account.harmonicbeacon.com/account' | 'https://account-staging.harmonicbeacon.com/account';
     accountSignedIn?: boolean;
+    accountMenu?: ReactNode;
 }) {
     const navLabel = locale === 'es' ? 'Navegación principal' : 'Primary navigation';
     const userMenuLabel = locale === 'es' ? 'Menú de usuario' : 'User menu';
@@ -108,7 +110,11 @@ export function GlobalNavigation({
             {createElement('hb-global-nav', {
                 'data-surface': active,
                 'data-account-signed-in': showSignedIn ? '' : undefined,
-            }, fallback)}
+            }, fallback, accountMenu && accountAvailable ? (
+                <div key="account-menu" slot="account-menu" className="hb-global-navigation-local-account-slot">
+                    {accountMenu}
+                </div>
+            ) : null)}
             {allowRemoteEnhancement && (
                 <Script src={`${GLOBAL_NAVIGATION_ASSET}?v=${GLOBAL_NAVIGATION_PROVENANCE}`} strategy="afterInteractive" />
             )}

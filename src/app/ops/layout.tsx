@@ -5,9 +5,8 @@ import { redirect } from 'next/navigation';
 import OpsNavLinks from '@/components/ops/OpsNavLinks';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
-import { messages, staffRolePresentation } from '@/lib/i18n';
+import { messages } from '@/lib/i18n';
 import { requestLocale } from '@/lib/i18n-server';
-import StaffIdentityMenu from '@/components/ops/StaffIdentityMenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +25,6 @@ export default async function OpsLayout({
 
     const locale = await requestLocale();
     const copy = messages[locale];
-    const rolePresentation = staffRolePresentation(copy, staff.role);
 
     const links = [
         { href: '/ops/events', label: copy.ops.events },
@@ -56,13 +54,6 @@ export default async function OpsLayout({
                     >
                         {copy.ops.publicSite}
                     </Link>
-                    <StaffIdentityMenu
-                        name={staff.name}
-                        roleLabel={rolePresentation.label}
-                        roleDescription={rolePresentation.description}
-                        signedInAs={copy.ops.signedInAs}
-                        signOut={copy.ops.signOut}
-                    />
                 </div>
             </nav>
             <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
