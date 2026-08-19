@@ -54,7 +54,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('ed7421616429681a37836f4698c73cf01799b75e');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('7e2730344e543e6c6ff5abde6d8133fc198214ae');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
@@ -76,9 +76,28 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(source).toContain('<circle cx="12" cy="8" r="3.25">');
         expect(source).toContain('aria-haspopup="menu"');
         expect(source).toContain('class="account-menu"');
+        expect(source).toContain('<slot name="account-menu">');
+        expect(source).toContain('assignedElements({ flatten:true })');
         expect(source).not.toContain('class="account-link"');
         expect(source).not.toContain('<iframe');
         expect(source).not.toContain('/favicon.svg');
+    });
+
+    it('offers one host-local menu through the canonical user control', () => {
+        const view = render(<GlobalNavigation
+            active="listen"
+            locale="en"
+            accountHref="https://account-staging.harmonicbeacon.com/account"
+            accountSignedIn
+            accountMenu={<div><p>Nico</p><button role="menuitem">Sign out</button></div>}
+        />);
+
+        const slot = view.container.querySelector('[slot="account-menu"]');
+        expect(slot).toBeTruthy();
+        expect(slot?.parentElement?.tagName.toLowerCase()).toBe('hb-global-nav');
+        expect(within(slot as HTMLElement).getByText('Nico')).toBeInTheDocument();
+        expect(within(slot as HTMLElement).getByRole('menuitem', { name: 'Sign out' }))
+            .toBeInTheDocument();
     });
 
     it('renders the same destinations in Spanish', () => {

@@ -1,15 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LocaleProvider } from '@/context/LocaleContext';
 
-const recoverIdentity = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/early-birds/auth-client', () => ({
-    recoverListenerIdentity: recoverIdentity,
     clearListenerOAuthAttempt: vi.fn(),
 }));
 
@@ -38,12 +35,10 @@ import EarlyBirdHome from '../EarlyBirdHome';
 
 afterEach(() => {
     cleanup();
-    recoverIdentity.mockReset();
 });
 
 describe('EarlyBird Listener home access chrome', () => {
-    it('routes logout and account switching through the bounded recovery endpoint', async () => {
-        recoverIdentity.mockResolvedValueOnce(false);
+    it('keeps identity actions in the global navbar and presents membership as page content', () => {
         render(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
@@ -54,14 +49,14 @@ describe('EarlyBird Listener home access chrome', () => {
             </LocaleProvider>,
         );
 
-        await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
-        expect(recoverIdentity).toHaveBeenCalledOnce();
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'We could not prepare a new sign-in.',
-        );
+        expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
+        expect(document.querySelector('details.listener-account')).toBeNull();
+        expect(screen.getByText('Invitation access')).toBeInTheDocument();
+        expect(screen.getByText('Invitation access').closest('.listener-home-membership-status'))
+            .toBeTruthy();
     });
 
-    it('tolerates browser-restored profile disclosure state during hydration', async () => {
+    it('hydrates the noninteractive membership status without disclosure state', async () => {
         const tree = (
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
@@ -74,9 +69,8 @@ describe('EarlyBird Listener home access chrome', () => {
         const container = document.createElement('div');
         container.innerHTML = renderToString(tree);
         document.body.append(container);
-        const disclosure = container.querySelector('details.listener-account');
-        expect(disclosure).toBeInstanceOf(HTMLDetailsElement);
-        (disclosure as HTMLDetailsElement).open = true;
+        expect(container.querySelector('details.listener-account')).toBeNull();
+        expect(container.querySelector('.listener-home-membership-status')).toBeTruthy();
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         let root!: ReturnType<typeof hydrateRoot>;
@@ -132,7 +126,7 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(screen.queryByText('Preview access')).not.toBeInTheDocument();
     });
 
-    it('keeps account controls for a membership-backed Listener', () => {
+    it('does not duplicate the navbar user control for a membership-backed Listener', () => {
         render(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome
@@ -143,8 +137,8 @@ describe('EarlyBird Listener home access chrome', () => {
             </LocaleProvider>,
         );
 
-        expect(screen.getByLabelText('Account')).toBeInTheDocument();
-        expect(screen.getByText('Sign out')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Account')).not.toBeInTheDocument();
+        expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
         expect(screen.getByText('Invitation access')).toBeInTheDocument();
         expect(screen.queryByText('FREE')).not.toBeInTheDocument();
     });
@@ -263,7 +257,8 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(footer).toHaveTextContent('Membership is not available for purchase right now.');
         expect(footer?.querySelector('a')).toBeNull();
         expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
-        expect(screen.getByLabelText('Account').closest('header')).not.toContainElement(footer);
+        expect(screen.queryByLabelText('Account')).toBeNull();
+        expect(document.querySelector('details.listener-account')).toBeNull();
     });
 
     it('replaces the mail contact fallback with the private checkout action', () => {

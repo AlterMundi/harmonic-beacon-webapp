@@ -9,6 +9,7 @@ import {
     currentListenerAccountSession,
     LISTENER_ACCOUNT_COOKIE,
     listenerAccountRPConfig,
+    locallyKnownListenerNavigationIdentity,
     locallyKnownListenerAccountSession,
     localListenerAccountId,
     readListenerAccountCookie,
@@ -103,12 +104,16 @@ describe('Listener Account RP subject namespace', () => {
             sid: 'central-sid',
             synthetic: false,
             expiresAt: new Date('2026-08-18T12:05:00.000Z'),
+            account: { name: 'Fallback name', beaconProfile: { displayName: 'Nico' } },
         });
         const headers = new Headers({
             host: 'earlybirds-staging.harmonicbeacon.com',
             cookie: `${LISTENER_ACCOUNT_COOKIE}=opaque-session-token`,
         });
 
+        await expect(locallyKnownListenerNavigationIdentity(headers, now)).resolves.toEqual({
+            displayName: 'Nico',
+        });
         await expect(locallyKnownListenerAccountSession(headers, now)).resolves.toBe(true);
         expect(fetchMock).not.toHaveBeenCalled();
         expect(sessions.update).not.toHaveBeenCalled();

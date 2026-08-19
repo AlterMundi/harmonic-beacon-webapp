@@ -80,7 +80,6 @@ export default async function EarlyBirdsPage({
                 publicAccess
                 reactiveVisualizationAvailable={reactiveVisualizationAvailable}
                 reactiveFieldLabAvailable={reactiveFieldLabAvailable}
-                displayName=""
                 membership={listenerMembershipPresentation(null)}
                 dropIns={{
                     es: configuredEarlyBirdDropIn('es'),
@@ -120,7 +119,6 @@ export default async function EarlyBirdsPage({
     if (session && access?.allowed === true) {
         return (
             <EarlyBirdHome
-                displayName={session.user.name}
                 reactiveVisualizationAvailable={reactiveVisualizationAvailable}
                 reactiveFieldLabAvailable={reactiveFieldLabAvailable}
                 membership={listenerMembershipPresentation(access.membership.projection)}

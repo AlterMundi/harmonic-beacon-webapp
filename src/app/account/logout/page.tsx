@@ -24,7 +24,7 @@ export default async function AccountLogoutPage({ searchParams }: {
     const rawInitiation = Array.isArray(query.initiation) ? query.initiation[0] : query.initiation;
     const initiation = typeof rawInitiation === 'string' && rawInitiation.length <= 2048
         ? rawInitiation : null;
-    return <main className="account-shell"><AccountLogoutClient
+    return <main className="account-shell account-shell--logout"><AccountLogoutClient
         mode={mode} returnTo={returnTo} locale={locale} initiation={initiation}
     /></main>;
 }

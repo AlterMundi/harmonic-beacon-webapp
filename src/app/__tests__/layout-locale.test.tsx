@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     requestLocale: vi.fn(),
     requestBrowserLocale: vi.fn(),
     locallyKnownAccountSession: vi.fn(),
-    locallyKnownListenerAccountSession: vi.fn(),
+    locallyKnownListenerNavigationIdentity: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: mocks.headers }));
@@ -19,7 +19,7 @@ vi.mock('@/lib/account/auth', () => ({
     locallyKnownAccountSession: mocks.locallyKnownAccountSession,
 }));
 vi.mock('@/lib/listener/account-rp', () => ({
-    locallyKnownListenerAccountSession: mocks.locallyKnownListenerAccountSession,
+    locallyKnownListenerNavigationIdentity: mocks.locallyKnownListenerNavigationIdentity,
 }));
 vi.mock('next/font/local', () => ({
     default: () => ({ variable: 'local-font' }),
@@ -39,7 +39,7 @@ describe('root document locale boundary', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.locallyKnownAccountSession.mockResolvedValue(false);
-        mocks.locallyKnownListenerAccountSession.mockResolvedValue(false);
+        mocks.locallyKnownListenerNavigationIdentity.mockResolvedValue(null);
     });
 
     it('matches the canonical Listener SSR document to browser-language content', async () => {
@@ -102,7 +102,7 @@ describe('root document locale boundary', () => {
         expect(navigation.props.accountHref).toBe('https://account-staging.harmonicbeacon.com/account');
         expect(navigation.props.accountSignedIn).toBe(true);
         expect(mocks.locallyKnownAccountSession).toHaveBeenCalledOnce();
-        expect(mocks.locallyKnownListenerAccountSession).not.toHaveBeenCalled();
+        expect(mocks.locallyKnownListenerNavigationIdentity).not.toHaveBeenCalled();
     });
 
     it('uses only the local Listener projection for the signed-in navigation hint', async () => {
@@ -111,14 +111,15 @@ describe('root document locale boundary', () => {
             'en-US',
         ));
         mocks.requestBrowserLocale.mockResolvedValue('en');
-        mocks.locallyKnownListenerAccountSession.mockResolvedValue(true);
+        mocks.locallyKnownListenerNavigationIdentity.mockResolvedValue({ displayName: 'Nico' });
 
         const result = await RootLayout({ children: <main /> });
         const navigation = result.props.children.props.children[0];
 
         expect(navigation.props.accountHref).toBe('https://account-staging.harmonicbeacon.com/account');
         expect(navigation.props.accountSignedIn).toBe(true);
-        expect(mocks.locallyKnownListenerAccountSession).toHaveBeenCalledOnce();
+        expect(navigation.props.accountMenu.props.displayName).toBe('Nico');
+        expect(mocks.locallyKnownListenerNavigationIdentity).toHaveBeenCalledOnce();
         expect(mocks.locallyKnownAccountSession).not.toHaveBeenCalled();
     });
 
@@ -131,7 +132,7 @@ describe('root document locale boundary', () => {
 
         expect(navigation.props.accountHref).toBeNull();
         expect(navigation.props.accountSignedIn).toBe(false);
-        expect(mocks.locallyKnownListenerAccountSession).not.toHaveBeenCalled();
+        expect(mocks.locallyKnownListenerNavigationIdentity).not.toHaveBeenCalled();
         expect(mocks.locallyKnownAccountSession).not.toHaveBeenCalled();
     });
 

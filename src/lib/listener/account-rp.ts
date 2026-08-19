@@ -322,24 +322,54 @@ export async function currentListenerAccountSession(
     return listenerSessionView(session);
 }
 
+export type LocalListenerNavigationIdentity = {
+    displayName: string;
+};
+
 /**
- * A boolean-only navigation hint derived from the host-local RP session.
- * It never revalidates with Account, mutates the session, or exposes identity.
+ * Host-local presentation for the canonical navigation control. It never
+ * revalidates with Account or mutates the session, and it returns no email,
+ * subject, sid, token or authorization state.
  */
+export async function locallyKnownListenerNavigationIdentity(
+    headers: Headers,
+    now = new Date(),
+): Promise<LocalListenerNavigationIdentity | null> {
+    const raw = readListenerAccountCookie(headers);
+    if (!raw) return null;
+    let config: RPConfig;
+    try { config = listenerAccountRPConfig(headers); } catch { return null; }
+    const session = await prisma.listenerAccountSession.findUnique({
+        where: { tokenDigest: digestSessionToken(raw) },
+        select: {
+            issuer: true,
+            subject: true,
+            sid: true,
+            synthetic: true,
+            expiresAt: true,
+            account: {
+                select: {
+                    name: true,
+                    beaconProfile: { select: { displayName: true } },
+                },
+            },
+        },
+    });
+    if (!session || session.synthetic || session.issuer !== config.issuer ||
+        session.subject.length === 0 || session.sid.length === 0 || session.expiresAt <= now) {
+        return null;
+    }
+    return {
+        displayName: session.account.beaconProfile?.displayName ?? session.account.name,
+    };
+}
+
+/** Boolean-only compatibility wrapper for callers that need no presentation. */
 export async function locallyKnownListenerAccountSession(
     headers: Headers,
     now = new Date(),
 ): Promise<boolean> {
-    const raw = readListenerAccountCookie(headers);
-    if (!raw) return false;
-    let config: RPConfig;
-    try { config = listenerAccountRPConfig(headers); } catch { return false; }
-    const session = await prisma.listenerAccountSession.findUnique({
-        where: { tokenDigest: digestSessionToken(raw) },
-        select: { issuer: true, subject: true, sid: true, synthetic: true, expiresAt: true },
-    });
-    return Boolean(session && !session.synthetic && session.issuer === config.issuer &&
-        session.subject.length > 0 && session.sid.length > 0 && session.expiresAt > now);
+    return Boolean(await locallyKnownListenerNavigationIdentity(headers, now));
 }
 
 type ListenerSessionWithAccount = Prisma.ListenerAccountSessionGetPayload<{
