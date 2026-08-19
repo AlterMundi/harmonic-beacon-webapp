@@ -483,3 +483,31 @@ test('Account staging ACME bootstrap exposes only the certificate challenge', ()
   assert.match(nginx, /location \/ \{ return 503; \}/);
   assert.doesNotMatch(nginx, /listen 443|ssl_certificate|proxy_pass|1300[0-9]/);
 });
+
+test('social-provider runbook uses only central Account callbacks and default-off activation', () => {
+  const runbook = fs.readFileSync(
+    path.resolve(ROOT, '../../docs/operations/BEACON_ACCOUNT_SOCIAL_PROVIDERS.md'),
+    'utf8',
+  );
+  for (const environment of ['account-staging', 'account']) {
+    for (const provider of ['google', 'apple']) {
+      assert.match(runbook, new RegExp(
+        `https://${environment}\\.harmonicbeacon\\.com/api/account/auth/callback/${provider}`,
+      ));
+    }
+  }
+  for (const provider of ['GOOGLE', 'APPLE']) {
+    assert.match(runbook, new RegExp(`BEACON_ACCOUNT_${provider}_ENABLED=0`));
+    assert.match(runbook, new RegExp(`BEACON_ACCOUNT_${provider}_CLIENT_ID`));
+    assert.match(runbook, new RegExp(`BEACON_ACCOUNT_${provider}_CLIENT_SECRET`));
+  }
+  assert.doesNotMatch(runbook, /api\/early-birds\/auth\/callback\/(?:google|apple)/);
+  assert.match(runbook, /Matching email never links or merges accounts/);
+
+  const legacy = fs.readFileSync(
+    path.resolve(ROOT, '../../docs/operations/LISTENER_APPLE_IDENTITY.md'),
+    'utf8',
+  );
+  assert.match(legacy, /Legacy cutover note/);
+  assert.match(legacy, /BEACON_ACCOUNT_SOCIAL_PROVIDERS\.md/);
+});

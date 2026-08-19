@@ -1,5 +1,12 @@
 # Listener Sign in with Apple
 
+> **Legacy cutover note:** this document describes the direct Listener provider
+> runtime that remains relevant only until the central Account production
+> cutover or for its rollback. Do not create new direct-Listener Apple clients
+> from it. New staging and production provider setup belongs to the central
+> Account authority and must follow
+> `docs/operations/BEACON_ACCOUNT_SOCIAL_PROVIDERS.md`.
+
 Apple identity is provider-neutral, fail-closed and default-off. Google keeps
 its explicit account chooser. No provider may implicitly link itself to an
 existing Listener account merely because an email address matches.
