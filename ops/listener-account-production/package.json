@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check validate.mjs && node --check ../../scripts/listener-account-production/sync-secret.mjs && node --check ../../scripts/listener-account-production/preflight.mjs && sh -n ../../scripts/listener-account-production/prepare.sh ../../scripts/listener-account-production/preflight.sh",
+    "check": "node --check validate.mjs && node --check ../../scripts/listener-account-production/sync-secret.mjs && node --check ../../scripts/listener-account-production/preflight.mjs && node --check ../../scripts/listener-account-production/activate-env.mjs && sh -n ../../scripts/listener-account-production/prepare.sh ../../scripts/listener-account-production/preflight.sh ../../scripts/listener-account-production/activate.sh ../../scripts/listener-account-production/rollback.sh ../../scripts/listener-account-production/health-smoke.sh",
     "test": "node --test test/contract.test.mjs"
   }
 }

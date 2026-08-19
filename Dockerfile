@@ -55,6 +55,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/beacon-account/check-migr
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/beacon-account/provision-production-role.mjs ./scripts/beacon-account/provision-production-role.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-account-production/sync-secret.mjs ./scripts/listener-account-production/sync-secret.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-account-production/preflight.mjs ./scripts/listener-account-production/preflight.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-account-production/activate-env.mjs ./scripts/listener-account-production/activate-env.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/ops/beacon-account/validate.mjs ./ops/beacon-account/validate.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/ops/beacon-account/account.production.env.example ./ops/beacon-account/account.production.env.example
 COPY --from=builder --chown=nextjs:nodejs /app/ops/beacon-account/account.staging.env.example ./ops/beacon-account/account.staging.env.example

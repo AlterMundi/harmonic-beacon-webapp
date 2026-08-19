@@ -471,17 +471,32 @@ test('nginx keeps Account hosts isolated and never logs token-bearing routes', (
   }
 });
 
-test('Account staging ACME bootstrap exposes only the certificate challenge', () => {
+test('Account ACME bootstraps expose only the exact certificate challenge', () => {
+  for (const [name, host] of [
+    ['account-acme-bootstrap.conf.template', 'account.harmonicbeacon.com'],
+    ['account-staging-acme-bootstrap.conf.template', 'account-staging.harmonicbeacon.com'],
+  ]) {
+    const nginx = fs.readFileSync(path.join(ROOT, 'nginx', name), 'utf8');
+    assert.match(nginx, new RegExp(`server_name ${host.replaceAll('.', '\\.')};`));
+    assert.match(nginx, /access_log off;/);
+    assert.match(nginx, /location \^~ \/\.well-known\/acme-challenge\/ \{/);
+    assert.match(nginx, /root \/var\/www\/letsencrypt;/);
+    assert.match(nginx, /location \/ \{ return 503; \}/);
+    assert.doesNotMatch(nginx, /listen 443|ssl_certificate|proxy_pass|1300[0-9]/);
+  }
+});
+
+test('Account production edge stays truthful while its upstream is unavailable', () => {
   const nginx = fs.readFileSync(
-    path.join(ROOT, 'nginx/account-staging-acme-bootstrap.conf.template'),
+    path.join(ROOT, 'nginx/account.harmonicbeacon.com.conf.template'),
     'utf8',
   );
-  assert.match(nginx, /server_name account-staging\.harmonicbeacon\.com;/);
-  assert.match(nginx, /access_log off;/);
-  assert.match(nginx, /location \^~ \/\.well-known\/acme-challenge\/ \{/);
-  assert.match(nginx, /root \/var\/www\/letsencrypt;/);
-  assert.match(nginx, /location \/ \{ return 503; \}/);
-  assert.doesNotMatch(nginx, /listen 443|ssl_certificate|proxy_pass|1300[0-9]/);
+  assert.match(nginx, /proxy_intercept_errors on;/);
+  assert.match(nginx, /error_page 502 503 504 = @account_unavailable;/);
+  const unavailable = nginx.slice(nginx.indexOf('location @account_unavailable'));
+  assert.match(unavailable, /access_log off;/);
+  assert.match(unavailable, /Cache-Control "no-store" always;/);
+  assert.match(unavailable, /return 503;/);
 });
 
 test('social-provider runbook uses only central Account callbacks and default-off activation', () => {
