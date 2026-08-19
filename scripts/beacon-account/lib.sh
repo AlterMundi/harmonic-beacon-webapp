@@ -246,6 +246,7 @@ account_backup_production() (
   test "$(stat -c '%U:%G:%a' "$backup_dir")" = root:root:700 ||
     account_fail "$backup_dir must be root:root 0700"
   backup_name="account-pre-${BEACON_ACCOUNT_GIT_SHA}-$(date -u +%Y%m%dT%H%M%SZ).dump.enc"
+  test ! -e "$backup_dir/$backup_name" || account_fail 'production backup target already exists'
   backup_work=$(mktemp -d /run/beacon-account-backup.XXXXXX)
   chmod 0700 "$backup_work"
   database_env="$backup_work/database.env"
@@ -273,6 +274,43 @@ account_backup_production() (
       pg_restore --list >/dev/null || account_fail 'encrypted backup verification failed'
   trap - EXIT HUP INT TERM
   test -s "$backup_dir/$backup_name" || account_fail 'production backup is empty'
+  chmod 0600 "$backup_dir/$backup_name"
+  printf '%s\n' "$backup_dir/$backup_name"
+)
+
+account_backup_staging() (
+  backup_dir=$BEACON_ACCOUNT_BACKUP_DIR
+  test -d "$backup_dir" || account_fail "missing backup directory: $backup_dir"
+  test "$(stat -c '%U:%G:%a' "$backup_dir")" = root:root:700 ||
+    account_fail "$backup_dir must be root:root 0700"
+  container=beacon-account-account-staging-postgres-1
+  state=$(docker inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)
+  test "$state" = healthy || account_fail 'staging PostgreSQL is not healthy'
+  backup_name="account-staging-pre-provider-${BEACON_ACCOUNT_GIT_SHA}-$(date -u +%Y%m%dT%H%M%SZ).dump.enc"
+  test ! -e "$backup_dir/$backup_name" || account_fail 'staging backup target already exists'
+  backup_work=$(mktemp -d /run/beacon-account-staging-backup.XXXXXX)
+  chmod 0700 "$backup_work"
+  dump_fifo="$backup_work/dump.fifo"
+  mkfifo -m 0600 "$dump_fifo"
+  trap 'rm -rf "$backup_work"; rm -f "$backup_dir/$backup_name"' EXIT HUP INT TERM
+  docker exec "$container" sh -ec \
+    'exec pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --format=custom --no-owner --no-acl' \
+    > "$dump_fifo" &
+  dump_pid=$!
+  if ! openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 \
+      -pass "file:$BEACON_ACCOUNT_BACKUP_KEY_FILE" -in "$dump_fifo" -out "$backup_dir/$backup_name"; then
+    kill "$dump_pid" >/dev/null 2>&1 || true
+    wait "$dump_pid" >/dev/null 2>&1 || true
+    account_fail 'staging backup encryption failed'
+  fi
+  wait "$dump_pid" || account_fail 'staging pg_dump failed'
+  rm -rf "$backup_work"
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+    -pass "file:$BEACON_ACCOUNT_BACKUP_KEY_FILE" -in "$backup_dir/$backup_name" |
+    docker run --rm -i postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777 \
+      pg_restore --list >/dev/null || account_fail 'encrypted staging backup verification failed'
+  trap - EXIT HUP INT TERM
+  test -s "$backup_dir/$backup_name" || account_fail 'staging backup is empty'
   chmod 0600 "$backup_dir/$backup_name"
   printf '%s\n' "$backup_dir/$backup_name"
 )

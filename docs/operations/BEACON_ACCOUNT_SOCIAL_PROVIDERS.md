@@ -42,17 +42,21 @@ Google consent screen remains in Testing, add only the intended human testers.
 The application requests the provider's ordinary identity scopes; Google email
 is profile data, never membership or linking authority.
 
-Install the client ID and secret only in the corresponding root-owned Account
-environment:
+Prepare the client ID and secret only in the corresponding root-owned provider
+bundle. The activation lifecycle, rather than a manual edit, installs them in
+the Account environment:
 
 ```text
-BEACON_ACCOUNT_GOOGLE_ENABLED=0
 BEACON_ACCOUNT_GOOGLE_CLIENT_ID=<web-client-id>.apps.googleusercontent.com
 BEACON_ACCOUNT_GOOGLE_CLIENT_SECRET=<secret>
 ```
 
-Keep the switch at `0` while installing and validating the bundle. Never place
-staging and production credentials in the same runtime.
+Use exactly one of these fixed files, owned by `root:root` with mode `0600`:
+
+- `/etc/harmonic-beacon/account-provider-staging-google.env`
+- `/etc/harmonic-beacon/account-provider-production-google.env`
+
+Never place staging and production credentials in the same bundle or runtime.
 
 ## Apple Developer setup
 
@@ -77,14 +81,18 @@ The exact Apple callbacks are:
 - production:
   `https://account.harmonicbeacon.com/api/account/auth/callback/apple`
 
-Generate the JWT offline from the protected `.p8`. Install only the Services
-ID and generated JWT:
+Generate the JWT offline from the protected `.p8`. Put only the Services ID and
+generated JWT in the target provider bundle:
 
 ```text
-BEACON_ACCOUNT_APPLE_ENABLED=0
 BEACON_ACCOUNT_APPLE_CLIENT_ID=<services-id>
 BEACON_ACCOUNT_APPLE_CLIENT_SECRET=<current-es256-jwt>
 ```
+
+Use exactly one of these fixed files, owned by `root:root` with mode `0600`:
+
+- `/etc/harmonic-beacon/account-provider-staging-apple.env`
+- `/etc/harmonic-beacon/account-provider-production-apple.env`
 
 The application rejects a raw `.p8`, a malformed JWT, the wrong audience or
 subject, and an expired JWT. Apple may provide name and email only on first
@@ -95,27 +103,46 @@ neutral provider-independent Beacon profile; they never trigger email linking.
 
 Do one provider at a time.
 
-1. Confirm the exact reviewed release and a clean checkout.
-2. Create a fresh encrypted Account staging database backup and verify it with
-   `pg_restore --list`. Back up the current root-owned environment separately.
-3. Confirm the target environment file is a regular, non-symlink
-   `root:root 0600` file. Install the complete provider bundle atomically while
-   its enable flag remains `0`.
-4. Run the containerized Account environment validator with network disabled.
-   It must accept both production and staging files without printing values.
-5. Change only the target provider switch from `0` to `1`, recreate Account
-   staging app only through the reviewed lifecycle, and keep rollback active
-   through the external smoke.
-6. Require Account readiness at the exact candidate SHA with
+1. Confirm the exact reviewed release, clean checkout, exact running image and
+   root-owned deployment coordinates.
+2. Create the exact two-line provider bundle at the fixed path above. Do not
+   pass either value on a command line and do not print the file.
+3. Run, for example:
+
+   ```sh
+   sudo scripts/beacon-account/activate-social-provider.sh \
+     staging google /etc/harmonic-beacon/beacon-account-deploy.env
+   ```
+
+   The lifecycle creates and verifies a fresh encrypted database backup,
+   stores the prior Account environment in a root-only rollback directory,
+   builds a complete candidate environment inside the exact image with no
+   network, and validates the complete production/staging pair before any
+   cutover. There is no installed-but-disabled intermediate state.
+4. The lifecycle atomically replaces only the target Account environment and
+   recreates only the target Account app. It does not recreate the mail worker,
+   database, Listener, Live, event, stream, or payment services. Any readiness,
+   discovery, JWKS, or provider-visibility failure automatically restores the
+   previous environment and app.
+5. Require Account readiness at the exact candidate SHA with
    `checks.providers=ok`. Confirm the Account page shows only the provider just
    enabled and email/password remains available.
-7. Complete supervised human acceptance before enabling the other provider or
+6. Complete supervised human acceptance before enabling the other provider or
    touching production.
 
-Rollback is the backed-up environment with that provider switch restored to
-`0`, followed by recreating only the Account app. Disabling a provider hides
-new sign-in without deleting accounts, profiles, sessions, or product data.
-Do not delete provider identities as rollback.
+The successful command prints a root-only rollback-state path. Manual rollback
+uses that exact state and the same deployment coordinates:
+
+```sh
+sudo scripts/beacon-account/rollback-social-provider.sh \
+  /var/lib/harmonic-beacon/account-social-providers/<exact-state> \
+  /etc/harmonic-beacon/beacon-account-deploy.env
+```
+
+Rollback restores the complete prior environment and recreates only the
+Account app. Disabling a provider hides new sign-in without deleting accounts,
+profiles, sessions, or product data. Do not delete provider identities as
+rollback.
 
 ## Human acceptance
 

@@ -53,6 +53,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-quiesce-for-free
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-withdrawal-operator.ts ./scripts/listener-withdrawal-operator.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/beacon-account/check-migrations.mjs ./scripts/beacon-account/check-migrations.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/beacon-account/provision-production-role.mjs ./scripts/beacon-account/provision-production-role.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/beacon-account/social-provider-env.mjs ./scripts/beacon-account/social-provider-env.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-account-production/sync-secret.mjs ./scripts/listener-account-production/sync-secret.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-account-production/preflight.mjs ./scripts/listener-account-production/preflight.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/listener-account-production/activate-env.mjs ./scripts/listener-account-production/activate-env.mjs

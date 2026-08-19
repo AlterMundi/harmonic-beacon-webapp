@@ -512,10 +512,12 @@ test('social-provider runbook uses only central Account callbacks and default-of
     }
   }
   for (const provider of ['GOOGLE', 'APPLE']) {
-    assert.match(runbook, new RegExp(`BEACON_ACCOUNT_${provider}_ENABLED=0`));
     assert.match(runbook, new RegExp(`BEACON_ACCOUNT_${provider}_CLIENT_ID`));
     assert.match(runbook, new RegExp(`BEACON_ACCOUNT_${provider}_CLIENT_SECRET`));
   }
+  assert.match(runbook, /activate-social-provider\.sh/);
+  assert.match(runbook, /rollback-social-provider\.sh/);
+  assert.match(runbook, /There is no installed-but-disabled intermediate state/);
   assert.doesNotMatch(runbook, /api\/early-birds\/auth\/callback\/(?:google|apple)/);
   assert.match(runbook, /Matching email never links or merges accounts/);
 
@@ -525,4 +527,42 @@ test('social-provider runbook uses only central Account callbacks and default-of
   );
   assert.match(legacy, /Legacy cutover note/);
   assert.match(legacy, /BEACON_ACCOUNT_SOCIAL_PROVIDERS\.md/);
+});
+
+test('social-provider activation is exact-image, offline, backed up and app-only', () => {
+  const activate = fs.readFileSync(
+    path.resolve(ROOT, '../../scripts/beacon-account/activate-social-provider.sh'),
+    'utf8',
+  );
+  const rollback = fs.readFileSync(
+    path.resolve(ROOT, '../../scripts/beacon-account/rollback-social-provider.sh'),
+    'utf8',
+  );
+  const transformer = fs.readFileSync(
+    path.resolve(ROOT, '../../scripts/beacon-account/social-provider-env.mjs'),
+    'utf8',
+  );
+  const dockerfile = fs.readFileSync(path.resolve(ROOT, '../../Dockerfile'), 'utf8');
+  assert.match(activate, /account-provider-\$environment-\$provider\.env/);
+  assert.match(activate, /account_backup_(?:production|staging)/);
+  assert.match(activate, /--network none --read-only --user 0:0 --cap-drop ALL/);
+  assert.match(activate, /social-provider-env\.mjs/);
+  assert.match(activate, /validate\.mjs/);
+  assert.match(activate, /up -d --no-deps --force-recreate --no-build "account-\$environment"/);
+  assert.match(activate, /mail worker changed during provider activation/);
+  assert.doesNotMatch(activate, /account-mail-worker-\$environment"/);
+  assert.doesNotMatch(activate, /^state=/m);
+  assert.doesNotMatch(rollback, /^state=/m);
+  assert.match(rollback, /identities and sessions were retained/);
+  assert.match(transformer, /bundle must contain only the exact provider client ID and secret/);
+  assert.match(dockerfile, /scripts\/beacon-account\/social-provider-env\.mjs/);
+  for (const script of [
+    'activate-social-provider.sh',
+    'rollback-social-provider.sh',
+  ]) {
+    const checked = spawnSync('sh', ['-n', path.resolve(ROOT, `../../scripts/beacon-account/${script}`)], {
+      encoding: 'utf8',
+    });
+    assert.equal(checked.status, 0, checked.stderr);
+  }
 });
