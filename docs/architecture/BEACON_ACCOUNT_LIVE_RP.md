@@ -70,8 +70,10 @@ audit entry. There is no MFA claim or MFA policy in this slice.
 - `GET /api/account/login?flow=attendee|staff&next=<local path>`
 - `GET /api/account/callback`
 - `GET /api/account/frontchannel-logout?iss=<exact issuer>&sid=<exact sid>`
-- existing `POST /api/auth/logout` revokes locally and returns the issuer
-  end-session URL; `?scope=all` first revokes every local SID for the subject.
+- existing `POST /api/auth/logout` revokes locally and returns a 120-second,
+  client-secret-signed Account logout initiation bound to the exact central
+  `sid`, mode and registered Live origin; `?scope=all` first revokes every
+  local SID for the subject. Live never persists an ID token merely to log out.
 
 Apply the forward-only migration with the feature disabled, seed and review the
 four staff bindings, register exact clients/callbacks, verify discovery and

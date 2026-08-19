@@ -62,9 +62,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let issuerLogoutUrl: string | null = null;
     if (account) {
         try {
-            issuerLogoutUrl = await accountLogoutUrl(liveOrigin);
+            issuerLogoutUrl = await accountLogoutUrl({
+                origin: liveOrigin,
+                sessionId: account.sessionId,
+                mode: allDevices ? 'all' : 'current',
+            });
         } catch (error) {
-            console.error(`[auth] account logout discovery failed: ${redactError(error)}`);
+            console.error(`[auth] account logout initiation failed: ${redactError(error)}`);
         }
     }
     const response = NextResponse.json({

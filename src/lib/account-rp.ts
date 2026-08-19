@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
@@ -675,12 +675,37 @@ export async function validatedAccountIdentity(
         : null;
 }
 
-export async function accountLogoutUrl(origin: string): Promise<string> {
+export async function accountLogoutUrl(input: {
+    origin: string;
+    sessionId: string;
+    mode: 'current' | 'all';
+    now?: Date;
+}): Promise<string> {
     const config = accountConfiguration();
-    const discovery = await discoverAccountIssuer(config);
-    const url = new URL(discovery.end_session_endpoint);
-    url.searchParams.set('client_id', config.clientId);
-    url.searchParams.set('post_logout_redirect_uri', new URL('/', trustedLiveOrigin(origin)).href);
+    if (!OPAQUE_CLAIM.test(input.sessionId) || input.sessionId.length > 128) {
+        throw new Error('Beacon Account session id is invalid for logout');
+    }
+    const returnTo = new URL('/', trustedLiveOrigin(input.origin)).href;
+    const now = Math.floor((input.now ?? new Date()).getTime() / 1_000);
+    const payload = {
+        v: 1,
+        iss: config.issuer,
+        client_id: config.clientId,
+        sid: input.sessionId,
+        mode: input.mode,
+        return_to: returnTo,
+        state: randomOpaque(16),
+        iat: now,
+        exp: now + 120,
+    } as const;
+    const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    const signature = createHmac('sha256', config.clientSecret)
+        .update(encoded, 'utf8')
+        .digest('base64url');
+    const url = new URL('/account/logout', config.issuer);
+    url.searchParams.set('mode', input.mode);
+    url.searchParams.set('return_to', returnTo);
+    url.searchParams.set('initiation', `${encoded}.${signature}`);
     return url.href;
 }
 

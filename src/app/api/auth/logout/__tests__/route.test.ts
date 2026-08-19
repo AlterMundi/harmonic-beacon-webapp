@@ -36,6 +36,8 @@ describe('POST /api/auth/logout', () => {
 
     afterEach(() => {
         vi.doUnmock('@/lib/db');
+        vi.doUnmock('@/lib/principal');
+        vi.doUnmock('@/lib/account-rp');
         vi.restoreAllMocks();
         delete process.env.TICKET_LOGIN_URL_PREFIX;
     });
@@ -104,6 +106,46 @@ describe('POST /api/auth/logout', () => {
         expect(sessionCookieOf(response)).toMatchObject({ value: '', maxAge: 0 });
         expect(error).toHaveBeenCalled();
         expect(String(error.mock.calls[0][0])).not.toContain(TOKEN);
+    });
+
+    it('returns a signed current-session Account logout initiation bound to the exact sid', async () => {
+        const accountLogoutUrl = vi.fn().mockResolvedValue(
+            'https://account-staging.harmonicbeacon.com/account/logout?initiation=signed',
+        );
+        const revokeWebSessionByToken = vi.fn().mockResolvedValue(undefined);
+        vi.doMock('@/lib/principal', () => ({
+            accountIdentityFromToken: vi.fn().mockResolvedValue({
+                issuer: 'https://account-staging.harmonicbeacon.com',
+                subject: 'central-subject',
+                sessionId: 'central-sid',
+            }),
+            revokeWebSessionByToken,
+            clearedSessionCookie: () => ({
+                name: 'hb_session', value: '', maxAge: 0, httpOnly: true,
+                secure: true, sameSite: 'lax' as const, path: '/',
+            }),
+        }));
+        vi.doMock('@/lib/account-rp', () => ({
+            beaconAccountEnabled: () => true,
+            trustedLiveRequestOrigin: () => 'https://live-staging.harmonicbeacon.com',
+            revokeAllAccountSessions: vi.fn(),
+            accountLogoutUrl,
+        }));
+        const { POST } = await import('../route');
+
+        const response = await POST(logoutRequest(TOKEN));
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+            ok: true,
+            issuerLogoutUrl: 'https://account-staging.harmonicbeacon.com/account/logout?initiation=signed',
+        });
+        expect(revokeWebSessionByToken).toHaveBeenCalledWith(TOKEN);
+        expect(accountLogoutUrl).toHaveBeenCalledWith({
+            origin: 'https://live-staging.harmonicbeacon.com',
+            sessionId: 'central-sid',
+            mode: 'current',
+        });
     });
 
     it.each([
