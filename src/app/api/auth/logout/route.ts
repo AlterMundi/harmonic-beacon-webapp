@@ -29,6 +29,19 @@ import { redactError } from '@/lib/redact';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    let liveOrigin: string;
+    try {
+        liveOrigin = trustedLiveRequestOrigin(request);
+    } catch {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+    if (
+        request.headers.get('origin') !== liveOrigin ||
+        request.headers.get('sec-fetch-site') !== 'same-origin'
+    ) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
     const account = beaconAccountEnabled()
         ? await accountIdentityFromToken(token, new Date(), false).catch(() => null)
@@ -49,7 +62,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let issuerLogoutUrl: string | null = null;
     if (account) {
         try {
-            issuerLogoutUrl = await accountLogoutUrl(trustedLiveRequestOrigin(request));
+            issuerLogoutUrl = await accountLogoutUrl(liveOrigin);
         } catch (error) {
             console.error(`[auth] account logout discovery failed: ${redactError(error)}`);
         }
