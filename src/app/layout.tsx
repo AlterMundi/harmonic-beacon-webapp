@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { ListenerNavigationAccountMenu } from "@/components/brand/ListenerNavigationAccountMenu";
+import { ListenerIdentityCacheBoundary } from "@/components/brand/ListenerIdentityCacheBoundary";
 import {
   globalNavigationAccountHref,
   globalNavigationSurface,
@@ -162,6 +163,7 @@ export default async function RootLayout({
             />
           ) : undefined}
         />
+        {listenerNavigationIdentity && <ListenerIdentityCacheBoundary />}
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
           <div className="relative z-10">{children}</div>

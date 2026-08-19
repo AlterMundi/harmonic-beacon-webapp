@@ -15,6 +15,13 @@ on:
       - src/components/early-birds/**
       - src/lib/early-birds/**
       - src/lib/listener/**
+      - e2e/fixtures/listener-account-switch.ts
+      - e2e/tests/listener-account-switch.spec.ts
+      - playwright.config.ts
+      - src/app/layout.tsx
+      - src/app/globals.css
+      - src/components/brand/ListenerIdentityCacheBoundary.tsx
+      - src/components/brand/__tests__/ListenerIdentityCacheBoundary.test.tsx
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
@@ -46,6 +53,13 @@ on:
       - src/components/early-birds/**
       - src/lib/early-birds/**
       - src/lib/listener/**
+      - e2e/fixtures/listener-account-switch.ts
+      - e2e/tests/listener-account-switch.spec.ts
+      - playwright.config.ts
+      - src/app/layout.tsx
+      - src/app/globals.css
+      - src/components/brand/ListenerIdentityCacheBoundary.tsx
+      - src/components/brand/__tests__/ListenerIdentityCacheBoundary.test.tsx
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
@@ -138,3 +152,35 @@ jobs:
       - run: npm --prefix ops/listener-identity-staging run validate:example
       - run: npm --prefix ops/listener-account-production run check
       - run: npm --prefix ops/listener-account-production test
+
+  identity-cache:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: beacon_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d beacon_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      E2E_DATABASE_URL: postgresql://postgres:e2e@localhost:55432/beacon_test
+      E2E_LISTENER_ACCOUNT_SWITCH_GATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+          cache: 'npm'
+      - run: npm ci
+      - run: DATABASE_URL="$E2E_DATABASE_URL" npx prisma migrate deploy
+      - run: npx playwright install --with-deps chromium firefox
+      - run: >-
+          npx playwright test e2e/tests/listener-account-switch.spec.ts
+          --project=chromium
+          --project=firefox

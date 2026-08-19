@@ -146,6 +146,14 @@ jobs:
       - name: Run Firefox functional and accessibility gates
         run: npx playwright test --project=firefox
 
+      - name: Verify Listener Founder and Free account-switch cache boundary
+        run: >-
+          npx playwright test e2e/tests/listener-account-switch.spec.ts
+          --project=chromium
+          --project=firefox
+        env:
+          E2E_LISTENER_ACCOUNT_SWITCH_GATE: '1'
+
       - name: Install WebKit after Chromium screenshot gates
         run: npx playwright install --with-deps webkit
 
