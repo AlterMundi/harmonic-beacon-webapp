@@ -6,9 +6,13 @@ import { useRouter } from 'next/navigation';
 
 import type { UiLocale } from '@/lib/i18n';
 
+type AccountHref =
+    | 'https://account.harmonicbeacon.com/account'
+    | 'https://account-staging.harmonicbeacon.com/account';
+
 export function trustedAccountLogoutURL(
     raw: unknown,
-    accountHref: 'https://account-staging.harmonicbeacon.com/account',
+    accountHref: AccountHref,
 ): string | null {
     if (typeof raw !== 'string') return null;
     try {
@@ -35,7 +39,7 @@ export function LiveNavigationAccountMenu({
 }: {
     displayName: string | null;
     staffRoleLabel: string | null;
-    accountHref: 'https://account-staging.harmonicbeacon.com/account';
+    accountHref: AccountHref;
     locale: UiLocale;
 }) {
     const [busy, setBusy] = useState(false);
