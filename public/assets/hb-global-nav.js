@@ -7,6 +7,7 @@
   var LISTENER_STAGING_ORIGIN = 'https://earlybirds-staging.harmonicbeacon.com';
   var LIVE_ORIGIN = 'https://live.harmonicbeacon.com';
   var LIVE_STAGING_ORIGIN = 'https://live-staging.harmonicbeacon.com';
+  var ACCOUNT_ORIGIN = 'https://account.harmonicbeacon.com';
   var ACCOUNT_STAGING_ORIGIN = 'https://account-staging.harmonicbeacon.com';
   var ELEMENT_NAME = 'hb-global-nav';
 
@@ -90,11 +91,21 @@
     return null;
   }
 
-  function accountControlAvailable() {
+  function accountControlAvailable(element) {
     var host = location.hostname.toLowerCase();
     return host === 'earlybirds-staging.harmonicbeacon.com' ||
       host === 'live-staging.harmonicbeacon.com' ||
-      host === 'account-staging.harmonicbeacon.com';
+      host === 'account-staging.harmonicbeacon.com' ||
+      element.hasAttribute('data-account-available');
+  }
+
+  function accountOrigin() {
+    var host = location.hostname.toLowerCase();
+    return host === 'earlybirds-staging.harmonicbeacon.com' ||
+      host === 'live-staging.harmonicbeacon.com' ||
+      host === 'account-staging.harmonicbeacon.com'
+      ? ACCOUNT_STAGING_ORIGIN
+      : ACCOUNT_ORIGIN;
   }
 
   function accountReturnTo() {
@@ -109,7 +120,7 @@
   }
 
   function accountPageHref(language) {
-    var url = new URL('/account', ACCOUNT_STAGING_ORIGIN);
+    var url = new URL('/account', accountOrigin());
     url.searchParams.set('lang', language);
     url.searchParams.set('return_to', accountReturnTo());
     return url.toString();
@@ -184,11 +195,11 @@
 
   class HarmonicBeaconGlobalNav extends HTMLElement {
     static get observedAttributes() {
-      return ['data-account-signed-in'];
+      return ['data-account-available', 'data-account-signed-in'];
     }
 
     attributeChangedCallback(name, previous, next) {
-      if (name === 'data-account-signed-in' && previous !== next && this.shadowRoot) this.render();
+      if (this.constructor.observedAttributes.includes(name) && previous !== next && this.shadowRoot) this.render();
     }
 
     connectedCallback() {
@@ -234,7 +245,7 @@
         ? (accountSignedIn ? 'Menú de usuario, sesión iniciada' : 'Menú de usuario')
         : (accountSignedIn ? 'User menu, signed in' : 'User menu');
       var accountLabel = language === 'es' ? 'Cuenta' : 'Account';
-      var accountControl = accountControlAvailable()
+      var accountControl = accountControlAvailable(this)
         ? '<div class="account-control">' +
             '<button class="account-trigger' + (accountSignedIn ? ' signed-in' : '') + '" type="button" aria-label="' + userMenuLabel + '" aria-haspopup="menu" aria-controls="hb-account-menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.75 19c.6-3.25 2.7-5 6.25-5s5.65 1.75 6.25 5"></path></svg></button>' +
             '<div class="account-menu" id="hb-account-menu" role="menu" hidden><slot name="account-menu"><a role="menuitem" href="' + accountPageHref(language) + '">' + accountLabel + '</a></slot></div>' +

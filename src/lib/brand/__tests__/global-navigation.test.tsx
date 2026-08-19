@@ -58,7 +58,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('7e2730344e543e6c6ff5abde6d8133fc198214ae');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('6bd32262318e9a1faf6f4fc54b85b96f856544df');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
@@ -67,8 +67,9 @@ describe('canonical Harmonic Beacon global navigation', () => {
             .toBe(GLOBAL_NAVIGATION_SHA256);
         const source = bytes.toString('utf8');
         expect(source).toContain('class="account-trigger\' + (accountSignedIn ? \' signed-in\' : \'\')');
-        expect(source).toContain('function accountControlAvailable()');
-        expect(source).toContain("return ['data-account-signed-in'];");
+        expect(source).toContain('function accountControlAvailable(element)');
+        expect(source).toContain("return ['data-account-available', 'data-account-signed-in'];");
+        expect(source).toContain("element.hasAttribute('data-account-available')");
         expect(source).toContain('User menu, signed in');
         expect(source).toContain('Menú de usuario, sesión iniciada');
         expect(source).toContain('.account-trigger.signed-in::after');
@@ -86,7 +87,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(source).toContain("querySelectorAll('[role=\"menuitem\"]')");
         expect(source).toContain('event.composedPath().includes(this)');
         expect(source).not.toContain('class="account-link"');
-        expect(source).not.toContain('https://account.harmonicbeacon.com');
+        expect(source).toContain("var ACCOUNT_ORIGIN = 'https://account.harmonicbeacon.com'");
         expect(source).not.toContain('fetch(');
         expect(source).not.toContain('<iframe');
         expect(source).not.toContain('/favicon.svg');
@@ -180,5 +181,23 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(view.container.querySelector('hb-global-nav')).not.toHaveAttribute('data-account-signed-in');
         expect(view.container.querySelector('details')).toBeNull();
         expect(view.container.querySelector('[slot="account-menu"]')).toBeNull();
+    });
+
+    it('exposes the production Account control only with the server availability capability', () => {
+        const view = render(<GlobalNavigation
+            active="events"
+            locale="en"
+            accountHref="https://account.harmonicbeacon.com/account"
+            accountAvailable
+            accountSignedIn
+            accountMenu={<button role="menuitem">Operations</button>}
+        />);
+
+        expect(within(view.container).getByLabelText('User menu, signed in')).toBeInTheDocument();
+        expect(within(view.container).getByRole('menuitem', { name: 'Account' }))
+            .toHaveAttribute('href', 'https://account.harmonicbeacon.com/account?lang=en');
+        expect(view.container.querySelector('hb-global-nav')).toHaveAttribute('data-account-available', '');
+        expect(view.container.querySelector('hb-global-nav')).toHaveAttribute('data-account-signed-in', '');
+        expect(within(view.container).getByRole('menuitem', { name: 'Operations' })).toBeInTheDocument();
     });
 });

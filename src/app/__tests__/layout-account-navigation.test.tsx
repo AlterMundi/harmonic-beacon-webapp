@@ -21,11 +21,17 @@ vi.mock('@/lib/brand/account-navigation-state', () => ({
     locallyKnownLiveNavigationIdentity: mocks.localNavigationIdentity,
 }));
 vi.mock('@/components/brand/GlobalNavigation', () => ({
-    GlobalNavigation: ({ accountHref, accountSignedIn, accountMenu }: {
+    GlobalNavigation: ({ accountHref, accountAvailable, accountSignedIn, accountMenu }: {
         accountHref: string;
+        accountAvailable: boolean;
         accountSignedIn: boolean;
         accountMenu?: React.ReactNode;
-    }) => <div data-testid="global-navigation" data-account-href={accountHref} data-signed-in={accountSignedIn}>{accountMenu}</div>,
+    }) => <div
+        data-testid="global-navigation"
+        data-account-href={accountHref}
+        data-account-available={accountAvailable}
+        data-signed-in={accountSignedIn}
+    >{accountMenu}</div>,
 }));
 vi.mock('@/components/brand/LiveNavigationAccountMenu', () => ({
     LiveNavigationAccountMenu: ({ displayName, staffRoleLabel }: { displayName: string; staffRoleLabel: string | null }) => (
@@ -46,9 +52,11 @@ describe('root layout Account navigation hint', () => {
     afterEach(() => {
         cleanup();
         vi.clearAllMocks();
+        delete process.env.BEACON_ACCOUNT_ENABLED;
     });
 
     it('derives the staging hint from the host-local session and SSRs only the boolean', async () => {
+        process.env.BEACON_ACCOUNT_ENABLED = 'true';
         const requestHeaders = new Headers({
             host: 'live-staging.harmonicbeacon.com',
             cookie: `hb_session=${'a'.repeat(43)}`,
@@ -64,12 +72,14 @@ describe('root layout Account navigation hint', () => {
             'https://account-staging.harmonicbeacon.com/account',
         );
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-signed-in', 'true');
+        expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-account-available', 'true');
         expect(screen.getByTestId('local-account-menu')).toHaveTextContent('Nicolás');
         expect(screen.getByTestId('local-account-menu')).toHaveAttribute('data-role', 'Administration');
         expect(screen.getByTestId('identity-cache-boundary')).toBeInTheDocument();
     });
 
     it('keeps production Account hidden without reading local identity state', async () => {
+        process.env.BEACON_ACCOUNT_ENABLED = 'false';
         mocks.headers.mockResolvedValue(new Headers({
             host: 'live.harmonicbeacon.com',
             cookie: `hb_session=${'a'.repeat(43)}`,
@@ -83,11 +93,13 @@ describe('root layout Account navigation hint', () => {
             'https://account.harmonicbeacon.com/account',
         );
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-signed-in', 'false');
+        expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-account-available', 'false');
         expect(screen.queryByTestId('local-account-menu')).toBeNull();
         expect(screen.queryByTestId('identity-cache-boundary')).toBeNull();
     });
 
     it('fails neutral when the local presentation lookup is unavailable', async () => {
+        process.env.BEACON_ACCOUNT_ENABLED = 'true';
         mocks.headers.mockResolvedValue(new Headers({ host: 'live-staging.harmonicbeacon.com' }));
         mocks.localNavigationIdentity.mockRejectedValue(new Error('database unavailable'));
 
@@ -95,5 +107,26 @@ describe('root layout Account navigation hint', () => {
 
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-signed-in', 'false');
         expect(screen.queryByTestId('local-account-menu')).toBeNull();
+    });
+
+    it('enables the same local menu on production only after the RP feature is active', async () => {
+        process.env.BEACON_ACCOUNT_ENABLED = 'true';
+        const requestHeaders = new Headers({
+            host: 'live.harmonicbeacon.com',
+            cookie: `hb_session=${'b'.repeat(43)}`,
+        });
+        mocks.headers.mockResolvedValue(requestHeaders);
+        mocks.localNavigationIdentity.mockResolvedValue({ displayName: 'Production Tester', staffRole: null });
+
+        render(await RootLayout({ children: <main>Live</main> }), { container: document });
+
+        expect(mocks.localNavigationIdentity).toHaveBeenCalledWith(requestHeaders);
+        expect(screen.getByTestId('global-navigation')).toHaveAttribute(
+            'data-account-href',
+            'https://account.harmonicbeacon.com/account',
+        );
+        expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-account-available', 'true');
+        expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-signed-in', 'true');
+        expect(screen.getByTestId('local-account-menu')).toHaveTextContent('Production Tester');
     });
 });
