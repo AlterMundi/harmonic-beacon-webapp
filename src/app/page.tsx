@@ -8,7 +8,9 @@
 
 import Link from "next/link";
 
+import { EventLocalTime, EventSchedule } from "@/components/events/EventSchedule";
 import { prisma } from "@/lib/db";
+import { isPublicCycleSession } from "@/lib/public-cycle";
 import { redactError } from "@/lib/redact";
 
 import LoginClient from "./login/LoginClient";
@@ -70,26 +72,6 @@ async function weekendEvents(): Promise<WeekendEvent[] | null> {
     }
 }
 
-function formatEventTime(at: Date, locale: string, timeZone: string): string {
-    return new Intl.DateTimeFormat(locale, {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone,
-        timeZoneName: "short",
-    }).format(at);
-}
-
-function formatTimeOnly(at: Date, locale: string, timeZone: string): string {
-    return new Intl.DateTimeFormat(locale, {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone,
-    }).format(at);
-}
-
 export default async function LandingPage({
     searchParams,
 }: {
@@ -105,7 +87,7 @@ export default async function LandingPage({
         : null;
     const accountError = params.account_error === '1';
     const events = await weekendEvents();
-    const hasTicketedEvents = events === null || events.some((event) => !event.publicAccess);
+    const hasTicketedEvents = events === null || events.some((event) => !isPublicCycleSession(event.id));
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlSession2 = process.env.TICKET_PURCHASE_URL_SESSION_2 || process.env.TICKET_PURCHASE_URL;
     const purchaseUrlFor = (language: string) =>
@@ -148,15 +130,18 @@ export default async function LandingPage({
                             {copy.noSessions}
                         </div>
                     ) : (
-                        <ul className="grid gap-4 md:grid-cols-2">
-                            {events.map((event) => (
+                        <EventSchedule locale={locale}>
+                            <ul className="grid gap-4 md:grid-cols-2">
+                                {events.map((event) => {
+                                    const publicCycle = isPublicCycleSession(event.id);
+                                    return (
                                 <li key={event.id} className="event-card">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="space-y-2">
                                             <p className="event-card__label">
                                                 {event.language === "ENGLISH" ? copy.english : copy.spanish}
                                             </p>
-                                            {event.publicAccess && (
+                                            {publicCycle && (
                                                 <>
                                                     <h3 className="font-serif text-xl text-[var(--paper)]">{event.title}</h3>
                                                     {event.description && (
@@ -164,37 +149,23 @@ export default async function LandingPage({
                                                     )}
                                                 </>
                                             )}
-                                            <p className="text-sm text-[var(--text-secondary)]">
-                                                <span className="font-medium text-[var(--paper)]">{copy.costaRica}: </span>
-                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
-                                            </p>
-                                            <p className="text-xs text-[var(--text-muted)]">
-                                                <span className="font-medium">{copy.argentina}: </span>
-                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-GB" : "es-AR", "America/Argentina/Buenos_Aires")}
-                                            </p>
-                                            <p className="text-xs text-[var(--text-muted)]">
-                                                <span className="font-medium">UTC: </span>
-                                                {formatEventTime(event.scheduledAt, locale === "en" ? "en-GB" : "es-AR", "UTC")}
-                                            </p>
+                                            <EventLocalTime at={event.scheduledAt.toISOString()} />
                                         </div>
                                         <div className="text-right">
-                                            <p className="whitespace-nowrap font-mono text-lg font-normal text-[var(--gold)]">
-                                                {formatTimeOnly(event.scheduledAt, locale === "en" ? "en-US" : "es-CR", "America/Costa_Rica")}
-                                            </p>
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
-                                                {event.publicAccess ? (locale === 'en' ? 'Free' : 'Gratis') : (event.language === "ENGLISH" ? "US $50" : "US $20")}
+                                                {publicCycle ? (locale === 'en' ? 'Free' : 'Gratis') : (event.language === "ENGLISH" ? "US $50" : "US $20")}
                                             </p>
                                         </div>
                                     </div>
 
                                     <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                                        {event.publicAccess ? (
-                                            <Link
-                                                href={account ? `/session/${event.id}` : `/api/account/login?flow=attendee&next=${encodeURIComponent(`/session/${event.id}`)}`}
+                                        {publicCycle ? (
+                                            <a
+                                                href={`/api/public-sessions/${event.id}/enter`}
                                                 className="event-button event-button--primary mt-3 inline-flex w-full text-center sm:w-auto"
                                             >
                                                 {locale === 'en' ? 'Enter event' : 'Ingresar al evento'}
-                                            </Link>
+                                            </a>
                                         ) : purchaseUrlFor(event.language) ? (
                                             <a
                                                 href={purchaseUrlFor(event.language)}
@@ -210,15 +181,17 @@ export default async function LandingPage({
                                                 {copy.salesSoon}
                                             </p>
                                         )}
-                                        {!event.publicAccess && (
+                                        {!publicCycle && (
                                             <p className="mt-3 text-xs text-[var(--text-secondary)]">
                                                 USD $50 {copy.globalNorth} · USD $20 {copy.globalSouth}
                                             </p>
                                         )}
                                     </div>
                                 </li>
-                            ))}
-                        </ul>
+                                    );
+                                })}
+                            </ul>
+                        </EventSchedule>
                     )}
                 </section>
 
@@ -234,7 +207,7 @@ export default async function LandingPage({
                                 {copy.experienceBody}
                             </p>
                             <a
-                                href="https://proyecciondelmito.harmonicbeacon.com/"
+                                href="https://harmonicbeacon.com/proyeccion-armonica-del-mito/"
                                 className="event-button event-button--secondary inline-flex w-full sm:w-auto"
                                 rel="noreferrer noopener"
                                 target="_blank"

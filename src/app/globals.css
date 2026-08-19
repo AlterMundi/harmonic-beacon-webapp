@@ -1411,6 +1411,85 @@ body {
   box-shadow: var(--hb-shadow-card);
 }
 
+.event-time-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  color: var(--hb-ink-800);
+  background: rgba(27, 21, 15, 0.5);
+  border: 1px solid var(--hb-hair-soft);
+  border-radius: 14px;
+}
+
+.event-time-zone__label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.event-time-zone__control {
+  position: relative;
+  flex: 0 1 19rem;
+}
+
+.event-time-zone__select {
+  width: 100%;
+  min-height: 46px;
+  appearance: none;
+  padding: 0.65rem 2.6rem 0.65rem 1rem;
+  color: var(--paper);
+  background: var(--hb-bg-0);
+  border: 1px solid var(--hb-hair);
+  border-radius: 999px;
+  font: 500 0.8rem/1.2 var(--hb-font-sans);
+  cursor: pointer;
+}
+
+.event-time-zone__select:hover {
+  border-color: var(--hb-gold);
+}
+
+.event-time-zone__select option {
+  color: var(--paper);
+  background: var(--hb-bg-0);
+}
+
+.event-time-zone__chevron {
+  position: absolute;
+  top: 50%;
+  right: 1rem;
+  color: var(--hb-gold);
+  pointer-events: none;
+  transform: translateY(-56%);
+}
+
+.event-local-time {
+  margin-top: 0.9rem;
+}
+
+.event-local-time__primary {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.event-local-time__utc {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.event-local-time__clock {
+  flex: none;
+  white-space: nowrap;
+  color: var(--gold);
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 1.125rem;
+}
+
 :where(.event-shell, .live-ops-shell) .event-button {
   min-height: 46px;
   border-radius: 999px;
@@ -1673,6 +1752,16 @@ body {
    ============================================ */
 
 @media (max-width: 768px) {
+  .event-time-zone {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .event-time-zone__control {
+    flex-basis: auto;
+    width: 100%;
+  }
+
   .event-card {
     border-radius: 18px;
     padding: 18px;

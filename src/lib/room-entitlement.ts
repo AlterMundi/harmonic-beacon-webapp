@@ -9,6 +9,7 @@ import {
     beaconAccountEnabled,
     validatedAccountIdentity,
 } from '@/lib/account-rp';
+import { isAnonymousPublicCycleAccess } from '@/lib/public-cycle';
 import {
     SESSION_COOKIE_NAME,
     digestSessionToken,
@@ -155,12 +156,17 @@ async function resolveRoomAccess(
                 select: {
                     id: true,
                     scheduledSessionId: true,
+                    tier: true,
+                    codeLastFour: true,
                     state: true,
                     boundEmail: true,
                     accountId: true,
                     accountIssuer: true,
                     expiresAt: true,
                     revokedAt: true,
+                    scheduledSession: {
+                        select: { publicAccess: true, isTest: true },
+                    },
                     commerceEntitlement: {
                         select: { livekitIdentityVersion: true },
                     },
@@ -176,7 +182,7 @@ async function resolveRoomAccess(
     ) {
         return { ok: false, status: 401, error: 'Authentication required' };
     }
-    const accountRequired = beaconAccountEnabled();
+    const accountRequired = beaconAccountEnabled() && !isAnonymousPublicCycleAccess(webSession);
     const account = accountRequired
         ? await validatedAccountIdentity(webSession, now)
         : null;
