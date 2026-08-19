@@ -11,7 +11,7 @@ export function ListenerNavigationAccountMenu({
     locale,
 }: {
     displayName: string;
-    accountHref: 'https://account-staging.harmonicbeacon.com/account';
+    accountHref: 'https://account.harmonicbeacon.com/account' | 'https://account-staging.harmonicbeacon.com/account';
     locale: UiLocale;
 }) {
     const [signOutError, setSignOutError] = useState(false);
