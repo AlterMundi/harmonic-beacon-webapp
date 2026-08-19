@@ -6,6 +6,7 @@ import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { LiveIdentityCacheBoundary } from "@/components/brand/LiveIdentityCacheBoundary";
 import { LiveNavigationAccountMenu } from "@/components/brand/LiveNavigationAccountMenu";
 import { LocaleProvider } from "@/context/LocaleContext";
+import { beaconAccountEnabled } from "@/lib/account-rp";
 import {
   globalNavigationAccountHref,
   globalNavigationSurface,
@@ -85,7 +86,8 @@ export default async function RootLayout({
   const locale = await requestLocale();
   const navigationSurface = globalNavigationSurface(incomingHeaders) ?? "events";
   const accountHref = globalNavigationAccountHref(incomingHeaders);
-  const navigationIdentity = accountHref === "https://account-staging.harmonicbeacon.com/account"
+  const accountAvailable = beaconAccountEnabled();
+  const navigationIdentity = accountAvailable
     ? await locallyKnownLiveNavigationIdentity(incomingHeaders).catch(() => null)
     : null;
 
@@ -96,8 +98,9 @@ export default async function RootLayout({
           active={navigationSurface}
           locale={locale}
           accountHref={accountHref}
+          accountAvailable={accountAvailable}
           accountSignedIn={Boolean(navigationIdentity)}
-          accountMenu={navigationIdentity && accountHref === "https://account-staging.harmonicbeacon.com/account" ? (
+          accountMenu={navigationIdentity ? (
             <LiveNavigationAccountMenu
               displayName={navigationIdentity.displayName}
               staffRoleLabel={navigationIdentity.staffRole
