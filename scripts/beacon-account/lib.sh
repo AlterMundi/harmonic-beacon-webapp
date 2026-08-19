@@ -158,10 +158,86 @@ account_verify_running() {
   fi
 }
 
-account_check_production_migrations() {
+account_check_production_migrations() (
   mode=$1
-  account_compose run --rm --no-deps account-production \
-    node scripts/beacon-account/check-migrations.mjs "$mode"
+  work=$(mktemp -d /run/beacon-account-migration-check.XXXXXX)
+  trap 'rm -rf "$work"' EXIT HUP INT TERM
+  account_write_production_admin_env "$work/admin.env"
+  docker run --rm --network earlybirds_preview_db_internal --read-only --tmpfs /tmp \
+    --cap-drop ALL --security-opt no-new-privileges --env-file "$work/admin.env" \
+    -e "BEACON_ACCOUNT_EXPECTED_PENDING_MIGRATIONS=$BEACON_ACCOUNT_EXPECTED_PENDING_MIGRATIONS" \
+    -e "BEACON_ACCOUNT_SCHEMA_VERSION=$BEACON_ACCOUNT_SCHEMA_VERSION" \
+    --entrypoint node "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" \
+    /app/scripts/beacon-account/check-migrations.mjs "$mode"
+  rm -rf "$work"
+  trap - EXIT HUP INT TERM
+)
+
+account_write_production_admin_env() {
+  target=$1
+  container=earlybirds-preview-postgres-1
+  state=$(docker inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' 2>/dev/null || true)
+  test "$state" = healthy || account_fail 'production PostgreSQL is not healthy'
+  networks=$(docker inspect "$container" --format '{{range $name,$value := .NetworkSettings.Networks}}{{println $name}}{{end}}')
+  echo "$networks" | grep -Fxq earlybirds_preview_db_internal ||
+    account_fail 'production PostgreSQL is outside its exact internal network'
+  work=$(dirname -- "$target")
+  inspect_file="$work/postgres-inspect.json"
+  docker inspect "$container" > "$inspect_file"
+  chmod 0600 "$inspect_file"
+  docker run --rm --network none --read-only --cap-drop ALL --user 0:0 \
+    --security-opt no-new-privileges \
+    --mount "type=bind,src=$inspect_file,dst=/run/postgres-inspect.json,readonly" \
+    --entrypoint node "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" -e '
+      const fs = require("node:fs");
+      const inspected = JSON.parse(fs.readFileSync("/run/postgres-inspect.json", "utf8"));
+      if (!Array.isArray(inspected) || inspected.length !== 1) throw new Error("invalid PostgreSQL inspection");
+      const values = new Map((inspected[0].Config?.Env ?? []).map((line) => {
+        const at = line.indexOf("="); return [line.slice(0, at), line.slice(at + 1)];
+      }));
+      const user = values.get("POSTGRES_USER");
+      const password = values.get("POSTGRES_PASSWORD");
+      const database = values.get("POSTGRES_DB");
+      if (user !== "earlybirds_preview" || database !== "earlybirds_preview" ||
+          !password || password.length < 32) throw new Error("unexpected PostgreSQL authority identity");
+      const url = new URL("postgresql://earlybirds-preview-postgres/earlybirds_preview?schema=public");
+      url.username = user; url.password = password;
+      process.stdout.write(`DATABASE_URL=${url.toString()}\n`);
+    ' > "$target"
+  rm -f "$inspect_file"
+  chmod 0600 "$target"
+  test "$(wc -l < "$target")" -eq 1 || account_fail 'migration database environment is invalid'
+}
+
+account_migrate_production() (
+  work=$(mktemp -d /run/beacon-account-migrate.XXXXXX)
+  trap 'rm -rf "$work"' EXIT HUP INT TERM
+  account_write_production_admin_env "$work/admin.env"
+  docker run --rm --network earlybirds_preview_db_internal --read-only --tmpfs /tmp \
+    --cap-drop ALL --security-opt no-new-privileges --env-file "$work/admin.env" \
+    "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" npx prisma migrate deploy
+)
+
+account_provision_production_role() (
+  work=$(mktemp -d /run/beacon-account-role.XXXXXX)
+  trap 'rm -rf "$work"' EXIT HUP INT TERM
+  account_write_production_admin_env "$work/admin.env"
+  sed -n '/^DATABASE_URL=/p' "$BEACON_ACCOUNT_PRODUCTION_ENV_FILE" > "$work/runtime.env"
+  chmod 0600 "$work/runtime.env"
+  test "$(wc -l < "$work/runtime.env")" -eq 1 || account_fail 'production runtime DATABASE_URL is missing or duplicated'
+  docker run --rm --network earlybirds_preview_db_internal --read-only --tmpfs /tmp \
+    --cap-drop ALL --user 0:0 --security-opt no-new-privileges \
+    --env-file "$work/admin.env" \
+    --mount "type=bind,src=$work/runtime.env,dst=/run/account-runtime.env,readonly" \
+    --entrypoint node "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" \
+    /app/scripts/beacon-account/provision-production-role.mjs /run/account-runtime.env
+)
+
+account_provision_production_authority() {
+  docker run --rm --network earlybirds_preview_db_internal --read-only --tmpfs /tmp \
+    --cap-drop ALL --security-opt no-new-privileges \
+    --env-file "$BEACON_ACCOUNT_PRODUCTION_ENV_FILE" \
+    "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_TAG" npm run account:provision
 }
 
 account_backup_production() (
@@ -178,8 +254,7 @@ account_backup_production() (
   mkfifo -m 0600 "$dump_fifo"
   chmod 0600 "$database_env"
   trap 'rm -rf "$backup_work"; rm -f "$backup_dir/$backup_name"' EXIT HUP INT TERM
-  sed -n '/^DATABASE_URL=/p' "$BEACON_ACCOUNT_PRODUCTION_ENV_FILE" > "$database_env"
-  test "$(wc -l < "$database_env")" -eq 1 || account_fail 'production DATABASE_URL is missing or duplicated'
+  account_write_production_admin_env "$database_env"
   docker run --rm --network earlybirds_preview_db_internal --env-file "$database_env" \
     postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777 \
     sh -ec 'pg_dump --format=custom --no-owner --no-acl "$DATABASE_URL"' > "$dump_fifo" &

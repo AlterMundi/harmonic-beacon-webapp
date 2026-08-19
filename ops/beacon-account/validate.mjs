@@ -41,6 +41,13 @@ function validateDatabase(raw, expected) {
   if (url.hostname !== expected.host || url.pathname.slice(1) !== expected.database) {
     throw new Error(`DATABASE_URL must use isolated ${expected.host}/${expected.database}`);
   }
+  if (decodeURIComponent(url.username) !== expected.user) {
+    throw new Error(`DATABASE_URL must use the dedicated ${expected.user} role`);
+  }
+  const password = decodeURIComponent(url.password);
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(password)) {
+    throw new Error('DATABASE_URL password must be 32-128 base64url characters');
+  }
   return {
     identity: `${url.hostname}:${url.port || '5432'}${url.pathname}?schema=${expected.schema}`,
     url,
@@ -110,8 +117,8 @@ function validateEnvironment(env, kind, allowPlaceholders, stagingDatabaseEnv) {
     if (env.get(key)) throw new Error(`${key} must be empty outside its issuer`);
   });
   const database = validateDatabase(required(env, 'DATABASE_URL'), production
-    ? { host: 'earlybirds-preview-postgres', database: 'earlybirds_preview', schema: 'public' }
-    : { host: 'account-staging-postgres', database: 'beacon_account_staging', schema: 'public' });
+    ? { host: 'earlybirds-preview-postgres', database: 'earlybirds_preview', schema: 'public', user: 'account_prod' }
+    : { host: 'account-staging-postgres', database: 'beacon_account_staging', schema: 'public', user: 'beacon_account_staging' });
   if (!production) {
     assertRealSecret(required(stagingDatabaseEnv, 'POSTGRES_PASSWORD', 32), 'POSTGRES_PASSWORD', allowPlaceholders);
     if (!stagingDatabaseEnv ||
