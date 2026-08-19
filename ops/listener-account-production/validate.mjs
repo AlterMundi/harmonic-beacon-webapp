@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const requiredFiles = [
   '/app/scripts/listener-account-production/sync-secret.mjs',
   '/app/scripts/listener-account-production/preflight.mjs',
+  '/app/scripts/listener-account-production/activate-env.mjs',
 ];
 
 for (const file of requiredFiles) {
