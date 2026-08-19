@@ -6,12 +6,19 @@ vi.mock('@/lib/db', () => ({ prisma: { listenerAccountSession: db } }));
 
 import { GET, POST } from '../route';
 
-function request(origin = 'https://earlybirds-staging.harmonicbeacon.com') {
-    return new NextRequest('https://earlybirds-staging.harmonicbeacon.com/api/listener/auth/recover', {
+function request(input: {
+    origin?: string;
+    url?: string;
+    host?: string;
+    forwardedHost?: string;
+} = {}) {
+    const origin = input.origin ?? 'https://earlybirds-staging.harmonicbeacon.com';
+    return new NextRequest(input.url ?? 'https://earlybirds-staging.harmonicbeacon.com/api/listener/auth/recover', {
         method: 'POST',
         headers: {
-            host: 'earlybirds-staging.harmonicbeacon.com', origin,
-            'sec-fetch-site': origin.includes('earlybirds-staging') ? 'same-origin' : 'same-site',
+            host: input.host ?? 'earlybirds-staging.harmonicbeacon.com', origin,
+            'x-forwarded-host': input.forwardedHost ?? 'earlybirds-staging.harmonicbeacon.com',
+            'sec-fetch-site': 'same-origin',
             'content-type': 'application/json',
             cookie: '__Host-hb_listener_account=local-cookie',
         },
@@ -61,6 +68,16 @@ describe('Listener same-origin central logout initiation', () => {
         expect(db.deleteMany).not.toHaveBeenCalled();
     });
 
+    it('accepts the canonical browser origin when Next sees the loopback nginx upstream', async () => {
+        db.findUnique.mockResolvedValue(null);
+        const response = await POST(request({
+            url: 'http://127.0.0.1:3000/api/listener/auth/recover',
+            forwardedHost: 'attacker.example',
+        }));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ confirmation: true });
+    });
+
     it('treats malformed or duplicate RP cookies as absent without throwing or querying by token', async () => {
         for (const cookie of [
             '__Host-hb_listener_account=%',
@@ -76,7 +93,8 @@ describe('Listener same-origin central logout initiation', () => {
     });
 
     it('rejects sibling-origin POSTs and every GET', async () => {
-        expect((await POST(request('https://listen.harmonicbeacon.com'))).status).toBe(403);
+        expect((await POST(request({ origin: 'https://listen.harmonicbeacon.com' }))).status).toBe(403);
+        expect((await POST(request({ host: '127.0.0.1:3000' }))).status).toBe(403);
         expect(GET().status).toBe(405);
         expect(db.findUnique).not.toHaveBeenCalled();
     });
