@@ -50,6 +50,9 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', 'https://live.harmonicbeacon.com/?lang=en');
         expect(screen.getByRole('link', { name: 'Listen' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('link', { name: 'News' })).toHaveAttribute('href', 'https://harmonicbeacon.com/eventos/?lang=en');
+        expect(screen.queryByRole('link', { name: 'Why it works' })).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Team' })).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Contact' })).toBeNull();
         expect(screen.queryByLabelText('User menu')).toBeNull();
         expect(screen.queryByRole('menuitem', { name: 'Account' })).toBeNull();
     });
