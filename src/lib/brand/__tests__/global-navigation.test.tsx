@@ -32,14 +32,16 @@ describe('canonical Harmonic Beacon global navigation', () => {
     });
 
     it.each([
-        ['account-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
-        ['earlybirds-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
-        ['live-staging.harmonicbeacon.com', 'https://account-staging.harmonicbeacon.com/account'],
-        ['listen.harmonicbeacon.com', null],
-        ['account.harmonicbeacon.com', null],
-        ['earlybirds-staging.harmonicbeacon.com, account.harmonicbeacon.com', null],
-    ] as const)('maps the exact host %s to Account href %s', (host, expected) => {
-        expect(globalNavigationAccountHref(new Headers({ host }))).toBe(expected);
+        ['account-staging.harmonicbeacon.com', true, 'https://account-staging.harmonicbeacon.com/account'],
+        ['earlybirds-staging.harmonicbeacon.com', true, 'https://account-staging.harmonicbeacon.com/account'],
+        ['live-staging.harmonicbeacon.com', true, 'https://account-staging.harmonicbeacon.com/account'],
+        ['listen.harmonicbeacon.com', true, 'https://account.harmonicbeacon.com/account'],
+        ['account.harmonicbeacon.com', true, 'https://account.harmonicbeacon.com/account'],
+        ['listen.harmonicbeacon.com', false, null],
+        ['earlybirds-staging.harmonicbeacon.com', false, null],
+        ['earlybirds-staging.harmonicbeacon.com, account.harmonicbeacon.com', true, null],
+    ] as const)('maps the exact host %s with availability %s to Account href %s', (host, available, expected) => {
+        expect(globalNavigationAccountHref(new Headers({ host }), available)).toBe(expected);
     });
 
     it('keeps an accessible same-destination fallback while the shared asset loads', () => {
@@ -54,7 +56,7 @@ describe('canonical Harmonic Beacon global navigation', () => {
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('7e2730344e543e6c6ff5abde6d8133fc198214ae');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('6bd32262318e9a1faf6f4fc54b85b96f856544df');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
@@ -64,6 +66,8 @@ describe('canonical Harmonic Beacon global navigation', () => {
         const source = bytes.toString('utf8');
         expect(source).toContain('class="account-trigger');
         expect(source).toContain("'data-account-signed-in'");
+        expect(source).toContain("'data-account-available'");
+        expect(source).toContain("element.hasAttribute('data-account-available')");
         expect(source).toContain("this.hasAttribute('data-account-signed-in')");
         expect(source).toContain('User menu, signed in');
         expect(source).toContain('Menú de usuario, sesión iniciada');
@@ -149,5 +153,20 @@ describe('canonical Harmonic Beacon global navigation', () => {
 
         expect(shadow?.querySelector('.account-trigger')).toBeNull();
         expect(shadow?.querySelector('.account-menu')).toBeNull();
+    });
+
+    it('reveals only the production Account menu when the server supplies availability', () => {
+        const view = render(<GlobalNavigation
+            active="listen"
+            locale="en"
+            accountHref="https://account.harmonicbeacon.com/account"
+            accountSignedIn
+            accountMenu={<button role="menuitem">Sign out</button>}
+        />);
+
+        expect(view.container.querySelector('hb-global-nav')).toHaveAttribute('data-account-available', '');
+        expect(within(view.container).getByRole('menuitem', { name: 'Account' }))
+            .toHaveAttribute('href', 'https://account.harmonicbeacon.com/account?lang=en');
+        expect(within(view.container).getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
     });
 });

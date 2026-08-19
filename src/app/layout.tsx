@@ -11,9 +11,12 @@ import {
 } from "@/lib/brand/global-navigation";
 import { requestBrowserLocale, requestLocale } from "@/lib/i18n-server";
 import { isCanonicalListenerHost, isListenerStagingHost } from "@/lib/listener/public-discovery";
-import { isAccountHost } from "@/lib/account/config";
+import { isAccountHost, isCurrentAccountHost } from "@/lib/account/config";
 import { locallyKnownAccountSession } from "@/lib/account/auth";
-import { locallyKnownListenerNavigationIdentity } from "@/lib/listener/account-rp";
+import {
+  locallyKnownListenerNavigationIdentity,
+  validateListenerAccountRPEnvironment,
+} from "@/lib/listener/account-rp";
 import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
@@ -120,7 +123,20 @@ export default async function RootLayout({
   const listenerHost = isCanonicalListenerHost(incomingHeaders);
   const listenerAccountHost = listenerHost || isListenerStagingHost(incomingHeaders);
   const accountHost = isAccountHost(incomingHeaders.get('host'));
-  const accountHref = globalNavigationAccountHref(incomingHeaders);
+  const accountAuthorityAvailable = accountHost && process.env.BEACON_ACCOUNT_RUNTIME === '1' &&
+    isCurrentAccountHost(incomingHeaders.get('host'));
+  let listenerAccountAvailable = false;
+  if (listenerAccountHost) {
+    try {
+      listenerAccountAvailable = validateListenerAccountRPEnvironment();
+    } catch {
+      listenerAccountAvailable = false;
+    }
+  }
+  const accountHref = globalNavigationAccountHref(
+    incomingHeaders,
+    accountAuthorityAvailable || listenerAccountAvailable,
+  );
   const localHeaders = new Headers(incomingHeaders);
   const listenerNavigationIdentity = accountHref && listenerAccountHost
     ? await locallyKnownListenerNavigationIdentity(localHeaders).catch(() => null)

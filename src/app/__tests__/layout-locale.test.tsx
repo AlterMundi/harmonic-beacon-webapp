@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     requestBrowserLocale: vi.fn(),
     locallyKnownAccountSession: vi.fn(),
     locallyKnownListenerNavigationIdentity: vi.fn(),
+    validateListenerAccountRPEnvironment: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: mocks.headers }));
@@ -20,6 +21,7 @@ vi.mock('@/lib/account/auth', () => ({
 }));
 vi.mock('@/lib/listener/account-rp', () => ({
     locallyKnownListenerNavigationIdentity: mocks.locallyKnownListenerNavigationIdentity,
+    validateListenerAccountRPEnvironment: mocks.validateListenerAccountRPEnvironment,
 }));
 vi.mock('next/font/local', () => ({
     default: () => ({ variable: 'local-font' }),
@@ -41,6 +43,9 @@ describe('root document locale boundary', () => {
         vi.clearAllMocks();
         mocks.locallyKnownAccountSession.mockResolvedValue(false);
         mocks.locallyKnownListenerNavigationIdentity.mockResolvedValue(null);
+        mocks.validateListenerAccountRPEnvironment.mockReturnValue(false);
+        delete process.env.BEACON_ACCOUNT_RUNTIME;
+        delete process.env.BEACON_ACCOUNT_BASE_URL;
     });
 
     it('matches the canonical Listener SSR document to browser-language content', async () => {
@@ -92,6 +97,8 @@ describe('root document locale boundary', () => {
     });
 
     it('enhances Account staging navigation and reflects only a local signed-in boolean', async () => {
+        process.env.BEACON_ACCOUNT_RUNTIME = '1';
+        process.env.BEACON_ACCOUNT_BASE_URL = 'https://account-staging.harmonicbeacon.com';
         const incoming = requestHeaders('account-staging.harmonicbeacon.com', 'en-US');
         incoming.set('x-hb-account-locale', 'en');
         mocks.headers.mockResolvedValue(incoming);
@@ -107,6 +114,7 @@ describe('root document locale boundary', () => {
     });
 
     it('uses only the local Listener projection for the signed-in navigation hint', async () => {
+        mocks.validateListenerAccountRPEnvironment.mockReturnValue(true);
         mocks.headers.mockResolvedValue(requestHeaders(
             'earlybirds-staging.harmonicbeacon.com',
             'en-US',
@@ -124,6 +132,23 @@ describe('root document locale boundary', () => {
         expect(bodyChildren[1].type).toBe(ListenerIdentityCacheBoundary);
         expect(mocks.locallyKnownListenerNavigationIdentity).toHaveBeenCalledOnce();
         expect(mocks.locallyKnownAccountSession).not.toHaveBeenCalled();
+    });
+
+    it('exposes production Account only when the Listener RP environment is enabled', async () => {
+        const incoming = requestHeaders('listen.harmonicbeacon.com', 'en-US');
+        mocks.headers.mockResolvedValue(incoming);
+        mocks.requestBrowserLocale.mockResolvedValue('en');
+        mocks.validateListenerAccountRPEnvironment.mockReturnValue(true);
+        mocks.locallyKnownListenerNavigationIdentity.mockResolvedValue({ displayName: 'Nico' });
+
+        const result = await RootLayout({ children: <main /> });
+        const bodyChildren = result.props.children.props.children;
+        const navigation = bodyChildren[0];
+
+        expect(navigation.props.accountHref).toBe('https://account.harmonicbeacon.com/account');
+        expect(navigation.props.accountSignedIn).toBe(true);
+        expect(navigation.props.accountMenu.props.displayName).toBe('Nico');
+        expect(mocks.locallyKnownListenerNavigationIdentity).toHaveBeenCalledOnce();
     });
 
     it('does not expose an Account control on production before Account production exists', async () => {

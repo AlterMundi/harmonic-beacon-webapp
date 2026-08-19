@@ -1,7 +1,8 @@
 import type { GlobalNavigationSurface } from '@/components/brand/GlobalNavigation';
 
 export type GlobalNavigationAccountHref =
-    'https://account-staging.harmonicbeacon.com/account';
+    | 'https://account.harmonicbeacon.com/account'
+    | 'https://account-staging.harmonicbeacon.com/account';
 
 const PUBLIC_SURFACES: Record<string, GlobalNavigationSurface> = {
     'live.harmonicbeacon.com': 'events',
@@ -29,11 +30,16 @@ export function globalNavigationSurface(headers: Pick<Headers, 'get'>): GlobalNa
  * the server-rendered fallback shown before the pinned navigation asset loads. */
 export function globalNavigationAccountHref(
     headers: Pick<Headers, 'get'>,
+    accountAvailable = false,
 ): GlobalNavigationAccountHref | null {
+    if (!accountAvailable) return null;
     const host = normalizedHost(headers.get('host'));
-    return host === 'account-staging.harmonicbeacon.com' ||
+    if (host === 'account-staging.harmonicbeacon.com' ||
         host === 'earlybirds-staging.harmonicbeacon.com' ||
-        host === 'live-staging.harmonicbeacon.com'
-        ? 'https://account-staging.harmonicbeacon.com/account'
+        host === 'live-staging.harmonicbeacon.com') {
+        return 'https://account-staging.harmonicbeacon.com/account';
+    }
+    return host === 'account.harmonicbeacon.com' || host === 'listen.harmonicbeacon.com'
+        ? 'https://account.harmonicbeacon.com/account'
         : null;
 }
