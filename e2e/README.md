@@ -13,6 +13,7 @@ deterministic fixtures, no production credentials or participant data.
 | `tests/responsive.spec.ts` | nothing | layout geometry at 1440/1024/768/390/320 px |
 | `tests/visual.spec.ts` | stack | screenshot baselines at the same five widths |
 | `tests/media-continuity.spec.ts` | stack + LiveKit | the four media invariants in desktop Chromium, Android/Chrome emulation and iPhone/WebKit emulation |
+| `tests/rtc-audio-stats.spec.ts` | browser only | sanitized RTC audio-stat whitelist and per-peer failure isolation |
 | `tests/stage-invitation.spec.ts` | stack + LiveKit | two-browser hand → decline/invite → fresh connection stays pending → accept → return journey |
 | `tests/whole-system.spec.ts` | stack + LiveKit | two consecutive ES → EN waiting → doors → hand → invite → decline/accept → return → terminate lifecycles, selected-event health, plus one-identity `FACILITATOR_OP` admission/reconciliation |
 | `src/app/session/[id]/__tests__/media-continuity.test.tsx` | nothing | same invariants in Vitest/jsdom (`npm test`) |
@@ -82,6 +83,14 @@ resume. A flow is bracketed by two snapshots and
 invariant. The probe is panel-agnostic. For the #70 cockpit it snapshots the
 persistent same-origin room frame before and after every conductor drawer,
 proving that operational UI changes do not replace or reactivate media.
+
+The same probe exposes `rtcAudioStatsSnapshot()` for #93 diagnostics. It reads
+active peer connections without changing them and emits only the whitelist
+documented in
+[`docs/verification/rtc-audio-diagnostics.md`](../docs/verification/rtc-audio-diagnostics.md).
+The real-LiveKit attendee journey attaches that sanitized JSON to its test
+result. It never includes RTC ids, SSRCs, participant/track identities,
+device ids, candidates, IPs, ports, URLs or tokens.
 
 ## Screenshot baselines
 
