@@ -57,11 +57,14 @@ stackTest('FACILITATOR_OP completes two consecutive event lifecycles without swi
 
                     await expect(staff.getByTestId('conductor-cockpit')).toBeVisible();
                     await expect(staff.getByRole('heading', { name: session.title })).toBeVisible();
-                    await expect(staff.getByText('Lifecycle Conductor').first()).toBeVisible();
-                    await expect(staff.getByText(
-                        /Facilitación y operaciones|Facilitator and operations/i,
-                    ).first())
-                        .toBeVisible();
+                    const operationsNavigation = staff.getByRole('navigation', {
+                        name: /Operaciones de eventos|Event operations/i,
+                    });
+                    await expect(operationsNavigation).toBeVisible();
+                    // Identity lives in the one canonical global user menu.
+                    // The operations strip must not recreate the removed
+                    // second user circle on any lifecycle page.
+                    await expect(operationsNavigation.locator('details')).toHaveCount(0);
 
                     const attendeeContext = await browser.newContext();
                     const attendee = await attendeeContext.newPage();

@@ -63,6 +63,31 @@ export async function withSessionStatus<T>(
     }
 }
 
+/**
+ * Delete a session's contributions before and after `run`, so chat tests
+ * never leak messages into surfaces asserted by other specs (the visual
+ * baselines capture the attendee room — and its contributions panel — with
+ * the fixture's empty feed).
+ */
+export async function withoutContributions<T>(
+    databaseUrl: string,
+    sessionId: string,
+    run: () => Promise<T>,
+): Promise<T> {
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+        await client.query('delete from session_contributions where scheduled_session_id = $1', [sessionId]);
+        try {
+            return await run();
+        } finally {
+            await client.query('delete from session_contributions where scheduled_session_id = $1', [sessionId]);
+        }
+    } finally {
+        await client.end();
+    }
+}
+
 /** Replace fixture event titles for a layout test, then restore them exactly. */
 export async function withSessionTitles<T>(
     databaseUrl: string,

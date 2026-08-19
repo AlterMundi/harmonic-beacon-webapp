@@ -220,6 +220,7 @@ export async function mediaProbeSnapshot(surface: Page | Frame): Promise<MediaPr
 export function expectMediaContinuity(
     before: MediaProbeSnapshot,
     after: MediaProbeSnapshot,
+    options: { ignoreAmbientAudioContextResumes?: boolean } = {},
 ): void {
     const problems: string[] = [];
     if (after.livekitSocketsClosed > before.livekitSocketsClosed) {
@@ -250,7 +251,10 @@ export function expectMediaContinuity(
             `${after.playCalls - before.playCalls} extra play() call(s) — repeated audio activation`,
         );
     }
-    if (after.audioContextResumes > before.audioContextResumes) {
+    if (
+        !options.ignoreAmbientAudioContextResumes
+        && after.audioContextResumes > before.audioContextResumes
+    ) {
         problems.push(
             `${after.audioContextResumes - before.audioContextResumes} extra AudioContext.resume() call(s)`,
         );

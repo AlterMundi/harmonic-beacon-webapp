@@ -27,6 +27,8 @@ type EntitlementRow = {
     tier: string;
     state: 'ISSUED' | 'BOUND' | 'REVOKED' | 'EXPIRED';
     boundEmail: string | null;
+    accountId: string | null;
+    accountIssuer: string | null;
     boundAt: Date | null;
     expiresAt: Date;
     revokedAt: Date | null;
@@ -41,6 +43,8 @@ function ticketRow(overrides: Partial<EntitlementRow> = {}): EntitlementRow {
         tier: 'GLOBAL_NORTH',
         state: 'ISSUED',
         boundEmail: null,
+        accountId: null,
+        accountIssuer: null,
         boundAt: null,
         expiresAt: new Date('2027-08-05T00:00:00.000Z'),
         revokedAt: null,
@@ -49,10 +53,17 @@ function ticketRow(overrides: Partial<EntitlementRow> = {}): EntitlementRow {
 }
 
 type WebSessionRow = {
+    id?: string;
     tokenDigest: string;
     displayName?: string;
     ticketEntitlementId?: string;
     expiresAt: Date;
+    revokedAt?: Date | null;
+    accountIssuer?: string | null;
+    accountSubject?: string | null;
+    accountSessionId?: string | null;
+    accountDisplayName?: string | null;
+    accountValidatedAt?: Date | null;
 };
 
 type FakePrisma = {
@@ -67,6 +78,8 @@ type FakePrisma = {
     };
     webSession: {
         create: (args: { data: WebSessionRow }) => Promise<WebSessionRow & { id: string }>;
+        findUnique: (args: { where: { tokenDigest: string } }) => Promise<WebSessionRow | null>;
+        updateMany: (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => Promise<{ count: number }>;
     };
 };
 
@@ -78,15 +91,25 @@ type FakePrisma = {
  * `updateMany` is atomic within the single-threaded fake, which is what Postgres
  * row locking gives the real thing.
  */
-function createFakeDb(rows: EntitlementRow[]) {
+function createFakeDb(rows: EntitlementRow[], initialSessions: WebSessionRow[] = []) {
     const entitlements = rows.map((row) => ({ ...row }));
-    const webSessions: WebSessionRow[] = [];
+    const webSessions: WebSessionRow[] = initialSessions.map((row, index) => ({
+        id: `seed-session-${index + 1}`,
+        revokedAt: null,
+        ...row,
+    }));
 
     function matches(where: Record<string, unknown>, row: EntitlementRow): boolean {
         if (where.codeDigest !== undefined && row.codeDigest !== where.codeDigest) return false;
         if (where.id !== undefined && row.id !== where.id) return false;
-        if (where.state !== undefined && row.state !== where.state) return false;
+        if (where.state !== undefined) {
+            const expected = where.state as string | { in?: string[] };
+            if (typeof expected === 'string' && row.state !== expected) return false;
+            if (typeof expected === 'object' && expected.in && !expected.in.includes(row.state)) return false;
+        }
         if (where.boundEmail !== undefined && row.boundEmail !== where.boundEmail) return false;
+        if (where.accountId !== undefined && row.accountId !== where.accountId) return false;
+        if (where.accountIssuer !== undefined && row.accountIssuer !== where.accountIssuer) return false;
         if (where.revokedAt !== undefined && row.revokedAt !== where.revokedAt) return false;
         return true;
     }
@@ -111,14 +134,26 @@ function createFakeDb(rows: EntitlementRow[]) {
                 webSessions.push(data);
                 return { id: `web-session-${webSessions.length}`, ...data };
             },
+            findUnique: async ({ where }) =>
+                webSessions.find((row) => row.tokenDigest === where.tokenDigest) ?? null,
+            updateMany: async ({ where, data }) => {
+                let count = 0;
+                for (const row of webSessions) {
+                    if (where.tokenDigest !== undefined && row.tokenDigest !== where.tokenDigest) continue;
+                    if (where.revokedAt !== undefined && (row.revokedAt ?? null) !== where.revokedAt) continue;
+                    Object.assign(row, data);
+                    count += 1;
+                }
+                return { count };
+            },
         },
     };
 
     return { prisma, entitlements, webSessions };
 }
 
-function mountDb(rows: EntitlementRow[]) {
-    const fake = createFakeDb(rows);
+function mountDb(rows: EntitlementRow[], sessions: WebSessionRow[] = []) {
+    const fake = createFakeDb(rows, sessions);
     vi.doMock('@/lib/db', () => ({ prisma: fake.prisma, default: fake.prisma }));
     return fake;
 }
@@ -307,6 +342,58 @@ describe('POST /api/auth/ticket', () => {
         expect(JSON.stringify(db.webSessions[0])).not.toContain(cookie!.value);
         expect(db.webSessions[0].ticketEntitlementId).toBe('ticket-1');
         expect(db.webSessions[0].displayName).toBe(NAME);
+    });
+
+    it('binds a provider ticket once to the opaque Account subject, never the email snapshot', async () => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        const accountToken = 'central-account-local-session-token';
+        const issuer = 'https://account.harmonicbeacon.com';
+        vi.stubEnv('BEACON_ACCOUNT_ISSUER_URL', issuer);
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_ID', 'hb-live');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET', 'test-secret-that-is-at-least-32-characters');
+        const db = mountDb([
+            ticketRow({
+                // Ticket Tailor may have supplied this audit snapshot and
+                // provisioned the entitlement as BOUND before its first use.
+                state: 'BOUND',
+                boundEmail: 'buyer-audit-snapshot@example.com',
+            }),
+        ], [{
+            tokenDigest: digestSessionToken(accountToken),
+            expiresAt: new Date('2027-08-05T00:00:00.000Z'),
+            accountIssuer: issuer,
+            accountSubject: 'acct_opaque_123',
+            accountSessionId: 'central-device-sid',
+            accountDisplayName: 'Ana Account',
+            accountValidatedAt: new Date(),
+        }]);
+        const { POST } = await importRoute();
+        const request = createRequest('/api/auth/ticket', {
+            method: 'POST',
+            body: { name: 'Event alias', code: CODE },
+            headers: {
+                cookie: `hb_session=${accountToken}`,
+                'x-forwarded-for': CLIENT,
+            },
+        });
+
+        const response = await POST(request);
+
+        expect(response.status).toBe(200);
+        expect(db.entitlements[0]).toMatchObject({
+            state: 'BOUND',
+            accountIssuer: issuer,
+            accountId: 'acct_opaque_123',
+            boundEmail: 'buyer-audit-snapshot@example.com',
+        });
+        const attached = db.webSessions.find((session) => session.ticketEntitlementId === 'ticket-1');
+        expect(attached).toMatchObject({
+            displayName: 'Event alias',
+            accountIssuer: issuer,
+            accountSubject: 'acct_opaque_123',
+            accountSessionId: 'central-device-sid',
+        });
+        expect(JSON.stringify(attached)).not.toContain('buyer-audit-snapshot@example.com');
     });
 
     it('normalizes the bound email so a refresh and a later login both work', async () => {

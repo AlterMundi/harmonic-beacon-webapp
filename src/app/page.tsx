@@ -8,14 +8,16 @@
 
 import Link from "next/link";
 
+import { EventLocalTime, EventSchedule } from "@/components/events/EventSchedule";
 import { prisma } from "@/lib/db";
+import { isPublicCycleSession } from "@/lib/public-cycle";
 import { redactError } from "@/lib/redact";
 
 import LoginClient from "./login/LoginClient";
 import { messages } from "@/lib/i18n";
 import { requestLocale } from "@/lib/i18n-server";
-import { isPublicCycleSession } from "@/lib/public-cycle";
-import { EventLocalTime, EventSchedule } from "@/components/events/EventSchedule";
+import { beaconAccountEnabled } from "@/lib/account-rp";
+import { currentAccountIdentity } from "@/lib/principal";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,7 @@ type WeekendEvent = {
     description: string | null;
     language: "ENGLISH" | "SPANISH";
     scheduledAt: Date;
+    publicAccess: boolean;
 };
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
@@ -60,6 +63,7 @@ async function weekendEvents(): Promise<WeekendEvent[] | null> {
                 description: true,
                 language: true,
                 scheduledAt: true,
+                publicAccess: true,
             },
         });
     } catch (error) {
@@ -75,7 +79,13 @@ export default async function LandingPage({
 }) {
     const locale = await requestLocale();
     const copy = messages[locale].landing;
-    const next = safeNext((await searchParams).next);
+    const params = await searchParams;
+    const next = safeNext(params.next);
+    const accountEnabled = beaconAccountEnabled();
+    const account = accountEnabled
+        ? await currentAccountIdentity().catch(() => null)
+        : null;
+    const accountError = params.account_error === '1';
     const events = await weekendEvents();
     const hasTicketedEvents = events === null || events.some((event) => !isPublicCycleSession(event.id));
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
@@ -122,14 +132,16 @@ export default async function LandingPage({
                     ) : (
                         <EventSchedule locale={locale}>
                             <ul className="grid gap-4 md:grid-cols-2">
-                                {events.map((event) => (
-                                    <li key={event.id} className="event-card">
+                                {events.map((event) => {
+                                    const publicCycle = isPublicCycleSession(event.id);
+                                    return (
+                                <li key={event.id} className="event-card">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="space-y-2">
                                             <p className="event-card__label">
                                                 {event.language === "ENGLISH" ? copy.english : copy.spanish}
                                             </p>
-                                            {isPublicCycleSession(event.id) && (
+                                            {publicCycle && (
                                                 <>
                                                     <h3 className="font-serif text-xl text-[var(--paper)]">{event.title}</h3>
                                                     {event.description && (
@@ -141,18 +153,18 @@ export default async function LandingPage({
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
-                                                {isPublicCycleSession(event.id) ? (locale === "en" ? "Free" : "Gratis") : (event.language === "ENGLISH" ? "US $50" : "US $20")}
+                                                {publicCycle ? (locale === 'en' ? 'Free' : 'Gratis') : (event.language === "ENGLISH" ? "US $50" : "US $20")}
                                             </p>
                                         </div>
                                     </div>
 
                                     <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                                        {isPublicCycleSession(event.id) ? (
+                                        {publicCycle ? (
                                             <a
                                                 href={`/api/public-sessions/${event.id}/enter`}
                                                 className="event-button event-button--primary mt-3 inline-flex w-full text-center sm:w-auto"
                                             >
-                                                {locale === "en" ? "Enter event" : "Ingresar al evento"}
+                                                {locale === 'en' ? 'Enter event' : 'Ingresar al evento'}
                                             </a>
                                         ) : purchaseUrlFor(event.language) ? (
                                             <a
@@ -169,19 +181,21 @@ export default async function LandingPage({
                                                 {copy.salesSoon}
                                             </p>
                                         )}
-                                        {!isPublicCycleSession(event.id) && (
+                                        {!publicCycle && (
                                             <p className="mt-3 text-xs text-[var(--text-secondary)]">
                                                 USD $50 {copy.globalNorth} · USD $20 {copy.globalSouth}
                                             </p>
                                         )}
                                     </div>
-                                    </li>
-                                ))}
+                                </li>
+                                    );
+                                })}
                             </ul>
                         </EventSchedule>
                     )}
                 </section>
 
+                {/* The wider practice, secondary to the current event cycle. */}
                 <section className="space-y-5" aria-labelledby="experience-heading">
                     <p className="hb-section-label">{copy.experienceEyebrow}</p>
                     <div className="event-card max-w-3xl">
@@ -205,13 +219,45 @@ export default async function LandingPage({
                     </div>
                 </section>
 
-                {/* Login */}
+                {/* Ticket login remains available only when a ticketed event is listed. */}
                 {hasTicketedEvents && <section className="space-y-5" aria-labelledby="login-heading">
                     <h2 id="login-heading" className="hb-section-label">
                         {copy.loginHeading}
                     </h2>
                     <div className="event-card max-w-xl">
-                        <LoginClient next={next} />
+                        {accountEnabled && !account ? (
+                            <div className="space-y-4">
+                                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                                    {copy && messages[locale].ticketLogin.accountRequired}
+                                </p>
+                                {accountError && (
+                                    <div role="alert" className="event-alert event-alert--danger">
+                                        {messages[locale].ticketLogin.accountError}
+                                    </div>
+                                )}
+                                <a
+                                    className="event-button event-button--primary inline-flex w-full"
+                                    href={`/api/account/login?flow=attendee${next ? `&next=${encodeURIComponent(next)}` : ''}`}
+                                >
+                                    {messages[locale].ticketLogin.accountContinue}
+                                </a>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {accountEnabled && (
+                                    <p className="text-xs text-[var(--text-muted)]">
+                                        {messages[locale].ticketLogin.accountConnected}
+                                    </p>
+                                )}
+                                <LoginClient
+                                    next={next}
+                                    {...(accountEnabled ? {
+                                        accountEnabled: true,
+                                        defaultDisplayName: account?.displayName ?? '',
+                                    } : {})}
+                                />
+                            </div>
+                        )}
                     </div>
                 </section>}
 

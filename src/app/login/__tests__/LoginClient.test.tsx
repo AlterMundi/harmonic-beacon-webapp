@@ -173,4 +173,31 @@ describe('LoginClient', () => {
         );
         expect(screen.getByLabelText('Ticket code')).toHaveAttribute('maxlength', '80');
     });
+
+    it('keeps the Account profile name as an editable event alias and never asks for email', async () => {
+        const fetchMock = mockFetch({
+            status: 200,
+            body: { ok: true, scheduledSessionId: 'session-saturday' },
+        });
+        window.localStorage.setItem('hb-locale', 'en');
+        render(
+            <LocaleProvider initialLocale="en">
+                <LoginClient accountEnabled defaultDisplayName="Account profile" />
+            </LocaleProvider>,
+        );
+        const user = userEvent.setup();
+        const alias = screen.getByLabelText(/Name shown in the room/);
+        expect(alias).toHaveValue('Account profile');
+        await user.clear(alias);
+        await user.type(alias, 'Event alias');
+        await user.type(screen.getByLabelText(/Ticket code/), CODE);
+        expect(screen.queryByLabelText(/Email used to buy the ticket/)).toBeNull();
+        await user.click(screen.getByRole('button', { name: /Enter the event/ }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+            name: 'Event alias',
+            code: CODE,
+        });
+    });
 });

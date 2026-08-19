@@ -12,6 +12,84 @@ hb-global-nav:not(:defined) {
   font-family: var(--font-hb-inter), Inter, system-ui, sans-serif;
 }
 
+hb-global-nav:not(:defined) > [slot="account-menu"] {
+  display: none;
+}
+
+.hb-global-navigation-local-account-slot,
+.hb-live-account-menu {
+  min-width: 15rem;
+}
+
+.hb-live-account-menu {
+  display: grid;
+}
+
+.hb-live-account-menu__identity {
+  margin: 0;
+  padding: 0.65rem 0.75rem 0.55rem;
+  border-bottom: 1px solid rgba(244, 238, 226, 0.1);
+  color: #f4eee2;
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.hb-live-account-menu__role {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  color: #ada089;
+  font-size: 0.72rem;
+}
+
+.hb-live-account-menu a,
+.hb-live-account-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: #e9e0d0;
+  background: transparent;
+  cursor: pointer;
+  font: 600 11px/1.2 var(--font-hb-inter), Inter, system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.hb-live-account-menu a:hover,
+.hb-live-account-menu button:hover {
+  color: #f4eee2;
+  background: rgba(201, 162, 78, 0.1);
+}
+
+.hb-live-account-menu a:focus-visible,
+.hb-live-account-menu button:focus-visible {
+  outline: 2px solid #c9a24e;
+  outline-offset: -2px;
+}
+
+.hb-live-account-menu button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.hb-live-account-menu small {
+  padding: 0.55rem 0.75rem;
+  color: #e4b8ae;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+/* A local identity is hidden before a possible bfcache snapshot. Persisted
+   restorations reload from the host database before showing it again. */
+html[data-hb-live-identity-stale="1"] body {
+  visibility: hidden;
+}
+
 html[data-hb-embedded-surface="cockpit"] hb-global-nav {
   display: none;
 }
@@ -51,6 +129,99 @@ body:has(.live-ops-shell [role="dialog"]:not(.hidden)) > hb-global-nav {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.hb-global-navigation-fallback__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hb-global-navigation-fallback__account-control {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+}
+
+.hb-global-navigation-fallback__account-control summary {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  list-style: none;
+  border: 1px solid rgba(201, 162, 78, 0.55);
+  border-radius: 999px;
+  color: #e9e0d0;
+  background: rgba(22, 18, 13, 0.82);
+  cursor: pointer;
+}
+
+.hb-global-navigation-fallback__account-control[data-account-signed-in] summary {
+  position: relative;
+  border-color: rgba(201, 162, 78, 0.72);
+  background: rgba(201, 162, 78, 0.1);
+}
+
+.hb-global-navigation-fallback__account-control[data-account-signed-in] summary::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid #16120d;
+  border-radius: 999px;
+  background: #c9a24e;
+}
+
+.hb-global-navigation-fallback__account-control summary::-webkit-details-marker {
+  display: none;
+}
+
+.hb-global-navigation-fallback__account-control summary:focus-visible {
+  outline: 2px solid #c9a24e;
+  outline-offset: 3px;
+}
+
+.hb-global-navigation-fallback__account-control svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.hb-global-navigation-fallback__account-menu {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 164px;
+  padding: 6px;
+  border: 1px solid rgba(201, 162, 78, 0.34);
+  border-radius: 12px;
+  background: #16120d;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
+}
+
+.hb-global-navigation-fallback__account-menu a {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #e9e0d0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hb-global-navigation-fallback__account-menu a[aria-current="page"] {
+  color: #c9a24e;
 }
 
 .hb-global-navigation-fallback li a {

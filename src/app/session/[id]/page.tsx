@@ -16,6 +16,8 @@ import {
 import { AudioProvider, useAudio } from "@/context/AudioContext";
 import { useLocale } from "@/context/LocaleContext";
 import HandRaiseButton from "@/components/session/HandRaiseButton";
+import SessionContributions from "@/components/session/SessionContributions";
+import SessionGuidance from "@/components/session/SessionGuidance";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
 import ThumbnailSender from "@/components/session/ThumbnailSender";
 import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
@@ -975,7 +977,8 @@ function SessionRoom() {
                     </div>
                 </header>
 
-                {/* Stage */}
+                {/* Stage + contributions panel (side on desktop, below on mobile) */}
+                <div className="flex flex-1 flex-col lg:flex-row">
                 <div className="flex flex-1 flex-col items-center justify-center gap-5 px-3 py-4 sm:px-4">
                     <StageLayout
                         publishers={stagePublishers}
@@ -1066,6 +1069,11 @@ function SessionRoom() {
 
                     <ThumbnailTapestry sessionId={id} />
 
+                    {/* Listening guidance: a quiet disclosure above the
+                        controls it explains. Presentational only — opening it
+                        never remounts the Room or touches audio state. */}
+                    <SessionGuidance copy={copy.session.guidance} className="w-full max-w-sm" />
+
                     {/* Volume + Mix controls */}
                     <div className="w-full max-w-sm space-y-5">
                         <div>
@@ -1111,6 +1119,10 @@ function SessionRoom() {
                             </div>
                         </div>
                     </div>
+                </div>
+                {principalKind === 'ticket' && (
+                    <SessionContributions key={id} sessionId={id} />
+                )}
                 </div>
 
                 {principalKind === 'staff' && (
@@ -1363,7 +1375,7 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
         }).format(new Date(entry.session.scheduledAt));
         return (
             <main className="event-shell">
-                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                <div className="relative z-10 flex min-h-screen flex-col items-center justify-center gap-4 px-4 py-8">
                     <section role="status" aria-live="polite" className="event-card w-full max-w-md text-center">
                         <div className="terminal-state__icon text-[var(--lime)]">&#10022;</div>
                         <p className="font-mono text-xs uppercase tracking-[0.12em] text-[var(--lime)]">
@@ -1384,6 +1396,9 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                             </p>
                         )}
                     </section>
+                    {/* Guidance waits outside the live region: the disclosure
+                        toggling must not be announced as a door-state change. */}
+                    <SessionGuidance copy={copy.session.guidance} className="w-full max-w-md" />
                 </div>
             </main>
         );

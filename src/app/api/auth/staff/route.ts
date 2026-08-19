@@ -1,5 +1,7 @@
 /**
- * Staff login: seeded email + password.
+ * Legacy staff login: seeded email + password. The route is unavailable when
+ * the central Beacon Account RP feature is enabled; staff then enter through
+ * an explicit issuer/subject binding while roles remain local.
  *
  * Four named people, credentials seeded from environment-supplied scrypt
  * digests (see `prisma/seed-contract.ts`). No signup, no reset, no MFA, no
@@ -26,6 +28,7 @@ import { authFailureLimiter } from '@/lib/rate-limit';
 import { redactError } from '@/lib/redact';
 import { verifyStaffPassword } from '@/lib/session-auth';
 import { resolveStaffLanding } from '@/lib/staff-navigation';
+import { beaconAccountEnabled } from '@/lib/account-rp';
 
 const GENERIC_REJECTION = 'Those credentials are not valid.';
 const RATE_LIMITED = 'Too many attempts. Please wait and try again.';
@@ -41,6 +44,9 @@ const DECOY_DIGEST = `scrypt$${randomBytes(16).toString('base64url')}$${randomBy
 type FailureReason = 'malformed_request' | 'unknown_account' | 'bad_password' | 'disabled_account';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    if (beaconAccountEnabled()) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
     const address = clientAddress(request.headers);
 
     if (authFailureLimiter.isLimited(address)) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { digestSessionToken } from '../session-auth';
 
@@ -12,10 +12,12 @@ describe('resolveStaffByToken', () => {
     beforeEach(() => {
         vi.resetModules();
     });
+    afterEach(() => vi.unstubAllEnvs());
 
-    function mockDb(session: unknown) {
+    function mockDb(session: unknown, binding: unknown = null) {
         const mockPrisma = {
             webSession: { findUnique: vi.fn().mockResolvedValue(session) },
+            staffAccountBinding: { findUnique: vi.fn().mockResolvedValue(binding) },
         };
         vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
         return mockPrisma;
@@ -84,5 +86,34 @@ describe('resolveStaffByToken', () => {
         mockDb(activeStaffSession({ staffUser: { ...staffRow, disabledAt: new Date() } }));
         const { resolveStaffByToken } = await import('../ops-auth');
         expect(await resolveStaffByToken('cookie-token')).toBeNull();
+    });
+
+    it('keeps roles local while requiring the exact preconfigured Account binding', async () => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        const issuer = 'https://account.harmonicbeacon.com';
+        vi.stubEnv('BEACON_ACCOUNT_ISSUER_URL', issuer);
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_ID', 'hb-live');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET', 'test-secret-that-is-at-least-32-characters');
+        const session = activeStaffSession({
+            accountIssuer: issuer,
+            accountSubject: 'acct_staff_1',
+            accountSessionId: 'central-sid',
+            accountValidatedAt: new Date(),
+        });
+        mockDb(session, {
+            accountIssuer: issuer,
+            accountSubject: 'acct_staff_1',
+            disabledAt: null,
+        });
+        const { resolveStaffByToken } = await import('../ops-auth');
+        expect(await resolveStaffByToken('cookie-token')).toMatchObject({ role: 'ADMIN' });
+
+        vi.resetModules();
+        mockDb(session, {
+            accountIssuer: issuer,
+            accountSubject: 'different-account',
+            disabledAt: null,
+        });
+        expect(await (await import('../ops-auth')).resolveStaffByToken('cookie-token')).toBeNull();
     });
 });

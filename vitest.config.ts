@@ -10,7 +10,11 @@ export default defineConfig({
     test: {
         environment: 'node',
         setupFiles: ['src/__tests__/setup.ts'],
-        include: ['src/**/*.test.{ts,tsx}', 'middleware.test.ts'],
+        include: [
+            'src/**/*.test.{ts,tsx}',
+            'scripts/live-staging/**/*.test.ts',
+            'middleware.test.ts',
+        ],
         coverage: {
             provider: 'v8',
             include: ['src/lib/**', 'src/app/api/**', 'src/components/**', 'src/context/**'],

@@ -3,9 +3,17 @@ import { Syne, Space_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
+import { LiveIdentityCacheBoundary } from "@/components/brand/LiveIdentityCacheBoundary";
+import { LiveNavigationAccountMenu } from "@/components/brand/LiveNavigationAccountMenu";
 import { LocaleProvider } from "@/context/LocaleContext";
-import { globalNavigationSurface } from "@/lib/brand/global-navigation";
+import { beaconAccountEnabled } from "@/lib/account-rp";
+import {
+  globalNavigationAccountHref,
+  globalNavigationSurface,
+} from "@/lib/brand/global-navigation";
+import { locallyKnownLiveNavigationIdentity } from "@/lib/brand/account-navigation-state";
 import { requestLocale } from "@/lib/i18n-server";
+import { messages } from "@/lib/i18n";
 import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
@@ -77,11 +85,33 @@ export default async function RootLayout({
   const incomingHeaders = await headers();
   const locale = await requestLocale();
   const navigationSurface = globalNavigationSurface(incomingHeaders) ?? "events";
+  const accountHref = globalNavigationAccountHref(incomingHeaders);
+  const accountAvailable = beaconAccountEnabled();
+  const navigationIdentity = accountAvailable
+    ? await locallyKnownLiveNavigationIdentity(incomingHeaders).catch(() => null)
+    : null;
 
   return (
     <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
-        <GlobalNavigation active={navigationSurface} locale={locale} />
+        <GlobalNavigation
+          active={navigationSurface}
+          locale={locale}
+          accountHref={accountHref}
+          accountAvailable={accountAvailable}
+          accountSignedIn={Boolean(navigationIdentity)}
+          accountMenu={navigationIdentity ? (
+            <LiveNavigationAccountMenu
+              displayName={navigationIdentity.displayName}
+              staffRoleLabel={navigationIdentity.staffRole
+                ? messages[locale].staffRoles[navigationIdentity.staffRole]
+                : null}
+              accountHref={accountHref}
+              locale={locale}
+            />
+          ) : undefined}
+        />
+        {navigationIdentity && <LiveIdentityCacheBoundary />}
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
           <div className="relative z-10">{children}</div>
