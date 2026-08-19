@@ -15,9 +15,7 @@
     { key: 'listen', href: LISTENER_ORIGIN + '/', en: 'Listen', es: 'Escuchar' },
     { key: 'news', href: MAIN_ORIGIN + '/eventos/', en: 'News', es: 'Novedades' },
     { key: 'why', href: MAIN_ORIGIN + '/#porque', en: 'Why it works', es: 'Por qué funciona' },
-    { key: 'team', href: MAIN_ORIGIN + '/#team', en: 'Team', es: 'Equipo' },
-    { key: 'foundation', href: MAIN_ORIGIN + '/#foundation', en: 'HIT', es: 'HIT' },
-    { key: 'contact', href: MAIN_ORIGIN + '/#contact', en: 'Contact', es: 'Contacto' }
+    { key: 'foundation', href: MAIN_ORIGIN + '/#foundation', en: 'HIT', es: 'HIT' }
   ];
 
   function validLanguage(value) {
@@ -88,9 +86,7 @@
     if (host === 'live.harmonicbeacon.com') return 'events';
     if (location.pathname.indexOf('/eventos') === 0) return 'news';
     if (location.hash === '#porque') return 'why';
-    if (location.hash === '#team') return 'team';
     if (location.hash === '#foundation') return 'foundation';
-    if (location.hash === '#contact') return 'contact';
     return null;
   }
 
@@ -161,6 +157,7 @@
     .account-trigger svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
     .account-menu { position:absolute; z-index:4; top:calc(100% + 8px); right:0; min-width:164px; padding:6px; border:1px solid rgba(201,162,78,.34); border-radius:12px; background:#16120D; box-shadow:0 18px 48px rgba(0,0,0,.34); }
     .account-menu[hidden] { display:none; }
+    .account-menu slot { display:block; }
     .account-menu a { display:flex; min-height:44px; align-items:center; padding:10px 12px; border-radius:8px; color:#E9E0D0; font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; }
     .account-menu a:hover { color:#F4EEE2; background:rgba(201,162,78,.1); }
     .toggle { display:none; width:44px; height:44px; padding:0 10px; border:0; background:transparent; cursor:pointer; }
@@ -240,7 +237,7 @@
       var accountControl = accountControlAvailable()
         ? '<div class="account-control">' +
             '<button class="account-trigger' + (accountSignedIn ? ' signed-in' : '') + '" type="button" aria-label="' + userMenuLabel + '" aria-haspopup="menu" aria-controls="hb-account-menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.75 19c.6-3.25 2.7-5 6.25-5s5.65 1.75 6.25 5"></path></svg></button>' +
-            '<div class="account-menu" id="hb-account-menu" role="menu" hidden><a role="menuitem" href="' + accountPageHref(language) + '">' + accountLabel + '</a></div>' +
+            '<div class="account-menu" id="hb-account-menu" role="menu" hidden><slot name="account-menu"><a role="menuitem" href="' + accountPageHref(language) + '">' + accountLabel + '</a></slot></div>' +
           '</div>'
         : '';
       this.shadowRoot.innerHTML = '<style>' + style + '</style>' +
@@ -268,7 +265,15 @@
       var accountTrigger = this.shadowRoot.querySelector('.account-trigger');
       var accountMenu = this.shadowRoot.querySelector('.account-menu');
       if (accountTrigger && accountMenu) {
-        var accountMenuLink = accountMenu.querySelector('a');
+        var accountMenuSlot = accountMenu.querySelector('slot');
+        var accountMenuItems = function () {
+          var assigned = accountMenuSlot.assignedElements({ flatten:true });
+          if (!assigned.length) return Array.from(accountMenu.querySelectorAll('[role="menuitem"]'));
+          return assigned.flatMap(function (element) {
+            var items = element.matches('[role="menuitem"]') ? [element] : [];
+            return items.concat(Array.from(element.querySelectorAll('[role="menuitem"]')));
+          });
+        };
         var setAccountMenuOpen = function (open) {
           accountTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
           accountMenu.hidden = !open;
@@ -280,18 +285,22 @@
           if (event.key !== 'ArrowDown') return;
           event.preventDefault();
           setAccountMenuOpen(true);
-          accountMenuLink.focus();
+          var firstItem = accountMenuItems()[0];
+          if (firstItem) firstItem.focus();
         });
-        [accountTrigger, accountMenuLink].forEach(function (control) {
-          control.addEventListener('keydown', function (event) {
-            if (event.key !== 'Escape') return;
-            setAccountMenuOpen(false);
-            accountTrigger.focus();
-          });
+        accountMenu.addEventListener('keydown', function (event) {
+          if (event.key !== 'Escape') return;
+          setAccountMenuOpen(false);
+          accountTrigger.focus();
+        });
+        accountTrigger.addEventListener('keydown', function (event) {
+          if (event.key !== 'Escape') return;
+          setAccountMenuOpen(false);
+          accountTrigger.focus();
         });
         if (this.outsideClick) document.removeEventListener('click', this.outsideClick);
         this.outsideClick = function (event) {
-          if (event.target !== this) setAccountMenuOpen(false);
+          if (!event.composedPath().includes(this)) setAccountMenuOpen(false);
         }.bind(this);
         document.addEventListener('click', this.outsideClick);
       }

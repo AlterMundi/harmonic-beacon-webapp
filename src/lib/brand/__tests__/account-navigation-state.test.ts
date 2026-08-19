@@ -26,7 +26,9 @@ function localSession(overrides: Record<string, unknown> = {}) {
         accountIssuer: ISSUER,
         accountSubject: 'account-subject-opaque',
         accountSessionId: 'account-session-opaque',
+        accountDisplayName: 'Nicolás',
         accountValidatedAt: new Date(NOW.getTime() - 60_000),
+        staffUser: null,
         ...overrides,
     };
 }
@@ -48,11 +50,18 @@ afterEach(() => {
 });
 
 describe('local Account navigation state', () => {
-    it('returns only a boolean from a valid local Live session without backchannel or mutation', async () => {
+    it('returns minimum local presentation without backchannel or mutation', async () => {
         findUnique.mockResolvedValue(localSession());
         const fetchSpy = vi.spyOn(globalThis, 'fetch');
-        const { locallyKnownLiveAccountSession } = await import('../account-navigation-state');
+        const {
+            locallyKnownLiveAccountSession,
+            locallyKnownLiveNavigationIdentity,
+        } = await import('../account-navigation-state');
 
+        await expect(locallyKnownLiveNavigationIdentity(requestHeaders(), NOW)).resolves.toEqual({
+            displayName: 'Nicolás',
+            staffRole: null,
+        });
         await expect(locallyKnownLiveAccountSession(requestHeaders(), NOW)).resolves.toBe(true);
         expect(findUnique).toHaveBeenCalledWith({
             where: { tokenDigest: digestSessionToken(TOKEN) },
@@ -63,11 +72,60 @@ describe('local Account navigation state', () => {
                 accountIssuer: true,
                 accountSubject: true,
                 accountSessionId: true,
+                accountDisplayName: true,
                 accountValidatedAt: true,
+                staffUser: {
+                    select: {
+                        role: true,
+                        disabledAt: true,
+                        accountBinding: {
+                            select: {
+                                accountIssuer: true,
+                                accountSubject: true,
+                                disabledAt: true,
+                            },
+                        },
+                    },
+                },
             },
         });
         expect(fetchSpy).not.toHaveBeenCalled();
-        expect(findUnique.mock.calls[0][0].select).not.toHaveProperty('accountDisplayName');
+        expect(findUnique.mock.calls[0][0].select).not.toHaveProperty('email');
+        expect(findUnique.mock.calls[0][0].select).not.toHaveProperty('tokenDigest');
+    });
+
+    it('exposes only a local staff shortcut when the active binding still matches', async () => {
+        findUnique.mockResolvedValue(localSession({
+            staffUser: {
+                role: 'ADMIN',
+                disabledAt: null,
+                accountBinding: {
+                    accountIssuer: ISSUER,
+                    accountSubject: 'account-subject-opaque',
+                    disabledAt: null,
+                },
+            },
+        }));
+        const { locallyKnownLiveNavigationIdentity } = await import('../account-navigation-state');
+
+        await expect(locallyKnownLiveNavigationIdentity(requestHeaders(), NOW)).resolves.toEqual({
+            displayName: 'Nicolás',
+            staffRole: 'ADMIN',
+        });
+    });
+
+    it.each([
+        ['disabled staff', { role: 'ADMIN', disabledAt: NOW, accountBinding: null }],
+        ['disabled binding', { role: 'ADMIN', disabledAt: null, accountBinding: { accountIssuer: ISSUER, accountSubject: 'account-subject-opaque', disabledAt: NOW } }],
+        ['wrong binding', { role: 'ADMIN', disabledAt: null, accountBinding: { accountIssuer: ISSUER, accountSubject: 'other-subject', disabledAt: null } }],
+    ])('keeps Account signed in but withholds Operations for %s', async (_label, staffUser) => {
+        findUnique.mockResolvedValue(localSession({ staffUser }));
+        const { locallyKnownLiveNavigationIdentity } = await import('../account-navigation-state');
+
+        await expect(locallyKnownLiveNavigationIdentity(requestHeaders(), NOW)).resolves.toEqual({
+            displayName: 'Nicolás',
+            staffRole: null,
+        });
     });
 
     it.each([

@@ -1,5 +1,6 @@
 import { storedAccountIdentity } from '@/lib/account-rp';
 import { prisma } from '@/lib/db';
+import type { LocalizedStaffRole } from '@/lib/i18n';
 import { SESSION_COOKIE_NAME, digestSessionToken } from '@/lib/session-auth';
 
 const MAX_COOKIE_HEADER_BYTES = 8_192;
@@ -29,9 +30,28 @@ export async function locallyKnownLiveAccountSession(
     headers: Pick<Headers, 'get'>,
     now = new Date(),
 ): Promise<boolean> {
-    if (process.env.BEACON_ACCOUNT_ENABLED !== 'true') return false;
+    return Boolean(await locallyKnownLiveNavigationIdentity(headers, now));
+}
+
+export type LocalLiveNavigationIdentity = {
+    displayName: string | null;
+    staffRole: LocalizedStaffRole | null;
+};
+
+/**
+ * Resolve the minimum host-local presentation used inside the global user
+ * menu. This is deliberately not an authorization check: it performs one
+ * read-only database lookup, never revalidates with Account and never updates
+ * session activity. Protected Live and Ops routes still resolve their ordinary
+ * principal independently.
+ */
+export async function locallyKnownLiveNavigationIdentity(
+    headers: Pick<Headers, 'get'>,
+    now = new Date(),
+): Promise<LocalLiveNavigationIdentity | null> {
+    if (process.env.BEACON_ACCOUNT_ENABLED !== 'true') return null;
     const token = exactlyOneSessionToken(headers);
-    if (!token) return false;
+    if (!token) return null;
 
     try {
         const row = await prisma.webSession.findUnique({
@@ -43,20 +63,44 @@ export async function locallyKnownLiveAccountSession(
                 accountIssuer: true,
                 accountSubject: true,
                 accountSessionId: true,
+                accountDisplayName: true,
                 accountValidatedAt: true,
+                staffUser: {
+                    select: {
+                        role: true,
+                        disabledAt: true,
+                        accountBinding: {
+                            select: {
+                                accountIssuer: true,
+                                accountSubject: true,
+                                disabledAt: true,
+                            },
+                        },
+                    },
+                },
             },
         });
-        if (!row || row.revokedAt || row.expiresAt <= now) return false;
+        if (!row || row.revokedAt || row.expiresAt <= now) return null;
 
-        return storedAccountIdentity({
-            ...row,
-            // The navigation consumes only a boolean and never reads profile
-            // data, so do not select the locally cached display name at all.
-            accountDisplayName: null,
-        }) !== null;
+        const identity = storedAccountIdentity(row);
+        if (!identity) return null;
+        const binding = row.staffUser?.accountBinding;
+        const isStaff = Boolean(
+            row.staffUser &&
+            row.staffUser.disabledAt === null &&
+            binding &&
+            binding.disabledAt === null &&
+            binding.accountIssuer === identity.issuer &&
+            binding.accountSubject === identity.subject
+        );
+
+        return {
+            displayName: identity.displayName?.trim() || null,
+            staffRole: isStaff ? row.staffUser!.role : null,
+        };
     } catch {
         // Navigation remains neutral when local state/configuration is
         // unavailable. It never turns a display hint into an auth dependency.
-        return false;
+        return null;
     }
 }

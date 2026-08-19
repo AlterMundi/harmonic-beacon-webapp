@@ -50,12 +50,15 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', 'https://live.harmonicbeacon.com/?lang=en');
         expect(screen.getByRole('link', { name: 'Listen' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('link', { name: 'News' })).toHaveAttribute('href', 'https://harmonicbeacon.com/eventos/?lang=en');
+        expect(screen.queryByRole('link', { name: 'Why it works' })).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Team' })).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Contact' })).toBeNull();
         expect(screen.queryByLabelText('User menu')).toBeNull();
         expect(screen.queryByRole('menuitem', { name: 'Account' })).toBeNull();
     });
 
     it('loads a byte-pinned local canonical asset instead of remote same-origin code', () => {
-        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('ed7421616429681a37836f4698c73cf01799b75e');
+        expect(GLOBAL_NAVIGATION_PROVENANCE).toBe('7e2730344e543e6c6ff5abde6d8133fc198214ae');
         const bytes = readFileSync(resolve(process.cwd(), 'public/assets/hb-global-nav.js'));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(GLOBAL_NAVIGATION_SHA256);
         expect(manifest.globalNavigation.commit).toBe(GLOBAL_NAVIGATION_PROVENANCE);
@@ -78,6 +81,10 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(source).toContain('<circle cx="12" cy="8" r="3.25">');
         expect(source).toContain('aria-haspopup="menu"');
         expect(source).toContain('class="account-menu"');
+        expect(source).toContain('<slot name="account-menu">');
+        expect(source).toContain('assignedElements({ flatten:true })');
+        expect(source).toContain("querySelectorAll('[role=\"menuitem\"]')");
+        expect(source).toContain('event.composedPath().includes(this)');
         expect(source).not.toContain('class="account-link"');
         expect(source).not.toContain('https://account.harmonicbeacon.com');
         expect(source).not.toContain('fetch(');
@@ -146,10 +153,32 @@ describe('canonical Harmonic Beacon global navigation', () => {
         expect(screen.getByLabelText('Menú de usuario, sesión iniciada')).toBeInTheDocument();
     });
 
+    it('provides the host-local signed-in menu through the canonical slot only on staging', () => {
+        const view = render(<GlobalNavigation
+            active="events"
+            locale="en"
+            accountHref="https://account-staging.harmonicbeacon.com/account"
+            accountSignedIn
+            accountMenu={<div><p>Nicolás</p><button role="menuitem">Operations</button></div>}
+        />);
+
+        const slot = view.container.querySelector('[slot="account-menu"]');
+        expect(slot).toHaveClass('hb-global-navigation-local-account-slot');
+        expect(within(slot as HTMLElement).getByText('Nicolás')).toBeInTheDocument();
+        expect(within(slot as HTMLElement).getByRole('menuitem', { name: 'Operations' }))
+            .toBeInTheDocument();
+    });
+
     it('does not expose a signed-in marker when production Account is unavailable', () => {
-        const view = render(<GlobalNavigation active="events" locale="en" accountSignedIn />);
+        const view = render(<GlobalNavigation
+            active="events"
+            locale="en"
+            accountSignedIn
+            accountMenu={<button role="menuitem">Operations</button>}
+        />);
 
         expect(view.container.querySelector('hb-global-nav')).not.toHaveAttribute('data-account-signed-in');
         expect(view.container.querySelector('details')).toBeNull();
+        expect(view.container.querySelector('[slot="account-menu"]')).toBeNull();
     });
 });

@@ -14,7 +14,11 @@ function mountDb(updateMany = vi.fn().mockResolvedValue({ count: 1 })) {
 function logoutRequest(cookie?: string) {
     return createRequest('/api/auth/logout', {
         method: 'POST',
-        headers: cookie ? { cookie: `hb_session=${cookie}` } : {},
+        headers: {
+            origin: 'https://live-staging.harmonicbeacon.com',
+            'sec-fetch-site': 'same-origin',
+            ...(cookie ? { cookie: `hb_session=${cookie}` } : {}),
+        },
     });
 }
 
@@ -27,11 +31,13 @@ function sessionCookieOf(response: Response) {
 describe('POST /api/auth/logout', () => {
     beforeEach(() => {
         vi.resetModules();
+        process.env.TICKET_LOGIN_URL_PREFIX = 'https://live-staging.harmonicbeacon.com';
     });
 
     afterEach(() => {
         vi.doUnmock('@/lib/db');
         vi.restoreAllMocks();
+        delete process.env.TICKET_LOGIN_URL_PREFIX;
     });
 
     it('revokes the session row and clears the cookie', async () => {
@@ -98,5 +104,24 @@ describe('POST /api/auth/logout', () => {
         expect(sessionCookieOf(response)).toMatchObject({ value: '', maxAge: 0 });
         expect(error).toHaveBeenCalled();
         expect(String(error.mock.calls[0][0])).not.toContain(TOKEN);
+    });
+
+    it.each([
+        ['missing Origin', { 'sec-fetch-site': 'same-origin' }],
+        ['sibling Origin', { origin: 'https://account-staging.harmonicbeacon.com', 'sec-fetch-site': 'same-origin' }],
+        ['cross-site fetch metadata', { origin: 'https://live-staging.harmonicbeacon.com', 'sec-fetch-site': 'cross-site' }],
+    ])('rejects %s before reading or revoking the session', async (_label, headers) => {
+        const updateMany = mountDb();
+        const { POST } = await import('../route');
+        const request = createRequest('/api/auth/logout', {
+            method: 'POST',
+            headers: { ...headers, cookie: `hb_session=${TOKEN}` },
+        });
+
+        const response = await POST(request);
+
+        expect(response.status).toBe(403);
+        expect(updateMany).not.toHaveBeenCalled();
+        expect(sessionCookieOf(response)).toBeUndefined();
     });
 });
