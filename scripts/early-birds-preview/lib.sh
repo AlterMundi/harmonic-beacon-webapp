@@ -119,13 +119,25 @@ require_synthetic_env() {
   fi
   case "$account_enabled" in 0|1) ;; *) preview_fail 'BEACON_LISTENER_ACCOUNT_ENABLED must be 0 or 1' ;; esac
   if test "$account_enabled" = 1; then
-    for account_secret in "$account_client_prod" "$account_client_staging" "$account_state_prod" "$account_state_staging"; do
+    for account_secret in "$account_client_prod" "$account_state_prod"; do
       test "${#account_secret}" -ge 32 || preview_fail 'Listener Account RP secrets must contain at least 32 characters'
     done
-    test "$account_client_prod" != "$account_client_staging" || preview_fail 'Listener Account client secrets must differ by environment'
-    test "$account_state_prod" != "$account_state_staging" || preview_fail 'Listener Account state secrets must differ by environment'
+    test "$account_client_prod" != "$account_state_prod" || preview_fail 'Listener Account client and state secrets must differ'
+    test -z "$account_client_staging" && test -z "$account_state_staging" ||
+      preview_fail 'production Listener must not contain staging Account secrets'
+    require_exact_preview_value EARLY_BIRDS_AUTH_BASE_URL https://listen.harmonicbeacon.com "$env_file"
+    require_exact_preview_value EARLY_BIRDS_TRUSTED_ORIGINS \
+      https://listen.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com "$env_file"
+  else
+    for account_secret in "$account_client_prod" "$account_client_staging" "$account_state_prod" "$account_state_staging"; do
+      test -z "$account_secret" || preview_fail 'disabled Listener must not carry Account RP secrets'
+    done
   fi
-  if test -n "$google_client_id" || test -n "$apple_client_id"; then
+  if test "$account_enabled" = 1; then
+    # The exact production Listener origin was already required together with
+    # its production-only RP secret pair above.
+    :
+  elif test -n "$google_client_id" || test -n "$apple_client_id"; then
     oauth_auth_base=$(preview_env_value EARLY_BIRDS_AUTH_BASE_URL "$env_file")
     case "$oauth_auth_base" in
       https://earlybirds-staging.harmonicbeacon.com)

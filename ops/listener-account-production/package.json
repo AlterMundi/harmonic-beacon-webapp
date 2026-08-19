@@ -1,0 +1,9 @@
+{
+  "name": "@harmonic-beacon/listener-account-production-ops",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check validate.mjs && node --check ../../scripts/listener-account-production/sync-secret.mjs && node --check ../../scripts/listener-account-production/preflight.mjs && sh -n ../../scripts/listener-account-production/prepare.sh ../../scripts/listener-account-production/preflight.sh",
+    "test": "node --test test/contract.test.mjs"
+  }
+}
