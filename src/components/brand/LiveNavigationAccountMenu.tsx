@@ -17,6 +17,7 @@ export function trustedAccountLogoutURL(
         if (
             logoutURL.protocol !== 'https:' ||
             logoutURL.origin !== accountOrigin ||
+            logoutURL.pathname !== '/account/logout' ||
             logoutURL.username ||
             logoutURL.password
         ) return null;

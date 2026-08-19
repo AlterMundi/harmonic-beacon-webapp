@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -381,6 +381,38 @@ describe('Beacon Account OAuth 2.1 RP', () => {
         const { accountIdentityIsFresh } = await import('../account-rp');
         expect(accountIdentityIsFresh({ validatedAt: NOW }, new Date(NOW.getTime() + 899_999))).toBe(true);
         expect(accountIdentityIsFresh({ validatedAt: NOW }, new Date(NOW.getTime() + 900_001))).toBe(false);
+    });
+
+    it('creates a short-lived signed Account logout initiation without retaining an ID token', async () => {
+        process.env.TICKET_LOGIN_URL_PREFIX = 'https://live-staging.harmonicbeacon.com';
+        const { accountLogoutUrl } = await import('../account-rp');
+
+        const result = new URL(await accountLogoutUrl({
+            origin: 'https://live-staging.harmonicbeacon.com',
+            sessionId: SID,
+            mode: 'current',
+            now: NOW,
+        }));
+
+        expect(result.origin + result.pathname).toBe(`${ISSUER}/account/logout`);
+        expect(result.searchParams.get('mode')).toBe('current');
+        expect(result.searchParams.get('return_to')).toBe('https://live-staging.harmonicbeacon.com/');
+        const initiation = result.searchParams.get('initiation')!;
+        const [encoded, signature, extra] = initiation.split('.');
+        expect(extra).toBeUndefined();
+        expect(signature).toBe(createHmac('sha256', CLIENT_SECRET)
+            .update(encoded, 'utf8').digest('base64url'));
+        expect(JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))).toMatchObject({
+            v: 1,
+            iss: ISSUER,
+            client_id: CLIENT_ID,
+            sid: SID,
+            mode: 'current',
+            return_to: 'https://live-staging.harmonicbeacon.com/',
+            iat: Math.floor(NOW.getTime() / 1_000),
+            exp: Math.floor(NOW.getTime() / 1_000) + 120,
+        });
+        expect(initiation).not.toContain(CLIENT_SECRET);
     });
 
     it('revalidates and coalesces stale local sessions through the exact Account backchannel', async () => {

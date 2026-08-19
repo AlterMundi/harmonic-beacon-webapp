@@ -89,8 +89,10 @@ describe('Live navigation Account menu', () => {
     });
 
     it.each([
-        ['https://account-staging.harmonicbeacon.com/api/account/auth/oauth2/end-session?state=opaque', true],
+        ['https://account-staging.harmonicbeacon.com/account/logout?initiation=opaque', true],
+        ['https://account-staging.harmonicbeacon.com/api/account/auth/oauth2/end-session?state=opaque', false],
         ['https://account.harmonicbeacon.com/account/logout', false],
+        ['https://account-staging.harmonicbeacon.com/account', false],
         ['https://account-staging.harmonicbeacon.com.evil.example/logout', false],
         ['javascript:alert(1)', false],
         ['not a URL', false],
