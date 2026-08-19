@@ -47,6 +47,8 @@ test('refuses enabled, staging and unexpected secret states', () => {
 test('host wrappers constrain secrets, networking, provenance and arguments', () => {
   const prepare = source('scripts/listener-account-production/prepare.sh');
   const preflight = source('scripts/listener-account-production/preflight.sh');
+  assert.match(prepare, /id -u/);
+  assert.match(preflight, /id -u/);
   assert.match(prepare, /--network none/);
   assert.match(prepare, /--read-only/);
   assert.match(prepare, /--cap-drop ALL/);

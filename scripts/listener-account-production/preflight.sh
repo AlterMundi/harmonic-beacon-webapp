@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+test "$(id -u)" -eq 0 || { echo 'run as root' >&2; exit 2; }
+
 expected_sha=${1:?usage: preflight.sh exact-sha40}
 case "$expected_sha" in *[!0-9a-f]*|'') echo 'exact lowercase sha40 required' >&2; exit 2 ;; esac
 test "${#expected_sha}" -eq 40 || { echo 'exact lowercase sha40 required' >&2; exit 2; }
