@@ -1511,6 +1511,12 @@ html[data-hb-surface='listener'] body {
   font-family: var(--hb-font-sans);
 }
 
+/* A host-local Account document is hidden before a possible bfcache snapshot.
+   A persisted restoration reloads authoritatively before removing this flag. */
+html[data-hb-listener-identity-stale='1'] body {
+  visibility: hidden;
+}
+
 .listener-shell :where(button, input, select, textarea),
 .listener-page-shell :where(button, input, select, textarea) {
   font: inherit;

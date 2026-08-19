@@ -30,6 +30,7 @@ vi.mock('@/context/LocaleContext', () => ({
 vi.mock('sonner', () => ({ Toaster: () => null }));
 
 import RootLayout, { generateMetadata, generateViewport } from '../layout';
+import { ListenerIdentityCacheBoundary } from '@/components/brand/ListenerIdentityCacheBoundary';
 
 function requestHeaders(host: string, acceptLanguage: string): Headers {
     return new Headers({ host, 'accept-language': acceptLanguage });
@@ -114,11 +115,13 @@ describe('root document locale boundary', () => {
         mocks.locallyKnownListenerNavigationIdentity.mockResolvedValue({ displayName: 'Nico' });
 
         const result = await RootLayout({ children: <main /> });
-        const navigation = result.props.children.props.children[0];
+        const bodyChildren = result.props.children.props.children;
+        const navigation = bodyChildren[0];
 
         expect(navigation.props.accountHref).toBe('https://account-staging.harmonicbeacon.com/account');
         expect(navigation.props.accountSignedIn).toBe(true);
         expect(navigation.props.accountMenu.props.displayName).toBe('Nico');
+        expect(bodyChildren[1].type).toBe(ListenerIdentityCacheBoundary);
         expect(mocks.locallyKnownListenerNavigationIdentity).toHaveBeenCalledOnce();
         expect(mocks.locallyKnownAccountSession).not.toHaveBeenCalled();
     });
@@ -128,10 +131,12 @@ describe('root document locale boundary', () => {
         mocks.requestBrowserLocale.mockResolvedValue('en');
 
         const result = await RootLayout({ children: <main /> });
-        const navigation = result.props.children.props.children[0];
+        const bodyChildren = result.props.children.props.children;
+        const navigation = bodyChildren[0];
 
         expect(navigation.props.accountHref).toBeNull();
         expect(navigation.props.accountSignedIn).toBe(false);
+        expect(bodyChildren[1]).toBeNull();
         expect(mocks.locallyKnownListenerNavigationIdentity).not.toHaveBeenCalled();
         expect(mocks.locallyKnownAccountSession).not.toHaveBeenCalled();
     });

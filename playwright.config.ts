@@ -24,6 +24,7 @@ const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 // talk to the same throwaway database.
 const DATABASE_URL =
     process.env.E2E_DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/beacon_test';
+const LISTENER_ACCOUNT_SWITCH_GATE = process.env.E2E_LISTENER_ACCOUNT_SWITCH_GATE === '1';
 assertSafeFixtureDatabaseUrl(DATABASE_URL);
 if (!process.env.E2E_BASE_URL) {
     process.env.E2E_DATABASE_URL = DATABASE_URL;
@@ -174,6 +175,16 @@ export default defineConfig({
                   EARLY_BIRDS_TEST_LOGIN_SECRET: 'early-birds-e2e-login-secret-not-for-production',
                   EARLY_BIRDS_STAGING_TEAM_ENTRY_ENABLED: '1',
                   EARLY_BIRDS_STAGING_TEAM_ENTRY_HOSTS: `localhost:${PORT}`,
+                  // This opt-in gate gets a separate server process so the
+                  // regular visual suite keeps its existing Account-off UI.
+                  ...(LISTENER_ACCOUNT_SWITCH_GATE ? {
+                      BEACON_LISTENER_ACCOUNT_ENABLED: '1',
+                      BEACON_LISTENER_ACCOUNT_ENVIRONMENT: 'production',
+                      BEACON_LISTENER_ACCOUNT_CLIENT_SECRET:
+                          'listener-account-e2e-client-secret-not-for-production',
+                      BEACON_LISTENER_ACCOUNT_STATE_SECRET:
+                          'listener-account-e2e-state-secret-not-for-production',
+                  } : {}),
               },
           },
 });
