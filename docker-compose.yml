@@ -80,6 +80,27 @@ services:
         max-size: "30m"
         max-file: "3"
 
+  # One-shot migrations intentionally inherit neither the app-only Account RP
+  # bundle nor the app-only commerce bearer bundle.
+  migrate:
+    image: harmonic-beacon/app:${BEACON_IMAGE_TAG:-latest}
+    command: [npx, prisma, migrate, deploy]
+    restart: "no"
+    env_file:
+      - path: /etc/harmonic-beacon/production.env
+        required: true
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+    networks:
+      - beacon
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
   # ── Next.js app ───────────────────────────────────────────────────
   app:
     image: harmonic-beacon/app:${BEACON_IMAGE_TAG:-latest}
@@ -93,10 +114,17 @@ services:
     container_name: beacon-app
     restart: unless-stopped
     env_file:
-      - /etc/harmonic-beacon/production.env
+      - path: /etc/harmonic-beacon/production.env
+        required: true
+      # Confidential hb-live RP material is app-only. In particular, it must
+      # never enter PostgreSQL, LiveKit, playlist, tapestry or the commerce
+      # reconciler through the shared production environment.
+      - path: /etc/harmonic-beacon/live-production-secrets/account.env
+        required: false
       # Kept separate so playlist, tapestry, Postgres and the media worker can
       # never inherit the private PMP bearer from the shared stack env.
-      - /etc/harmonic-beacon/commerce.env
+      - path: /etc/harmonic-beacon/commerce.env
+        required: true
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}

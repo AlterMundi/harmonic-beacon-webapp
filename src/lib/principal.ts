@@ -25,6 +25,13 @@ import type { StaffRole, TicketTier } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import {
+    beaconAccountEnabled,
+    storedAccountIdentity,
+    validatedAccountIdentity,
+    type AccountIdentity,
+} from '@/lib/account-rp';
+import { isAnonymousPublicCycleAccess } from '@/lib/public-cycle';
+import {
     SESSION_COOKIE_NAME,
     digestSessionToken,
     issueSessionToken,
@@ -41,6 +48,8 @@ export type AttendeePrincipal = {
     tier: TicketTier;
     /** Support handle for admission: enough to find a ticket, not to identify a person. */
     codeLastFour: string;
+    /** Present only under the central Account RP feature. Never an email. */
+    accountId?: string;
 };
 
 export type StaffPrincipal = {
@@ -48,6 +57,7 @@ export type StaffPrincipal = {
     webSessionId: string;
     userId: string;
     role: StaffRole;
+    accountId?: string;
 };
 
 export type Principal = AttendeePrincipal | StaffPrincipal;
@@ -122,6 +132,43 @@ export function newSessionToken() {
     return issueSessionToken();
 }
 
+/** Resolve the central Account session even before a ticket is attached. */
+export async function accountIdentityFromToken(
+    token: string | null | undefined,
+    now = new Date(),
+    requireFresh = true,
+): Promise<AccountIdentity | null> {
+    if (!beaconAccountEnabled() || !token) return null;
+    const row = await prisma.webSession.findUnique({
+        where: { tokenDigest: digestSessionToken(token) },
+        select: {
+            id: true,
+            tokenDigest: true,
+            expiresAt: true,
+            revokedAt: true,
+            accountIssuer: true,
+            accountSubject: true,
+            accountSessionId: true,
+            accountDisplayName: true,
+            accountValidatedAt: true,
+        },
+    });
+    if (
+        !row ||
+        !sessionTokenMatchesDigest(token, row.tokenDigest) ||
+        row.revokedAt ||
+        row.expiresAt <= now
+    ) return null;
+    return requireFresh
+        ? validatedAccountIdentity(row, now)
+        : storedAccountIdentity(row);
+}
+
+export async function currentAccountIdentity(now = new Date()): Promise<AccountIdentity | null> {
+    const store = await cookies();
+    return accountIdentityFromToken(store.get(SESSION_COOKIE_NAME)?.value, now);
+}
+
 /**
  * Resolve an opaque cookie value into a principal, or null.
  *
@@ -144,8 +191,24 @@ export async function principalFromToken(
             tokenDigest: true,
             expiresAt: true,
             revokedAt: true,
+            accountIssuer: true,
+            accountSubject: true,
+            accountSessionId: true,
+            accountDisplayName: true,
+            accountValidatedAt: true,
             staffUser: {
-                select: { id: true, role: true, disabledAt: true },
+                select: {
+                    id: true,
+                    role: true,
+                    disabledAt: true,
+                    accountBinding: {
+                        select: {
+                            accountIssuer: true,
+                            accountSubject: true,
+                            disabledAt: true,
+                        },
+                    },
+                },
             },
             ticketEntitlement: {
                 select: {
@@ -154,8 +217,14 @@ export async function principalFromToken(
                     tier: true,
                     codeLastFour: true,
                     state: true,
+                    boundEmail: true,
                     expiresAt: true,
                     revokedAt: true,
+                    accountId: true,
+                    accountIssuer: true,
+                    scheduledSession: {
+                        select: { publicAccess: true, isTest: true },
+                    },
                 },
             },
         },
@@ -176,9 +245,29 @@ export async function principalFromToken(
         return null;
     }
 
+    const accountRequired = beaconAccountEnabled() && !isAnonymousPublicCycleAccess(webSession);
+    const accountIdentity = accountRequired
+        ? await validatedAccountIdentity(webSession, now)
+        : null;
+    if (accountRequired && !accountIdentity) {
+        // Fifteen-minute Account freshness is enforced for every new protected
+        // transition. Already-issued LiveKit tokens continue until their own
+        // bounded expiry and are not recalled on an issuer outage.
+        return null;
+    }
+
     const staff = webSession.staffUser;
     if (staff) {
         if (staff.disabledAt !== null) {
+            return null;
+        }
+        if (accountRequired && (
+            !accountIdentity ||
+            !staff.accountBinding ||
+            staff.accountBinding.disabledAt !== null ||
+            staff.accountBinding.accountIssuer !== accountIdentity.issuer ||
+            staff.accountBinding.accountSubject !== accountIdentity.subject
+        )) {
             return null;
         }
         return {
@@ -186,6 +275,7 @@ export async function principalFromToken(
             webSessionId: webSession.id,
             userId: staff.id,
             role: staff.role,
+            ...(accountIdentity ? { accountId: accountIdentity.subject } : {}),
         };
     }
 
@@ -200,6 +290,12 @@ export async function principalFromToken(
         if (entitlement.revokedAt !== null || entitlement.expiresAt.getTime() <= now.getTime()) {
             return null;
         }
+        if (accountRequired && (
+            entitlement.accountId !== accountIdentity?.subject ||
+            entitlement.accountIssuer !== accountIdentity?.issuer
+        )) {
+            return null;
+        }
         return {
             kind: 'attendee',
             webSessionId: webSession.id,
@@ -207,6 +303,7 @@ export async function principalFromToken(
             scheduledSessionId: entitlement.scheduledSessionId,
             tier: entitlement.tier,
             codeLastFour: entitlement.codeLastFour,
+            ...(accountIdentity ? { accountId: accountIdentity.subject } : {}),
         };
     }
 

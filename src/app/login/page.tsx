@@ -1,11 +1,13 @@
-import Link from "next/link";
+import Link from 'next/link';
 
-import { messages } from "@/lib/i18n";
-import { requestLocale } from "@/lib/i18n-server";
+import { beaconAccountEnabled } from '@/lib/account-rp';
+import { messages } from '@/lib/i18n';
+import { requestLocale } from '@/lib/i18n-server';
+import { currentAccountIdentity } from '@/lib/principal';
 
-import LoginClient from "./LoginClient";
+import LoginClient from './LoginClient';
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
 
@@ -14,7 +16,7 @@ function safeNext(raw: string | string[] | undefined): string | undefined {
     return value && INTERNAL_NEXT.test(value) ? value : undefined;
 }
 
-/** Stable ticket-entry surface when the public landing contains only free events. */
+/** Stable ticket entry when the public landing contains only free events. */
 export default async function AttendeeLoginPage({
     searchParams,
 }: {
@@ -22,7 +24,12 @@ export default async function AttendeeLoginPage({
 }) {
     const locale = await requestLocale();
     const copy = messages[locale];
-    const next = safeNext((await searchParams).next);
+    const params = await searchParams;
+    const next = safeNext(params.next);
+    const accountEnabled = beaconAccountEnabled();
+    const account = accountEnabled
+        ? await currentAccountIdentity().catch(() => null)
+        : null;
 
     return (
         <main className="event-shell">
@@ -35,7 +42,39 @@ export default async function AttendeeLoginPage({
                 </header>
 
                 <div className="event-card">
-                    <LoginClient next={next} />
+                    {accountEnabled && !account ? (
+                        <div className="space-y-4">
+                            <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                                {copy.ticketLogin.accountRequired}
+                            </p>
+                            {params.account_error === '1' && (
+                                <div role="alert" className="event-alert event-alert--danger">
+                                    {copy.ticketLogin.accountError}
+                                </div>
+                            )}
+                            <a
+                                className="event-button event-button--primary inline-flex w-full"
+                                href={`/api/account/login?flow=attendee${next ? `&next=${encodeURIComponent(next)}` : ''}`}
+                            >
+                                {copy.ticketLogin.accountContinue}
+                            </a>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {accountEnabled && (
+                                <p className="text-xs text-[var(--text-muted)]">
+                                    {copy.ticketLogin.accountConnected}
+                                </p>
+                            )}
+                            <LoginClient
+                                next={next}
+                                {...(accountEnabled ? {
+                                    accountEnabled: true,
+                                    defaultDisplayName: account?.displayName ?? '',
+                                } : {})}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 <footer className="text-xs text-[var(--text-muted)]">

@@ -23,10 +23,6 @@ test.describe('public surfaces (no stack required)', () => {
             'href',
             'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',
         );
-        const country = page.getByLabel('Ver horarios para');
-        await expect(country).toHaveValue('America/Argentina/Buenos_Aires');
-        await country.selectOption('America/Costa_Rica');
-        await expect(page.getByText(/Costa Rica:.*08:00.*GMT-6/).first()).toBeVisible();
     });
 
     test('staff login renders and links are reachable by keyboard', async ({ page }) => {

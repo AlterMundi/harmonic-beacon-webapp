@@ -125,6 +125,41 @@ describe('weekend seed contract', () => {
         expect(migration).toContain('ADD COLUMN "actor_role" "StaffRole"');
     });
 
+    it('defines the four free Saturdays as public Spanish app sessions', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260818030000_four_saturday_public_cycle/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        for (const date of ['2026-08-22', '2026-08-29', '2026-09-05', '2026-09-12']) {
+            expect(migration).toContain(date);
+        }
+        expect(migration).toContain('"public_access" = true');
+        expect(migration).toContain(`'SPANISH'::"SessionLanguage"`);
+        expect(migration).not.toMatch(/ticket.?tailor|purchase/i);
+    });
+
+    it('ensures an initialized installation cannot silently create zero public sessions', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260818163000_ensure_four_saturday_public_cycle/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain(`'FACILITATOR_OP'::"StaffRole"`);
+        expect(migration).toContain('facilitator_count = 0');
+        expect(migration).toContain('target_count <> 4');
+        expect(migration).toContain("'2026-08-22 14:00:00'::timestamp");
+        expect(migration).toContain('ON CONFLICT ("id") DO UPDATE SET');
+        expect(migration).toContain('requires an active facilitator');
+        expect(migration).toContain('must contain exactly four reviewed sessions');
+    });
+
     it('marks production and fixture events explicitly without title inference', () => {
         expect(loadSeedContract(validEnvironment()).events.every((event) => event.isTest === false))
             .toBe(true);

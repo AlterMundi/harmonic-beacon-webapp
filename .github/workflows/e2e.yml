@@ -126,6 +126,12 @@ jobs:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
           CONTRIBUTIONS_INTEGRATION_TEST: '1'
 
+      - name: Verify staging staff Account binding contract in PostgreSQL
+        run: npx vitest run --no-file-parallelism scripts/live-staging/__tests__/bind-staff-account.integration.test.ts
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          STAFF_BINDING_INTEGRATION_TEST: '1'
+
       - name: Verify every migration against a clean database
         # The fixture proves migrations apply on an existing database; this
         # proves the whole chain also builds from zero. The scratch database

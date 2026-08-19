@@ -26,29 +26,19 @@ vi.mock('@/components/ops/OpsNavLinks', () => ({
         </div>
     ),
 }));
-vi.mock('@/components/ops/StaffIdentityMenu', () => ({
-    default: ({ name, roleLabel, roleDescription }: { name: string; roleLabel: string; roleDescription: string }) => (
-        <div data-testid="identity">{name} · {roleLabel} · {roleDescription}</div>
-    ),
-}));
-
 import OpsLayout from '../layout';
 
 describe('staff layout', () => {
     afterEach(cleanup);
 
-    it('has one stable event hub entry and a truthful localized identity', async () => {
+    it('has one stable event hub entry without a second identity control', async () => {
         render(await OpsLayout({ children: <p>child</p> }));
 
         const nav = screen.getByTestId('nav-links');
         expect(nav.querySelectorAll('a')).toHaveLength(3);
         expect(screen.getAllByRole('link', { name: 'Eventos' })).toHaveLength(1);
         expect(screen.queryByRole('link', { name: /Room|Spotlight/ })).toBeNull();
-        expect(screen.getByTestId('identity')).toHaveTextContent(
-            'Julián · Facilitación y operaciones',
-        );
-        expect(screen.getByTestId('identity')).toHaveTextContent(
-            /Sólo en su evento asignado actúa como facilitación/,
-        );
+        expect(screen.queryByTestId('identity')).toBeNull();
+        expect(document.querySelectorAll('summary')).toHaveLength(0);
     });
 });

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { redactError } from '@/lib/redact';
 import { OperationTimeoutError, withTimeout } from '@/lib/with-timeout';
+import { beaconAccountEnabled, discoverAccountIssuer } from '@/lib/account-rp';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,8 +20,21 @@ const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
 export async function GET() {
     try {
         await withTimeout(prisma.$queryRaw`SELECT 1`, DB_CHECK_TIMEOUT_MS, 'Database check');
+        let account: 'disabled' | 'ok' | 'unavailable' = 'disabled';
+        if (beaconAccountEnabled()) {
+            try {
+                await withTimeout(discoverAccountIssuer(), DB_CHECK_TIMEOUT_MS, 'Account discovery');
+                account = 'ok';
+            } catch (error) {
+                // Account outage fails closed at each new auth/protected
+                // transition, but must not make the app unready and tear down
+                // already-issued LiveKit/media sessions.
+                account = 'unavailable';
+                console.error('Account readiness check failed:', redactError(error));
+            }
+        }
         return NextResponse.json(
-            { status: 'ok', checks: { database: 'ok' } },
+            { status: 'ok', checks: { database: 'ok', account } },
             { headers: NO_STORE_HEADERS },
         );
     } catch (error) {

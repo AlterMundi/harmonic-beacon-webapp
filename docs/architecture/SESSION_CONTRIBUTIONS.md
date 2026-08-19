@@ -236,7 +236,40 @@ is the database's unique idempotency index.
 | OPERATOR / ADMIN / FACILITATOR_OP | 403 | 200 | 200 |
 | Unknown session | 404 | 404 | 404 |
 
-## 10. What this contract deliberately does not include
+## 10. Client implementation (CHAT-01 UI, #141)
+
+The web client consumes this contract through two surfaces, both shipped in
+the CHAT-01 UI pull request:
+
+- **Attendee room** (`src/app/session/[id]/page.tsx`): the
+  `SessionContributions` panel renders for ticket principals only — a
+  collapsible side panel on desktop, a collapsible section below the scene on
+  mobile, never an overlay on the tapestry or the audio controls. The
+  composer presents the two explicit send actions from the canonical rules:
+  "Compartir" (`NAMED`) and "Compartir anónimo" (`ANONYMOUS`), with the
+  anonymity explanation always visible before sending.
+- **Staff cockpit** (`ConductorCockpit`, `ops/events/[id]`): a contributions
+  drawer shows the staff DTO as a compact console list — real author, body,
+  timestamp, and the "anonymous to the audience" badge. No moderation
+  controls yet (`[Planned — CHAT-02]`).
+
+Client behavior that the contract relies on:
+
+- The idempotency key is generated per draft, persisted with the draft in
+  `sessionStorage` under `hb-contrib-draft:<sessionId>` (no PII), reused by
+  every retry, and rotated only after a 201, a 200 replay, or a 409
+  conflict. Closing without sending stores nothing.
+- Initial load drains the backlog with `nextPageCursor`; the 5-second poll
+  follows the tail with `resumeCursor`, keeps its cursor on an empty page,
+  dedupes by message id, serializes overlapping polls, and pauses in hidden
+  tabs.
+- A 429 disables sending and counts down from `retryAfterSeconds`; a 409
+  rotates the key and asks for an explicit retry; network failures keep the
+  draft and offer retry. A 403 marks the session read-only.
+- Changing sessions remounts the panel (`key={sessionId}`), so no draft,
+  cursor, or message can cross sessions.
+
+## 11. What this contract deliberately does not include
 
 - Moderation transitions (hide, restore, withdraw), feed close/reopen, report
   UI, audit entries, tombstones, and the post-event withdrawal procedure.

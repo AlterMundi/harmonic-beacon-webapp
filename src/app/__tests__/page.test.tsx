@@ -31,6 +31,7 @@ const SATURDAY = {
     description: null,
     language: 'SPANISH' as const,
     scheduledAt: new Date('2026-08-08T14:30:00.000Z'),
+    publicAccess: false,
 };
 const SESSION_2 = {
     id: 'session-2',
@@ -38,8 +39,10 @@ const SESSION_2 = {
     description: null,
     language: 'ENGLISH' as const,
     scheduledAt: new Date('2026-08-08T20:00:00.000Z'),
+    publicAccess: false,
 };
 const NOW = new Date('2026-08-05T12:00:00.000Z');
+const PUBLIC_ID = '50000000-0000-4000-8000-202608220001';
 
 function mountDb(findMany: ReturnType<typeof vi.fn>) {
     const prisma = { scheduledSession: { findMany } };
@@ -86,7 +89,6 @@ describe('landing page', () => {
         expect(screen.getAllByText(/Referencia universal:/)).toHaveLength(2);
 
         fireEvent.change(country, { target: { value: 'America/Costa_Rica' } });
-
         expect(Array.from(document.querySelectorAll('.event-local-time__primary')).map((node) => node.textContent)).toEqual([
             expect.stringMatching(/Costa Rica: sábado, 8 de agosto, 08:30 GMT-6/),
             expect.stringMatching(/Costa Rica: sábado, 8 de agosto, 14:00 GMT-6/),
@@ -123,7 +125,9 @@ describe('landing page', () => {
         );
         // No paid-mode or attendee-cap columns leak into the public page.
         const select = findMany.mock.calls[0][0].select;
-        expect(Object.keys(select).sort()).toEqual(['description', 'id', 'language', 'scheduledAt', 'title']);
+        expect(Object.keys(select).sort()).toEqual([
+            'description', 'id', 'language', 'publicAccess', 'scheduledAt', 'title',
+        ]);
     });
 
     it('fails closed when a missed lifecycle transition leaves an old session LIVE', async () => {
@@ -170,46 +174,6 @@ describe('landing page', () => {
         expect(error).toHaveBeenCalled();
     });
 
-    it('publishes the four free Saturday rooms without ticket login', async () => {
-        const dates = [
-            ['50000000-0000-4000-8000-202608220001', '2026-08-22T14:00:00.000Z'],
-            ['50000000-0000-4000-8000-202608290001', '2026-08-29T14:00:00.000Z'],
-            ['50000000-0000-4000-8000-202609050001', '2026-09-05T14:00:00.000Z'],
-            ['50000000-0000-4000-8000-202609120001', '2026-09-12T14:00:00.000Z'],
-        ];
-        mountDb(vi.fn().mockResolvedValue(dates.map(([id, scheduledAt], index) => ({
-            id,
-            title: `Del otro lado del umbral — Encuentro ${index + 1} de 4`,
-            description: 'Ciclo gratuito en castellano',
-            language: 'SPANISH' as const,
-            scheduledAt: new Date(scheduledAt),
-        }))));
-
-        await renderPage();
-
-        expect(screen.getAllByText('Gratis')).toHaveLength(4);
-        expect(screen.getAllByRole('link', { name: 'Ingresar al evento' })).toHaveLength(4);
-        expect(screen.queryByTestId('ticket-login-form')).toBeNull();
-        for (const [id] of dates) {
-            expect(document.querySelector(`a[href="/api/public-sessions/${id}/enter"]`)).not.toBeNull();
-        }
-        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Próximos encuentros.');
-        expect(screen.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
-            'href',
-            'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',
-        );
-
-        fireEvent.change(screen.getByLabelText('Ver horarios para'), {
-            target: { value: 'America/Santiago' },
-        });
-        expect(Array.from(document.querySelectorAll('.event-local-time__clock')).map((node) => node.textContent)).toEqual([
-            '10:00',
-            '10:00',
-            '10:00',
-            '11:00',
-        ]);
-    });
-
     it('renders the purchase link when one is configured', async () => {
         vi.stubEnv('TICKET_PURCHASE_URL', 'https://tickets.example.invalid/harmonic-beacon');
         mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
@@ -219,6 +183,38 @@ describe('landing page', () => {
         expect(links[0]).toHaveAttribute('href', 'https://tickets.example.invalid/harmonic-beacon');
         expect(links[0]).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
         expect(screen.getAllByText(/USD \$50 Norte Global.*USD \$20 Sur Global/)).toHaveLength(2);
+    });
+
+    it('presents a public event as free direct app access without ticket commerce', async () => {
+        mountDb(vi.fn().mockResolvedValue([{
+            ...SATURDAY,
+            id: PUBLIC_ID,
+            title: 'Del otro lado del umbral — Encuentro 1 de 4',
+            description: 'Cuerpo, sonido y símbolo',
+            publicAccess: true,
+        }]));
+        await renderPage();
+
+        expect(screen.getByText('Del otro lado del umbral — Encuentro 1 de 4')).toBeInTheDocument();
+        expect(screen.getByText('Gratis')).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Ingresar al evento' })).toHaveAttribute(
+            'href',
+            `/api/public-sessions/${PUBLIC_ID}/enter`,
+        );
+        expect(screen.queryByRole('link', { name: /Comprar entrada/ })).toBeNull();
+        expect(screen.queryByTestId('ticket-login-form')).toBeNull();
+    });
+
+    it('makes upcoming gatherings the primary landing promise and links the wider experience below', async () => {
+        mountDb(vi.fn().mockResolvedValue([{ ...SATURDAY, id: PUBLIC_ID, publicAccess: true }]));
+        await renderPage();
+
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Próximos encuentros.');
+        expect(screen.getByText(/Cuatro sábados para participar desde cualquier lugar/)).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /Conocer la Proyección del Mito/ })).toHaveAttribute(
+            'href',
+            'https://harmonicbeacon.com/proyeccion-armonica-del-mito/',
+        );
     });
 
     it('says sales open shortly while the external platform is still TBD', async () => {
@@ -269,6 +265,7 @@ describe('landing page', () => {
         await renderPage();
 
         expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Upcoming gatherings.');
+        expect(screen.getByText(/Four Saturdays to join from anywhere/)).toBeInTheDocument();
         expect(screen.getByText('English')).toBeInTheDocument();
         expect(screen.getByText('Spanish')).toBeInTheDocument();
         expect(screen.getByLabelText('Show times for')).toHaveValue('America/Argentina/Buenos_Aires');

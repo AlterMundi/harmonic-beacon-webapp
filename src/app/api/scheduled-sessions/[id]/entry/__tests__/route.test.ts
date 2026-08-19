@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 
-const { principalFromToken, findUnique } = vi.hoisted(() => ({
+const { principalFromToken, accountIdentityFromToken, attachPublicSessionAccess, findUnique } = vi.hoisted(() => ({
     principalFromToken: vi.fn(),
+    accountIdentityFromToken: vi.fn(),
+    attachPublicSessionAccess: vi.fn(),
     findUnique: vi.fn(),
 }));
 
-vi.mock('@/lib/principal', () => ({ principalFromToken }));
+vi.mock('@/lib/principal', () => ({ principalFromToken, accountIdentityFromToken }));
+vi.mock('@/lib/public-session-access', () => ({ attachPublicSessionAccess }));
 vi.mock('@/lib/db', () => ({
     prisma: { scheduledSession: { findUnique } },
 }));
@@ -19,6 +22,7 @@ const session = {
     scheduledAt: new Date('2026-08-01T18:00:00Z'),
     status: 'SCHEDULED',
     facilitatorId: 'facilitator-1',
+    publicAccess: false,
 };
 
 const attendee = {
@@ -44,6 +48,8 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         principalFromToken.mockResolvedValue(attendee);
+        accountIdentityFromToken.mockResolvedValue(null);
+        attachPublicSessionAccess.mockResolvedValue(false);
         findUnique.mockResolvedValue(session);
     });
 
@@ -75,6 +81,29 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
     it('never lets a ticket inspect another event', async () => {
         principalFromToken.mockResolvedValue({ ...attendee, scheduledSessionId: 'event-2' });
         expect((await getEntry()).status).toBe(403);
+    });
+
+    it('turns a valid Beacon Account into free access for a public event', async () => {
+        const account = {
+            issuer: 'https://account.example',
+            subject: 'person-1',
+            sessionId: 'central-1',
+            displayName: 'Sai',
+            validatedAt: new Date(),
+        };
+        principalFromToken
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(attendee);
+        accountIdentityFromToken.mockResolvedValue(account);
+        findUnique.mockResolvedValue({ ...session, publicAccess: true });
+        attachPublicSessionAccess.mockResolvedValue(true);
+
+        expect((await getEntry()).status).toBe(200);
+        expect(attachPublicSessionAccess).toHaveBeenCalledWith(
+            'opaque',
+            expect.objectContaining({ id: 'event-1', publicAccess: true }),
+            account,
+        );
     });
 
     it('lets assigned facilitators preflight while scheduled', async () => {
@@ -109,6 +138,7 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
 
     it('does not reveal whether an event exists without a current entitlement', async () => {
         principalFromToken.mockResolvedValue(null);
+        accountIdentityFromToken.mockResolvedValue(null);
         expect((await getEntry()).status).toBe(401);
         expect(findUnique).not.toHaveBeenCalled();
     });

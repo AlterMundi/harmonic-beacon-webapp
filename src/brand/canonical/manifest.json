@@ -9,7 +9,15 @@
       "docs/brand/BRANDING.md": "68abcacb4263277071309f808455c08c9a8afdb5f0caeae6bf1599b9d2f66c31"
     }
   },
+  "globalNavigation": {
+    "repository": "https://github.com/AlterMundi/harmonicbeacon.com",
+    "commit": "6bd32262318e9a1faf6f4fc54b85b96f856544df",
+    "source": "assets/hb-global-nav.js",
+    "path": "public/assets/hb-global-nav.js",
+    "sha256": "5e0add357a923bf4609fd1eafd4a96d4989481f17e6c31296252842ce9d881d6"
+  },
   "snapshots": {
+    "public/assets/hb-global-nav.js": "5e0add357a923bf4609fd1eafd4a96d4989481f17e6c31296252842ce9d881d6",
     "src/brand/canonical/hb-brand-root.css": "9a4b97ef7545de47c99f37704a86c2317ea77e9b2c8c0bb078dda0be546ab89d",
     "src/brand/canonical/hb-mark.ts": "f832213a4ac29023a38dca3bdc0e0a8d5db9f324f8b3e119538b9aa2c3dcd881"
   },

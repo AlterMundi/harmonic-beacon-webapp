@@ -18,7 +18,9 @@ import { assertSafeFixtureDatabaseUrl } from './e2e/fixtures/database-url';
  */
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
-const CHROME_EXECUTABLE = process.env.PLAYWRIGHT_CHROME_EXECUTABLE || undefined;
+// Local validation can reuse an installed Chrome without weakening CI's
+// pinned Playwright browser. CI leaves this unset and keeps its normal binary.
+const CHROME_EXECUTABLE = process.env.PLAYWRIGHT_CHROME_EXECUTABLE?.trim() || undefined;
 
 // Resolve the fixture database URL once so both the web server and tests
 // that flip fixture state (e.g. opening doors by setting a session LIVE)

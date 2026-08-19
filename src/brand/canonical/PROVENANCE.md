@@ -25,13 +25,23 @@ manifest and visual-review update together.
 
 ## Global navigation
 
-The cross-product header is intentionally not vendored. Listener and Live load
-the canonical web component directly from
-`https://harmonicbeacon.com/assets/hb-global-nav.js`, owned by
-`AlterMundi/harmonicbeacon.com` (introduced in main merge `9fa515f6` and last
-reviewed here at `51fe213b`). The local light-DOM links are an accessible,
-same-destination fallback only; the shared runtime asset owns the visible
-desktop/mobile component so a navigation edit propagates to all three products.
+Listener, Live and Account serve a byte-pinned local snapshot of the canonical
+web component rather than executing JavaScript supplied at runtime by another
+origin. The source is `AlterMundi/harmonicbeacon.com` commit
+`6bd32262318e9a1faf6f4fc54b85b96f856544df`; the vendored
+`public/assets/hb-global-nav.js` SHA-256 is
+`5e0add357a923bf4609fd1eafd4a96d4989481f17e6c31296252842ce9d881d6`.
+The local light-DOM markup remains the accessible, same-destination fallback.
+Both implementations keep Account out of the primary destination list and
+expose it from the user-icon menu automatically on staging. Production remains
+hidden until the product server supplies the presence-only
+`data-account-available` capability after its Account RP is enabled. The host
+may also supply only the boolean `data-account-signed-in` hint; no name, email,
+subject, cookie or token enters the asset. A product may provide its own
+same-origin light-DOM menu through the canonical `account-menu` slot; the asset
+does not read or transmit its content.
+The enhanced navigation renders both the Beacon mark and user glyph locally;
+it does not embed Account in an iframe or fetch a cross-origin image.
 
 ## Font source and license
 
@@ -50,5 +60,5 @@ Both families are covered by the SIL Open Font License 1.1; the relevant
   is pinned from the Google Fonts repository commit above, with trailing
   whitespace normalized for the repository gate.
 
-No font, analytics or decorative brand asset is fetched at runtime. The single
-global-navigation component above is the deliberate exception.
+No font, analytics or decorative brand asset is fetched at runtime. The global
+navigation is served as the byte-pinned local snapshot described above.
