@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import { prisma } from '@/lib/db';
 import {
@@ -45,6 +45,7 @@ type Discovery = {
     authorization_endpoint: string;
     token_endpoint: string;
     jwks_uri: string;
+    userinfo_endpoint: string;
     introspection_endpoint: string;
     end_session_endpoint: string;
     code_challenge_methods_supported?: string[];
@@ -158,6 +159,7 @@ export async function discoverAccountIssuer(
         authorization_endpoint: exactIssuerEndpoint(raw.authorization_endpoint, config.issuer, 'authorization_endpoint'),
         token_endpoint: exactIssuerEndpoint(raw.token_endpoint, config.issuer, 'token_endpoint'),
         jwks_uri: exactIssuerEndpoint(raw.jwks_uri, config.issuer, 'jwks_uri'),
+        userinfo_endpoint: exactIssuerEndpoint(raw.userinfo_endpoint, config.issuer, 'userinfo_endpoint'),
         introspection_endpoint: exactIssuerEndpoint(raw.introspection_endpoint, config.issuer, 'introspection_endpoint'),
         end_session_endpoint: exactIssuerEndpoint(raw.end_session_endpoint, config.issuer, 'end_session_endpoint'),
         code_challenge_methods_supported: raw.code_challenge_methods_supported as string[],
@@ -313,7 +315,7 @@ function boundedCredential(value: unknown, label: string): string {
     return value;
 }
 
-function profileDisplayName(payload: JWTPayload): string | null {
+function profileDisplayName(payload: Record<string, unknown>): string | null {
     const raw = typeof payload.name === 'string'
         ? payload.name
         : typeof payload.preferred_username === 'string'
@@ -391,11 +393,25 @@ async function exchangeAuthorizationCode(input: {
     ) {
         throw new Error('Beacon Account access token is not active for this client');
     }
+
+    const userInfoResponse = await fetch(discovery.userinfo_endpoint, {
+        headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+        },
+        cache: 'no-store',
+        redirect: 'error',
+        signal: AbortSignal.timeout(8_000),
+    });
+    if (!userInfoResponse.ok) throw new Error('Beacon Account UserInfo unavailable');
+    const userInfo = await userInfoResponse.json() as Record<string, unknown>;
+    if (userInfo.sub !== subject) throw new Error('Beacon Account UserInfo subject mismatch');
+
     return {
         issuer: config.issuer,
         subject,
         sessionId,
-        displayName: profileDisplayName(verified.payload),
+        displayName: profileDisplayName(userInfo),
         validatedAt: new Date(),
     };
 }

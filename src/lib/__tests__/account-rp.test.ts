@@ -48,6 +48,7 @@ function discovery(overrides: Record<string, unknown> = {}) {
         authorization_endpoint: `${ISSUER}/oauth2/authorize`,
         token_endpoint: `${ISSUER}/oauth2/token`,
         jwks_uri: `${ISSUER}/oauth2/jwks`,
+        userinfo_endpoint: `${ISSUER}/oauth2/userinfo`,
         introspection_endpoint: `${ISSUER}/oauth2/introspect`,
         end_session_endpoint: `${ISSUER}/oauth2/logout`,
         code_challenge_methods_supported: ['S256'],
@@ -68,7 +69,7 @@ async function idToken(
     issuedAt = Math.floor(NOW.getTime() / 1000),
     expiresAt = Math.floor(NOW.getTime() / 1000) + 600,
 ) {
-    return new SignJWT({ nonce, sid: SID, name: '  Ana   Beacon  ' })
+    return new SignJWT({ nonce, sid: SID })
         .setProtectedHeader({ alg: 'RS256', kid: 'account-test-key' })
         .setIssuer(ISSUER)
         .setSubject(SUBJECT)
@@ -228,6 +229,11 @@ describe('Beacon Account OAuth 2.1 RP', () => {
                 client_id: CLIENT_ID,
                 sub: SUBJECT,
             });
+            if (url === `${ISSUER}/oauth2/userinfo`) return json({
+                sub: SUBJECT,
+                name: '  Ana   Beacon  ',
+                profile_revision: 2,
+            });
             throw new Error(`unexpected fetch ${url}`);
         });
         vi.stubGlobal('fetch', fetchMock);
@@ -264,6 +270,52 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             Authorization: expect.stringMatching(/^Basic /),
         });
         expect(String((tokenCall?.[1] as RequestInit).body)).toContain('code_verifier=pkce-verifier-value');
+        const userInfoCall = fetchMock.mock.calls.find(([url]) => String(url) === `${ISSUER}/oauth2/userinfo`);
+        expect((userInfoCall?.[1] as RequestInit).headers).toMatchObject({
+            Authorization: 'Bearer opaque-access-token',
+        });
+    });
+
+    it('rejects UserInfo for a different subject without creating a local session', async () => {
+        findAttempt.mockResolvedValue({
+            stateDigest: stateDigest(),
+            codeVerifier: 'pkce-verifier-value',
+            nonce: NONCE,
+            flow: 'attendee',
+            returnTo: '/',
+            expiresAt: new Date(NOW.getTime() + 60_000),
+            consumedAt: null,
+            pendingPromoDigest: null,
+            pendingDisplayName: null,
+            pendingTermsVersion: null,
+            pendingTermsAcceptedAt: null,
+        });
+        const signed = await idToken();
+        vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+            const url = String(input);
+            if (url.endsWith('/.well-known/openid-configuration')) return json(discovery());
+            if (url === `${ISSUER}/oauth2/token`) return json({
+                access_token: 'opaque-access-token', id_token: signed, token_type: 'Bearer',
+            });
+            if (url === `${ISSUER}/oauth2/jwks`) return json({ keys: [publicJwk] });
+            if (url === `${ISSUER}/oauth2/introspect`) return json({
+                active: true, client_id: CLIENT_ID, sub: SUBJECT,
+            });
+            if (url === `${ISSUER}/oauth2/userinfo`) return json({
+                sub: 'different-account', name: 'Wrong Person',
+            });
+            throw new Error(`unexpected fetch ${url}`);
+        }));
+        const { completeAccountAuthorization } = await import('../account-rp');
+
+        await expect(completeAccountAuthorization({
+            code: 'one-use-authorization-code',
+            state: STATE,
+            stateCookie: STATE,
+            origin: 'http://localhost:3000',
+            now: NOW,
+        })).rejects.toThrow(/UserInfo subject mismatch/);
+        expect(createSession).not.toHaveBeenCalled();
     });
 
     it('rejects an ID token whose issued-at exceeds the callback freshness window', async () => {
