@@ -120,6 +120,48 @@ describe('Account catch-all route confidential OAuth boundary', () => {
             .toBe('__Host-hb_account_session=opaque-session');
     });
 
+    it('uses the completed RP callback when the credential Location still points to Account', async () => {
+        const callback = 'https://listen.harmonicbeacon.com/api/account/callback' +
+            '?code=opaque-code&state=opaque-state';
+        const headers = new Headers({ Location: '/account' });
+        headers.append('Set-Cookie',
+            '__Host-hb_account_session=oauth-session.signature; Path=/; HttpOnly; Secure; SameSite=Lax');
+        authHandler.mockResolvedValueOnce(Response.json({
+            redirect: true,
+            url: callback,
+        }, { headers }));
+        userFindUnique.mockResolvedValueOnce({ id: 'account-1', securityRevision: 3 });
+        getSession
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ user: { id: 'account-1' }, session: { id: 'session-1' } });
+        transaction.mockImplementationOnce(async (callbackTransaction) => callbackTransaction({
+            $queryRaw: vi.fn(),
+            earlyBirdAuthSession: {
+                findUnique: vi.fn().mockResolvedValue({
+                    id: 'session-1', userId: 'account-1', securityRevision: 3,
+                    user: { securityRevision: 3 },
+                }),
+                deleteMany: vi.fn(),
+            },
+        }));
+
+        const response = await POST(new Request(`${origin}/api/account/auth/sign-in/email`, {
+            method: 'POST',
+            headers: {
+                host: 'account.harmonicbeacon.com', origin,
+                'sec-fetch-site': 'same-origin', 'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: 'listener@example.invalid', password: '12345678',
+                oauth_query: 'signed-provider-query',
+            }),
+        }));
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ status: 'authenticated', redirect: callback });
+        expect(response.headers.getSetCookie()).toHaveLength(1);
+    });
+
     it.each([
         ['underlying success', 200],
         ['underlying rejection', 422],

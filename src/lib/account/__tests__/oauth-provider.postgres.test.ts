@@ -72,8 +72,40 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
     });
 
     it('exchanges an auth code and introspects using the provisioned full secret', async () => {
-        const signIn = await accountRoutePOST(jsonRequest('/api/account/auth/sign-in/email', { email, password }));
+        const verifier = randomBytes(48).toString('base64url');
+        const challenge = createHash('sha256').update(verifier).digest('base64url');
+        const authorizeURL = new URL('/api/account/auth/oauth2/authorize', issuer);
+        authorizeURL.search = new URLSearchParams({
+            client_id: clientId,
+            redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
+            response_type: 'code', scope: 'openid profile',
+            state: 'state-for-handler-regression', nonce: 'nonce-for-handler-regression',
+            code_challenge: challenge, code_challenge_method: 'S256',
+        }).toString();
+        const preLoginAuthorize = await handler(new Request(authorizeURL, {
+            headers: { host: 'account.harmonicbeacon.com' },
+        }));
+        expect(preLoginAuthorize.status).toBe(302);
+        const accountLogin = new URL(preLoginAuthorize.headers.get('location')!, issuer);
+        expect(accountLogin.origin + accountLogin.pathname)
+            .toBe('https://account.harmonicbeacon.com/account');
+        expect(accountLogin.searchParams.get('sig')).toBeTruthy();
+
+        const signIn = await accountRoutePOST(jsonRequest('/api/account/auth/sign-in/email', {
+            email,
+            password,
+            callbackURL: '/account',
+            oauth_query: accountLogin.searchParams.toString(),
+        }));
         expect(signIn.status).toBe(200);
+        const signInBody = await signIn.clone().json() as { redirect?: string };
+        expect(signInBody.redirect).toBeTruthy();
+        const callback = new URL(signInBody.redirect!);
+        expect(callback.origin + callback.pathname)
+            .toBe('https://listen.harmonicbeacon.com/api/account/callback');
+        expect(callback.searchParams.get('state')).toBe('state-for-handler-regression');
+        const code = callback.searchParams.get('code');
+        expect(code).toBeTruthy();
         const setCookies = signIn.headers.getSetCookie();
         const sessionCookies = setCookies.filter((entry) =>
             entry.startsWith('__Host-hb_account_session='));
@@ -87,25 +119,6 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         const sessionCookie = setCookies.map((entry) => entry.split(';', 1)[0]).join('; ');
         const resolved = await currentAccountSession(new Headers({ cookie: sessionCookie }));
         expect(resolved).toMatchObject({ user: { id: accountId, accessMethod: 'email' } });
-
-        const verifier = randomBytes(48).toString('base64url');
-        const challenge = createHash('sha256').update(verifier).digest('base64url');
-        const authorizeURL = new URL('/api/account/auth/oauth2/authorize', issuer);
-        authorizeURL.search = new URLSearchParams({
-            client_id: clientId,
-            redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
-            response_type: 'code', scope: 'openid profile',
-            state: 'state-for-handler-regression', nonce: 'nonce-for-handler-regression',
-            code_challenge: challenge, code_challenge_method: 'S256',
-        }).toString();
-        const authorize = await handler(new Request(authorizeURL, {
-            headers: { host: 'account.harmonicbeacon.com', cookie: sessionCookie },
-        }));
-        expect(authorize.status).toBeGreaterThanOrEqual(300);
-        expect(authorize.status).toBeLessThan(400);
-        const callback = new URL(authorize.headers.get('location')!);
-        const code = callback.searchParams.get('code');
-        expect(code).toBeTruthy();
 
         const basic = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
         const token = await handler(new Request(`${issuer}/api/account/auth/oauth2/token`, {

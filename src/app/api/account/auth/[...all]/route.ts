@@ -7,7 +7,7 @@ import {
     accountEnvironment,
     accountOrigin,
     ACCOUNT_SESSION_COOKIE,
-    ACCOUNT_STATIC_CLIENTS,
+    activeAccountStaticClients,
 } from '@/lib/account/config';
 import { accountAuthorityDatabaseReady } from '@/lib/account/authority-db';
 import { accountCredentialRequestAllowed, accountRequestAllowed } from '@/lib/account/request-boundary';
@@ -24,17 +24,26 @@ async function safeRPRedirect(response: Response): Promise<string | null> {
     const body = await response.clone().json().catch(() => null) as {
         url?: unknown; redirect_uri?: unknown;
     } | null;
-    const candidate = response.headers.get('location') ??
-        (typeof body?.redirect_uri === 'string' ? body.redirect_uri : null) ??
-        (typeof body?.url === 'string' ? body.url : null);
-    if (!candidate) return null;
-    try {
-        const parsed = new URL(candidate);
-        return ACCOUNT_STATIC_CLIENTS.some((client) =>
-            new URL(client.redirectUri).origin === parsed.origin &&
-            new URL(client.redirectUri).pathname === parsed.pathname)
-            ? parsed.toString() : null;
-    } catch { return null; }
+    // Better Auth can preserve the credential callback (`/account`) in the
+    // Location header while returning the completed OAuth RP callback in its
+    // JSON body. A non-RP Location must not shadow a later valid RP result.
+    const candidates = [
+        response.headers.get('location'),
+        typeof body?.redirect_uri === 'string' ? body.redirect_uri : null,
+        typeof body?.url === 'string' ? body.url : null,
+    ];
+    const clients = activeAccountStaticClients();
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+        try {
+            const parsed = new URL(candidate);
+            if (!parsed.username && !parsed.password && !parsed.hash && clients.some((client) => {
+                const registered = new URL(client.redirectUri);
+                return registered.origin === parsed.origin && registered.pathname === parsed.pathname;
+            })) return parsed.toString();
+        } catch { /* Continue to the provider's next result shape. */ }
+    }
+    return null;
 }
 
 async function genericCredentialResponse(response: Response, path: string): Promise<Response> {
