@@ -15,6 +15,7 @@ import { SESSION_COOKIE_NAME, digestSessionToken } from '../session-auth';
 const TOKEN = 'opaque-cookie-value-for-tests';
 const NOW = new Date('2026-08-01T18:00:00.000Z');
 const LATER = new Date('2026-08-01T19:00:00.000Z');
+const PUBLIC_CYCLE_SESSION_ID = '50000000-0000-4000-8000-202608220001';
 
 type WebSessionRow = Record<string, unknown> | null;
 
@@ -267,6 +268,62 @@ describe('principalFromToken', () => {
         });
         expect(await (await importPrincipal()).principalFromToken(TOKEN, NOW)).toBeNull();
         vi.unstubAllEnvs();
+    });
+
+    it('preserves only the exact registration-free public-cycle principal when Account is enabled', async () => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        withWebSession({
+            ...attendeeSession({
+                scheduledSessionId: PUBLIC_CYCLE_SESSION_ID,
+                tier: 'COMP',
+                codeLastFour: 'FREE',
+                boundEmail: 'public-opaque@anonymous.harmonicbeacon.invalid',
+                accountId: null,
+                accountIssuer: null,
+                scheduledSession: { publicAccess: true, isTest: false },
+            }),
+            accountIssuer: null,
+            accountSubject: null,
+            accountSessionId: null,
+            accountDisplayName: null,
+            accountValidatedAt: null,
+        });
+
+        await expect((await importPrincipal()).principalFromToken(TOKEN, NOW)).resolves.toMatchObject({
+            kind: 'attendee',
+            scheduledSessionId: PUBLIC_CYCLE_SESSION_ID,
+            tier: 'COMP',
+            codeLastFour: 'FREE',
+        });
+    });
+
+    it.each([
+        ['arbitrary session', { scheduledSessionId: 'session-saturday' }],
+        ['paid tier', { tier: 'GLOBAL_NORTH' }],
+        ['non-public row', { scheduledSession: { publicAccess: false, isTest: false } }],
+        ['test row', { scheduledSession: { publicAccess: true, isTest: true } }],
+        ['Account-bound ticket', { accountId: 'opaque-account' }],
+    ])('does not widen the anonymous Account exception to a %s', async (_label, override) => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        withWebSession({
+            ...attendeeSession({
+                scheduledSessionId: PUBLIC_CYCLE_SESSION_ID,
+                tier: 'COMP',
+                codeLastFour: 'FREE',
+                boundEmail: 'public-opaque@anonymous.harmonicbeacon.invalid',
+                accountId: null,
+                accountIssuer: null,
+                scheduledSession: { publicAccess: true, isTest: false },
+                ...override,
+            }),
+            accountIssuer: null,
+            accountSubject: null,
+            accountSessionId: null,
+            accountDisplayName: null,
+            accountValidatedAt: null,
+        });
+
+        await expect((await importPrincipal()).principalFromToken(TOKEN, NOW)).resolves.toBeNull();
     });
 });
 

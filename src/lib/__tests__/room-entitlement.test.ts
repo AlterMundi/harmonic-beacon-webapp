@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Prisma } from '@prisma/client';
 
@@ -28,6 +28,7 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/livekit-server', () => ({ stableRoomIdentity }));
 
 const now = new Date('2026-08-01T16:00:00Z');
+const publicCycleSessionId = '50000000-0000-4000-8000-202608220001';
 const activeEvent = {
     id: 'event-1',
     title: 'Weekend event',
@@ -78,6 +79,53 @@ describe('resolveRoomPrincipal', () => {
         upsertParticipant.mockResolvedValue({
             publishGrantedAt: null,
             publishRevokedAt: null,
+        });
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it('admits the exact anonymous public-cycle ticket while Account is enabled', async () => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        findWebSession.mockResolvedValue({
+            ...activeTicketSession,
+            displayName: 'Participante',
+            accountIssuer: null,
+            accountSubject: null,
+            accountSessionId: null,
+            accountDisplayName: null,
+            accountValidatedAt: null,
+            ticketEntitlement: {
+                ...activeTicketSession.ticketEntitlement,
+                scheduledSessionId: publicCycleSessionId,
+                tier: 'COMP',
+                codeLastFour: 'FREE',
+                boundEmail: 'public-opaque@anonymous.harmonicbeacon.invalid',
+                accountId: null,
+                accountIssuer: null,
+                scheduledSession: { publicAccess: true, isTest: false },
+            },
+        });
+        findScheduledSession.mockResolvedValue({
+            ...activeEvent,
+            id: publicCycleSessionId,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(
+            request(),
+            publicCycleSessionId,
+            now,
+        );
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: {
+                role: 'ATTENDEE',
+                ticketEntitlementId: 'ticket-1',
+                displayName: 'Participante',
+            },
         });
     });
 

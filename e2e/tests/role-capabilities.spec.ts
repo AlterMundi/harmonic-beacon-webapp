@@ -17,48 +17,6 @@ import { ROUTES, SESSION_EN, SESSION_ES, STAFF, TICKETS } from '../fixtures/test
 type StaffDashboardRole = Exclude<DashboardRole, 'ATTENDEE'>;
 type UiLocale = 'es' | 'en';
 
-const ROLE_COPY: Record<UiLocale, Record<StaffDashboardRole, {
-    label: string;
-    description: string;
-}>> = {
-    es: {
-        FACILITATOR: {
-            label: 'Facilitador/a',
-            description: 'Conduce y publica únicamente en los eventos que tiene asignados. Puede consultar entradas y estado técnico, pero no administrar accesos.',
-        },
-        FACILITATOR_OP: {
-            label: 'Facilitación y operaciones',
-            description: 'Opera todos los eventos. Sólo en su evento asignado actúa como facilitación y puede publicar; fuera de él conserva acceso operativo sin publicación.',
-        },
-        OPERATOR: {
-            label: 'Operaciones',
-            description: 'Opera todos los eventos y resuelve admisión y accesos. No publica cámara o micrófono como facilitación.',
-        },
-        ADMIN: {
-            label: 'Administración',
-            description: 'Administra el sistema, los eventos y los accesos globalmente. No publica cámara o micrófono como facilitación.',
-        },
-    },
-    en: {
-        FACILITATOR: {
-            label: 'Facilitator',
-            description: 'Conducts and publishes only in assigned events. Can inspect admission and system health, but cannot administer access.',
-        },
-        FACILITATOR_OP: {
-            label: 'Facilitator and operations',
-            description: 'Operates every event. Acts as facilitator and may publish only in the assigned event; elsewhere retains operational access without publication.',
-        },
-        OPERATOR: {
-            label: 'Operations',
-            description: 'Operates every event and supports admission and access. Does not publish camera or microphone as facilitator.',
-        },
-        ADMIN: {
-            label: 'Administration',
-            description: 'Administers the system, events, and access globally. Does not publish camera or microphone as facilitator.',
-        },
-    },
-};
-
 const ROLE_NAMES: Record<StaffDashboardRole, string> = {
     FACILITATOR: 'E2E Fede',
     FACILITATOR_OP: 'E2E Conductor',
@@ -83,21 +41,18 @@ async function withPage<T>(browser: Browser, run: (page: Page) => Promise<T>): P
     }
 }
 
-async function expectStaffIdentity(
+async function expectOperationsNavigation(
     page: Page,
     role: StaffDashboardRole,
-    name: string,
     locale: UiLocale,
 ): Promise<void> {
-    const copy = ROLE_COPY[locale][role];
     const operationsNavigation = page.getByRole('navigation', {
         name: locale === 'es' ? 'Operaciones de eventos' : 'Event operations',
     });
-    const identity = operationsNavigation.locator('details');
-    await expect(identity.locator('summary')).toContainText(name);
-    await expect(identity.locator('summary')).toContainText(copy.label);
-    await identity.locator('summary').click();
-    await expect(identity).toContainText(copy.description);
+    await expect(operationsNavigation).toBeVisible();
+    // Identity and sign-out now live only in the one canonical global user
+    // menu. The ops strip must not recreate the removed second user circle.
+    await expect(operationsNavigation.locator('details')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(role);
 
     for (const label of locale === 'es'
@@ -128,7 +83,7 @@ stackTest.describe('role capability contract', () => {
                         await setLocale(page, locale);
                         await loginViaDashboard(page, role, name, ROUTES.opsEvents);
                         await expect(page.locator('html')).toHaveAttribute('lang', locale);
-                        await expectStaffIdentity(page, role, name, locale);
+                        await expectOperationsNavigation(page, role, locale);
 
                         const entry = await page.request.get(
                             `/api/scheduled-sessions/${SESSION_ES.id}/entry`,

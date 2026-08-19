@@ -30,6 +30,7 @@ import {
     validatedAccountIdentity,
     type AccountIdentity,
 } from '@/lib/account-rp';
+import { isAnonymousPublicCycleAccess } from '@/lib/public-cycle';
 import {
     SESSION_COOKIE_NAME,
     digestSessionToken,
@@ -216,10 +217,14 @@ export async function principalFromToken(
                     tier: true,
                     codeLastFour: true,
                     state: true,
+                    boundEmail: true,
                     expiresAt: true,
                     revokedAt: true,
                     accountId: true,
                     accountIssuer: true,
+                    scheduledSession: {
+                        select: { publicAccess: true, isTest: true },
+                    },
                 },
             },
         },
@@ -240,10 +245,11 @@ export async function principalFromToken(
         return null;
     }
 
-    const accountIdentity = beaconAccountEnabled()
+    const accountRequired = beaconAccountEnabled() && !isAnonymousPublicCycleAccess(webSession);
+    const accountIdentity = accountRequired
         ? await validatedAccountIdentity(webSession, now)
         : null;
-    if (beaconAccountEnabled() && !accountIdentity) {
+    if (accountRequired && !accountIdentity) {
         // Fifteen-minute Account freshness is enforced for every new protected
         // transition. Already-issued LiveKit tokens continue until their own
         // bounded expiry and are not recalled on an issuer outage.
@@ -255,7 +261,7 @@ export async function principalFromToken(
         if (staff.disabledAt !== null) {
             return null;
         }
-        if (beaconAccountEnabled() && (
+        if (accountRequired && (
             !accountIdentity ||
             !staff.accountBinding ||
             staff.accountBinding.disabledAt !== null ||
@@ -284,7 +290,7 @@ export async function principalFromToken(
         if (entitlement.revokedAt !== null || entitlement.expiresAt.getTime() <= now.getTime()) {
             return null;
         }
-        if (beaconAccountEnabled() && (
+        if (accountRequired && (
             entitlement.accountId !== accountIdentity?.subject ||
             entitlement.accountIssuer !== accountIdentity?.issuer
         )) {

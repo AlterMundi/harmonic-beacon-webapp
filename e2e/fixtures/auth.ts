@@ -50,7 +50,11 @@ export async function loginAttendeeWithTicket(
     page: Page,
     credentials: { name: string; email: string; code: string },
 ): Promise<void> {
-    await page.goto('/');
+    // The public landing is now intentionally registration-free for the four
+    // reviewed rooms. Ticket credentials keep their stable, explicit entry
+    // surface instead of depending on whether a ticketed event is currently
+    // listed on `/`.
+    await page.goto('/login');
     await page.locator('#display-name').fill(credentials.name);
     await page.locator('#ticket-code').fill(credentials.code);
     await page.locator('#ticket-email').fill(credentials.email);
