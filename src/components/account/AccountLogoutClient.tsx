@@ -44,7 +44,7 @@ export default function AccountLogoutClient({
     }, [initiation, mode, returnTo]);
 
     return (
-        <section className="account-card" aria-live="polite">
+        <section className="account-card account-card--logout" aria-live="polite">
             <h1>{es ? 'Cerrando sesión…' : 'Signing out…'}</h1>
             {!initiation && !failed && <button className="account-primary" onClick={perform}>
                 {es ? 'Confirmar cierre de sesión' : 'Confirm sign out'}

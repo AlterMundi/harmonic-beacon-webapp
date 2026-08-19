@@ -87,7 +87,6 @@ describe('EarlyBird Listener page', () => {
         expect(result.type).toBe(EarlyBirdHome);
         expect(result.props).toMatchObject({
             publicAccess: true,
-            displayName: '',
             membership: { kind: 'none', state: 'none' },
             dropIns: { es: null, en: '/api/early-birds/drop-ins/en' },
         });
@@ -151,7 +150,6 @@ describe('EarlyBird Listener page', () => {
 
         expect(result.type).toBe(EarlyBirdHome);
         expect(result.props).toMatchObject({
-            displayName: 'Nico',
             membership: { kind: 'none', state: 'none' },
             accessKind: 'free-quota',
             quota: expect.objectContaining({ remainingMs: 10_800_000 }),

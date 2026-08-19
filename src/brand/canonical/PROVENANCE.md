@@ -28,17 +28,19 @@ manifest and visual-review update together.
 Listener, Live and Account serve a byte-pinned local snapshot of the canonical
 web component rather than executing JavaScript supplied at runtime by another
 origin. The source is `AlterMundi/harmonicbeacon.com` commit
-`ed7421616429681a37836f4698c73cf01799b75e`; the vendored
+`7e2730344e543e6c6ff5abde6d8133fc198214ae`; the vendored
 `public/assets/hb-global-nav.js` SHA-256 is
-`4a8a18fea07e279c0f757abd3be61bd715b0c6e647e6bc389d84c228c312e691`.
+`ec27014086a96c5e2187967dde0f96f238ef95a49c9382a6028af1d59e6deb08`.
 The local light-DOM markup remains the accessible, same-destination fallback.
 Both implementations keep Account out of the primary destination list and
 expose it from the user-icon menu. The enhanced navigation renders both the
 Beacon mark and user glyph locally; it does not embed Account in an iframe or
-fetch a cross-origin image. Product layouts may pass only the boolean presence
-of a locally known Account session. That hint changes the icon treatment and
-accessible label, but never carries a name, email, subject, session ID or token
-and is never an authorization decision.
+fetch a cross-origin image. Product layouts may pass the boolean presence of a
+locally known Account session and may fill the canonical menu slot with
+host-local presentation. The static asset never reads cookies or identity and
+the slot must never carry email, subject, session ID or token. Listener uses it
+only for the already-visible display name, Account destination and sign-out
+action. Neither the hint nor slotted presentation is an authorization decision.
 
 ## Font source and license
 

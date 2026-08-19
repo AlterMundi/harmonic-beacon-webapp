@@ -1,12 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
-import {
-    clearListenerOAuthAttempt,
-    recoverListenerIdentity,
-} from '@/lib/early-birds/auth-client';
+import { clearListenerOAuthAttempt } from '@/lib/early-birds/auth-client';
 import { earlyBirdCopy, earlyBirdHomeCopy, listenerMembershipPresentationCopy } from '@/lib/early-birds/copy';
 import type { ListenerMembershipPresentation } from '@/lib/early-birds/membership-presentation';
 
@@ -21,7 +18,6 @@ import type { SerializedEarlyBirdQuotaSnapshot } from './free-quota';
 import ListenerPlayer from './ListenerPlayer';
 
 export default function EarlyBirdHome({
-    displayName,
     membership,
     accessKind = 'membership',
     serverNow = new Date(0).toISOString(),
@@ -34,7 +30,8 @@ export default function EarlyBirdHome({
     checkoutEnvironment = 'staging',
     liveWorkbench = null,
 }: {
-    displayName: string;
+    /** @deprecated Identity presentation now belongs to the canonical navbar. */
+    displayName?: string;
     membership: ListenerMembershipPresentation;
     accessKind?: 'membership' | 'free-quota';
     serverNow?: string;
@@ -50,53 +47,19 @@ export default function EarlyBirdHome({
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
     const membershipCopy = listenerMembershipPresentationCopy(earlyBirdCopy[locale], membership);
-    const [signOutError, setSignOutError] = useState(false);
 
     useEffect(() => clearListenerOAuthAttempt(), []);
-
-    async function signOut() {
-        setSignOutError(false);
-        if (!await recoverListenerIdentity()) setSignOutError(true);
-    }
 
     return (
         <main className="listener-shell">
             <div className="listener-shell__frame listener-shell__frame--home">
-                <header className="listener-rail">
-                    <div className="listener-rail__actions">
-                        {publicAccess && (
+                {publicAccess && (
+                    <header className="listener-rail">
+                        <div className="listener-rail__actions">
                             <FreeQuotaStatus serverNow={serverNow} unlimited="free-for-all" compact />
-                        )}
-                        {!publicAccess && <details
-                            className="listener-account"
-                            // Browsers may restore native disclosure state before React hydrates.
-                            suppressHydrationWarning
-                        >
-                            <summary aria-label={copy.account} title={copy.account}>
-                                {displayName.slice(0, 1).toUpperCase()}
-                            </summary>
-                            <div className="listener-account__menu">
-                                <p>{displayName}</p>
-                                {membershipCopy && (
-                                    <span>{membershipCopy?.title ?? copy.active}</span>
-                                )}
-                                {membership.kind !== 'none' && membershipCopy?.detail && (
-                                    <small>{membershipCopy.detail}</small>
-                                )}
-                                {accessKind === 'membership' && membership.kind === 'founder' && (
-                                    <FreeQuotaStatus serverNow={serverNow} unlimited="membership" compact />
-                                )}
-                                {accessKind === 'membership' && membership.kind === 'founder' && (
-                                    <FoundingListenerMembershipActions membership={membership} />
-                                )}
-                                <button type="button" onClick={signOut}>{copy.signOut}</button>
-                                {signOutError && (
-                                    <small role="alert">{earlyBirdCopy[locale].identityRecoveryFailed}</small>
-                                )}
-                            </div>
-                        </details>}
-                    </div>
-                </header>
+                        </div>
+                    </header>
+                )}
                 <div className="listener-static-field" data-testid="listener-static-field">
                     <BeaconField phase="ready" />
                 </div>
@@ -111,6 +74,20 @@ export default function EarlyBirdHome({
                         reactiveVisualizationInitiallyEnabled={false}
                         reactiveFieldLabAvailable={reactiveFieldLabAvailable}
                     />
+                    {!publicAccess && membershipCopy && (
+                        <footer className="listener-home-membership-status">
+                            <p>{membershipCopy.title ?? copy.active}</p>
+                            {membership.kind !== 'none' && membershipCopy.detail && (
+                                <small>{membershipCopy.detail}</small>
+                            )}
+                            {accessKind === 'membership' && membership.kind === 'founder' && (
+                                <FreeQuotaStatus serverNow={serverNow} unlimited="membership" compact />
+                            )}
+                            {accessKind === 'membership' && membership.kind === 'founder' && (
+                                <FoundingListenerMembershipActions membership={membership} />
+                            )}
+                        </footer>
+                    )}
                     {!publicAccess && accessKind === 'free-quota' && (
                         <footer className="listener-listening-status">
                             <FreeQuotaStatus

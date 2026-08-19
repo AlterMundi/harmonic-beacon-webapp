@@ -12,6 +12,47 @@ hb-global-nav:not(:defined) {
   font-family: var(--font-hb-inter), Inter, system-ui, sans-serif;
 }
 
+hb-global-nav:not(:defined) > [slot="account-menu"] { display: none; }
+
+.hb-global-navigation-local-account-slot { min-width: 15rem; }
+.hb-listener-account-menu { display: grid; min-width: 15rem; }
+.hb-listener-account-menu__identity {
+  margin: 0;
+  padding: 0.65rem 0.75rem 0.55rem;
+  border-bottom: 1px solid rgba(244, 238, 226, 0.1);
+  color: #f4eee2;
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.hb-listener-account-menu a,
+.hb-listener-account-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: #e9e0d0;
+  background: transparent;
+  cursor: pointer;
+  font: 600 11px/1.2 var(--font-hb-inter), Inter, system-ui, sans-serif;
+  letter-spacing: .12em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.hb-listener-account-menu a:hover,
+.hb-listener-account-menu button:hover { color: #f4eee2; background: rgba(201, 162, 78, .1); }
+.hb-listener-account-menu a:focus-visible,
+.hb-listener-account-menu button:focus-visible { outline: 2px solid #c9a24e; outline-offset: -2px; }
+.hb-listener-account-menu small {
+  padding: 0.55rem 0.75rem;
+  color: #e4b8ae;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 /* Central Account authority. Bound to its own route/host; event and Listener
    product styling remain untouched. */
 .account-shell {
@@ -43,6 +84,20 @@ hb-global-nav:not(:defined) {
   border-radius: 18px;
   background: rgba(30, 24, 18, .92);
   box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, .28);
+}
+.account-shell--logout { display: grid; place-items: center; padding-block: 5rem 2rem; }
+.account-card--logout {
+  width: min(24rem, 100%);
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  box-shadow: 0 0.8rem 2.5rem rgba(0, 0, 0, .2);
+}
+.account-card--logout h1 {
+  margin: 0;
+  font-family: var(--font-hb-inter), Inter, system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: .04em;
 }
 .account-grid .account-card { width: 100%; }
 .account-form, .account-providers, .account-actions { display: grid; gap: .75rem; margin-top: 1rem; }
@@ -1632,57 +1687,19 @@ html[data-hb-surface='listener'] body {
   margin-left: auto;
 }
 
-.listener-account {
-  position: relative;
-}
-
-.listener-account > summary {
-  width: 2.75rem;
-  height: 2.75rem;
+.listener-home-membership-status {
   display: grid;
-  place-items: center;
-  border: 1px solid var(--hb-hair);
-  border-radius: 50%;
-  color: var(--hb-bone);
-  background: var(--hb-surface);
-  cursor: pointer;
-  list-style: none;
-}
-
-.listener-account > summary::-webkit-details-marker { display: none; }
-
-.listener-account__menu {
-  position: absolute;
-  top: calc(100% + 0.65rem);
-  right: 0;
-  z-index: 20;
-  min-width: 15rem;
-  padding: 1rem;
+  width: min(100%, 30rem);
+  gap: 0.45rem;
+  margin: 1rem auto 0;
+  padding: 0.85rem 1rem;
   border: 1px solid var(--border-subtle);
   border-radius: var(--hb-radius-card);
-  background: rgba(27, 21, 15, 0.97);
-  box-shadow: var(--hb-shadow-card);
-  backdrop-filter: blur(20px);
-}
-
-.listener-account__menu p { font-size: 0.9rem; }
-.listener-account__menu span,
-.listener-account__menu small {
-  display: block;
-  margin-top: 0.3rem;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-}
-
-.listener-account__menu button {
-  width: 100%;
-  min-height: 2.75rem;
-  margin-top: 0.8rem;
-  border-top: 1px solid var(--border-subtle);
-  color: var(--paper);
+  background: rgba(27, 21, 15, 0.72);
   text-align: left;
-  cursor: pointer;
 }
+.listener-home-membership-status > p { color: var(--hb-bone); font-size: 0.84rem; font-weight: 600; }
+.listener-home-membership-status > small { color: var(--text-muted); font-size: 0.72rem; line-height: 1.45; }
 
 .listener-experience {
   width: 100%;
@@ -2812,9 +2829,6 @@ html[data-hb-surface='listener'] body {
     opacity: 0.48;
   }
 
-  .listener-account__menu {
-    width: min(18rem, calc(100vw - 1.5rem));
-  }
 }
 
 @media (max-width: 360px) {
@@ -2833,9 +2847,6 @@ html[data-hb-surface='listener'] body {
   .listener-control-panel { padding-top: 0.75rem; }
   .listener-details { padding-inline: 0.65rem; }
 
-  .listener-account__menu {
-    width: min(15rem, calc(100vw - 1.1rem));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

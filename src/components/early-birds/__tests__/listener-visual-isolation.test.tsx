@@ -188,10 +188,10 @@ describe('Listener visual isolation from event surfaces (issues #213, #198)', ()
         expect(css).toContain('width: min(100%, 46rem);');
         expect(css).toContain('width: min(100%, 42rem);');
         expect(mobile).toContain('min-height: 48px;');
-        expect(mobile).toContain('width: min(18rem, calc(100vw - 1.5rem));');
         expect(mobile).not.toContain('position: sticky;');
-        expect(narrow).toContain('width: min(15rem, calc(100vw - 1.1rem));');
         expect(narrow).toContain('padding-inline: 0.65rem;');
+        expect(css).not.toContain('.listener-account__menu');
+        expect(css).not.toContain('.listener-account > summary');
         expect(css).toMatch(/\.listener-details input\[type='range'\][\s\S]*?min-height: 2\.75rem;/);
         expect(css).toMatch(/\.listener-quota a[\s\S]*?min-height: 2\.75rem;/);
     });

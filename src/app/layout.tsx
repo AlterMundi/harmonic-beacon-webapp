@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
+import { ListenerNavigationAccountMenu } from "@/components/brand/ListenerNavigationAccountMenu";
 import {
   globalNavigationAccountHref,
   globalNavigationSurface,
@@ -11,7 +12,7 @@ import { requestBrowserLocale, requestLocale } from "@/lib/i18n-server";
 import { isCanonicalListenerHost, isListenerStagingHost } from "@/lib/listener/public-discovery";
 import { isAccountHost } from "@/lib/account/config";
 import { locallyKnownAccountSession } from "@/lib/account/auth";
-import { locallyKnownListenerAccountSession } from "@/lib/listener/account-rp";
+import { locallyKnownListenerNavigationIdentity } from "@/lib/listener/account-rp";
 import "@/styles/hb-brand.css";
 import "./globals.css";
 import { Toaster } from "sonner";
@@ -120,12 +121,13 @@ export default async function RootLayout({
   const accountHost = isAccountHost(incomingHeaders.get('host'));
   const accountHref = globalNavigationAccountHref(incomingHeaders);
   const localHeaders = new Headers(incomingHeaders);
+  const listenerNavigationIdentity = accountHref && listenerAccountHost
+    ? await locallyKnownListenerNavigationIdentity(localHeaders).catch(() => null)
+    : null;
   const accountSignedIn = accountHref
       ? accountHost
       ? await locallyKnownAccountSession(localHeaders).catch(() => false)
-      : listenerAccountHost
-        ? await locallyKnownListenerAccountSession(localHeaders).catch(() => false)
-        : false
+      : Boolean(listenerNavigationIdentity)
     : false;
   // This application is the Live surface by default. Listener and its staging
   // host opt into their own active item explicitly; local/E2E hosts continue
@@ -152,6 +154,13 @@ export default async function RootLayout({
           locale={locale}
           accountHref={accountHref}
           accountSignedIn={accountSignedIn}
+          accountMenu={listenerNavigationIdentity && accountHref ? (
+            <ListenerNavigationAccountMenu
+              displayName={listenerNavigationIdentity.displayName}
+              accountHref={accountHref}
+              locale={locale}
+            />
+          ) : undefined}
         />
         <LocaleProvider initialLocale={locale}>
           {/* Main content */}
