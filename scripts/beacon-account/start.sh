@@ -36,11 +36,20 @@ baked_sha=$(docker image inspect "harmonic-beacon/account:$BEACON_ACCOUNT_IMAGE_
 test "$baked_sha" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'built image provenance mismatch'
 account_validate
 
-[ "$environment" != production ] || account_check_production_migrations before
-[ "$environment" != production ] || account_backup_production >/dev/null
-cutover_started=1
-account_compose up -d "account-mail-worker-$environment" "account-$environment"
-[ "$environment" != production ] || account_check_production_migrations after
+if [ "$environment" = production ]; then
+  account_check_production_migrations before
+  account_backup_production >/dev/null
+  account_migrate_production
+  account_check_production_migrations after
+  account_provision_production_role
+  account_provision_production_authority
+  cutover_started=1
+  account_compose up -d --no-deps \
+    account-mail-worker-production account-production
+else
+  cutover_started=1
+  account_compose up -d account-mail-worker-staging account-staging
+fi
 account_verify_running "$environment"
 "$root/scripts/beacon-account/health-smoke.sh" \
   "$environment" "$ACCOUNT_DEPLOY_FILE" "$BEACON_ACCOUNT_GIT_SHA" 1 1

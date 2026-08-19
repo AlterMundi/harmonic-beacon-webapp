@@ -103,6 +103,27 @@ already issued, but new identity/authorization and lease renewal fail closed.
 
 ## Runtime and provider configuration
 
+### Production database boundary
+
+Production shares the canonical `earlybirds_preview` database so existing
+opaque account and product foreign keys survive, but it does not share the
+database owner's credential. The lifecycle derives a short-lived migration
+connection from the already-running PostgreSQL container, confines that
+connection to the internal DB network, and removes it after migration, backup
+or verification. The long-running application and mail worker use the
+non-owner `account_prod` role. Deployment creates or rotates that role only
+after the reviewed migration and grants it CRUD on the explicit Account/auth
+table inventory; it has no role membership, DDL, superuser, membership,
+commerce or event-table access.
+
+The first production authority migration intentionally invalidates legacy
+browser sessions and one-use auth artifacts. It must therefore be deployed as
+the coordinated Account → Listener identity cutover, with the encrypted
+pre-migration backup already verified. Starting an internal Account container
+early is not a harmless preview and is forbidden. A retry may accept the exact
+target migration as already applied, but never an unknown pending/applied
+migration or schema downgrade.
+
 The dedicated Account container requires `BEACON_ACCOUNT_RUNTIME=1` and the
 exact issuer Host; all non-Account routes and direct Docker Host access are 404.
 Readiness uses `BEACON_DATABASE_SCHEMA_VERSION` and returns

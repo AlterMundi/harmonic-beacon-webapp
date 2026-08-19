@@ -177,6 +177,17 @@ test('validator rejects a shared staging database schema', () => {
   assert.throws(() => validatePair(PROD, bad, STAGING_DB, true), /isolated account-staging-postgres/);
 });
 
+test('validator pins the production runtime role and bounded database password shape', () => {
+  const wrongRole = mutate(PROD, 'postgresql://account_prod:', 'postgresql://earlybirds_preview:');
+  assert.throws(() => validatePair(wrongRole, STAGING, STAGING_DB, true), /dedicated account_prod role/);
+  const unsafePassword = mutate(
+    PROD,
+    'account_prod:replace-production-database-password-32-random@earlybirds-preview-postgres',
+    'account_prod:short@earlybirds-preview-postgres',
+  );
+  assert.throws(() => validatePair(unsafePassword, STAGING, STAGING_DB, true), /32-128 base64url/);
+});
+
 test('validator rejects a production client secret in staging', () => {
   const bad = mutate(STAGING, 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER=', 'BEACON_ACCOUNT_CLIENT_SECRET_HB_LISTENER=wrong-boundary');
   assert.throws(() => validatePair(PROD, bad, STAGING_DB, true), /must be empty outside its issuer/);
@@ -285,11 +296,18 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(start, /git -C "\$root" rev-parse HEAD/);
   assert.match(start, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
   assert.match(start, /account_compose build account-production[\s\S]*account_validate/);
-  assert.match(start, /account_compose up -d "account-mail-worker-\$environment" "account-\$environment"/);
+  assert.match(start, /account_compose up -d --no-deps[\s\\]+account-mail-worker-production account-production/);
+  assert.match(start, /account_compose up -d account-mail-worker-staging account-staging/);
   assert.match(start, /health-smoke\.sh"[\s\\]+"\$environment" "\$ACCOUNT_DEPLOY_FILE" "\$BEACON_ACCOUNT_GIT_SHA" 1 1/);
   assert.ok(start.indexOf('health-smoke.sh') < start.lastIndexOf('cutover_started=0'));
   assert.match(start, /account_check_production_migrations before/);
   assert.match(start, /account_check_production_migrations after/);
+  assert.match(start, /account_migrate_production/);
+  assert.match(start, /account_provision_production_role/);
+  assert.match(start, /account_provision_production_authority/);
+  assert.ok(start.indexOf('account_backup_production') < start.indexOf('account_migrate_production'));
+  assert.ok(start.indexOf('account_migrate_production') < start.indexOf('account_provision_production_role'));
+  assert.ok(start.indexOf('account_provision_production_role') < start.indexOf('cutover_started=1', start.indexOf('if [ "$environment" = production ]')));
   assert.match(start, /flock -n 9/);
   assert.match(start, /account_backup_production/);
   assert.match(start, /account_restore_previous_runtime/);
@@ -321,6 +339,11 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(lib, /openssl enc -d -aes-256-cbc/);
   assert.doesNotMatch(lib, /> "\$backup_dir\/\$backup_name"\s*$/m);
   assert.match(lib, /database was not downgraded|account_restore_previous_runtime/);
+  assert.match(lib, /account_write_production_admin_env/);
+  assert.match(lib, /--network none --read-only --cap-drop ALL --user 0:0/);
+  assert.match(lib, /--network earlybirds_preview_db_internal --read-only --tmpfs \/tmp/);
+  assert.match(lib, /provision-production-role\.mjs/);
+  assert.doesNotMatch(lib, /GRANT\s+earlybirds_preview\s+TO\s+account_prod/i);
   assert.match(smoke, /verify-health-json\.sh/);
   assert.match(smoke, /--connect-timeout 3 --max-time 8/);
   assert.match(smoke, /\/assets\/hb-global-nav\.js\?v=\$expected_sha/);
@@ -330,11 +353,13 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.doesNotMatch(smoke, /\bnode\b/);
   const migrationGuard = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/check-migrations.mjs'), 'utf8');
   assert.match(migrationGuard, /pending migrations differ from the reviewed Account-only list/);
+  assert.match(migrationGuard, /pending\.length === 0 && applied\.has\(target\)/);
   assert.match(migrationGuard, /unresolved migration/);
   assert.doesNotMatch(`${start}\n${lib}`, /migrate reset|migrate down|docker compose down|volume rm|prune/);
   const dockerfile = fs.readFileSync(path.resolve(ROOT, '../../Dockerfile'), 'utf8');
   assert.match(dockerfile, /BEACON_ACCOUNT_NAV_ASSET=1/);
   assert.match(dockerfile, /ops\/beacon-account\/validate\.mjs/);
+  assert.match(dockerfile, /scripts\/beacon-account\/provision-production-role\.mjs/);
   for (const fixture of [
     'account.production.env.example',
     'account.staging.env.example',
@@ -344,6 +369,23 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   ]) {
     assert.match(dockerfile, new RegExp(`ops/beacon-account/${fixture.replaceAll('.', '\\\.')}`));
   }
+});
+
+test('production runtime role provisioning is explicit, non-owner and allowlisted', () => {
+  const source = fs.readFileSync(
+    path.resolve(ROOT, '../../scripts/beacon-account/provision-production-role.mjs'),
+    'utf8',
+  );
+  assert.match(source, /RUNTIME_ROLE = 'account_prod'/);
+  assert.match(source, /NOSUPERUSER NOCREATEDB NOCREATEROLE/);
+  assert.match(source, /NOREPLICATION NOBYPASSRLS/);
+  assert.match(source, /runtime database role must not inherit another role/);
+  assert.match(source, /REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM account_prod/);
+  assert.match(source, /GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE/);
+  assert.match(source, /beacon_account_mail_outbox/);
+  assert.match(source, /beacon_oauth_access_tokens/);
+  assert.doesNotMatch(source, /GRANT\s+earlybirds_preview\s+TO\s+account_prod/i);
+  assert.doesNotMatch(source, /GRANT\s+ALL\s+(?:PRIVILEGES\s+)?ON\s+ALL\s+TABLES/i);
 });
 
 test('runtime verification preserves the pre-worker rollback boundary', () => {

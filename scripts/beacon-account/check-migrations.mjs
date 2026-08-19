@@ -29,8 +29,12 @@ try {
     .filter((row) => row.finished_at !== null && row.rolled_back_at === null)
     .map((row) => row.migration_name));
   const pending = available.filter((name) => !applied.has(name));
-  if (mode === 'before' && JSON.stringify(pending) !== JSON.stringify(expected)) {
-    throw new Error('pending migrations differ from the reviewed Account-only list');
+  if (mode === 'before') {
+    const exactPending = JSON.stringify(pending) === JSON.stringify(expected);
+    const exactAlreadyApplied = pending.length === 0 && applied.has(target);
+    if (!exactPending && !exactAlreadyApplied) {
+      throw new Error('pending migrations differ from the reviewed Account-only list');
+    }
   }
   if (mode === 'after' && pending.length !== 0) throw new Error('migrations remain pending after deploy');
 } finally {
