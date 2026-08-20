@@ -133,6 +133,8 @@ export async function provisionStaffAccountBinding(
     if (!apply) {
         return prisma.$transaction((tx) => inspectBinding(tx, input), {
             isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            maxWait: 5_000,
+            timeout: 10_000,
         });
     }
 
@@ -163,7 +165,11 @@ export async function provisionStaffAccountBinding(
                     },
                 });
                 return { outcome: 'created', bindingId: binding.id };
-            }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+            }, {
+                isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+                maxWait: 5_000,
+                timeout: 10_000,
+            });
         } catch (error) {
             const retryable = error instanceof Prisma.PrismaClientKnownRequestError &&
                 (error.code === 'P2002' || error.code === 'P2034');
@@ -192,7 +198,13 @@ export async function main(
     }
     const databaseUrl = validateProductionEnvironment(environment);
     const input = await readRootOnlyBindingInput();
-    const pool = new Pool({ connectionString: databaseUrl.toString(), max: 2 });
+    const pool = new Pool({
+        connectionString: databaseUrl.toString(),
+        max: 2,
+        connectionTimeoutMillis: 5_000,
+        query_timeout: 10_000,
+        statement_timeout: 10_000,
+    });
     const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
     try {
         await assertDatabaseIdentity(prisma);

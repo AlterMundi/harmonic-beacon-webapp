@@ -74,6 +74,7 @@ postgres_password=$(env_value POSTGRES_PASSWORD)
 postgres_database=$(env_value POSTGRES_DB)
 test "$postgres_database" = beacon || fail 'production database name is not beacon'
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
+command -v timeout >/dev/null 2>&1 || fail 'timeout is required'
 encoded_user=$(jq -rn --arg value "$postgres_user" '$value|@uri')
 encoded_password=$(jq -rn --arg value "$postgres_password" '$value|@uri')
 encoded_database=$(jq -rn --arg value "$postgres_database" '$value|@uri')
@@ -114,7 +115,7 @@ docker network create --internal --driver bridge "$network" >/dev/null
 network_created=1
 docker network connect --alias postgres "$network" beacon-postgres
 database_connected=1
-output=$(docker run --rm --pull never --cidfile "$runner_cidfile" --network "$network" \
+output=$(timeout --signal=TERM 30s docker run --rm --pull never --cidfile "$runner_cidfile" --network "$network" \
   --read-only --user 0:0 --cap-drop ALL --security-opt no-new-privileges \
   --mount "type=bind,src=$source_script,dst=/app/scripts/live-production/bind-staff-account.operator.ts,readonly" \
   --mount "type=bind,src=$input,dst=/run/harmonic-beacon/staff-account-binding.env,readonly" \
