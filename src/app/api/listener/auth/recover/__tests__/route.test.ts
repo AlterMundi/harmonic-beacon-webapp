@@ -53,6 +53,8 @@ describe('Listener same-origin central logout initiation', () => {
             where: { id: 'local-session', sid: 'central-sid' },
         });
         expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+        expect(response.headers.get('set-cookie'))
+            .toContain('__Host-hb_listener_account_auto_handoff=1');
     });
 
     it('offers human confirmation when state_mismatch left no local RP session', async () => {
@@ -62,6 +64,8 @@ describe('Listener same-origin central logout initiation', () => {
         const target = new URL(result.url);
         expect(response.status).toBe(200);
         expect(result.confirmation).toBe(true);
+        expect(response.headers.get('set-cookie'))
+            .toContain('__Host-hb_listener_account_auto_handoff=1');
         expect(target.searchParams.has('initiation')).toBe(false);
         expect(target.searchParams.get('return_to'))
             .toBe('https://earlybirds-staging.harmonicbeacon.com/');

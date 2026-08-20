@@ -14,7 +14,10 @@ import {
 } from '@/lib/early-birds/invitation-cookie';
 import { syntheticTeamEntryAllowed } from '@/lib/early-birds/synthetic-team-entry';
 import { configuredEarlyBirdDropIn } from '@/lib/early-birds/drop-ins';
-import { listenerAccountRPConfig } from '@/lib/listener/account-rp';
+import {
+    listenerAccountRPConfig,
+    listenerAutomaticHandoffSuppressed,
+} from '@/lib/listener/account-rp';
 import { serializeEarlyBirdQuotaSnapshot } from '@/lib/early-birds/quota';
 import {
     isCanonicalListenerHost,
@@ -111,11 +114,16 @@ export default async function EarlyBirdsPage({
     let accountIdentityAvailable = true;
     try { listenerAccountRPConfig(incomingHeaders); } catch { accountIdentityAvailable = false; }
     const syntheticTeamEntryAvailable = syntheticTeamEntryAllowed({ headers: incomingHeaders });
+    const accountUnavailable = params.accountUnavailable === '1';
+    if (!session && accountIdentityAvailable && !accountUnavailable && params.authError !== '1' &&
+        !listenerAutomaticHandoffSuppressed(incomingHeaders)) {
+        redirect('/api/account/login?auto=1');
+    }
     const identityUnavailable = sessionResolution.unavailable || (
         !session
         && !accountIdentityAvailable
         && !syntheticTeamEntryAvailable
-    );
+    ) || accountUnavailable;
     return (
         <EarlyBirdLanding
             signedIn={Boolean(session)}

@@ -11,6 +11,7 @@ import {
     listenerAccountRPConfig,
     locallyKnownListenerNavigationIdentity,
     locallyKnownListenerAccountSession,
+    listenerAutomaticHandoffSuppressed,
     localListenerAccountId,
     readListenerAccountCookie,
     readListenerAccountAttemptCookie,
@@ -74,6 +75,15 @@ describe('Listener Account RP subject namespace', () => {
         expect(readListenerAccountAttemptCookie(new Headers({
             cookie: '__Host-hb_listener_account_attempt=one; __Host-hb_listener_account_attempt=two',
         }))).toBeNull();
+        expect(listenerAutomaticHandoffSuppressed(new Headers({
+            cookie: '__Host-hb_listener_account_auto_handoff=1',
+        }))).toBe(true);
+        expect(listenerAutomaticHandoffSuppressed(new Headers({
+            cookie: '__Host-hb_listener_account_auto_handoff=0',
+        }))).toBe(false);
+        expect(listenerAutomaticHandoffSuppressed(new Headers({
+            cookie: '__Host-hb_listener_account_auto_handoff=1; __Host-hb_listener_account_auto_handoff=1',
+        }))).toBe(false);
     });
 
     it('preserves production opaque account IDs for existing commercial foreign keys', () => {

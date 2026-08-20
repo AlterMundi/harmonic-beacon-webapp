@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { verifyAccountFrontchannelLogout } from '@/lib/account/frontchannel-token';
 import {
     listenerAccountCookie,
+    listenerAutomaticHandoffCookie,
     listenerAccountRPConfig,
 } from '@/lib/listener/account-rp';
 import { isCanonicalListenerHost, isListenerStagingHost } from '@/lib/listener/public-discovery';
@@ -26,12 +27,14 @@ export async function GET(request: Request): Promise<Response> {
     await prisma.listenerAccountSession.deleteMany({
         where: { issuer: authority.iss, sid: authority.sid },
     });
+    const responseHeaders = new Headers({
+        'Cache-Control': 'private, no-store',
+        'Content-Security-Policy': `default-src 'none'; frame-ancestors ${config.issuer}`,
+    });
+    responseHeaders.append('Set-Cookie', listenerAccountCookie('', 0));
+    responseHeaders.append('Set-Cookie', listenerAutomaticHandoffCookie('1'));
     return new Response(null, {
         status: 204,
-        headers: {
-            'Set-Cookie': listenerAccountCookie('', 0),
-            'Cache-Control': 'private, no-store',
-            'Content-Security-Policy': `default-src 'none'; frame-ancestors ${config.issuer}`,
-        },
+        headers: responseHeaders,
     });
 }
