@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { signAccountLogoutInitiation } from '@/lib/account/frontchannel-token';
 import {
     listenerAccountCookie,
+    listenerAutomaticHandoffCookie,
     listenerAccountRPConfig,
     readListenerAccountCookie,
 } from '@/lib/listener/account-rp';
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         'Cache-Control': 'private, no-store',
         'Set-Cookie': listenerAccountCookie('', 0),
     });
+    responseHeaders.append('Set-Cookie', listenerAutomaticHandoffCookie('1'));
     const returnTo = isListenerStagingHost(headers)
         ? 'https://earlybirds-staging.harmonicbeacon.com/'
         : 'https://listen.harmonicbeacon.com/';

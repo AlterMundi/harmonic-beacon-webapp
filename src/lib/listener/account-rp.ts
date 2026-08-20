@@ -10,6 +10,7 @@ import { isListenerStagingHost } from '@/lib/listener/public-discovery';
 
 export const LISTENER_ACCOUNT_COOKIE = '__Host-hb_listener_account';
 export const LISTENER_ACCOUNT_ATTEMPT_COOKIE = '__Host-hb_listener_account_attempt';
+export const LISTENER_ACCOUNT_AUTO_HANDOFF_COOKIE = '__Host-hb_listener_account_auto_handoff';
 const MAX_LISTENER_ACCOUNT_COOKIE_LENGTH = 512;
 
 function readSingleBoundedCookie(headers: Headers, name: string, maxLength: number): string | null {
@@ -34,6 +35,11 @@ export function readListenerAccountCookie(headers: Headers): string | null {
 
 export function readListenerAccountAttemptCookie(headers: Headers): string | null {
     return readSingleBoundedCookie(headers, LISTENER_ACCOUNT_ATTEMPT_COOKIE, 2048);
+}
+
+/** A logout/recovery marker suppresses only the optional automatic OIDC hop. */
+export function listenerAutomaticHandoffSuppressed(headers: Headers): boolean {
+    return readSingleBoundedCookie(headers, LISTENER_ACCOUNT_AUTO_HANDOFF_COOKIE, 8) === '1';
 }
 
 type RPConfig = {
@@ -399,4 +405,8 @@ export function listenerAccountCookie(value: string, maxAge = 30 * 24 * 60 * 60)
 
 export function listenerAttemptCookie(value: string, maxAge = 10 * 60) {
     return `${LISTENER_ACCOUNT_ATTEMPT_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+export function listenerAutomaticHandoffCookie(value: '' | '1', maxAge = 10 * 60) {
+    return `${LISTENER_ACCOUNT_AUTO_HANDOFF_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }

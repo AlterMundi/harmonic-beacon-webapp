@@ -34,6 +34,8 @@ describe('Listener signed frontchannel logout boundary', () => {
         expect(response.status).toBe(204);
         expect(response.headers.get('content-security-policy'))
             .toBe(`default-src 'none'; frame-ancestors ${issuer}`);
+        expect(response.headers.get('set-cookie'))
+            .toContain('__Host-hb_listener_account_auto_handoff=1');
         expect(db.deleteMany).toHaveBeenCalledWith({
             where: { issuer, sid: 'central-session' },
         });

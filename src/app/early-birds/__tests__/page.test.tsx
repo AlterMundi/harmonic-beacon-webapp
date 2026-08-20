@@ -55,6 +55,63 @@ const availableQuota = {
 };
 
 describe('EarlyBird Listener page', () => {
+    function enableProductionAccount() {
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_ENABLED', '1');
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_ENVIRONMENT', 'production');
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_CLIENT_SECRET', 'p'.repeat(32));
+        vi.stubEnv('BEACON_LISTENER_ACCOUNT_STATE_SECRET', 's'.repeat(32));
+    }
+
+    it('starts one bounded Account handoff instead of rendering a redundant signed-out CTA', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        enableProductionAccount();
+        mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+        const redirected = new Error('redirected');
+        mocks.redirect.mockImplementation(() => { throw redirected; });
+
+        await expect(EarlyBirdsPage({ searchParams: Promise.resolve({}) }))
+            .rejects.toBe(redirected);
+        expect(mocks.redirect).toHaveBeenCalledWith('/api/account/login?auto=1');
+        expect(mocks.getEarlyBirdListeningAccess).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['logout suppression', { cookie: '__Host-hb_listener_account_auto_handoff=1' }, {}],
+        ['callback failure', {}, { authError: '1' }],
+    ])('keeps a visible retry path after %s instead of redirecting in a loop', async (_label, headerValues, params) => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        enableProductionAccount();
+        mocks.headers.mockResolvedValue(new Headers({
+            host: 'listen.harmonicbeacon.com',
+            ...headerValues,
+        }));
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+
+        const result = await EarlyBirdsPage({ searchParams: Promise.resolve(params) });
+        expect(result.type).toBeDefined();
+        expect(mocks.redirect).not.toHaveBeenCalled();
+    });
+
+    it('turns an unavailable automatic handoff into a truthful retryable landing', async () => {
+        vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
+        vi.stubEnv('EARLY_BIRDS_FREE_FOR_ALL', '0');
+        enableProductionAccount();
+        mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
+        mocks.currentEarlyBirdSession.mockResolvedValue(null);
+
+        const result = await EarlyBirdsPage({
+            searchParams: Promise.resolve({ accountUnavailable: '1' }),
+        });
+        expect(result.props).toMatchObject({
+            signedIn: false,
+            serviceUnavailable: 'identity',
+        });
+        expect(mocks.redirect).not.toHaveBeenCalled();
+    });
+
     it('cleans provider return parameters without treating them as payment authority', async () => {
         vi.stubEnv('EARLY_BIRDS_ENABLED', '1');
         mocks.headers.mockResolvedValue(new Headers({
