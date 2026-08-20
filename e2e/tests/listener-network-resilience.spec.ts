@@ -9,6 +9,7 @@ import { expect, test } from '@playwright/test';
 const execFileAsync = promisify(execFile);
 const STREAM_ORIGIN = 'https://stream.e2e.invalid';
 const MEDIA_SEGMENT_SECONDS = 6;
+const SOURCE_FIXTURE_SEGMENTS = 240;
 const SOURCE_WINDOW_SEGMENTS = 50;
 // Browsers may retain a sub-frame tail in TimeRanges after the decoder clock
 // has genuinely stalled. Half a second is still two orders of magnitude below
@@ -29,7 +30,7 @@ async function createHlsFixture(): Promise<HlsFixture> {
         '-loglevel', 'error',
         '-f', 'lavfi',
         '-i', 'sine=frequency=440:sample_rate=48000',
-        '-t', String(MEDIA_SEGMENT_SECONDS * SOURCE_WINDOW_SEGMENTS),
+        '-t', String(MEDIA_SEGMENT_SECONDS * SOURCE_FIXTURE_SEGMENTS),
         '-c:a', 'aac',
         '-b:a', '64k',
         '-f', 'hls',
@@ -43,10 +44,11 @@ async function createHlsFixture(): Promise<HlsFixture> {
     const manifest = await readFile(path.join(root, 'source.m3u8'), 'utf8');
     const initialization = /#EXT-X-MAP:URI="([^"]+)"/.exec(manifest)?.[1];
     const generatedSegments = manifest.split('\n').filter((line) => /^\d{5}\.m4s$/.test(line));
-    // ffmpeg may emit one final encoder-drain fragment after the exact 300s
-    // boundary. The test window deliberately uses only fifty full segments.
-    const segments = generatedSegments.slice(0, SOURCE_WINDOW_SEGMENTS);
-    if (!initialization || segments.length !== SOURCE_WINDOW_SEGMENTS) {
+    // ffmpeg may emit one final encoder-drain fragment after the requested
+    // boundary. Keep a monotonic 24-minute source behind the rolling 5-minute
+    // manifest so a slower CI runner never wraps media timestamps mid-outage.
+    const segments = generatedSegments.slice(0, SOURCE_FIXTURE_SEGMENTS);
+    if (!initialization || segments.length !== SOURCE_FIXTURE_SEGMENTS) {
         throw new Error(`unexpected HLS fixture inventory: ${generatedSegments.length}`);
     }
     return { root, initialization, segments };
@@ -63,8 +65,8 @@ function renderLiveManifest(fixture: HlsFixture, edgeSequence: number): string {
         `#EXT-X-MAP:URI="${fixture.initialization}"`,
     ];
     for (let sequence = firstSequence; sequence <= edgeSequence; sequence += 1) {
-        const index = sequence % fixture.segments.length;
-        if (index === 0 && sequence !== 0) lines.push('#EXT-X-DISCONTINUITY');
+        const index = sequence;
+        if (!fixture.segments[index]) break;
         lines.push(`#EXTINF:${MEDIA_SEGMENT_SECONDS.toFixed(6)},`);
         lines.push(fixture.segments[index]);
     }
@@ -191,8 +193,11 @@ test.describe('Listener network resilience', () => {
             if (file === 'live.m3u8') {
                 manifestRequests += 1;
                 const elapsedMediaSeconds = (Date.now() - sourceStartedAt) / 1_000 * 4;
-                const edgeSequence = SOURCE_WINDOW_SEGMENTS - 1
-                    + Math.floor(elapsedMediaSeconds / MEDIA_SEGMENT_SECONDS);
+                const edgeSequence = Math.min(
+                    SOURCE_FIXTURE_SEGMENTS - 1,
+                    SOURCE_WINDOW_SEGMENTS - 1
+                        + Math.floor(elapsedMediaSeconds / MEDIA_SEGMENT_SECONDS),
+                );
                 await route.fulfill({
                     status: 200,
                     contentType: 'application/vnd.apple.mpegurl',
