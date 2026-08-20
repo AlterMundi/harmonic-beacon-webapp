@@ -4,6 +4,7 @@ import {
     accountConfiguration,
     beaconAccountEnabled,
     revokeCentralSession,
+    verifyAccountFrontchannelLogoutToken,
 } from '@/lib/account-rp';
 import { redactError } from '@/lib/redact';
 
@@ -13,16 +14,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (!beaconAccountEnabled()) {
         return new NextResponse(null, { status: 404 });
     }
-    const issuer = request.nextUrl.searchParams.get('iss') ?? '';
-    const sid = request.nextUrl.searchParams.get('sid') ?? '';
+    const token = request.nextUrl.searchParams.get('logout_token') ?? '';
     try {
-        const expectedIssuer = accountConfiguration().issuer;
-        await revokeCentralSession(issuer, sid);
+        const config = accountConfiguration();
+        const authority = verifyAccountFrontchannelLogoutToken(token, config);
+        if (!authority) {
+            return new NextResponse(null, {
+                status: 400,
+                headers: { 'Cache-Control': 'private, no-store' },
+            });
+        }
+        await revokeCentralSession(authority.iss, authority.sid);
         return new NextResponse('<!doctype html><title>Signed out</title>', {
             status: 200,
             headers: {
                 'Cache-Control': 'private, no-store',
-                'Content-Security-Policy': `default-src 'none'; frame-ancestors ${new URL(expectedIssuer).origin}`,
+                'Content-Security-Policy': `default-src 'none'; frame-ancestors ${new URL(config.issuer).origin}`,
                 'Content-Type': 'text/html; charset=utf-8',
                 'Referrer-Policy': 'no-referrer',
                 'X-Content-Type-Options': 'nosniff',
