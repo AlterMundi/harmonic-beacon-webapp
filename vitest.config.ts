@@ -13,6 +13,7 @@ export default defineConfig({
         include: [
             'src/**/*.test.{ts,tsx}',
             'scripts/live-staging/**/*.test.ts',
+            'scripts/live-production/**/*.test.ts',
             'middleware.test.ts',
         ],
         coverage: {
