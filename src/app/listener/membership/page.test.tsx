@@ -111,6 +111,22 @@ describe('Listener membership management route', () => {
         expect(result.props.checkoutAvailability).toEqual({ paypal: true, mercadoPago: false });
     });
 
+    it('keeps both approved Live providers available to an eligible production account', async () => {
+        mocks.headers.mockResolvedValue(new Headers({ host: 'listen.harmonicbeacon.com' }));
+        mocks.checkout.mockReturnValue({ paypal: true, mercadoPago: true });
+        mocks.membership.mockReturnValue({ kind: 'none', state: 'none' });
+
+        const result = await ListenerMembershipManagementPage();
+
+        expect(mocks.checkout).toHaveBeenCalledWith(process.env, 'live');
+        expect(result.props).toMatchObject({
+            membership: { kind: 'none', state: 'none' },
+            checkoutEnvironment: 'live',
+            checkoutAvailability: { paypal: true, mercadoPago: true },
+            liveWorkbench: null,
+        });
+    });
+
     it('fails closed when the authoritative access lookup is unavailable', async () => {
         mocks.access.mockRejectedValue(new Error('database unavailable'));
 
