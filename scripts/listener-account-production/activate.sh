@@ -96,6 +96,12 @@ test "$previous_image" = "harmonic-beacon/earlybirds-preview-listener:$previous_
 previous_schema=$(sed -n 's/^EARLYBIRDS_PREVIEW_SCHEMA_VERSION=//p' "$listener_env" | tail -n 1 | tr -d '\r')
 printf '%s\n' "$previous_schema" | grep -Eq '^[0-9]{14}_[a-z0-9_]+$' ||
   fail 'previous Listener schema provenance is invalid'
+previous_account_mode=$(sed -n 's/^BEACON_LISTENER_ACCOUNT_ENABLED=//p' "$listener_env" | tail -n 1 | tr -d '\r')
+case "$previous_account_mode" in
+  ''|0) previous_account_mode=0 ;;
+  1) ;;
+  *) fail 'previous Listener Account mode is invalid' ;;
+esac
 test "$previous_image" != "$image" || fail 'candidate is already running'
 
 # This is intentionally before every persistent write and runtime mutation.
@@ -115,9 +121,10 @@ install -o root -g root -m 0600 "$listener_env" "$state/previous.env"
 printf '%s\n' "$previous_image" > "$state/previous-image.txt"
 printf '%s\n' "$previous_sha" > "$state/previous-sha.txt"
 printf '%s\n' "$previous_schema" > "$state/previous-schema.txt"
+printf '%s\n' "$previous_account_mode" > "$state/previous-account-mode.txt"
 printf '%s\n' "$image" > "$state/candidate-image.txt"
 chmod 0600 "$state/previous-image.txt" "$state/previous-sha.txt" \
-  "$state/previous-schema.txt" "$state/candidate-image.txt"
+  "$state/previous-schema.txt" "$state/previous-account-mode.txt" "$state/candidate-image.txt"
 write_protected_environment "$listener_env" "$state/protected-env.before"
 write_protected_containers "$state/protected-containers.before"
 
@@ -147,7 +154,7 @@ rollback_on_failure() {
     preview_compose_command "$listener_env" up -d --no-deps --force-recreate --no-build listener || true
     wait_healthy || true
     "$root/scripts/listener-account-production/health-smoke.sh" \
-      "$previous_sha" 0 "$previous_schema" || true
+      "$previous_sha" "$previous_account_mode" "$previous_schema" || true
   elif test "$status" -ne 0; then
     rm -rf "$state"
   fi
@@ -188,6 +195,7 @@ cmp -s "$state/protected-containers.before" "$state/protected-containers.after" 
   printf 'candidate_sha=%s\n' "$expected_sha"
   printf 'candidate_schema=%s\n' "$expected_schema"
   printf 'previous_sha=%s\n' "$previous_sha"
+  printf 'previous_account_mode=%s\n' "$previous_account_mode"
   printf 'listener_health=pass\n'
   printf 'account_preflight=pass\n'
   printf 'public_login=pass\n'
@@ -195,6 +203,7 @@ cmp -s "$state/protected-containers.before" "$state/protected-containers.after" 
 } > "$state/result.txt"
 chmod 0600 "$state/result.txt"
 (cd "$state" && sha256sum previous.env previous-image.txt previous-sha.txt previous-schema.txt \
+  previous-account-mode.txt \
   candidate-image.txt protected-env.before protected-env.after protected-containers.before \
   protected-containers.after result.txt > SHA256SUMS)
 chmod 0600 "$state/SHA256SUMS"

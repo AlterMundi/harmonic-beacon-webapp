@@ -25,8 +25,12 @@ the coordinated Account/Listener cutover.
    it, recreates only the Listener app, and keeps rollback active through local
    and public login smokes. It does not rebuild/restart the stream origin,
    PostgreSQL, withdrawal worker, payments, LiveKit or event services.
+   Subsequent immutable Listener releases use this same command while Account
+   is already on. The generator then requires the active production RP secrets
+   to match the protected bundle exactly and rejects any reintroduced legacy
+   Google, Apple or magic-link credential before replacing the app.
 6. The printed root-only activation directory is the only accepted argument to
-   `rollback.sh`. Rollback restores the Account-off env and exact prior image;
+   `rollback.sh`. Rollback restores the exact prior Account mode, env and image;
    it never downgrades the shared database.
 
 The first Account production migration revokes legacy Listener authentication
