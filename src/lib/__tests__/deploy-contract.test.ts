@@ -62,6 +62,13 @@ describe('production deploy contract', () => {
     expect(e2eWorkflow).toContain('workflow_call:');
     expect(workflow).toContain('release-e2e:');
     expect(workflow).toContain('uses: ./.github/workflows/e2e.yml');
+    expect(workflow).toContain('release_gate: true');
+    expect(e2eWorkflow).toContain('release_gate:');
+    expect(e2eWorkflow).toContain(
+      '- run: npx playwright install --with-deps chromium',
+    );
+    expect(e2eWorkflow).not.toContain('PLAYWRIGHT_CHROME_EXECUTABLE:');
+    expect(e2eWorkflow).not.toContain('/usr/bin/google-chrome');
     expect(workflow).toMatch(/deploy:\n\s+needs: release-e2e\n\s+runs-on: \[self-hosted, mona\]/);
   });
 
