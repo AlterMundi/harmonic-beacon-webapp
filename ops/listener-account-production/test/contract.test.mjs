@@ -92,9 +92,22 @@ test('builds a production-only Listener activation without changing unrelated va
   assert.match(activated, /BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED=1/);
   assert.match(activated, /BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED=1/);
   assert.match(activated, /UNRELATED=preserved/);
+
+  const redeployed = buildProductionActivation({
+    listenerContents: activated,
+    bundleContents: `BEACON_LISTENER_ACCOUNT_CLIENT_SECRET=${client}\nBEACON_LISTENER_ACCOUNT_STATE_SECRET=${state}\n`,
+    expectedSha: 'b'.repeat(40),
+    buildTime: '2026-08-20T20:00:00Z',
+    expectedSchema: '20260818010000_beacon_account_authority',
+  });
+  assert.match(redeployed, new RegExp(`EARLYBIRDS_PREVIEW_IMAGE_TAG=${'b'.repeat(40)}`));
+  assert.match(redeployed, /BEACON_LISTENER_ACCOUNT_ENABLED=1/);
+  assert.match(redeployed, /BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED=1/);
+  assert.match(redeployed, /BEACON_LISTENER_MERCADO_PAGO_LIVE_CHECKOUT_ENABLED=1/);
+  assert.match(redeployed, /UNRELATED=preserved/);
 });
 
-test('activation refuses enabled, cross-environment, ambiguous and invalid input', () => {
+test('activation refuses drifted enabled, cross-environment, ambiguous and invalid input', () => {
   const input = {
     listenerContents: activationListener,
     bundleContents: `BEACON_LISTENER_ACCOUNT_CLIENT_SECRET=${client}\nBEACON_LISTENER_ACCOUNT_STATE_SECRET=${state}\n`,
@@ -104,13 +117,25 @@ test('activation refuses enabled, cross-environment, ambiguous and invalid input
   };
   assert.throws(() => buildProductionActivation({
     ...input,
-    listenerContents: activationListener.replace('ENABLED=0', 'ENABLED=1'),
-  }), /absent or 0/);
+    listenerContents: activationListener.replace('ACCOUNT_ENABLED=0', 'ACCOUNT_ENABLED=2'),
+  }), /must be 0 or 1/);
   const withoutFlag = buildProductionActivation({
     ...input,
     listenerContents: activationListener.replace('BEACON_LISTENER_ACCOUNT_ENABLED=0\n', ''),
   });
   assert.match(withoutFlag, /BEACON_LISTENER_ACCOUNT_ENABLED=1/);
+  const active = buildProductionActivation(input);
+  assert.throws(() => buildProductionActivation({
+    ...input,
+    listenerContents: active.replace(
+      `BEACON_LISTENER_ACCOUNT_CLIENT_SECRET=${client}`,
+      `BEACON_LISTENER_ACCOUNT_CLIENT_SECRET=${'x'.repeat(64)}`,
+    ),
+  }), /enabled Listener environment BEACON_LISTENER_ACCOUNT_CLIENT_SECRET mismatch/);
+  assert.throws(() => buildProductionActivation({
+    ...input,
+    listenerContents: active.replace('EARLY_BIRDS_GOOGLE_CLIENT_ID=', 'EARLY_BIRDS_GOOGLE_CLIENT_ID=drifted'),
+  }), /enabled Listener environment EARLY_BIRDS_GOOGLE_CLIENT_ID mismatch/);
   assert.throws(() => buildProductionActivation({
     ...input,
     listenerContents: `${activationListener}BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING=${state}\n`,
@@ -158,6 +183,8 @@ test('host wrappers constrain secrets, networking, provenance and arguments', ()
   assert.match(activate, /health-smoke\.sh"[\s\\\n]+"\$expected_sha" 1 "\$expected_schema"/);
   assert.match(activate, /candidate image schema provenance mismatch/);
   assert.match(activate, /previous-schema\.txt/);
+  assert.match(activate, /previous-account-mode\.txt/);
+  assert.match(activate, /health-smoke\.sh"[\s\\\n]+"\$previous_sha" "\$previous_account_mode" "\$previous_schema"/);
   assert.match(activate, /BEACON_LISTENER_PAYPAL_LIVE_CHECKOUT_ENABLED/);
   assert.match(activate, /protected-containers\.before/);
   assert.match(activate, /protected-containers\.after/);
@@ -178,6 +205,8 @@ test('host wrappers constrain secrets, networking, provenance and arguments', ()
   assert.match(rollback, /running Listener does not match this rollback candidate/);
   assert.match(rollback, /--no-deps --force-recreate --no-build listener/);
   assert.match(rollback, /database was not downgraded/);
+  assert.match(rollback, /previous-account-mode\.txt/);
+  assert.match(rollback, /health-smoke\.sh"[\s\\\n]+"\$previous_sha" "\$previous_account_mode" "\$previous_schema"/);
   assert.match(rollback, /trap '' HUP INT TERM/);
   assert.doesNotMatch(rollback, /require_synthetic_env/);
   assert.match(health, /--connect-timeout 3 --max-time 8/);

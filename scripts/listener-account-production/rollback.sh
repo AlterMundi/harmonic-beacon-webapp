@@ -11,7 +11,7 @@ test -d "$state" && test ! -L "$state" || { echo 'rollback state must be a regul
 test "$(stat -c '%U:%G:%a' "$state")" = root:root:700 || {
   echo 'rollback state must be root:root mode 0700' >&2; exit 2;
 }
-for file in previous.env previous-image.txt previous-sha.txt previous-schema.txt \
+for file in previous.env previous-image.txt previous-sha.txt previous-schema.txt previous-account-mode.txt \
   candidate-image.txt protected-env.before protected-env.after \
   protected-containers.before protected-containers.after result.txt SHA256SUMS; do
   test -f "$state/$file" && test ! -L "$state/$file" || { echo 'rollback state is incomplete' >&2; exit 2; }
@@ -26,6 +26,7 @@ listener_env=/etc/harmonic-beacon/earlybirds-preview.env
 previous_image=$(sed -n '1p' "$state/previous-image.txt")
 previous_sha=$(sed -n '1p' "$state/previous-sha.txt")
 previous_schema=$(sed -n '1p' "$state/previous-schema.txt")
+previous_account_mode=$(sed -n '1p' "$state/previous-account-mode.txt")
 candidate_image=$(sed -n '1p' "$state/candidate-image.txt")
 test "$previous_image" = "harmonic-beacon/earlybirds-preview-listener:$previous_sha" || {
   echo 'previous image provenance is inconsistent' >&2; exit 2;
@@ -41,6 +42,10 @@ printf '%s\n' "$candidate_sha" | grep -Eq '^[0-9a-f]{40}$' || {
 printf '%s\n' "$previous_schema" | grep -Eq '^[0-9]{14}_[a-z0-9_]+$' || {
   echo 'previous schema provenance is invalid' >&2; exit 2;
 }
+case "$previous_account_mode" in
+  0|1) ;;
+  *) echo 'previous Listener Account mode is invalid' >&2; exit 2 ;;
+esac
 test "$(docker inspect earlybirds-preview-listener-1 --format '{{.Config.Image}}')" = "$candidate_image" || {
   echo 'running Listener does not match this rollback candidate' >&2; exit 2;
 }
@@ -84,6 +89,6 @@ running_sha=$(docker inspect earlybirds-preview-listener-1 \
   sed -n 's/^BEACON_GIT_SHA=//p' | tail -n 1)
 test "$running_sha" = "$previous_sha" || { echo 'restored Listener SHA mismatch' >&2; exit 2; }
 "$root/scripts/listener-account-production/health-smoke.sh" \
-  "$previous_sha" 0 "$previous_schema"
+  "$previous_sha" "$previous_account_mode" "$previous_schema"
 trap - EXIT HUP INT TERM
 echo "Listener production restored to exact SHA $previous_sha; database was not downgraded."

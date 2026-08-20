@@ -56,8 +56,9 @@ export function buildProductionActivation({
   const listener = assignments(listenerContents, 'Listener environment');
   const bundle = assignments(bundleContents, 'Listener Account bundle');
 
-  if ((listener.get('BEACON_LISTENER_ACCOUNT_ENABLED') ?? '0') !== '0') {
-    throw new Error('Listener environment BEACON_LISTENER_ACCOUNT_ENABLED must be absent or 0');
+  const accountMode = listener.get('BEACON_LISTENER_ACCOUNT_ENABLED') ?? '0';
+  if (accountMode !== '0' && accountMode !== '1') {
+    throw new Error('Listener environment BEACON_LISTENER_ACCOUNT_ENABLED must be 0 or 1');
   }
   exact(listener, 'EARLY_BIRDS_AUTH_BASE_URL', 'https://listen.harmonicbeacon.com', 'Listener environment');
   exact(
@@ -67,8 +68,6 @@ export function buildProductionActivation({
     'Listener environment',
   );
   for (const key of [
-    'BEACON_LISTENER_ACCOUNT_CLIENT_SECRET',
-    'BEACON_LISTENER_ACCOUNT_STATE_SECRET',
     'BEACON_LISTENER_ACCOUNT_CLIENT_SECRET_STAGING',
     'BEACON_LISTENER_ACCOUNT_STATE_SECRET_STAGING',
   ]) {
@@ -89,6 +88,40 @@ export function buildProductionActivation({
     throw new Error('Listener Account bundle contains an invalid secret');
   }
   if (clientSecret === stateSecret) throw new Error('Listener Account secrets must differ');
+
+  if (accountMode === '0') {
+    for (const key of [
+      'BEACON_LISTENER_ACCOUNT_CLIENT_SECRET',
+      'BEACON_LISTENER_ACCOUNT_STATE_SECRET',
+    ]) {
+      if ((listener.get(key) ?? '') !== '') throw new Error(`Listener environment ${key} must be empty`);
+    }
+  } else {
+    exact(
+      listener,
+      'BEACON_LISTENER_ACCOUNT_CLIENT_SECRET',
+      clientSecret,
+      'enabled Listener environment',
+    );
+    exact(
+      listener,
+      'BEACON_LISTENER_ACCOUNT_STATE_SECRET',
+      stateSecret,
+      'enabled Listener environment',
+    );
+    for (const [key, expected] of [
+      ['EARLY_BIRDS_GOOGLE_CLIENT_ID', ''],
+      ['EARLY_BIRDS_GOOGLE_CLIENT_SECRET', ''],
+      ['BEACON_LISTENER_APPLE_ENABLED', '0'],
+      ['BEACON_LISTENER_APPLE_CLIENT_ID', ''],
+      ['BEACON_LISTENER_APPLE_CLIENT_SECRET', ''],
+      ['EARLY_BIRDS_MAGIC_LINK_DELIVERY_URL', ''],
+      ['EARLY_BIRDS_MAGIC_LINK_DELIVERY_TOKEN', ''],
+      ['EARLY_BIRDS_MAGIC_LINK_RATE_SECRET', ''],
+    ]) {
+      exact(listener, key, expected, 'enabled Listener environment');
+    }
+  }
 
   let result = listenerContents;
   for (const [key, value] of [
