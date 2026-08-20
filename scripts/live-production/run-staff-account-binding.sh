@@ -19,7 +19,8 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 state="$state_root/run-$stamp"
 network="hb-live-staff-binding-$$"
 minimal_env=$(mktemp /run/hb-live-staff-binding.XXXXXX)
-runner_cidfile=$(mktemp /run/hb-live-staff-binding-cid.XXXXXX)
+runner_state=$(mktemp -d /run/hb-live-staff-binding-run.XXXXXX)
+runner_cidfile="$runner_state/container.cid"
 network_created=0
 database_connected=0
 
@@ -46,6 +47,7 @@ cleanup() {
   fi
   if test "$network_created" -eq 1; then docker network rm "$network" >/dev/null 2>&1 || true; fi
   rm -f -- "$minimal_env" "$runner_cidfile"
+  rmdir -- "$runner_state" >/dev/null 2>&1 || true
   exit "$status"
 }
 trap cleanup EXIT HUP INT TERM
