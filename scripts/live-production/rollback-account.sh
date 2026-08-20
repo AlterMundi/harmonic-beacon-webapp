@@ -5,7 +5,8 @@ test "$(id -u)" -eq 0 || { echo 'run as root' >&2; exit 2; }
 script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 production_env=/etc/harmonic-beacon/production.env
 bundle=/etc/harmonic-beacon/live-production-secrets/account.env
-vhost=/etc/nginx/sites-enabled/harmonic-beacon
+vhost=/etc/nginx/sites-available/harmonic-beacon
+vhost_enabled=/etc/nginx/sites-enabled/harmonic-beacon
 state_root=/var/lib/harmonic-beacon/live-account-production
 last_activation="$state_root/last-activation"
 
@@ -27,6 +28,10 @@ case "$live_sha" in *[!0-9a-f]*|'') fail 'saved Live SHA is invalid' ;; esac
 test "${#live_sha}" -eq 40 || fail 'saved Live SHA is invalid'
 test "$(docker inspect beacon-app --format '{{.Config.Image}}')" = "$live_image" || fail 'running Live image mismatch'
 test -f "$bundle" && test ! -L "$bundle" || fail 'active Account bundle is missing'
+test -f "$vhost" && test ! -L "$vhost" || fail 'Live production vhost must be a regular file'
+test -L "$vhost_enabled" || fail 'Live production enabled vhost must be a symbolic link'
+test "$(readlink -f "$vhost_enabled")" = "$vhost" ||
+  fail 'Live production enabled vhost targets an unexpected file'
 compose_file="$state/docker-compose.yml"
 candidate_vhost="$state/nginx.candidate"
 test -f "$compose_file" && test ! -L "$compose_file" || fail 'saved Compose file is missing'

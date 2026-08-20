@@ -18,7 +18,8 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 image="harmonic-beacon/app:$live_sha"
 production_env=/etc/harmonic-beacon/production.env
 bundle=/etc/harmonic-beacon/live-production-secrets/account.env
-vhost=/etc/nginx/sites-enabled/harmonic-beacon
+vhost=/etc/nginx/sites-available/harmonic-beacon
+vhost_enabled=/etc/nginx/sites-enabled/harmonic-beacon
 state_root=/var/lib/harmonic-beacon/live-account-production
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 state="$state_root/activation-$live_sha-$stamp"
@@ -76,6 +77,9 @@ test -z "$(git -C "$root" status --porcelain)" || fail 'release checkout is dirt
 private_file "$production_env" 'Live production environment'
 private_file "$bundle" 'Live production Account bundle'
 test -f "$vhost" && test ! -L "$vhost" || fail 'Live production vhost must be a regular file'
+test -L "$vhost_enabled" || fail 'Live production enabled vhost must be a symbolic link'
+test "$(readlink -f "$vhost_enabled")" = "$vhost" ||
+  fail 'Live production enabled vhost targets an unexpected file'
 test "$(sha256sum "$vhost" | awk '{print $1}')" = "$pre_account_vhost_sha" || fail 'current Live vhost is not the reviewed pre-Account boundary'
 docker image inspect "$image" >/dev/null 2>&1 || fail 'exact Live image is missing'
 baked_sha=$(docker image inspect "$image" --format '{{range .Config.Env}}{{println .}}{{end}}' |
