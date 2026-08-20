@@ -110,6 +110,7 @@ describe('Live production Account app-only contract', () => {
         expect(rollback).toContain('.checks.account == "disabled"');
         expect(smoke).toContain("--connect-timeout 3 --max-time 8");
         expect(smoke).toContain("--proto '=https'");
+        expect(smoke).toContain("test \"$status\" = 303 || { echo 'malformed Live Account callback was not bounded'");
         expect(smoke).toContain('/var/log/nginx/access.log');
         expect(smoke).not.toMatch(/\bnode\b/);
         expect(deploy).toContain('run --rm --no-deps migrate npx prisma migrate deploy');
