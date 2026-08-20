@@ -10,6 +10,11 @@ const execFileAsync = promisify(execFile);
 const STREAM_ORIGIN = 'https://stream.e2e.invalid';
 const MEDIA_SEGMENT_SECONDS = 6;
 const SOURCE_WINDOW_SEGMENTS = 50;
+// Browsers may retain a sub-frame tail in TimeRanges after the decoder clock
+// has genuinely stalled. Half a second is still two orders of magnitude below
+// the promised reservoir and prevents pretending that millisecond rounding is
+// audible continuity.
+const EXHAUSTED_MEDIA_TOLERANCE_SECONDS = 0.5;
 
 type HlsFixture = {
     root: string;
@@ -111,6 +116,32 @@ async function reservoirSnapshotCount(page: import('@playwright/test').Page): Pr
             .__hbNetworkDiagnostics ?? [])
             .filter((diagnostic) => diagnostic?.reason === 'reservoir-ready').length
     ));
+}
+
+async function lastRecoveryBufferedAheadSeconds(
+    page: import('@playwright/test').Page,
+): Promise<number | null> {
+    return page.evaluate(() => {
+        const diagnostics = (window as typeof window & { __hbNetworkDiagnostics?: unknown[] })
+            .__hbNetworkDiagnostics ?? [];
+        for (let index = diagnostics.length - 1; index >= 0; index -= 1) {
+            const diagnostic = diagnostics[index];
+            if (!diagnostic || typeof diagnostic !== 'object') continue;
+            const record = diagnostic as {
+                reason?: unknown;
+                media?: { bufferedAheadSeconds?: unknown };
+            };
+            if (![
+                'media-clock-stalled',
+                'paused-unexpectedly',
+                'ended-unexpectedly',
+                'media-error',
+            ].includes(String(record.reason))) continue;
+            const value = record.media?.bufferedAheadSeconds;
+            return typeof value === 'number' && Number.isFinite(value) ? value : null;
+        }
+        return null;
+    });
 }
 
 test.describe('Listener network resilience', () => {
@@ -331,26 +362,38 @@ test.describe('Listener network resilience', () => {
         // to reconnecting, but it must keep trying and resume without a new
         // lease or a manual reload when the origin returns.
         const beforeExhaustion = await mediaState(page);
+        const retainedBeforeExhaustion = await retainedReservoirSeconds(page);
         originOnline = false;
         const exhaustionDeadline = Date.now()
-            + Math.ceil(beforeExhaustion.bufferedAheadSeconds / 4 * 1_000)
+            // MediaSource and the memory reservoir can hold partially distinct
+            // fragments. Their sum is a conservative upper bound; using only
+            // the larger value races WebKit while it is still consuming valid
+            // bytes from the other layer.
+            + Math.ceil((
+                beforeExhaustion.bufferedAheadSeconds
+                + retainedBeforeExhaustion
+            ) / 4 * 1_000)
             + 45_000;
         let maxCurrentTime = beforeExhaustion.currentTime;
-        let bufferExhaustedObserved = false;
+        let exhaustedState: Awaited<ReturnType<typeof mediaState>> | null = null;
         while (Date.now() < exhaustionDeadline) {
             const state = await mediaState(page);
             maxCurrentTime = Math.max(maxCurrentTime, state.currentTime);
-            if (state.bufferedAheadSeconds <= 0.25) {
-                bufferExhaustedObserved = true;
+            const phase = await page.locator('.listener-experience').getAttribute('data-phase');
+            if (phase === 'reconnecting') {
+                exhaustedState = state;
                 break;
             }
             await page.waitForTimeout(250);
         }
-        expect(bufferExhaustedObserved).toBe(true);
+        expect(exhaustedState, `${browserName} did not enter reconnecting after exhausting retained audio`)
+            .not.toBeNull();
+        expect(await lastRecoveryBufferedAheadSeconds(page))
+            .toBeLessThanOrEqual(EXHAUSTED_MEDIA_TOLERANCE_SECONDS);
         expect(maxCurrentTime - beforeExhaustion.currentTime)
             .toBeGreaterThanOrEqual(Math.max(0, beforeExhaustion.bufferedAheadSeconds - 5));
         await expect(page.locator('.listener-experience[data-phase="reconnecting"]'))
-            .toBeVisible({ timeout: 20_000 });
+            .toBeVisible();
         const reconnectingObservedAt = Date.now();
         await expect(page.getByText(/unavailable right now|no está disponible/i)).toHaveCount(0);
         originOnline = true;
