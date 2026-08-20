@@ -204,10 +204,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version | head -n 1
-      - run: >-
+      - name: Run network resilience without cross-browser decoder contention
+        run: >-
           npx playwright test e2e/tests/listener-network-resilience.spec.ts
           --project=chromium
           --project=firefox
           --project=android-chrome
           --project=iphone-webkit
-          --workers=4
+          --workers=1
