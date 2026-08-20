@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
@@ -56,6 +56,16 @@ type TokenResponse = {
     access_token?: unknown;
     id_token?: unknown;
     token_type?: unknown;
+};
+
+type AccountFrontchannelPayload = {
+    v: 1;
+    iss: string;
+    aud: string;
+    sid: string;
+    state: string;
+    iat: number;
+    exp: number;
 };
 
 type Introspection = {
@@ -717,6 +727,41 @@ export async function revokeCentralSession(issuer: string, sid: string, now = ne
         data: { revokedAt: now, revocationReason: 'account_frontchannel_logout' },
     });
     return result.count;
+}
+
+function canonicalBase64Url(value: string): Buffer | null {
+    if (!/^[A-Za-z0-9_-]+$/.test(value)) return null;
+    const decoded = Buffer.from(value, 'base64url');
+    return decoded.toString('base64url') === value ? decoded : null;
+}
+
+export function verifyAccountFrontchannelLogoutToken(
+    token: string,
+    config = accountConfiguration(),
+    now = new Date(),
+): AccountFrontchannelPayload | null {
+    if (token.length > 2048) return null;
+    try {
+        const [encoded, presented, extra] = token.split('.');
+        if (!encoded || !presented || extra) return null;
+        const payloadBytes = canonicalBase64Url(encoded);
+        const actual = canonicalBase64Url(presented);
+        if (!payloadBytes || !actual) return null;
+        const expected = createHmac('sha256', config.clientSecret).update(encoded, 'utf8').digest();
+        if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
+        const payload = JSON.parse(payloadBytes.toString('utf8')) as AccountFrontchannelPayload;
+        const timestamp = Math.floor(now.getTime() / 1_000);
+        if (
+            payload.v !== 1 || payload.iss !== config.issuer || payload.aud !== config.clientId ||
+            typeof payload.sid !== 'string' || payload.sid.length < 1 || payload.sid.length > 128 ||
+            !/^[A-Za-z0-9_-]{20,64}$/.test(payload.state) ||
+            !Number.isSafeInteger(payload.iat) || !Number.isSafeInteger(payload.exp) ||
+            payload.iat > timestamp + 30 || payload.exp < timestamp || payload.exp > payload.iat + 120
+        ) return null;
+        return payload;
+    } catch {
+        return null;
+    }
 }
 
 export async function revokeAllAccountSessions(
