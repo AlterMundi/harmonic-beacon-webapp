@@ -528,7 +528,11 @@ function ListenerPlayerController({
                     // never the MediaSource — so an online signal can refill
                     // immediately without discarding playable bytes.
                     instance.stopLoad();
-                    instance.startLoad(-1);
+                    // Do not let hls.js seek the media element while restarting
+                    // its loaders. Firefox can otherwise reset the clock to the
+                    // beginning of the live window even though playable bytes
+                    // are still buffered locally.
+                    instance.startLoad(-1, true);
                 } catch {
                     // The bounded timer remains authoritative. A later retry or
                     // the media-clock recovery can rebuild after buffer exhaustion.
@@ -1623,7 +1627,7 @@ function ListenerPlayerController({
                             && listenerBufferedAheadSeconds(currentAudio)
                                 <= LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS;
                         hls.current?.stopLoad();
-                        hls.current?.startLoad(-1);
+                        hls.current?.startLoad(-1, true);
                         if (bufferExhausted) {
                             cancelRecovery(false);
                             scheduleAutomaticRecovery(0, 'online-buffer-exhausted');

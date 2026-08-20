@@ -9,10 +9,11 @@ const MEDIA_FILE_SHA256 = {
     // stability vertical. The Listener now starts three minutes behind the
     // edge, retains the same bounded window in MSE plus an ephemeral segment
     // reservoir, preserves accepted bytes through network loss and retries the
-    // same lease indefinitely with bounded backoff. Codec, bitrate, channel,
-    // gain/fade, AudioContext, intro assets, quota, event and payment behavior
-    // remain unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': 'c4e3141c46add34b2ff90ba858ae1e806d4cf1a416280480adb84b9de483e43e',
+    // same lease indefinitely with bounded backoff. A loader restart explicitly
+    // skips hls.js seeking so Firefox cannot rewind the live clock while valid
+    // bytes remain buffered. Codec, bitrate, channel, gain/fade, AudioContext,
+    // intro assets, quota, event and payment behavior remain unchanged.
+    'src/components/early-birds/ListenerPlayer.tsx': 'f5616cad7ede9ae75cdfb7b0283bbe3494f68658de474f944ba1a9c9d506ea4a',
     'src/lib/listener/playback-resilience.ts': '758c466216d2dfaef760665f28a35fdcefea167112fdc3ac96feb004dec7737f',
     'src/lib/listener/segment-reservoir.ts': '40176ee8ace849990d7d23ddc78531ad637d5a5c6ec1f11b5ed6935fa81ee497',
     'src/lib/early-birds/stream.ts': '40c5a17d27e8d6f820251d96dd33cd2bbbd83b164e50a212acf8fd0bb158c51c',
