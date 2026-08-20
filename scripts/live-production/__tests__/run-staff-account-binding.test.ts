@@ -19,7 +19,10 @@ describe('Live production staff binding runner contract', () => {
         expect(source).toContain('--security-opt no-new-privileges');
         expect(source).toContain('--read-only');
         expect(source).toContain('--env-file "$minimal_env"');
+        expect(source).toContain('runner_state=$(mktemp -d /run/hb-live-staff-binding-run.XXXXXX)');
+        expect(source).toContain('runner_cidfile="$runner_state/container.cid"');
         expect(source).toContain('--cidfile "$runner_cidfile"');
+        expect(source).not.toContain('runner_cidfile=$(mktemp');
         expect(source).toContain('timeout --signal=TERM 30s docker run');
         expect(source).not.toContain('--name "$runner"');
         expect(source).not.toContain('--env-file "$production_env"');
