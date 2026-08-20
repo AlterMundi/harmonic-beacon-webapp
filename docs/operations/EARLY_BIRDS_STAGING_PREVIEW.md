@@ -289,8 +289,9 @@ moving the volume control.
   later Listen seeks to the current configured edge.
 - Pause and Seek remain available only while a private introduction is active.
 - The current stability policy supersedes that first tuning: clients target
-  twenty six-second segments behind the edge, a 120-second forward buffer and
-  a 180-second hard maximum; low-latency mode remains off. The origin retains
+  thirty six-second segments behind the edge and a measured 180-second
+  memory/MSE continuity window (including the bounded segment reservoir needed
+  by WebKit); low-latency mode remains off. The origin retains
   fifty entries so the configured buffer is backed by real playlist history.
 - Volume input updates media elements directly instead of re-rendering the
   Listener constellation for every slider movement.
