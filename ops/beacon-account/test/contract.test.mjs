@@ -15,6 +15,7 @@ const PROD_WORKER = path.join(ROOT, 'account-mail-worker.production.env.example'
 const STAGING_WORKER = path.join(ROOT, 'account-mail-worker.staging.env.example');
 const HEALTH_JSON_VERIFY = path.resolve(ROOT, '../../scripts/beacon-account/verify-health-json.sh');
 const ACCOUNT_LIFECYCLE_LIB = path.resolve(ROOT, '../../scripts/beacon-account/lib.sh');
+const PRODUCTION_PG_DUMP = path.resolve(ROOT, '../../scripts/beacon-account/production-pg-dump.sh');
 const HEALTH_ISSUER = 'https://account-staging.harmonicbeacon.com';
 const HEALTH_SHA = 'a'.repeat(40);
 const HEALTH_SCHEMA = '20260818010000_beacon_account_authority';
@@ -35,6 +36,21 @@ function composeService(source, name) {
   const remainder = source.slice(start + marker.length);
   const next = remainder.search(/\n  [a-z0-9][a-z0-9-]*:\n/);
   return next < 0 ? remainder : remainder.slice(0, next);
+}
+
+function runProductionPgDump(databaseUrl) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'beacon-account-pg-dump-'));
+  const pgDump = path.join(directory, 'pg_dump');
+  fs.writeFileSync(pgDump, `#!/bin/sh
+printf '%s\\n' "$@"
+`);
+  fs.chmodSync(pgDump, 0o755);
+  const result = spawnSync(PRODUCTION_PG_DUMP, [], {
+    encoding: 'utf8',
+    env: { PATH: directory, DATABASE_URL: databaseUrl },
+  });
+  fs.rmSync(directory, { recursive: true, force: true });
+  return result;
 }
 
 function verifyHealthFixture({ jwks, ready = {}, discovery = {} }) {
@@ -334,7 +350,8 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(lib, /docker run --rm --network none --read-only --cap-drop ALL --user 0:0/);
   assert.match(lib, /\/app\/ops\/beacon-account\/validate\.mjs/);
   assert.doesNotMatch(lib, /\n\s*node "\$root\/ops\/beacon-account\/validate\.mjs"/);
-  assert.match(lib, /pg_dump --format=custom/);
+  assert.match(lib, /production-pg-dump\.sh,dst=\/usr\/local\/bin\/beacon-account-production-pg-dump,readonly/);
+  assert.match(lib, /\/usr\/local\/bin\/beacon-account-production-pg-dump/);
   assert.match(lib, /openssl enc -aes-256-cbc -salt -pbkdf2/);
   assert.match(lib, /openssl enc -d -aes-256-cbc/);
   assert.doesNotMatch(lib, /> "\$backup_dir\/\$backup_name"\s*$/m);
@@ -368,6 +385,31 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
     'account-mail-worker.staging.env.example',
   ]) {
     assert.match(dockerfile, new RegExp(`ops/beacon-account/${fixture.replaceAll('.', '\\\.')}`));
+  }
+});
+
+test('production backup removes only the Prisma schema query before pg_dump', () => {
+  const valid = runProductionPgDump(
+    'postgresql://account_prod:example-password@earlybirds-preview-postgres/earlybirds_preview?schema=public',
+  );
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.deepEqual(valid.stdout.trim().split('\n'), [
+    '--format=custom',
+    '--no-owner',
+    '--no-acl',
+    'postgresql://account_prod:example-password@earlybirds-preview-postgres/earlybirds_preview',
+  ]);
+
+  for (const databaseUrl of [
+    'postgresql://account_prod:do-not-print@earlybirds-preview-postgres/earlybirds_preview',
+    'postgresql://account_prod:do-not-print@earlybirds-preview-postgres/earlybirds_preview?sslmode=require',
+    'postgresql://account_prod:do-not-print@earlybirds-preview-postgres/earlybirds_preview?schema=private',
+  ]) {
+    const invalid = runProductionPgDump(databaseUrl);
+    assert.equal(invalid.status, 2);
+    assert.match(invalid.stderr, /reviewed public schema parameter/);
+    assert.doesNotMatch(invalid.stderr, /do-not-print/);
+    assert.equal(invalid.stdout, '');
   }
 });
 

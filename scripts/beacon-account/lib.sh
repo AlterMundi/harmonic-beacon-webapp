@@ -241,6 +241,7 @@ account_provision_production_authority() {
 }
 
 account_backup_production() (
+  root=$(account_repo_root)
   backup_dir=$BEACON_ACCOUNT_BACKUP_DIR
   test -d "$backup_dir" || account_fail "missing backup directory: $backup_dir"
   test "$(stat -c '%U:%G:%a' "$backup_dir")" = root:root:700 ||
@@ -257,8 +258,9 @@ account_backup_production() (
   trap 'rm -rf "$backup_work"; rm -f "$backup_dir/$backup_name"' EXIT HUP INT TERM
   account_write_production_admin_env "$database_env"
   docker run --rm --network earlybirds_preview_db_internal --env-file "$database_env" \
+    --mount "type=bind,src=$root/scripts/beacon-account/production-pg-dump.sh,dst=/usr/local/bin/beacon-account-production-pg-dump,readonly" \
     postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777 \
-    sh -ec 'pg_dump --format=custom --no-owner --no-acl "$DATABASE_URL"' > "$dump_fifo" &
+    /usr/local/bin/beacon-account-production-pg-dump > "$dump_fifo" &
   dump_pid=$!
   if ! openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 \
       -pass "file:$BEACON_ACCOUNT_BACKUP_KEY_FILE" -in "$dump_fifo" -out "$backup_dir/$backup_name"; then
