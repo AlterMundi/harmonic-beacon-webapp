@@ -38,7 +38,7 @@ unset location
 sentinel="hb-live-account-smoke-$$-$(date +%s)"
 status=$(curl $curl_flags --proto '=https' --output /dev/null --write-out '%{http_code}' \
   "$origin/api/account/callback?code=$sentinel&state=$sentinel")
-test "$status" = 302 || { echo 'malformed Live Account callback was not bounded' >&2; exit 1; }
+test "$status" = 303 || { echo 'malformed Live Account callback was not bounded' >&2; exit 1; }
 test "$(curl $curl_flags --proto '=https' --output /dev/null --write-out '%{http_code}' \
   "$origin/api/account/frontchannel-logout")" = 400 || { echo 'unsigned frontchannel logout was accepted' >&2; exit 1; }
 for route in login callback frontchannel-logout; do
