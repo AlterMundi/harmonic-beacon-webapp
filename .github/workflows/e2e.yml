@@ -26,8 +26,8 @@ on:
       - '**/*.md'
   workflow_call:
     inputs:
-      use_runner_chrome:
-        description: Use the Google Chrome already installed on the hosted runner.
+      release_gate:
+        description: Run the focused pre-deploy browser matrix for an exact release commit.
         required: false
         type: boolean
         default: false
@@ -61,7 +61,6 @@ jobs:
       E2E_LIVEKIT_URL: ws://localhost:7880
       E2E_LIVEKIT_API_KEY: devkey
       E2E_LIVEKIT_API_SECRET: secret
-      PLAYWRIGHT_CHROME_EXECUTABLE: ${{ inputs.use_runner_chrome && '/usr/bin/google-chrome' || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -77,8 +76,11 @@ jobs:
 
       - run: npm ci
 
-      - if: ${{ !inputs.use_runner_chrome }}
-        run: npx playwright install --with-deps chromium
+      # Both PR and release gates use Playwright's version-pinned Chromium.
+      # The hosted runner's auto-updated Google Chrome can render the same
+      # page with different font metrics and invalidate otherwise-correct
+      # visual baselines after the PR has already passed.
+      - run: npx playwright install --with-deps chromium
 
       - name: Start LiveKit dev server
         run: |
@@ -145,7 +147,7 @@ jobs:
           DATABASE_URL="$CLEAN_URL" npx prisma migrate deploy
 
       - name: Run Chromium and Android gates
-        if: ${{ !inputs.use_runner_chrome }}
+        if: ${{ !inputs.release_gate }}
         run: >-
           npx playwright test
           --project=chromium
@@ -157,14 +159,14 @@ jobs:
           --project=android-chrome
 
       - name: Run release Chromium and Android functional gates
-        if: ${{ inputs.use_runner_chrome }}
+        if: ${{ inputs.release_gate }}
         run: >-
           npx playwright test
           --project=chromium
           --project=android-chrome
 
       - name: Run release public responsive and visual gates
-        if: ${{ inputs.use_runner_chrome }}
+        if: ${{ inputs.release_gate }}
         run: >-
           npx playwright test
           e2e/tests/responsive.spec.ts
@@ -177,19 +179,19 @@ jobs:
           --grep 'responsive public surfaces|visual baselines.*landing'
 
       - name: Install Firefox after Chromium screenshot gates
-        if: ${{ !inputs.use_runner_chrome }}
+        if: ${{ !inputs.release_gate }}
         run: npx playwright install --with-deps firefox
 
       - name: Run Firefox functional and accessibility gates
-        if: ${{ !inputs.use_runner_chrome }}
+        if: ${{ !inputs.release_gate }}
         run: npx playwright test --project=firefox
 
       - name: Install WebKit after Chromium screenshot gates
-        if: ${{ !inputs.use_runner_chrome }}
+        if: ${{ !inputs.release_gate }}
         run: npx playwright install --with-deps webkit
 
       - name: Run iPhone/WebKit media gate
-        if: ${{ !inputs.use_runner_chrome }}
+        if: ${{ !inputs.release_gate }}
         run: npx playwright test e2e/tests/media-continuity.spec.ts --project=iphone-webkit
 
       - name: Verify commerce transaction and durable outbox contract

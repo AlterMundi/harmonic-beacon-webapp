@@ -14,7 +14,7 @@ jobs:
   release-e2e:
     uses: ./.github/workflows/e2e.yml
     with:
-      use_runner_chrome: true
+      release_gate: true
 
   deploy:
     needs: release-e2e
