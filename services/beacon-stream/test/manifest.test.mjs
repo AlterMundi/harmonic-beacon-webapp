@@ -21,7 +21,7 @@ test('builds a deterministic wall-clock manifest and signs each segment URI', ()
   }
 });
 
-test('retains a five-minute stability window once enough program time exists', () => {
+test('retains at least the three-minute player target once enough program time exists', () => {
   const item = metadata();
   const manifest = renderManifest({
     metadata: item,
@@ -30,8 +30,12 @@ test('retains a five-minute stability window once enough program time exists', (
     nowMs: item.epochMs + 10 * 60_000,
   });
   const urls = manifest.split('\n').filter((line) => line.startsWith('https://'));
+  const retainedSeconds = manifest.split('\n')
+    .filter((line) => line.startsWith('#EXTINF:'))
+    .reduce((total, line) => total + Number(line.slice('#EXTINF:'.length, -1)), 0);
   assert.equal(WINDOW_SEGMENTS, 50);
   assert.equal(urls.length, WINDOW_SEGMENTS);
+  assert.ok(retainedSeconds >= 180, `retained only ${retainedSeconds}s`);
 });
 
 test('never signs a segment beyond the inbound manifest authorization horizon', () => {

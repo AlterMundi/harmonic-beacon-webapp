@@ -6,8 +6,12 @@ import { LocaleProvider } from '@/context/LocaleContext';
 
 type HlsTestInstance = {
     destroy: ReturnType<typeof vi.fn>;
+    stopLoad: ReturnType<typeof vi.fn>;
+    startLoad: ReturnType<typeof vi.fn>;
+    recoverMediaError: ReturnType<typeof vi.fn>;
     loadedSources: string[];
-    emitFatal(): void;
+    emitFatal(type?: string, details?: string): void;
+    emitLoaded(): void;
     emitFragChanged(programDateTime: number, start: number): void;
 };
 
@@ -76,24 +80,45 @@ vi.mock('@/lib/listener/analysis', async (importOriginal) => {
 });
 vi.mock('hls.js', () => {
     class TestHls {
-        static Events = { ERROR: 'error', FRAG_CHANGED: 'fragChanged' };
+        static DefaultConfig = {
+            loader: class TestLoader {},
+        };
+        static Events = {
+            ERROR: 'error',
+            FRAG_CHANGED: 'fragChanged',
+            FRAG_LOADED: 'fragLoaded',
+            LEVEL_LOADED: 'levelLoaded',
+        };
         static isSupported = () => true;
         liveSyncPosition: number | null = null;
         destroy = vi.fn();
+        stopLoad = vi.fn();
+        startLoad = vi.fn();
+        recoverMediaError = vi.fn();
         loadedSources: string[] = [];
-        private errorHandler: ((_event: string, data: { fatal: boolean }) => void) | null = null;
+        private errorHandler: ((_event: string, data: {
+            fatal: boolean;
+            type: string;
+            details: string;
+        }) => void) | null = null;
         private fragChangedHandler: ((_event: string, data: {
             frag: { programDateTime: number; start: number };
         }) => void) | null = null;
+        private loadedHandlers: Array<() => void> = [];
 
         constructor() {
             hlsHarness.instances.push(this);
         }
 
-        on(event: string, handler: (_event: string, data: { fatal: boolean }) => void) {
-            if (event === TestHls.Events.ERROR) this.errorHandler = handler;
+        on(event: string, handler: (_event: string, data: never) => void) {
+            if (event === TestHls.Events.ERROR) {
+                this.errorHandler = handler as unknown as typeof this.errorHandler;
+            }
             if (event === TestHls.Events.FRAG_CHANGED) {
                 this.fragChangedHandler = handler as unknown as typeof this.fragChangedHandler;
+            }
+            if (event === TestHls.Events.FRAG_LOADED || event === TestHls.Events.LEVEL_LOADED) {
+                this.loadedHandlers.push(handler as unknown as () => void);
             }
         }
 
@@ -103,8 +128,12 @@ vi.mock('hls.js', () => {
 
         attachMedia() {}
 
-        emitFatal() {
-            this.errorHandler?.('error', { fatal: true });
+        emitFatal(type = 'networkError', details = 'fragLoadError') {
+            this.errorHandler?.('error', { fatal: true, type, details });
+        }
+
+        emitLoaded() {
+            for (const handler of this.loadedHandlers) handler();
         }
 
         emitFragChanged(programDateTime: number, start: number) {
@@ -592,18 +621,18 @@ describe('EarlyBird Listener player', () => {
             },
         } as unknown as HTMLAudioElement;
         expect(seekNativeAudioToLiveEdge(audio)).toBe(true);
-        expect(audio.currentTime).toBe(130);
+        expect(audio.currentTime).toBe(70);
     });
 
     it('keeps a stability-first desktop HLS buffer without enabling low latency', () => {
         expect(LISTENER_HLS_BUFFER_CONFIG).toMatchObject({
             lowLatencyMode: false,
-            initialLiveManifestSize: 21,
-            liveSyncDurationCount: 20,
-            liveMaxLatencyDurationCount: 45,
+            initialLiveManifestSize: 31,
+            liveSyncDurationCount: 30,
+            liveMaxLatencyDurationCount: 48,
             liveSyncMode: 'buffered',
             startOnSegmentBoundary: true,
-            maxBufferLength: 120,
+            maxBufferLength: 180,
             maxMaxBufferLength: 180,
         });
     });
@@ -717,8 +746,8 @@ describe('EarlyBird Listener player', () => {
         expect(earlyBirdLeaseRecoveryDisposition(null)).toBe('recoverable');
     });
 
-    it('refreshes the active lease and reattaches a fresh hls.js source after a fatal error', async () => {
-        vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    it('keeps buffered audio playing while hls.js refills after a fatal network error', async () => {
+        const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
         const grants = [3, 4].map((suffix) => ({
@@ -748,18 +777,49 @@ describe('EarlyBird Listener player', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
-        hlsHarness.instances[0].emitFatal();
+        const live = screen.getByLabelText('Beacon');
+        Object.defineProperties(live, {
+            currentTime: { value: 120, configurable: true },
+            paused: { value: false, configurable: true },
+            buffered: {
+                value: { length: 1, start: () => 100, end: () => 220 },
+                configurable: true,
+            },
+        });
+        const pauseCallsBeforeFailure = pause.mock.calls.length;
+        const diagnostics: unknown[] = [];
+        const onDiagnostic: EventListener = (event) => {
+            diagnostics.push((event as CustomEvent).detail);
+        };
+        window.addEventListener(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, onDiagnostic);
+        hlsHarness.instances[0].emitFatal('networkError', 'fragLoadError');
 
-        await waitFor(() => expect(hlsHarness.instances).toHaveLength(2));
-        expect(fetchMock.mock.calls.filter(([url]) => (
-            url === '/api/early-birds/stream/heartbeat'
-        )).length).toBeGreaterThanOrEqual(2);
-        expect(hlsHarness.instances[0].destroy).toHaveBeenCalledOnce();
-        expect(hlsHarness.instances[1].loadedSources).toEqual([grants[0].stream.manifestUrl]);
+        await waitFor(() => expect(hlsHarness.instances[0].startLoad).toHaveBeenCalledWith(-1));
+        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalled();
+        expect(hlsHarness.instances).toHaveLength(1);
+        expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
+        expect(pause).toHaveBeenCalledTimes(pauseCallsBeforeFailure);
         expect(fetchMock.mock.calls.filter(([url]) => (
             url === '/api/early-birds/stream/lease'
         ))).toHaveLength(1);
+        expect(diagnostics[0]).toMatchObject({
+            reason: 'hls-fatal',
+            action: 'restart-network-load',
+            bufferedAheadSeconds: 100,
+        });
+        expect(screen.queryByText('Restoring connection…')).toBeNull();
         expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+        const startCallsBeforeOnline = hlsHarness.instances[0].startLoad.mock.calls.length;
+        window.dispatchEvent(new Event('online'));
+        await waitFor(() => expect(hlsHarness.instances[0].startLoad.mock.calls.length)
+            .toBeGreaterThan(startCallsBeforeOnline));
+        expect(hlsHarness.instances[0].stopLoad.mock.calls.length).toBeGreaterThan(1);
+        expect(fetchMock.mock.calls.filter(([url]) => (
+            url === '/api/early-birds/stream/lease'
+        ))).toHaveLength(1);
+        hlsHarness.instances[0].emitLoaded();
+        await waitFor(() => expect(diagnostics.at(-1)).toMatchObject({ reason: 'hls-recovered' }));
+        window.removeEventListener(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, onDiagnostic);
     });
 
     it('detects a silent media-clock stall and rebuilds the same lease pipeline', async () => {
@@ -1072,7 +1132,7 @@ describe('EarlyBird Listener player', () => {
             .toBeInTheDocument();
     });
 
-    it('bounds automatic hls.js recovery attempts and ends in an honest unavailable state', async () => {
+    it('keeps automatic recovery alive with bounded request cadence during an outage', async () => {
         vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
@@ -1099,16 +1159,16 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
-        hlsHarness.instances[0].emitFatal();
+        hlsHarness.instances[0].emitFatal('muxError', 'internalException');
 
-        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
-            'The Beacon is unavailable right now.',
-        ), { timeout: 5_500 });
-        const boundedCallCount = fetchMock.mock.calls.length;
-        expect(boundedCallCount).toBeLessThanOrEqual(6);
-        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
-            'The Beacon is unavailable right now.',
+        await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(
+            'Restoring connection…',
         ));
+        await new Promise((resolve) => setTimeout(resolve, 5_200));
+        const boundedCallCount = fetchMock.mock.calls.length;
+        expect(boundedCallCount).toBeLessThanOrEqual(7);
+        expect(screen.queryByText('The Beacon is unavailable right now.')).toBeNull();
+        expect(screen.getByRole('status')).toHaveTextContent('Restoring connection…');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(fetchMock).toHaveBeenCalledTimes(boundedCallCount);
     }, 7_000);
@@ -1191,7 +1251,7 @@ describe('EarlyBird Listener player', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
-        hlsHarness.instances[0].emitFatal();
+        hlsHarness.instances[0].emitFatal('muxError', 'internalException');
 
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
             'This device was displaced because the account is already listening on two other devices.',
@@ -1250,7 +1310,7 @@ describe('EarlyBird Listener player', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument());
-        hlsHarness.instances[0].emitFatal();
+        hlsHarness.instances[0].emitFatal('muxError', 'internalException');
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
         expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
@@ -1308,7 +1368,7 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Listen' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
         await waitFor(() => expect(hlsHarness.instances).toHaveLength(1));
-        hlsHarness.instances[0].emitFatal();
+        hlsHarness.instances[0].emitFatal('muxError', 'internalException');
         await waitFor(() => expect(screen.getByText('Restoring connection…')).toBeInTheDocument());
         finishFirstPlay?.();
 

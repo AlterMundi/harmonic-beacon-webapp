@@ -2,7 +2,7 @@ import { signedUrl } from './auth.mjs';
 
 // Listener values continuity over realtime latency. Fifty six-second entries
 // retain a five-minute recovery window while the player deliberately starts
-// two minutes behind the edge. This is still a small, deterministic playlist
+// three minutes behind the edge. This is still a small, deterministic playlist
 // and avoids making one delayed request an audible interruption.
 export const WINDOW_SEGMENTS = 50;
 

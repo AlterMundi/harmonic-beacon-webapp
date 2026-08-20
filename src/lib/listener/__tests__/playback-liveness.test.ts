@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    LISTENER_PLAYBACK_EXHAUSTED_STALL_AFTER_MS,
     LISTENER_PLAYBACK_STALL_AFTER_MS,
     ListenerPlaybackLivenessWatchdog,
     listenerPlaybackObservation,
@@ -24,6 +25,7 @@ function observation(overrides: Partial<Parameters<ListenerPlaybackLivenessWatch
             errorCode: null,
             bufferedRangeCount: 1,
             bufferedEndSeconds: 72,
+            bufferedAheadSeconds: 30,
             seekableRangeCount: 1,
             seekableEndSeconds: 90,
         },
@@ -85,6 +87,22 @@ describe('ListenerPlaybackLivenessWatchdog', () => {
         }))).toMatchObject({ reason: 'media-error' });
     });
 
+    it('recognizes exhausted media quickly only after a fatal network signal', () => {
+        const watchdog = new ListenerPlaybackLivenessWatchdog();
+        const exhausted = observation({
+            media: { ...observation().media, bufferedAheadSeconds: 0 },
+            hls: { type: 'networkError', details: 'fragLoadError', fatal: true },
+        });
+        expect(watchdog.observe(exhausted)).toBeNull();
+        expect(watchdog.observe({
+            ...exhausted,
+            observedAtMs: LISTENER_PLAYBACK_EXHAUSTED_STALL_AFTER_MS,
+        })).toMatchObject({
+            reason: 'media-clock-stalled',
+            stalledForMs: LISTENER_PLAYBACK_EXHAUSTED_STALL_AFTER_MS,
+        });
+    });
+
     it('extracts range summaries without throwing or retaining range contents', () => {
         const audio = document.createElement('audio');
         Object.defineProperties(audio, {
@@ -111,6 +129,7 @@ describe('ListenerPlaybackLivenessWatchdog', () => {
             currentTimeSeconds: 12.5,
             bufferedRangeCount: 1,
             bufferedEndSeconds: 18,
+            bufferedAheadSeconds: 5.5,
             seekableRangeCount: 1,
             seekableEndSeconds: 24,
         });

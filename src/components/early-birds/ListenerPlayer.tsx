@@ -23,6 +23,18 @@ import {
     listenerPlaybackObservation,
     type ListenerPlaybackDiagnostic,
 } from '@/lib/listener/playback-liveness';
+import {
+    LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS,
+    LISTENER_BUFFER_TARGET_SECONDS,
+    listenerBufferedAheadSeconds,
+    listenerHlsRecoveryAction,
+    listenerRecoveryDelayMs,
+    listenerTransportDiagnostic,
+} from '@/lib/listener/playback-resilience';
+import {
+    createListenerReservoirLoader,
+    ListenerSegmentReservoir,
+} from '@/lib/listener/segment-reservoir';
 
 import { deriveListenerPresentationPhase } from './listener-presentation';
 import { ListenerTabIdentityCoordinator } from './listener-tab-identity';
@@ -64,12 +76,12 @@ class LeaseRequestError extends Error {
 
 const DROP_PROGRESS_PREFIX = 'hb_earlybird_drop_progress_';
 const PLAYBACK_MODE_STORAGE_KEY = 'hb_listener_playback_mode';
-const RECOVERY_DELAYS_MS = [0, 1_000, 3_000] as const;
 const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
 const TRANSPORT_FADE_OUT_MS = 650;
+const MEDIA_PLAY_ATTEMPT_TIMEOUT_MS = 8_000;
 const DEFAULT_LISTENER_VOLUME = 0.7;
-const LISTENER_STABILITY_DELAY_SECONDS = 120;
+const LISTENER_STABILITY_DELAY_SECONDS = LISTENER_BUFFER_TARGET_SECONDS;
 
 export const LISTENER_PLAYBACK_PRESENCE_EVENT = 'listener:playback-presence';
 export const LISTENER_PLAYBACK_DIAGNOSTIC_EVENT = 'listener:playback-diagnostic';
@@ -130,18 +142,18 @@ export function nextPresenceSequence(
     return nextPresence === currentPresence ? currentSequence : currentSequence + 1;
 }
 
-// The Listener does not need low latency. Starting roughly twenty six-second
-// HLS segments behind the edge gives browsers two minutes of network headroom
-// while every fresh play still joins the current continuous program.
+// The Listener does not need low latency. Starting thirty six-second HLS
+// segments behind the edge gives browsers the promised three minutes of
+// network headroom while every fresh play still joins the current program.
 export const LISTENER_HLS_BUFFER_CONFIG = {
     lowLatencyMode: false,
     liveDurationInfinity: true,
-    initialLiveManifestSize: 21,
-    liveSyncDurationCount: 20,
-    liveMaxLatencyDurationCount: 45,
+    initialLiveManifestSize: 31,
+    liveSyncDurationCount: 30,
+    liveMaxLatencyDurationCount: 48,
     liveSyncMode: 'buffered',
     startOnSegmentBoundary: true,
-    maxBufferLength: 120,
+    maxBufferLength: LISTENER_BUFFER_TARGET_SECONDS,
     maxMaxBufferLength: 180,
     backBufferLength: 0,
 } as const;
@@ -153,10 +165,30 @@ export function seekNativeAudioToLiveEdge(audio: HTMLAudioElement): boolean {
     const edge = audio.seekable.end(rangeIndex);
     if (!Number.isFinite(start) || !Number.isFinite(edge) || edge <= start) return false;
     // Listener has no low-latency requirement. Native HLS should use the same
-    // two-minute safety margin as hls.js instead of sitting 250 ms from the
+    // three-minute safety margin as hls.js instead of sitting 250 ms from the
     // edge, where one delayed segment becomes an audible interruption.
     audio.currentTime = Math.max(start, edge - LISTENER_STABILITY_DELAY_SECONDS);
     return true;
+}
+
+async function playMediaWithTimeout(
+    audio: HTMLMediaElement,
+    timeoutMs = MEDIA_PLAY_ATTEMPT_TIMEOUT_MS,
+): Promise<void> {
+    let timeout: number | null = null;
+    try {
+        await Promise.race([
+            audio.play(),
+            new Promise<never>((_resolve, reject) => {
+                timeout = window.setTimeout(
+                    () => reject(new Error('media play timed out')),
+                    timeoutMs,
+                );
+            }),
+        ]);
+    } finally {
+        if (timeout !== null) window.clearTimeout(timeout);
+    }
 }
 
 export function earlyBirdLeaseRecoveryDisposition(payload: unknown): 'displaced' | 'recoverable' {
@@ -263,6 +295,7 @@ function ListenerPlayerController({
     const analysisFrameUnsubscribe = useRef<(() => void) | null>(null);
     const analysisStatusUnsubscribe = useRef<(() => void) | null>(null);
     const hls = useRef<Hls | null>(null);
+    const hlsReservoir = useRef<ListenerSegmentReservoir | null>(null);
     const hlsProgramAnchor = useRef<{
         mediaStartSeconds: number;
         programStartMs: number;
@@ -290,6 +323,9 @@ function ListenerPlayerController({
     const recoveryAttempts = useRef(0);
     const recoveryTimer = useRef<number | null>(null);
     const queuedRecoveryDelay = useRef<number | null>(null);
+    const hlsRefillAttempts = useRef(0);
+    const hlsRefillTimer = useRef<number | null>(null);
+    const hlsRefillInstance = useRef<Hls | null>(null);
     const nativeSuspendObserved = useRef(false);
     const playbackWatchdog = useRef(new ListenerPlaybackLivenessWatchdog());
     const lastPlaybackAction = useRef('mount');
@@ -462,11 +498,56 @@ function ListenerPlayerController({
         if (resetAttempts) recoveryAttempts.current = 0;
     }, []);
 
+    const cancelHlsRefill = useCallback((resetAttempts = true) => {
+        if (hlsRefillTimer.current !== null) {
+            window.clearTimeout(hlsRefillTimer.current);
+            hlsRefillTimer.current = null;
+        }
+        hlsRefillInstance.current = null;
+        if (resetAttempts) hlsRefillAttempts.current = 0;
+    }, []);
+
+    const scheduleHlsRefill = useCallback((instance: Hls, initialDelayMs = 0) => {
+        if (!wantsLivePlayback.current || hls.current !== instance) return;
+        if (hlsRefillTimer.current !== null && hlsRefillInstance.current === instance) return;
+        cancelHlsRefill(false);
+        hlsRefillInstance.current = instance;
+
+        const schedule = (delayMs: number) => {
+            hlsRefillTimer.current = window.setTimeout(() => {
+                hlsRefillTimer.current = null;
+                if (
+                    !wantsLivePlayback.current
+                    || hls.current !== instance
+                    || hlsRefillInstance.current !== instance
+                ) return;
+                lastPlaybackAction.current = 'hls-network-refill';
+                try {
+                    // `startLoad()` alone is a no-op while hls.js still owns a
+                    // delayed internal retry. Reset only the loader state —
+                    // never the MediaSource — so an online signal can refill
+                    // immediately without discarding playable bytes.
+                    instance.stopLoad();
+                    instance.startLoad(-1);
+                } catch {
+                    // The bounded timer remains authoritative. A later retry or
+                    // the media-clock recovery can rebuild after buffer exhaustion.
+                }
+                hlsRefillAttempts.current = Math.min(hlsRefillAttempts.current + 1, 1_000_000);
+                schedule(listenerRecoveryDelayMs(hlsRefillAttempts.current));
+            }, Math.max(0, delayMs));
+        };
+        schedule(initialDelayMs);
+    }, [cancelHlsRefill]);
+
     const stopHls = useCallback(() => {
+        cancelHlsRefill();
+        hlsReservoir.current?.dispose();
+        hlsReservoir.current = null;
         hls.current?.destroy();
         hls.current = null;
         hlsProgramAnchor.current = null;
-    }, []);
+    }, [cancelHlsRefill]);
 
     const attachManifest = useCallback(async (url: string) => {
         const audio = liveAudio.current;
@@ -495,7 +576,29 @@ function ListenerPlayerController({
             }
             throw new Error('HLS is not supported');
         }
-        const instance = new HlsConstructor(LISTENER_HLS_BUFFER_CONFIG);
+        const reservoir = new ListenerSegmentReservoir((snapshot) => {
+            window.dispatchEvent(new CustomEvent(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, {
+                detail: listenerTransportDiagnostic({
+                    reason: 'reservoir-ready',
+                    action: 'reservoir-filled',
+                    observedAtMs: performance.now(),
+                    bufferedAheadSeconds: listenerBufferedAheadSeconds(audio),
+                    reservoirAheadSeconds: snapshot.retainedSeconds,
+                    recoveryAttempt: 0,
+                    hlsType: null,
+                    hlsDetails: null,
+                }),
+            }));
+        }, wantsLivePlayback.current);
+        const ReservoirLoader = createListenerReservoirLoader(
+            HlsConstructor.DefaultConfig.loader,
+            reservoir,
+        );
+        hlsReservoir.current = reservoir;
+        const instance = new HlsConstructor({
+            ...LISTENER_HLS_BUFFER_CONFIG,
+            loader: ReservoirLoader,
+        });
         instance.on(HlsConstructor.Events.ERROR, (_event, data) => {
             lastHlsSignal.current = {
                 type: boundedDiagnosticToken(data.type),
@@ -503,10 +606,58 @@ function ListenerPlayerController({
                 fatal: Boolean(data.fatal),
             };
             if (!data.fatal) return;
+            const action = listenerHlsRecoveryAction(data.type);
+            const bufferedAheadSeconds = listenerBufferedAheadSeconds(audio);
+            window.dispatchEvent(new CustomEvent(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, {
+                detail: listenerTransportDiagnostic({
+                    reason: 'hls-fatal',
+                    action,
+                    observedAtMs: performance.now(),
+                    bufferedAheadSeconds,
+                    recoveryAttempt: hlsRefillAttempts.current,
+                    hlsType: lastHlsSignal.current.type,
+                    hlsDetails: lastHlsSignal.current.details,
+                }),
+            }));
+            if (action === 'restart-network-load') {
+                // A manifest or segment failure does not invalidate bytes that
+                // MediaSource already accepted. Keep the audio clock, fade,
+                // presence and lease intact while hls.js refills in place.
+                scheduleHlsRefill(instance);
+                return;
+            }
+            if (action === 'recover-media') {
+                try {
+                    instance.recoverMediaError();
+                    return;
+                } catch {
+                    // Fall through to the same-lease destructive recovery only
+                    // when hls.js cannot repair its decoder pipeline in place.
+                }
+            }
             deferLiveFadeForRecovery.current();
             liveAudio.current?.pause();
             automaticRecovery.current(0, 'hls-fatal');
         });
+        const refillRecovered = () => {
+            if (hlsRefillInstance.current !== instance) return;
+            const recoveryAttempt = hlsRefillAttempts.current;
+            cancelHlsRefill();
+            lastHlsSignal.current = { type: null, details: null, fatal: false };
+            window.dispatchEvent(new CustomEvent(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, {
+                detail: listenerTransportDiagnostic({
+                    reason: 'hls-recovered',
+                    action: 'refill-resumed',
+                    observedAtMs: performance.now(),
+                    bufferedAheadSeconds: listenerBufferedAheadSeconds(audio),
+                    recoveryAttempt,
+                    hlsType: null,
+                    hlsDetails: null,
+                }),
+            }));
+        };
+        instance.on(HlsConstructor.Events.FRAG_LOADED, refillRecovered);
+        instance.on(HlsConstructor.Events.LEVEL_LOADED, refillRecovered);
         instance.on(HlsConstructor.Events.FRAG_CHANGED, (_event, data) => {
             const programStartMs = data.frag.programDateTime;
             const mediaStartSeconds = data.frag.start;
@@ -521,7 +672,7 @@ function ListenerPlayerController({
         hls.current = instance;
         livePreparedRef.current = true;
         setLivePrepared(true);
-    }, [stopHls]);
+    }, [cancelHlsRefill, scheduleHlsRefill, stopHls]);
 
     const clearLeaseCursor = useCallback(() => {
         leaseId.current = null;
@@ -943,7 +1094,10 @@ function ListenerPlayerController({
             } else {
                 seekNativeAudioToLiveEdge(audio);
             }
-            await audio.play();
+            // Chromium can leave play() pending forever after an exhausted
+            // MediaSource. Bound one attempt so the same-lease retry loop can
+            // rebuild/refill once connectivity returns instead of deadlocking.
+            await playMediaWithTimeout(audio);
             if (
                 expectedLifecycleGeneration !== playbackLifecycleGeneration.current
                 || !wantsLivePlayback.current
@@ -1127,18 +1281,11 @@ function ListenerPlayerController({
 
         const runAttempt = (delayMs: number) => {
             if (!wantsLivePlayback.current) return;
-            if (recoveryAttempts.current >= RECOVERY_DELAYS_MS.length) {
-                wantsLivePlayback.current = false;
-                liveAudio.current?.pause();
-                reportPresence('idle');
-                updateLiveState('error');
-                return;
-            }
             recoveryTimer.current = window.setTimeout(async () => {
                 recoveryTimer.current = null;
                 if (!wantsLivePlayback.current) return;
                 updateLiveState('recovering');
-                recoveryAttempts.current += 1;
+                recoveryAttempts.current = Math.min(recoveryAttempts.current + 1, 1_000_000);
                 const recovered = await attemptLivePlayback(true, true);
                 if (!wantsLivePlayback.current) return;
                 if (queuedRecoveryDelay.current !== null) {
@@ -1153,7 +1300,7 @@ function ListenerPlayerController({
                     updateLiveState('playing');
                     return;
                 }
-                runAttempt(RECOVERY_DELAYS_MS[recoveryAttempts.current] ?? 0);
+                runAttempt(listenerRecoveryDelayMs(recoveryAttempts.current));
             }, delayMs);
         };
         runAttempt(Math.max(0, initialDelayMs));
@@ -1208,6 +1355,7 @@ function ListenerPlayerController({
     const playLive = useCallback(async (forceRefresh = false, expectedGeneration = dropGeneration.current) => {
         if (!liveAudio.current || ['loading', 'recovering'].includes(liveStateRef.current)) return;
         wantsLivePlayback.current = true;
+        hlsReservoir.current?.enable();
         cancelRecovery(true);
         pauseDropIns(true);
         armLiveFadeIn();
@@ -1460,7 +1608,45 @@ function ListenerPlayerController({
             const suspendedWithoutFutureData = nativeSuspendObserved.current
                 && Boolean(liveAudio.current)
                 && (liveAudio.current?.readyState ?? 0) < 3;
-            if (liveStateRef.current === 'recovering' || leaseNearExpiry || suspendedWithoutFutureData) {
+            const activeHlsNetworkRecovery = hls.current !== null
+                && lastHlsSignal.current.fatal === true
+                && lastHlsSignal.current.type === 'networkError';
+            if (activeHlsNetworkRecovery) {
+                // Refreshing the existing grant extends the exact same origin
+                // token. Restart hls.js in place so an online event never
+                // discards a still-playable forward buffer.
+                void probeExistingLease().then((probe) => {
+                    if (probe.kind === 'active') {
+                        manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
+                        const currentAudio = liveAudio.current;
+                        const bufferExhausted = currentAudio !== null
+                            && listenerBufferedAheadSeconds(currentAudio)
+                                <= LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS;
+                        hls.current?.stopLoad();
+                        hls.current?.startLoad(-1);
+                        if (bufferExhausted) {
+                            cancelRecovery(false);
+                            scheduleAutomaticRecovery(0, 'online-buffer-exhausted');
+                        }
+                        return;
+                    }
+                    if (
+                        liveAudio.current
+                        && listenerBufferedAheadSeconds(liveAudio.current)
+                            <= LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS
+                    ) {
+                        cancelRecovery(false);
+                        scheduleAutomaticRecovery(0, 'online-buffer-exhausted');
+                    }
+                });
+                return;
+            }
+            if (
+                liveStateRef.current === 'recovering'
+                || (!hls.current && leaseNearExpiry)
+                || suspendedWithoutFutureData
+            ) {
+                cancelRecovery(false);
                 scheduleAutomaticRecovery(0, 'foreground-health-check');
             }
         };
@@ -1480,6 +1666,7 @@ function ListenerPlayerController({
         deferLiveFade,
         dropAudio,
         reportPresence,
+        probeExistingLease,
         revalidateIdlePreparedSource,
         scheduleAutomaticRecovery,
         startReactiveAnalysis,
@@ -1624,6 +1811,7 @@ function ListenerPlayerController({
             let liveStarted: Promise<void> | null = null;
             if (!wantsLivePlayback.current && livePreparedRef.current && liveAudio.current) {
                 wantsLivePlayback.current = true;
+                hlsReservoir.current?.enable();
                 cancelRecovery(true);
                 updateLiveState('loading');
                 seekNativeAudioToLiveEdge(liveAudio.current);
@@ -1635,6 +1823,7 @@ function ListenerPlayerController({
             const introStarted = selected.play();
             if (!wantsLivePlayback.current) {
                 wantsLivePlayback.current = true;
+                hlsReservoir.current?.enable();
                 cancelRecovery(true);
                 updateLiveState('loading');
                 void attemptLivePlayback().then((played) => {

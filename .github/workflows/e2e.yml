@@ -160,6 +160,17 @@ jobs:
       - name: Run iPhone/WebKit media gate
         run: npx playwright test e2e/tests/media-continuity.spec.ts --project=iphone-webkit
 
+      - name: Verify Listener buffer and recovery under deterministic network loss
+        run: >-
+          npx playwright test e2e/tests/listener-network-resilience.spec.ts
+          --project=chromium
+          --project=firefox
+          --project=android-chrome
+          --project=iphone-webkit
+          --workers=4
+        env:
+          E2E_LISTENER_NETWORK_GATE: '1'
+
       - name: Verify commerce transaction and durable outbox contract
         run: npx vitest run --no-file-parallelism src/lib/__tests__/commerce-entitlement.integration.test.ts src/lib/__tests__/promo-invitation.integration.test.ts
         env:

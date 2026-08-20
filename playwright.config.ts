@@ -25,6 +25,7 @@ const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 const DATABASE_URL =
     process.env.E2E_DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/beacon_test';
 const LISTENER_ACCOUNT_SWITCH_GATE = process.env.E2E_LISTENER_ACCOUNT_SWITCH_GATE === '1';
+const LISTENER_NETWORK_GATE = process.env.E2E_LISTENER_NETWORK_GATE === '1';
 assertSafeFixtureDatabaseUrl(DATABASE_URL);
 if (!process.env.E2E_BASE_URL) {
     process.env.E2E_DATABASE_URL = DATABASE_URL;
@@ -33,6 +34,7 @@ if (!process.env.E2E_BASE_URL) {
 /** Functional suites run once; responsive/visual suites run per width. */
 const PER_WIDTH = /(responsive|visual)\.spec\.ts/;
 const MEDIA_CONTINUITY = /media-continuity\.spec\.ts/;
+const LISTENER_NETWORK_RESILIENCE = /listener-network-resilience\.spec\.ts/;
 const WEBKIT_ATTENDEE_CONTINUITY = /attendee controls without capture/;
 
 export default defineConfig({
@@ -74,7 +76,7 @@ export default defineConfig({
             // not replace the physical Android check in the rehearsal sheet.
             name: 'android-chrome',
             use: { ...devices['Pixel 7'] },
-            testMatch: MEDIA_CONTINUITY,
+            testMatch: [MEDIA_CONTINUITY, LISTENER_NETWORK_RESILIENCE],
             grepInvert: WEBKIT_ATTENDEE_CONTINUITY,
         },
         {
@@ -108,8 +110,8 @@ export default defineConfig({
                 // browser permissions through Playwright.
                 launchOptions: { args: [] },
             },
-            testMatch: MEDIA_CONTINUITY,
-            grep: WEBKIT_ATTENDEE_CONTINUITY,
+            testMatch: [MEDIA_CONTINUITY, LISTENER_NETWORK_RESILIENCE],
+            grep: /attendee controls without capture|preserves the filled buffer/i,
         },
         {
             name: 'w1440',
@@ -168,6 +170,7 @@ export default defineConfig({
                   LIVEKIT_API_SECRET: process.env.E2E_LIVEKIT_API_SECRET ?? 'secret',
                   LIVEKIT_ROOM_NAME: 'beacon',
                   EARLY_BIRDS_ENABLED: '1',
+                  EARLY_BIRDS_FREE_FOR_ALL: LISTENER_NETWORK_GATE ? '1' : '0',
                   EARLY_BIRDS_AUTH_SECRET: 'early-birds-e2e-auth-secret-not-for-production',
                   EARLY_BIRDS_AUTH_BASE_URL: BASE_URL,
                   EARLY_BIRDS_TRUSTED_ORIGINS: BASE_URL,
