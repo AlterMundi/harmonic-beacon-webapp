@@ -749,6 +749,13 @@ function ListenerPlayerController({
         };
         instance.on(HlsConstructor.Events.FRAG_LOADED, refillRecovered);
         instance.on(HlsConstructor.Events.LEVEL_LOADED, refillRecovered);
+        instance.on(HlsConstructor.Events.FRAG_BUFFERED, (_event, data) => {
+            // A loader response is not yet playable. Retain its bytes through
+            // transmuxing and SourceBuffer append so an append/retry boundary
+            // during an outage cannot turn a downloaded fragment into an
+            // offline cache miss. FRAG_BUFFERED is hls.js's acceptance point.
+            reservoir.markBuffered(data.frag.url);
+        });
         instance.on(HlsConstructor.Events.FRAG_CHANGED, (_event, data) => {
             const programStartMs = data.frag.programDateTime;
             const mediaStartSeconds = data.frag.start;

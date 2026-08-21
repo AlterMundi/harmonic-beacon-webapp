@@ -12,12 +12,13 @@ const MEDIA_FILE_SHA256 = {
     // same lease indefinitely with bounded backoff. During an outage hls.js can
     // drain only the in-memory reservoir, and a successful origin probe resumes
     // forward loading without seeking the media clock. Exhaustion also keeps
-    // that timeline intact until a real origin probe succeeds. Codec, bitrate,
+    // that timeline intact until a real origin probe succeeds. Reservoir bytes
+    // are released only after hls.js confirms MediaSource accepted them. Codec, bitrate,
     // channel, gain/fade, AudioContext, intro assets, quota, event and payment
     // behavior remain unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': 'ac28ff1a52d6d07a5068ef965c1df8fb29d9d89fb432c5318b03f18f47b3efc8',
+    'src/components/early-birds/ListenerPlayer.tsx': 'b56d635638f45c747d9abdc57efed20730d7599789e8c9bd0e7343b8eeb107b7',
     'src/lib/listener/playback-resilience.ts': '758c466216d2dfaef760665f28a35fdcefea167112fdc3ac96feb004dec7737f',
-    'src/lib/listener/segment-reservoir.ts': '31d37368c104d0754491217a5233081c93d1043ccca3c5ccc16dfc472078ee0a',
+    'src/lib/listener/segment-reservoir.ts': '4d04998653a1d97b40455358650c8520edf84aadea6ac67e35b80403c84b4c06',
     'src/lib/early-birds/stream.ts': '40c5a17d27e8d6f820251d96dd33cd2bbbd83b164e50a212acf8fd0bb158c51c',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',

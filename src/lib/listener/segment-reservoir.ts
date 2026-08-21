@@ -164,7 +164,7 @@ export class ListenerSegmentReservoir {
         this.originAllowed = allowed;
     }
 
-    markDelivered(url: string): void {
+    markBuffered(url: string): void {
         if (this.disposed || this.initializationUrls.has(url)) return;
         this.delivered.add(url);
         if (!this.entries.delete(url)) return;
@@ -336,7 +336,6 @@ export function createListenerReservoirLoader(
             const serveBytes = (bytes: ArrayBuffer) => {
                 if (this.aborted) return;
                 Object.assign(this.stats, cachedStats(bytes.byteLength));
-                reservoir.markDelivered(context.url);
                 callbacks.onSuccess(
                     { url: context.url, data: bytes.slice(0), code: 200 },
                     this.stats,
@@ -419,8 +418,6 @@ export function createListenerReservoirLoader(
                 onSuccess: (response, stats, successfulContext, networkDetails) => {
                     if (typeof response.data === 'string') {
                         reservoir.observePlaylist(successfulContext.url, response.data);
-                    } else if (response.data instanceof ArrayBuffer) {
-                        reservoir.markDelivered(successfulContext.url);
                     }
                     callbacks.onSuccess(response, stats, successfulContext, networkDetails);
                 },

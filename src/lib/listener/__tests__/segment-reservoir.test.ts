@@ -215,7 +215,7 @@ describe('ListenerSegmentReservoir', () => {
         reservoir.dispose();
     });
 
-    it('retains slid-out segments until the player consumes them', async () => {
+    it('retains slid-out segments until MediaSource accepts them', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([8, 1]))));
         const snapshots: number[] = [];
         const reservoir = new ListenerSegmentReservoir((snapshot) => {
@@ -252,6 +252,9 @@ describe('ListenerSegmentReservoir', () => {
 
         await vi.waitFor(() => expect(success).toHaveBeenCalledOnce());
         expect(delegatedLoads).not.toHaveBeenCalled();
+        expect(reservoir.cached(consumedUrl)).not.toBeNull();
+        expect(snapshots.at(-1)).toBe(48);
+        reservoir.markBuffered(consumedUrl);
         expect(reservoir.cached(consumedUrl)).toBeNull();
         expect(snapshots.at(-1)).toBe(42);
         reservoir.dispose();
