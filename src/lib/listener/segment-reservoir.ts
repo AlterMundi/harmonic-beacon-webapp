@@ -110,9 +110,12 @@ export class ListenerSegmentReservoir {
     private readonly inflight = new Map<string, Promise<ArrayBuffer | null>>();
     private readonly controllers = new Set<AbortController>();
     private readonly playlistFallback = new Map<string, { mediaSequence: number; playlist: string }>();
+    private readonly delivered = new Set<string>();
+    private readonly initializationUrls = new Set<string>();
     private generation = 0;
     private disposed = false;
     private enabled: boolean;
+    private originAllowed = true;
     private lastSnapshot: ListenerReservoirSnapshot = {
         retainedSeconds: 0,
         retainedBytes: 0,
@@ -140,6 +143,22 @@ export class ListenerSegmentReservoir {
 
     fallbackPlaylist(url: string): string | null {
         return this.playlistFallback.get(url)?.playlist ?? null;
+    }
+
+    mayReachOrigin(): boolean {
+        return this.originAllowed;
+    }
+
+    setOriginAllowed(allowed: boolean): void {
+        if (this.disposed) return;
+        this.originAllowed = allowed;
+    }
+
+    markDelivered(url: string): void {
+        if (this.disposed || this.initializationUrls.has(url)) return;
+        this.delivered.add(url);
+        if (!this.entries.delete(url)) return;
+        this.publishSnapshot();
     }
 
     private retainedByteCount(): number {
@@ -170,7 +189,28 @@ export class ListenerSegmentReservoir {
     private prefetchPlaylist(url: string, playlist: string): void {
         const generation = ++this.generation;
         const inventory = listenerReservoirInventory(playlist, url);
+        const visibleUrls = new Set(inventory.segments.map((segment) => segment.url));
+        for (const deliveredUrl of this.delivered) {
+            if (!visibleUrls.has(deliveredUrl)) this.delivered.delete(deliveredUrl);
+        }
+        if (inventory.initializationUrl) {
+            this.initializationUrls.clear();
+            this.initializationUrls.add(inventory.initializationUrl);
+        }
         void this.prefetchGeneration(generation, inventory.initializationUrl, inventory.segments);
+    }
+
+    private publishSnapshot(): void {
+        let retainedBytes = 0;
+        let retainedSeconds = 0;
+        let retainedSegments = 0;
+        for (const entry of this.entries.values()) {
+            retainedBytes += entry.bytes.byteLength;
+            retainedSeconds += entry.durationSeconds;
+            if (entry.durationSeconds > 0) retainedSegments += 1;
+        }
+        this.lastSnapshot = { retainedSeconds, retainedBytes, retainedSegments };
+        this.onSnapshot(this.snapshot());
     }
 
     private fetchBytes(url: string, durationSeconds: number): Promise<ArrayBuffer | null> {
@@ -192,9 +232,13 @@ export class ListenerSegmentReservoir {
             if (Number.isFinite(declaredBytes) && declaredBytes > MAX_RESERVOIR_BYTES) return null;
             const bytes = await response.arrayBuffer();
             if (bytes.byteLength <= 0 || bytes.byteLength > MAX_RESERVOIR_BYTES) return null;
-            if (!this.disposed && this.retainedByteCount() + bytes.byteLength <= MAX_RESERVOIR_BYTES) {
+            if (
+                !this.disposed
+                && !this.delivered.has(url)
+                && this.retainedByteCount() + bytes.byteLength <= MAX_RESERVOIR_BYTES
+            ) {
                 this.entries.set(url, { bytes, durationSeconds });
-            } else {
+            } else if (!this.delivered.has(url)) {
                 return null;
             }
             return bytes;
@@ -211,8 +255,6 @@ export class ListenerSegmentReservoir {
         initializationUrl: string | null,
         segments: PlaylistSegment[],
     ): Promise<void> {
-        const desired = new Set(segments.map((segment) => segment.url));
-        if (initializationUrl) desired.add(initializationUrl);
         const queue: PlaylistSegment[] = initializationUrl
             ? [{ url: initializationUrl, durationSeconds: 0 }, ...segments]
             : [...segments];
@@ -234,20 +276,10 @@ export class ListenerSegmentReservoir {
         await Promise.all(workers);
         if (this.disposed || generation !== this.generation) return;
 
-        let retainedBytes = 0;
-        let retainedSeconds = 0;
-        let retainedSegments = 0;
-        for (const [entryUrl, entry] of this.entries) {
-            if (!desired.has(entryUrl)) {
-                this.entries.delete(entryUrl);
-                continue;
-            }
-            retainedBytes += entry.bytes.byteLength;
-            retainedSeconds += entry.durationSeconds;
-            if (entry.durationSeconds > 0) retainedSegments += 1;
-        }
-        this.lastSnapshot = { retainedSeconds, retainedBytes, retainedSegments };
-        this.onSnapshot(this.snapshot());
+        // Do not prune a segment merely because it slid out of the newest live
+        // playlist. It may still be ahead of the listener's media clock after
+        // jitter or an outage. The loader releases it exactly when delivered.
+        this.publishSnapshot();
     }
 
     dispose(): void {
@@ -258,6 +290,8 @@ export class ListenerSegmentReservoir {
         this.inflight.clear();
         this.entries.clear();
         this.playlistFallback.clear();
+        this.delivered.clear();
+        this.initializationUrls.clear();
     }
 }
 
@@ -288,11 +322,21 @@ export function createListenerReservoirLoader(
             const serveBytes = (bytes: ArrayBuffer) => {
                 if (this.aborted) return;
                 Object.assign(this.stats, cachedStats(bytes.byteLength));
+                reservoir.markDelivered(context.url);
                 callbacks.onSuccess(
                     { url: context.url, data: bytes.slice(0), code: 200 },
                     this.stats,
                     context,
                     null,
+                );
+            };
+            const rejectOfflineMiss = () => {
+                if (this.aborted) return;
+                callbacks.onError(
+                    { code: 503, text: 'origin unavailable' },
+                    context,
+                    null,
+                    this.stats,
                 );
             };
             if (context.responseType === 'arraybuffer') {
@@ -313,10 +357,36 @@ export function createListenerReservoirLoader(
                     void pending.then((bytes) => {
                         if (this.aborted) return;
                         if (bytes) serveBytes(bytes);
-                        else this.loadDelegate(context, config, callbacks);
+                        else if (reservoir.mayReachOrigin()) {
+                            this.loadDelegate(context, config, callbacks);
+                        } else {
+                            rejectOfflineMiss();
+                        }
                     });
                     return;
                 }
+            }
+            if (!reservoir.mayReachOrigin()) {
+                const fallback = context.responseType !== 'arraybuffer'
+                    ? reservoir.fallbackPlaylist(context.url)
+                    : null;
+                if (fallback !== null) {
+                    const bytes = new TextEncoder().encode(fallback).byteLength;
+                    const fallbackStats = cachedStats(bytes);
+                    Object.assign(this.stats, fallbackStats);
+                    queueMicrotask(() => {
+                        if (this.aborted) return;
+                        callbacks.onSuccess(
+                            { url: context.url, data: fallback, code: 200 },
+                            fallbackStats,
+                            context,
+                            null,
+                        );
+                    });
+                } else {
+                    queueMicrotask(rejectOfflineMiss);
+                }
+                return;
             }
             this.loadDelegate(context, config, callbacks);
         }
@@ -331,6 +401,8 @@ export function createListenerReservoirLoader(
                 onSuccess: (response, stats, successfulContext, networkDetails) => {
                     if (typeof response.data === 'string') {
                         reservoir.observePlaylist(successfulContext.url, response.data);
+                    } else if (response.data instanceof ArrayBuffer) {
+                        reservoir.markDelivered(successfulContext.url);
                     }
                     callbacks.onSuccess(response, stats, successfulContext, networkDetails);
                 },

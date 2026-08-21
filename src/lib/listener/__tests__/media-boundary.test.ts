@@ -9,13 +9,14 @@ const MEDIA_FILE_SHA256 = {
     // stability vertical. The Listener now starts three minutes behind the
     // edge, retains the same bounded window in MSE plus an ephemeral segment
     // reservoir, preserves accepted bytes through network loss and retries the
-    // same lease indefinitely with bounded backoff. A loader restart explicitly
-    // skips hls.js seeking so Firefox cannot rewind the live clock while valid
-    // bytes remain buffered. Codec, bitrate, channel, gain/fade, AudioContext,
-    // intro assets, quota, event and payment behavior remain unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': 'dd0b554e92afb9c839044e292d2cc67226a27ab8ddb60adbe899c0ba7385beb2',
+    // same lease indefinitely with bounded backoff. During an outage hls.js can
+    // drain only the in-memory reservoir, and a successful origin probe resumes
+    // forward loading without seeking the media clock. Codec, bitrate, channel,
+    // gain/fade, AudioContext, intro assets, quota, event and payment behavior
+    // remain unchanged.
+    'src/components/early-birds/ListenerPlayer.tsx': '2c3d9063e2a1ba9278aacd9420e9ef9cf8d5a587ecc2da5e0a3f2111ed200cda',
     'src/lib/listener/playback-resilience.ts': '758c466216d2dfaef760665f28a35fdcefea167112fdc3ac96feb004dec7737f',
-    'src/lib/listener/segment-reservoir.ts': '40176ee8ace849990d7d23ddc78531ad637d5a5c6ec1f11b5ed6935fa81ee497',
+    'src/lib/listener/segment-reservoir.ts': '0b09803fc25bdef43cfd6f8b0647aebd7b5caa898ede24139bd5163470568c6f',
     'src/lib/early-birds/stream.ts': '40c5a17d27e8d6f820251d96dd33cd2bbbd83b164e50a212acf8fd0bb158c51c',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',

@@ -10,6 +10,7 @@ type HlsTestInstance = {
     startLoad: ReturnType<typeof vi.fn>;
     recoverMediaError: ReturnType<typeof vi.fn>;
     loadedSources: string[];
+    emitError(fatal: boolean, type?: string, details?: string): void;
     emitFatal(type?: string, details?: string): void;
     emitLoaded(): void;
     emitFragChanged(programDateTime: number, start: number): void;
@@ -128,8 +129,12 @@ vi.mock('hls.js', () => {
 
         attachMedia() {}
 
+        emitError(fatal: boolean, type = 'networkError', details = 'fragLoadError') {
+            this.errorHandler?.('error', { fatal, type, details });
+        }
+
         emitFatal(type = 'networkError', details = 'fragLoadError') {
-            this.errorHandler?.('error', { fatal: true, type, details });
+            this.emitError(true, type, details);
         }
 
         emitLoaded() {
@@ -746,7 +751,7 @@ describe('EarlyBird Listener player', () => {
         expect(earlyBirdLeaseRecoveryDisposition(null)).toBe('recoverable');
     });
 
-    it('keeps buffered audio playing while hls.js refills after a fatal network error', async () => {
+    it('freezes hls.js on the first network error while buffered audio keeps playing', async () => {
         const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
         vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
@@ -807,11 +812,13 @@ describe('EarlyBird Listener player', () => {
             diagnostics.push((event as CustomEvent).detail);
         };
         window.addEventListener(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, onDiagnostic);
+        hlsHarness.instances[0].emitError(false, 'networkError', 'fragLoadError');
         hlsHarness.instances[0].emitFatal('networkError', 'fragLoadError');
 
         await waitFor(() => expect(manifestProbes).toBe(1));
-        expect(hlsHarness.instances[0].startLoad).not.toHaveBeenCalled();
-        expect(hlsHarness.instances[0].stopLoad).not.toHaveBeenCalled();
+        expect(hlsHarness.instances[0].startLoad).toHaveBeenCalledTimes(1);
+        expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(220, true);
+        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalledTimes(2);
         expect(hlsHarness.instances).toHaveLength(1);
         expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
         expect(pause).toHaveBeenCalledTimes(pauseCallsBeforeFailure);
@@ -830,7 +837,7 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(hlsHarness.instances[0].startLoad.mock.calls.length)
             .toBeGreaterThan(startCallsBeforeOnline));
         expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(220, true);
-        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalledTimes(1);
+        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalledTimes(3);
         expect(manifestProbes).toBeGreaterThanOrEqual(2);
         expect(fetchMock.mock.calls.filter(([url]) => (
             url === '/api/early-birds/stream/lease'

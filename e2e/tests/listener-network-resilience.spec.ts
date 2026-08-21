@@ -110,11 +110,19 @@ async function retainedReservoirSeconds(page: import('@playwright/test').Page): 
             if (!diagnostic || typeof diagnostic !== 'object') continue;
             const value = (diagnostic as { reservoirAheadSeconds?: unknown }).reservoirAheadSeconds;
             if (typeof value === 'number' && Number.isFinite(value)) {
-                retainedSeconds = Math.max(retainedSeconds, value);
+                retainedSeconds = value;
             }
         }
         return retainedSeconds;
     });
+}
+
+async function availablePlaybackSeconds(page: import('@playwright/test').Page): Promise<number> {
+    const [media, retained] = await Promise.all([
+        mediaState(page),
+        retainedReservoirSeconds(page),
+    ]);
+    return media.bufferedAheadSeconds + retained;
 }
 
 async function reservoirSnapshotCount(page: import('@playwright/test').Page): Promise<number> {
@@ -272,7 +280,7 @@ test.describe('Listener network resilience', () => {
         await listen.click();
         await expect(page.getByRole('button', { name: /Stop|Detener/ })).toBeVisible();
 
-        await expect.poll(async () => retainedReservoirSeconds(page), {
+        await expect.poll(async () => availablePlaybackSeconds(page), {
             timeout: 90_000,
             message: `${browserName} did not fill the promised Listener buffer`,
         }).toBeGreaterThanOrEqual(180);
@@ -280,7 +288,7 @@ test.describe('Listener network resilience', () => {
             timeout: 20_000,
             message: `${browserName} did not make retained audio immediately playable`,
         }).toBeGreaterThan(5);
-        const achievedBufferSeconds = await retainedReservoirSeconds(page);
+        const achievedBufferSeconds = await availablePlaybackSeconds(page);
         await page.locator('audio[aria-label="Beacon"]').evaluate((media: HTMLAudioElement) => {
             media.playbackRate = 4;
         });
@@ -311,7 +319,7 @@ test.describe('Listener network resilience', () => {
                 timeout: 30_000,
                 message: `${browserName} did not complete a reservoir refill`,
             }).toBeGreaterThan(snapshotsBeforeRefill);
-            await expect.poll(async () => retainedReservoirSeconds(page), {
+            await expect.poll(async () => availablePlaybackSeconds(page), {
                 timeout: 45_000,
                 message: `${browserName} did not refill after a ${outageMediaSeconds}s outage`,
             }).toBeGreaterThanOrEqual(180);
@@ -341,7 +349,7 @@ test.describe('Listener network resilience', () => {
         await page.locator('audio[aria-label="Beacon"]').evaluate((media: HTMLAudioElement) => {
             media.playbackRate = 4;
         });
-        await expect.poll(async () => retainedReservoirSeconds(page), {
+        await expect.poll(async () => availablePlaybackSeconds(page), {
             timeout: 45_000,
         }).toBeGreaterThanOrEqual(180);
 
@@ -349,8 +357,8 @@ test.describe('Listener network resilience', () => {
         // equals buffered media. Leave ten seconds in reserve so the assertion
         // proves continuous playback without intentionally exhausting it.
         const nearLimit = await mediaState(page);
-        const retainedNearLimitSeconds = await retainedReservoirSeconds(page);
-        const nearLimitOutageSeconds = Math.max(60, Math.floor(retainedNearLimitSeconds - 10));
+        const availableNearLimitSeconds = await availablePlaybackSeconds(page);
+        const nearLimitOutageSeconds = Math.max(60, Math.floor(availableNearLimitSeconds - 10));
         originOnline = false;
         await expect.poll(async () => (await mediaState(page)).currentTime - nearLimit.currentTime, {
             timeout: Math.ceil(nearLimitOutageSeconds / 4 * 1_000) + 20_000,
@@ -362,7 +370,7 @@ test.describe('Listener network resilience', () => {
         await page.evaluate(() => window.dispatchEvent(new Event('online')));
         await expect.poll(async () => reservoirSnapshotCount(page), { timeout: 30_000 })
             .toBeGreaterThan(nearLimitSnapshots);
-        await expect.poll(async () => retainedReservoirSeconds(page), {
+        await expect.poll(async () => availablePlaybackSeconds(page), {
             timeout: 60_000,
         }).toBeGreaterThanOrEqual(180);
         await expect(page.locator('.listener-experience[data-phase="beacon"]'))

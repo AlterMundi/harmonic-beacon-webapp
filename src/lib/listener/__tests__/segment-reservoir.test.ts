@@ -16,13 +16,13 @@ import {
 
 const MANIFEST_URL = 'https://stream.example.test/v1/hls/approved/live.m3u8?grant=secret';
 
-function playlist(segmentCount = 4): string {
+function playlist(segmentCount = 4, startSequence = 0): string {
     const lines = [
         '#EXTM3U',
         '#EXT-X-VERSION:7',
         '#EXT-X-MAP:URI="segments/init.mp4?grant=secret"',
     ];
-    for (let index = 0; index < segmentCount; index += 1) {
+    for (let index = startSequence; index < startSequence + segmentCount; index += 1) {
         lines.push('#EXTINF:6.000000,');
         lines.push(`segments/${index}.m4s?grant=secret`);
     }
@@ -148,6 +148,98 @@ describe('ListenerSegmentReservoir', () => {
         expect(delegatedLoads).not.toHaveBeenCalled();
         expect([...new Uint8Array(onSuccess.mock.calls[0][0].data as ArrayBuffer)])
             .toEqual([4, 1, 9]);
+        reservoir.dispose();
+    });
+
+    it('drains only cached playlists and fragments while origin access is disabled', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([7, 2, 1]))));
+        const reservoir = new ListenerSegmentReservoir(undefined, true);
+        reservoir.observePlaylist(MANIFEST_URL, playlist(1));
+        const segmentUrl = 'https://stream.example.test/v1/hls/approved/segments/0.m4s?grant=secret';
+        await vi.waitFor(() => expect(reservoir.cached(segmentUrl)).not.toBeNull());
+
+        const delegatedLoads = vi.fn();
+        class UnexpectedNetworkLoader implements Loader<LoaderContext> {
+            context: LoaderContext | null = null;
+            stats = new LoadStats();
+            constructor() {}
+            load(): void { delegatedLoads(); }
+            abort(): void {}
+            destroy(): void {}
+        }
+        const ReservoirLoader = createListenerReservoirLoader(UnexpectedNetworkLoader, reservoir);
+        reservoir.setOriginAllowed(false);
+
+        const playlistSuccess = vi.fn();
+        new ReservoirLoader({} as HlsConfig).load(
+            { url: MANIFEST_URL, responseType: 'text' },
+            {} as LoaderConfiguration,
+            { onSuccess: playlistSuccess, onError: vi.fn(), onTimeout: vi.fn() },
+        );
+        const fragmentSuccess = vi.fn();
+        new ReservoirLoader({} as HlsConfig).load(
+            { url: segmentUrl, responseType: 'arraybuffer', rangeStart: 0, rangeEnd: 0 },
+            {} as LoaderConfiguration,
+            { onSuccess: fragmentSuccess, onError: vi.fn(), onTimeout: vi.fn() },
+        );
+        const missingError = vi.fn();
+        new ReservoirLoader({} as HlsConfig).load(
+            {
+                url: 'https://stream.example.test/v1/hls/approved/segments/missing.m4s',
+                responseType: 'arraybuffer',
+                rangeStart: 0,
+                rangeEnd: 0,
+            },
+            {} as LoaderConfiguration,
+            { onSuccess: vi.fn(), onError: missingError, onTimeout: vi.fn() },
+        );
+
+        await vi.waitFor(() => expect(playlistSuccess).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(fragmentSuccess).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(missingError).toHaveBeenCalledOnce());
+        expect(delegatedLoads).not.toHaveBeenCalled();
+        reservoir.dispose();
+    });
+
+    it('retains slid-out segments until the player consumes them', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([8, 1]))));
+        const snapshots: number[] = [];
+        const reservoir = new ListenerSegmentReservoir((snapshot) => {
+            snapshots.push(snapshot.retainedSeconds);
+        }, true);
+        reservoir.observePlaylist(MANIFEST_URL, playlist(4, 0));
+        await vi.waitFor(() => expect(snapshots.at(-1)).toBe(24));
+        reservoir.observePlaylist(MANIFEST_URL, playlist(4, 4));
+        await vi.waitFor(() => expect(snapshots.at(-1)).toBe(48));
+
+        const delegatedLoads = vi.fn();
+        class UnexpectedNetworkLoader implements Loader<LoaderContext> {
+            context: LoaderContext | null = null;
+            stats = new LoadStats();
+            constructor() {}
+            load(): void { delegatedLoads(); }
+            abort(): void {}
+            destroy(): void {}
+        }
+        const ReservoirLoader = createListenerReservoirLoader(UnexpectedNetworkLoader, reservoir);
+        reservoir.setOriginAllowed(false);
+        const success = vi.fn();
+        const consumedUrl = 'https://stream.example.test/v1/hls/approved/segments/0.m4s?grant=secret';
+        new ReservoirLoader({} as HlsConfig).load(
+            {
+                url: consumedUrl,
+                responseType: 'arraybuffer',
+                rangeStart: 0,
+                rangeEnd: 0,
+            },
+            {} as LoaderConfiguration,
+            { onSuccess: success, onError: vi.fn(), onTimeout: vi.fn() },
+        );
+
+        await vi.waitFor(() => expect(success).toHaveBeenCalledOnce());
+        expect(delegatedLoads).not.toHaveBeenCalled();
+        expect(reservoir.cached(consumedUrl)).toBeNull();
+        expect(snapshots.at(-1)).toBe(42);
         reservoir.dispose();
     });
 });
