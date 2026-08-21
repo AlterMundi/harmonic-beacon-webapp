@@ -14,20 +14,21 @@ describe('public four-Saturday cycle', () => {
         expect(isPublicCycleSession('10000000-0000-4000-8000-000000000001')).toBe(false);
     });
 
-    it('keeps the final migration contract at the advertised 14:00 UTC', () => {
+    it('keeps the final migration contract at the confirmed 16:00 UTC', () => {
         const migration = readFileSync(
             new URL(
-                '../../../prisma/migrations/20260818163000_ensure_four_saturday_public_cycle/migration.sql',
+                '../../../prisma/migrations/20260821194000_correct_four_saturday_cycle_start/migration.sql',
                 import.meta.url,
             ),
             'utf8',
         );
 
         for (const date of ['2026-08-22', '2026-08-29', '2026-09-05', '2026-09-12']) {
-            expect(migration).toContain(`'${date} 14:00:00'::timestamp`);
+            expect(migration).toContain(`'${date} 16:00:00'::timestamp`);
         }
-        expect(migration).toContain('"public_access" = EXCLUDED."public_access"');
-        expect(migration).toContain('target_count <> 4');
+        expect(migration).toContain('initialized_count = 0 AND corrected_count <> 0');
+        expect(migration).toContain('initialized_count > 0 AND corrected_count <> 4');
+        expect(migration).not.toContain('14:00:00');
     });
 
     it('recognizes only an entirely anonymous COMP entitlement for a reviewed public room', () => {
