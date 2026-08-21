@@ -682,20 +682,13 @@ function ListenerPlayerController({
             const bufferedNetworkFailure = action === 'restart-network-load'
                 && bufferedAheadSeconds > LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS;
             if (bufferedNetworkFailure) {
-                const enteringOfflineMode = reservoir.mayReachOrigin();
                 reservoir.setOriginAllowed(false);
-                // Freeze hls.js on its first (usually non-fatal) network error.
-                // Restart it only against the in-memory reservoir so engines
-                // with a small MediaSource window can keep appending retained
-                // segments without retrying or seeking against the live origin.
-                try {
-                    instance.stopLoad();
-                    if (enteringOfflineMode) {
-                        instance.startLoad(listenerHlsForwardLoadPosition(audio), true);
-                    }
-                } catch {
-                    // The probe loop remains authoritative and can retry later.
-                }
+                // Do not stop/restart hls.js here. Its current loader retry can
+                // consume the in-memory playlist/fragments without losing the
+                // fragment tracker or MediaSource timestamp offset. Explicitly
+                // restarting at this boundary made Firefox/Chromium append an
+                // overlapping fragment, emit bufferAppendError and rewind the
+                // media clock even though accepted bytes were still playable.
                 if (hlsRefillInstance.current !== instance) scheduleHlsRefill(instance);
             }
             if (!data.fatal) return;

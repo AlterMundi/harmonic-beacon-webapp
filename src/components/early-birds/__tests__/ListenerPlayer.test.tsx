@@ -816,9 +816,8 @@ describe('EarlyBird Listener player', () => {
         hlsHarness.instances[0].emitFatal('networkError', 'fragLoadError');
 
         await waitFor(() => expect(manifestProbes).toBe(1));
-        expect(hlsHarness.instances[0].startLoad).toHaveBeenCalledTimes(1);
-        expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(220, true);
-        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalledTimes(2);
+        expect(hlsHarness.instances[0].startLoad).not.toHaveBeenCalled();
+        expect(hlsHarness.instances[0].stopLoad).not.toHaveBeenCalled();
         expect(hlsHarness.instances).toHaveLength(1);
         expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
         expect(pause).toHaveBeenCalledTimes(pauseCallsBeforeFailure);
@@ -844,7 +843,7 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(hlsHarness.instances[0].startLoad.mock.calls.length)
             .toBeGreaterThan(startCallsBeforeOnline));
         expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(120, true);
-        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalledTimes(3);
+        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalledOnce();
         expect(hlsHarness.instances).toHaveLength(1);
         expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
         expect(manifestProbes).toBeGreaterThanOrEqual(2);
