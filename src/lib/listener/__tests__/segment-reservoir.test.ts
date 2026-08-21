@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     createListenerReservoirLoader,
+    LISTENER_RESERVOIR_PREFETCH_TARGET_SECONDS,
     ListenerSegmentReservoir,
     listenerReservoirInventory,
 } from '@/lib/listener/segment-reservoir';
@@ -69,10 +70,11 @@ describe('ListenerSegmentReservoir', () => {
             snapshots.push(snapshot.retainedSeconds);
         }, true);
 
-        reservoir.observePlaylist(MANIFEST_URL, playlist(4));
-        await vi.waitFor(() => expect(snapshots.at(-1)).toBe(24));
-        expect(fetch).toHaveBeenCalledTimes(5);
-        const url = 'https://stream.example.test/v1/hls/approved/segments/3.m4s?grant=secret';
+        reservoir.observePlaylist(MANIFEST_URL, playlist(40));
+        await vi.waitFor(() => expect(snapshots.at(-1))
+            .toBe(LISTENER_RESERVOIR_PREFETCH_TARGET_SECONDS));
+        expect(fetch).toHaveBeenCalledTimes(36);
+        const url = 'https://stream.example.test/v1/hls/approved/segments/39.m4s?grant=secret';
         const first = reservoir.cached(url);
         expect(first && [...new Uint8Array(first)]).toEqual([1, 2, 3]);
         new Uint8Array(first as ArrayBuffer)[0] = 9;

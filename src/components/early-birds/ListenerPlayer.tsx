@@ -1434,10 +1434,31 @@ function ListenerPlayerController({
             }));
             reportPresence('idle');
             deferLiveFade();
+            const networkRecoveryInstance = lastHlsSignal.current.type === 'networkError'
+                ? hls.current
+                : null;
+            if (networkRecoveryInstance) {
+                // An exhausted MediaSource is not permission to destroy the
+                // media timeline while the origin is still unreachable. The
+                // refill probe owns this state: it leaves currentTime intact,
+                // retries with bounded backoff and restarts the same hls.js
+                // instance only after a real manifest succeeds.
+                updateLiveState('recovering');
+                if (hlsRefillInstance.current !== networkRecoveryInstance) {
+                    scheduleHlsRefill(networkRecoveryInstance, 0);
+                }
+                return;
+            }
             scheduleAutomaticRecovery(0, 'watchdog-recovery');
         }, LISTENER_PLAYBACK_WATCHDOG_INTERVAL_MS);
         return () => window.clearInterval(interval);
-    }, [deferLiveFade, reportPresence, scheduleAutomaticRecovery]);
+    }, [
+        deferLiveFade,
+        reportPresence,
+        scheduleAutomaticRecovery,
+        scheduleHlsRefill,
+        updateLiveState,
+    ]);
 
     useEffect(() => {
         automaticRecovery.current = scheduleAutomaticRecovery;

@@ -11,6 +11,14 @@ import { LISTENER_BUFFER_TARGET_SECONDS } from './playback-resilience';
 
 const MAX_RESERVOIR_BYTES = 16 * 1024 * 1024;
 const MAX_PREFETCH_CONCURRENCY = 4;
+const MAX_PLAYLIST_SEGMENT_SECONDS = 30;
+
+// The media clock starts consuming the first fragment while the reservoir is
+// still filling. Keep one maximum-sized fragment beyond the user-visible
+// target so "three minutes available" does not immediately become 2:54 on a
+// six-second stream merely because playback started successfully.
+export const LISTENER_RESERVOIR_PREFETCH_TARGET_SECONDS =
+    LISTENER_BUFFER_TARGET_SECONDS + MAX_PLAYLIST_SEGMENT_SECONDS;
 
 type ReservoirEntry = {
     bytes: ArrayBuffer;
@@ -60,7 +68,9 @@ export function listenerReservoirInventory(
         const durationMatch = /^#EXTINF:([0-9]+(?:\.[0-9]+)?),/.exec(line);
         if (durationMatch) {
             const duration = Number(durationMatch[1]);
-            pendingDuration = Number.isFinite(duration) && duration > 0 && duration <= 30
+            pendingDuration = Number.isFinite(duration)
+                && duration > 0
+                && duration <= MAX_PLAYLIST_SEGMENT_SECONDS
                 ? duration
                 : null;
             continue;
@@ -188,7 +198,11 @@ export class ListenerSegmentReservoir {
 
     private prefetchPlaylist(url: string, playlist: string): void {
         const generation = ++this.generation;
-        const inventory = listenerReservoirInventory(playlist, url);
+        const inventory = listenerReservoirInventory(
+            playlist,
+            url,
+            LISTENER_RESERVOIR_PREFETCH_TARGET_SECONDS,
+        );
         const visibleUrls = new Set(inventory.segments.map((segment) => segment.url));
         for (const deliveredUrl of this.delivered) {
             if (!visibleUrls.has(deliveredUrl)) this.delivered.delete(deliveredUrl);

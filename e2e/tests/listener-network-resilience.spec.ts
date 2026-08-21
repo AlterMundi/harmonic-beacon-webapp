@@ -178,7 +178,21 @@ test.describe('Listener network resilience', () => {
         browserName,
     }, testInfo) => {
         test.setTimeout(browserName === 'webkit' ? 600_000 : 480_000);
-        const sourceStartedAt = Date.now();
+        let sourceElapsedMediaSeconds = 0;
+        let sourceClockUpdatedAt = Date.now();
+        let sourcePlaybackRate = 1;
+        // Keep the synthetic live edge aligned with the listener clock. A
+        // permanently 4x origin makes a slow decoder fall out of the rolling
+        // window before the test has even enabled accelerated playback.
+        const currentSourceElapsedMediaSeconds = () => (
+            sourceElapsedMediaSeconds
+            + (Date.now() - sourceClockUpdatedAt) / 1_000 * sourcePlaybackRate
+        );
+        const setSourcePlaybackRate = (nextRate: number) => {
+            sourceElapsedMediaSeconds = currentSourceElapsedMediaSeconds();
+            sourceClockUpdatedAt = Date.now();
+            sourcePlaybackRate = nextRate;
+        };
         let originOnline = true;
         let originDelayMs = 0;
         let failEveryMediaRequest = 0;
@@ -205,7 +219,7 @@ test.describe('Listener network resilience', () => {
             const file = path.basename(url.pathname);
             if (file === 'live.m3u8') {
                 manifestRequests += 1;
-                const elapsedMediaSeconds = (Date.now() - sourceStartedAt) / 1_000 * 4;
+                const elapsedMediaSeconds = currentSourceElapsedMediaSeconds();
                 const edgeSequence = Math.min(
                     SOURCE_FIXTURE_SEGMENTS - 1,
                     SOURCE_WINDOW_SEGMENTS - 1
@@ -292,6 +306,7 @@ test.describe('Listener network resilience', () => {
         await page.locator('audio[aria-label="Beacon"]').evaluate((media: HTMLAudioElement) => {
             media.playbackRate = 4;
         });
+        setSourcePlaybackRate(4);
 
         const outageDurations = [5, 15, 30, 60];
         for (const outageMediaSeconds of outageDurations) {
@@ -332,6 +347,7 @@ test.describe('Listener network resilience', () => {
         await page.locator('audio[aria-label="Beacon"]').evaluate((media: HTMLAudioElement) => {
             media.playbackRate = 1;
         });
+        setSourcePlaybackRate(1);
         originDelayMs = 250;
         failEveryMediaRequest = 9;
         const degradedStarted = (await mediaState(page)).currentTime;
@@ -349,16 +365,21 @@ test.describe('Listener network resilience', () => {
         await page.locator('audio[aria-label="Beacon"]').evaluate((media: HTMLAudioElement) => {
             media.playbackRate = 4;
         });
+        setSourcePlaybackRate(4);
         await expect.poll(async () => availablePlaybackSeconds(page), {
             timeout: 45_000,
         }).toBeGreaterThanOrEqual(180);
 
-        // Exercise the actual achieved limit rather than assuming the config
-        // equals buffered media. Leave ten seconds in reserve so the assertion
-        // proves continuous playback without intentionally exhausting it.
+        // Exercise an outage ten seconds below the promised three-minute
+        // target. The MediaSource and reservoir counters are intentionally
+        // separate and may briefly overstate what the decoder can consume, so
+        // never turn their sum into a larger product promise here.
         const nearLimit = await mediaState(page);
         const availableNearLimitSeconds = await availablePlaybackSeconds(page);
-        const nearLimitOutageSeconds = Math.max(60, Math.floor(availableNearLimitSeconds - 10));
+        const nearLimitOutageSeconds = Math.max(
+            60,
+            Math.min(170, Math.floor(availableNearLimitSeconds - 10)),
+        );
         originOnline = false;
         await expect.poll(async () => (await mediaState(page)).currentTime - nearLimit.currentTime, {
             timeout: Math.ceil(nearLimitOutageSeconds / 4 * 1_000) + 20_000,
