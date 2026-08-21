@@ -188,7 +188,20 @@ jobs:
           --project=firefox
 
   network-resilience:
+    name: network-resilience (${{ matrix.project }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: chromium
+            browser: chromium
+          - project: firefox
+            browser: firefox
+          - project: android-chrome
+            browser: chromium
+          - project: iphone-webkit
+            browser: webkit
     env:
       E2E_LISTENER_NETWORK_GATE: '1'
     steps:
@@ -198,17 +211,14 @@ jobs:
           node-version: '22.22'
           cache: 'npm'
       - run: npm ci
-      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Install deterministic HLS fixture encoder
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version | head -n 1
-      - name: Run network resilience without cross-browser decoder contention
+      - name: Run network resilience in an isolated browser process
         run: >-
           npx playwright test e2e/tests/listener-network-resilience.spec.ts
-          --project=chromium
-          --project=firefox
-          --project=android-chrome
-          --project=iphone-webkit
+          --project=${{ matrix.project }}
           --workers=1
