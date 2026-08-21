@@ -11,6 +11,7 @@ const STREAM_ORIGIN = 'https://stream.e2e.invalid';
 const MEDIA_SEGMENT_SECONDS = 6;
 const SOURCE_FIXTURE_SEGMENTS = 240;
 const SOURCE_WINDOW_SEGMENTS = 50;
+const SOURCE_PROGRAM_EPOCH_MS = Date.parse('2026-08-20T00:00:00.000Z');
 // Browsers may retain a sub-frame tail in TimeRanges after the decoder clock
 // has genuinely stalled. Half a second is still two orders of magnitude below
 // the promised reservoir and prevents pretending that millisecond rounding is
@@ -60,6 +61,7 @@ function renderLiveManifest(fixture: HlsFixture, edgeSequence: number): string {
         '#EXTM3U',
         '#EXT-X-VERSION:7',
         `#EXT-X-TARGETDURATION:${MEDIA_SEGMENT_SECONDS}`,
+        '#EXT-X-DISCONTINUITY-SEQUENCE:0',
         `#EXT-X-MEDIA-SEQUENCE:${firstSequence}`,
         '#EXT-X-INDEPENDENT-SEGMENTS',
         `#EXT-X-MAP:URI="${fixture.initialization}"`,
@@ -67,6 +69,9 @@ function renderLiveManifest(fixture: HlsFixture, edgeSequence: number): string {
     for (let sequence = firstSequence; sequence <= edgeSequence; sequence += 1) {
         const index = sequence;
         if (!fixture.segments[index]) break;
+        lines.push(`#EXT-X-PROGRAM-DATE-TIME:${new Date(
+            SOURCE_PROGRAM_EPOCH_MS + sequence * MEDIA_SEGMENT_SECONDS * 1_000,
+        ).toISOString()}`);
         lines.push(`#EXTINF:${MEDIA_SEGMENT_SECONDS.toFixed(6)},`);
         lines.push(fixture.segments[index]);
     }
@@ -164,7 +169,7 @@ test.describe('Listener network resilience', () => {
         page,
         browserName,
     }, testInfo) => {
-        test.setTimeout(browserName === 'webkit' ? 420_000 : 360_000);
+        test.setTimeout(browserName === 'webkit' ? 600_000 : 480_000);
         const sourceStartedAt = Date.now();
         let originOnline = true;
         let originDelayMs = 0;
@@ -368,6 +373,19 @@ test.describe('Listener network resilience', () => {
         // lease or a manual reload when the origin returns.
         const beforeExhaustion = await mediaState(page);
         const retainedBeforeExhaustion = await retainedReservoirSeconds(page);
+        const rateProbeStartedAt = Date.now();
+        await page.waitForTimeout(2_000);
+        const rateProbeEnded = await mediaState(page);
+        expect(rateProbeEnded.paused).toBe(false);
+        expect(rateProbeEnded.currentTime - beforeExhaustion.currentTime).toBeGreaterThan(0.5);
+        const effectivePlaybackRate = Math.max(
+            0.5,
+            Math.min(
+                4,
+                (rateProbeEnded.currentTime - beforeExhaustion.currentTime)
+                    / ((Date.now() - rateProbeStartedAt) / 1_000),
+            ),
+        );
         originOnline = false;
         const exhaustionDeadline = Date.now()
             // MediaSource and the memory reservoir can hold partially distinct
@@ -377,9 +395,9 @@ test.describe('Listener network resilience', () => {
             + Math.ceil((
                 beforeExhaustion.bufferedAheadSeconds
                 + retainedBeforeExhaustion
-            ) / 4 * 1_000)
-            + 45_000;
-        let maxCurrentTime = beforeExhaustion.currentTime;
+            ) / effectivePlaybackRate * 1_000)
+            + 60_000;
+        let maxCurrentTime = rateProbeEnded.currentTime;
         let exhaustedState: Awaited<ReturnType<typeof mediaState>> | null = null;
         while (Date.now() < exhaustionDeadline) {
             const state = await mediaState(page);
@@ -430,6 +448,7 @@ test.describe('Listener network resilience', () => {
                 browserName,
                 bufferTargetSeconds: 180,
                 achievedBufferSeconds,
+                effectivePlaybackRate,
                 outageMediaSeconds: outageDurations,
                 nearLimitOutageSeconds,
                 exhaustionRecoveryMs: Math.max(0, recoveredAt - reconnectingObservedAt),
