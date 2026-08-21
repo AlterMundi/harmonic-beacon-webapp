@@ -832,12 +832,21 @@ describe('EarlyBird Listener player', () => {
         });
         expect(screen.queryByText('Restoring connection…')).toBeNull();
         expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+        // The retained MediaSource can drain before an OS-level `online`
+        // signal. That signal is advisory: recovery must wait for the bounded
+        // manifest probe and preserve this exact hls.js/media-clock instance.
+        Object.defineProperty(live, 'buffered', {
+            value: { length: 1, start: () => 100, end: () => 120 },
+            configurable: true,
+        });
         const startCallsBeforeOnline = hlsHarness.instances[0].startLoad.mock.calls.length;
         window.dispatchEvent(new Event('online'));
         await waitFor(() => expect(hlsHarness.instances[0].startLoad.mock.calls.length)
             .toBeGreaterThan(startCallsBeforeOnline));
-        expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(220, true);
+        expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(120, true);
         expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalledTimes(3);
+        expect(hlsHarness.instances).toHaveLength(1);
+        expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
         expect(manifestProbes).toBeGreaterThanOrEqual(2);
         expect(fetchMock.mock.calls.filter(([url]) => (
             url === '/api/early-birds/stream/lease'

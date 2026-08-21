@@ -1733,15 +1733,13 @@ function ListenerPlayerController({
                 void probeExistingLease().then((probe) => {
                     if (probe.kind === 'active') {
                         manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
-                        const currentAudio = liveAudio.current;
-                        const bufferExhausted = currentAudio !== null
-                            && listenerBufferedAheadSeconds(currentAudio)
-                                <= LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS;
-                        if (bufferExhausted) {
-                            cancelHlsRefill(false);
-                            cancelRecovery(false);
-                            scheduleAutomaticRecovery(0, 'online-buffer-exhausted');
-                        } else if (hls.current) {
+                        if (hls.current) {
+                            // A browser `online` event only proves that some
+                            // network interface is available. It does not prove
+                            // that the stream origin can answer yet. Keep the
+                            // same MediaSource/currentTime even after its buffer
+                            // drains; the bounded manifest probe is the only
+                            // authority allowed to restart hls.js in place.
                             const activeInstance = hls.current;
                             cancelHlsRefill(false);
                             scheduleHlsRefill(activeInstance, 0);
