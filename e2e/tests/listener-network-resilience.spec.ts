@@ -531,6 +531,21 @@ test.describe('Listener network resilience', () => {
             .toBeVisible();
         const reconnectingObservedAt = Date.now();
         await expect(page.getByText(/unavailable right now|no está disponible/i)).toHaveCount(0);
+
+        // An OS/browser `online` event is only advisory: captive portals and
+        // partial network recovery can emit it while the stream origin remains
+        // unreachable. It must not rebuild MediaSource, reset currentTime or
+        // mint a replacement lease before the bounded manifest probe succeeds.
+        const beforeAdvisoryOnline = await mediaState(page);
+        await page.evaluate(() => window.dispatchEvent(new Event('online')));
+        await page.waitForTimeout(2_500);
+        await expect(page.locator('.listener-experience[data-phase="reconnecting"]'))
+            .toBeVisible();
+        const afterAdvisoryOnline = await mediaState(page);
+        expect(afterAdvisoryOnline.currentTime)
+            .toBeGreaterThanOrEqual(beforeAdvisoryOnline.currentTime - 1);
+        expect(leaseRequests).toBe(1);
+
         originOnline = true;
         await page.evaluate(() => window.dispatchEvent(new Event('online')));
         await expect(page.locator('.listener-experience[data-phase="beacon"]'))
