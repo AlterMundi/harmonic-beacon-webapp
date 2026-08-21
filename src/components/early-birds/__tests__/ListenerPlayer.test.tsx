@@ -795,7 +795,7 @@ describe('EarlyBird Listener player', () => {
         hlsHarness.instances[0].emitFatal('networkError', 'fragLoadError');
 
         await waitFor(() => expect(hlsHarness.instances[0].startLoad)
-            .toHaveBeenCalledWith(120, true));
+            .toHaveBeenCalledWith(220, true));
         expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalled();
         expect(hlsHarness.instances).toHaveLength(1);
         expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
@@ -814,7 +814,7 @@ describe('EarlyBird Listener player', () => {
         window.dispatchEvent(new Event('online'));
         await waitFor(() => expect(hlsHarness.instances[0].startLoad.mock.calls.length)
             .toBeGreaterThan(startCallsBeforeOnline));
-        expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(120, true);
+        expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(220, true);
         expect(hlsHarness.instances[0].stopLoad.mock.calls.length).toBeGreaterThan(1);
         expect(fetchMock.mock.calls.filter(([url]) => (
             url === '/api/early-birds/stream/lease'

@@ -92,6 +92,26 @@ function boundedDiagnosticToken(value: unknown): string | null {
         : null;
 }
 
+function listenerHlsForwardLoadPosition(audio: HTMLMediaElement | null): number {
+    if (!audio || !Number.isFinite(audio.currentTime)) return -1;
+    const currentTime = audio.currentTime;
+    for (let index = 0; index < audio.buffered.length; index += 1) {
+        try {
+            const start = audio.buffered.start(index);
+            const end = audio.buffered.end(index);
+            if (
+                Number.isFinite(start)
+                && Number.isFinite(end)
+                && currentTime >= start - 0.25
+                && currentTime <= end + 0.25
+            ) return Math.max(currentTime, end);
+        } catch {
+            return currentTime;
+        }
+    }
+    return currentTime;
+}
+
 export function resolveListenerAnalysisFramesPerSecond({
     reducedMotion,
     saveData,
@@ -528,15 +548,14 @@ function ListenerPlayerController({
                     // never the MediaSource — so an online signal can refill
                     // immediately without discarding playable bytes.
                     instance.stopLoad();
-                    // Do not let hls.js seek the media element while restarting
-                    // its loaders. Firefox can otherwise reset the clock to the
-                    // beginning of the live window even though playable bytes
-                    // are still buffered locally.
+                    // Resume loading at the first missing forward byte without
+                    // seeking the media element. Restarting at the sentinel or
+                    // the currently playing fragment can rewind Firefox or feed
+                    // overlapping media into its decoder while valid bytes are
+                    // still buffered locally.
                     const currentAudio = liveAudio.current;
                     instance.startLoad(
-                        currentAudio && Number.isFinite(currentAudio.currentTime)
-                            ? currentAudio.currentTime
-                            : -1,
+                        listenerHlsForwardLoadPosition(currentAudio),
                         true,
                     );
                 } catch {
@@ -1634,9 +1653,7 @@ function ListenerPlayerController({
                                 <= LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS;
                         hls.current?.stopLoad();
                         hls.current?.startLoad(
-                            currentAudio && Number.isFinite(currentAudio.currentTime)
-                                ? currentAudio.currentTime
-                                : -1,
+                            listenerHlsForwardLoadPosition(currentAudio),
                             true,
                         );
                         if (bufferExhausted) {
