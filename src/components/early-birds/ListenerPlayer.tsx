@@ -80,6 +80,7 @@ const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
 const TRANSPORT_FADE_OUT_MS = 650;
 const MEDIA_PLAY_ATTEMPT_TIMEOUT_MS = 8_000;
+const HLS_REFILL_PROBE_TIMEOUT_MS = 2_000;
 const DEFAULT_LISTENER_VOLUME = 0.7;
 const LISTENER_STABILITY_DELAY_SECONDS = LISTENER_BUFFER_TARGET_SECONDS;
 
@@ -110,6 +111,26 @@ function listenerHlsForwardLoadPosition(audio: HTMLMediaElement | null): number 
         }
     }
     return currentTime;
+}
+
+async function listenerManifestReachable(url: string): Promise<boolean> {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), HLS_REFILL_PROBE_TIMEOUT_MS);
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { accept: 'application/vnd.apple.mpegurl' },
+            cache: 'no-store',
+            credentials: 'omit',
+            redirect: 'error',
+            signal: controller.signal,
+        });
+        return response.ok;
+    } catch {
+        return false;
+    } finally {
+        window.clearTimeout(timeout);
+    }
 }
 
 export function resolveListenerAnalysisFramesPerSecond({
@@ -346,6 +367,7 @@ function ListenerPlayerController({
     const hlsRefillAttempts = useRef(0);
     const hlsRefillTimer = useRef<number | null>(null);
     const hlsRefillInstance = useRef<Hls | null>(null);
+    const hlsRefillGeneration = useRef(0);
     const nativeSuspendObserved = useRef(false);
     const playbackWatchdog = useRef(new ListenerPlaybackLivenessWatchdog());
     const lastPlaybackAction = useRef('mount');
@@ -519,6 +541,7 @@ function ListenerPlayerController({
     }, []);
 
     const cancelHlsRefill = useCallback((resetAttempts = true) => {
+        hlsRefillGeneration.current += 1;
         if (hlsRefillTimer.current !== null) {
             window.clearTimeout(hlsRefillTimer.current);
             hlsRefillTimer.current = null;
@@ -532,21 +555,40 @@ function ListenerPlayerController({
         if (hlsRefillTimer.current !== null && hlsRefillInstance.current === instance) return;
         cancelHlsRefill(false);
         hlsRefillInstance.current = instance;
+        const refillGeneration = hlsRefillGeneration.current;
 
         const schedule = (delayMs: number) => {
-            hlsRefillTimer.current = window.setTimeout(() => {
+            hlsRefillTimer.current = window.setTimeout(async () => {
                 hlsRefillTimer.current = null;
                 if (
                     !wantsLivePlayback.current
                     || hls.current !== instance
                     || hlsRefillInstance.current !== instance
+                    || hlsRefillGeneration.current !== refillGeneration
                 ) return;
+                const probedManifestUrl = manifestUrl.current;
+                const originReachable = probedManifestUrl
+                    ? await listenerManifestReachable(probedManifestUrl)
+                    : false;
+                if (
+                    !wantsLivePlayback.current
+                    || hls.current !== instance
+                    || hlsRefillInstance.current !== instance
+                    || hlsRefillGeneration.current !== refillGeneration
+                ) return;
+                if (!originReachable || manifestUrl.current !== probedManifestUrl) {
+                    hlsRefillAttempts.current = Math.min(
+                        hlsRefillAttempts.current + 1,
+                        1_000_000,
+                    );
+                    schedule(listenerRecoveryDelayMs(hlsRefillAttempts.current));
+                    return;
+                }
                 lastPlaybackAction.current = 'hls-network-refill';
                 try {
-                    // `startLoad()` alone is a no-op while hls.js still owns a
-                    // delayed internal retry. Reset only the loader state —
-                    // never the MediaSource — so an online signal can refill
-                    // immediately without discarding playable bytes.
+                    // Never touch hls.js merely because a request failed. Its
+                    // timeline stays isolated while buffered audio is playing;
+                    // only a successful origin probe may reset loader state.
                     instance.stopLoad();
                     // Resume loading at the first missing forward byte without
                     // seeking the media element. Restarting at the sentinel or
@@ -1651,14 +1693,14 @@ function ListenerPlayerController({
                         const bufferExhausted = currentAudio !== null
                             && listenerBufferedAheadSeconds(currentAudio)
                                 <= LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS;
-                        hls.current?.stopLoad();
-                        hls.current?.startLoad(
-                            listenerHlsForwardLoadPosition(currentAudio),
-                            true,
-                        );
                         if (bufferExhausted) {
+                            cancelHlsRefill(false);
                             cancelRecovery(false);
                             scheduleAutomaticRecovery(0, 'online-buffer-exhausted');
+                        } else if (hls.current) {
+                            const activeInstance = hls.current;
+                            cancelHlsRefill(false);
+                            scheduleHlsRefill(activeInstance, 0);
                         }
                         return;
                     }
@@ -1694,12 +1736,14 @@ function ListenerPlayerController({
         attemptLivePlayback,
         beginLiveFade,
         cancelLiveFade,
+        cancelHlsRefill,
         cancelRecovery,
         deferLiveFade,
         dropAudio,
         reportPresence,
         probeExistingLease,
         revalidateIdlePreparedSource,
+        scheduleHlsRefill,
         scheduleAutomaticRecovery,
         startReactiveAnalysis,
         stopHls,

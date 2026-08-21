@@ -760,12 +760,27 @@ describe('EarlyBird Listener player', () => {
                 expiresAt: '2099-08-06T12:03:00.000Z',
             },
         }));
-        const fetchMock = vi.fn()
-            .mockResolvedValueOnce(new Response(JSON.stringify(grants[0]), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[0], presenceSequence: 1 }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[0], presenceSequence: 2 }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[1], presenceSequence: 2 }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ ...grants[1], presenceSequence: 3 }), { status: 200 }));
+        const apiResponses = [
+            new Response(JSON.stringify(grants[0]), { status: 200 }),
+            new Response(JSON.stringify({ ...grants[0], presenceSequence: 1 }), { status: 200 }),
+            new Response(JSON.stringify({ ...grants[0], presenceSequence: 2 }), { status: 200 }),
+            new Response(JSON.stringify({ ...grants[1], presenceSequence: 2 }), { status: 200 }),
+            new Response(JSON.stringify({ ...grants[1], presenceSequence: 3 }), { status: 200 }),
+        ];
+        let manifestProbes = 0;
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            if (String(input).startsWith(grants[0].stream.manifestUrl)) {
+                manifestProbes += 1;
+                if (manifestProbes === 1) throw new TypeError('origin unavailable');
+                return new Response('#EXTM3U\n', {
+                    status: 200,
+                    headers: { 'content-type': 'application/vnd.apple.mpegurl' },
+                });
+            }
+            const response = apiResponses.shift();
+            if (!response) throw new Error('unexpected API request');
+            return response;
+        });
         vi.stubGlobal('fetch', fetchMock);
         render(
             <LocaleProvider initialLocale="en">
@@ -794,9 +809,9 @@ describe('EarlyBird Listener player', () => {
         window.addEventListener(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, onDiagnostic);
         hlsHarness.instances[0].emitFatal('networkError', 'fragLoadError');
 
-        await waitFor(() => expect(hlsHarness.instances[0].startLoad)
-            .toHaveBeenCalledWith(220, true));
-        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalled();
+        await waitFor(() => expect(manifestProbes).toBe(1));
+        expect(hlsHarness.instances[0].startLoad).not.toHaveBeenCalled();
+        expect(hlsHarness.instances[0].stopLoad).not.toHaveBeenCalled();
         expect(hlsHarness.instances).toHaveLength(1);
         expect(hlsHarness.instances[0].destroy).not.toHaveBeenCalled();
         expect(pause).toHaveBeenCalledTimes(pauseCallsBeforeFailure);
@@ -815,7 +830,8 @@ describe('EarlyBird Listener player', () => {
         await waitFor(() => expect(hlsHarness.instances[0].startLoad.mock.calls.length)
             .toBeGreaterThan(startCallsBeforeOnline));
         expect(hlsHarness.instances[0].startLoad).toHaveBeenLastCalledWith(220, true);
-        expect(hlsHarness.instances[0].stopLoad.mock.calls.length).toBeGreaterThan(1);
+        expect(hlsHarness.instances[0].stopLoad).toHaveBeenCalledTimes(1);
+        expect(manifestProbes).toBeGreaterThanOrEqual(2);
         expect(fetchMock.mock.calls.filter(([url]) => (
             url === '/api/early-birds/stream/lease'
         ))).toHaveLength(1);
