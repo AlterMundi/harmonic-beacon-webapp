@@ -80,6 +80,7 @@ const STALL_RECOVERY_DELAY_MS = 1_000;
 const LIVE_FADE_IN_MS = 3_000;
 const TRANSPORT_FADE_OUT_MS = 650;
 const MEDIA_PLAY_ATTEMPT_TIMEOUT_MS = 8_000;
+const HLS_REFILL_PROBE_TIMEOUT_MS = 2_000;
 const DEFAULT_LISTENER_VOLUME = 0.7;
 const LISTENER_STABILITY_DELAY_SECONDS = LISTENER_BUFFER_TARGET_SECONDS;
 
@@ -90,6 +91,46 @@ function boundedDiagnosticToken(value: unknown): string | null {
     return typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(value)
         ? value
         : null;
+}
+
+function listenerHlsForwardLoadPosition(audio: HTMLMediaElement | null): number {
+    if (!audio || !Number.isFinite(audio.currentTime)) return -1;
+    const currentTime = audio.currentTime;
+    for (let index = 0; index < audio.buffered.length; index += 1) {
+        try {
+            const start = audio.buffered.start(index);
+            const end = audio.buffered.end(index);
+            if (
+                Number.isFinite(start)
+                && Number.isFinite(end)
+                && currentTime >= start - 0.25
+                && currentTime <= end + 0.25
+            ) return Math.max(currentTime, end);
+        } catch {
+            return currentTime;
+        }
+    }
+    return currentTime;
+}
+
+async function listenerManifestReachable(url: string): Promise<boolean> {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), HLS_REFILL_PROBE_TIMEOUT_MS);
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { accept: 'application/vnd.apple.mpegurl' },
+            cache: 'no-store',
+            credentials: 'omit',
+            redirect: 'error',
+            signal: controller.signal,
+        });
+        return response.ok;
+    } catch {
+        return false;
+    } finally {
+        window.clearTimeout(timeout);
+    }
 }
 
 export function resolveListenerAnalysisFramesPerSecond({
@@ -153,8 +194,12 @@ export const LISTENER_HLS_BUFFER_CONFIG = {
     liveMaxLatencyDurationCount: 48,
     liveSyncMode: 'buffered',
     startOnSegmentBoundary: true,
-    maxBufferLength: LISTENER_BUFFER_TARGET_SECONDS,
-    maxMaxBufferLength: 180,
+    // Keep MediaSource below the cross-browser append/eviction pressure that
+    // Firefox reaches near 180 seconds. The rolling reservoir owns the full
+    // network-continuity window and feeds this smaller decoder window as the
+    // media clock advances, so total playable headroom remains three minutes.
+    maxBufferLength: 60,
+    maxMaxBufferLength: 60,
     backBufferLength: 0,
 } as const;
 
@@ -326,6 +371,7 @@ function ListenerPlayerController({
     const hlsRefillAttempts = useRef(0);
     const hlsRefillTimer = useRef<number | null>(null);
     const hlsRefillInstance = useRef<Hls | null>(null);
+    const hlsRefillGeneration = useRef(0);
     const nativeSuspendObserved = useRef(false);
     const playbackWatchdog = useRef(new ListenerPlaybackLivenessWatchdog());
     const lastPlaybackAction = useRef('mount');
@@ -499,6 +545,7 @@ function ListenerPlayerController({
     }, []);
 
     const cancelHlsRefill = useCallback((resetAttempts = true) => {
+        hlsRefillGeneration.current += 1;
         if (hlsRefillTimer.current !== null) {
             window.clearTimeout(hlsRefillTimer.current);
             hlsRefillTimer.current = null;
@@ -512,23 +559,52 @@ function ListenerPlayerController({
         if (hlsRefillTimer.current !== null && hlsRefillInstance.current === instance) return;
         cancelHlsRefill(false);
         hlsRefillInstance.current = instance;
+        const refillGeneration = hlsRefillGeneration.current;
 
         const schedule = (delayMs: number) => {
-            hlsRefillTimer.current = window.setTimeout(() => {
+            hlsRefillTimer.current = window.setTimeout(async () => {
                 hlsRefillTimer.current = null;
                 if (
                     !wantsLivePlayback.current
                     || hls.current !== instance
                     || hlsRefillInstance.current !== instance
+                    || hlsRefillGeneration.current !== refillGeneration
                 ) return;
+                const probedManifestUrl = manifestUrl.current;
+                const originReachable = probedManifestUrl
+                    ? await listenerManifestReachable(probedManifestUrl)
+                    : false;
+                if (
+                    !wantsLivePlayback.current
+                    || hls.current !== instance
+                    || hlsRefillInstance.current !== instance
+                    || hlsRefillGeneration.current !== refillGeneration
+                ) return;
+                if (!originReachable || manifestUrl.current !== probedManifestUrl) {
+                    hlsRefillAttempts.current = Math.min(
+                        hlsRefillAttempts.current + 1,
+                        1_000_000,
+                    );
+                    schedule(listenerRecoveryDelayMs(hlsRefillAttempts.current));
+                    return;
+                }
                 lastPlaybackAction.current = 'hls-network-refill';
                 try {
-                    // `startLoad()` alone is a no-op while hls.js still owns a
-                    // delayed internal retry. Reset only the loader state —
-                    // never the MediaSource — so an online signal can refill
-                    // immediately without discarding playable bytes.
+                    // Never touch hls.js merely because a request failed. Its
+                    // timeline stays isolated while buffered audio is playing;
+                    // only a successful origin probe may reset loader state.
                     instance.stopLoad();
-                    instance.startLoad(-1);
+                    hlsReservoir.current?.setOriginAllowed(true);
+                    // Resume loading at the first missing forward byte without
+                    // seeking the media element. Restarting at the sentinel or
+                    // the currently playing fragment can rewind Firefox or feed
+                    // overlapping media into its decoder while valid bytes are
+                    // still buffered locally.
+                    const currentAudio = liveAudio.current;
+                    instance.startLoad(
+                        listenerHlsForwardLoadPosition(currentAudio),
+                        true,
+                    );
                 } catch {
                     // The bounded timer remains authoritative. A later retry or
                     // the media-clock recovery can rebuild after buffer exhaustion.
@@ -605,9 +681,21 @@ function ListenerPlayerController({
                 details: boundedDiagnosticToken(data.details),
                 fatal: Boolean(data.fatal),
             };
-            if (!data.fatal) return;
             const action = listenerHlsRecoveryAction(data.type);
             const bufferedAheadSeconds = listenerBufferedAheadSeconds(audio);
+            const bufferedNetworkFailure = action === 'restart-network-load'
+                && bufferedAheadSeconds > LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS;
+            if (bufferedNetworkFailure) {
+                reservoir.setOriginAllowed(false);
+                // Do not stop/restart hls.js here. Its current loader retry can
+                // consume the in-memory playlist/fragments without losing the
+                // fragment tracker or MediaSource timestamp offset. Explicitly
+                // restarting at this boundary made Firefox/Chromium append an
+                // overlapping fragment, emit bufferAppendError and rewind the
+                // media clock even though accepted bytes were still playable.
+                if (hlsRefillInstance.current !== instance) scheduleHlsRefill(instance);
+            }
+            if (!data.fatal) return;
             window.dispatchEvent(new CustomEvent(LISTENER_PLAYBACK_DIAGNOSTIC_EVENT, {
                 detail: listenerTransportDiagnostic({
                     reason: 'hls-fatal',
@@ -623,7 +711,7 @@ function ListenerPlayerController({
                 // A manifest or segment failure does not invalidate bytes that
                 // MediaSource already accepted. Keep the audio clock, fade,
                 // presence and lease intact while hls.js refills in place.
-                scheduleHlsRefill(instance);
+                if (!bufferedNetworkFailure) scheduleHlsRefill(instance);
                 return;
             }
             if (action === 'recover-media') {
@@ -641,6 +729,9 @@ function ListenerPlayerController({
         });
         const refillRecovered = () => {
             if (hlsRefillInstance.current !== instance) return;
+            // Cached playlists/fragments prove only that the local reservoir is
+            // usable. Keep probing until an actual origin request succeeds.
+            if (!reservoir.mayReachOrigin()) return;
             const recoveryAttempt = hlsRefillAttempts.current;
             cancelHlsRefill();
             lastHlsSignal.current = { type: null, details: null, fatal: false };
@@ -658,6 +749,13 @@ function ListenerPlayerController({
         };
         instance.on(HlsConstructor.Events.FRAG_LOADED, refillRecovered);
         instance.on(HlsConstructor.Events.LEVEL_LOADED, refillRecovered);
+        instance.on(HlsConstructor.Events.FRAG_BUFFERED, (_event, data) => {
+            // A loader response is not yet playable. Retain its bytes through
+            // transmuxing and SourceBuffer append so an append/retry boundary
+            // during an outage cannot turn a downloaded fragment into an
+            // offline cache miss. FRAG_BUFFERED is hls.js's acceptance point.
+            reservoir.markBuffered(data.frag.url);
+        });
         instance.on(HlsConstructor.Events.FRAG_CHANGED, (_event, data) => {
             const programStartMs = data.frag.programDateTime;
             const mediaStartSeconds = data.frag.start;
@@ -1340,10 +1438,31 @@ function ListenerPlayerController({
             }));
             reportPresence('idle');
             deferLiveFade();
+            const networkRecoveryInstance = lastHlsSignal.current.type === 'networkError'
+                ? hls.current
+                : null;
+            if (networkRecoveryInstance) {
+                // An exhausted MediaSource is not permission to destroy the
+                // media timeline while the origin is still unreachable. The
+                // refill probe owns this state: it leaves currentTime intact,
+                // retries with bounded backoff and restarts the same hls.js
+                // instance only after a real manifest succeeds.
+                updateLiveState('recovering');
+                if (hlsRefillInstance.current !== networkRecoveryInstance) {
+                    scheduleHlsRefill(networkRecoveryInstance, 0);
+                }
+                return;
+            }
             scheduleAutomaticRecovery(0, 'watchdog-recovery');
         }, LISTENER_PLAYBACK_WATCHDOG_INTERVAL_MS);
         return () => window.clearInterval(interval);
-    }, [deferLiveFade, reportPresence, scheduleAutomaticRecovery]);
+    }, [
+        deferLiveFade,
+        reportPresence,
+        scheduleAutomaticRecovery,
+        scheduleHlsRefill,
+        updateLiveState,
+    ]);
 
     useEffect(() => {
         automaticRecovery.current = scheduleAutomaticRecovery;
@@ -1618,15 +1737,16 @@ function ListenerPlayerController({
                 void probeExistingLease().then((probe) => {
                     if (probe.kind === 'active') {
                         manifestExpiresAt.current = Date.parse(probe.grant.stream.expiresAt);
-                        const currentAudio = liveAudio.current;
-                        const bufferExhausted = currentAudio !== null
-                            && listenerBufferedAheadSeconds(currentAudio)
-                                <= LISTENER_BUFFER_EXHAUSTED_EPSILON_SECONDS;
-                        hls.current?.stopLoad();
-                        hls.current?.startLoad(-1);
-                        if (bufferExhausted) {
-                            cancelRecovery(false);
-                            scheduleAutomaticRecovery(0, 'online-buffer-exhausted');
+                        if (hls.current) {
+                            // A browser `online` event only proves that some
+                            // network interface is available. It does not prove
+                            // that the stream origin can answer yet. Keep the
+                            // same MediaSource/currentTime even after its buffer
+                            // drains; the bounded manifest probe is the only
+                            // authority allowed to restart hls.js in place.
+                            const activeInstance = hls.current;
+                            cancelHlsRefill(false);
+                            scheduleHlsRefill(activeInstance, 0);
                         }
                         return;
                     }
@@ -1662,12 +1782,14 @@ function ListenerPlayerController({
         attemptLivePlayback,
         beginLiveFade,
         cancelLiveFade,
+        cancelHlsRefill,
         cancelRecovery,
         deferLiveFade,
         dropAudio,
         reportPresence,
         probeExistingLease,
         revalidateIdlePreparedSource,
+        scheduleHlsRefill,
         scheduleAutomaticRecovery,
         startReactiveAnalysis,
         stopHls,

@@ -57,7 +57,11 @@ export default defineConfig({
         baseURL: BASE_URL,
         locale: 'es-CR',
         timezoneId: 'America/Costa_Rica',
-        trace: 'retain-on-failure',
+        // The network gate serves hundreds of immutable media fragments. A
+        // retained trace embeds every response body and can itself exhaust
+        // Firefox/Playwright while reporting a failure. The gate has a bounded
+        // purpose-built diagnostic ring and screenshots instead.
+        trace: LISTENER_NETWORK_GATE ? 'off' : 'retain-on-failure',
         screenshot: 'only-on-failure',
         launchOptions: {
             // Deterministic fake mic/camera for media-continuity tests.

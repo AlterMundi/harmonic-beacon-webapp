@@ -17,6 +17,7 @@ on:
       - src/lib/listener/**
       - e2e/fixtures/listener-account-switch.ts
       - e2e/tests/listener-account-switch.spec.ts
+      - e2e/tests/listener-network-resilience.spec.ts
       - playwright.config.ts
       - src/app/layout.tsx
       - src/app/globals.css
@@ -55,6 +56,7 @@ on:
       - src/lib/listener/**
       - e2e/fixtures/listener-account-switch.ts
       - e2e/tests/listener-account-switch.spec.ts
+      - e2e/tests/listener-network-resilience.spec.ts
       - playwright.config.ts
       - src/app/layout.tsx
       - src/app/globals.css
@@ -184,3 +186,53 @@ jobs:
           npx playwright test e2e/tests/listener-account-switch.spec.ts
           --project=chromium
           --project=firefox
+
+  network-resilience:
+    name: network-resilience (${{ matrix.project }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: chromium
+            browser: chromium
+            runner: ubuntu-latest
+          - project: firefox
+            browser: firefox
+            # Playwright documents that media codec availability varies by
+            # host OS. Its patched Linux Firefox does not expose the approved
+            # AAC/fMP4 MSE pipeline, so exercise Firefox on macOS rather than
+            # silently substituting a different stream codec.
+            runner: macos-15
+          - project: android-chrome
+            browser: chromium
+            runner: ubuntu-latest
+          - project: iphone-webkit
+            browser: webkit
+            runner: ubuntu-latest
+    env:
+      E2E_LISTENER_NETWORK_GATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Install deterministic HLS fixture encoder
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
+      - name: Install deterministic HLS fixture encoder on macOS
+        if: runner.os == 'macOS'
+        run: |
+          command -v ffmpeg >/dev/null || brew install ffmpeg
+          ffmpeg -version | head -n 1
+      - name: Run network resilience in an isolated browser process
+        run: >-
+          npx playwright test e2e/tests/listener-network-resilience.spec.ts
+          --project=${{ matrix.project }}
+          --workers=1

@@ -109,13 +109,17 @@ test.describe('Listener Account A/B cache boundary', () => {
             await page.goto('/listener/privacy');
             await useListenerAccount(context, baseURL, pair.free);
             await page.goBack({ waitUntil: 'domcontentloaded' });
+            await expect(page).toHaveURL(/\/listener$/);
+            await expectFree(page);
             // The Account-derived response is deliberately not bfcacheable in
             // current engines, so this history traversal must fetch B anew.
+            // Assert this only after B's server-derived presentation is stable:
+            // Chromium can destroy the first DOMContentLoaded execution context
+            // while completing a history traversal.
             expect(await page.evaluate(() => Boolean(
                 (window as typeof window & { __hbPageShowPersisted?: boolean })
                     .__hbPageShowPersisted,
             ))).toBe(false);
-            await expectFree(page);
 
             await page.goForward({ waitUntil: 'domcontentloaded' });
             await expect(page).toHaveURL(/\/listener\/privacy$/);
