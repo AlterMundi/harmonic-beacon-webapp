@@ -125,6 +125,76 @@ async function availablePlaybackSeconds(page: import('@playwright/test').Page): 
     return media.bufferedAheadSeconds + retained;
 }
 
+async function waitForAvailablePlaybackSeconds(
+    page: import('@playwright/test').Page,
+    minimumSeconds: number,
+    timeout: number,
+    message: string,
+): Promise<void> {
+    try {
+        await page.waitForFunction((minimum) => {
+            const media = document.querySelector<HTMLAudioElement>('audio[aria-label="Beacon"]');
+            if (!media) return false;
+            let bufferedAheadSeconds = 0;
+            for (let index = 0; index < media.buffered.length; index += 1) {
+                const start = media.buffered.start(index);
+                const end = media.buffered.end(index);
+                if (media.currentTime >= start - 0.25 && media.currentTime <= end + 0.25) {
+                    bufferedAheadSeconds = Math.max(0, end - media.currentTime);
+                    break;
+                }
+            }
+            const diagnostics = (window as typeof window & { __hbNetworkDiagnostics?: unknown[] })
+                .__hbNetworkDiagnostics ?? [];
+            let retainedSeconds = 0;
+            for (const diagnostic of diagnostics) {
+                if (!diagnostic || typeof diagnostic !== 'object') continue;
+                const value = (diagnostic as { reservoirAheadSeconds?: unknown })
+                    .reservoirAheadSeconds;
+                if (typeof value === 'number' && Number.isFinite(value)) retainedSeconds = value;
+            }
+            return bufferedAheadSeconds + retainedSeconds >= minimum;
+        }, minimumSeconds, { timeout, polling: 250 });
+    } catch (error) {
+        const evidence = await page.evaluate(() => {
+            const media = document.querySelector<HTMLAudioElement>('audio[aria-label="Beacon"]');
+            const diagnostics = (window as typeof window & { __hbNetworkDiagnostics?: unknown[] })
+                .__hbNetworkDiagnostics ?? [];
+            return {
+                currentTime: media?.currentTime ?? null,
+                readyState: media?.readyState ?? null,
+                errorCode: media?.error?.code ?? null,
+                retainedSeconds: diagnostics.reduce((latest, diagnostic) => {
+                    if (!diagnostic || typeof diagnostic !== 'object') return latest;
+                    const value = (diagnostic as { reservoirAheadSeconds?: unknown })
+                        .reservoirAheadSeconds;
+                    return typeof value === 'number' && Number.isFinite(value) ? value : latest;
+                }, 0),
+                recent: diagnostics.slice(-8).map((diagnostic) => {
+                    if (!diagnostic || typeof diagnostic !== 'object') return null;
+                    const record = diagnostic as {
+                        reason?: unknown;
+                        action?: unknown;
+                        reservoirAheadSeconds?: unknown;
+                        media?: { bufferedAheadSeconds?: unknown };
+                        hls?: { type?: unknown; details?: unknown; fatal?: unknown };
+                    };
+                    return {
+                        reason: record.reason,
+                        action: record.action,
+                        reservoirAheadSeconds: record.reservoirAheadSeconds,
+                        bufferedAheadSeconds: record.media?.bufferedAheadSeconds,
+                        hlsType: record.hls?.type,
+                        hlsDetails: record.hls?.details,
+                        hlsFatal: record.hls?.fatal,
+                    };
+                }),
+            };
+        });
+        throw new Error(`${message}: ${JSON.stringify(evidence)}`, { cause: error });
+    }
+}
+
 async function reservoirSnapshotCount(page: import('@playwright/test').Page): Promise<number> {
     return page.evaluate(() => (
         ((window as typeof window & { __hbNetworkDiagnostics?: Array<{ reason?: unknown }> })
@@ -206,8 +276,11 @@ test.describe('Listener network resilience', () => {
             (window as typeof window & { __hbNetworkDiagnostics?: unknown[] })
                 .__hbNetworkDiagnostics = [];
             window.addEventListener('listener:playback-diagnostic', (event) => {
-                (window as typeof window & { __hbNetworkDiagnostics: unknown[] })
-                    .__hbNetworkDiagnostics.push((event as CustomEvent).detail);
+            (window as typeof window & { __hbNetworkDiagnostics: unknown[] })
+                .__hbNetworkDiagnostics.push((event as CustomEvent).detail);
+            const diagnostics = (window as typeof window & { __hbNetworkDiagnostics: unknown[] })
+                .__hbNetworkDiagnostics;
+            if (diagnostics.length > 256) diagnostics.splice(0, diagnostics.length - 256);
             });
         });
         await page.route(`${STREAM_ORIGIN}/**`, async (route) => {
@@ -294,10 +367,12 @@ test.describe('Listener network resilience', () => {
         await listen.click();
         await expect(page.getByRole('button', { name: /Stop|Detener/ })).toBeVisible();
 
-        await expect.poll(async () => availablePlaybackSeconds(page), {
-            timeout: 90_000,
-            message: `${browserName} did not fill the promised Listener buffer`,
-        }).toBeGreaterThanOrEqual(180);
+        await waitForAvailablePlaybackSeconds(
+            page,
+            180,
+            90_000,
+            `${browserName} did not fill the promised Listener buffer`,
+        );
         await expect.poll(async () => (await mediaState(page)).bufferedAheadSeconds, {
             timeout: 20_000,
             message: `${browserName} did not make retained audio immediately playable`,
@@ -334,10 +409,12 @@ test.describe('Listener network resilience', () => {
                 timeout: 30_000,
                 message: `${browserName} did not complete a reservoir refill`,
             }).toBeGreaterThan(snapshotsBeforeRefill);
-            await expect.poll(async () => availablePlaybackSeconds(page), {
-                timeout: 45_000,
-                message: `${browserName} did not refill after a ${outageMediaSeconds}s outage`,
-            }).toBeGreaterThanOrEqual(180);
+            await waitForAvailablePlaybackSeconds(
+                page,
+                180,
+                45_000,
+                `${browserName} did not refill after a ${outageMediaSeconds}s outage`,
+            );
             await expect(page.locator('.listener-experience[data-phase="beacon"]'))
                 .toBeVisible({ timeout: 20_000 });
         }
@@ -366,9 +443,12 @@ test.describe('Listener network resilience', () => {
             media.playbackRate = 4;
         });
         setSourcePlaybackRate(4);
-        await expect.poll(async () => availablePlaybackSeconds(page), {
-            timeout: 45_000,
-        }).toBeGreaterThanOrEqual(180);
+        await waitForAvailablePlaybackSeconds(
+            page,
+            180,
+            45_000,
+            `${browserName} did not refill after degraded connectivity`,
+        );
 
         // Exercise an outage ten seconds below the promised three-minute
         // target. The MediaSource and reservoir counters are intentionally
@@ -391,9 +471,12 @@ test.describe('Listener network resilience', () => {
         await page.evaluate(() => window.dispatchEvent(new Event('online')));
         await expect.poll(async () => reservoirSnapshotCount(page), { timeout: 30_000 })
             .toBeGreaterThan(nearLimitSnapshots);
-        await expect.poll(async () => availablePlaybackSeconds(page), {
-            timeout: 60_000,
-        }).toBeGreaterThanOrEqual(180);
+        await waitForAvailablePlaybackSeconds(
+            page,
+            180,
+            60_000,
+            `${browserName} did not refill after its near-limit outage`,
+        );
         await expect(page.locator('.listener-experience[data-phase="beacon"]'))
             .toBeVisible({ timeout: 20_000 });
 
