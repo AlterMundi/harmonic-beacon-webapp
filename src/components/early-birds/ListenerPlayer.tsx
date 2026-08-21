@@ -194,8 +194,12 @@ export const LISTENER_HLS_BUFFER_CONFIG = {
     liveMaxLatencyDurationCount: 48,
     liveSyncMode: 'buffered',
     startOnSegmentBoundary: true,
-    maxBufferLength: LISTENER_BUFFER_TARGET_SECONDS,
-    maxMaxBufferLength: 180,
+    // Keep MediaSource below the cross-browser append/eviction pressure that
+    // Firefox reaches near 180 seconds. The rolling reservoir owns the full
+    // network-continuity window and feeds this smaller decoder window as the
+    // media clock advances, so total playable headroom remains three minutes.
+    maxBufferLength: 60,
+    maxMaxBufferLength: 60,
     backBufferLength: 0,
 } as const;
 

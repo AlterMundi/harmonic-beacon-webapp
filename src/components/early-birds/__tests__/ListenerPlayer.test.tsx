@@ -629,7 +629,7 @@ describe('EarlyBird Listener player', () => {
         expect(audio.currentTime).toBe(70);
     });
 
-    it('keeps a stability-first desktop HLS buffer without enabling low latency', () => {
+    it('keeps a bounded decoder window beneath the rolling three-minute reservoir', () => {
         expect(LISTENER_HLS_BUFFER_CONFIG).toMatchObject({
             lowLatencyMode: false,
             initialLiveManifestSize: 31,
@@ -637,8 +637,8 @@ describe('EarlyBird Listener player', () => {
             liveMaxLatencyDurationCount: 48,
             liveSyncMode: 'buffered',
             startOnSegmentBoundary: true,
-            maxBufferLength: 180,
-            maxMaxBufferLength: 180,
+            maxBufferLength: 60,
+            maxMaxBufferLength: 60,
         });
     });
 
