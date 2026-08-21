@@ -362,6 +362,16 @@ test.describe('Listener network resilience', () => {
         });
 
         await page.goto('/early-birds');
+        const codecSupport = await page.evaluate(() => ({
+            mediaSource: typeof MediaSource !== 'undefined'
+                && MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"'),
+            audio: document.createElement('audio')
+                .canPlayType('audio/mp4; codecs="mp4a.40.2"'),
+        }));
+        expect(codecSupport.mediaSource, `${browserName} lacks the approved AAC/fMP4 MSE codec`)
+            .toBe(true);
+        expect(codecSupport.audio, `${browserName} cannot decode the approved AAC-LC stream`)
+            .not.toBe('');
         const listen = page.getByRole('button', { name: /Listen|Escuchar/ });
         await expect(listen).toBeEnabled({ timeout: 20_000 });
         await listen.click();
