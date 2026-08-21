@@ -344,7 +344,11 @@ export function createListenerReservoirLoader(
                 // rangeStart=0/rangeEnd=0. Only a real non-zero byte range
                 // must bypass the whole-object reservoir.
                 if ((context.rangeStart ?? 0) !== 0 || (context.rangeEnd ?? 0) !== 0) {
-                    this.loadDelegate(context, config, callbacks);
+                    if (reservoir.mayReachOrigin()) {
+                        this.loadDelegate(context, config, callbacks);
+                    } else {
+                        queueMicrotask(rejectOfflineMiss);
+                    }
                     return;
                 }
                 const cached = reservoir.cached(context.url);

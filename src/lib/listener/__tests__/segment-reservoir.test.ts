@@ -193,10 +193,22 @@ describe('ListenerSegmentReservoir', () => {
             {} as LoaderConfiguration,
             { onSuccess: vi.fn(), onError: missingError, onTimeout: vi.fn() },
         );
+        const rangedError = vi.fn();
+        new ReservoirLoader({} as HlsConfig).load(
+            {
+                url: segmentUrl,
+                responseType: 'arraybuffer',
+                rangeStart: 1,
+                rangeEnd: 2,
+            },
+            {} as LoaderConfiguration,
+            { onSuccess: vi.fn(), onError: rangedError, onTimeout: vi.fn() },
+        );
 
         await vi.waitFor(() => expect(playlistSuccess).toHaveBeenCalledOnce());
         await vi.waitFor(() => expect(fragmentSuccess).toHaveBeenCalledOnce());
         await vi.waitFor(() => expect(missingError).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(rangedError).toHaveBeenCalledOnce());
         expect(delegatedLoads).not.toHaveBeenCalled();
         reservoir.dispose();
     });
