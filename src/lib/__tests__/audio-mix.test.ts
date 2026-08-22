@@ -11,15 +11,14 @@ describe('roomMixGains', () => {
     });
 
     it('retains the documented Beacon floor at the Session end', () => {
-        expect(roomMixGains(0.8, 1)).toEqual({
-            beacon: 0.8 * BEACON_SESSION_FLOOR_RATIO,
-            session: 0.8,
-        });
+        const gains = roomMixGains(0.8, 1);
+        expect(gains.beacon).toBeCloseTo(0.8 * BEACON_SESSION_FLOOR_RATIO);
+        expect(gains.session).toBe(0.8);
     });
 
-    it('starts centered with the Beacon slightly above the session instead of too quiet', () => {
+    it('starts centered with both sources near parity while preserving the session-side floor', () => {
         expect(roomMixGains(0.8, 0.5)).toEqual({
-            beacon: 0.5,
+            beacon: 0.42000000000000004,
             session: 0.4,
         });
     });
@@ -27,9 +26,8 @@ describe('roomMixGains', () => {
     it('clamps hostile values and obeys master mute', () => {
         expect(roomMixGains(0, 0)).toEqual({ beacon: 0, session: 0 });
         expect(roomMixGains(2, -1)).toEqual({ beacon: 1, session: 0 });
-        expect(roomMixGains(1, 2)).toEqual({
-            beacon: BEACON_SESSION_FLOOR_RATIO,
-            session: 1,
-        });
+        const sessionEnd = roomMixGains(1, 2);
+        expect(sessionEnd.beacon).toBeCloseTo(BEACON_SESSION_FLOOR_RATIO);
+        expect(sessionEnd.session).toBe(1);
     });
 });

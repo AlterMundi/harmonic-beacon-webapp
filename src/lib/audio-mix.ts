@@ -1,4 +1,4 @@
-export const BEACON_SESSION_FLOOR_RATIO = 0.25;
+export const BEACON_SESSION_FLOOR_RATIO = 0.05;
 
 function clampUnit(value: number): number {
     if (!Number.isFinite(value)) return 0;
