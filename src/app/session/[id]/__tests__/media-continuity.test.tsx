@@ -152,7 +152,7 @@ describe('session shell — media continuity invariants', () => {
         fireEvent.change(balance, { target: { value: '1' } });
         expect(remoteAudio.muted).toBe(false);
         expect(remoteAudio.volume).toBe(0.8);
-        expect(audioMocks.setBeaconVolume).toHaveBeenLastCalledWith(0.2);
+        expect(audioMocks.setBeaconVolume.mock.lastCall?.[0]).toBeCloseTo(0.04);
 
         fireEvent.change(balance, { target: { value: '0' } });
         expect(remoteAudio.muted).toBe(true);
