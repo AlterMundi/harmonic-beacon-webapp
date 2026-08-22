@@ -23,6 +23,7 @@ import ThumbnailSender from "@/components/session/ThumbnailSender";
 import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
 import type { StageVideoPublication } from "@/components/session/StageTile";
 import type { StageConnectionQuality } from "@/lib/stage-layout";
+import { roomMixGains } from "@/lib/audio-mix";
 import { redactErrorDetail } from "@/lib/redact";
 import { isLocalizedStaffRole, localeForEventLanguage, staffRolePresentation } from "@/lib/i18n";
 
@@ -212,7 +213,7 @@ function SessionRoom() {
     // even after LiveKit has already cleared its srcObject.
     const audioElementsRef = useRef<Map<RemoteTrack, HTMLAudioElement>>(new Map());
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const stageVolumeRef = useRef(volume * mix);
+    const stageVolumeRef = useRef(roomMixGains(volume, mix).session);
     const audioOnlyRef = useRef(audioOnly);
     const slotOrderRef = useRef<Map<string, number>>(new Map());
     const nextSlotRef = useRef(0);
@@ -529,6 +530,7 @@ function SessionRoom() {
                         }
                         const audioElement = track.attach() as HTMLAudioElement;
                         audioElement.volume = stageVolumeRef.current;
+                        audioElement.muted = stageVolumeRef.current === 0;
                         audioElement.style.display = "none";
                         document.body.appendChild(audioElement);
                         audioElementsRef.current.set(track, audioElement);
@@ -711,13 +713,15 @@ function SessionRoom() {
     }, [canPublish, principalKind, stageInvitationAccepted]);
 
     useEffect(() => {
-        const sessionVol = volume * mix;
-        const beaconVol = volume * (1 - mix);
-        stageVolumeRef.current = sessionVol;
+        const gains = roomMixGains(volume, mix);
+        stageVolumeRef.current = gains.session;
         audioElementsRef.current.forEach((el) => {
-            el.volume = sessionVol;
+            el.volume = gains.session;
+            // Volume zero should be enough, but an explicit mute guarantees
+            // the Beacon endpoint never leaks stage voice across engines.
+            el.muted = gains.session === 0;
         });
-        setBeaconVolume(beaconVol);
+        setBeaconVolume(gains.beacon);
     }, [volume, mix, setBeaconVolume]);
 
     const toggleMic = useCallback(async () => {

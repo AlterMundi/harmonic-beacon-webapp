@@ -924,7 +924,7 @@ describe('SessionRoomPage - two-room crossfader', () => {
         expect(sliders[1]).toHaveValue('0.5');
         await waitFor(() => {
             const initialBedGain = audioMocks.setBeaconVolume.mock.lastCall?.[0];
-            expect(initialBedGain).toBeCloseTo(0.4);
+            expect(initialBedGain).toBeCloseTo(0.5);
         });
 
         const stageAudio = document.createElement('audio');
@@ -949,7 +949,7 @@ describe('SessionRoomPage - two-room crossfader', () => {
         await waitFor(() => {
             expect(stageAudio.volume).toBeCloseTo(0.2);
             const bedGain = audioMocks.setBeaconVolume.mock.lastCall?.[0];
-            expect(bedGain).toBeCloseTo(0.6);
+            expect(bedGain).toBeCloseTo(0.65);
         });
     });
 
