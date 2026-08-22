@@ -39,6 +39,7 @@ const WEBKIT_ATTENDEE_CONTINUITY = /attendee controls without capture/;
 
 export default defineConfig({
     testDir: './e2e/tests',
+    globalSetup: './e2e/fixtures/stabilize-public-cycle.ts',
     fullyParallel: false,
     workers: 1,
     forbidOnly: !!process.env.CI,
