@@ -77,6 +77,18 @@ describe('livekit-server', () => {
         });
     });
 
+    it('allows only the assigned facilitator to send Staff audio telemetry', async () => {
+        const { createSessionToken } = await import('../livekit-server');
+        await createSessionToken('stage', 'identity', 'Julián', true, {
+            role: 'FACILITATOR_OP',
+            isAssignedFacilitator: true,
+        });
+
+        expect(addGrant).toHaveBeenCalledWith(expect.objectContaining({
+            canPublishData: true,
+        }));
+    });
+
     it('makes the bed strictly subscribe-only', async () => {
         const { createBedToken } = await import('../livekit-server');
         await createBedToken('beacon', 'bed-identity');

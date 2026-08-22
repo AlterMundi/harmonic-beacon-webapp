@@ -108,6 +108,10 @@ stackTest.describe('media continuity', () => {
         await expect(
             facilitator.getByRole('button', { name: /Mute microphone|Silenciar micrófono/i }),
         ).toBeVisible();
+        const qualityMonitor = facilitator.getByTestId('facilitator-audio-quality');
+        await expect(qualityMonitor).toBeVisible();
+        await expect(qualityMonitor).not.toHaveAttribute('data-severity', 'waiting', { timeout: 10_000 });
+        await expect(qualityMonitor).toContainText(/96 kbps/);
         await facilitator.getByRole('button', { name: /Turn camera on|Encender cámara/i }).click();
         await expect(
             facilitator.getByRole('button', { name: /Turn camera off|Apagar cámara/i }),

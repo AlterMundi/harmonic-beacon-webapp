@@ -117,6 +117,28 @@ export type Messages = {
         assignedFacilitatorCapability: string;
         operationalStaffCapability: string;
         staffConsole: string;
+        audioQuality: {
+            heading: string;
+            healthy: string;
+            warning: string;
+            critical: string;
+            waiting: string;
+            facilitatorUplink: string;
+            thisDeviceDownlink: string;
+            measuredAgo: string;
+            noAutomaticAction: string;
+            profile: string;
+            bitrate: string;
+            packetLoss: string;
+            jitter: string;
+            roundTripTime: string;
+            concealment: string;
+            availableBitrate: string;
+            codec: string;
+            capture: string;
+            unavailable: string;
+            reasons: Record<string, string>;
+        };
         audioActivationLabel: string;
         audioPrompt: string;
         startAudio: string;
@@ -617,6 +639,43 @@ export const messages: Record<UiLocale, Messages> = {
             assignedFacilitatorCapability: 'Facilitación asignada · podés conducir y publicar en este evento; tu cámara y micrófono siguen bajo tu control.',
             operationalStaffCapability: 'Acceso operativo · podés acompañar este evento, pero no publicar como facilitación asignada.',
             staffConsole: 'Escena y manos',
+            audioQuality: {
+                heading: 'Calidad de voz de facilitación',
+                healthy: 'Dentro de parámetros',
+                warning: 'Revisar calidad',
+                critical: 'Calidad degradada',
+                waiting: 'Esperando mediciones',
+                facilitatorUplink: 'Salida del facilitador',
+                thisDeviceDownlink: 'Recepción en este dispositivo',
+                measuredAgo: 'medido hace {seconds} s',
+                noAutomaticAction: 'Este monitor sólo advierte: nunca silencia, corta ni modifica la transmisión.',
+                profile: 'Perfil objetivo: Opus mono · 96 kbps máx. · 48 kHz · RED activo · DTX y filtros del navegador apagados.',
+                bitrate: 'Bitrate',
+                packetLoss: 'Pérdida',
+                jitter: 'Jitter',
+                roundTripTime: 'RTT',
+                concealment: 'Audio reconstruido',
+                availableBitrate: 'Ancho de banda disponible',
+                codec: 'Codec',
+                capture: 'Captura real',
+                unavailable: 'sin dato',
+                reasons: {
+                    no_measurement: 'Todavía no hay una medición utilizable.',
+                    stale: 'La telemetría dejó de actualizarse.',
+                    connection_lost: 'LiveKit informa que se perdió la conexión.',
+                    connection_poor: 'LiveKit informa una conexión débil.',
+                    packet_loss: 'La pérdida de paquetes supera el rango razonable.',
+                    jitter: 'La variación de llegada del audio es alta.',
+                    rtt: 'La latencia de ida y vuelta es alta.',
+                    concealment: 'El navegador está reconstruyendo demasiado audio perdido.',
+                    bitrate: 'El bitrate efectivo está por debajo del rango de alta fidelidad.',
+                    sample_rate: 'La captura real está por debajo de 44,1 kHz.',
+                    auto_gain_control: 'El navegador mantuvo activo el control automático de ganancia.',
+                    echo_cancellation: 'El navegador mantuvo activa la cancelación de eco.',
+                    noise_suppression: 'El navegador mantuvo activa la supresión de ruido.',
+                    voice_isolation: 'El navegador mantuvo activo el aislamiento de voz.',
+                },
+            },
             audioActivationLabel: 'Activación de audio',
             audioPrompt: 'Presioná una vez para escuchar la sesión y el Beacon.',
             startAudio: 'Iniciar audio',
@@ -1172,6 +1231,43 @@ export const messages: Record<UiLocale, Messages> = {
             assignedFacilitatorCapability: 'Assigned facilitator · you can conduct and publish in this event; your camera and microphone remain under your control.',
             operationalStaffCapability: 'Operational access · you can support this event, but you do not publish as its assigned facilitator.',
             staffConsole: 'Stage and hands',
+            audioQuality: {
+                heading: 'Facilitator voice quality',
+                healthy: 'Within parameters',
+                warning: 'Check quality',
+                critical: 'Quality degraded',
+                waiting: 'Waiting for measurements',
+                facilitatorUplink: 'Facilitator uplink',
+                thisDeviceDownlink: 'Reception on this device',
+                measuredAgo: 'measured {seconds} s ago',
+                noAutomaticAction: 'This monitor only warns: it never mutes, stops, or changes the transmission.',
+                profile: 'Target profile: mono Opus · 96 kbps max · 48 kHz · RED on · DTX and browser processing off.',
+                bitrate: 'Bitrate',
+                packetLoss: 'Loss',
+                jitter: 'Jitter',
+                roundTripTime: 'RTT',
+                concealment: 'Concealed audio',
+                availableBitrate: 'Available bandwidth',
+                codec: 'Codec',
+                capture: 'Actual capture',
+                unavailable: 'unavailable',
+                reasons: {
+                    no_measurement: 'No usable measurement is available yet.',
+                    stale: 'Telemetry has stopped updating.',
+                    connection_lost: 'LiveKit reports a lost connection.',
+                    connection_poor: 'LiveKit reports a weak connection.',
+                    packet_loss: 'Packet loss is above the reasonable range.',
+                    jitter: 'Audio arrival variation is high.',
+                    rtt: 'Round-trip latency is high.',
+                    concealment: 'The browser is reconstructing too much lost audio.',
+                    bitrate: 'Effective bitrate is below the high-fidelity range.',
+                    sample_rate: 'Actual capture is below 44.1 kHz.',
+                    auto_gain_control: 'The browser kept automatic gain control enabled.',
+                    echo_cancellation: 'The browser kept echo cancellation enabled.',
+                    noise_suppression: 'The browser kept noise suppression enabled.',
+                    voice_isolation: 'The browser kept voice isolation enabled.',
+                },
+            },
             audioActivationLabel: 'Audio activation',
             audioPrompt: 'Press once to hear the session and Beacon.',
             startAudio: 'Start audio',

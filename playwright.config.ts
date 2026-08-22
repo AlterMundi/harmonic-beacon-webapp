@@ -170,6 +170,10 @@ export default defineConfig({
                   // production templates and runtime default remain OFF.
                   PROMO_INVITATIONS_ENABLED: 'true',
                   E2E_DASHBOARD_ENABLED: '1',
+                  // Keep the four-event fixture deterministic after the real
+                  // August cycle begins. Production ignores this value because
+                  // its E2E dashboard gate is disabled.
+                  E2E_CLOCK_NOW: '2026-08-21T12:00:00.000Z',
                   SESSION_COOKIE_TTL_SECONDS: '604800',
                   NEXT_PUBLIC_LIVEKIT_URL: process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
                   LIVEKIT_API_KEY: process.env.E2E_LIVEKIT_API_KEY ?? 'devkey',

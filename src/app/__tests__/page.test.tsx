@@ -130,6 +130,33 @@ describe('landing page', () => {
         ]);
     });
 
+    it('pins public discovery time only inside the E2E-gated stack', async () => {
+        const pinned = new Date('2026-08-21T12:00:00.000Z');
+        vi.stubEnv('E2E_DASHBOARD_ENABLED', '1');
+        vi.stubEnv('E2E_CLOCK_NOW', pinned.toISOString());
+        const findMany = mountDb(vi.fn().mockResolvedValue([]));
+
+        await renderPage();
+
+        expect(findMany.mock.calls[0][0].where.OR[0]).toEqual({
+            status: 'SCHEDULED',
+            scheduledAt: { gte: pinned },
+        });
+    });
+
+    it('ignores the E2E clock pin when the dashboard gate is disabled', async () => {
+        vi.stubEnv('E2E_DASHBOARD_ENABLED', '0');
+        vi.stubEnv('E2E_CLOCK_NOW', '2026-08-21T12:00:00.000Z');
+        const findMany = mountDb(vi.fn().mockResolvedValue([]));
+
+        await renderPage();
+
+        expect(findMany.mock.calls[0][0].where.OR[0]).toEqual({
+            status: 'SCHEDULED',
+            scheduledAt: { gte: NOW },
+        });
+    });
+
     it('fails closed when a missed lifecycle transition leaves an old session LIVE', async () => {
         const findMany = mountDb(vi.fn().mockResolvedValue([SATURDAY, SESSION_2]));
         vi.stubEnv('TICKET_PURCHASE_URL', 'https://tickets.example.invalid/harmonic-beacon');
