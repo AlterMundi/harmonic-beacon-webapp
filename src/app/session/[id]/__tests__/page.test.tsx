@@ -459,6 +459,21 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         );
     });
 
+    it('makes the staff camera and microphone invitation visually prominent', async () => {
+        installStaffToken(true);
+        await renderConnected();
+        const room = currentRoom();
+        room.localParticipant.permissions.canPublish = true;
+
+        act(() => room.emit('participantPermissionsChanged', null, room.localParticipant));
+
+        const invitation = await screen.findByTestId('stage-device-invitation');
+        expect(invitation).toHaveAttribute('role', 'status');
+        expect(invitation).toHaveAttribute('aria-live', 'polite');
+        expect(invitation).toHaveClass('border-2', 'border-[var(--gold)]', 'bg-[var(--gold)]/15');
+        expect(invitation).toHaveTextContent('Your turn — enable camera and microphone');
+    });
+
     it('explains that unassigned composite staff has operational access without publication', async () => {
         installStaffToken(false);
         await renderConnected();

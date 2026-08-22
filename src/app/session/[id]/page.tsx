@@ -1051,9 +1051,16 @@ function SessionRoom() {
                     )}
 
                     {needsDeviceGesture && (
-                        <p className="text-center text-sm text-[var(--lime)]">
-                            {copy.session.yourTurn}
-                        </p>
+                        <div
+                            role="status"
+                            aria-live="polite"
+                            data-testid="stage-device-invitation"
+                            className="event-card w-full max-w-md border-2 border-[var(--gold)] bg-[var(--gold)]/15 px-5 py-4 text-center shadow-[0_0_28px_rgba(221,179,90,0.22)]"
+                        >
+                            <p className="font-serif text-xl text-[var(--paper)]">
+                                {copy.session.yourTurn}
+                            </p>
+                        </div>
                     )}
                     {stageInvitationAccepted && stageInvitationError ? (
                         <p className="max-w-md text-center text-sm text-[var(--danger)]" role="alert">
