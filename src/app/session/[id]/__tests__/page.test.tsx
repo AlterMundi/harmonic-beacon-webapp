@@ -70,10 +70,11 @@ vi.mock('livekit-client', () => {
             isMicrophoneEnabled: false,
             connectionQuality: 'excellent',
             unpublishTrack: vi.fn(),
+            publishData: vi.fn().mockResolvedValue(undefined),
             setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
             setCameraEnabled: vi.fn().mockResolvedValue(undefined),
-            getTrackPublication: vi.fn(() => (
-                this.localParticipant.isCameraEnabled
+            getTrackPublication: vi.fn((source: string) => (
+                source === 'camera' && this.localParticipant.isCameraEnabled
                     ? { videoTrack: this.cameraTrack }
                     : undefined
             )),
@@ -93,6 +94,10 @@ vi.mock('livekit-client', () => {
         startAudio = vi.fn().mockResolvedValue(undefined);
         on(event: string, cb: (...args: unknown[]) => void) {
             (this.listeners[event] ||= []).push(cb);
+            return this;
+        }
+        off(event: string, cb: (...args: unknown[]) => void) {
+            this.listeners[event] = (this.listeners[event] || []).filter((listener) => listener !== cb);
             return this;
         }
         emit(event: string, ...args: unknown[]) {
@@ -120,9 +125,13 @@ vi.mock('livekit-client', () => {
             Reconnected: 'reconnected',
             ConnectionQualityChanged: 'connectionQualityChanged',
             ParticipantPermissionsChanged: 'participantPermissionsChanged',
+            DataReceived: 'dataReceived',
             Disconnected: 'disconnected',
         },
-        Track: { Kind: { Audio: 'audio', Video: 'video' }, Source: { Camera: 'camera' } },
+        Track: { Kind: { Audio: 'audio', Video: 'video' }, Source: { Camera: 'camera', Microphone: 'microphone' } },
+        AudioPresets: {
+            musicHighQuality: { maxBitrate: 96_000 },
+        },
         VideoPresets: {
             h720: { resolution: { width: 1280, height: 720 }, encoding: {} },
             h360: { resolution: { width: 640, height: 360 }, encoding: {} },
@@ -150,7 +159,7 @@ vi.mock('livekit-client', () => {
 });
 
 import SessionRoomPage from '../page';
-import { Room, DisconnectReason } from 'livekit-client';
+import { Room, DisconnectReason, type RoomOptions } from 'livekit-client';
 
 interface EmittableRoom {
     emit: (event: string, ...args: unknown[]) => void;
@@ -457,6 +466,24 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         expect(screen.getByTestId('viewer-role-guidance')).toHaveTextContent(
             /Assigned facilitator.*camera and microphone remain under your control/i,
         );
+        const options = vi.mocked(Room).mock.calls.at(-1)?.[0] as RoomOptions;
+        expect(options).toMatchObject({
+            audioCaptureDefaults: {
+                sampleRate: { ideal: 48_000 },
+                channelCount: { ideal: 1 },
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false,
+                voiceIsolation: false,
+            },
+            publishDefaults: {
+                audioPreset: { maxBitrate: 96_000, priority: 'high' },
+                dtx: false,
+                red: true,
+                forceStereo: false,
+            },
+        });
+        expect(screen.getByTestId('facilitator-audio-quality')).toBeInTheDocument();
     });
 
     it('makes the staff camera and microphone invitation visually prominent', async () => {
@@ -481,6 +508,9 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         expect(screen.getByTestId('viewer-role-guidance')).toHaveTextContent(
             /Operational access.*do not publish as its assigned facilitator/i,
         );
+        const options = vi.mocked(Room).mock.calls.at(-1)?.[0] as RoomOptions;
+        expect(options.audioCaptureDefaults).toBeUndefined();
+        expect(options.publishDefaults?.audioPreset).toBeUndefined();
     });
 
     it('disconnects the standalone room and preserves device intent before opening the cockpit', async () => {
