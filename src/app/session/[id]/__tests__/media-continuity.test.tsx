@@ -145,6 +145,21 @@ async function renderConnectedWithRemoteAudio() {
 }
 
 describe('session shell — media continuity invariants', () => {
+    it('keeps a Beacon floor at Session and removes stage voice completely at Beacon', async () => {
+        const { remoteAudio } = await renderConnectedWithRemoteAudio();
+        const balance = screen.getByRole('slider', { name: 'Beacon / Session balance' });
+
+        fireEvent.change(balance, { target: { value: '1' } });
+        expect(remoteAudio.muted).toBe(false);
+        expect(remoteAudio.volume).toBe(0.8);
+        expect(audioMocks.setBeaconVolume).toHaveBeenLastCalledWith(0.2);
+
+        fireEvent.change(balance, { target: { value: '0' } });
+        expect(remoteAudio.muted).toBe(true);
+        expect(remoteAudio.volume).toBe(0);
+        expect(audioMocks.setBeaconVolume).toHaveBeenLastCalledWith(0.8);
+    });
+
     it('room controls never disconnect, remount, duplicate media, or re-activate audio', async () => {
         const { remoteAudio } = await renderConnectedWithRemoteAudio();
         const room = latestFakeRoom(Room);
