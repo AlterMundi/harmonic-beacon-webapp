@@ -76,7 +76,11 @@ describe('FacilitatorAudioQuality', () => {
                 />
             </LocaleProvider>,
         );
-        await act(async () => Promise.resolve());
+        await act(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+        expect(screen.getByTestId('facilitator-audio-quality')).toHaveAttribute('data-severity', 'healthy');
         await act(async () => {
             vi.advanceTimersByTime(2_000);
             await Promise.resolve();

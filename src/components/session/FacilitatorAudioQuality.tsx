@@ -51,7 +51,7 @@ function highestSeverity(values: AudioQualitySeverity[]): AudioQualitySeverity {
     if (!values.length || values.every((value) => value === 'waiting')) return 'waiting';
     return values.reduce((highest, value) => (
         SEVERITY_ORDER[value] > SEVERITY_ORDER[highest] ? value : highest
-    ), 'waiting');
+    ), values[0]);
 }
 
 function metric(value: number | undefined, suffix: string, unavailable: string): string {

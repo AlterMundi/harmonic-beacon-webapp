@@ -37,6 +37,19 @@ const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
 // before a stale row can be presented as the next paid event.
 const PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+function publicScheduleNow(): Date {
+    const pinned = process.env.E2E_DASHBOARD_ENABLED === '1'
+        ? process.env.E2E_CLOCK_NOW?.trim()
+        : undefined;
+    if (!pinned) return new Date();
+
+    const now = new Date(pinned);
+    if (Number.isNaN(now.getTime())) {
+        throw new Error('E2E_CLOCK_NOW must be an ISO-8601 timestamp');
+    }
+    return now;
+}
+
 function safeNext(raw: string | string[] | undefined): string | undefined {
     const value = Array.isArray(raw) ? raw[0] : raw;
     return value && INTERNAL_NEXT.test(value) ? value : undefined;
@@ -44,7 +57,10 @@ function safeNext(raw: string | string[] | undefined): string | undefined {
 
 async function weekendEvents(): Promise<WeekendEvent[] | null> {
     try {
-        const now = new Date();
+        // Browser gates pin their own clock so a real event crossing its start
+        // time cannot change the fixture landing halfway through CI. The pin is
+        // ignored unless the already test-only dashboard gate is enabled.
+        const now = publicScheduleNow();
         const liveStartedAfter = new Date(now.getTime() - PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS);
 
         return await prisma.scheduledSession.findMany({
