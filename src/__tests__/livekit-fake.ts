@@ -31,12 +31,15 @@ export interface FakeParticipant {
     connectionQuality: string;
     permissions?: { canPublish: boolean };
     trackPublications: Map<string, FakeVideoPublication>;
+    audioTrackPublications: Map<string, never>;
     videoTrackPublications: Map<string, FakeVideoPublication>;
     isCameraEnabled: boolean;
     isMicrophoneEnabled: boolean;
     setCameraEnabled: ReturnType<typeof vi.fn>;
     setMicrophoneEnabled: ReturnType<typeof vi.fn>;
     enableCameraAndMicrophone: ReturnType<typeof vi.fn>;
+    getTrackPublication: ReturnType<typeof vi.fn>;
+    publishData: ReturnType<typeof vi.fn>;
 }
 
 export interface FakeParticipantOptions {
@@ -81,12 +84,15 @@ export function createFakeParticipant(options: FakeParticipantOptions): FakePart
         connectionQuality: options.quality ?? 'excellent',
         permissions: { canPublish },
         trackPublications: publications,
+        audioTrackPublications: new Map<string, never>(),
         videoTrackPublications: publications,
         isCameraEnabled: canPublish ? options.camera ?? true : false,
         isMicrophoneEnabled: canPublish ? options.mic ?? true : false,
         setCameraEnabled: vi.fn(),
         setMicrophoneEnabled: vi.fn(),
         enableCameraAndMicrophone: vi.fn(),
+        getTrackPublication: vi.fn(),
+        publishData: vi.fn().mockResolvedValue(undefined),
     };
 
     // Mirror the SDK: enabling a device flips the getter the UI reads back.
@@ -121,6 +127,11 @@ export class FakeRoom {
 
     on(event: string, cb: (...args: unknown[]) => void) {
         (this.listeners[event] ||= []).push(cb);
+        return this;
+    }
+
+    off(event: string, cb: (...args: unknown[]) => void) {
+        this.listeners[event] = (this.listeners[event] || []).filter((listener) => listener !== cb);
         return this;
     }
 
@@ -183,8 +194,12 @@ export function livekitClientMock() {
             ActiveSpeakersChanged: 'activeSpeakersChanged',
             ConnectionQualityChanged: 'connectionQualityChanged',
             ParticipantPermissionsChanged: 'participantPermissionsChanged',
+            DataReceived: 'dataReceived',
         },
-        Track: { Kind: { Audio: 'audio', Video: 'video' } },
+        Track: { Kind: { Audio: 'audio', Video: 'video' }, Source: { Camera: 'camera', Microphone: 'microphone' } },
+        AudioPresets: {
+            musicHighQuality: { maxBitrate: 96_000 },
+        },
         VideoPresets: {
             h180: fakePreset(320, 180, 150_000),
             h360: fakePreset(640, 360, 500_000),

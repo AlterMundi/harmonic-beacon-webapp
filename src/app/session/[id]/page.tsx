@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import {
+    AudioPresets,
     DisconnectReason,
     Room,
     RoomEvent,
@@ -16,6 +17,7 @@ import {
 import { AudioProvider, useAudio } from "@/context/AudioContext";
 import { useLocale } from "@/context/LocaleContext";
 import HandRaiseButton from "@/components/session/HandRaiseButton";
+import FacilitatorAudioQuality from "@/components/session/FacilitatorAudioQuality";
 import SessionContributions from "@/components/session/SessionContributions";
 import SessionGuidance from "@/components/session/SessionGuidance";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
@@ -28,18 +30,39 @@ import { isLocalizedStaffRole, localeForEventLanguage, staffRolePresentation } f
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://live.altermundi.net";
 
-const STAGE_ROOM_OPTIONS: RoomOptions = {
-    adaptiveStream: true,
-    dynacast: true,
-    videoCaptureDefaults: {
-        resolution: VideoPresets.h720.resolution,
-    },
-    publishDefaults: {
-        simulcast: true,
-        videoEncoding: VideoPresets.h720.encoding,
-        videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
-    },
-};
+function stageRoomOptions(isAssignedFacilitator: boolean): RoomOptions {
+    return {
+        adaptiveStream: true,
+        dynacast: true,
+        videoCaptureDefaults: {
+            resolution: VideoPresets.h720.resolution,
+        },
+        ...(isAssignedFacilitator ? {
+            audioCaptureDefaults: {
+                sampleRate: { ideal: 48_000 },
+                channelCount: { ideal: 1 },
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false,
+                voiceIsolation: false,
+            },
+        } : {}),
+        publishDefaults: {
+            simulcast: true,
+            videoEncoding: VideoPresets.h720.encoding,
+            videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
+            ...(isAssignedFacilitator ? {
+                // Audio keeps WebRTC's high network priority. This is a ceiling,
+                // not a promise that a constrained connection will deliver 96 kbps;
+                // the Staff monitor reports the effective rate instead of acting on it.
+                audioPreset: { ...AudioPresets.musicHighQuality, priority: 'high' as const },
+                dtx: false,
+                red: true,
+                forceStereo: false,
+            } : {}),
+        },
+    };
+}
 
 const STAGE_REFRESH_MS = 100;
 const STAGE_HANDOFF_MAX_AGE_MS = 30_000;
@@ -203,6 +226,7 @@ function SessionRoom() {
     const [retryToken, setRetryToken] = useState(0);
     const [audioActivationError, setAudioActivationError] = useState<string | null>(null);
     const [viewerInfo, setViewerInfo] = useState<ViewerInfo | null>(null);
+    const [activeRoom, setActiveRoom] = useState<Room | null>(null);
     const [stageInvitationAccepted, setStageInvitationAccepted] = useState(false);
     const [stageInvitationBusy, setStageInvitationBusy] = useState<'accept' | 'decline' | null>(null);
     const [stageInvitationError, setStageInvitationError] = useState<string | null>(null);
@@ -512,9 +536,10 @@ function SessionRoom() {
                     setDuration(Math.max(0, elapsed));
                 }
 
-                const room = new Room(STAGE_ROOM_OPTIONS);
+                const room = new Room(stageRoomOptions(data.isAssignedFacilitator === true));
                 ownedRoom = room;
                 roomRef.current = room;
+                setActiveRoom(room);
 
                 room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication) => {
                     if (track.kind === Track.Kind.Audio) {
@@ -664,7 +689,10 @@ function SessionRoom() {
             if (ownedRoom) {
                 intentionalDisconnectRef.current = true;
                 ownedRoom.disconnect();
-                if (roomRef.current === ownedRoom) roomRef.current = null;
+                if (roomRef.current === ownedRoom) {
+                    roomRef.current = null;
+                    setActiveRoom(null);
+                }
             }
             audioElements.forEach((el) => {
                 el.pause();
@@ -976,6 +1004,17 @@ function SessionRoom() {
                         <span className="font-mono text-xs text-[var(--gold)]">{formatTime(duration)}</span>
                     </div>
                 </header>
+
+                {principalKind === 'staff' ? (
+                    <div className="flex justify-center px-3 pt-3 sm:px-4">
+                        <FacilitatorAudioQuality
+                            key={`${viewerInfo?.identity ?? 'staff'}:${retryToken}`}
+                            room={activeRoom}
+                            isStaff
+                            isAssignedFacilitator={viewerInfo?.isAssignedFacilitator === true}
+                        />
+                    </div>
+                ) : null}
 
                 {/* Stage + contributions panel (side on desktop, below on mobile) */}
                 <div className="flex flex-1 flex-col lg:flex-row">

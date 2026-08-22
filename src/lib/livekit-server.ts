@@ -100,7 +100,10 @@ export async function createSessionToken(
         canPublishSources: canPublish
             ? [TrackSource.MICROPHONE, TrackSource.CAMERA]
             : [],
-        canPublishData: false,
+        // Only the assigned facilitator may emit the small, bounded and
+        // identity-free audio-quality snapshot consumed by Staff monitors.
+        // Attendees and operational Staff remain unable to publish data.
+        canPublishData: metadata?.isAssignedFacilitator === true,
         canSubscribe: true,
     });
 
