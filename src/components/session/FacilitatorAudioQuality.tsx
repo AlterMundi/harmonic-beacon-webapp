@@ -268,7 +268,6 @@ export default function FacilitatorAudioQuality({ room, isStaff, isAssignedFacil
                         />
                     ) : null}
                 </div>
-                <p className="mt-3 text-xs text-[var(--text-muted)]">{labels.noAutomaticAction}</p>
             </details>
         </aside>
     );
