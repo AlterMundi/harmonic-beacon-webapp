@@ -126,7 +126,6 @@ export type Messages = {
             facilitatorUplink: string;
             thisDeviceDownlink: string;
             measuredAgo: string;
-            noAutomaticAction: string;
             profile: string;
             bitrate: string;
             packetLoss: string;
@@ -648,7 +647,6 @@ export const messages: Record<UiLocale, Messages> = {
                 facilitatorUplink: 'Salida del facilitador',
                 thisDeviceDownlink: 'Recepción en este dispositivo',
                 measuredAgo: 'medido hace {seconds} s',
-                noAutomaticAction: 'Este monitor sólo advierte: nunca silencia, corta ni modifica la transmisión.',
                 profile: 'Perfil objetivo: Opus mono · 96 kbps máx. · 48 kHz · RED activo · DTX y filtros del navegador apagados.',
                 bitrate: 'Bitrate',
                 packetLoss: 'Pérdida',
@@ -1240,7 +1238,6 @@ export const messages: Record<UiLocale, Messages> = {
                 facilitatorUplink: 'Facilitator uplink',
                 thisDeviceDownlink: 'Reception on this device',
                 measuredAgo: 'measured {seconds} s ago',
-                noAutomaticAction: 'This monitor only warns: it never mutes, stops, or changes the transmission.',
                 profile: 'Target profile: mono Opus · 96 kbps max · 48 kHz · RED on · DTX and browser processing off.',
                 bitrate: 'Bitrate',
                 packetLoss: 'Loss',
