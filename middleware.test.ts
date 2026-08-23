@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { SESSION_COOKIE_NAME } from './src/lib/session-auth';
@@ -31,6 +31,10 @@ function location(response: NextResponse): URL {
 }
 
 describe('middleware', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     it('recognizes exactly the cookie the session contract issues', () => {
         // Drift guard for the literal in `middleware.ts`, which cannot import
         // `@/lib/session-auth` because the edge runtime has no `node:crypto`.
@@ -40,6 +44,18 @@ describe('middleware', () => {
     });
 
     describe('without a session cookie', () => {
+        it('starts the attendee Account handoff directly when Account is enabled', () => {
+            vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+
+            const response = middleware(request('/session/session-saturday'));
+
+            expect(response.status).toBe(307);
+            const target = location(response);
+            expect(target.pathname).toBe('/api/account/login');
+            expect(target.searchParams.get('flow')).toBe('attendee');
+            expect(target.searchParams.get('next')).toBe('/session/session-saturday');
+        });
+
         it('sends a room visitor to the landing page with the room remembered', () => {
             const response = middleware(request('/session/session-saturday'));
 
