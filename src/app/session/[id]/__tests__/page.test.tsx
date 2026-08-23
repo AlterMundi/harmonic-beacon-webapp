@@ -1027,6 +1027,41 @@ describe('SessionRoomPage - two-room crossfader', () => {
 });
 
 describe('SessionRoomPage - audio activation', () => {
+    it('reapplies an exclusive Beacon mix after LiveKit unmutes remote audio', async () => {
+        await renderConnected();
+        const stageAudio = document.createElement('audio');
+        const stageTrack = {
+            kind: 'audio',
+            attach: () => stageAudio,
+            detach: () => [stageAudio],
+        };
+        act(() => {
+            currentRoom().emit(
+                'trackSubscribed',
+                stageTrack,
+                {},
+                { identity: 'facilitator' },
+            );
+        });
+
+        const balance = screen.getAllByRole('slider')[1];
+        fireEvent.change(balance, { target: { value: '0' } });
+        await waitFor(() => {
+            expect(stageAudio.volume).toBe(0);
+            expect(stageAudio.muted).toBe(true);
+        });
+
+        currentRoom().startAudio.mockImplementationOnce(async () => {
+            // Mirrors LiveKit Room.startAudio(): unlock every remote element.
+            stageAudio.muted = false;
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+
+        await waitFor(() => expect(currentRoom().startAudio).toHaveBeenCalledOnce());
+        expect(stageAudio.volume).toBe(0);
+        expect(stageAudio.muted).toBe(true);
+    });
+
     it('starts both LiveKit rooms before awaiting either one', async () => {
         await renderConnected();
         const stageAudio = document.createElement('audio');

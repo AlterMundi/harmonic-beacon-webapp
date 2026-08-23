@@ -256,6 +256,16 @@ function SessionRoom() {
     participantFallbackRef.current = copy.session.participantFallback;
     stageInvitationAcceptedRef.current = stageInvitationAccepted;
 
+    const applyStageGain = useCallback((gain: number) => {
+        stageVolumeRef.current = gain;
+        audioElementsRef.current.forEach((element) => {
+            element.volume = gain;
+            // LiveKit's audio unlock may unmute every attached remote element.
+            // Keep the Beacon endpoint exclusive even after that SDK side effect.
+            element.muted = gain === 0;
+        });
+    }, []);
+
     const slotFor = useCallback((identity: string): number => {
         const existing = slotOrderRef.current.get(identity);
         if (existing !== undefined) return existing;
@@ -419,6 +429,10 @@ function SessionRoom() {
                 beaconStart,
                 stageStart,
             ]);
+            // room.startAudio() deliberately unlocks/unmutes remote elements.
+            // Reapply the current personal mix after the unlock so Session does
+            // not leak when the crossfader is fully at Beacon.
+            applyStageGain(stageVolumeRef.current);
             if (!beaconStarted) {
                 setAudioActivationError(
                     copy.session.beaconAudioError,
@@ -430,7 +444,7 @@ function SessionRoom() {
                 copy.session.audioError,
             );
         }
-    }, [startBeaconAudio, copy.session.beaconAudioError, copy.session.audioError]);
+    }, [applyStageGain, startBeaconAudio, copy.session.beaconAudioError, copy.session.audioError]);
 
     const acceptStageInvitation = useCallback(async () => {
         const room = roomRef.current;
@@ -742,15 +756,9 @@ function SessionRoom() {
 
     useEffect(() => {
         const gains = roomMixGains(volume, mix);
-        stageVolumeRef.current = gains.session;
-        audioElementsRef.current.forEach((el) => {
-            el.volume = gains.session;
-            // Volume zero should be enough, but an explicit mute guarantees
-            // the Beacon endpoint never leaks stage voice across engines.
-            el.muted = gains.session === 0;
-        });
+        applyStageGain(gains.session);
         setBeaconVolume(gains.beacon);
-    }, [volume, mix, setBeaconVolume]);
+    }, [volume, mix, applyStageGain, setBeaconVolume]);
 
     const toggleMic = useCallback(async () => {
         const room = roomRef.current;
