@@ -24,7 +24,7 @@ import type { NextRequest } from 'next/server';
  */
 const SESSION_COOKIE = 'hb_session';
 
-/** Attendee surfaces: the paid room. Login is the code + email form on `/`. */
+/** Attendee surfaces: the protected room. */
 const ATTENDEE_PREFIXES = ['/session'];
 
 /** Staff surfaces: the operator console. */
@@ -46,9 +46,17 @@ export default function middleware(request: NextRequest): NextResponse {
     }
 
     if (matches(pathname, ATTENDEE_PREFIXES)) {
-        // Carry the destination so a reconnecting attendee lands back in their
-        // room after re-entering the code. `next` is re-validated where it is
-        // consumed; nothing trusts it as given.
+        // A room deep link must not strand an Account user on the public event
+        // list. When central Account is enabled, begin the bounded OIDC handoff
+        // immediately and carry the local room path through its validated
+        // `next` contract. Deployments without Account keep the legacy ticket
+        // login surface.
+        if (process.env.BEACON_ACCOUNT_ENABLED === 'true') {
+            const target = new URL('/api/account/login', request.url);
+            target.searchParams.set('flow', 'attendee');
+            target.searchParams.set('next', pathname);
+            return NextResponse.redirect(target);
+        }
         const target = new URL('/', request.url);
         target.searchParams.set('next', pathname);
         return NextResponse.redirect(target);
