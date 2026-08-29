@@ -12,6 +12,7 @@ import {
   globalNavigationSurface,
 } from "@/lib/brand/global-navigation";
 import { locallyKnownLiveNavigationIdentity } from "@/lib/brand/account-navigation-state";
+import { analyticsBrowserConfig } from "@/lib/analytics-browser";
 import { requestLocale } from "@/lib/i18n-server";
 import { messages } from "@/lib/i18n";
 import "@/styles/hb-brand.css";
@@ -90,18 +91,17 @@ export default async function RootLayout({
   const navigationIdentity = accountAvailable
     ? await locallyKnownLiveNavigationIdentity(incomingHeaders).catch(() => null)
     : null;
-  const analyticsCollector = process.env.NEXT_PUBLIC_ANALYTICS_COLLECTOR_URL?.trim()
-    || (process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT === 'production' ? '/_a' : '');
+  const analytics = analyticsBrowserConfig(incomingHeaders);
 
   return (
     <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
-        {analyticsCollector ? <script
+        {analytics ? <script
           defer
-          src={`${analyticsCollector}/v1/tracker.js`}
-          data-collector={analyticsCollector}
-          data-surface="live"
-          data-environment={process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT || 'production'}
+          src={`${analytics.collector}/v1/tracker.js`}
+          data-collector={analytics.collector}
+          data-surface={analytics.surface}
+          data-environment={analytics.environment}
         /> : null}
         <GlobalNavigation
           active={navigationSurface}
