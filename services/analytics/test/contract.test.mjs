@@ -13,7 +13,7 @@ const browserEvent = (overrides = {}) => ({
     session_id: '10000000-0000-4000-8000-000000000003',
     traffic_class: 'real',
     page: { path: '/welcome?token=secret#x', title: 'Welcome', referrer: 'https://search.example/q?private=yes', landing: '/' },
-    attribution: { utm_source: 'newsletter', fbclid: 'opaque-click' },
+    attribution: { utm_source: 'newsletter', fbclid: 'opaque-click', referrer: 'https://example.test/path?secret=yes', landing: '/welcome?gclid=secret' },
     device: { class: 'mobile', browser: 'Safari', os: 'iOS', language: 'es-AR', screen: '390x844' },
     properties: { component: 'hero' },
     ...overrides,
@@ -24,6 +24,8 @@ test('validates a strict browser event and strips queries', () => {
     assert.equal(value.page.path, '/welcome');
     assert.equal(value.page.referrer, 'https://search.example/q');
     assert.equal(value.attribution.fbclid, 'opaque-click');
+    assert.equal(value.attribution.referrer, 'https://example.test/path');
+    assert.equal(value.attribution.landing, '/welcome');
 });
 
 test('rejects unknown fields and sensitive property names', () => {

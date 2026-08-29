@@ -21,6 +21,7 @@
 
   const params = new URLSearchParams(location.search);
   const clickKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'msclkid', 'ttclid'];
+  const touchKeys = [...clickKeys, 'referrer', 'landing'];
   const currentTouch = Object.fromEntries(clickKeys.map(key => [key, (params.get(key) || '').slice(0, key.endsWith('clid') ? 500 : 200) || null]));
   const hasCampaign = Object.values(currentTouch).some(Boolean);
   const referrer = (() => { try { const value = new URL(document.referrer); return `${value.origin}${value.pathname}`.slice(0, 500); } catch { return null; } })();
@@ -52,8 +53,8 @@
     occurred_at: new Date().toISOString(), source: 'browser', surface, environment,
     visitor_id: visitorId, session_id: session.id, traffic_class: 'real', handoff,
     page: { path: location.pathname, title: document.title.slice(0, 200), referrer, landing: firstTouch.landing || location.pathname },
-    first_attribution: Object.fromEntries(clickKeys.map(key => [key, firstTouch[key] || null])),
-    last_attribution: Object.fromEntries(clickKeys.map(key => [key, lastTouch[key] || null])),
+    first_attribution: Object.fromEntries(touchKeys.map(key => [key, firstTouch[key] || null])),
+    last_attribution: Object.fromEntries(touchKeys.map(key => [key, lastTouch[key] || null])),
     device: { class: deviceClass, browser, os, language: navigator.language.slice(0, 20), screen: `${screen.width}x${screen.height}` },
     properties,
   });

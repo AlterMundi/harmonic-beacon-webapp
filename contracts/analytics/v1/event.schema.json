@@ -60,7 +60,9 @@
         "fbclid": { "type": ["string", "null"], "maxLength": 500 },
         "gclid": { "type": ["string", "null"], "maxLength": 500 },
         "msclkid": { "type": ["string", "null"], "maxLength": 500 },
-        "ttclid": { "type": ["string", "null"], "maxLength": 500 }
+        "ttclid": { "type": ["string", "null"], "maxLength": 500 },
+        "referrer": { "type": ["string", "null"], "maxLength": 500 },
+        "landing": { "type": ["string", "null"], "maxLength": 500 }
       }
     },
     "device": {

@@ -54,9 +54,10 @@ export async function queryDashboard(pool, rawFilters = {}) {
             coalesce(sum(case when state='confirmed' then amount_minor when state='refunded' then -amount_minor else 0 end),0)::bigint net_revenue_minor
             from mart.payment_facts where ${scope} group by currency order by currency`, params),
         pool.query(`select source,medium,campaign,first_source,first_medium,first_campaign,
+            first_referrer,last_referrer,first_landing,last_landing,
             sum(visitors)::bigint visitors,sum(sessions)::bigint sessions,sum(pageviews)::bigint pageviews
             from mart.acquisition where metric_date >= ($1 at time zone $5)::date and metric_date <= ($2 at time zone $5)::date
-              and environment=$3 and traffic_class=any($4::text[]) group by 1,2,3,4,5,6 order by visitors desc limit 100`, [...params, filters.timezone]),
+              and environment=$3 and traffic_class=any($4::text[]) group by 1,2,3,4,5,6,7,8,9,10 order by visitors desc limit 100`, [...params, filters.timezone]),
         pool.query(`select coalesce(country_code,'unknown') country,coalesce(region_code,'unknown') region,
             count(distinct visitor_id)::bigint visitors from ingest.raw_events where ${scope} group by 1,2 order by visitors desc limit 100`, params),
         pool.query(`select coalesce(device->>'class','unknown') class,coalesce(device->>'browser','unknown') browser,

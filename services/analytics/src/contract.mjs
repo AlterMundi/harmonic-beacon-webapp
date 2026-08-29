@@ -104,7 +104,7 @@ export function validateEvent(input, { serverAuthenticated = false } = {}) {
     const page = strictObject(input.page, new Set(['path', 'title', 'referrer', 'landing']), 'page');
     const attributionFields = new Set([
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
-        'fbclid', 'gclid', 'msclkid', 'ttclid',
+        'fbclid', 'gclid', 'msclkid', 'ttclid', 'referrer', 'landing',
     ]);
     const attribution = strictObject(input.attribution, attributionFields, 'attribution');
     const firstAttribution = strictObject(input.first_attribution, attributionFields, 'first_attribution');
@@ -151,7 +151,9 @@ export function validateEvent(input, { serverAuthenticated = false } = {}) {
 
 function sanitizeAttribution(value, field) {
     return value ? Object.fromEntries(Object.entries(value).map(([key, item]) => [
-        key, bounded(item, key.endsWith('clid') ? 500 : 200, `${field}.${key}`),
+        key, key === 'referrer' || key === 'landing'
+            ? sanitizePath(bounded(item, 500, `${field}.${key}`))
+            : bounded(item, key.endsWith('clid') ? 500 : 200, `${field}.${key}`),
     ])) : null;
 }
 
