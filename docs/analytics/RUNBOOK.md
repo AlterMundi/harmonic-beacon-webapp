@@ -15,6 +15,9 @@ three-second or shorter proxy timeouts, so analytics cannot block a product requ
 
 ## Data retention and access
 
+The authoritative data-class, purpose, jurisdiction and owner matrix is
+[DATA_GOVERNANCE.md](./DATA_GOVERNANCE.md).
+
 - Network digests: 30 days; advertising click IDs: 90 days; raw browser events: 180 days.
 - Canonical account, listening, attendance, membership and payment facts: retained while needed
   for operations, financial/legal obligations and longitudinal product analysis.

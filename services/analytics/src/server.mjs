@@ -8,7 +8,7 @@ import { browserOriginContext, ContractError, contractInternals, validateEvent }
 import { digest, signHandoff, verifyEnvironmentServerSignature, verifyHandoff, verifyServerSignature } from './crypto.mjs';
 import { createStore } from './store.mjs';
 import { queryDashboard } from './dashboard.mjs';
-import { lookupGeo, normalizedClientIp, openGeoDatabase } from './geoip.mjs';
+import { analyticsAllowedWithoutConsent, lookupGeo, normalizedClientIp, openGeoDatabase } from './geoip.mjs';
 
 const port = Number(process.env.ANALYTICS_PORT ?? 3300);
 const handoffSecret = process.env.ANALYTICS_HANDOFF_SECRET;
@@ -115,6 +115,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/v1/tracker.js') {
         if (!originAllowed(origin)) return respond(res, 403, 'forbidden');
         return respond(res, 200, tracker, origin, { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'public, max-age=300', etag: `"${createHash('sha256').update(tracker).digest('hex')}"` });
+    }
+    if (req.method === 'GET' && url.pathname === '/v1/privacy-context') {
+        if (!originAllowed(origin)) return respond(res, 403, { error: 'origin_not_allowed' });
+        const context = requestContext(req);
+        return respond(res, 200, {
+            analytics_allowed_without_consent: analyticsAllowedWithoutConsent(context.countryCode),
+            country_known: context.countryCode !== null,
+        }, origin, { 'cache-control': 'private, max-age=3600' });
     }
     if (req.method === 'GET' && url.pathname === '/v1/handoff') {
         if (!originAllowed(origin)) return respond(res, 403, { error: 'origin_not_allowed' });

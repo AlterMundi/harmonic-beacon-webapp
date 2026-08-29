@@ -31,7 +31,7 @@ export async function queryDashboard(pool, rawFilters = {}) {
     const filters = dashboardFilters(rawFilters);
     const params = [filters.start, filters.end, filters.environment, filters.traffic];
     const scope = `occurred_at >= $1 and occurred_at < $2 and environment=$3 and traffic_class=any($4::text[])`;
-    const [web, accounts, listen, live, commerce, acquisition, geography, devices, events, memberships, campaigns, health, series, cohorts, pages, listenerActivity, funnel, lifecycle] = await Promise.all([
+    const [web, accounts, listen, live, commerce, acquisition, geography, devices, events, memberships, campaigns, health, quality, storage, series, cohorts, pages, listenerActivity, funnel, lifecycle] = await Promise.all([
         pool.query(`select count(distinct visitor_id)::bigint visitors,count(distinct session_id)::bigint sessions,
             count(*) filter(where event_name='page.viewed')::bigint pageviews from ingest.raw_events where ${scope}`, params),
         pool.query(`select count(*)::bigint created,count(*) filter(where verified_at is not null)::bigint verified,
@@ -84,6 +84,12 @@ export async function queryDashboard(pool, rawFilters = {}) {
             from mart.campaign_delivery where date_start is null or (date_start <= $2::date and date_stop >= $1::date)
             order by delivering desc,impressions desc nulls last,name limit 500`, [filters.start, filters.end]),
         pool.query('select * from mart.source_health order by source'),
+        pool.query(`select check_name,source,status,observed_value,expected_value,details,checked_at
+            from mart.latest_quality_results order by status desc,source,check_name`),
+        pool.query(`select checked_at,database_bytes,raw_events,account_facts,listening_intervals,
+            live_presence_intervals,membership_snapshots,payment_facts
+            from ops.storage_samples where checked_at >= $1 and checked_at < $2
+            order by checked_at desc limit 500`, [filters.start, filters.end]),
         pool.query(`select metric_date,surface,sum(visitors)::bigint visitors,sum(sessions)::bigint sessions,
             sum(pageviews)::bigint pageviews,sum(accounts_created)::bigint accounts_created,
             sum(accounts_verified)::bigint accounts_verified,sum(listeners)::bigint listeners,
@@ -134,6 +140,7 @@ export async function queryDashboard(pool, rawFilters = {}) {
         commerce: commerce.rows, acquisition: acquisition.rows, geography: geography.rows,
         devices: devices.rows, pages: pages.rows, events: events.rows, memberships: memberships.rows,
         listener_activity: listenerActivity.rows, funnel: funnel.rows, lifecycle: lifecycle.rows,
-        campaigns: campaigns.rows, health: health.rows, series: series.rows, cohorts: cohorts.rows,
+        campaigns: campaigns.rows, health: health.rows, quality: quality.rows, storage: storage.rows,
+        series: series.rows, cohorts: cohorts.rows,
     };
 }

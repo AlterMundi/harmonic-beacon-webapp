@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import pg from 'pg';
 
+import { syncMetaSource } from '../src/meta-sync.mjs';
+import { runQualityAndRetention } from '../src/quality.mjs';
 import { RECLASSIFY_BROWSER_TRAFFIC_SQL } from '../src/queries.mjs';
 import { SourceIngestor } from '../src/sources.mjs';
 import { createStore } from '../src/store.mjs';
@@ -162,5 +164,73 @@ postgresTest('source retry failures are deduplicated, backed off and resolved', 
     assert.equal(resolved.rows[0].resolved, true);
     await pool.query('delete from ingest.dead_letters where source=$1', [source]);
     await ingestor.close();
+    await pool.end();
+});
+
+postgresTest('Meta fixture sync projects and idempotently updates campaign delivery', async () => {
+    const pool = new pg.Pool({ connectionString });
+    const entityId = 'fixture-campaign-474';
+    await pool.query("delete from mart.campaign_insights where provider='meta' and entity_id=$1", [entityId]);
+    await pool.query("delete from mart.campaign_entities where provider='meta' and entity_id=$1", [entityId]);
+    await pool.query("delete from ingest.dead_letters where source='meta'");
+    await pool.query("delete from ops.source_watermarks where source='meta'");
+    let resolved = 0;
+    const sources = {
+        resolveFailures: async () => { resolved += 1; },
+        recordFailure: async () => assert.fail('fixture sync must not fail'),
+    };
+    const fixture = {
+        entities: async () => [{
+            provider: 'meta', entityType: 'campaign', entityId, parentId: null, name: 'Fixture campaign',
+            configuredStatus: 'ACTIVE', effectiveStatus: 'ACTIVE', objective: 'OUTCOME_TRAFFIC',
+            startsAt: '2026-08-01T00:00:00Z', endsAt: null, accountCurrency: 'USD',
+            accountTimezone: 'America/Argentina/Buenos_Aires', observedAt: '2026-08-29T12:00:00Z', rawDigest: 'a'.repeat(64),
+        }],
+        insights: async ({ since, until }) => [{
+            provider: 'meta', entityType: 'campaign', entityId, dateStart: since, dateStop: until,
+            attributionWindow: 'default', currency: 'USD', spendMinor: 1234, impressions: 2000,
+            reach: 1500, frequency: 1.3333, clicks: 42, ctr: 2.1, cpcMinor: 29, cpmMinor: 617,
+            actions: { link_click: 42 }, observedAt: '2026-08-29T12:00:00Z',
+        }],
+    };
+    const first = await syncMetaSource({ pool, sources, client: fixture, now: new Date('2026-08-29T12:00:00Z') });
+    const second = await syncMetaSource({ pool, sources, client: fixture, now: new Date('2026-08-29T12:05:00Z') });
+    assert.deepEqual(first, { status: 'ok', read: 2, written: 2 });
+    assert.deepEqual(second, { status: 'ok', read: 2, written: 2 });
+    assert.equal(resolved, 2);
+    const delivery = await pool.query(`select configured_status,effective_status,delivering,spend_minor,impressions,clicks
+        from mart.campaign_delivery where provider='meta' and entity_id=$1`, [entityId]);
+    assert.deepEqual(delivery.rows, [{
+        configured_status: 'ACTIVE', effective_status: 'ACTIVE', delivering: true,
+        spend_minor: '1234', impressions: '2000', clicks: '42',
+    }]);
+    const counts = await pool.query(`select
+        (select count(*)::int from mart.campaign_entities where provider='meta' and entity_id=$1) entities,
+        (select count(*)::int from mart.campaign_insights where provider='meta' and entity_id=$1) insights`, [entityId]);
+    assert.deepEqual(counts.rows, [{ entities: 1, insights: 1 }]);
+    await pool.query("delete from mart.campaign_insights where provider='meta' and entity_id=$1", [entityId]);
+    await pool.query("delete from mart.campaign_entities where provider='meta' and entity_id=$1", [entityId]);
+    await pool.query("delete from ops.source_watermarks where source='meta'");
+    await pool.end();
+});
+
+postgresTest('quality run records canonical integrity and storage samples', async () => {
+    const pool = new pg.Pool({ connectionString });
+    const names = [
+        'collector_clock_skew', 'canonical_projection_backlog', 'identity_links_without_account',
+        'payments_without_membership', 'invalid_listener_intervals', 'invalid_live_intervals',
+    ];
+    await pool.query('delete from ops.quality_results where check_name=any($1::text[])', [names]);
+    const before = new Date();
+    await runQualityAndRetention(pool);
+    const quality = await pool.query(`select check_name,status,observed_value::int observed
+        from mart.latest_quality_results where check_name=any($1::text[]) order by check_name`, [names]);
+    assert.equal(quality.rowCount, names.length);
+    assert.equal(quality.rows.every(row => row.status === 'ok' && row.observed === 0), true);
+    const storage = await pool.query(`select database_bytes>0 valid_size,raw_events>=0 valid_events
+        from ops.storage_samples where checked_at >= $1 order by checked_at desc limit 1`, [before]);
+    assert.deepEqual(storage.rows, [{ valid_size: true, valid_events: true }]);
+    await pool.query('delete from ops.quality_results where check_name=any($1::text[])', [names]);
+    await pool.query('delete from ops.storage_samples where checked_at >= $1', [before]);
     await pool.end();
 });
