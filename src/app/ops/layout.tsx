@@ -7,6 +7,7 @@ import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 import { messages } from '@/lib/i18n';
 import { requestLocale } from '@/lib/i18n-server';
+import { effectiveAnalyticsRole } from '@/lib/analytics-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,11 +26,13 @@ export default async function OpsLayout({
 
     const locale = await requestLocale();
     const copy = messages[locale];
+    const analyticsRole = await effectiveAnalyticsRole(staff).catch(() => null);
 
     const links = [
         { href: '/ops/events', label: copy.ops.events },
         { href: '/ops/health', label: copy.ops.health },
         { href: '/ops/admission', label: copy.ops.admission },
+        ...(analyticsRole ? [{ href: '/ops/analytics', label: 'Analytics' }] : []),
     ];
 
     return (

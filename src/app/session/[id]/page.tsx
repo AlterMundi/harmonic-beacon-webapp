@@ -499,8 +499,20 @@ function SessionRoom() {
     useEffect(() => {
         let cancelled = false;
         let ownedRoom: Room | null = null;
+        let presenceTimer: ReturnType<typeof setInterval> | null = null;
         const audioElements = audioElementsRef.current;
         intentionalDisconnectRef.current = false;
+
+        const reportPresence = (state: 'connected' | 'left', reconnect = false) => {
+            const body = JSON.stringify({ state, reconnect });
+            if (state === 'left' && navigator.sendBeacon?.(
+                `/api/scheduled-sessions/${id}/presence`,
+                new Blob([body], { type: 'application/json' }),
+            )) return;
+            void fetch(`/api/scheduled-sessions/${id}/presence`, {
+                method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true,
+            }).catch(() => {});
+        };
 
         async function connect() {
             try {
@@ -635,11 +647,14 @@ function SessionRoom() {
                     return;
                 }
 
+                const wasReconnect = autoReconnectAttemptRef.current > 0;
                 setIsConnected(true);
                 setIsConnecting(false);
                 setDisconnectState(null);
                 setConnectionError(false);
                 autoReconnectAttemptRef.current = 0;
+                reportPresence('connected', wasReconnect);
+                presenceTimer = setInterval(() => reportPresence('connected'), 20_000);
                 if (autoReconnectTimerRef.current) {
                     clearTimeout(autoReconnectTimerRef.current);
                     autoReconnectTimerRef.current = null;
@@ -684,6 +699,8 @@ function SessionRoom() {
 
         return () => {
             cancelled = true;
+            if (presenceTimer) clearInterval(presenceTimer);
+            reportPresence('left');
             if (stageRefreshRef.current) {
                 clearTimeout(stageRefreshRef.current);
                 stageRefreshRef.current = null;

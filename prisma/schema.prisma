@@ -15,6 +15,11 @@ enum StaffRole {
   ADMIN
 }
 
+enum AnalyticsRole {
+  VIEWER
+  EXPORTER
+}
+
 enum SessionLanguage {
   ENGLISH
   SPANISH
@@ -104,8 +109,22 @@ model User {
   grantedParticipants  SessionParticipant[] @relation("StageGrantActor")
   auditEntries         AuditLog[]           @relation("AuditActor")
   accountBinding       StaffAccountBinding?
+  analyticsGrant       AnalyticsRoleGrant?
 
   @@map("users")
+}
+
+model AnalyticsRoleGrant {
+  id          String        @id @default(uuid()) @db.Uuid
+  staffUserId String        @unique @map("staff_user_id") @db.Uuid
+  staffUser   User          @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  role        AnalyticsRole
+  grantedAt   DateTime      @default(now()) @map("granted_at")
+  revokedAt   DateTime?     @map("revoked_at")
+  grantedBy   String        @map("granted_by") @db.VarChar(64)
+
+  @@index([role, revokedAt])
+  @@map("analytics_role_grants")
 }
 
 model ScheduledSession {
@@ -133,6 +152,7 @@ model ScheduledSession {
   commerceEntitlements CommerceEntitlement[]
   promoInvitations     PromoInvitation[]
   contributions        SessionContribution[]
+  presenceIntervals    LivePresenceInterval[]
 
   @@index([status, scheduledAt])
   @@map("scheduled_sessions")
@@ -358,18 +378,18 @@ model StaffAccountBinding {
 /// One-use OAuth authorization transaction. Only opaque protocol material is
 /// persisted; provider tokens and profile/email claims never enter this table.
 model AccountLoginAttempt {
-  stateDigest  String    @id @map("state_digest") @db.Char(64)
-  codeVerifier String    @map("code_verifier")
-  nonce        String
-  flow         String    @db.VarChar(16)
-  returnTo     String    @map("return_to")
+  stateDigest            String    @id @map("state_digest") @db.Char(64)
+  codeVerifier           String    @map("code_verifier")
+  nonce                  String
+  flow                   String    @db.VarChar(16)
+  returnTo               String    @map("return_to")
   pendingPromoDigest     String?   @map("pending_promo_digest") @db.Char(64)
   pendingDisplayName     String?   @map("pending_display_name")
   pendingTermsVersion    String?   @map("pending_terms_version")
   pendingTermsAcceptedAt DateTime? @map("pending_terms_accepted_at")
-  expiresAt    DateTime  @map("expires_at")
-  consumedAt   DateTime? @map("consumed_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  expiresAt              DateTime  @map("expires_at")
+  consumedAt             DateTime? @map("consumed_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
 
   @@index([expiresAt])
   @@map("account_login_attempts")
@@ -399,12 +419,36 @@ model SessionParticipant {
   createdAt            DateTime           @default(now()) @map("created_at")
   updatedAt            DateTime           @updatedAt @map("updated_at")
 
-  contributions SessionContribution[]
+  contributions     SessionContribution[]
+  presenceIntervals LivePresenceInterval[]
 
   @@unique([scheduledSessionId, participantIdentity])
   @@index([scheduledSessionId, raisedAt])
   @@index([scheduledSessionId, publishGrantedAt])
   @@map("session_participants")
+}
+
+// Server-observed event presence. The browser can heartbeat an authenticated
+// principal but cannot submit timestamps or elapsed duration.
+model LivePresenceInterval {
+  id                 String             @id @default(uuid()) @db.Uuid
+  scheduledSessionId String             @map("scheduled_session_id") @db.Uuid
+  scheduledSession   ScheduledSession   @relation(fields: [scheduledSessionId], references: [id], onDelete: Cascade)
+  participantId      String             @map("participant_id") @db.Uuid
+  participant        SessionParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  generation         Int
+  startedAt          DateTime           @map("started_at")
+  lastHeartbeatAt    DateTime           @map("last_heartbeat_at")
+  endedAt            DateTime?          @map("ended_at")
+  endReason          String?            @map("end_reason") @db.VarChar(32)
+  reconnectCount     Int                @default(0) @map("reconnect_count")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  @@unique([participantId, generation])
+  @@index([scheduledSessionId, startedAt, endedAt])
+  @@index([endedAt, lastHeartbeatAt])
+  @@map("live_presence_intervals")
 }
 
 model AuditLog {
