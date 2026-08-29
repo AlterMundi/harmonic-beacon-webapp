@@ -69,7 +69,12 @@ event. Browser elapsed values are never accepted.
 Raw PII, technical identifiers, operational facts and aggregates live in separate schemas/roles.
 The public collector rejects password/token/secret/payment/chat/media fields and strips query
 strings from page and referrer paths. IP addresses are HMACed with a dedicated rotating key; raw
-addresses are not persisted. Country/region and coarse device/browser fields are retained.
+addresses are not persisted. The collector resolves the trusted Nginx peer address in memory
+through the mounted DB-IP MMDB and persists only country/region plus coarse device/browser
+fields. The currently installed country-lite database produces country and leaves region as
+`unknown`; a future city database can fill the same bounded field without changing the event
+contract. Missing or unreadable GeoIP data degrades only this enrichment and is exposed by the
+collector health and metrics.
 
 The mart is read-only to the dashboard. Detail and CSV endpoints require an authorized role and
 append an audit fact. Provider tokens exist only in the worker environment. The Meta adapter has

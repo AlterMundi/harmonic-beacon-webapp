@@ -49,7 +49,10 @@ services:
       ANALYTICS_DATABASE_URL: postgresql://hb_analytics_collector:${ANALYTICS_COLLECTOR_DATABASE_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
       ANALYTICS_DASHBOARD_DATABASE_URL: postgresql://hb_analytics_dashboard:${ANALYTICS_DASHBOARD_DATABASE_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
       ANALYTICS_PORT: "3300"
+      ANALYTICS_GEOIP_DATABASE: /data/geoip.mmdb
       NODE_ENV: production
+    volumes:
+      - ${ANALYTICS_GEOIP_DATABASE_PATH:-/mnt/beacon-data/listener/geoip/dbip-country-lite-2026-07.mmdb}:/data/geoip.mmdb:ro
     ports: ["127.0.0.1:3300:3300"]
     depends_on:
       postgres: { condition: service_healthy }

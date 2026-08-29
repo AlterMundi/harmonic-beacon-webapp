@@ -8,6 +8,7 @@ import { ContractError, contractInternals, validateEvent } from './contract.mjs'
 import { digest, signHandoff, verifyHandoff, verifyServerSignature } from './crypto.mjs';
 import { createStore } from './store.mjs';
 import { queryDashboard } from './dashboard.mjs';
+import { lookupGeo, normalizedClientIp, openGeoDatabase } from './geoip.mjs';
 
 const port = Number(process.env.ANALYTICS_PORT ?? 3300);
 const handoffSecret = process.env.ANALYTICS_HANDOFF_SECRET;
@@ -22,7 +23,8 @@ const dashboardConnectionString = process.env.ANALYTICS_DASHBOARD_DATABASE_URL;
 if (!dashboardConnectionString) throw new Error('ANALYTICS_DASHBOARD_DATABASE_URL is required');
 const dashboardPool = new pg.Pool({ connectionString: dashboardConnectionString, max: 3, application_name: 'hb-analytics-dashboard' });
 const tracker = await readFile(fileURLToPath(new URL('./tracker.js', import.meta.url)));
-const metrics = { accepted: 0, duplicate: 0, rejected: 0, databaseErrors: 0, handoffs: 0 };
+const geoDatabase = await openGeoDatabase(process.env.ANALYTICS_GEOIP_DATABASE);
+const metrics = { accepted: 0, duplicate: 0, rejected: 0, databaseErrors: 0, handoffs: 0, geoipLookups: 0, geoipMisses: 0 };
 const buckets = new Map();
 
 function originAllowed(value) {
@@ -57,10 +59,12 @@ async function readBody(req) {
 }
 
 function requestContext(req) {
-    const forwarded = String(req.headers['cf-connecting-ip'] ?? req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',', 1)[0].trim();
+    const forwarded = normalizedClientIp(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress);
+    const geo = lookupGeo(geoDatabase, forwarded);
+    metrics.geoipLookups += 1;
+    if (geo.countryCode === 'unknown') metrics.geoipMisses += 1;
     return {
-        countryCode: String(req.headers['cf-ipcountry'] ?? 'unknown').slice(0, 2).toUpperCase(),
-        regionCode: String(req.headers['cf-region-code'] ?? req.headers['x-vercel-ip-country-region'] ?? 'unknown').slice(0, 16),
+        ...geo,
         networkDigest: digest(forwarded || 'unknown', networkSecret),
     };
 }
@@ -94,14 +98,16 @@ const server = http.createServer(async (req, res) => {
         if (!originAllowed(origin)) return respond(res, 403, '', null);
         return respond(res, 204, '', origin, { 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type,x-hb-event-timestamp,x-hb-event-signature' });
     }
-    if (req.method === 'GET' && url.pathname === '/health') return respond(res, 200, { status: 'ok' });
+    if (req.method === 'GET' && url.pathname === '/health') {
+        return respond(res, 200, { status: 'ok', components: { geoip: geoDatabase ? 'ready' : 'unavailable' } });
+    }
     if (req.method === 'GET' && url.pathname === '/ready') {
         try { return respond(res, await store.ready() ? 200 : 503, { status: 'ready' }); }
         catch { return respond(res, 503, { status: 'not_ready' }); }
     }
     if (req.method === 'GET' && url.pathname === '/metrics') {
         const lines = Object.entries(metrics).map(([key, value]) => `hb_analytics_${key}_total ${value}`).join('\n');
-        return respond(res, 200, `${lines}\n`, null, { 'content-type': 'text/plain; version=0.0.4' });
+        return respond(res, 200, `${lines}\nhb_analytics_geoip_database_loaded ${geoDatabase ? 1 : 0}\n`, null, { 'content-type': 'text/plain; version=0.0.4' });
     }
     if (req.method === 'GET' && url.pathname === '/v1/tracker.js') {
         if (!originAllowed(origin)) return respond(res, 403, 'forbidden');
