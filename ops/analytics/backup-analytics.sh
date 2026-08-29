@@ -9,6 +9,7 @@ mount_root="${ANALYTICS_BACKUP_REQUIRED_MOUNT:-/mnt/beacon-data}"
 output_root="${ANALYTICS_BACKUP_OUTPUT:-/mnt/beacon-data/backups/analytics/postgres}"
 recipients_file="${ANALYTICS_BACKUP_RECIPIENTS_FILE:-/etc/harmonic-beacon/analytics-backup-recipients.txt}"
 retention_days="${ANALYTICS_BACKUP_RETENTION_DAYS:-14}"
+postgres_image="postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
 
 mountpoint -q -- "$mount_root" || { echo "Analytics backup mount is absent: $mount_root" >&2; exit 72; }
 [[ "$(stat -c %d -- "$mount_root")" != "$(stat -c %d -- /)" ]] || {
@@ -29,7 +30,7 @@ trap '[[ -n "${stage:-}" && "$stage" == /mnt/beacon-data/backups/analytics/.stag
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 plain="${stage}/hb-analytics-${stamp}.dump"
 docker exec hb-analytics-postgres pg_dump -U analytics_owner -d analytics --format=custom --no-owner --no-privileges > "$plain"
-pg_restore --list "$plain" >/dev/null
+docker run --rm -i "$postgres_image" pg_restore --list < "$plain" >/dev/null
 output="${output_root}/hb-analytics-${stamp}.dump.age"
 age -r "${recipients[0]}" -r "${recipients[1]}" -o "$output" "$plain"
 chmod 600 "$output"

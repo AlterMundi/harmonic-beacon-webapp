@@ -4,6 +4,7 @@ umask 077
 
 backup="${1:-}"
 identity="${ANALYTICS_BACKUP_IDENTITY_FILE:-/etc/harmonic-beacon/analytics-backup-identity.txt}"
+postgres_image="postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
 [[ -s "$backup" && -s "${backup}.sha256" && -s "$identity" ]] || {
     echo "Usage: $0 /mnt/beacon-data/backups/analytics/postgres/hb-analytics-*.dump.age" >&2
     exit 64
@@ -19,7 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 age -d -i "$identity" -o "$stage/database.dump" "$backup"
-pg_restore --list "$stage/database.dump" >/dev/null
+docker run --rm -i "$postgres_image" pg_restore --list < "$stage/database.dump" >/dev/null
 docker exec hb-analytics-postgres createdb -U analytics_owner -O analytics_owner "$restore_db"
 docker cp "$stage/database.dump" "hb-analytics-postgres:/tmp/${restore_db}.dump"
 docker exec hb-analytics-postgres pg_restore -U analytics_owner -d "$restore_db" --no-owner --no-privileges "/tmp/${restore_db}.dump"
