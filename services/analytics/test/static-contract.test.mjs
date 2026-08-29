@@ -50,6 +50,11 @@ test('browser retention preserves daily acquisition aggregates beyond raw-event 
     assert.match(worker, /delete from ingest\.raw_events where received_at < now\(\)-interval '180 days'/);
 });
 
+test('Compose starts the analytics worker entrypoint rather than the collector server', async () => {
+    const compose = await readFile(new URL('../../ops/analytics/compose.yml', root), 'utf8');
+    assert.match(compose, /worker:[\s\S]*command: \["node", "src\/worker\.mjs"\]/);
+});
+
 test('backup verification uses the pinned PostgreSQL toolchain and mounted data disk', async () => {
     const backup = await readFile(new URL('../../ops/analytics/backup-analytics.sh', root), 'utf8');
     const restore = await readFile(new URL('../../ops/analytics/restore-verify-analytics.sh', root), 'utf8');
