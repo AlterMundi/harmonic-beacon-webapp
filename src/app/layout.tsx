@@ -12,6 +12,7 @@ import {
   globalNavigationSurface,
 } from "@/lib/brand/global-navigation";
 import { locallyKnownLiveNavigationIdentity } from "@/lib/brand/account-navigation-state";
+import { analyticsBrowserConfig } from "@/lib/analytics-browser";
 import { requestLocale } from "@/lib/i18n-server";
 import { messages } from "@/lib/i18n";
 import "@/styles/hb-brand.css";
@@ -90,10 +91,18 @@ export default async function RootLayout({
   const navigationIdentity = accountAvailable
     ? await locallyKnownLiveNavigationIdentity(incomingHeaders).catch(() => null)
     : null;
+  const analytics = analyticsBrowserConfig(incomingHeaders);
 
   return (
     <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
+        {analytics ? <script
+          defer
+          src={`${analytics.collector}/v1/tracker.js`}
+          data-collector={analytics.collector}
+          data-surface={analytics.surface}
+          data-environment={analytics.environment}
+        /> : null}
         <GlobalNavigation
           active={navigationSurface}
           locale={locale}
