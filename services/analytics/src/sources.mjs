@@ -1,15 +1,15 @@
 import { createHmac } from 'node:crypto';
 import pg from 'pg';
 
-const { Pool } = pg;
-const hex64 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+import { parseInternalSubjects } from './traffic.mjs';
 
+const { Pool } = pg;
 export class SourceIngestor {
     constructor({ analyticsPool, identitySecret = process.env.ANALYTICS_IDENTITY_SECRET, urls = {} }) {
         if (!identitySecret || identitySecret.length < 32) throw new Error('ANALYTICS_IDENTITY_SECRET must contain at least 32 characters');
         this.analytics = analyticsPool;
         this.identitySecret = identitySecret;
-        this.internal = new Set(String(process.env.ANALYTICS_INTERNAL_ACCOUNT_SUBJECTS ?? '').split(',').map(v => v.trim()).filter(hex64));
+        this.internal = parseInternalSubjects(process.env.ANALYTICS_INTERNAL_ACCOUNT_SUBJECTS);
         this.sources = Object.fromEntries(Object.entries({
             listener: urls.listener ?? process.env.ANALYTICS_LISTENER_SOURCE_URL,
             live: urls.live ?? process.env.ANALYTICS_LIVE_SOURCE_URL,

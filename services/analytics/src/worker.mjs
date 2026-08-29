@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import pg from 'pg';
 
 import { MetaMarketingClient } from './meta.mjs';
+import { RECLASSIFY_BROWSER_TRAFFIC_SQL } from './queries.mjs';
 import { SourceIngestor } from './sources.mjs';
+import { classifyLinkedTraffic } from './traffic.mjs';
 
 const { Pool } = pg;
 const connectionString = process.env.ANALYTICS_DATABASE_ADMIN_URL ?? process.env.ANALYTICS_DATABASE_URL;
@@ -31,11 +33,20 @@ async function projectBatch(limit = 500) {
         });
         for (const event of events.rows) {
             if (event.event_name === 'identity.linked' && event.account_subject && event.visitor_id) {
+                const trafficClass = classifyLinkedTraffic(
+                    event.account_subject,
+                    event.traffic_class,
+                    sources.internal,
+                );
+                await client.query(`update identity_map.account_links set valid_to=$1
+                    where visitor_id=$2 and valid_to is null and account_subject<>$3 and valid_from<$1`, [
+                    event.occurred_at, event.visitor_id, event.account_subject,
+                ]);
                 await client.query(`insert into identity_map.account_links
                     (account_subject, visitor_id, valid_from, link_reason, source_event_id, traffic_class)
                     values ($1,$2,$3,$4,$5,$6) on conflict do nothing`, [
                     event.account_subject, event.visitor_id, event.occurred_at,
-                    property(event, 'link_reason', 'login'), event.event_id, event.traffic_class,
+                    property(event, 'link_reason', 'login'), event.event_id, trafficClass,
                 ]);
             } else if (event.event_name === 'account.created' && event.account_subject) {
                 await client.query(`insert into mart.account_facts
@@ -101,6 +112,11 @@ async function refreshDaily() {
     const client = await pool.connect();
     try {
         await client.query('begin');
+        // Browser payloads may only self-classify as real/test. Once the
+        // authenticated server links a visitor, apply the canonical class to
+        // matching time ranges. This also catches events arriving after the
+        // link and keeps internal traffic out of commercial defaults.
+        await client.query(RECLASSIFY_BROWSER_TRAFFIC_SQL);
         await client.query(`delete from mart.daily_metrics where metric_date >= current_date - 400`);
         await client.query(`insert into mart.daily_metrics
             (metric_date,environment,traffic_class,surface,visitors,sessions,pageviews,currency)

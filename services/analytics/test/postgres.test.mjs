@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import pg from 'pg';
 
+import { RECLASSIFY_BROWSER_TRAFFIC_SQL } from '../src/queries.mjs';
 import { createStore } from '../src/store.mjs';
 
 const connectionString = process.env.ANALYTICS_TEST_DATABASE_URL;
@@ -59,5 +60,25 @@ postgresTest('commercial facts reject negative and non-terminal pseudo payments'
     await assert.rejects(pool.query(`insert into mart.payment_facts
         (source_system,source_key_digest,account_subject,provider,state,amount_minor,currency,occurred_at,traffic_class,environment)
         values($1,$2,$3,$4,'approval_pending',500,$5,$6,$7,$8)`, base));
+    await pool.end();
+});
+
+postgresTest('canonical account links reclassify matching browser traffic by time range', async () => {
+    const pool = new pg.Pool({ connectionString });
+    const eventId = '20000000-0000-4000-8000-000000000011';
+    const visitorId = '20000000-0000-4000-8000-000000000012';
+    await pool.query('delete from ingest.raw_events where event_id=$1', [eventId]);
+    await pool.query('delete from identity_map.account_links where visitor_id=$1', [visitorId]);
+    await pool.query(`insert into ingest.raw_events
+        (event_id,schema_version,event_name,occurred_at,source,surface,environment,visitor_id,traffic_class)
+        values($1,'hb.analytics.event.v1','page.viewed','2026-08-29T10:01:00Z','browser','home','production',$2,'real')`,
+    [eventId, visitorId]);
+    await pool.query(`insert into identity_map.account_links
+        (account_subject,visitor_id,valid_from,link_reason,traffic_class)
+        values($1,$2,'2026-08-29T10:00:00Z','login','internal')`, ['a'.repeat(64), visitorId]);
+    const updated = await pool.query(RECLASSIFY_BROWSER_TRAFFIC_SQL);
+    assert.equal(updated.rowCount >= 1, true);
+    const result = await pool.query('select traffic_class from ingest.raw_events where event_id=$1', [eventId]);
+    assert.equal(result.rows[0].traffic_class, 'internal');
     await pool.end();
 });
