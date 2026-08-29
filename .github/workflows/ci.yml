@@ -54,3 +54,42 @@ jobs:
         with:
           name: coverage-report
           path: coverage/
+
+  analytics:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14-alpine
+        env:
+          POSTGRES_USER: analytics_owner
+          POSTGRES_PASSWORD: analytics_test_password
+          POSTGRES_DB: analytics
+        ports: ["55433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U analytics_owner -d analytics"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+          cache: npm
+          cache-dependency-path: services/analytics/package-lock.json
+      - run: npm ci --prefix services/analytics
+      - name: Apply analytics migrations and run PostgreSQL tests
+        env:
+          ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:analytics_test_password@127.0.0.1:55433/analytics
+          ANALYTICS_TEST_DATABASE_URL: postgresql://analytics_owner:analytics_test_password@127.0.0.1:55433/analytics
+        run: |
+          npm run migrate --prefix services/analytics
+          npm test --prefix services/analytics
+      - name: Validate operational artifacts
+        env:
+          ANALYTICS_IMAGE_TAG: test
+          ANALYTICS_POSTGRES_PASSWORD: owner_test_password
+          ANALYTICS_COLLECTOR_DATABASE_PASSWORD: collector_test_password_0123456789
+          ANALYTICS_DASHBOARD_DATABASE_PASSWORD: dashboard_test_password_0123456789
+          ANALYTICS_ENV_FILE: analytics.env.example
+        run: |
+          bash -n ops/analytics/*.sh
+          docker compose --env-file ops/analytics/analytics.env.example -f ops/analytics/compose.yml config --quiet

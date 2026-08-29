@@ -1,0 +1,104 @@
+name: harmonic-beacon-analytics
+
+services:
+  postgres:
+    image: postgres:16.14-alpine
+    container_name: hb-analytics-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: analytics_owner
+      POSTGRES_PASSWORD: ${ANALYTICS_POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: analytics
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - /mnt/beacon-data/analytics/postgres:/var/lib/postgresql/data
+    networks: [database]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics_owner -d analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+
+  migrate:
+    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
+    build:
+      context: ../../services/analytics
+      labels:
+        org.opencontainers.image.revision: ${ANALYTICS_IMAGE_TAG:?required}
+    environment:
+      ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@postgres:5432/analytics
+    command: ["node", "src/migrate.mjs"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [database]
+    restart: "no"
+
+  collector:
+    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
+    container_name: hb-analytics-collector
+    restart: unless-stopped
+    env_file: ${ANALYTICS_ENV_FILE:-/etc/harmonic-beacon/analytics.env}
+    environment:
+      ANALYTICS_DATABASE_URL: postgresql://hb_analytics_collector:${ANALYTICS_COLLECTOR_DATABASE_PASSWORD:?required}@postgres:5432/analytics
+      ANALYTICS_DASHBOARD_DATABASE_URL: postgresql://hb_analytics_dashboard:${ANALYTICS_DASHBOARD_DATABASE_PASSWORD:?required}@postgres:5432/analytics
+      ANALYTICS_PORT: "3300"
+      NODE_ENV: production
+    ports: ["127.0.0.1:3300:3300"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [database, live_source]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3300/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 192M }
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+
+  worker:
+    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
+    container_name: hb-analytics-worker
+    restart: unless-stopped
+    env_file: ${ANALYTICS_ENV_FILE:-/etc/harmonic-beacon/analytics.env}
+    environment:
+      ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@postgres:5432/analytics
+      NODE_ENV: production
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [database, egress, live_source, listener_source, authority_source]
+    healthcheck:
+      test: ["CMD", "node", "src/worker-health.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 384M }
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+
+networks:
+  database:
+    internal: true
+  egress: {}
+  live_source:
+    external: true
+    name: app_beacon
+  listener_source:
+    external: true
+    name: earlybirds_preview_db_internal
+  authority_source:
+    external: true
+    name: earlybirds_authority_private

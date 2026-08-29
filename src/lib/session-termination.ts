@@ -2,6 +2,7 @@ import type { StaffRole } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { bedRoomIdentity, getRoomService } from '@/lib/livekit-server';
+import { closeSessionPresence } from '@/lib/live-presence';
 
 const BED_ROOM_NAME = process.env.LIVEKIT_ROOM_NAME || 'beacon';
 
@@ -9,7 +10,7 @@ export type SessionTerminationResult = {
     complete: boolean;
     stageDisconnected: number;
     bedDisconnected: number;
-    failures: Array<'stage' | 'bed' | 'audit'>;
+    failures: Array<'stage' | 'bed' | 'presence' | 'audit'>;
 };
 
 /**
@@ -49,6 +50,12 @@ export async function terminateSessionMedia(input: {
     };
     let stageDisconnected = 0;
     let bedDisconnected = 0;
+
+    try {
+        await closeSessionPresence(input.sessionId);
+    } catch {
+        recordFailure('presence');
+    }
 
     let stageListingSucceeded = false;
     try {

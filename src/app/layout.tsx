@@ -90,10 +90,19 @@ export default async function RootLayout({
   const navigationIdentity = accountAvailable
     ? await locallyKnownLiveNavigationIdentity(incomingHeaders).catch(() => null)
     : null;
+  const analyticsCollector = process.env.NEXT_PUBLIC_ANALYTICS_COLLECTOR_URL?.trim()
+    || (process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT === 'production' ? '/_a' : '');
 
   return (
     <html lang={locale} data-lang={locale} className={`${cormorant.variable} ${inter.variable} ${syne.variable} ${spaceMono.variable}`}>
       <body className="antialiased">
+        {analyticsCollector ? <script
+          defer
+          src={`${analyticsCollector}/v1/tracker.js`}
+          data-collector={analyticsCollector}
+          data-surface="live"
+          data-environment={process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT || 'production'}
+        /> : null}
         <GlobalNavigation
           active={navigationSurface}
           locale={locale}
