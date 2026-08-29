@@ -10,6 +10,7 @@ import {
   globalNavigationSurface,
 } from "@/lib/brand/global-navigation";
 import { requestBrowserLocale, requestLocale } from "@/lib/i18n-server";
+import { analyticsBrowserConfig } from "@/lib/analytics-browser";
 import { isCanonicalListenerHost, isListenerStagingHost } from "@/lib/listener/public-discovery";
 import { isAccountHost, isCurrentAccountHost } from "@/lib/account/config";
 import { locallyKnownAccountSession } from "@/lib/account/auth";
@@ -156,8 +157,7 @@ export default async function RootLayout({
       ? accountLocale
       : await requestBrowserLocale(incomingHeaders)
     : await requestLocale();
-  const analyticsCollector = process.env.NEXT_PUBLIC_ANALYTICS_COLLECTOR_URL?.trim()
-    || (process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT === 'production' ? 'https://live.harmonicbeacon.com/_a' : '');
+  const analytics = analyticsBrowserConfig(incomingHeaders);
 
   return (
     <html
@@ -205,12 +205,12 @@ export default async function RootLayout({
             }}
           />
         </LocaleProvider>
-        {analyticsCollector ? <script
+        {analytics ? <script
           defer
-          src={`${analyticsCollector}/v1/tracker.js`}
-          data-collector={analyticsCollector}
-          data-surface={listenerAccountHost ? 'listen' : accountHost ? 'account' : 'live'}
-          data-environment={process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT || 'production'}
+          src={`${analytics.collector}/v1/tracker.js`}
+          data-collector={analytics.collector}
+          data-surface={analytics.surface}
+          data-environment={analytics.environment}
           data-account-link={accountHost || listenerAccountHost ? '/api/analytics/identity-link' : undefined}
         /> : null}
       </body>
