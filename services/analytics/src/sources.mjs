@@ -96,7 +96,7 @@ export class SourceIngestor {
                 const subject = this.subject('account', row.id);
                 await db.query(`insert into mart.account_facts
                     (source_system,source_key_digest,account_subject,created_at,verified_at,auth_method,last_active_at,traffic_class,environment)
-                    values('listener',$1,$2,$3,case when $4 then $5::timestamptz else null::timestamptz end,$6,$5::timestamptz,$7,'production')
+                    values('listener',$1,$2,$3,case when $4::boolean then $5::timestamptz else null::timestamptz end,$6,$5::timestamptz,$7,'production')
                     on conflict(source_system,source_key_digest) do update set verified_at=excluded.verified_at,
                       auth_method=excluded.auth_method,last_active_at=greatest(mart.account_facts.last_active_at,excluded.last_active_at),
                       traffic_class=excluded.traffic_class,ingested_at=now()`, [
