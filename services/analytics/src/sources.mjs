@@ -96,7 +96,7 @@ export class SourceIngestor {
                 const subject = this.subject('account', row.id);
                 await db.query(`insert into mart.account_facts
                     (source_system,source_key_digest,account_subject,created_at,verified_at,auth_method,last_active_at,traffic_class,environment)
-                    values('listener',$1,$2,$3,case when $4 then $5 else null end,$6,$5,$7,'production')
+                    values('listener',$1,$2,$3,case when $4 then $5::timestamptz else null::timestamptz end,$6,$5::timestamptz,$7,'production')
                     on conflict(source_system,source_key_digest) do update set verified_at=excluded.verified_at,
                       auth_method=excluded.auth_method,last_active_at=greatest(mart.account_facts.last_active_at,excluded.last_active_at),
                       traffic_class=excluded.traffic_class,ingested_at=now()`, [
@@ -191,7 +191,8 @@ export class SourceIngestor {
         let written = 0;
         for (const row of result.rows) {
             const endedAt = row.left_at ?? row.event_ended_at ?? (['ENDED','CANCELLED'].includes(row.status) ? row.updated_at : null);
-            if (!endedAt || new Date(endedAt) < new Date(row.joined_at)) continue;
+            const durationMs = endedAt ? new Date(endedAt).getTime() - new Date(row.joined_at).getTime() : -1;
+            if (!endedAt || durationMs < 0 || durationMs > 12 * 60 * 60 * 1000) continue;
             const isStaff = Boolean(row.staff_user_id);
             // Legacy Live identities are event-scoped pseudonyms, not Account subjects.
             // Future presence leases carry an authenticated Account subject separately.
@@ -209,7 +210,8 @@ export class SourceIngestor {
             written += 1;
         }
         for (const row of durable.rows) {
-            if (!row.ended_at || new Date(row.ended_at) < new Date(row.started_at)) continue;
+            const durationMs = row.ended_at ? new Date(row.ended_at).getTime() - new Date(row.started_at).getTime() : -1;
+            if (!row.ended_at || durationMs < 0 || durationMs > 12 * 60 * 60 * 1000) continue;
             const isStaff = Boolean(row.staff_user_id);
             const person = this.subject(isStaff ? 'staff-person' : 'live-person', row.staff_user_id ?? row.participant_identity);
             let accountSubject = null;

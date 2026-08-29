@@ -38,6 +38,8 @@ test('source backfills exclude unverifiable legacy lease time from real metrics'
     assert.match(source, /\.\.\.payments\.rows/);
     assert.match(source, /PAYMENT_REFUNDED','DISPUTED/);
     assert.match(source, /'confirmed'.*'refunded'.*'reversed'/s);
+    assert.match(source, /\$5::timestamptz/);
+    assert.match(source, /durationMs > 12 \* 60 \* 60 \* 1000/);
     assert.match(source, /recordFailure/);
     assert.match(source, /resolveFailures/);
 });
