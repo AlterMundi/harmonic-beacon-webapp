@@ -26,5 +26,15 @@ lag="$(docker exec hb-analytics-postgres psql -U analytics_owner -d analytics -A
 unhealthy_sources="$(docker exec hb-analytics-postgres psql -U analytics_owner -d analytics -Atc \
   "select count(*) from mart.source_health where display_state in ('stale','error') or open_dead_letters>0")"
 [[ "$unhealthy_sources" -eq 0 ]] || { echo "analytics_sources_unhealthy count=$unhealthy_sources" >&2; exit 1; }
-printf 'analytics_monitor_ok root=%s%% data=%s%% inodes=%s%% backup_age=%ss database_bytes=%s max_lag=%ss\n' \
-  "$root_percent" "$data_percent" "$data_inode_percent" "$age_seconds" "$db_bytes" "$lag"
+unhealthy_quality="$(docker exec hb-analytics-postgres psql -U analytics_owner -d analytics -Atc \
+  "select count(*) from mart.latest_quality_results where status='error' and checked_at>now()-interval '2 hours'")"
+[[ "$unhealthy_quality" -eq 0 ]] || { echo "analytics_quality_failed count=$unhealthy_quality" >&2; exit 1; }
+daily_growth="$(docker exec hb-analytics-postgres psql -U analytics_owner -d analytics -Atc \
+  "with current_sample as (select database_bytes from ops.storage_samples order by checked_at desc limit 1),
+         prior_sample as (select database_bytes from ops.storage_samples where checked_at<=now()-interval '20 hours' order by checked_at desc limit 1)
+   select coalesce(greatest(0,current_sample.database_bytes-prior_sample.database_bytes),0) from current_sample left join prior_sample on true")"
+[[ "$daily_growth" -le "${ANALYTICS_DATABASE_DAILY_GROWTH_ALERT_BYTES:-1073741824}" ]] || {
+  echo "analytics_database_growth_high bytes=$daily_growth" >&2; exit 1;
+}
+printf 'analytics_monitor_ok root=%s%% data=%s%% inodes=%s%% backup_age=%ss database_bytes=%s daily_growth=%s max_lag=%ss\n' \
+  "$root_percent" "$data_percent" "$data_inode_percent" "$age_seconds" "$db_bytes" "$daily_growth" "$lag"

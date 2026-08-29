@@ -73,6 +73,7 @@ services:
     image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
     container_name: hb-analytics-worker
     restart: unless-stopped
+    command: ["node", "src/worker.mjs"]
     env_file: ${ANALYTICS_ENV_FILE:-/etc/harmonic-beacon/analytics.env}
     environment:
       ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@hb-analytics-postgres:5432/analytics

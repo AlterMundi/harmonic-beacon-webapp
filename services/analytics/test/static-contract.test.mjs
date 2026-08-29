@@ -4,12 +4,16 @@ import test from 'node:test';
 
 const root = new URL('../', import.meta.url);
 
-test('tracker is fail-open and does not inspect form values or Meta Pixel', async () => {
+test('tracker never blocks product surfaces and does not inspect form values or Meta Pixel', async () => {
     const tracker = await readFile(new URL('src/tracker.js', root), 'utf8');
     assert.match(tracker, /sendBeacon/);
     assert.match(tracker, /\.catch\(\(\) => \{\}\)/);
     assert.doesNotMatch(tracker, /FormData|target\.value|currentTarget\.value|meta-pixel|fbq/);
     assert.match(tracker, /history\.replaceState/);
+    assert.match(tracker, /hb_analytics_disabled=1/);
+    assert.match(tracker, /globalPrivacyControl/);
+    assert.match(tracker, /\/v1\/privacy-context/);
+    assert.match(tracker, /analytics_allowed_without_consent !== true/);
     assert.match(tracker, /SESSION_IDLE_MS = 1800000/);
     assert.match(tracker, /handoffSessionId === session\.id/);
     assert.match(tracker, /Date\.now\(\) < handoffExpiresAt/);
@@ -38,16 +42,29 @@ test('source backfills exclude unverifiable legacy lease time from real metrics'
     assert.match(source, /\.\.\.payments\.rows/);
     assert.match(source, /PAYMENT_REFUNDED','DISPUTED/);
     assert.match(source, /'confirmed'.*'refunded'.*'reversed'/s);
+    assert.match(source, /\$4::boolean.*\$5::timestamptz/);
+    assert.match(source, /\$4::varchar in \('EXPIRED','REFUNDED','CANCELLED'\)/);
+    assert.match(source, /then \$11::timestamptz else null::timestamptz/);
+    assert.match(source, /durationMs > 12 \* 60 \* 60 \* 1000/);
     assert.match(source, /recordFailure/);
     assert.match(source, /resolveFailures/);
 });
 
 test('browser retention preserves daily acquisition aggregates beyond raw-event expiry', async () => {
     const worker = await readFile(new URL('src/worker.mjs', root), 'utf8');
+    const quality = await readFile(new URL('src/quality.mjs', root), 'utf8');
     assert.match(worker, /refreshDaily\(180\)/);
     assert.match(worker, /refreshDaily\(2\)/);
     assert.match(worker, /insert into mart\.acquisition_daily/);
-    assert.match(worker, /delete from ingest\.raw_events where received_at < now\(\)-interval '180 days'/);
+    assert.match(quality, /delete from ingest\.raw_events where received_at < now\(\)-interval '180 days'/);
+    assert.match(quality, /insert into ops\.storage_samples/);
+    assert.match(quality, /canonical_projection_backlog/);
+    assert.match(quality, /payments_without_membership/);
+});
+
+test('Compose starts the analytics worker entrypoint rather than the collector server', async () => {
+    const compose = await readFile(new URL('../../ops/analytics/compose.yml', root), 'utf8');
+    assert.match(compose, /worker:[\s\S]*command: \["node", "src\/worker\.mjs"\]/);
 });
 
 test('backup verification uses the pinned PostgreSQL toolchain and mounted data disk', async () => {
@@ -59,4 +76,11 @@ test('backup verification uses the pinned PostgreSQL toolchain and mounted data 
         assert.match(script, /docker run --rm -i "\$postgres_image" pg_restore --list/);
         assert.doesNotMatch(script, /^pg_restore /m);
     }
+});
+
+test('monitor fails on current quality errors and excessive database growth', async () => {
+    const monitor = await readFile(new URL('../../ops/analytics/monitor-analytics.sh', root), 'utf8');
+    assert.match(monitor, /mart\.latest_quality_results/);
+    assert.match(monitor, /analytics_quality_failed/);
+    assert.match(monitor, /ANALYTICS_DATABASE_DAILY_GROWTH_ALERT_BYTES/);
 });
