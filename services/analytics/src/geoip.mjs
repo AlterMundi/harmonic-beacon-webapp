@@ -9,17 +9,17 @@ export function normalizedClientIp(value) {
 }
 
 export function lookupGeo(reader, ip) {
-    if (!reader || !ip) return { countryCode: 'unknown', regionCode: 'unknown' };
+    if (!reader || !ip) return { countryCode: null, regionCode: null };
     try {
         const record = reader.get(ip);
         const country = record?.country?.iso_code ?? record?.country_code ?? record?.country?.isoCode;
         const region = record?.subdivisions?.[0]?.iso_code ?? record?.state?.iso_code ?? record?.region_code;
         return {
-            countryCode: typeof country === 'string' && /^[A-Z]{2}$/i.test(country) ? country.toUpperCase() : 'unknown',
-            regionCode: typeof region === 'string' && /^[A-Z0-9-]{1,16}$/i.test(region) ? region.toUpperCase() : 'unknown',
+            countryCode: typeof country === 'string' && /^[A-Z]{2}$/i.test(country) ? country.toUpperCase() : null,
+            regionCode: typeof region === 'string' && /^[A-Z0-9-]{1,16}$/i.test(region) ? region.toUpperCase() : null,
         };
     } catch {
-        return { countryCode: 'unknown', regionCode: 'unknown' };
+        return { countryCode: null, regionCode: null };
     }
 }
 

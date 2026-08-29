@@ -14,10 +14,11 @@ test('extracts bounded country and region codes without retaining the address', 
     const reader = { get: () => ({ country: { iso_code: 'ar' }, subdivisions: [{ iso_code: 'x' }] }) };
     assert.deepEqual(lookupGeo(reader, '203.0.113.8'), { countryCode: 'AR', regionCode: 'X' });
     assert.deepEqual(lookupGeo({ get: () => { throw new Error('not found'); } }, '203.0.113.9'), {
-        countryCode: 'unknown', regionCode: 'unknown',
+        countryCode: null, regionCode: null,
     });
 });
 
 test('a missing database degrades enrichment without breaking collection', async () => {
     assert.equal(await openGeoDatabase('/definitely/not/a/geoip-database.mmdb'), null);
+    assert.deepEqual(lookupGeo(null, null), { countryCode: null, regionCode: null });
 });

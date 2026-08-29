@@ -65,7 +65,7 @@ function requestContext(req) {
     const forwarded = normalizedClientIp(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress);
     const geo = lookupGeo(geoDatabase, forwarded);
     metrics.geoipLookups += 1;
-    if (geo.countryCode === 'unknown') metrics.geoipMisses += 1;
+    if (geo.countryCode === null) metrics.geoipMisses += 1;
     return {
         ...geo,
         networkDigest: digest(forwarded || 'unknown', networkSecret),
