@@ -152,8 +152,8 @@ export class SourceIngestor {
                 const classification = row.synthetic ? 'synthetic' : this.traffic(subject);
                 await db.query(`insert into mart.membership_snapshots
                     (source_system,source_key,account_subject,revision,state,provider,offer_code,currency,amount_minor,effective_at,paid_through,terminal_at,traffic_class,environment)
-                    values('listener-projection',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-                      case when $4 in ('EXPIRED','REFUNDED','CANCELLED') then $11 else null end,$12,'production')
+                    values('listener-projection',$1,$2,$3,$4::varchar,$5,$6,$7,$8,$9,$10,
+                      case when $4::varchar in ('EXPIRED','REFUNDED','CANCELLED') then $11 else null end,$12,'production')
                     on conflict(source_system,source_key,revision) do update set state=excluded.state,paid_through=excluded.paid_through,
                       terminal_at=excluded.terminal_at,traffic_class=excluded.traffic_class,ingested_at=now()`, [
                     row.id, subject, row.revision, row.state, row.provider ?? row.source, row.offer_code,
