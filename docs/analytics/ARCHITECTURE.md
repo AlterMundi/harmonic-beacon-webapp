@@ -2,6 +2,9 @@
 
 Status: accepted for epic #474. Contract version: `hb.analytics.event.v1`.
 
+The operational data inventory, regional collection boundary, retention and access matrix are in
+[DATA_GOVERNANCE.md](./DATA_GOVERNANCE.md).
+
 ## Decision
 
 Harmonic Beacon uses a purpose-built, first-party collector and an Account-authenticated Admin
