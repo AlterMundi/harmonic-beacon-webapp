@@ -82,3 +82,17 @@ postgresTest('canonical account links reclassify matching browser traffic by tim
     assert.equal(result.rows[0].traffic_class, 'internal');
     await pool.end();
 });
+
+postgresTest('current membership prefers the canonical authority over a later projection', async () => {
+    const pool = new pg.Pool({ connectionString });
+    const account = 'f'.repeat(64);
+    await pool.query('delete from mart.membership_snapshots where account_subject=$1', [account]);
+    await pool.query(`insert into mart.membership_snapshots
+        (source_system,source_key,account_subject,revision,state,provider,currency,amount_minor,effective_at,paid_through,traffic_class,environment)
+        values
+        ('authority','canonical',$1,1,'ACTIVE','paypal','USD',500,'2026-08-01T00:00:00Z','2026-09-01T00:00:00Z','test','test'),
+        ('listener-projection','projection',$1,99,'EXPIRED','paypal','USD',500,'2026-08-20T00:00:00Z',null,'test','test')`, [account]);
+    const result = await pool.query('select source_system,state from mart.current_memberships where account_subject=$1', [account]);
+    assert.deepEqual(result.rows, [{ source_system: 'authority', state: 'ACTIVE' }]);
+    await pool.end();
+});

@@ -76,6 +76,8 @@ jobs:
           cache: npm
           cache-dependency-path: services/analytics/package-lock.json
       - run: npm ci --prefix services/analytics
+      - name: Reject analytics production dependency vulnerabilities
+        run: npm audit --omit=dev --prefix services/analytics --audit-level=high
       - name: Apply analytics migrations and run PostgreSQL tests
         env:
           ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:analytics_test_password@127.0.0.1:55433/analytics

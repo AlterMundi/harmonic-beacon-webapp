@@ -26,3 +26,11 @@ test('SQL mart unions overlapping intervals before calculating duration', async 
     assert.match(sql, /live_presence_intervals_unioned/);
     assert.match(sql, /not is_staff and not is_test|is_staff/);
 });
+
+test('source backfills exclude unverifiable legacy lease time from real metrics', async () => {
+    const source = await readFile(new URL('src/sources.mjs', root), 'utf8');
+    assert.match(source, /row\.presence !== 'LISTENING'/);
+    assert.match(source, /'listener-lease-backfill'.*'unknown'/s);
+    assert.match(source, /\.\.\.durableIntervals\.rows/);
+    assert.match(source, /\.\.\.payments\.rows/);
+});

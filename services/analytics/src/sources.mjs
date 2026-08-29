@@ -58,7 +58,8 @@ export class SourceIngestor {
                 from early_bird_users u left join early_bird_identities i on i.user_id=u.id
                 left join listener_account_subjects s on s.account_id=u.id
                 where u.updated_at >= $1 or s.created_at >= $1 group by u.id,s.issuer,s.subject`, [since]),
-            source.query(`select id,account_id,device_digest,created_at,last_seen_at,expires_at,evicted_at,presence::text
+            source.query(`select id,account_id,device_digest,created_at,last_seen_at,last_seen_at as updated_at,
+                expires_at,evicted_at,presence::text
                 from early_bird_stream_leases where last_seen_at >= $1`, [since]),
             source.query(`select i.id,i.account_id,i.device_digest,i.started_at,
                 least(coalesce(i.ended_at,i.last_heartbeat_at + interval '45 seconds'),l.expires_at) as ended_at,
@@ -95,15 +96,24 @@ export class SourceIngestor {
                 written += 1;
             }
             for (const row of legacyIntervals.rows) {
+                // A reused pre-instrumentation lease cannot prove its complete
+                // playback history. Preserve only the last heartbeat-sized
+                // LISTENING sample and classify it unknown so it never enters
+                // the default real-duration metric.
+                if (row.presence !== 'LISTENING') continue;
                 const endedAt = [row.last_seen_at, row.expires_at, row.evicted_at].filter(Boolean).map(v => new Date(v)).sort((a, b) => a - b)[0];
-                if (!endedAt || endedAt < new Date(row.created_at)) continue;
+                if (!endedAt) continue;
+                const startedAt = new Date(Math.max(
+                    new Date(row.created_at).getTime(),
+                    endedAt.getTime() - 45_000,
+                ));
+                if (endedAt < startedAt) continue;
                 const subject = this.subject('account', row.account_id);
                 await db.query(`insert into mart.listening_intervals
                     (source_system,source_key,account_subject,device_subject,started_at,ended_at,source_category,access_class,environment,traffic_class)
-                    values('listener-lease-backfill',$1,$2,$3,$4,$5,$6,$7,'production',$8)
+                    values('listener-lease-backfill',$1,$2,$3,$4,$5,'beacon','legacy-lease','production','unknown')
                     on conflict(source_system,source_key) do update set ended_at=greatest(mart.listening_intervals.ended_at,excluded.ended_at),ingested_at=now()`, [
-                    row.id, subject, this.subject('device', row.device_digest), row.created_at, endedAt,
-                    row.presence === 'PLAYING' ? 'beacon' : 'unknown', 'legacy-lease', this.traffic(subject),
+                    row.id, subject, this.subject('device', row.device_digest), startedAt, endedAt,
                 ]);
                 written += 1;
             }
@@ -135,7 +145,12 @@ export class SourceIngestor {
             }
             await db.query('commit');
         } catch (error) { await db.query('rollback'); throw error; } finally { db.release(); }
-        const latest = [...accounts.rows, ...memberships.rows].reduce((value, row) => Math.max(value, new Date(row.updated_at).getTime()), since.getTime());
+        const latest = [
+            ...accounts.rows,
+            ...legacyIntervals.rows,
+            ...durableIntervals.rows,
+            ...memberships.rows,
+        ].reduce((value, row) => Math.max(value, new Date(row.updated_at).getTime()), since.getTime());
         await this.mark('listener', { status: 'ok', read: accounts.rowCount + legacyIntervals.rowCount + durableIntervals.rowCount + memberships.rowCount, written, updatedAt: new Date(latest) });
     }
 
@@ -252,7 +267,10 @@ export class SourceIngestor {
             }
             await db.query('commit');
         } catch (error) { await db.query('rollback'); throw error; } finally { db.release(); }
-        const latest = subscriptions.rows.reduce((value, row) => Math.max(value, new Date(row.updated_at).getTime()), since.getTime());
+        const latest = [...subscriptions.rows, ...payments.rows].reduce((value, row) => Math.max(
+            value,
+            new Date(row.updated_at ?? row.created_at).getTime(),
+        ), since.getTime());
         await this.mark('authority', { status: 'ok', read: subscriptions.rowCount + payments.rowCount, written, updatedAt: new Date(latest) });
     }
 

@@ -17,6 +17,11 @@ provider minor units and grouped by currency; the dashboard never invents an exc
 | Churn | Current membership entering CANCELLED, EXPIRED, REFUNDED or REVOKED in range | Membership authority |
 | Campaign delivering | Recent non-zero spend or impressions, independent of configured ACTIVE | Meta insights |
 
+Pre-instrumentation Listener leases are not reliable elapsed-time records because one device lease
+was reused across playback episodes. The backfill retains only a bounded last-heartbeat sample as
+`traffic_class=unknown`; it is excluded from default real metrics. Canonical duration begins with
+the durable #308 interval table.
+
 `0` means the query ran and found no qualifying facts. `unknown` means a fact is absent. `stale`
 means its source watermark exceeded the freshness contract. `error` means the latest sync failed.
 Clicks, return URLs, `APPROVAL_PENDING`, and abandoned provider pages never count as payments.

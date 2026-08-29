@@ -232,11 +232,12 @@ async function syncMeta() {
 let lastMeta = 0;
 let lastMaintenance = 0;
 let lastSources = 0;
+let lastDaily = 0;
 while (!stopping) {
     try {
         if (Date.now() - lastSources > 300000) { await sources.syncAll(); lastSources = Date.now(); }
         await projectBatch();
-        await refreshDaily();
+        if (Date.now() - lastDaily > 300000) { await refreshDaily(); lastDaily = Date.now(); }
         if (Date.now() - lastMaintenance > 3600000) { await qualityAndRetention(); lastMaintenance = Date.now(); }
         if (Date.now() - lastMeta > 900000) { await syncMeta(); lastMeta = Date.now(); }
         await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,last_success_at,lag_seconds,status,rows_read,rows_written,last_error_code,updated_at)
