@@ -632,8 +632,8 @@ describe('EarlyBird Listener player', () => {
     it('keeps a bounded decoder window beneath the rolling three-minute reservoir', () => {
         expect(LISTENER_HLS_BUFFER_CONFIG).toMatchObject({
             lowLatencyMode: false,
-            initialLiveManifestSize: 31,
-            liveSyncDurationCount: 30,
+            initialLiveManifestSize: 32,
+            liveSyncDurationCount: 31,
             liveMaxLatencyDurationCount: 48,
             liveSyncMode: 'buffered',
             startOnSegmentBoundary: true,

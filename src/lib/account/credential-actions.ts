@@ -14,6 +14,7 @@ import {
 import { consumeAccountRateLimit } from '@/lib/account/rate-limit';
 import { hashAccountPassword, verifyAccountPassword } from '@/lib/session-auth';
 import { revokeAllAccountSessions } from '@/lib/account/revocation';
+import { emitAnalyticsEvent } from '@/lib/analytics-server';
 
 const GENERIC_FLOOR_MS = 300;
 
@@ -91,13 +92,23 @@ export async function completePasswordReset(token: string, password: string): Pr
 }
 
 export async function verifyAccountEmail(token: string): Promise<boolean> {
+    let verifiedAccountId: string | null = null;
     const completed = await consumeAccountActionTokenWith({ token, purpose: 'verify_email' }, async (transaction, action) => {
         await transaction.$queryRaw`SELECT "id" FROM "early_bird_users" WHERE "id" = ${action.accountId} FOR UPDATE`;
         await transaction.earlyBirdUser.update({
             where: { id: action.accountId }, data: { emailVerified: true },
         });
+        verifiedAccountId = action.accountId;
         return true;
     });
+    if (completed === true && verifiedAccountId) {
+        const authorityEnvironment = accountEnvironment();
+        await emitAnalyticsEvent({
+            eventName: 'account.verified', source: 'account', surface: 'account', accountId: verifiedAccountId,
+            environment: authorityEnvironment === 'local' ? 'development' : authorityEnvironment,
+            properties: { verification_method: 'email' },
+        });
+    }
     return completed === true;
 }
 

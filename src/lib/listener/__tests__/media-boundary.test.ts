@@ -13,13 +13,18 @@ const MEDIA_FILE_SHA256 = {
     // drain only the in-memory reservoir, and a successful origin probe resumes
     // forward loading without seeking the media clock. Exhaustion also keeps
     // that timeline intact until a real origin probe succeeds. Reservoir bytes
-    // are released only after hls.js confirms MediaSource accepted them. Codec, bitrate,
+    // are released only after hls.js confirms MediaSource accepted them. The
+    // actual playback fragment also advances a sequence floor so the initial
+    // prefetch margin behind the decoder is never reported as playable
+    // headroom. Codec, bitrate,
     // channel, gain/fade, AudioContext, intro assets, quota, event and payment
     // behavior remain unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': 'b56d635638f45c747d9abdc57efed20730d7599789e8c9bd0e7343b8eeb107b7',
+    'src/components/early-birds/ListenerPlayer.tsx': '815c8403189c87c8de2a84b4b38d61e72ca30eeb3eeec7c265903e9c61d4b50a',
     'src/lib/listener/playback-resilience.ts': '758c466216d2dfaef760665f28a35fdcefea167112fdc3ac96feb004dec7737f',
-    'src/lib/listener/segment-reservoir.ts': '4d04998653a1d97b40455358650c8520edf84aadea6ac67e35b80403c84b4c06',
-    'src/lib/early-birds/stream.ts': '40c5a17d27e8d6f820251d96dd33cd2bbbd83b164e50a212acf8fd0bb158c51c',
+    'src/lib/listener/segment-reservoir.ts': '4bd2a96171caff974003238d665dde73aa9ea8d0cff38e66a37a62b8706a0964',
+    // #474 adds server-side interval observation around the existing lease
+    // lifecycle. It does not alter player bytes, codec, media URLs or audio.
+    'src/lib/early-birds/stream.ts': 'e26cc0a3d3332be12b4a503f461fdf94c454f3ffceb0d290d82bc64907317b9f',
     'src/lib/early-birds/drop-ins.ts': '3b0d18c2c8548aa3ee917ece726cbca4b6d253ea3b4941a8424f8bcbfb8922e2',
     'src/app/api/early-birds/stream/lease/route.ts': 'ec0e8780387bc1f493eb33d13a2d90e01cfdb6d899fc6232e04f51aaf2dfc508',
     'src/app/api/early-birds/stream/heartbeat/route.ts': '268ced6066e4a666f09286f2dc995a4085d9efd7a3f4ea4e983dc8055c9eab6b',

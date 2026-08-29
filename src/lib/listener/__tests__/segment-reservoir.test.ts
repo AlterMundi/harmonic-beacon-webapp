@@ -21,6 +21,7 @@ function playlist(segmentCount = 4, startSequence = 0): string {
     const lines = [
         '#EXTM3U',
         '#EXT-X-VERSION:7',
+        `#EXT-X-MEDIA-SEQUENCE:${startSequence}`,
         '#EXT-X-MAP:URI="segments/init.mp4?grant=secret"',
     ];
     for (let index = startSequence; index < startSequence + segmentCount; index += 1) {
@@ -43,10 +44,12 @@ describe('listenerReservoirInventory', () => {
                 {
                     url: 'https://stream.example.test/v1/hls/approved/segments/2.m4s?grant=secret',
                     durationSeconds: 6,
+                    sequence: 2,
                 },
                 {
                     url: 'https://stream.example.test/v1/hls/approved/segments/3.m4s?grant=secret',
                     durationSeconds: 6,
+                    sequence: 3,
                 },
             ],
         });
@@ -257,6 +260,19 @@ describe('ListenerSegmentReservoir', () => {
         reservoir.markBuffered(consumedUrl);
         expect(reservoir.cached(consumedUrl)).toBeNull();
         expect(snapshots.at(-1)).toBe(42);
+        reservoir.dispose();
+    });
+
+    it('does not count prefetched fragments behind the actual playback floor', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([8, 1]))));
+        const snapshots: number[] = [];
+        const reservoir = new ListenerSegmentReservoir(snapshot => snapshots.push(snapshot.retainedSeconds), true);
+        reservoir.observePlaylist(MANIFEST_URL, playlist(6));
+        await vi.waitFor(() => expect(snapshots.at(-1)).toBe(36));
+        reservoir.markPlayed('https://stream.example.test/v1/hls/approved/segments/1.m4s?grant=secret');
+        expect(reservoir.cached('https://stream.example.test/v1/hls/approved/segments/0.m4s?grant=secret')).toBeNull();
+        expect(reservoir.cached('https://stream.example.test/v1/hls/approved/segments/1.m4s?grant=secret')).toBeNull();
+        expect(snapshots.at(-1)).toBe(24);
         reservoir.dispose();
     });
 });

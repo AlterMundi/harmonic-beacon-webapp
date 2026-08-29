@@ -482,6 +482,7 @@ model EarlyBirdUser {
   freeSchedule            EarlyBirdFreeSchedule?
   welcomeAccess           EarlyBirdWelcomeAccess?
   streamLeases            EarlyBirdStreamLease[]
+  listeningIntervals      EarlyBirdListeningInterval[]
   listeningQuota          EarlyBirdListeningQuotaCursor?
   listeningBonuses        EarlyBirdListeningBonusGrant[]
 
@@ -864,25 +865,53 @@ model EarlyBirdWelcomeAccess {
 }
 
 model EarlyBirdStreamLease {
-  id                String                @id @default(uuid()) @db.Uuid
-  accountId         String                @map("account_id")
-  account           EarlyBirdUser         @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  deviceDigest      String                @map("device_digest") @db.Char(64)
-  presence          ListenerPresenceState @default(IDLE)
-  macroRegion       ListenerMacroRegion   @default(UNKNOWN) @map("macro_region")
-  presenceUpdatedAt DateTime?             @map("presence_updated_at")
-  generation        Int                   @default(1)
-  presenceSequence  Int                   @default(0) @map("presence_sequence")
-  createdAt         DateTime              @default(now()) @map("created_at")
-  lastSeenAt        DateTime              @map("last_seen_at")
-  expiresAt         DateTime              @map("expires_at")
-  evictedAt         DateTime?             @map("evicted_at")
+  id                 String                       @id @default(uuid()) @db.Uuid
+  accountId          String                       @map("account_id")
+  account            EarlyBirdUser                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deviceDigest       String                       @map("device_digest") @db.Char(64)
+  presence           ListenerPresenceState        @default(IDLE)
+  macroRegion        ListenerMacroRegion          @default(UNKNOWN) @map("macro_region")
+  presenceUpdatedAt  DateTime?                    @map("presence_updated_at")
+  generation         Int                          @default(1)
+  presenceSequence   Int                          @default(0) @map("presence_sequence")
+  createdAt          DateTime                     @default(now()) @map("created_at")
+  lastSeenAt         DateTime                     @map("last_seen_at")
+  expiresAt          DateTime                     @map("expires_at")
+  evictedAt          DateTime?                    @map("evicted_at")
+  listeningIntervals EarlyBirdListeningInterval[]
 
   @@unique([accountId, deviceDigest])
   @@index([accountId, evictedAt, expiresAt, lastSeenAt])
   @@index([accountId, presence, evictedAt, expiresAt])
   @@index([presence, presenceUpdatedAt, expiresAt])
   @@map("early_bird_stream_leases")
+}
+
+// Durable server-observed playback spans. Browser events can request a
+// presence transition but cannot declare elapsed listening time.
+model EarlyBirdListeningInterval {
+  id               String               @id @default(uuid()) @db.Uuid
+  accountId        String               @map("account_id")
+  account          EarlyBirdUser        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  leaseId          String               @map("lease_id") @db.Uuid
+  lease            EarlyBirdStreamLease @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  leaseGeneration  Int                  @map("lease_generation")
+  presenceSequence Int                  @map("presence_sequence")
+  deviceDigest     String               @map("device_digest") @db.Char(64)
+  startedAt        DateTime             @map("started_at")
+  lastHeartbeatAt  DateTime             @map("last_heartbeat_at")
+  endedAt          DateTime?            @map("ended_at")
+  endReason        String?              @map("end_reason") @db.VarChar(32)
+  accessClass      String               @map("access_class") @db.VarChar(32)
+  sourceCategory   String               @default("beacon") @map("source_category") @db.VarChar(16)
+  synthetic        Boolean              @default(false)
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  @@unique([leaseId, leaseGeneration, presenceSequence])
+  @@index([accountId, startedAt, endedAt])
+  @@index([endedAt, lastHeartbeatAt])
+  @@map("early_bird_listening_intervals")
 }
 
 // Compact enforcement cursor for the personal seven-day Listener quota. The

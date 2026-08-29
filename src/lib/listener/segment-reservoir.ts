@@ -28,6 +28,7 @@ type ReservoirEntry = {
 type PlaylistSegment = {
     url: string;
     durationSeconds: number;
+    sequence: number;
 };
 
 export type ListenerReservoirSnapshot = {
@@ -57,6 +58,8 @@ export function listenerReservoirInventory(
     }
     let initializationUrl: string | null = null;
     let pendingDuration: number | null = null;
+    const sequenceMatch = /^#EXT-X-MEDIA-SEQUENCE:(\d+)$/m.exec(playlist);
+    const firstSequence = sequenceMatch ? Number(sequenceMatch[1]) : 0;
     const allSegments: PlaylistSegment[] = [];
     for (const rawLine of playlist.split(/\r?\n/)) {
         const line = rawLine.trim();
@@ -77,7 +80,11 @@ export function listenerReservoirInventory(
         }
         if (!line || line.startsWith('#') || pendingDuration === null) continue;
         const url = safeMediaUrl(line, manifestUrl);
-        if (url) allSegments.push({ url, durationSeconds: pendingDuration });
+        if (url) allSegments.push({
+            url,
+            durationSeconds: pendingDuration,
+            sequence: firstSequence + allSegments.length,
+        });
         pendingDuration = null;
     }
 
@@ -122,6 +129,8 @@ export class ListenerSegmentReservoir {
     private readonly playlistFallback = new Map<string, { mediaSequence: number; playlist: string }>();
     private readonly delivered = new Set<string>();
     private readonly initializationUrls = new Set<string>();
+    private readonly segmentSequences = new Map<string, number>();
+    private lastPlayedSequence: number | null = null;
     private generation = 0;
     private disposed = false;
     private enabled: boolean;
@@ -171,6 +180,25 @@ export class ListenerSegmentReservoir {
         this.publishSnapshot();
     }
 
+    markPlayed(url: string): void {
+        if (this.disposed) return;
+        const sequence = this.segmentSequences.get(url);
+        if (sequence === undefined || (this.lastPlayedSequence !== null && sequence <= this.lastPlayedSequence)) return;
+        this.lastPlayedSequence = sequence;
+        let changed = false;
+        for (const [entryUrl] of this.entries) {
+            const entrySequence = this.segmentSequences.get(entryUrl);
+            if (entrySequence !== undefined && entrySequence <= sequence) {
+                this.entries.delete(entryUrl);
+                changed = true;
+            }
+        }
+        for (const [segmentUrl, segmentSequence] of this.segmentSequences) {
+            if (segmentSequence <= sequence) this.segmentSequences.delete(segmentUrl);
+        }
+        if (changed) this.publishSnapshot();
+    }
+
     private retainedByteCount(): number {
         let total = 0;
         for (const entry of this.entries.values()) total += entry.bytes.byteLength;
@@ -203,6 +231,14 @@ export class ListenerSegmentReservoir {
             url,
             LISTENER_RESERVOIR_PREFETCH_TARGET_SECONDS,
         );
+        for (const segment of inventory.segments) {
+            if (this.lastPlayedSequence === null || segment.sequence > this.lastPlayedSequence) {
+                this.segmentSequences.set(segment.url, segment.sequence);
+            }
+        }
+        const segments = this.lastPlayedSequence === null
+            ? inventory.segments
+            : inventory.segments.filter(segment => segment.sequence > this.lastPlayedSequence!);
         const visibleUrls = new Set(inventory.segments.map((segment) => segment.url));
         for (const deliveredUrl of this.delivered) {
             if (!visibleUrls.has(deliveredUrl)) this.delivered.delete(deliveredUrl);
@@ -211,7 +247,7 @@ export class ListenerSegmentReservoir {
             this.initializationUrls.clear();
             this.initializationUrls.add(inventory.initializationUrl);
         }
-        void this.prefetchGeneration(generation, inventory.initializationUrl, inventory.segments);
+        void this.prefetchGeneration(generation, inventory.initializationUrl, segments);
     }
 
     private publishSnapshot(): void {
@@ -270,7 +306,7 @@ export class ListenerSegmentReservoir {
         segments: PlaylistSegment[],
     ): Promise<void> {
         const queue: PlaylistSegment[] = initializationUrl
-            ? [{ url: initializationUrl, durationSeconds: 0 }, ...segments]
+            ? [{ url: initializationUrl, durationSeconds: 0, sequence: -1 }, ...segments]
             : [...segments];
         let cursor = 0;
         const workers = Array.from(
@@ -306,6 +342,7 @@ export class ListenerSegmentReservoir {
         this.playlistFallback.clear();
         this.delivered.clear();
         this.initializationUrls.clear();
+        this.segmentSequences.clear();
     }
 }
 

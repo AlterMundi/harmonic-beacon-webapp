@@ -247,7 +247,7 @@ test.describe('Listener network resilience', () => {
         page,
         browserName,
     }, testInfo) => {
-        test.setTimeout(browserName === 'webkit' ? 600_000 : 480_000);
+        test.setTimeout(720_000);
         let sourceElapsedMediaSeconds = 0;
         let sourceClockUpdatedAt = Date.now();
         let sourcePlaybackRate = 1;
@@ -465,6 +465,7 @@ test.describe('Listener network resilience', () => {
         // separate and may briefly overstate what the decoder can consume, so
         // never turn their sum into a larger product promise here.
         const nearLimit = await mediaState(page);
+        expect(nearLimit.paused).toBe(false);
         const availableNearLimitSeconds = await availablePlaybackSeconds(page);
         const nearLimitOutageSeconds = Math.max(
             60,
@@ -472,7 +473,11 @@ test.describe('Listener network resilience', () => {
         );
         originOnline = false;
         await expect.poll(async () => (await mediaState(page)).currentTime - nearLimit.currentTime, {
-            timeout: Math.ceil(nearLimitOutageSeconds / 4 * 1_000) + 20_000,
+            // An accelerated browser decoder can be heavily throttled after
+            // its origin disappears. Assert media-clock progress, but give it
+            // a fixed wall-clock budget independent of a short, optimistic
+            // playback-rate probe.
+            timeout: 240_000,
             message: `${browserName} did not preserve playback near its measured buffer limit`,
         }).toBeGreaterThanOrEqual(nearLimitOutageSeconds);
         expect((await mediaState(page)).paused).toBe(false);

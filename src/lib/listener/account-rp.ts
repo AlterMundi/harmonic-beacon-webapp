@@ -5,6 +5,7 @@ import type { Prisma } from '@prisma/client';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import { prisma } from '@/lib/db';
+import { emitAnalyticsEvent } from '@/lib/analytics-server';
 import { digestSessionToken } from '@/lib/session-auth';
 import { isListenerStagingHost } from '@/lib/listener/public-discovery';
 
@@ -229,6 +230,11 @@ export async function completeListenerAccountCallback(input: {
             issuer: config.issuer, subject, sid: verified.payload.sid as string,
             expiresAt: new Date(now.getTime() + 30 * 24 * 60 * 60_000), lastCheckedAt: now,
         } });
+    });
+    await emitAnalyticsEvent({
+        eventName: 'identity.authenticated', source: 'listener', surface: 'listen', accountId,
+        environment: config.issuer === 'https://account-staging.harmonicbeacon.com' ? 'staging' : 'production',
+        properties: { link_reason: 'login', auth_method: 'oidc' },
     });
     return { token };
 }
