@@ -49,3 +49,14 @@ test('browser retention preserves daily acquisition aggregates beyond raw-event 
     assert.match(worker, /insert into mart\.acquisition_daily/);
     assert.match(worker, /delete from ingest\.raw_events where received_at < now\(\)-interval '180 days'/);
 });
+
+test('backup verification uses the pinned PostgreSQL toolchain and mounted data disk', async () => {
+    const backup = await readFile(new URL('../../ops/analytics/backup-analytics.sh', root), 'utf8');
+    const restore = await readFile(new URL('../../ops/analytics/restore-verify-analytics.sh', root), 'utf8');
+    for (const script of [backup, restore]) {
+        assert.match(script, /mountpoint -q/);
+        assert.match(script, /postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777/);
+        assert.match(script, /docker run --rm -i "\$postgres_image" pg_restore --list/);
+        assert.doesNotMatch(script, /^pg_restore /m);
+    }
+});
