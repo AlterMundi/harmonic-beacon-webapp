@@ -2,6 +2,16 @@ import { isIP } from 'node:net';
 
 import maxmind from 'maxmind';
 
+const ANALYTICS_CONSENT_COUNTRIES = new Set([
+    'AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT',
+    'NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH',
+]);
+
+export function analyticsAllowedWithoutConsent(countryCode) {
+    return typeof countryCode === 'string' && /^[A-Z]{2}$/.test(countryCode)
+        && !ANALYTICS_CONSENT_COUNTRIES.has(countryCode);
+}
+
 export function normalizedClientIp(value) {
     const first = String(value ?? '').split(',', 1)[0].trim();
     const normalized = first.startsWith('::ffff:') ? first.slice(7) : first;

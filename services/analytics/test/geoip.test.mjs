@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { lookupGeo, normalizedClientIp, openGeoDatabase } from '../src/geoip.mjs';
+import { analyticsAllowedWithoutConsent, lookupGeo, normalizedClientIp, openGeoDatabase } from '../src/geoip.mjs';
 
 test('normalizes only valid first-hop IPv4 and IPv6 addresses', () => {
     assert.equal(normalizedClientIp('203.0.113.8, 10.0.0.1'), '203.0.113.8');
@@ -21,4 +21,12 @@ test('extracts bounded country and region codes without retaining the address', 
 test('a missing database degrades enrichment without breaking collection', async () => {
     assert.equal(await openGeoDatabase('/definitely/not/a/geoip-database.mmdb'), null);
     assert.deepEqual(lookupGeo(null, null), { countryCode: null, regionCode: null });
+});
+
+test('analytics fails closed where consent is required or country is unknown', () => {
+    assert.equal(analyticsAllowedWithoutConsent('AR'), true);
+    assert.equal(analyticsAllowedWithoutConsent('CR'), true);
+    assert.equal(analyticsAllowedWithoutConsent('DE'), false);
+    assert.equal(analyticsAllowedWithoutConsent('GB'), false);
+    assert.equal(analyticsAllowedWithoutConsent(null), false);
 });

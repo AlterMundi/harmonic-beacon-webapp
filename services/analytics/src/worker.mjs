@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import pg from 'pg';
 
-import { MetaMarketingClient } from './meta.mjs';
+import { syncMetaSource } from './meta-sync.mjs';
+import { runQualityAndRetention } from './quality.mjs';
 import { RECLASSIFY_BROWSER_TRAFFIC_SQL } from './queries.mjs';
 import { SourceIngestor } from './sources.mjs';
 import { classifyLinkedTraffic } from './traffic.mjs';
@@ -176,82 +177,6 @@ async function refreshDaily(windowDays = 2) {
     } finally { client.release(); }
 }
 
-async function qualityAndRetention() {
-    await pool.query(`insert into ops.quality_results(check_name,source,status,observed_value,expected_value,details)
-        select 'collector_clock_skew','collector',case when count(*)=0 then 'ok' else 'warning' end,count(*),0,'{}'
-        from ingest.raw_events where received_at >= now()-interval '1 hour' and abs(extract(epoch from(received_at-occurred_at)))>86400`);
-    await pool.query(`update ingest.raw_events set network_digest=null where received_at < now()-interval '30 days' and network_digest is not null`);
-    await pool.query(`update ingest.raw_events set
-        attribution=attribution-'fbclid'-'gclid'-'msclkid'-'ttclid',
-        first_attribution=first_attribution-'fbclid'-'gclid'-'msclkid'-'ttclid',
-        last_attribution=last_attribution-'fbclid'-'gclid'-'msclkid'-'ttclid'
-        where received_at < now()-interval '90 days' and (
-          attribution ?| array['fbclid','gclid','msclkid','ttclid'] or
-          first_attribution ?| array['fbclid','gclid','msclkid','ttclid'] or
-          last_attribution ?| array['fbclid','gclid','msclkid','ttclid'])`);
-    await pool.query(`delete from ingest.raw_events where received_at < now()-interval '180 days'`);
-    await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,last_success_at,lag_seconds,status,rows_read,rows_written,updated_at)
-        select 'collector',now(),now(),coalesce(extract(epoch from(now()-max(received_at)))::int,0),'ok',count(*),count(*),now()
-        from ingest.raw_events
-        on conflict(source) do update set last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,
-          lag_seconds=excluded.lag_seconds,status='ok',rows_read=excluded.rows_read,rows_written=excluded.rows_written,updated_at=now()`);
-}
-
-async function syncMeta() {
-    const token = process.env.META_MARKETING_ACCESS_TOKEN;
-    const accountId = process.env.META_MARKETING_AD_ACCOUNT_ID;
-    if (!token || !accountId) {
-        await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,status,last_error_code,updated_at)
-            values('meta',now(),'disabled','credentials_missing',now()) on conflict(source) do update set
-            last_attempt_at=now(),status='disabled',last_error_code='credentials_missing',updated_at=now()`);
-        await sources.resolveFailures('meta');
-        return;
-    }
-    const client = new MetaMarketingClient({ token, accountId, graphVersion: process.env.META_GRAPH_API_VERSION ?? 'v25.0' });
-    const now = new Date();
-    const until = now.toISOString().slice(0, 10);
-    const since = new Date(now.getTime() - 36 * 86400000).toISOString().slice(0, 10);
-    try {
-        const [entities, insights] = await Promise.all([client.entities(now), client.insights({ since, until, observedAt: now })]);
-        const db = await pool.connect();
-        try {
-            await db.query('begin');
-            for (const row of entities) await db.query(`insert into mart.campaign_entities
-                (provider,entity_type,entity_id,parent_id,name,configured_status,effective_status,objective,starts_at,ends_at,account_currency,account_timezone,observed_at,raw_digest)
-                values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-                on conflict(provider,entity_type,entity_id) do update set parent_id=excluded.parent_id,name=excluded.name,
-                configured_status=excluded.configured_status,effective_status=excluded.effective_status,objective=excluded.objective,
-                starts_at=excluded.starts_at,ends_at=excluded.ends_at,account_currency=excluded.account_currency,
-                account_timezone=excluded.account_timezone,observed_at=excluded.observed_at,raw_digest=excluded.raw_digest`, [
-                row.provider, row.entityType, row.entityId, row.parentId, row.name,
-                row.configuredStatus, row.effectiveStatus, row.objective, row.startsAt, row.endsAt,
-                row.accountCurrency, row.accountTimezone, row.observedAt, row.rawDigest,
-            ]);
-            for (const row of insights) await db.query(`insert into mart.campaign_insights
-                (provider,entity_type,entity_id,date_start,date_stop,attribution_window,currency,spend_minor,impressions,reach,frequency,clicks,ctr,cpc_minor,cpm_minor,actions,observed_at)
-                values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)
-                on conflict(provider,entity_type,entity_id,date_start,date_stop,attribution_window) do update set
-                currency=excluded.currency,spend_minor=excluded.spend_minor,impressions=excluded.impressions,reach=excluded.reach,
-                frequency=excluded.frequency,clicks=excluded.clicks,ctr=excluded.ctr,cpc_minor=excluded.cpc_minor,
-                cpm_minor=excluded.cpm_minor,actions=excluded.actions,observed_at=excluded.observed_at`, [
-                row.provider,row.entityType,row.entityId,row.dateStart,row.dateStop,row.attributionWindow,row.currency,
-                row.spendMinor,row.impressions,row.reach,row.frequency,row.clicks,row.ctr,row.cpcMinor,row.cpmMinor,
-                JSON.stringify(row.actions),row.observedAt,
-            ]);
-            await db.query(`insert into ops.source_watermarks(source,last_attempt_at,last_success_at,lag_seconds,status,rows_read,rows_written,last_error_code,updated_at)
-                values('meta',now(),now(),0,'ok',$1,$2,null,now()) on conflict(source) do update set
-                last_attempt_at=now(),last_success_at=now(),lag_seconds=0,status='ok',rows_read=$1,rows_written=$2,last_error_code=null,updated_at=now()`, [entities.length + insights.length, entities.length + insights.length]);
-            await db.query('commit');
-            await sources.resolveFailures('meta');
-        } catch (error) { await db.query('rollback'); throw error; } finally { db.release(); }
-    } catch (error) {
-        const code = createHash('sha256').update(String(error.code ?? error.name ?? 'meta_error')).digest('hex').slice(0, 32);
-        await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,status,last_error_code,updated_at)
-            values('meta',now(),'error',$1,now()) on conflict(source) do update set last_attempt_at=now(),status='error',last_error_code=$1,updated_at=now()`, [code]);
-        await sources.recordFailure('meta', code);
-    }
-}
-
 let lastMeta = 0;
 let lastMaintenance = 0;
 let lastSources = 0;
@@ -266,8 +191,8 @@ while (!stopping) {
         } else if (Date.now() - lastDaily > 300000) {
             await refreshDaily(2); lastDaily = Date.now();
         }
-        if (Date.now() - lastMaintenance > 3600000) { await qualityAndRetention(); lastMaintenance = Date.now(); }
-        if (Date.now() - lastMeta > 900000) { await syncMeta(); lastMeta = Date.now(); }
+        if (Date.now() - lastMaintenance > 3600000) { await runQualityAndRetention(pool); lastMaintenance = Date.now(); }
+        if (Date.now() - lastMeta > 900000) { await syncMetaSource({ pool, sources }); lastMeta = Date.now(); }
         await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,last_success_at,lag_seconds,status,rows_read,rows_written,last_error_code,updated_at)
             values('worker',now(),now(),0,'ok',0,0,null,now()) on conflict(source) do update set
             last_attempt_at=now(),last_success_at=now(),lag_seconds=0,status='ok',last_error_code=null,updated_at=now()`);

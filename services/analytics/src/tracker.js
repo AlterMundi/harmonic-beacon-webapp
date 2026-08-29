@@ -1,12 +1,18 @@
-(() => {
+(async () => {
   'use strict';
   const script = document.currentScript;
   if (!script || window.hbAnalytics) return;
+  const disabledByCookie = document.cookie.split(';').some(value => value.trim() === 'hb_analytics_disabled=1');
+  if (disabledByCookie || navigator.globalPrivacyControl === true || navigator.doNotTrack === '1') return;
   try { if (localStorage.getItem('hb_analytics_disabled') === '1') return; } catch {}
   const collector = String(script.dataset.collector || new URL(script.src).origin).replace(/\/$/, '');
   const surface = script.dataset.surface || 'home';
   const environment = script.dataset.environment || 'production';
   const accountLink = script.dataset.accountLink || '';
+  try {
+    const response = await fetch(`${collector}/v1/privacy-context`, { mode: 'cors', credentials: 'omit' });
+    if (!response.ok || (await response.json()).analytics_allowed_without_consent !== true) return;
+  } catch { return; }
   const allowed = new Set(['harmonicbeacon.com', 'www.harmonicbeacon.com', 'account.harmonicbeacon.com', 'listen.harmonicbeacon.com', 'live.harmonicbeacon.com', 'account-staging.harmonicbeacon.com', 'earlybirds-staging.harmonicbeacon.com', 'live-staging.harmonicbeacon.com']);
   const uuid = () => crypto.randomUUID();
   const safeGet = (store, key) => { try { return store.getItem(key); } catch { return null; } };
