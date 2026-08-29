@@ -1,0 +1,12 @@
+[Unit]
+Description=Harmonic Beacon analytics encrypted backup
+After=docker.service
+Requires=docker.service
+RequiresMountsFor=/mnt/beacon-data
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/harmonic-beacon/analytics-backup.env
+ExecStartPre=/usr/bin/mountpoint -q /mnt/beacon-data
+ExecStart=/opt/beacon/analytics/ops/analytics/backup-analytics.sh

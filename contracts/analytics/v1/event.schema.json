@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/analytics/v1/event.schema.json",
+  "title": "Harmonic Beacon analytics event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_name",
+    "occurred_at",
+    "source",
+    "surface",
+    "environment"
+  ],
+  "properties": {
+    "schema_version": { "const": "hb.analytics.event.v1" },
+    "event_id": { "type": "string", "format": "uuid" },
+    "event_name": { "type": "string", "pattern": "^[a-z][a-z0-9_.]{2,63}$" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "source": { "enum": ["browser", "home", "account", "listener", "live", "membership", "meta", "backfill"] },
+    "surface": { "enum": ["home", "account", "listen", "live", "ops", "commerce", "campaigns"] },
+    "environment": { "enum": ["production", "staging", "development", "test"] },
+    "visitor_id": { "type": ["string", "null"], "format": "uuid" },
+    "session_id": { "type": ["string", "null"], "format": "uuid" },
+    "account_subject": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "page": { "$ref": "#/$defs/page" },
+    "attribution": { "$ref": "#/$defs/attribution" },
+    "first_attribution": { "$ref": "#/$defs/attribution" },
+    "last_attribution": { "$ref": "#/$defs/attribution" },
+    "device": { "$ref": "#/$defs/device" },
+    "traffic_class": { "enum": ["real", "internal", "synthetic", "test", "unknown"] },
+    "handoff": { "type": ["string", "null"], "maxLength": 4096 },
+    "properties": {
+      "type": "object",
+      "maxProperties": 32,
+      "additionalProperties": { "type": ["string", "number", "boolean", "null"], "maxLength": 500 }
+    }
+  },
+  "$defs": {
+    "page": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "maxLength": 500 },
+        "title": { "type": "string", "maxLength": 200 },
+        "referrer": { "type": ["string", "null"], "maxLength": 500 },
+        "landing": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    },
+    "attribution": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "utm_source": { "type": ["string", "null"], "maxLength": 200 },
+        "utm_medium": { "type": ["string", "null"], "maxLength": 200 },
+        "utm_campaign": { "type": ["string", "null"], "maxLength": 200 },
+        "utm_content": { "type": ["string", "null"], "maxLength": 200 },
+        "utm_term": { "type": ["string", "null"], "maxLength": 200 },
+        "fbclid": { "type": ["string", "null"], "maxLength": 500 },
+        "gclid": { "type": ["string", "null"], "maxLength": 500 },
+        "msclkid": { "type": ["string", "null"], "maxLength": 500 },
+        "ttclid": { "type": ["string", "null"], "maxLength": 500 },
+        "referrer": { "type": ["string", "null"], "maxLength": 500 },
+        "landing": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    },
+    "device": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "class": { "enum": ["desktop", "mobile", "tablet", "unknown"] },
+        "browser": { "type": "string", "maxLength": 40 },
+        "os": { "type": "string", "maxLength": 40 },
+        "language": { "type": "string", "maxLength": 20 },
+        "screen": { "type": "string", "pattern": "^[0-9]{1,5}x[0-9]{1,5}$" }
+      }
+    }
+  }
+}
