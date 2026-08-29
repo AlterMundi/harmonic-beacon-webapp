@@ -25,6 +25,7 @@ the durable #308 interval table.
 Refunds and provider-confirmed disputes/reversals subtract their canonical amount from net revenue;
 an abandoned or pending checkout contributes nothing. `0` means the query ran and found no qualifying facts. `unknown` means a fact is absent. `stale`
 means its source watermark exceeded the freshness contract. `error` means the latest sync failed.
+Daily acquisition buckets remain after the 180-day raw-browser retention window, without retaining visitor IDs or advertising click IDs.
 Clicks, return URLs, `APPROVAL_PENDING`, and abandoned provider pages never count as payments.
 
 First touch is the visitor's earliest stored campaign/referrer/landing. Last touch changes on a

@@ -10,6 +10,9 @@ test('tracker is fail-open and does not inspect form values or Meta Pixel', asyn
     assert.match(tracker, /\.catch\(\(\) => \{\}\)/);
     assert.doesNotMatch(tracker, /FormData|target\.value|currentTarget\.value|meta-pixel|fbq/);
     assert.match(tracker, /history\.replaceState/);
+    assert.match(tracker, /SESSION_IDLE_MS = 1800000/);
+    assert.match(tracker, /handoffSessionId === session\.id/);
+    assert.match(tracker, /Date\.now\(\) < handoffExpiresAt/);
 });
 
 test('schema has closed top-level fields and canonical version', async () => {
@@ -37,4 +40,12 @@ test('source backfills exclude unverifiable legacy lease time from real metrics'
     assert.match(source, /'confirmed'.*'refunded'.*'reversed'/s);
     assert.match(source, /recordFailure/);
     assert.match(source, /resolveFailures/);
+});
+
+test('browser retention preserves daily acquisition aggregates beyond raw-event expiry', async () => {
+    const worker = await readFile(new URL('src/worker.mjs', root), 'utf8');
+    assert.match(worker, /refreshDaily\(180\)/);
+    assert.match(worker, /refreshDaily\(2\)/);
+    assert.match(worker, /insert into mart\.acquisition_daily/);
+    assert.match(worker, /delete from ingest\.raw_events where received_at < now\(\)-interval '180 days'/);
 });

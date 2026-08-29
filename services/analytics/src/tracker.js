@@ -11,11 +11,12 @@
   const uuid = () => crypto.randomUUID();
   const safeGet = (store, key) => { try { return store.getItem(key); } catch { return null; } };
   const safeSet = (store, key, value) => { try { store.setItem(key, value); } catch {} };
+  const SESSION_IDLE_MS = 1800000;
   const now = Date.now();
   let visitorId = safeGet(localStorage, 'hb_analytics_visitor');
   if (!/^[0-9a-f-]{36}$/i.test(visitorId || '')) { visitorId = uuid(); safeSet(localStorage, 'hb_analytics_visitor', visitorId); }
   let session = (() => { try { return JSON.parse(safeGet(sessionStorage, 'hb_analytics_session') || 'null'); } catch { return null; } })();
-  if (!session || !/^[0-9a-f-]{36}$/i.test(session.id || '') || now - Number(session.seen || 0) > 1800000) session = { id: uuid(), seen: now };
+  if (!session || !/^[0-9a-f-]{36}$/i.test(session.id || '') || now - Number(session.seen || 0) > SESSION_IDLE_MS) session = { id: uuid(), seen: now };
   session.seen = now;
   safeSet(sessionStorage, 'hb_analytics_session', JSON.stringify(session));
 
@@ -33,6 +34,10 @@
   if (!lastTouch || hasCampaign || externalReferrer) { lastTouch = touch; safeSet(localStorage, 'hb_analytics_last_touch', JSON.stringify(lastTouch)); }
 
   let handoff = params.get('hb_at');
+  let handoffSessionId = null;
+  let handoffExpiresAt = 0;
+  let sessionTimer = null;
+  let handoffTimer = null;
   if (handoff) {
     params.delete('hb_at');
     const remaining = params.toString();
@@ -58,8 +63,31 @@
     device: { class: deviceClass, browser, os, language: navigator.language.slice(0, 20), screen: `${screen.width}x${screen.height}` },
     properties,
   });
+  const scheduleSessionRotation = () => {
+    if (sessionTimer !== null) clearTimeout(sessionTimer);
+    const remaining = Math.max(100, SESSION_IDLE_MS - (Date.now() - Number(session.seen || 0)) + 10);
+    sessionTimer = setTimeout(() => {
+      if (Date.now() - Number(session.seen || 0) < SESSION_IDLE_MS) return scheduleSessionRotation();
+      session = { id: uuid(), seen: Date.now() };
+      handoff = null; handoffSessionId = null; handoffExpiresAt = 0;
+      safeSet(sessionStorage, 'hb_analytics_session', JSON.stringify(session));
+      scheduleSessionRotation();
+      void refreshIdentity();
+    }, remaining);
+  };
+  const touchSession = () => {
+    const touchedAt = Date.now();
+    if (touchedAt - Number(session.seen || 0) >= SESSION_IDLE_MS) {
+      session = { id: uuid(), seen: touchedAt };
+      handoff = null; handoffSessionId = null; handoffExpiresAt = 0;
+      void refreshIdentity();
+    } else session.seen = touchedAt;
+    safeSet(sessionStorage, 'hb_analytics_session', JSON.stringify(session));
+    scheduleSessionRotation();
+  };
   const send = (eventName, properties) => {
     try {
+      touchSession();
       const body = JSON.stringify(payload(eventName, properties));
       if (navigator.sendBeacon && navigator.sendBeacon(`${collector}/v1/events`, new Blob([body], { type: 'application/json' }))) return;
       fetch(`${collector}/v1/events`, { method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true, headers: { 'content-type': 'application/json' }, body }).catch(() => {});
@@ -67,9 +95,13 @@
   };
   window.hbAnalytics = { track: send, visitorId: () => visitorId, sessionId: () => session.id };
 
-  const decorate = token => {
+  const decorate = (token, boundSessionId, expiresIn) => {
     if (!token) return;
     handoff = token;
+    handoffSessionId = boundSessionId;
+    handoffExpiresAt = Date.now() + Math.max(1, Number(expiresIn || 0)) * 1000;
+    if (handoffTimer !== null) clearTimeout(handoffTimer);
+    handoffTimer = setTimeout(() => { void refreshIdentity(); }, 600000);
     document.querySelectorAll('a[href]').forEach(link => {
       try {
         const url = new URL(link.href, location.href);
@@ -79,6 +111,23 @@
         }
       } catch {}
     });
+  };
+  const refreshIdentity = () => {
+    const boundVisitorId = visitorId;
+    const boundSessionId = session.id;
+    const handoffQuery = new URLSearchParams({ visitor_id: boundVisitorId, session_id: boundSessionId, first_touch: JSON.stringify(firstTouch), last_touch: JSON.stringify(lastTouch) });
+    fetch(`${collector}/v1/handoff?${handoffQuery}`, { mode: 'cors', credentials: 'omit' })
+      .then(r => r.ok ? r.json() : null)
+      .then(v => {
+        if (v && visitorId === boundVisitorId && session.id === boundSessionId) {
+          decorate(v.token, boundSessionId, v.expires_in);
+        }
+      }).catch(() => {});
+    if (accountLink) {
+      fetch(accountLink, { method: 'POST', credentials: 'same-origin', keepalive: true,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ visitor_id: boundVisitorId, session_id: boundSessionId }) }).catch(() => {});
+    }
   };
   const begin = async () => {
     if (handoff) {
@@ -97,13 +146,9 @@
         }
       } catch {}
     }
-    const handoffQuery = new URLSearchParams({ visitor_id: visitorId, session_id: session.id, first_touch: JSON.stringify(firstTouch), last_touch: JSON.stringify(lastTouch) });
-    fetch(`${collector}/v1/handoff?${handoffQuery}`, { mode: 'cors', credentials: 'omit' }).then(r => r.ok ? r.json() : null).then(v => decorate(v && v.token)).catch(() => {});
-    if (accountLink) {
-      fetch(accountLink, { method: 'POST', credentials: 'same-origin', keepalive: true,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ visitor_id: visitorId, session_id: session.id }) }).catch(() => {});
-    }
+    handoff = null;
+    refreshIdentity();
+    scheduleSessionRotation();
     send('page.viewed');
   };
   void begin();
@@ -132,9 +177,12 @@
     const link = event.target.closest && event.target.closest('a[href]');
     if (!link) return;
     try {
+      touchSession();
       const url = new URL(link.href, location.href);
-      if (handoff && url.protocol === 'https:' && allowed.has(url.hostname) && url.hostname !== location.hostname) {
-        url.searchParams.set('hb_at', handoff); link.href = url.toString();
+      if (url.protocol === 'https:' && allowed.has(url.hostname) && url.hostname !== location.hostname) {
+        if (handoff && handoffSessionId === session.id && Date.now() < handoffExpiresAt) url.searchParams.set('hb_at', handoff);
+        else url.searchParams.delete('hb_at');
+        link.href = url.toString();
       }
       send('navigation.clicked', { destination_host: url.hostname.slice(0, 120), destination_path: url.pathname.slice(0, 300) });
     } catch {}

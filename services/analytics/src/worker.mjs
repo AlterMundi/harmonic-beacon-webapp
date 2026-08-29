@@ -108,7 +108,7 @@ async function projectBatch(limit = 500) {
     }
 }
 
-async function refreshDaily() {
+async function refreshDaily(windowDays = 2) {
     const client = await pool.connect();
     try {
         await client.query('begin');
@@ -117,38 +117,58 @@ async function refreshDaily() {
         // matching time ranges. This also catches events arriving after the
         // link and keeps internal traffic out of commercial defaults.
         await client.query(RECLASSIFY_BROWSER_TRAFFIC_SQL);
-        await client.query(`delete from mart.daily_metrics where metric_date >= current_date - 400`);
+        // Raw browser events retain 180 days. Refresh only that mutable window
+        // so daily aggregates older than raw retention remain available.
+        await client.query(`delete from mart.daily_metrics where metric_date >= current_date - $1::int`, [windowDays]);
         await client.query(`insert into mart.daily_metrics
             (metric_date,environment,traffic_class,surface,visitors,sessions,pageviews,currency)
             select occurred_at::date,environment,traffic_class,surface,
                    count(distinct visitor_id),count(distinct session_id),count(*) filter(where event_name='page.viewed'),'N/A'
-            from ingest.raw_events where source='browser' and occurred_at >= current_date - 400
-            group by 1,2,3,4`);
+            from ingest.raw_events where source='browser' and occurred_at >= current_date - $1::int
+            group by 1,2,3,4`, [windowDays]);
+        await client.query(`delete from mart.acquisition_daily where metric_date >= current_date - $1::int`, [windowDays]);
+        await client.query(`insert into mart.acquisition_daily
+            (metric_date,environment,traffic_class,source,medium,campaign,first_source,first_medium,first_campaign,
+             first_referrer,last_referrer,first_landing,last_landing,visitors,sessions,pageviews)
+            select occurred_at::date,environment,traffic_class,
+              coalesce(nullif(last_attribution->>'utm_source',''),nullif(page->>'referrer',''),'direct'),
+              coalesce(nullif(last_attribution->>'utm_medium',''),'unknown'),
+              coalesce(nullif(last_attribution->>'utm_campaign',''),'unattributed'),
+              coalesce(nullif(first_attribution->>'utm_source',''),nullif(page->>'referrer',''),'direct'),
+              coalesce(nullif(first_attribution->>'utm_medium',''),'unknown'),
+              coalesce(nullif(first_attribution->>'utm_campaign',''),'unattributed'),
+              coalesce(nullif(first_attribution->>'referrer',''),'direct'),
+              coalesce(nullif(last_attribution->>'referrer',''),'direct'),
+              coalesce(nullif(first_attribution->>'landing',''),'unknown'),
+              coalesce(nullif(last_attribution->>'landing',''),'unknown'),
+              count(distinct visitor_id),count(distinct session_id),count(*) filter(where event_name='page.viewed')
+            from ingest.raw_events where source='browser' and occurred_at >= current_date - $1::int
+            group by 1,2,3,4,5,6,7,8,9,10,11,12,13`, [windowDays]);
         await client.query(`insert into mart.daily_metrics
             (metric_date,environment,traffic_class,surface,accounts_created,accounts_verified,currency)
             select created_at::date,environment,traffic_class,'account',count(*),count(*) filter(where verified_at is not null),'N/A'
-            from mart.account_facts where created_at >= current_date - 400 group by 1,2,3
+            from mart.account_facts where created_at >= current_date - $1::int group by 1,2,3
             on conflict (metric_date,environment,traffic_class,surface,currency) do update set
-              accounts_created=excluded.accounts_created,accounts_verified=excluded.accounts_verified,refreshed_at=now()`);
+              accounts_created=excluded.accounts_created,accounts_verified=excluded.accounts_verified,refreshed_at=now()`, [windowDays]);
         await client.query(`insert into mart.daily_metrics
             (metric_date,environment,traffic_class,surface,listeners,listening_seconds,currency)
             select started_at::date,environment,traffic_class,'listen',count(distinct account_subject),sum(duration_seconds),'N/A'
-            from mart.listening_intervals_unioned where started_at >= current_date - 400 group by 1,2,3
+            from mart.listening_intervals_unioned where started_at >= current_date - $1::int group by 1,2,3
             on conflict (metric_date,environment,traffic_class,surface,currency) do update set
-              listeners=excluded.listeners,listening_seconds=excluded.listening_seconds,refreshed_at=now()`);
+              listeners=excluded.listeners,listening_seconds=excluded.listening_seconds,refreshed_at=now()`, [windowDays]);
         await client.query(`insert into mart.daily_metrics
             (metric_date,environment,traffic_class,surface,attendees,attendee_seconds,currency)
             select started_at::date,environment,traffic_class,'live',count(distinct person_subject),sum(duration_seconds),'N/A'
-            from mart.live_presence_intervals_unioned where not is_staff and not is_test and started_at >= current_date - 400 group by 1,2,3
+            from mart.live_presence_intervals_unioned where not is_staff and not is_test and started_at >= current_date - $1::int group by 1,2,3
             on conflict (metric_date,environment,traffic_class,surface,currency) do update set
-              attendees=excluded.attendees,attendee_seconds=excluded.attendee_seconds,refreshed_at=now()`);
+              attendees=excluded.attendees,attendee_seconds=excluded.attendee_seconds,refreshed_at=now()`, [windowDays]);
         await client.query(`insert into mart.daily_metrics
             (metric_date,environment,traffic_class,surface,payments_confirmed,revenue_minor,currency)
             select occurred_at::date,environment,traffic_class,'commerce',count(*) filter(where state='confirmed'),
                    sum(case when state='confirmed' then amount_minor when state in ('refunded','reversed') then -amount_minor else 0 end),currency
-            from mart.payment_facts where occurred_at >= current_date - 400 group by 1,2,3,7
+            from mart.payment_facts where occurred_at >= current_date - $1::int group by 1,2,3,7
             on conflict (metric_date,environment,traffic_class,surface,currency) do update set
-              payments_confirmed=excluded.payments_confirmed,revenue_minor=excluded.revenue_minor,refreshed_at=now()`);
+              payments_confirmed=excluded.payments_confirmed,revenue_minor=excluded.revenue_minor,refreshed_at=now()`, [windowDays]);
         await client.query('commit');
     } catch (error) {
         await client.query('rollback');
@@ -236,11 +256,16 @@ let lastMeta = 0;
 let lastMaintenance = 0;
 let lastSources = 0;
 let lastDaily = 0;
+let lastFullDaily = 0;
 while (!stopping) {
     try {
         if (Date.now() - lastSources > 300000) { await sources.syncAll(); lastSources = Date.now(); }
         await projectBatch();
-        if (Date.now() - lastDaily > 300000) { await refreshDaily(); lastDaily = Date.now(); }
+        if (Date.now() - lastFullDaily > 86400000) {
+            await refreshDaily(180); lastFullDaily = Date.now(); lastDaily = lastFullDaily;
+        } else if (Date.now() - lastDaily > 300000) {
+            await refreshDaily(2); lastDaily = Date.now();
+        }
         if (Date.now() - lastMaintenance > 3600000) { await qualityAndRetention(); lastMaintenance = Date.now(); }
         if (Date.now() - lastMeta > 900000) { await syncMeta(); lastMeta = Date.now(); }
         await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,last_success_at,lag_seconds,status,rows_read,rows_written,last_error_code,updated_at)
