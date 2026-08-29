@@ -4,7 +4,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
-import { ContractError, contractInternals, validateEvent } from './contract.mjs';
+import { browserOriginContext, ContractError, contractInternals, validateEvent } from './contract.mjs';
 import { digest, signHandoff, verifyHandoff, verifyServerSignature } from './crypto.mjs';
 import { createStore } from './store.mjs';
 import { queryDashboard } from './dashboard.mjs';
@@ -155,7 +155,8 @@ const server = http.createServer(async (req, res) => {
     const browser = req.method === 'POST' && url.pathname === '/v1/events';
     const canonical = req.method === 'POST' && url.pathname === '/v1/server-events';
     if (!browser && !canonical) return respond(res, 404, { error: 'not_found' });
-    if (browser && !originAllowed(origin)) return respond(res, 403, { error: 'origin_not_allowed' });
+    const expectedBrowserContext = browser ? browserOriginContext(origin) : null;
+    if (browser && !expectedBrowserContext) return respond(res, 403, { error: 'origin_not_allowed' });
     const context = requestContext(req);
     if (!rateAllowed(context.networkDigest)) return respond(res, 429, { error: 'rate_limited' }, origin);
     try {
@@ -165,6 +166,9 @@ const server = http.createServer(async (req, res) => {
             return respond(res, 401, { error: 'invalid_signature' });
         }
         const event = validateEvent(JSON.parse(raw), { serverAuthenticated: canonical });
+        if (browser && (event.surface !== expectedBrowserContext.surface || event.environment !== expectedBrowserContext.environment)) {
+            throw new ContractError('browser context does not match origin');
+        }
         if (browser && event.handoff) {
             const handoff = verifyHandoff(event.handoff, handoffSecret);
             if (handoff && contractInternals.UUID.test(handoff.v) && contractInternals.UUID.test(handoff.s)) {

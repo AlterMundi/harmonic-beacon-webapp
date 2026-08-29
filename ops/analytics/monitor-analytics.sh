@@ -23,5 +23,8 @@ age_seconds="$(( $(date +%s) - $(stat -c %Y -- "$latest") ))"
 (cd "$backup_root" && sha256sum -c -- "$(basename "${latest}.sha256")" >/dev/null)
 db_bytes="$(docker exec hb-analytics-postgres psql -U analytics_owner -d analytics -Atc "select pg_database_size(current_database())")"
 lag="$(docker exec hb-analytics-postgres psql -U analytics_owner -d analytics -Atc "select coalesce(max(lag_seconds),0) from ops.source_watermarks where status='ok'")"
+unhealthy_sources="$(docker exec hb-analytics-postgres psql -U analytics_owner -d analytics -Atc \
+  "select count(*) from mart.source_health where display_state in ('stale','error') or open_dead_letters>0")"
+[[ "$unhealthy_sources" -eq 0 ]] || { echo "analytics_sources_unhealthy count=$unhealthy_sources" >&2; exit 1; }
 printf 'analytics_monitor_ok root=%s%% data=%s%% inodes=%s%% backup_age=%ss database_bytes=%s max_lag=%ss\n' \
   "$root_percent" "$data_percent" "$data_inode_percent" "$age_seconds" "$db_bytes" "$lag"

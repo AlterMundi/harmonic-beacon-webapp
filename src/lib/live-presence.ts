@@ -24,8 +24,27 @@ export async function observeLivePresence(input: {
         const open = await tx.livePresenceInterval.findFirst({
             where: { participantId: participant.id, endedAt: null },
             orderBy: { generation: 'desc' },
+            select: { id: true, generation: true, lastHeartbeatAt: true },
         });
         if (open) {
+            const graceEndedAt = new Date(open.lastHeartbeatAt.getTime() + LIVE_PRESENCE_GRACE_MS);
+            if (graceEndedAt < now) {
+                await tx.livePresenceInterval.update({
+                    where: { id: open.id },
+                    data: { endedAt: graceEndedAt, endReason: 'heartbeat_timeout' },
+                });
+                return tx.livePresenceInterval.create({
+                    data: {
+                        scheduledSessionId: input.scheduledSessionId,
+                        participantId: participant.id,
+                        generation: open.generation + 1,
+                        startedAt: now,
+                        lastHeartbeatAt: now,
+                        reconnectCount: input.reconnect ? 1 : 0,
+                    },
+                    select: { id: true, generation: true },
+                });
+            }
             return tx.livePresenceInterval.update({
                 where: { id: open.id },
                 data: {

@@ -8,7 +8,9 @@ payment truth. The worker has one allowlisted read-only role per source. Collect
 use separate PostgreSQL login roles; only the worker/migrator uses `analytics_owner`.
 
 Health endpoints are `/health`, `/ready` and loopback-only `/metrics` on the collector. Worker,
-source and Meta freshness appear in `mart.source_health`. Browser calls are fail-open and have
+source and Meta freshness appear in `mart.source_health`. Its `display_state` distinguishes
+`disabled`, `unknown`, `stale`, `error`, and `ok`; unresolved source retries are counted in
+`open_dead_letters` without storing query text, credentials, or source rows. Browser calls are fail-open and have
 three-second or shorter proxy timeouts, so analytics cannot block a product request.
 
 ## Data retention and access

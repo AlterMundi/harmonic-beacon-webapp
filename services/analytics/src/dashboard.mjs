@@ -51,7 +51,8 @@ export async function queryDashboard(pool, rawFilters = {}) {
               and traffic_class=any($4::text[]) and not is_staff and not is_test`, params),
         pool.query(`select currency,count(*) filter(where state='confirmed')::bigint confirmed,
             count(*) filter(where state='refunded')::bigint refunds,
-            coalesce(sum(case when state='confirmed' then amount_minor when state='refunded' then -amount_minor else 0 end),0)::bigint net_revenue_minor
+            count(*) filter(where state='reversed')::bigint reversals,
+            coalesce(sum(case when state='confirmed' then amount_minor when state in ('refunded','reversed') then -amount_minor else 0 end),0)::bigint net_revenue_minor
             from mart.payment_facts where ${scope} group by currency order by currency`, params),
         pool.query(`select source,medium,campaign,first_source,first_medium,first_campaign,
             first_referrer,last_referrer,first_landing,last_landing,

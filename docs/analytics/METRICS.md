@@ -22,7 +22,8 @@ was reused across playback episodes. The backfill retains only a bounded last-he
 `traffic_class=unknown`; it is excluded from default real metrics. Canonical duration begins with
 the durable #308 interval table.
 
-`0` means the query ran and found no qualifying facts. `unknown` means a fact is absent. `stale`
+Refunds and provider-confirmed disputes/reversals subtract their canonical amount from net revenue;
+an abandoned or pending checkout contributes nothing. `0` means the query ran and found no qualifying facts. `unknown` means a fact is absent. `stale`
 means its source watermark exceeded the freshness contract. `error` means the latest sync failed.
 Clicks, return URLs, `APPROVAL_PENDING`, and abandoned provider pages never count as payments.
 

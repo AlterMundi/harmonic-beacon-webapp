@@ -46,6 +46,24 @@ export class SourceIngestor {
               last_attempt_at=now(),last_success_at=case when $3='ok' then now() else ops.source_watermarks.last_success_at end,
               lag_seconds=excluded.lag_seconds,status=$3,rows_read=$4,rows_written=$5,last_error_code=$6,updated_at=now()`,
         [source, updatedAt?.toISOString() ?? null, status, read, written, errorCode]);
+        if (status === 'ok' || status === 'disabled') await this.resolveFailures(source);
+    }
+
+    async recordFailure(source, errorCode) {
+        const sourceKeyDigest = this.subject('dead-letter', `${source}\0sync`);
+        await this.analytics.query(`insert into ingest.dead_letters
+            (source,source_key_digest,error_code,retry_after,metadata)
+            values($1,$2,$3,now()+interval '30 seconds',jsonb_build_object('operation','source_sync'))
+            on conflict(source,source_key_digest,error_code) do update set
+              last_failed_at=now(),attempts=ingest.dead_letters.attempts+1,
+              retry_after=now()+make_interval(secs => least(3600,
+                (30*power(2,least(ingest.dead_letters.attempts,7)))::int)),
+              resolved_at=null`, [source, sourceKeyDigest, errorCode]);
+    }
+
+    async resolveFailures(source) {
+        await this.analytics.query(`update ingest.dead_letters set resolved_at=now()
+            where source=$1 and resolved_at is null`, [source]);
     }
 
     async syncListener() {
@@ -229,7 +247,7 @@ export class SourceIngestor {
                 from early_bird_provider_events e join early_bird_subscriptions s on s.external_subscription_id=e.external_subscription_id
                 join early_bird_accounts a on a.id=s.account_ref
                 left join early_bird_checkout_bindings b on b.id=s.checkout_binding_id
-                where e.status='PROCESSED' and e.event_type in ('PAYMENT_SUCCEEDED','PAYMENT_REFUNDED') and e.created_at >= $1`, [since]),
+                where e.status='PROCESSED' and e.event_type in ('PAYMENT_SUCCEEDED','PAYMENT_REFUNDED','DISPUTED') and e.created_at >= $1`, [since]),
         ]);
         const db = await this.analytics.connect();
         let written = 0;
@@ -251,9 +269,10 @@ export class SourceIngestor {
             for (const row of payments.rows) {
                 const subject = this.subject('account', row.account_id);
                 const traffic = row.sandbox ? 'test' : this.traffic(subject);
-                const state = row.event_type === 'PAYMENT_SUCCEEDED' ? 'confirmed' : 'refunded';
-                const amount = state === 'confirmed' ? Number(row.payload?.amount_minor ?? row.amount_minor) : row.amount_minor;
-                const currency = state === 'confirmed' ? String(row.payload?.currency ?? row.currency) : row.currency;
+                const state = row.event_type === 'PAYMENT_SUCCEEDED'
+                    ? 'confirmed' : row.event_type === 'PAYMENT_REFUNDED' ? 'refunded' : 'reversed';
+                const amount = Number(row.payload?.amount_minor ?? row.amount_minor);
+                const currency = String(row.payload?.currency ?? row.currency);
                 if (!Number.isInteger(amount) || amount < 0 || !/^[A-Z]{3}$/.test(currency ?? '')) continue;
                 await db.query(`insert into mart.payment_facts
                     (source_system,source_key_digest,account_subject,membership_source_key,provider,state,amount_minor,currency,occurred_at,traffic_class,environment)
@@ -281,6 +300,7 @@ export class SourceIngestor {
             catch (error) {
                 const errorCode = createHmac('sha256', this.identitySecret).update(String(error.code ?? error.name ?? 'source_error')).digest('hex').slice(0, 32);
                 await this.mark(name, { status: 'error', errorCode });
+                await this.recordFailure(name, errorCode);
                 outcomes.push({ name, ok: false });
             }
         }

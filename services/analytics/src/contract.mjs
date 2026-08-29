@@ -5,6 +5,16 @@ const SOURCES = new Set(['browser', 'home', 'account', 'listener', 'live', 'memb
 const SURFACES = new Set(['home', 'account', 'listen', 'live', 'ops', 'commerce', 'campaigns']);
 const ENVIRONMENTS = new Set(['production', 'staging', 'development', 'test']);
 const TRAFFIC_CLASSES = new Set(['real', 'internal', 'synthetic', 'test', 'unknown']);
+const BROWSER_ORIGIN_CONTEXTS = new Map([
+    ['https://harmonicbeacon.com', { surface: 'home', environment: 'production' }],
+    ['https://www.harmonicbeacon.com', { surface: 'home', environment: 'production' }],
+    ['https://account.harmonicbeacon.com', { surface: 'account', environment: 'production' }],
+    ['https://account-staging.harmonicbeacon.com', { surface: 'account', environment: 'staging' }],
+    ['https://listen.harmonicbeacon.com', { surface: 'listen', environment: 'production' }],
+    ['https://earlybirds-staging.harmonicbeacon.com', { surface: 'listen', environment: 'staging' }],
+    ['https://live.harmonicbeacon.com', { surface: 'live', environment: 'production' }],
+    ['https://live-staging.harmonicbeacon.com', { surface: 'live', environment: 'staging' }],
+]);
 const TOP_LEVEL = new Set([
     'schema_version', 'event_id', 'event_name', 'occurred_at', 'source', 'surface',
     'environment', 'visitor_id', 'session_id', 'account_subject', 'page', 'attribution',
@@ -23,6 +33,11 @@ export class ContractError extends Error {
         super(message);
         this.name = 'ContractError';
     }
+}
+
+export function browserOriginContext(origin) {
+    if (typeof origin !== 'string') return null;
+    return BROWSER_ORIGIN_CONTEXTS.get(origin) ?? null;
 }
 
 function bounded(value, max, field, nullable = true) {

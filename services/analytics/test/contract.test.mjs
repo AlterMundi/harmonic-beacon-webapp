@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ContractError, sanitizePath, validateEvent } from '../src/contract.mjs';
+import { browserOriginContext, ContractError, sanitizePath, validateEvent } from '../src/contract.mjs';
 
 const browserEvent = (overrides = {}) => ({
     schema_version: 'hb.analytics.event.v1',
@@ -54,4 +54,15 @@ test('server facts require authentication and valid opaque subject', () => {
 test('path sanitizer never retains query or fragment', () => {
     assert.equal(sanitizePath('https://listen.harmonicbeacon.com/a?grant=secret#fragment'), 'https://listen.harmonicbeacon.com/a');
     assert.equal(sanitizePath('/a?grant=secret'), '/a');
+});
+
+test('browser origins canonically bind surface and environment', () => {
+    assert.deepEqual(browserOriginContext('https://harmonicbeacon.com'), {
+        surface: 'home', environment: 'production',
+    });
+    assert.deepEqual(browserOriginContext('https://live-staging.harmonicbeacon.com'), {
+        surface: 'live', environment: 'staging',
+    });
+    assert.equal(browserOriginContext(null), null);
+    assert.equal(browserOriginContext('https://harmonicbeacon.com.evil.test'), null);
 });

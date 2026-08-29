@@ -145,7 +145,7 @@ async function refreshDaily() {
         await client.query(`insert into mart.daily_metrics
             (metric_date,environment,traffic_class,surface,payments_confirmed,revenue_minor,currency)
             select occurred_at::date,environment,traffic_class,'commerce',count(*) filter(where state='confirmed'),
-                   sum(case when state='confirmed' then amount_minor when state='refunded' then -amount_minor else 0 end),currency
+                   sum(case when state='confirmed' then amount_minor when state in ('refunded','reversed') then -amount_minor else 0 end),currency
             from mart.payment_facts where occurred_at >= current_date - 400 group by 1,2,3,7
             on conflict (metric_date,environment,traffic_class,surface,currency) do update set
               payments_confirmed=excluded.payments_confirmed,revenue_minor=excluded.revenue_minor,refreshed_at=now()`);
@@ -184,6 +184,7 @@ async function syncMeta() {
         await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,status,last_error_code,updated_at)
             values('meta',now(),'disabled','credentials_missing',now()) on conflict(source) do update set
             last_attempt_at=now(),status='disabled',last_error_code='credentials_missing',updated_at=now()`);
+        await sources.resolveFailures('meta');
         return;
     }
     const client = new MetaMarketingClient({ token, accountId, graphVersion: process.env.META_GRAPH_API_VERSION ?? 'v25.0' });
@@ -221,11 +222,13 @@ async function syncMeta() {
                 values('meta',now(),now(),0,'ok',$1,$2,null,now()) on conflict(source) do update set
                 last_attempt_at=now(),last_success_at=now(),lag_seconds=0,status='ok',rows_read=$1,rows_written=$2,last_error_code=null,updated_at=now()`, [entities.length + insights.length, entities.length + insights.length]);
             await db.query('commit');
+            await sources.resolveFailures('meta');
         } catch (error) { await db.query('rollback'); throw error; } finally { db.release(); }
     } catch (error) {
         const code = createHash('sha256').update(String(error.code ?? error.name ?? 'meta_error')).digest('hex').slice(0, 32);
         await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,status,last_error_code,updated_at)
             values('meta',now(),'error',$1,now()) on conflict(source) do update set last_attempt_at=now(),status='error',last_error_code=$1,updated_at=now()`, [code]);
+        await sources.recordFailure('meta', code);
     }
 }
 
@@ -243,8 +246,14 @@ while (!stopping) {
         await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,last_success_at,lag_seconds,status,rows_read,rows_written,last_error_code,updated_at)
             values('worker',now(),now(),0,'ok',0,0,null,now()) on conflict(source) do update set
             last_attempt_at=now(),last_success_at=now(),lag_seconds=0,status='ok',last_error_code=null,updated_at=now()`);
+        await sources.resolveFailures('worker');
     } catch (error) {
-        process.stderr.write(`${JSON.stringify({ level: 'error', component: 'analytics-worker', code: error.code ?? error.name ?? 'worker_error' })}\n`);
+        const code = createHash('sha256').update(String(error.code ?? error.name ?? 'worker_error')).digest('hex').slice(0, 32);
+        await pool.query(`insert into ops.source_watermarks(source,last_attempt_at,status,last_error_code,updated_at)
+            values('worker',now(),'error',$1,now()) on conflict(source) do update set
+            last_attempt_at=now(),status='error',last_error_code=$1,updated_at=now()`, [code]).catch(() => {});
+        await sources.recordFailure('worker', code).catch(() => {});
+        process.stderr.write(`${JSON.stringify({ level: 'error', component: 'analytics-worker', code })}\n`);
     }
     await new Promise(resolve => setTimeout(resolve, intervalMs));
 }
