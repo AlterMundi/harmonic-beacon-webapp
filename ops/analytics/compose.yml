@@ -33,7 +33,7 @@ services:
       labels:
         org.opencontainers.image.revision: ${ANALYTICS_IMAGE_TAG:?required}
     environment:
-      ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@postgres:5432/analytics
+      ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
     command: ["node", "src/migrate.mjs"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -46,8 +46,8 @@ services:
     restart: unless-stopped
     env_file: ${ANALYTICS_ENV_FILE:-/etc/harmonic-beacon/analytics.env}
     environment:
-      ANALYTICS_DATABASE_URL: postgresql://hb_analytics_collector:${ANALYTICS_COLLECTOR_DATABASE_PASSWORD:?required}@postgres:5432/analytics
-      ANALYTICS_DASHBOARD_DATABASE_URL: postgresql://hb_analytics_dashboard:${ANALYTICS_DASHBOARD_DATABASE_PASSWORD:?required}@postgres:5432/analytics
+      ANALYTICS_DATABASE_URL: postgresql://hb_analytics_collector:${ANALYTICS_COLLECTOR_DATABASE_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
+      ANALYTICS_DASHBOARD_DATABASE_URL: postgresql://hb_analytics_dashboard:${ANALYTICS_DASHBOARD_DATABASE_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
       ANALYTICS_PORT: "3300"
       NODE_ENV: production
     ports: ["127.0.0.1:3300:3300"]
@@ -72,7 +72,7 @@ services:
     restart: unless-stopped
     env_file: ${ANALYTICS_ENV_FILE:-/etc/harmonic-beacon/analytics.env}
     environment:
-      ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@postgres:5432/analytics
+      ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
       NODE_ENV: production
     depends_on:
       postgres: { condition: service_healthy }
