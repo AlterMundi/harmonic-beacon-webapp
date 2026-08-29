@@ -41,3 +41,12 @@ export function verifyServerSignature({ timestamp, signature, body, secret, now 
     try { actual = Buffer.from(signature ?? '', 'hex'); } catch { return false; }
     return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
+
+export function verifyEnvironmentServerSignature({
+    timestamp, signature, body, environment, productionSecret, nonProductionSecret, now = Date.now(),
+}) {
+    const secret = environment === 'production'
+        ? productionSecret
+        : ['staging', 'development', 'test'].includes(environment) ? nonProductionSecret : null;
+    return Boolean(secret) && verifyServerSignature({ timestamp, signature, body, secret, now });
+}

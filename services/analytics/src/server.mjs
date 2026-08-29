@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 import { browserOriginContext, ContractError, contractInternals, validateEvent } from './contract.mjs';
-import { digest, signHandoff, verifyHandoff, verifyServerSignature } from './crypto.mjs';
+import { digest, signHandoff, verifyEnvironmentServerSignature, verifyHandoff, verifyServerSignature } from './crypto.mjs';
 import { createStore } from './store.mjs';
 import { queryDashboard } from './dashboard.mjs';
 import { lookupGeo, normalizedClientIp, openGeoDatabase } from './geoip.mjs';
@@ -13,8 +13,11 @@ import { lookupGeo, normalizedClientIp, openGeoDatabase } from './geoip.mjs';
 const port = Number(process.env.ANALYTICS_PORT ?? 3300);
 const handoffSecret = process.env.ANALYTICS_HANDOFF_SECRET;
 const serverSecret = process.env.ANALYTICS_SERVER_EVENT_SECRET;
+const nonProductionServerSecret = process.env.ANALYTICS_NONPRODUCTION_SERVER_EVENT_SECRET;
 const networkSecret = process.env.ANALYTICS_NETWORK_DIGEST_SECRET;
-if (!handoffSecret || handoffSecret.length < 32 || !serverSecret || serverSecret.length < 32 || !networkSecret || networkSecret.length < 32) {
+if (!handoffSecret || handoffSecret.length < 32 || !serverSecret || serverSecret.length < 32 ||
+    !nonProductionServerSecret || nonProductionServerSecret.length < 32 ||
+    serverSecret === nonProductionServerSecret || !networkSecret || networkSecret.length < 32) {
     throw new Error('analytics HMAC secrets must each contain at least 32 characters');
 }
 const allowedOrigins = new Set((process.env.ANALYTICS_ALLOWED_ORIGINS ?? 'https://harmonicbeacon.com,https://www.harmonicbeacon.com,https://account.harmonicbeacon.com,https://listen.harmonicbeacon.com,https://live.harmonicbeacon.com,https://account-staging.harmonicbeacon.com,https://earlybirds-staging.harmonicbeacon.com,https://live-staging.harmonicbeacon.com').split(',').map(v => v.trim()).filter(Boolean));
@@ -161,9 +164,18 @@ const server = http.createServer(async (req, res) => {
     if (!rateAllowed(context.networkDigest)) return respond(res, 429, { error: 'rate_limited' }, origin);
     try {
         const raw = await readBody(req);
-        if (canonical && !verifyServerSignature({ timestamp: req.headers['x-hb-event-timestamp'], signature: req.headers['x-hb-event-signature'], body: raw, secret: serverSecret })) {
-            metrics.rejected += 1;
-            return respond(res, 401, { error: 'invalid_signature' });
+        if (canonical) {
+            let claimedEnvironment = null;
+            try { claimedEnvironment = JSON.parse(raw)?.environment; } catch {}
+            if (!verifyEnvironmentServerSignature({
+                timestamp: req.headers['x-hb-event-timestamp'],
+                signature: req.headers['x-hb-event-signature'], body: raw,
+                environment: claimedEnvironment, productionSecret: serverSecret,
+                nonProductionSecret: nonProductionServerSecret,
+            })) {
+                metrics.rejected += 1;
+                return respond(res, 401, { error: 'invalid_signature' });
+            }
         }
         const event = validateEvent(JSON.parse(raw), { serverAuthenticated: canonical });
         if (browser && (event.surface !== expectedBrowserContext.surface || event.environment !== expectedBrowserContext.environment)) {

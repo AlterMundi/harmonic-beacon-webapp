@@ -79,3 +79,9 @@ collector health and metrics.
 The mart is read-only to the dashboard. Detail and CSV endpoints require an authorized role and
 append an audit fact. Provider tokens exist only in the worker environment. The Meta adapter has
 no write methods and requests `ads_read` only.
+
+Canonical event signatures are environment-bound. Production emitters use
+`ANALYTICS_SERVER_EVENT_SECRET`; staging, development and test use the distinct
+`ANALYTICS_NONPRODUCTION_SERVER_EVENT_SECRET`. The collector selects the key from the claimed
+environment before accepting the strictly validated event, so either key fails closed if it is
+replayed with the other environment. The production key alone authorizes the Admin dashboard.
