@@ -15,6 +15,7 @@ import {
     withLockedQuotaTransaction,
     type SerializedEarlyBirdQuotaSnapshot,
 } from './quota';
+import { closeListeningIntervals, observeListeningInterval } from './listening-intervals';
 
 export const EARLY_BIRD_MAX_STREAM_DEVICES = 2;
 export const EARLY_BIRD_LEASE_TTL_MS = 3 * 60 * 1000;
@@ -417,11 +418,17 @@ async function acquireEarlyBirdStreamLeaseWithMode(
                 where: { id: { in: evicted.map(({ id }) => id) } },
                 data: { evictedAt: now, presence: 'IDLE', presenceUpdatedAt: now },
             });
+            await closeListeningIntervals({
+                tx, leaseIds: evicted.map(({ id }) => id), now, reason: 'evicted',
+            });
         }
 
         // A prepare lease may decode/prefetch for iOS, but it must always lose
         // an eviction contest against a device on which the person pressed play.
         const prioritySeenAt = evictOldest ? now : new Date(0);
+        if (previous) {
+            await closeListeningIntervals({ tx, leaseIds: [previous.id], now, reason: 'evicted' });
+        }
         let current = previous
             ? await tx.earlyBirdStreamLease.update({
                 where: { id: previous.id },
@@ -461,6 +468,7 @@ async function acquireEarlyBirdStreamLeaseWithMode(
                 where: { id: current.id },
                 data: { presence: 'IDLE', presenceUpdatedAt: now, expiresAt: now },
             });
+            await closeListeningIntervals({ tx, leaseIds: [current.id], now, reason: 'denied' });
             return { kind: 'denied' as const };
         }
         const finalExpiry = cappedLeaseExpiry(now, accessAfter.allowedUntil);
@@ -469,6 +477,12 @@ async function acquireEarlyBirdStreamLeaseWithMode(
             current = await tx.earlyBirdStreamLease.update({
                 where: { id: current.id },
                 data: { expiresAt: leaseExpiresAt },
+            });
+        }
+        if (startListening) {
+            await observeListeningInterval({
+                tx, lease: current, now, accessClass: accessAfter.kind,
+                synthetic: accountId === EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
             });
         }
         return {
@@ -506,6 +520,9 @@ async function acquireEarlyBirdStreamLeaseWithMode(
                 presenceUpdatedAt: lease.serverNow,
                 expiresAt: lease.serverNow,
             },
+        });
+        await closeListeningIntervals({
+            tx: prisma, leaseIds: [lease.current.id], now: lease.serverNow, reason: 'grant_failed',
         });
         throw error;
     }
@@ -583,7 +600,10 @@ export async function heartbeatEarlyBirdStreamLease(
         });
         if (!current) return { kind: 'inactive' as const, reason: 'missing' as const };
         if (current.evictedAt !== null) return { kind: 'inactive' as const, reason: 'evicted' as const };
-        if (current.expiresAt <= now) return { kind: 'inactive' as const, reason: 'expired' as const };
+        if (current.expiresAt <= now) {
+            await closeListeningIntervals({ tx, leaseIds: [current.id], now: current.expiresAt, reason: 'expired' });
+            return { kind: 'inactive' as const, reason: 'expired' as const };
+        }
         const nextPresence = presence?.state ?? current.presence;
         if (
             current.generation !== leaseGeneration
@@ -612,6 +632,7 @@ export async function heartbeatEarlyBirdStreamLease(
                     expiresAt: now,
                 },
             });
+            await closeListeningIntervals({ tx, leaseIds: [current.id], now, reason: 'denied' });
             return { kind: 'denied' as const };
         }
         const provisionalExpiry = cappedLeaseExpiry(
@@ -631,6 +652,14 @@ export async function heartbeatEarlyBirdStreamLease(
                 } : {}),
             },
         });
+        if (nextPresence === 'LISTENING') {
+            await observeListeningInterval({
+                tx, lease: updated, now, accessClass: accessBefore.kind,
+                synthetic: accountId === EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
+            });
+        } else {
+            await closeListeningIntervals({ tx, leaseIds: [current.id], now, reason: 'idle' });
+        }
         const quotaAfter = await settleLockedEarlyBirdQuota({ tx, accountId, projection, now });
         const access = listeningAccessDecision(projection, quotaAfter, now);
         if (!access.allowed) {
@@ -638,6 +667,7 @@ export async function heartbeatEarlyBirdStreamLease(
                 where: { id: current.id },
                 data: { presence: 'IDLE', presenceUpdatedAt: now, expiresAt: now },
             });
+            await closeListeningIntervals({ tx, leaseIds: [current.id], now, reason: 'denied' });
             return { kind: 'denied' as const };
         }
         const leaseExpiresAt = cappedLeaseExpiry(now, access.allowedUntil);
@@ -746,6 +776,7 @@ export async function acquireFreeForAllStreamLease(
             },
             data: { evictedAt: now },
         });
+        await closeListeningIntervals({ tx: prisma, leaseIds: [lease.id], now, reason: 'grant_failed' });
         throw error;
     }
 }
@@ -804,6 +835,13 @@ export async function heartbeatFreeForAllStreamLease(
             } : {}),
         },
     });
+    if (nextPresence === 'LISTENING') {
+        await observeListeningInterval({
+            tx: prisma, lease, now, accessClass: 'free-for-all', synthetic: true,
+        });
+    } else {
+        await closeListeningIntervals({ tx: prisma, leaseIds: [current.id], now, reason: 'idle' });
+    }
     const stream = await issuer.issue({
         accountId: EARLY_BIRD_FREE_FOR_ALL_ACCOUNT_ID,
         leaseId: lease.id,
@@ -846,6 +884,10 @@ export async function quiescePersonalListenerLeasesForFreeForAll(
         await withLockedQuotaTransaction(accountId, async (tx, now) => {
             const projection = await tx.earlyBirdMembershipProjection.findUnique({ where: { accountId } });
             await settleLockedEarlyBirdQuota({ tx, accountId, projection, now });
+            const activeLeases = await tx.earlyBirdStreamLease.findMany({
+                where: { accountId, evictedAt: null, expiresAt: { gt: now } },
+                select: { id: true },
+            });
             await tx.earlyBirdStreamLease.updateMany({
                 where: { accountId, evictedAt: null, expiresAt: { gt: now } },
                 data: {
@@ -853,6 +895,9 @@ export async function quiescePersonalListenerLeasesForFreeForAll(
                     presenceUpdatedAt: now,
                     evictedAt: now,
                 },
+            });
+            await closeListeningIntervals({
+                tx, leaseIds: activeLeases.map(({ id }) => id), now, reason: 'free_for_all_cutover',
             });
         });
     }

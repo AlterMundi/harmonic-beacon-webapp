@@ -84,6 +84,13 @@ const HLS_REFILL_PROBE_TIMEOUT_MS = 2_000;
 const DEFAULT_LISTENER_VOLUME = 0.7;
 const LISTENER_STABILITY_DELAY_SECONDS = LISTENER_BUFFER_TARGET_SECONDS;
 
+function trackListener(eventName: string, properties: Record<string, string | boolean> = {}) {
+    try {
+        (window as Window & { hbAnalytics?: { track(name: string, values?: Record<string, string | boolean>): void } })
+            .hbAnalytics?.track(eventName, properties);
+    } catch {}
+}
+
 export const LISTENER_PLAYBACK_PRESENCE_EVENT = 'listener:playback-presence';
 export const LISTENER_PLAYBACK_DIAGNOSTIC_EVENT = 'listener:playback-diagnostic';
 
@@ -409,6 +416,10 @@ function ListenerPlayerController({
         liveStateRef.current = state;
         setLiveState(state);
     }, []);
+
+    useEffect(() => {
+        if (liveState !== 'idle') trackListener('listener.playback_state_changed', { state: liveState });
+    }, [liveState]);
 
     const subscribeReactiveFrames = useCallback((
         listener: (frame: HarmonicAnalysisFrame | null) => void,
@@ -1497,6 +1508,7 @@ function ListenerPlayerController({
     }, [armLiveFadeIn, attemptLivePlayback, cancelRecovery, pauseDropIns, reportPresence, scheduleAutomaticRecovery, updateLiveState]);
 
     function playBeaconOnly() {
+        trackListener('listener.play_requested', { mode: 'beacon' });
         lastPlaybackAction.current = 'listen-beacon';
         dropGeneration.current += 1;
         if (!livePreparedRef.current) return;
@@ -1520,6 +1532,7 @@ function ListenerPlayerController({
             try {
                 startReactiveAnalysis(`intro-${language}`);
                 await intro.play();
+                trackListener('listener.playback_resumed', { mode: 'intro' });
                 setTransportPaused(false);
                 reportPresence('listening');
             } catch {
@@ -1531,6 +1544,7 @@ function ListenerPlayerController({
         cancelDropFade();
         const intro = dropAudio[language].current;
         intro?.pause();
+        trackListener('listener.playback_paused', { mode: 'intro' });
         analysisProvider.current?.pauseAnalysis();
         storeProgress(language);
         setTransportPaused(true);
@@ -1538,6 +1552,7 @@ function ListenerPlayerController({
     }
 
     function stopTransport() {
+        trackListener('listener.playback_stopped', { mode: activeDrop.current ? 'intro' : 'beacon' });
         lastPlaybackAction.current = 'stop';
         playbackLifecycleGeneration.current += 1;
         backgroundSuspension.current = null;
@@ -1904,6 +1919,7 @@ function ListenerPlayerController({
     }
 
     async function playWithIntro(language: DropLanguage) {
+        trackListener('listener.intro_started', { language });
         lastPlaybackAction.current = `listen-intro-${language}`;
         const selected = dropAudio[language].current;
         if (!selected || !dropIns[language]) return;
@@ -1996,6 +2012,7 @@ function ListenerPlayerController({
         const genuinelyEnded = Boolean(audio?.ended)
             || Boolean(audio && Number.isFinite(audio.duration) && audio.currentTime >= audio.duration - 0.25);
         if (activeDrop.current !== language || !genuinelyEnded) return;
+        trackListener('listener.intro_completed', { language });
         activeDrop.current = null;
         try {
             window.localStorage.removeItem(`${DROP_PROGRESS_PREFIX}${language}`);

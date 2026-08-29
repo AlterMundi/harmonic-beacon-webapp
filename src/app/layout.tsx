@@ -156,6 +156,8 @@ export default async function RootLayout({
       ? accountLocale
       : await requestBrowserLocale(incomingHeaders)
     : await requestLocale();
+  const analyticsCollector = process.env.NEXT_PUBLIC_ANALYTICS_COLLECTOR_URL?.trim()
+    || (process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT === 'production' ? 'https://live.harmonicbeacon.com/_a' : '');
 
   return (
     <html
@@ -203,6 +205,14 @@ export default async function RootLayout({
             }}
           />
         </LocaleProvider>
+        {analyticsCollector ? <script
+          defer
+          src={`${analyticsCollector}/v1/tracker.js`}
+          data-collector={analyticsCollector}
+          data-surface={listenerAccountHost ? 'listen' : accountHost ? 'account' : 'live'}
+          data-environment={process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT || 'production'}
+          data-account-link={accountHost || listenerAccountHost ? '/api/analytics/identity-link' : undefined}
+        /> : null}
       </body>
     </html>
   );

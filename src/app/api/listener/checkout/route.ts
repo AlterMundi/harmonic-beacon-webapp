@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
@@ -11,6 +12,7 @@ import {
 import { earlyBirdsEnabled } from '@/lib/early-birds/enabled';
 import { normalizeMercadoPagoPayerEmail } from '@/lib/early-birds/payer-email';
 import { isCanonicalListenerHost, isListenerStagingHost } from '@/lib/listener/public-discovery';
+import { emitAnalyticsEvent } from '@/lib/analytics-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,6 +101,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             returnUrl: `${context.origin}/?checkout=returned`,
             cancelUrl: `${context.origin}/?checkout=cancelled`,
             environment: context.environment,
+        });
+        await emitAnalyticsEvent({
+            eventName: 'membership.checkout_opened', source: 'membership', surface: 'commerce', accountId: session.user.id,
+            trafficClass: context.environment === 'staging' ? 'test' : 'unknown',
+            properties: {
+                provider, source_key_digest: createHash('sha256').update(attemptId).digest('hex'),
+            },
         });
         return json({ provider: result.provider, approvalUrl: result.approvalUrl }, 200);
     } catch (error) {
