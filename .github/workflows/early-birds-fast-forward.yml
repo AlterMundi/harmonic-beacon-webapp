@@ -26,8 +26,10 @@ on:
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
+      - ops/beacon-account/**
       - ops/listener-identity-staging/**
       - ops/listener-account-production/**
+      - scripts/beacon-account/**
       - scripts/early-birds-preview/**
       - scripts/listener-identity-staging/**
       - scripts/listener-account-production/**
@@ -65,8 +67,10 @@ on:
       - services/beacon-stream/**
       - ops/early-birds/**
       - ops/early-birds-preview/**
+      - ops/beacon-account/**
       - ops/listener-identity-staging/**
       - ops/listener-account-production/**
+      - scripts/beacon-account/**
       - scripts/early-birds-preview/**
       - scripts/listener-identity-staging/**
       - scripts/listener-account-production/**

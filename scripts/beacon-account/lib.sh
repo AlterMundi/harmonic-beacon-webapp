@@ -48,8 +48,13 @@ account_load_deploy_env() {
   account_require_private_file "$BEACON_ACCOUNT_MAIL_WORKER_PRODUCTION_ENV_FILE"
   account_require_private_file "$BEACON_ACCOUNT_MAIL_WORKER_STAGING_ENV_FILE"
   account_require_private_file "$BEACON_ACCOUNT_STAGING_DB_ENV_FILE"
-  test "$BEACON_ACCOUNT_BACKUP_DIR" = /var/backups/harmonic-beacon/account ||
+  test "$BEACON_ACCOUNT_BACKUP_DIR" = /mnt/beacon-data/backups/account ||
     account_fail 'unexpected backup directory'
+  command -v mountpoint >/dev/null 2>&1 || account_fail 'mountpoint command is unavailable'
+  mountpoint -q /mnt/beacon-data ||
+    account_fail '/mnt/beacon-data must be a mounted filesystem'
+  test "$(findmnt -n -o TARGET --target /mnt/beacon-data 2>/dev/null)" = /mnt/beacon-data ||
+    account_fail '/mnt/beacon-data mount identity is invalid'
   account_require_private_file "$BEACON_ACCOUNT_BACKUP_KEY_FILE"
   test "$(wc -c < "$BEACON_ACCOUNT_BACKUP_KEY_FILE")" -ge 48 || account_fail 'backup key is too short'
 }

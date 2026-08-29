@@ -354,6 +354,9 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   assert.match(lib, /\/usr\/local\/bin\/beacon-account-production-pg-dump/);
   assert.match(lib, /openssl enc -aes-256-cbc -salt -pbkdf2/);
   assert.match(lib, /openssl enc -d -aes-256-cbc/);
+  assert.match(lib, /BEACON_ACCOUNT_BACKUP_DIR" = \/mnt\/beacon-data\/backups\/account/);
+  assert.match(lib, /mountpoint -q \/mnt\/beacon-data/);
+  assert.match(lib, /findmnt -n -o TARGET --target \/mnt\/beacon-data/);
   assert.doesNotMatch(lib, /> "\$backup_dir\/\$backup_name"\s*$/m);
   assert.match(lib, /database was not downgraded|account_restore_previous_runtime/);
   assert.match(lib, /account_write_production_admin_env/);
