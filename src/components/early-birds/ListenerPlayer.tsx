@@ -190,14 +190,14 @@ export function nextPresenceSequence(
     return nextPresence === currentPresence ? currentSequence : currentSequence + 1;
 }
 
-// The Listener does not need low latency. Starting thirty six-second HLS
-// segments behind the edge gives browsers the promised three minutes of
-// network headroom while every fresh play still joins the current program.
+// The Listener does not need low latency. Start one complete segment beyond
+// the thirty-segment promise so joining partway through a fragment cannot turn
+// a nominal three-minute window into 2:54 of actually playable audio.
 export const LISTENER_HLS_BUFFER_CONFIG = {
     lowLatencyMode: false,
     liveDurationInfinity: true,
-    initialLiveManifestSize: 31,
-    liveSyncDurationCount: 30,
+    initialLiveManifestSize: 32,
+    liveSyncDurationCount: 31,
     liveMaxLatencyDurationCount: 48,
     liveSyncMode: 'buffered',
     startOnSegmentBoundary: true,
@@ -768,6 +768,11 @@ function ListenerPlayerController({
             reservoir.markBuffered(data.frag.url);
         });
         instance.on(HlsConstructor.Events.FRAG_CHANGED, (_event, data) => {
+            // Remove prefetched fragments at or behind the actual media clock.
+            // Initial live playlists deliberately include an extra segment
+            // margin; without this floor those unplayable bytes make the
+            // reservoir over-report outage coverage.
+            reservoir.markPlayed(data.frag.url);
             const programStartMs = data.frag.programDateTime;
             const mediaStartSeconds = data.frag.start;
             hlsProgramAnchor.current = typeof programStartMs === 'number'

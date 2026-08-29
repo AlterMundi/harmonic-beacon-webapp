@@ -13,12 +13,15 @@ const MEDIA_FILE_SHA256 = {
     // drain only the in-memory reservoir, and a successful origin probe resumes
     // forward loading without seeking the media clock. Exhaustion also keeps
     // that timeline intact until a real origin probe succeeds. Reservoir bytes
-    // are released only after hls.js confirms MediaSource accepted them. Codec, bitrate,
+    // are released only after hls.js confirms MediaSource accepted them. The
+    // actual playback fragment also advances a sequence floor so the initial
+    // prefetch margin behind the decoder is never reported as playable
+    // headroom. Codec, bitrate,
     // channel, gain/fade, AudioContext, intro assets, quota, event and payment
     // behavior remain unchanged.
-    'src/components/early-birds/ListenerPlayer.tsx': '3c680320b43fc89e9aa68163d1007d6470e575bc413f4fedf9183f04efcc231f',
+    'src/components/early-birds/ListenerPlayer.tsx': '815c8403189c87c8de2a84b4b38d61e72ca30eeb3eeec7c265903e9c61d4b50a',
     'src/lib/listener/playback-resilience.ts': '758c466216d2dfaef760665f28a35fdcefea167112fdc3ac96feb004dec7737f',
-    'src/lib/listener/segment-reservoir.ts': '4d04998653a1d97b40455358650c8520edf84aadea6ac67e35b80403c84b4c06',
+    'src/lib/listener/segment-reservoir.ts': '4bd2a96171caff974003238d665dde73aa9ea8d0cff38e66a37a62b8706a0964',
     // #474 adds server-side interval observation around the existing lease
     // lifecycle. It does not alter player bytes, codec, media URLs or audio.
     'src/lib/early-birds/stream.ts': 'e26cc0a3d3332be12b4a503f461fdf94c454f3ffceb0d290d82bc64907317b9f',
