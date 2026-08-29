@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { effectiveAnalyticsRole, fetchAnalyticsDashboard } from '@/lib/analytics-access';
+import { analyticsCsv } from '@/lib/analytics-csv';
 import { resolveStaffSession } from '@/lib/ops-auth';
 
 export const dynamic = 'force-dynamic';
@@ -14,17 +15,6 @@ function filters(request: NextRequest) {
         environment: values.get('environment') ?? 'production',
         traffic: (values.get('traffic') ?? 'real').split(',').filter(Boolean),
     };
-}
-
-function csvCell(value: unknown): string {
-    const text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
-    return `"${text.replaceAll('"', '""')}"`;
-}
-
-function csv(rows: unknown[]): string {
-    const objects = rows.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object' && !Array.isArray(row));
-    const columns = [...new Set(objects.flatMap(row => Object.keys(row)))];
-    return [columns.map(csvCell).join(','), ...objects.map(row => columns.map(key => csvCell(row[key])).join(','))].join('\n');
 }
 
 export async function GET(request: NextRequest) {
@@ -41,7 +31,7 @@ export async function GET(request: NextRequest) {
         if (dataset) {
             const rows = current[dataset];
             if (!Array.isArray(rows)) return NextResponse.json({ error: 'unknown_dataset' }, { status: 400 });
-            return new NextResponse(csv(rows), {
+            return new NextResponse(analyticsCsv(rows), {
                 headers: {
                     'content-type': 'text/csv; charset=utf-8',
                     'content-disposition': `attachment; filename="hb-analytics-${dataset}.csv"`,
