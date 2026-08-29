@@ -4,6 +4,7 @@ import { currentAccountSession } from '@/lib/account/auth';
 import { emitAnalyticsEvent } from '@/lib/analytics-server';
 import { currentEarlyBirdSession } from '@/lib/early-birds/auth';
 import { isAccountHost } from '@/lib/account/config';
+import { analyticsBrowserConfig } from '@/lib/analytics-browser';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
     await emitAnalyticsEvent({
         eventName: 'identity.linked', source: 'account', surface: isAccountHost(headers.get('host')) ? 'account' : 'listen',
         accountId, visitorId: values.visitor_id, sessionId: values.session_id,
+        environment: analyticsBrowserConfig(headers)?.environment,
         properties: { link_reason: 'login' },
     });
     return new NextResponse(null, { status: 204, headers: { 'cache-control': 'no-store' } });

@@ -104,6 +104,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
         await emitAnalyticsEvent({
             eventName: 'membership.checkout_opened', source: 'membership', surface: 'commerce', accountId: session.user.id,
+            environment: context.environment === 'staging' ? 'staging' : 'production',
             trafficClass: context.environment === 'staging' ? 'test' : 'unknown',
             properties: {
                 provider, source_key_digest: createHash('sha256').update(attemptId).digest('hex'),

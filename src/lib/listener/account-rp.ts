@@ -232,7 +232,8 @@ export async function completeListenerAccountCallback(input: {
         } });
     });
     await emitAnalyticsEvent({
-        eventName: 'identity.linked', source: 'listener', surface: 'listen', accountId,
+        eventName: 'identity.authenticated', source: 'listener', surface: 'listen', accountId,
+        environment: config.issuer === 'https://account-staging.harmonicbeacon.com' ? 'staging' : 'production',
         properties: { link_reason: 'login', auth_method: 'oidc' },
     });
     return { token };

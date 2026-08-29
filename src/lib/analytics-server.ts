@@ -3,8 +3,11 @@ import { createHmac, randomUUID } from 'node:crypto';
 type AnalyticsSurface = 'account' | 'listen' | 'commerce';
 type AnalyticsSource = 'account' | 'listener' | 'membership';
 
-function environment(): 'production' | 'staging' | 'development' | 'test' {
-    const value = process.env.NEXT_PUBLIC_DEPLOY_ENVIRONMENT ?? process.env.NODE_ENV;
+type AnalyticsEnvironment = 'production' | 'staging' | 'development' | 'test';
+
+function environment(explicit?: AnalyticsEnvironment): AnalyticsEnvironment {
+    if (explicit) return explicit;
+    const value: string | undefined = process.env.NODE_ENV;
     if (value === 'production' || value === 'staging' || value === 'test') return value;
     return 'development';
 }
@@ -25,6 +28,7 @@ export async function emitAnalyticsEvent(input: {
     occurredAt?: Date;
     trafficClass?: 'real' | 'internal' | 'synthetic' | 'test' | 'unknown';
     properties?: Record<string, string | number | boolean | null>;
+    environment?: AnalyticsEnvironment;
 }): Promise<boolean> {
     const endpoint = process.env.ANALYTICS_INTERNAL_URL?.trim();
     const secret = process.env.ANALYTICS_SERVER_EVENT_SECRET?.trim();
@@ -36,7 +40,7 @@ export async function emitAnalyticsEvent(input: {
         occurred_at: (input.occurredAt ?? new Date()).toISOString(),
         source: input.source,
         surface: input.surface,
-        environment: environment(),
+        environment: environment(input.environment),
         account_subject: input.accountId ? analyticsAccountSubject(input.accountId) : null,
         visitor_id: input.visitorId ?? null,
         session_id: input.sessionId ?? null,

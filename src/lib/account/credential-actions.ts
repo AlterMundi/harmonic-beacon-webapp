@@ -102,8 +102,10 @@ export async function verifyAccountEmail(token: string): Promise<boolean> {
         return true;
     });
     if (completed === true && verifiedAccountId) {
+        const authorityEnvironment = accountEnvironment();
         await emitAnalyticsEvent({
             eventName: 'account.verified', source: 'account', surface: 'account', accountId: verifiedAccountId,
+            environment: authorityEnvironment === 'local' ? 'development' : authorityEnvironment,
             properties: { verification_method: 'email' },
         });
     }
