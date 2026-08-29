@@ -38,6 +38,10 @@ test('source backfills exclude unverifiable legacy lease time from real metrics'
     assert.match(source, /\.\.\.payments\.rows/);
     assert.match(source, /PAYMENT_REFUNDED','DISPUTED/);
     assert.match(source, /'confirmed'.*'refunded'.*'reversed'/s);
+    assert.match(source, /\$4::boolean.*\$5::timestamptz/);
+    assert.match(source, /\$4::varchar in \('EXPIRED','REFUNDED','CANCELLED'\)/);
+    assert.match(source, /then \$11::timestamptz else null::timestamptz/);
+    assert.match(source, /durationMs > 12 \* 60 \* 60 \* 1000/);
     assert.match(source, /recordFailure/);
     assert.match(source, /resolveFailures/);
 });
@@ -48,6 +52,11 @@ test('browser retention preserves daily acquisition aggregates beyond raw-event 
     assert.match(worker, /refreshDaily\(2\)/);
     assert.match(worker, /insert into mart\.acquisition_daily/);
     assert.match(worker, /delete from ingest\.raw_events where received_at < now\(\)-interval '180 days'/);
+});
+
+test('Compose starts the analytics worker entrypoint rather than the collector server', async () => {
+    const compose = await readFile(new URL('../../ops/analytics/compose.yml', root), 'utf8');
+    assert.match(compose, /worker:[\s\S]*command: \["node", "src\/worker\.mjs"\]/);
 });
 
 test('backup verification uses the pinned PostgreSQL toolchain and mounted data disk', async () => {
