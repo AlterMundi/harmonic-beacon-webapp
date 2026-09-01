@@ -14,7 +14,7 @@ describe('public four-Saturday cycle', () => {
         expect(isPublicCycleSession('10000000-0000-4000-8000-000000000001')).toBe(false);
     });
 
-    it('keeps the final migration contract at the confirmed 16:00 UTC', () => {
+    it('preserves the historical four-session correction at 16:00 UTC', () => {
         const migration = readFileSync(
             new URL(
                 '../../../prisma/migrations/20260821194000_correct_four_saturday_cycle_start/migration.sql',
@@ -29,6 +29,22 @@ describe('public four-Saturday cycle', () => {
         expect(migration).toContain('initialized_count = 0 AND corrected_count <> 0');
         expect(migration).toContain('initialized_count > 0 AND corrected_count <> 4');
         expect(migration).not.toContain('14:00:00');
+    });
+
+    it('moves only the two remaining sessions to 14:00 Argentina / 17:00 UTC', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260901180000_move_remaining_umbral_sessions_to_1400_argentina/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain("'2026-09-05 17:00:00'::timestamp");
+        expect(migration).toContain("'2026-09-12 17:00:00'::timestamp");
+        expect(migration).not.toContain('2026-08-22 17:00:00');
+        expect(migration).not.toContain('2026-08-29 17:00:00');
+        expect(migration).toContain('corrected_count <> 2');
     });
 
     it('recognizes only an entirely anonymous COMP entitlement for a reviewed public room', () => {
