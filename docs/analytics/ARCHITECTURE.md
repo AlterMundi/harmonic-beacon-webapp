@@ -17,9 +17,10 @@ would create two browser pipelines and competing session definitions. The collec
 single strict contract, stores raw facts append-only and remains smaller than the Umami tracker.
 
 Metabase OSS cannot reuse the existing Account/Staff authorization or provide the required
-per-person access/export audit without a second identity system or paid SSO. The Admin surface in
-Live queries only the analytics mart through a read-only role, reuses Staff `ADMIN` plus explicit
-`ANALYTICS_VIEWER` / `ANALYTICS_EXPORTER` grants, and records every detail view and export. It therefore has a narrower
+per-person access/export audit without a second identity system or paid SSO. The Staff surface in
+Live queries only the analytics mart through a read-only role, grants view access to every authenticated
+Staff role, restricts exports to `ADMIN` or an explicit `ANALYTICS_EXPORTER` grant, and records every
+detail view and export. It therefore has a narrower
 attack surface and clearer ownership than an embedded BI instance.
 
 ## Topology

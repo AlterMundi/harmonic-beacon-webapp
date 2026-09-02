@@ -47,7 +47,7 @@ browser analytics in a consent-required territory.
 
 ## Access and data-subject operations
 
-- Live `ADMIN` and explicit `ANALYTICS_VIEWER` roles may view the dashboard.
+- Every authenticated Live staff role may view the dashboard.
 - `ADMIN` and `ANALYTICS_EXPORTER` may export. Every view/export records actor, role, filter digest
   and exported row count; the audit never stores the result set.
 - A correction or access request resolves the person in Account, derives the privileged HMAC

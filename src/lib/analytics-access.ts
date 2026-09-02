@@ -10,10 +10,13 @@ export async function effectiveAnalyticsRole(staff: StaffPrincipal): Promise<Eff
     const delegate = (prisma as unknown as { analyticsRoleGrant?: {
         findUnique(args: unknown): Promise<{ role: 'VIEWER' | 'EXPORTER'; revokedAt: Date | null } | null>;
     } }).analyticsRoleGrant;
-    if (!delegate) return null;
-    const grant = await delegate.findUnique({ where: { staffUserId: staff.id } });
-    if (!grant || grant.revokedAt) return null;
-    return grant.role === 'EXPORTER' ? 'ANALYTICS_EXPORTER' : 'ANALYTICS_VIEWER';
+    const grant = delegate
+        ? await delegate.findUnique({ where: { staffUserId: staff.id } })
+        : null;
+    if (grant && !grant.revokedAt && grant.role === 'EXPORTER') {
+        return 'ANALYTICS_EXPORTER';
+    }
+    return 'ANALYTICS_VIEWER';
 }
 
 function required(name: string): string {

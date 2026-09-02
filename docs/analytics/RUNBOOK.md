@@ -21,7 +21,8 @@ The authoritative data-class, purpose, jurisdiction and owner matrix is
 - Network digests: 30 days; advertising click IDs: 90 days; raw browser events: 180 days.
 - Canonical account, listening, attendance, membership and payment facts: retained while needed
   for operations, financial/legal obligations and longitudinal product analysis.
-- Dashboard: Live `ADMIN` or an explicit `AnalyticsRoleGrant`; CSV requires EXPORTER or ADMIN.
+- Dashboard: every authenticated Live staff role has view access; CSV requires an active
+  `EXPORTER` grant or `ADMIN`.
 - Every view/export appends an opaque actor, role, filters digest and row count to `audit`.
 - Passwords, auth tokens, secrets, signed URLs, payment numbers, chat/media content and form values
   are prohibited by the contract and rejected before storage.
