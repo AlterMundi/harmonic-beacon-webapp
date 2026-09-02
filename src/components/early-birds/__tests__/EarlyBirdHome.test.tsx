@@ -51,7 +51,7 @@ const quota = {
 afterEach(() => cleanup());
 
 describe('EarlyBird Listener home access chrome', () => {
-    it('keeps membership, payment, provider and identity controls out of the player', () => {
+    it('keeps payment controls out of the player while exposing membership discovery', () => {
         const { container } = render(
             <LocaleProvider initialLocale="en">
                 <EarlyBirdHome dropIns={{ es: null, en: null }} />
@@ -62,9 +62,26 @@ describe('EarlyBird Listener home access chrome', () => {
         expect(container.querySelector('.listener-home-membership-status')).toBeNull();
         expect(container.querySelector('.listener-membership-actions')).toBeNull();
         expect(container.querySelector('.listener-checkout')).toBeNull();
+        expect(screen.getByRole('link', { name: 'Manage membership' }))
+            .toHaveAttribute('href', '/listener/membership');
         expect(screen.queryByText(/Founding Listener|PayPal|Mercado Pago|USD 5/i)).toBeNull();
         expect(screen.queryByRole('button', { name: /cancel membership/i })).toBeNull();
         expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+    });
+
+    it('makes the USD 5 membership visible to Free listeners', () => {
+        render(
+            <LocaleProvider initialLocale="en">
+                <EarlyBirdHome
+                    accessKind="free-quota"
+                    quota={quota}
+                    dropIns={{ es: null, en: null }}
+                />
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByRole('link', { name: 'Subscribe · USD 5/month' }))
+            .toHaveAttribute('href', '/listener/membership');
     });
 
     it('keeps only the compact Free listening allowance below the player', () => {
