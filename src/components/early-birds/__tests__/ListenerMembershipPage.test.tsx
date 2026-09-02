@@ -69,7 +69,7 @@ describe('Listener membership management page', () => {
         );
 
         expect(screen.getByText('You have 3h left this week')).toBeInTheDocument();
-        expect(screen.getByText('Become a member for full access')).toBeInTheDocument();
+        expect(screen.getByText('Try Founder membership')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeInTheDocument();
         expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
     });

@@ -65,10 +65,11 @@ export default function FoundingListenerCheckout({
     }
 
     return (
-        <details className="listener-checkout">
-            <summary>{copy.freeQuotaMembershipCta}</summary>
+        <section className="listener-checkout" aria-labelledby="listener-checkout-title">
             <div className="listener-checkout__options">
-                <strong>{environment === 'live' ? copy.checkoutLiveTitle : copy.checkoutSandboxTitle}</strong>
+                <strong id="listener-checkout-title">
+                    {environment === 'live' ? copy.checkoutLiveTitle : copy.checkoutSandboxTitle}
+                </strong>
                 <p>{environment === 'live' ? copy.checkoutLiveDetail : copy.checkoutSandboxDetail}</p>
                 {environment === 'live' && (
                     <p className="listener-checkout__legal">
@@ -113,6 +114,6 @@ export default function FoundingListenerCheckout({
                     ? copy.checkoutLiveUnavailable
                     : copy.checkoutUnavailable}</p>}
             </div>
-        </details>
+        </section>
     );
 }

@@ -40,7 +40,7 @@ describe('Founding Listener sandbox checkout', () => {
             </LocaleProvider>,
         );
 
-        fireEvent.click(screen.getByText('Become a member for full access'));
+        expect(screen.getByText('Try Founder membership')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Continue with PayPal' }));
         await screen.findByRole('alert');
         fireEvent.click(screen.getByRole('button', { name: 'Continue with PayPal' }));
@@ -65,7 +65,7 @@ describe('Founding Listener sandbox checkout', () => {
             </LocaleProvider>,
         );
 
-        fireEvent.click(screen.getByText('Become a member for full access'));
+        expect(screen.getByText('Try Founder membership')).toBeInTheDocument();
         expect(screen.getByLabelText('Email for your Mercado Pago account')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Continue with Mercado Pago' }));
         expect(await screen.findByRole('alert')).toHaveTextContent('Enter the email you use for Mercado Pago.');

@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 
 import { useLocale } from '@/context/LocaleContext';
 import { clearListenerOAuthAttempt } from '@/lib/early-birds/auth-client';
-import { earlyBirdHomeCopy } from '@/lib/early-birds/copy';
+import { earlyBirdCopy, earlyBirdHomeCopy } from '@/lib/early-birds/copy';
+import { LISTENER_NAMESPACE } from '@/lib/listener/namespace';
 
 import BeaconField from './BeaconField';
 import FreeQuotaStatus from './FreeQuotaStatus';
@@ -30,19 +31,29 @@ export default function EarlyBirdHome({
 }) {
     const { locale } = useLocale();
     const copy = earlyBirdHomeCopy[locale];
+    const membershipCopy = earlyBirdCopy[locale];
 
     useEffect(() => clearListenerOAuthAttempt(), []);
 
     return (
         <main className="listener-shell">
             <div className="listener-shell__frame listener-shell__frame--home">
-                {publicAccess && (
-                    <header className="listener-rail">
-                        <div className="listener-rail__actions">
+                <header className="listener-rail">
+                    <div className="listener-rail__actions">
+                        {publicAccess ? (
                             <FreeQuotaStatus serverNow={serverNow} unlimited="free-for-all" compact />
-                        </div>
-                    </header>
-                )}
+                        ) : (
+                            <a
+                                className="listener-membership-entry"
+                                href={LISTENER_NAMESPACE.canonical.membership}
+                            >
+                                {accessKind === 'free-quota'
+                                    ? membershipCopy.membershipSubscribeAction
+                                    : membershipCopy.membershipManageAction}
+                            </a>
+                        )}
+                    </div>
+                </header>
                 <div className="listener-static-field" data-testid="listener-static-field">
                     <BeaconField phase="ready" />
                 </div>
