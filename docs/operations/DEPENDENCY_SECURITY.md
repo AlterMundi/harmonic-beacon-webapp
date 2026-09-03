@@ -34,6 +34,17 @@ patched dependency.
 The prior production `tsx` chain now resolves to `tsx@4.23.12` and patched
 `esbuild@0.28.2` within the already-declared compatible range.
 
+Prisma 7.9.1 also pins `mysql2@3.15.3` directly and reaches `fast-uri` through
+its bundled development tooling. New advisories published after the original
+review made both resolved versions fail the production gate. The root lockfile
+therefore overrides them to the first patched compatible releases reviewed on
+2026-09-03: `mysql2@3.24.3` and `fast-uri@3.1.6`. Harmonic Beacon uses
+PostgreSQL rather than MySQL, but the bundled package remains part of the
+installed production tree and is not exempted. Prisma generation, the full
+production build and the complete test suites remain required while these
+upstream pins are overridden. Remove each override once Prisma declares a
+patched version itself.
+
 Every independently deployed Node package is audited, not only the repository
 root. The tapestry service is pinned to Sharp 0.35.3 after its prior 0.34 line
 reported a high-severity inherited libvips advisory. CI and release now run
