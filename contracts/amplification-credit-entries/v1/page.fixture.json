@@ -1,0 +1,24 @@
+{
+  "schema_version": "amplification-credit-entries.v1",
+  "entries": [
+    {
+      "entry_id": "70000000-0000-4000-8000-000000000001",
+      "scheduled_session_id": "10000000-0000-4000-8000-000000000001",
+      "ticket_entitlement_id": "50000000-0000-4000-8000-000000000001",
+      "registration_id": "20000000-0000-4000-8000-000000000001",
+      "email": "ana@example.com",
+      "display_name": "Ana",
+      "entered_at": "2026-08-09T20:00:00.000Z"
+    },
+    {
+      "entry_id": "70000000-0000-4000-8000-000000000002",
+      "scheduled_session_id": "10000000-0000-4000-8000-000000000001",
+      "ticket_entitlement_id": "50000000-0000-4000-8000-000000000002",
+      "registration_id": null,
+      "email": null,
+      "display_name": null,
+      "entered_at": "2026-08-09T20:15:30.000Z"
+    }
+  ],
+  "next_cursor": "eyJ2IjoxLCJlbnRlcmVkX2F0IjoiMjAyNi0wOC0wOVQyMDoxNTozMC4wMDBaIiwiZW50cnlfaWQiOiI3MDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIifQ"
+}
