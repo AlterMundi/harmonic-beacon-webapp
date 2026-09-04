@@ -88,6 +88,39 @@ export async function withoutContributions<T>(
     }
 }
 
+/**
+ * Clear a fixture session's raised hands before and after `run`.
+ *
+ * Hand-flow specs exercise the real persistent queue. Keeping this cleanup
+ * close to those specs prevents their state from leaking into later cockpit
+ * screenshots while still allowing the product endpoints to own every
+ * transition under test.
+ */
+export async function withoutRaisedHands<T>(
+    databaseUrl: string,
+    sessionId: string,
+    run: () => Promise<T>,
+): Promise<T> {
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+        await client.query(
+            'update session_participants set raised_at = null where scheduled_session_id = $1',
+            [sessionId],
+        );
+        try {
+            return await run();
+        } finally {
+            await client.query(
+                'update session_participants set raised_at = null where scheduled_session_id = $1',
+                [sessionId],
+            );
+        }
+    } finally {
+        await client.end();
+    }
+}
+
 /** Replace fixture event titles for a layout test, then restore them exactly. */
 export async function withSessionTitles<T>(
     databaseUrl: string,
