@@ -31,13 +31,19 @@ type WeekendEvent = {
 };
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
-// Editorial override for the public landing only. The stored schedule still
-// controls room access, lifecycle automation and every non-landing surface.
-const LANDING_ONLY_1400_ART_SESSION_IDS = new Set([
-    '50000000-0000-4000-8000-202609050001',
-    '50000000-0000-4000-8000-202609120001',
+// Rollout-safe editorial override: normalize only the legacy stored times.
+// Once scheduled_at is migrated to the canonical value, this becomes a no-op
+// so the app cannot show 15:00 while old and new revisions overlap.
+const LANDING_1400_ART_SCHEDULES = new Map([
+    ['50000000-0000-4000-8000-202609050001', {
+        legacy: '2026-09-05T16:00:00.000Z',
+        canonical: '2026-09-05T17:00:00.000Z',
+    }],
+    ['50000000-0000-4000-8000-202609120001', {
+        legacy: '2026-09-12T16:00:00.000Z',
+        canonical: '2026-09-12T17:00:00.000Z',
+    }],
 ]);
-const ONE_HOUR_MS = 60 * 60 * 1000;
 // A missed lifecycle transition must not leave an old LIVE row advertising the
 // current checkout indefinitely. Weekend sessions last hours, not days; 24
 // hours keeps a delayed/extended live room discoverable while failing closed
@@ -45,10 +51,9 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 const PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function landingDisplayTime(event: Pick<WeekendEvent, 'id' | 'scheduledAt'>): string {
-    const displayTime = LANDING_ONLY_1400_ART_SESSION_IDS.has(event.id)
-        ? new Date(event.scheduledAt.getTime() + ONE_HOUR_MS)
-        : event.scheduledAt;
-    return displayTime.toISOString();
+    const stored = event.scheduledAt.toISOString();
+    const schedule = LANDING_1400_ART_SCHEDULES.get(event.id);
+    return schedule?.legacy === stored ? schedule.canonical : stored;
 }
 
 function publicScheduleNow(): Date {
