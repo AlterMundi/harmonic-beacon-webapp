@@ -227,6 +227,35 @@ describe('resolveRoomPrincipal', () => {
         });
     });
 
+    it('lets a newly confirmed device correct the durable alias without changing identity', async () => {
+        findWebSession.mockResolvedValue({
+            ...activeTicketSession,
+            displayName: 'Anahí 李',
+            displayNameConfirmedAt: now,
+        });
+        findParticipant.mockResolvedValue({
+            id: 'participant-1',
+            displayName: 'Nombre anterior',
+            publishGrantedAt: null,
+            publishRevokedAt: null,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: {
+                identity: 'opaque:event-1:ticket:ticket-1',
+                displayName: 'Anahí 李',
+            },
+        });
+        expect(updateParticipant).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 'participant-1' },
+            data: expect.objectContaining({ displayName: 'Anahí 李' }),
+        }));
+    });
+
     it('recovers a concurrent ticket insert only from the exact canonical winner', async () => {
         findParticipant
             .mockResolvedValueOnce(null)
@@ -257,7 +286,7 @@ describe('resolveRoomPrincipal', () => {
         });
         expect(updateParticipant).toHaveBeenCalledWith({
             where: { id: 'ticket-race-winner' },
-            data: { leftAt: null },
+            data: { leftAt: null, displayName: 'Ana' },
             select: {
                 grantReconcileNeeded: true,
                 publishGrantedAt: true,
@@ -385,6 +414,7 @@ describe('resolveRoomPrincipal', () => {
         expect(updateParticipant).toHaveBeenCalledWith({
             where: { id: 'seeded-facilitator-row' },
             data: {
+                displayName: 'Julián',
                 leftAt: null,
             },
             select: {

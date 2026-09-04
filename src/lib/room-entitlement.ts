@@ -103,7 +103,7 @@ async function recoverConcurrentParticipant(
 
     return prisma.sessionParticipant.update({
         where: { id: winner.id },
-        data: { leftAt: null },
+        data: { leftAt: null, displayName: access.displayName },
         select: {
             publishGrantedAt: true,
             publishRevokedAt: true,
@@ -134,6 +134,7 @@ async function resolveRoomAccess(
         select: {
             id: true,
             displayName: true,
+            displayNameConfirmedAt: true,
             accountIssuer: true,
             accountSubject: true,
             accountSessionId: true,
@@ -327,7 +328,9 @@ async function resolveRoomAccess(
             // Revocations rotate this identity so stale JWTs and late RPCs are
             // fenced away from the current connection.
             identity: existingParticipant?.participantIdentity ?? baselineIdentity,
-            displayName: existingParticipant?.displayName?.trim() || displayName,
+            displayName: ticketEntitlementId && webSession.displayNameConfirmedAt
+                ? webSession.displayName?.trim() || existingParticipant?.displayName?.trim() || displayName
+                : existingParticipant?.displayName?.trim() || displayName,
             role,
             isAssignedFacilitator,
             canPublishInitially,
@@ -407,7 +410,9 @@ export async function resolveRoomPrincipal(
                 where: { id: existingParticipant.id },
                 data: {
                     // Joining again resumes presence without rewriting identity
-                    // or the alias already captured for this participation.
+                    // after a grant fence. A newly confirmed alias from another
+                    // device becomes the durable event name.
+                    displayName: access.displayName,
                     leftAt: null,
                 },
                 select: {

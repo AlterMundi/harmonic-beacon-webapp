@@ -73,6 +73,7 @@ const TOKEN_RESPONSE = {
 
 const ENTRY_RESPONSE = {
     state: 'READY',
+    identity: { kind: 'attendee', displayName: 'Nico', confirmed: true },
     session: {
         id: 'session-1',
         title: 'Test Session',

@@ -20,6 +20,7 @@ import HandRaiseButton from "@/components/session/HandRaiseButton";
 import FacilitatorAudioQuality from "@/components/session/FacilitatorAudioQuality";
 import SessionContributions from "@/components/session/SessionContributions";
 import SessionGuidance from "@/components/session/SessionGuidance";
+import SessionIdentityGate from "@/components/session/SessionIdentityGate";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
 import ThumbnailSender from "@/components/session/ThumbnailSender";
 import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
@@ -245,6 +246,10 @@ function SessionRoom() {
     const [stageInvitationAccepted, setStageInvitationAccepted] = useState(false);
     const [stageInvitationBusy, setStageInvitationBusy] = useState<'accept' | 'decline' | null>(null);
     const [stageInvitationError, setStageInvitationError] = useState<string | null>(null);
+    const [stageExitConfirming, setStageExitConfirming] = useState(false);
+    const [stageExitBusy, setStageExitBusy] = useState(false);
+    const [stageExitError, setStageExitError] = useState<string | null>(null);
+    const [sessionExitConfirming, setSessionExitConfirming] = useState(false);
 
     const roomRef = useRef<Room | null>(null);
     // Keep ownership by track so an unsubscribe can remove the exact DOM node
@@ -264,6 +269,7 @@ function SessionRoom() {
     const desiredCameraRef = useRef(false);
     const deviceOperationRef = useRef<Promise<void> | null>(null);
     const stageInvitationAcceptedRef = useRef(false);
+    const stageExitInFlightRef = useRef(false);
     const terminalViewRef = useRef<HTMLDivElement>(null);
     const stageInvitationRef = useRef<HTMLDivElement>(null);
     const participantFallbackRef = useRef(copy.session.participantFallback);
@@ -508,6 +514,45 @@ function SessionRoom() {
             setStageInvitationBusy(null);
         }
     }, [canPublish, copy.session.invitationDeclineError, id, principalKind, stageInvitationBusy]);
+
+    const leaveStage = useCallback(async () => {
+        if (
+            principalKind !== 'ticket' ||
+            !canPublish ||
+            stageExitBusy ||
+            stageExitInFlightRef.current
+        ) return;
+
+        stageExitInFlightRef.current = true;
+        setStageExitBusy(true);
+        setStageExitError(null);
+        try {
+            const response = await fetch(`/api/scheduled-sessions/${id}/hand`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'leave_stage' }),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            // LiveKit's permission event releases the local devices. These
+            // state updates make the attendee UI converge immediately while
+            // both receiving rooms and their audio activation stay mounted.
+            desiredCameraRef.current = false;
+            desiredMicRef.current = false;
+            setStageInvitationAccepted(false);
+            setCanPublish(false);
+            setIsCameraOn(false);
+            setIsMicOn(false);
+            setStageExitConfirming(false);
+            readStage();
+        } catch (failure) {
+            console.error('Failed to leave the stage:', redactErrorDetail(failure));
+            setStageExitError(copy.session.leaveStageFailed);
+        } finally {
+            stageExitInFlightRef.current = false;
+            setStageExitBusy(false);
+        }
+    }, [canPublish, copy.session.leaveStageFailed, id, principalKind, readStage, stageExitBusy]);
 
     // Connect to LiveKit room
     useEffect(() => {
@@ -1235,6 +1280,62 @@ function SessionRoom() {
                             />
                         </div>
                     )}
+                    {canControlStageDevices && principalKind === 'ticket' ? (
+                        <div className="mx-auto mb-4 w-full max-w-md">
+                            {!stageExitConfirming ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setStageExitError(null);
+                                        setStageExitConfirming(true);
+                                    }}
+                                    className="event-button event-button--secondary w-full"
+                                >
+                                    {copy.session.leaveStage}
+                                </button>
+                            ) : (
+                                <section
+                                    role="alertdialog"
+                                    aria-labelledby="leave-stage-heading"
+                                    aria-describedby="leave-stage-body"
+                                    className="rounded border border-[var(--gold)]/40 bg-[var(--surface-alt)] p-4 text-center"
+                                >
+                                    <h2 id="leave-stage-heading" className="font-serif text-xl text-[var(--paper)]">
+                                        {copy.session.leaveStageHeading}
+                                    </h2>
+                                    <p id="leave-stage-body" className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                                        {copy.session.leaveStageBody}
+                                    </p>
+                                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => void leaveStage()}
+                                            disabled={stageExitBusy}
+                                            className="event-button event-button--primary w-full"
+                                        >
+                                            {stageExitBusy
+                                                ? copy.session.leavingStage
+                                                : copy.session.leaveStageConfirm}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setStageExitConfirming(false)}
+                                            disabled={stageExitBusy}
+                                            autoFocus
+                                            className="event-button event-button--secondary w-full"
+                                        >
+                                            {copy.session.leaveStageCancel}
+                                        </button>
+                                    </div>
+                                </section>
+                            )}
+                            {stageExitError ? (
+                                <p role="alert" className="mt-3 text-center text-sm text-[var(--danger)]">
+                                    {stageExitError}
+                                </p>
+                            ) : null}
+                        </div>
+                    ) : null}
                     <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-3">
                         {canControlStageDevices && (
                             <div className="flex flex-col items-center gap-1">
@@ -1327,24 +1428,48 @@ function SessionRoom() {
                             <span className="text-xs text-[var(--text-secondary)]">{copy.session.audioOnly}</span>
                         </div>
 
-                        <div className="flex flex-col items-center gap-1">
-                            <button
-                                onClick={leaveSession}
-                                className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-[var(--text-muted)] transition-all hover:bg-white/20"
-                                aria-label={copy.session.leaveSession}
-                            >
-                                <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                </svg>
-                            </button>
-                            <span className="text-xs text-[var(--text-secondary)]">{copy.session.leave}</span>
-                        </div>
                     </div>
                     {cameraSwitchError && (
                         <p className="mx-auto mt-3 max-w-md text-center text-sm text-[var(--danger)]" role="alert">
                             {cameraSwitchError}
                         </p>
                     )}
+                    <div className="mx-auto mt-5 max-w-md border-t border-[var(--border-subtle)] pt-4 text-center">
+                        {!sessionExitConfirming ? (
+                            <button
+                                type="button"
+                                onClick={() => setSessionExitConfirming(true)}
+                                className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
+                            >
+                                {copy.session.leaveSession}
+                            </button>
+                        ) : (
+                            <div
+                                role="alertdialog"
+                                aria-label={copy.session.leaveSession}
+                                className="rounded border border-[var(--danger)]/40 bg-[var(--surface-alt)] p-3"
+                            >
+                                <p className="text-sm leading-6 text-[var(--text-secondary)]">{copy.session.leaveSessionBody}</p>
+                                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                                    <button
+                                        type="button"
+                                        onClick={leaveSession}
+                                        className="event-button event-button--secondary"
+                                    >
+                                        {copy.session.leaveSessionConfirm}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSessionExitConfirming(false)}
+                                        autoFocus
+                                        className="event-button event-button--secondary"
+                                    >
+                                        {copy.session.leaveSessionCancel}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </main>
@@ -1369,6 +1494,11 @@ type EntrySession = {
 
 type EntryResponse = {
     state: EntryState;
+    identity: { kind: 'staff' } | {
+        kind: 'attendee';
+        displayName: string;
+        confirmed: boolean;
+    };
     session: EntrySession;
 };
 
@@ -1455,6 +1585,20 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                     </div>
                 </div>
             </main>
+        );
+    }
+
+    if (entry.identity.kind === 'attendee' && !entry.identity.confirmed) {
+        return (
+            <SessionIdentityGate
+                sessionId={sessionId}
+                sessionTitle={entry.session.title}
+                initialDisplayName={entry.identity.displayName}
+                onConfirmed={(displayName) => setEntry((current) => current ? {
+                    ...current,
+                    identity: { kind: 'attendee', displayName, confirmed: true },
+                } : current)}
+            />
         );
     }
 
