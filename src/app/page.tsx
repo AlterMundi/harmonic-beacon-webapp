@@ -31,30 +31,11 @@ type WeekendEvent = {
 };
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
-// Rollout-safe editorial override: normalize only the legacy stored times.
-// Once scheduled_at is migrated to the canonical value, this becomes a no-op
-// so the app cannot show 15:00 while old and new revisions overlap.
-const LANDING_1400_ART_SCHEDULES = new Map([
-    ['50000000-0000-4000-8000-202609050001', {
-        legacy: '2026-09-05T16:00:00.000Z',
-        canonical: '2026-09-05T17:00:00.000Z',
-    }],
-    ['50000000-0000-4000-8000-202609120001', {
-        legacy: '2026-09-12T16:00:00.000Z',
-        canonical: '2026-09-12T17:00:00.000Z',
-    }],
-]);
 // A missed lifecycle transition must not leave an old LIVE row advertising the
 // current checkout indefinitely. Weekend sessions last hours, not days; 24
 // hours keeps a delayed/extended live room discoverable while failing closed
 // before a stale row can be presented as the next paid event.
 const PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-function landingDisplayTime(event: Pick<WeekendEvent, 'id' | 'scheduledAt'>): string {
-    const stored = event.scheduledAt.toISOString();
-    const schedule = LANDING_1400_ART_SCHEDULES.get(event.id);
-    return schedule?.legacy === stored ? schedule.canonical : stored;
-}
 
 function publicScheduleNow(): Date {
     const pinned = process.env.E2E_DASHBOARD_ENABLED === '1'
@@ -184,7 +165,7 @@ export default async function LandingPage({
                                                     )}
                                                 </>
                                             )}
-                                            <EventLocalTime at={landingDisplayTime(event)} />
+                                            <EventLocalTime at={event.scheduledAt.toISOString()} />
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
