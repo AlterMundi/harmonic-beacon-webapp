@@ -120,8 +120,12 @@ export default function LoginClient({
                     required
                     autoComplete="email"
                     spellCheck={false}
+                    aria-describedby="display-name-hint"
                     className="event-field"
                 />
+                <p id="display-name-hint" className="text-xs leading-5 text-[var(--text-muted)]">
+                    {messages.displayNameHint}
+                </p>
             </div>}
 
             {error && (

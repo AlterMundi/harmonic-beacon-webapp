@@ -100,7 +100,7 @@ async function recoverConcurrentParticipant(
 
     return prisma.sessionParticipant.update({
         where: { id: winner.id },
-        data: { leftAt: null },
+        data: { leftAt: null, displayName: access.displayName },
         select: {
             publishGrantedAt: true,
             publishRevokedAt: true,
@@ -130,6 +130,7 @@ async function resolveRoomAccess(
         select: {
             id: true,
             displayName: true,
+            displayNameConfirmedAt: true,
             accountIssuer: true,
             accountSubject: true,
             accountSessionId: true,
@@ -318,7 +319,9 @@ async function resolveRoomAccess(
                 startedAt: scheduledSession.startedAt,
             },
             identity,
-            displayName: existingParticipant?.displayName?.trim() || displayName,
+            displayName: ticketEntitlementId && webSession.displayNameConfirmedAt
+                ? webSession.displayName?.trim() || existingParticipant?.displayName?.trim() || displayName
+                : existingParticipant?.displayName?.trim() || displayName,
             role,
             isAssignedFacilitator,
             canPublishInitially,
@@ -399,7 +402,9 @@ export async function resolveRoomPrincipal(
                 where: { id: existingParticipant.id },
                 data: {
                     participantIdentity: access.identity,
-                    // Preserve the alias already captured for this participation.
+                    // A newly confirmed alias from another device becomes the
+                    // durable event name without changing the stable identity.
+                    displayName: access.displayName,
                     leftAt: null,
                 },
                 select: {

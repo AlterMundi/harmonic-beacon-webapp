@@ -17,9 +17,10 @@ export async function loginViaDashboard(
     role: DashboardRole,
     name: string,
     landing: string,
+    options: { nameConfirmed?: boolean } = {},
 ): Promise<void> {
     const response = await page.request.post('/api/test-login', {
-        data: { name, role, landing },
+        data: { name, role, landing, ...options },
     });
     expect(
         response.ok(),

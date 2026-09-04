@@ -85,7 +85,7 @@ type GrantInput = {
 
 type DemoteInput = Omit<GrantInput, 'actorUserId'> & {
     actorUserId: string | null;
-    auditAction?: 'stage.demote' | 'stage.invitation.decline';
+    auditAction?: 'stage.demote' | 'stage.invitation.decline' | 'stage.attendee.leave';
     clearHand?: boolean;
 };
 
@@ -94,6 +94,8 @@ type DeclineInvitationInput = {
     participantIdentity: string;
     now?: Date;
 };
+
+type LeaveStageInput = DeclineInvitationInput;
 
 type MuteInput = {
     scheduledSessionId: string;
@@ -455,7 +457,15 @@ export async function demoteParticipant(
                 id: input.participantId,
                 scheduledSessionId: input.scheduledSessionId,
             },
-            select: { id: true, participantIdentity: true, staffUserId: true },
+            select: {
+                id: true,
+                participantIdentity: true,
+                staffUserId: true,
+                raisedAt: true,
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+                grantVersion: true,
+            },
         });
         if (!target) {
             throw new StageControlError(
@@ -471,15 +481,25 @@ export async function demoteParticipant(
                 'The assigned facilitator holds the reserved stage slot and cannot be demoted',
             );
         }
+        const activeGrant = target.publishGrantedAt !== null && target.publishRevokedAt === null;
+        if (!activeGrant && (!input.clearHand || target.raisedAt === null)) {
+            return {
+                id: target.id,
+                participantIdentity: target.participantIdentity,
+                grantVersion: target.grantVersion,
+                roomName: scheduledSession.roomName,
+            };
+        }
+
         const participant = await transaction.sessionParticipant.update({
             where: { id: target.id },
             data: {
-                publishRevokedAt: now,
+                ...(activeGrant ? { publishRevokedAt: now } : {}),
                 ...(input.clearHand ? { raisedAt: null } : {}),
                 grantReconcileNeeded: false,
                 grantChangedByUserId: input.actorUserId,
                 grantReason: input.reason?.trim() || 'Demoted from stage',
-                grantVersion: { increment: 1 },
+                ...(activeGrant ? { grantVersion: { increment: 1 } } : {}),
             },
             select: {
                 id: true,
@@ -569,6 +589,41 @@ export async function declineStageInvitation(
         actorUserId: null,
         reason: 'Attendee declined stage invitation',
         auditAction: 'stage.invitation.decline',
+        clearHand: true,
+        now: input.now,
+    });
+}
+
+/**
+ * Return an attendee from the stage to the audience using only their resolved
+ * opaque room identity. Repeated requests and a simultaneous staff demotion
+ * converge on the same revoked grant without allocating a new version.
+ */
+export async function leaveStage(
+    input: LeaveStageInput,
+): Promise<StageGrantResult> {
+    const participant = await prisma.sessionParticipant.findFirst({
+        where: {
+            scheduledSessionId: input.scheduledSessionId,
+            participantIdentity: input.participantIdentity,
+            ticketEntitlementId: { not: null },
+        },
+        select: { id: true },
+    });
+    if (!participant) {
+        throw new StageControlError(
+            'participant_not_found',
+            404,
+            'Participant not found',
+        );
+    }
+
+    return demoteParticipant({
+        scheduledSessionId: input.scheduledSessionId,
+        participantId: participant.id,
+        actorUserId: null,
+        reason: 'Attendee voluntarily left the stage',
+        auditAction: 'stage.attendee.leave',
         clearHand: true,
         now: input.now,
     });
