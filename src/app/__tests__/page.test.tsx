@@ -43,6 +43,7 @@ const SESSION_2 = {
 };
 const NOW = new Date('2026-08-05T12:00:00.000Z');
 const PUBLIC_ID = '50000000-0000-4000-8000-202608220001';
+const REMAINING_PUBLIC_ID = '50000000-0000-4000-8000-202609050001';
 
 function mountDb(findMany: ReturnType<typeof vi.fn>) {
     const prisma = { scheduledSession: { findMany } };
@@ -230,6 +231,24 @@ describe('landing page', () => {
         );
         expect(screen.queryByRole('link', { name: /Comprar entrada/ })).toBeNull();
         expect(screen.queryByTestId('ticket-login-form')).toBeNull();
+    });
+
+    it('shows the remaining public cycle at 14:00 Argentina without changing its stored schedule', async () => {
+        const scheduledAt = new Date('2026-09-05T16:00:00.000Z');
+        mountDb(vi.fn().mockResolvedValue([{
+            ...SATURDAY,
+            id: REMAINING_PUBLIC_ID,
+            scheduledAt,
+            publicAccess: true,
+        }]));
+
+        await renderPage();
+
+        expect(document.querySelector('.event-local-time__primary')).toHaveTextContent(
+            /Argentina: sábado, 5 de septiembre, 14:00 (ART|GMT-3)/,
+        );
+        expect(screen.getByText(/Referencia universal:/)).toHaveTextContent('17:00 UTC');
+        expect(scheduledAt.toISOString()).toBe('2026-09-05T16:00:00.000Z');
     });
 
     it('makes upcoming gatherings the primary landing promise and links the wider experience below', async () => {
