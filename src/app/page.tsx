@@ -31,11 +31,25 @@ type WeekendEvent = {
 };
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
+// Editorial override for the public landing only. The stored schedule still
+// controls room access, lifecycle automation and every non-landing surface.
+const LANDING_ONLY_1400_ART_SESSION_IDS = new Set([
+    '50000000-0000-4000-8000-202609050001',
+    '50000000-0000-4000-8000-202609120001',
+]);
+const ONE_HOUR_MS = 60 * 60 * 1000;
 // A missed lifecycle transition must not leave an old LIVE row advertising the
 // current checkout indefinitely. Weekend sessions last hours, not days; 24
 // hours keeps a delayed/extended live room discoverable while failing closed
 // before a stale row can be presented as the next paid event.
 const PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function landingDisplayTime(event: Pick<WeekendEvent, 'id' | 'scheduledAt'>): string {
+    const displayTime = LANDING_ONLY_1400_ART_SESSION_IDS.has(event.id)
+        ? new Date(event.scheduledAt.getTime() + ONE_HOUR_MS)
+        : event.scheduledAt;
+    return displayTime.toISOString();
+}
 
 function publicScheduleNow(): Date {
     const pinned = process.env.E2E_DASHBOARD_ENABLED === '1'
@@ -165,7 +179,7 @@ export default async function LandingPage({
                                                     )}
                                                 </>
                                             )}
-                                            <EventLocalTime at={event.scheduledAt.toISOString()} />
+                                            <EventLocalTime at={landingDisplayTime(event)} />
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs font-mono text-[var(--text-secondary)]">
