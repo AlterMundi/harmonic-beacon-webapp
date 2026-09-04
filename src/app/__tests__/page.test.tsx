@@ -44,6 +44,7 @@ const SESSION_2 = {
 const NOW = new Date('2026-08-05T12:00:00.000Z');
 const PUBLIC_ID = '50000000-0000-4000-8000-202608220001';
 const REMAINING_PUBLIC_ID = '50000000-0000-4000-8000-202609050001';
+const FINAL_PUBLIC_ID = '50000000-0000-4000-8000-202609120001';
 
 function mountDb(findMany: ReturnType<typeof vi.fn>) {
     const prisma = { scheduledSession: { findMany } };
@@ -233,11 +234,16 @@ describe('landing page', () => {
         expect(screen.queryByTestId('ticket-login-form')).toBeNull();
     });
 
-    it('shows the remaining public cycle at 14:00 Argentina without changing its stored schedule', async () => {
-        const scheduledAt = new Date('2026-09-05T16:00:00.000Z');
+    it.each([
+        ['third legacy', REMAINING_PUBLIC_ID, '2026-09-05T16:00:00.000Z'],
+        ['third canonical', REMAINING_PUBLIC_ID, '2026-09-05T17:00:00.000Z'],
+        ['fourth legacy', FINAL_PUBLIC_ID, '2026-09-12T16:00:00.000Z'],
+        ['fourth canonical', FINAL_PUBLIC_ID, '2026-09-12T17:00:00.000Z'],
+    ])('shows the remaining public cycle at 14:00 Argentina with the %s stored schedule', async (_state, id, storedAt) => {
+        const scheduledAt = new Date(storedAt);
         mountDb(vi.fn().mockResolvedValue([{
             ...SATURDAY,
-            id: REMAINING_PUBLIC_ID,
+            id,
             scheduledAt,
             publicAccess: true,
         }]));
@@ -245,10 +251,10 @@ describe('landing page', () => {
         await renderPage();
 
         expect(document.querySelector('.event-local-time__primary')).toHaveTextContent(
-            /Argentina: sábado, 5 de septiembre, 14:00 (ART|GMT-3)/,
+            /Argentina: sábado, (5|12) de septiembre, 14:00 (ART|GMT-3)/,
         );
         expect(screen.getByText(/Referencia universal:/)).toHaveTextContent('17:00 UTC');
-        expect(scheduledAt.toISOString()).toBe('2026-09-05T16:00:00.000Z');
+        expect(scheduledAt.toISOString()).toBe(storedAt);
     });
 
     it('makes upcoming gatherings the primary landing promise and links the wider experience below', async () => {
