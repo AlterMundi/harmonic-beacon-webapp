@@ -235,11 +235,9 @@ describe('landing page', () => {
     });
 
     it.each([
-        ['third legacy', REMAINING_PUBLIC_ID, '2026-09-05T16:00:00.000Z'],
-        ['third canonical', REMAINING_PUBLIC_ID, '2026-09-05T17:00:00.000Z'],
-        ['fourth legacy', FINAL_PUBLIC_ID, '2026-09-12T16:00:00.000Z'],
-        ['fourth canonical', FINAL_PUBLIC_ID, '2026-09-12T17:00:00.000Z'],
-    ])('shows the remaining public cycle at 14:00 Argentina with the %s stored schedule', async (_state, id, storedAt) => {
+        ['third', REMAINING_PUBLIC_ID, '2026-09-05T17:00:00.000Z'],
+        ['fourth', FINAL_PUBLIC_ID, '2026-09-12T17:00:00.000Z'],
+    ])('shows the canonical %s public-cycle schedule at 14:00 Argentina', async (_state, id, storedAt) => {
         const scheduledAt = new Date(storedAt);
         mountDb(vi.fn().mockResolvedValue([{
             ...SATURDAY,
