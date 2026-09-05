@@ -19,20 +19,24 @@ round trip remain required gates because the Sharp override crosses a major.
 Remove the overrides once a stable Next.js release declares fixed ranges.
 
 `npm run audit:production` is the root pull-request and deploy gate. It parses
-the structured npm audit report and fails on every unreviewed high or critical
-finding. Its sole temporary exception is advisory 1145093
-(`GHSA-ggr8-5vv4-36mx`) for exactly `deepmerge-ts@7.1.5` through
-`@prisma/config@7.9.1` and `prisma@7.9.1`. Prisma pins that dependency and the
-patched deepmerge release is a major while Prisma 8 remains pre-release. The
-exposure is bounded because Prisma config processes only the repository-owned
-`prisma.config.ts` during trusted build and migration operations, never request
-or user data. The guard checks the advisory ID, dependency versions and exact
-installed paths, rejects any additional high/critical finding, and expires
-closed on 2026-09-15. Remove it earlier when a stable Prisma release adopts the
-patched dependency.
+the structured npm audit report and fails on every high or critical finding.
+The former temporary Prisma/deepmerge exception was retired early: the root
+lockfile now overrides Prisma's compatible transitive range to
+`deepmerge-ts@8.0.1`, and the guard contains no advisory allowlist.
 
 The prior production `tsx` chain now resolves to `tsx@4.23.12` and patched
 `esbuild@0.28.2` within the already-declared compatible range.
+
+Prisma 7.9.1 also pins `mysql2@3.15.3` directly and reaches `fast-uri` through
+its bundled development tooling. New advisories published after the original
+review made both resolved versions fail the production gate. The root lockfile
+therefore overrides them to the first patched compatible releases reviewed on
+2026-09-03: `mysql2@3.24.3` and `fast-uri@3.1.6`. Harmonic Beacon uses
+PostgreSQL rather than MySQL, but the bundled package remains part of the
+installed production tree and is not exempted. Prisma generation, the full
+production build and the complete test suites remain required while these
+upstream pins are overridden. Remove each override once Prisma declares a
+patched version itself.
 
 Every independently deployed Node package is audited, not only the repository
 root. The tapestry service is pinned to Sharp 0.35.3 after its prior 0.34 line

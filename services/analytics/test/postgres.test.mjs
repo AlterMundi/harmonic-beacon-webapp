@@ -32,6 +32,7 @@ postgresTest('PostgreSQL ingestion deduplicates retries by event id', async () =
     const touches = await store.pool.query('select first_attribution,last_attribution from ingest.raw_events where event_id=$1', [event.event_id]);
     assert.equal(touches.rows[0].first_attribution.utm_source, 'newsletter');
     assert.equal(touches.rows[0].last_attribution.utm_source, 'meta');
+    await store.pool.query('delete from ingest.raw_events where event_id=$1', [event.event_id]);
     await store.close();
 });
 
@@ -101,6 +102,8 @@ postgresTest('canonical account links reclassify matching browser traffic by tim
     assert.equal(updated.rowCount >= 1, true);
     const result = await pool.query('select traffic_class from ingest.raw_events where event_id=$1', [eventId]);
     assert.equal(result.rows[0].traffic_class, 'internal');
+    await pool.query('delete from ingest.raw_events where event_id=$1', [eventId]);
+    await pool.query('delete from identity_map.account_links where visitor_id=$1', [visitorId]);
     await pool.end();
 });
 
