@@ -331,25 +331,26 @@ model CommerceMediaOutbox {
 }
 
 model WebSession {
-  id                  String             @id @default(uuid()) @db.Uuid
-  tokenDigest         String             @unique @map("token_digest")
-  displayName         String?            @map("display_name")
-  accountIssuer       String?            @map("account_issuer")
-  accountSubject      String?            @map("account_subject")
-  accountSessionId    String?            @map("account_session_id")
-  accountDisplayName  String?            @map("account_display_name")
-  accountValidatedAt  DateTime?          @map("account_validated_at")
-  staffUserId         String?            @map("staff_user_id") @db.Uuid
-  staffUser           User?              @relation("StaffWebSessions", fields: [staffUserId], references: [id], onDelete: Cascade)
-  ticketEntitlementId String?            @map("ticket_entitlement_id") @db.Uuid
-  ticketEntitlement   TicketEntitlement? @relation(fields: [ticketEntitlementId], references: [id], onDelete: Cascade)
-  expiresAt           DateTime           @map("expires_at")
-  lastSeenAt          DateTime?          @map("last_seen_at")
-  revokedAt           DateTime?          @map("revoked_at")
-  revokedByUserId     String?            @map("revoked_by_user_id") @db.Uuid
-  revokedBy           User?              @relation("WebSessionRevoker", fields: [revokedByUserId], references: [id], onDelete: SetNull)
-  revocationReason    String?            @map("revocation_reason")
-  createdAt           DateTime           @default(now()) @map("created_at")
+  id                     String             @id @default(uuid()) @db.Uuid
+  tokenDigest            String             @unique @map("token_digest")
+  displayName            String?            @map("display_name")
+  displayNameConfirmedAt DateTime?          @map("display_name_confirmed_at")
+  accountIssuer          String?            @map("account_issuer")
+  accountSubject         String?            @map("account_subject")
+  accountSessionId       String?            @map("account_session_id")
+  accountDisplayName     String?            @map("account_display_name")
+  accountValidatedAt     DateTime?          @map("account_validated_at")
+  staffUserId            String?            @map("staff_user_id") @db.Uuid
+  staffUser              User?              @relation("StaffWebSessions", fields: [staffUserId], references: [id], onDelete: Cascade)
+  ticketEntitlementId    String?            @map("ticket_entitlement_id") @db.Uuid
+  ticketEntitlement      TicketEntitlement? @relation(fields: [ticketEntitlementId], references: [id], onDelete: Cascade)
+  expiresAt              DateTime           @map("expires_at")
+  lastSeenAt             DateTime?          @map("last_seen_at")
+  revokedAt              DateTime?          @map("revoked_at")
+  revokedByUserId        String?            @map("revoked_by_user_id") @db.Uuid
+  revokedBy              User?              @relation("WebSessionRevoker", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  revocationReason       String?            @map("revocation_reason")
+  createdAt              DateTime           @default(now()) @map("created_at")
 
   @@index([staffUserId])
   @@index([ticketEntitlementId])

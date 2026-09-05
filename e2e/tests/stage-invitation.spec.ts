@@ -116,10 +116,32 @@ stackTest('a fresh connection stays invited until the attendee accepts the stage
             await expect(stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i })).toBeVisible({
                 timeout: 10_000,
             });
-            await stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i }).click();
+
+            // The attendee owns the return transition. It revokes publishing
+            // without leaving either receiving room or requiring a new audio
+            // activation, and is deliberately distinct from session exit.
+            await attendee.getByRole('button', { name: /Leave the scene|Dejar la escena/i }).click();
+            const leaveConfirmation = attendee.getByRole('alertdialog', {
+                name: /Return to the audience|volver al público/i,
+            });
+            await expect(leaveConfirmation).toContainText(/without reconnecting|sin reconectarte/i);
+            await leaveConfirmation.getByRole('button', {
+                name: /Yes, leave the scene|Sí, dejar la escena/i,
+            }).click();
+
             await expect(
                 attendee.getByRole('button', { name: /Turn camera off|Apagar (?:la )?cámara/i }),
             ).toHaveCount(0, { timeout: 10_000 });
+            await expect(attendee.getByTestId('connection-state')).toHaveAttribute(
+                'data-state',
+                'connected',
+            );
+            await expect(attendee.getByRole('button', { name: /Raise hand|Levantar la mano/i })).toBeVisible({
+                timeout: 10_000,
+            });
+            await expect(stageRow.getByRole('button', { name: /Take floor|Quitar la palabra/i })).toHaveCount(0, {
+                timeout: 10_000,
+            });
         } finally {
             await attendeeContext.close();
             await staffContext.close();

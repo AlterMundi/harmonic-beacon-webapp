@@ -10,6 +10,7 @@ import {
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
 import {
     declineStageInvitation,
+    leaveStage,
     StageControlError,
 } from '@/lib/stage-control';
 
@@ -170,15 +171,18 @@ export async function PATCH(
             { status: 400 },
         );
     }
-    if (body.action !== 'decline_invitation') {
+    if (body.action !== 'decline_invitation' && body.action !== 'leave_stage') {
         return NextResponse.json(
-            { error: 'invalid_request', message: 'Action must be decline_invitation' },
+            { error: 'invalid_request', message: 'Action must be decline_invitation or leave_stage' },
             { status: 400 },
         );
     }
 
     try {
-        await declineStageInvitation({
+        const changeStage = body.action === 'leave_stage'
+            ? leaveStage
+            : declineStageInvitation;
+        await changeStage({
             scheduledSessionId: id,
             participantIdentity: principal.identity,
         });

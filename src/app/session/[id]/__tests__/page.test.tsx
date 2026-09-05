@@ -204,6 +204,7 @@ const TOKEN_RESPONSE = {
 
 const ENTRY_RESPONSE = {
     state: 'READY',
+    identity: { kind: 'attendee', displayName: 'Nico', confirmed: true },
     session: {
         id: 'session-1',
         title: 'Test Session',
@@ -277,6 +278,7 @@ describe('SessionRoomPage - event entry', () => {
                     ok: true,
                     json: async () => ({
                         state: 'WAITING',
+                        identity: ENTRY_RESPONSE.identity,
                         session: {
                             ...ENTRY_RESPONSE.session,
                             language: 'SPANISH',
@@ -304,6 +306,7 @@ describe('SessionRoomPage - event entry', () => {
             ok: true,
             json: async () => ({
                 state: 'WAITING',
+                identity: ENTRY_RESPONSE.identity,
                 session: {
                     ...ENTRY_RESPONSE.session,
                     language: 'SPANISH',
@@ -326,6 +329,7 @@ describe('SessionRoomPage - event entry', () => {
             ok: true,
             json: async () => ({
                 state: 'ENDED',
+                identity: ENTRY_RESPONSE.identity,
                 session: { ...ENTRY_RESPONSE.session, status: 'ENDED' },
             }),
         } as Response);
@@ -347,6 +351,7 @@ describe('SessionRoomPage - event entry', () => {
                     json: async () => entryChecks === 1
                         ? {
                             state: 'WAITING',
+                            identity: ENTRY_RESPONSE.identity,
                             session: { ...ENTRY_RESPONSE.session, status: 'SCHEDULED' },
                         }
                         : ENTRY_RESPONSE,
@@ -378,6 +383,7 @@ describe('SessionRoomPage - event entry', () => {
                         ? ENTRY_RESPONSE
                         : {
                             state: 'ENDED',
+                            identity: ENTRY_RESPONSE.identity,
                             session: { ...ENTRY_RESPONSE.session, status: 'ENDED' },
                         },
                 } as Response);
@@ -396,6 +402,103 @@ describe('SessionRoomPage - event entry', () => {
 
         expect(await screen.findByText('Session ended')).toBeInTheDocument();
         await waitFor(() => expect(connectedRoom.disconnect).toHaveBeenCalledOnce());
+    });
+
+    it('does not mint a LiveKit token until the attendee confirms their visible name', async () => {
+        const roomsBefore = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+        const unconfirmed = {
+            ...ENTRY_RESPONSE,
+            identity: { kind: 'attendee', displayName: 'Participante', confirmed: false },
+        };
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+            if (String(url).includes('/entry') && init?.method === 'PATCH') {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ displayName: 'Anahí 李', confirmed: true }),
+                } as Response);
+            }
+            if (String(url).includes('/entry')) {
+                return Promise.resolve({ ok: true, json: async () => unconfirmed } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({ ...TOKEN_RESPONSE, displayName: 'Anahí 李' }),
+                } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        renderPage('es');
+
+        const input = await screen.findByRole('textbox', { name: /Tu nombre visible|Your visible name/i });
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomsBefore);
+        expect(vi.mocked(global.fetch).mock.calls.filter(([url]) => String(url).includes('/token'))).toHaveLength(0);
+        fireEvent.change(input, { target: { value: 'Anahí 李' } });
+        fireEvent.click(screen.getByRole('button', { name: /Confirmar y continuar|Confirm and continue/i }));
+
+        await waitFor(() => expect(
+            (Room as unknown as { mock: { calls: unknown[] } }).mock.calls,
+        ).toHaveLength(roomsBefore + 1));
+        expect(await screen.findByTestId('viewer-identity')).toHaveTextContent('Anahí 李');
+    });
+
+    it('ignores an entry poll that started before the attendee confirmed their name', async () => {
+        const roomsBefore = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+        const unconfirmed = {
+            ...ENTRY_RESPONSE,
+            identity: { kind: 'attendee', displayName: 'Participante', confirmed: false },
+        };
+        let entryGets = 0;
+        let releaseStalePoll: (value: typeof unconfirmed) => void = () => {};
+        const stalePoll = new Promise<typeof unconfirmed>((resolve) => {
+            releaseStalePoll = resolve;
+        });
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+            if (String(url).includes('/entry') && init?.method === 'PATCH') {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ displayName: 'Anahí 李', confirmed: true }),
+                } as Response);
+            }
+            if (String(url).includes('/entry')) {
+                entryGets += 1;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => entryGets === 1 ? unconfirmed : stalePoll,
+                } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({ ...TOKEN_RESPONSE, displayName: 'Anahí 李' }),
+                } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        renderPage('es');
+        const input = await screen.findByRole('textbox', { name: /Tu nombre visible|Your visible name/i });
+        fireEvent.focus(window);
+        await waitFor(() => expect(entryGets).toBe(2));
+
+        fireEvent.change(input, { target: { value: 'Anahí 李' } });
+        fireEvent.click(screen.getByRole('button', { name: /Confirmar y continuar|Confirm and continue/i }));
+        await waitFor(() => expect(
+            (Room as unknown as { mock: { calls: unknown[] } }).mock.calls,
+        ).toHaveLength(roomsBefore + 1));
+        const connectedRoom = currentRoom();
+
+        await act(async () => {
+            releaseStalePoll(unconfirmed);
+            await stalePoll;
+        });
+
+        expect(screen.queryByRole('textbox', { name: /Tu nombre visible|Your visible name/i })).toBeNull();
+        expect(await screen.findByTestId('viewer-identity')).toHaveTextContent('Anahí 李');
+        expect(connectedRoom.disconnect).not.toHaveBeenCalled();
     });
 });
 
@@ -718,6 +821,90 @@ describe('SessionRoomPage - stage invitation consent', () => {
         expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
         expect(room.disconnect).not.toHaveBeenCalled();
     });
+
+    it('leaves the stage deliberately and keeps both receiving rooms mounted', async () => {
+        const { room } = await receiveInvitation();
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+        await screen.findByRole('button', { name: 'Leave the scene' });
+        const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+        const beaconStarts = audioMocks.startBeaconAudio.mock.calls.length;
+        const stageAudioStarts = room.startAudio.mock.calls.length;
+
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the scene' }));
+        const confirmation = await screen.findByRole('alertdialog', { name: 'Return to the audience?' });
+        expect(confirmation).toHaveTextContent(/keep hearing the session and Beacon without reconnecting/i);
+        expect(screen.getByRole('button', { name: 'Stay on stage' })).toHaveFocus();
+        expect(room.disconnect).not.toHaveBeenCalled();
+
+        const confirm = screen.getByRole('button', { name: 'Yes, leave the scene' });
+        fireEvent.click(confirm);
+        fireEvent.click(confirm);
+
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Leave the scene' })).not.toBeInTheDocument());
+        const leaveRequests = vi.mocked(global.fetch).mock.calls.filter(([, init]) =>
+            init?.method === 'PATCH' && init.body === JSON.stringify({ action: 'leave_stage' }));
+        expect(leaveRequests).toHaveLength(1);
+        expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(audioMocks.startBeaconAudio).toHaveBeenCalledTimes(beaconStarts);
+        expect(room.startAudio).toHaveBeenCalledTimes(stageAudioStarts);
+        expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected');
+    });
+
+    it('stays on stage with retryable feedback when the voluntary exit request fails', async () => {
+        const { room } = await receiveInvitation();
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+        await screen.findByRole('button', { name: 'Leave the scene' });
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        const fetchMock = vi.mocked(global.fetch);
+        const fallback = fetchMock.getMockImplementation();
+        fetchMock.mockImplementation((url, init) => {
+            if (
+                String(url).includes('/hand') &&
+                init?.method === 'PATCH' &&
+                init.body === JSON.stringify({ action: 'leave_stage' })
+            ) {
+                return Promise.resolve({
+                    ok: false,
+                    status: 503,
+                    json: async () => ({ error: 'stage_unavailable' }),
+                } as Response);
+            }
+            return fallback!(url, init);
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the scene' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the scene' }));
+
+        expect(await screen.findByText(/could not complete your return/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Yes, leave the scene' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Turn camera off' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeInTheDocument();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected');
+    });
+});
+
+describe('SessionRoomPage - deliberate session exit', () => {
+    it('separates session exit from everyday controls and disconnects only after confirmation', async () => {
+        await renderConnected();
+        const room = currentRoom();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
+        const confirmation = screen.getByRole('alertdialog', { name: 'Leave session' });
+        expect(confirmation).toHaveTextContent(/disconnects this page from the session and Beacon/i);
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Stay in the session' })).toHaveFocus();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Stay in the session' }));
+        expect(room.disconnect).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the session' }));
+
+        expect(room.disconnect).toHaveBeenCalledOnce();
+        expect(mockPush).toHaveBeenCalledWith('/');
+    });
 });
 
 describe('SessionRoomPage - server-ended disconnect', () => {
@@ -917,6 +1104,7 @@ describe('SessionRoomPage - intentional disconnects are not terminal states', ()
         await renderConnected();
 
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the session' }));
         await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'));
 
         // The real SDK would still fire Disconnected(CLIENT_INITIATED) after

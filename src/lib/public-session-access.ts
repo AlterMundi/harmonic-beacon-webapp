@@ -65,6 +65,7 @@ export async function attachPublicSessionAccess(
             data: {
                 ticketEntitlementId: entitlement.id,
                 displayName: account.displayName?.trim() || 'Participante',
+                displayNameConfirmedAt: null,
                 lastSeenAt: now,
             },
         });
