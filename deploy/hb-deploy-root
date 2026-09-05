@@ -196,7 +196,24 @@ migrate() {
   validate_workspace "$workspace"
   validate_checkout "$sha"
   compose "$workspace" "$sha" run --rm --no-deps migrate npx prisma migrate deploy
+  compose "$workspace" "$sha" run --rm --no-deps migrate \
+    npx tsx scripts/stage-grant-forward-drain.ts
   compose "$workspace" "$sha" run --rm --no-deps migrate npx prisma migrate status
+}
+
+quiesce() {
+  local workspace="$1"
+  local sha="$2"
+
+  validate_workspace "$workspace"
+  validate_checkout "$sha"
+  compose "$workspace" "$sha" run --rm --no-deps migrate \
+    npx tsx scripts/release-quiesce-preflight.ts
+  compose "$workspace" "$sha" stop app
+  # Close the check/use race: no request-serving writer exists during this
+  # second check, and migration begins only after it remains clean.
+  compose "$workspace" "$sha" run --rm --no-deps migrate \
+    npx tsx scripts/release-quiesce-preflight.ts
 }
 
 replace() {
@@ -265,26 +282,63 @@ rollback() {
   local run_id="$2"
   local app_available="$3"
   local tapestry_available="$4"
+  local migration_attempted="$5"
   local rollback_tag
+  local candidate_tag
   local worker_expected=false
 
   validate_workspace "$workspace"
   validate_run_id "$run_id"
   validate_boolean "$app_available"
   validate_boolean "$tapestry_available"
+  validate_boolean "$migration_attempted"
   rollback_tag="rollback-${run_id}"
+  candidate_tag="$(git -c safe.directory="$workspace" -C "$workspace" rev-parse HEAD)"
+  validate_checkout "$candidate_tag"
 
-  if [ "$app_available" = true ]; then
-    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate app
-    if docker run --rm --entrypoint test \
-      "harmonic-beacon/app:${rollback_tag}" \
-      -f /app/scripts/commerce-media-worker.ts; then
-      compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate \
-        commerce-reconciler
-      worker_expected=true
-    else
+  if [ "$app_available" = true ] && [ "$migration_attempted" = true ]; then
+    # Stop request-serving writers first. Keep the compatible candidate worker
+    # alive briefly so already-committed effects can converge, then freeze it
+    # and repeat the preflight against a stable database snapshot.
+    compose "$workspace" "$candidate_tag" stop app
+    preflight_ready=false
+    for _attempt in $(seq 1 30); do
+      if compose "$workspace" "$candidate_tag" run --rm --no-deps migrate \
+        npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null; then
+        preflight_ready=true
+        break
+      fi
+      sleep 2
+    done
+    [ "$preflight_ready" = true ] || {
       docker stop beacon-commerce-reconciler 2>/dev/null || true
-    fi
+      die 'automatic rollback refused: durable grant state did not quiesce'
+    }
+    docker stop beacon-commerce-reconciler 2>/dev/null || true
+    compose "$workspace" "$candidate_tag" run --rm --no-deps migrate \
+      npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null ||
+      die 'automatic rollback refused: stable grant preflight failed'
+
+    # Never put an outbox-unaware application back in front of the migrated
+    # database. A failed first rollout remains isolated for human forward
+    # repair instead of silently reopening legacy grant writers.
+    docker run --rm --entrypoint test \
+      "harmonic-beacon/app:${rollback_tag}" \
+      -f /app/src/lib/stage-grant-effects.ts ||
+      die 'automatic rollback refused: previous app lacks durable grant contract'
+    docker run --rm --entrypoint test \
+      "harmonic-beacon/app:${rollback_tag}" \
+      -f /app/scripts/stage-grant-rollback-preflight.ts ||
+      die 'automatic rollback refused: previous worker lacks rollback preflight'
+
+    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate \
+      app commerce-reconciler
+    worker_expected=true
+  elif [ "$app_available" = true ]; then
+    # Build/gate/quiesce failures before a migration attempt never changed the
+    # durable schema. Ensure the preserved application is serving again.
+    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate app
+    worker_expected=true
   fi
 
   if [ "$tapestry_available" = true ]; then
@@ -321,7 +375,7 @@ rollback() {
 }
 
 usage() {
-  printf '%s\n' 'usage: hb-deploy {preflight|preserve|build|migrate|replace|health|status|boundary|rollback} ...' >&2
+  printf '%s\n' 'usage: hb-deploy {preflight|preserve|build|quiesce|migrate|replace|health|status|boundary|rollback} ...' >&2
   exit 2
 }
 
@@ -334,11 +388,12 @@ case "$command" in
   preflight) [ "$#" -eq 2 ] || usage; preflight "$@" ;;
   preserve) [ "$#" -eq 1 ] || usage; preserve "$@" ;;
   build) [ "$#" -eq 4 ] || usage; build "$@" ;;
+  quiesce) [ "$#" -eq 2 ] || usage; quiesce "$@" ;;
   migrate) [ "$#" -eq 2 ] || usage; migrate "$@" ;;
   replace) [ "$#" -eq 2 ] || usage; replace "$@" ;;
   health) [ "$#" -eq 1 ] || usage; health "$@" ;;
   status) [ "$#" -eq 2 ] || usage; status "$@" ;;
   boundary) [ "$#" -eq 0 ] || usage; boundary ;;
-  rollback) [ "$#" -eq 4 ] || usage; rollback "$@" ;;
+  rollback) [ "$#" -eq 5 ] || usage; rollback "$@" ;;
   *) usage ;;
 esac

@@ -189,6 +189,7 @@ describe('resolveRoomPrincipal', () => {
         upsertParticipant.mockResolvedValue({
             publishGrantedAt: new Date('2026-08-01T15:30:00Z'),
             publishRevokedAt: null,
+            grantReconcileNeeded: false,
         });
         const { resolveRoomPrincipal } = await import('../room-entitlement');
         const first = await resolveRoomPrincipal(request(), 'event-1', now);
@@ -208,6 +209,22 @@ describe('resolveRoomPrincipal', () => {
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
             update: { leftAt: null },
         }));
+    });
+
+    it('mints subscriber-only access while the durable grant effect is pending', async () => {
+        upsertParticipant.mockResolvedValue({
+            publishGrantedAt: new Date('2026-08-01T15:30:00Z'),
+            publishRevokedAt: null,
+            grantReconcileNeeded: true,
+        });
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: { canPublish: false },
+        });
     });
 
     it('recovers a concurrent ticket insert only from the exact canonical winner', async () => {
@@ -242,6 +259,7 @@ describe('resolveRoomPrincipal', () => {
             where: { id: 'ticket-race-winner' },
             data: { leftAt: null },
             select: {
+                grantReconcileNeeded: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
             },
@@ -328,7 +346,7 @@ describe('resolveRoomPrincipal', () => {
         });
     });
 
-    it('migrates the seeded facilitator row to the stable identity instead of inserting a duplicate', async () => {
+    it('preserves the durable seeded facilitator identity instead of inserting a duplicate', async () => {
         findWebSession.mockResolvedValue({
             expiresAt: new Date('2026-08-03T00:00:00Z'),
             revokedAt: null,
@@ -344,7 +362,10 @@ describe('resolveRoomPrincipal', () => {
             ...activeEvent,
             status: 'SCHEDULED',
         });
-        findParticipant.mockResolvedValue({ id: 'seeded-facilitator-row' });
+        findParticipant.mockResolvedValue({
+            id: 'seeded-facilitator-row',
+            participantIdentity: 'seeded-durable-identity',
+        });
         updateParticipant.mockResolvedValue({
             publishGrantedAt: now,
             publishRevokedAt: null,
@@ -356,7 +377,7 @@ describe('resolveRoomPrincipal', () => {
         expect(result).toMatchObject({
             ok: true,
             principal: {
-                identity: 'opaque:event-1:staff:facilitator-1',
+                identity: 'seeded-durable-identity',
                 canPublish: true,
                 isAssignedFacilitator: true,
             },
@@ -364,10 +385,10 @@ describe('resolveRoomPrincipal', () => {
         expect(updateParticipant).toHaveBeenCalledWith({
             where: { id: 'seeded-facilitator-row' },
             data: {
-                participantIdentity: 'opaque:event-1:staff:facilitator-1',
                 leftAt: null,
             },
             select: {
+                grantReconcileNeeded: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
             },

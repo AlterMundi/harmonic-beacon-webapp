@@ -48,6 +48,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/weekend-stabilize.ts ./scripts/weekend-stabilize.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/commerce-media-worker.ts ./scripts/commerce-media-worker.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/stage-grant-rollback-preflight.ts ./scripts/stage-grant-rollback-preflight.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/release-quiesce-preflight.ts ./scripts/release-quiesce-preflight.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/stage-grant-forward-drain.ts ./scripts/stage-grant-forward-drain.ts
 # Root-invoked, staging-only Account preparation commands. They are not
 # reachable from the application process and accept no caller-supplied paths.
 COPY --from=builder --chown=root:root /app/scripts/live-staging ./scripts/live-staging
@@ -55,12 +58,10 @@ COPY --from=builder --chown=root:root /app/scripts/live-staging ./scripts/live-s
 # not reachable from the application process; the networked preflight receives
 # only the dedicated hb-live RP bundle.
 COPY --from=builder --chown=root:root /app/scripts/live-production ./scripts/live-production
-COPY --from=builder --chown=nextjs:nodejs /app/src/lib/event-stabilization.ts ./src/lib/event-stabilization.ts
-COPY --from=builder --chown=nextjs:nodejs /app/src/lib/redact.ts ./src/lib/redact.ts
-COPY --from=builder --chown=nextjs:nodejs /app/src/lib/commerce-media-reconciler.ts ./src/lib/commerce-media-reconciler.ts
-COPY --from=builder --chown=nextjs:nodejs /app/src/lib/db.ts ./src/lib/db.ts
-COPY --from=builder --chown=nextjs:nodejs /app/src/lib/livekit-server.ts ./src/lib/livekit-server.ts
-COPY --from=builder --chown=nextjs:nodejs /app/src/lib/with-timeout.ts ./src/lib/with-timeout.ts
+# The operational TypeScript entrypoints run through tsx rather than the Next
+# standalone server. Copy their complete local module closure; a hand-maintained
+# subset previously allowed the worker image to build while crashing on import.
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib ./src/lib
 COPY --from=builder --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
 # Full node_modules so prisma/seed and config scripts work in production
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules

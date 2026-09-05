@@ -22,6 +22,13 @@ function healthyDeps(overrides: Partial<OperatorHealthDeps> = {}): OperatorHealt
         checkDatabase: async () => [{ '?column?': 1 }],
         getWatchedSession: async () => LIVE_SESSION,
         countActivePublishGrants: async () => 6,
+        getGrantEffectBacklog: async () => ({
+            pending: 0,
+            fences: 0,
+            oldestCreatedAt: null,
+            maxAttempts: 0,
+            lastErrorCode: null,
+        }),
         listRooms: async () => [
             { name: 'stage-room', numParticipants: 42 },
             { name: 'beacon', numParticipants: 1 },
@@ -65,6 +72,23 @@ describe('collectOperatorHealth', () => {
         // The other subsystems are fine and must say so.
         expect(report.checks.postgres.status).toBe('green');
         expect(report.checks.livekit.status).toBe('green');
+    });
+
+    it('reports persistent grant retries as degraded without coupling worker liveness', async () => {
+        const report = await collectOperatorHealth(healthyDeps({
+            getGrantEffectBacklog: async () => ({
+                pending: 2,
+                fences: 1,
+                oldestCreatedAt: new Date(Date.now() - 120_000),
+                maxAttempts: 4,
+                lastErrorCode: 'LIVEKIT_EFFECT_INCOMPLETE',
+            }),
+        }));
+
+        expect(report.status).toBe('red');
+        expect(report.checks.grantDelivery).toMatchObject({ status: 'red' });
+        expect(report.checks.grantDelivery.detail).toContain('max attempts 4');
+        expect(report.checks.grantDelivery.detail).toContain('LIVEKIT_EFFECT_INCOMPLETE');
     });
 
     it('turns red and names PostgreSQL when the database is lost, without leaking credentials', async () => {

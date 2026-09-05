@@ -37,8 +37,15 @@ function getLivekitHttpUrl(): string {
     return LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
 }
 
-export function getRoomService(): RoomServiceClient {
-    return new RoomServiceClient(getLivekitHttpUrl(), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+export function getRoomService(requestTimeoutSeconds?: number): RoomServiceClient {
+    return requestTimeoutSeconds
+        ? new RoomServiceClient(
+            getLivekitHttpUrl(),
+            LIVEKIT_API_KEY,
+            LIVEKIT_API_SECRET,
+            { requestTimeout: requestTimeoutSeconds },
+        )
+        : new RoomServiceClient(getLivekitHttpUrl(), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
 }
 
 function requireLiveKitCredentials(): void {
@@ -65,6 +72,25 @@ export function stableRoomIdentity(
     return `event-${digest}`;
 }
 
+/**
+ * Rotate a participant onto a fresh, non-PII LiveKit identity whenever a
+ * publication grant is revoked. A delayed RPC or previously issued editor JWT
+ * can then affect only the fenced identity captured by the outbox, never the
+ * participant's current room identity.
+ */
+export function rotatedRoomIdentity(
+    scheduledSessionId: string,
+    participantId: string,
+    grantVersion: number,
+): string {
+    requireLiveKitCredentials();
+    const digest = createHmac('sha256', LIVEKIT_IDENTITY_SECRET)
+        .update(`grant:${scheduledSessionId}:${participantId}:${grantVersion}`)
+        .digest('base64url')
+        .slice(0, 32);
+    return `event-${digest}`;
+}
+
 export function bedRoomIdentity(stageIdentity: string): string {
     requireLiveKitCredentials();
     const digest = createHmac('sha256', LIVEKIT_IDENTITY_SECRET)
@@ -77,11 +103,18 @@ export function bedRoomIdentity(stageIdentity: string): string {
 /**
  * Create a LiveKit access token for a scheduled session room.
  */
-export async function createSessionToken(
+/**
+ * Mint a room-join credential with no publication authority.
+ *
+ * Publication is deliberately granted only after the connection exists and
+ * the server has revalidated the current participant identity and durable
+ * grant under the database lock. A captured JWT can therefore be replayed to
+ * subscribe until it expires, but can never restore a revoked publisher.
+ */
+export async function createSessionJoinToken(
     room: string,
     identity: string,
     name: string,
-    canPublish: boolean,
     metadata?: SessionTokenMetadata,
     ttl: string = '4h',
 ): Promise<string> {
@@ -96,14 +129,9 @@ export async function createSessionToken(
     token.addGrant({
         roomJoin: true,
         room,
-        canPublish,
-        canPublishSources: canPublish
-            ? [TrackSource.MICROPHONE, TrackSource.CAMERA]
-            : [],
-        // Only the assigned facilitator may emit the small, bounded and
-        // identity-free audio-quality snapshot consumed by Staff monitors.
-        // Attendees and operational Staff remain unable to publish data.
-        canPublishData: metadata?.isAssignedFacilitator === true,
+        canPublish: false,
+        canPublishSources: [],
+        canPublishData: false,
         canSubscribe: true,
     });
 
@@ -115,5 +143,15 @@ export async function createBedToken(
     identity: string,
     ttl?: string,
 ): Promise<string> {
-    return createSessionToken(room, identity, 'Event audio', false, undefined, ttl);
+    return createSessionJoinToken(room, identity, 'Event audio', undefined, ttl);
+}
+
+/** The only publication grant projected onto a connected stage identity. */
+export function stagePublisherPermission(isAssignedFacilitator: boolean) {
+    return {
+        canPublish: true,
+        canPublishData: isAssignedFacilitator,
+        canSubscribe: true,
+        canPublishSources: [TrackSource.MICROPHONE, TrackSource.CAMERA],
+    };
 }

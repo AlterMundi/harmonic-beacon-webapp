@@ -244,7 +244,10 @@ afterEach(() => {
 
 async function renderConnected() {
     renderPage('en');
-    await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', {
+        level: 1,
+        name: 'Test Session',
+    })).toBeInTheDocument());
 }
 
 function renderPage(locale: UiLocale = 'en') {
@@ -436,10 +439,11 @@ describe('SessionRoomPage - participant identity', () => {
 describe('SessionRoomPage - staff cockpit handoff', () => {
     function installStaffToken(isAssignedFacilitator = true) {
         vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
-            if (String(url).includes('/entry')) {
+            const target = String(url);
+            if (target.includes('/entry')) {
                 return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
             }
-            if (String(url).includes('/token')) {
+            if (target.includes('/token')) {
                 return Promise.resolve({
                     ok: true,
                     json: async () => ({
@@ -450,6 +454,12 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
                         isAssignedFacilitator,
                     }),
                 } as Response);
+            }
+            if (target.includes('/publication')) {
+                const room = currentRoom();
+                room.localParticipant.permissions.canPublish = true;
+                room.emit('participantPermissionsChanged', null, room.localParticipant);
+                return Promise.resolve({ ok: true, json: async () => ({ canPublish: true }) } as Response);
             }
             return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
         });
@@ -484,6 +494,10 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
             },
         });
         expect(screen.getByTestId('facilitator-audio-quality')).toBeInTheDocument();
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/scheduled-sessions/session-1/publication',
+            { method: 'POST' },
+        );
     });
 
     it('explains that unassigned composite staff has operational access without publication', async () => {
@@ -699,7 +713,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
         expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeInTheDocument();
     });
 
-    it('declines the invitation durably without touching devices or the room lifecycle', async () => {
+    it('declines durably and reconnects as audience after the old identity is fenced', async () => {
         const { room } = await receiveInvitation();
         const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
 
@@ -717,6 +731,18 @@ describe('SessionRoomPage - stage invitation consent', () => {
         expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
         expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
         expect(room.disconnect).not.toHaveBeenCalled();
+
+        act(() => {
+            room.emit('disconnected', DisconnectReason.PARTICIPANT_REMOVED);
+        });
+        expect(screen.getByTestId('connection-state')).toHaveTextContent('Reconnecting');
+        await waitFor(
+            () => expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls)
+                .toHaveLength(roomCount + 1),
+            { timeout: 2_000 },
+        );
+        expect(await screen.findByRole('button', { name: 'Raise hand' })).toBeInTheDocument();
+        expect(screen.queryByText('Session ended')).not.toBeInTheDocument();
     });
 });
 
@@ -743,8 +769,8 @@ describe('SessionRoomPage - server-ended disconnect', () => {
         expect(mockPush).toHaveBeenCalledWith('/');
     });
 
-    it('treats a participant removal and a server shutdown the same way', async () => {
-        for (const reason of [DisconnectReason.PARTICIPANT_REMOVED, DisconnectReason.ROOM_CLOSED, DisconnectReason.SERVER_SHUTDOWN]) {
+    it('treats room closure and a server shutdown as terminal', async () => {
+        for (const reason of [DisconnectReason.ROOM_CLOSED, DisconnectReason.SERVER_SHUTDOWN]) {
             cleanup();
             await renderConnected();
             act(() => {
@@ -790,6 +816,12 @@ describe('SessionRoomPage - transport-failure disconnect', () => {
                         ok: true,
                         json: async () => ({ ...TOKEN_RESPONSE, canPublish }),
                     } as Response);
+                }
+                if (target.includes('/publication')) {
+                    const activeRoom = currentRoom();
+                    activeRoom.localParticipant.permissions.canPublish = true;
+                    activeRoom.emit('participantPermissionsChanged', null, activeRoom.localParticipant);
+                    return Promise.resolve({ ok: true, json: async () => ({ canPublish: true }) } as Response);
                 }
                 if (target.includes('/hand')) {
                     return Promise.resolve({

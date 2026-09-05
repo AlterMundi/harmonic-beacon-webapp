@@ -35,11 +35,20 @@ A push to `release` runs `.github/workflows/deploy.yml` on the managed host. It:
 4. preserves the currently running app and tapestry images under independent
    immutable rollback tags;
 5. builds commit-tagged app and tapestry images;
-6. applies additive Prisma migrations and verifies migration status;
-7. replaces only app, commerce reconciler and tapestry; and
-8. waits for app readiness plus reconciler and tapestry health.
+6. verifies no session is `LIVE`, stops request-serving writers, and repeats
+   that check after the stop to close the check/use race;
+7. applies additive Prisma migrations, drains every current grant marker with
+   the candidate implementation, and verifies migration status;
+8. replaces only app, commerce reconciler and tapestry; and
+9. waits for app readiness plus reconciler and tapestry health.
 
-On failure it restores the preserved app and tapestry images independently. It
+On failure after a successful migration it first stops application writers,
+drains and preflights durable stage-grant effects, stops the compatible worker,
+verifies that the previous image implements the durable grant contract, and
+only then restores app and worker together. An incompatible or non-quiescent
+rollback fails closed rather than restarting legacy writers. A failure before
+migration leaves the untouched running app in place. Tapestry is restored
+independently. The helper
 never uses `compose down`, deletes data or pretends that rebuilding the same tag
 is a rollback.
 
@@ -138,11 +147,14 @@ revoke fixtures from the PMP worker and prove public GET and PUT under
 ## Rollback
 
 Use an image tag/digest captured before deploy. For commerce incidents, first
-put PMP in mock mode so no new commands enter. Keep the reconciler running until
-pending jobs reach zero and target identities are absent. Restore the previous
-app image, then stop the reconciler only if the old image does not contain it.
-The additive migration may remain; never drop commerce tables during an
-incident because they contain the command ledger and unfinished reconciliation.
+put PMP in mock mode so no new commands enter. Stop the app so no grant writers
+remain, keep the compatible reconciler running until pending jobs reach zero
+and target identities are absent, run the stage-grant rollback preflight, then
+stop the reconciler. Restore app and reconciler together only if the target
+image contains both the durable stage-grant implementation and rollback
+preflight. Otherwise leave writers stopped and roll forward to a compatible
+image. The additive migration may remain; never drop commerce or grant tables
+during an incident because they contain command ledgers and unfinished effects.
 
 ## Useful diagnostics
 

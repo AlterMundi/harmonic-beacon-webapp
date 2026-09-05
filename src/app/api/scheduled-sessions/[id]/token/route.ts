@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { createSessionToken } from '@/lib/livekit-server';
+import { createSessionJoinToken } from '@/lib/livekit-server';
 import {
-    finalizeTicketTokenIssue,
     TICKET_LIVEKIT_TOKEN_TTL_SECONDS,
 } from '@/lib/commerce-entitlement';
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import {
+    finalizeRoomTokenIssue,
+    STAFF_LIVEKIT_TOKEN_TTL_SECONDS,
+} from '@/lib/room-token-issue';
+import { redactError } from '@/lib/redact';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
@@ -33,38 +37,35 @@ export async function GET(
 
     const { principal } = entitlement;
     try {
-        const ticketTtl = `${TICKET_LIVEKIT_TOKEN_TTL_SECONDS}s`;
+        const ttlSeconds = principal.ticketEntitlementId
+            ? TICKET_LIVEKIT_TOKEN_TTL_SECONDS
+            : STAFF_LIVEKIT_TOKEN_TTL_SECONDS;
+        const tokenTtl = `${ttlSeconds}s`;
         const tokenMetadata = {
             role: principal.role,
             isAssignedFacilitator: principal.isAssignedFacilitator,
         };
-        const token = principal.ticketEntitlementId
-            ? await createSessionToken(
-                principal.session.roomName,
-                principal.identity,
-                principal.displayName,
-                principal.canPublish,
-                tokenMetadata,
-                ticketTtl,
-            )
-            : await createSessionToken(
-                principal.session.roomName,
-                principal.identity,
-                principal.displayName,
-                principal.canPublish,
-                tokenMetadata,
-            );
+        // Every credential is subscribe-only. The connected browser requests
+        // publication activation separately; that server-side step rechecks
+        // the current identity and grant while holding the authority locks.
+        const token = await createSessionJoinToken(
+            principal.session.roomName,
+            principal.identity,
+            principal.displayName,
+            tokenMetadata,
+            tokenTtl,
+        );
 
-        if (principal.ticketEntitlementId) {
-            const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-            const tokenExpiresAt = new Date(Date.now() + TICKET_LIVEKIT_TOKEN_TTL_SECONDS * 1000);
-            if (!cookieValue || !await finalizeTicketTokenIssue(
-                cookieValue,
-                principal.ticketEntitlementId,
-                tokenExpiresAt,
-            )) {
-                return tokenResponse({ error: 'Not authorized' }, 403);
-            }
+        const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+        const tokenExpiresAt = new Date(Date.now() + ttlSeconds * 1000);
+        if (!cookieValue || !await finalizeRoomTokenIssue({
+            cookieValue,
+            principal,
+            expectedIdentity: principal.identity,
+            expectedCanPublish: principal.canPublish,
+            tokenExpiresAt,
+        })) {
+            return tokenResponse({ error: 'Not authorized' }, 403);
         }
 
         return tokenResponse({
@@ -85,7 +86,8 @@ export async function GET(
                 startedAt: principal.session.startedAt?.toISOString() ?? null,
             },
         });
-    } catch {
-        return tokenResponse({ error: 'LiveKit API credentials not configured' }, 500);
+    } catch (error) {
+        console.error(`[room-token] stage token issue failed: ${redactError(error)}`);
+        return tokenResponse({ error: 'Unable to issue room token' }, 500);
     }
 }

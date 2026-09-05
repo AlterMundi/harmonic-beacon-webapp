@@ -51,9 +51,11 @@ type RoomAccessBase = {
     staffUserId: string | null;
     existingParticipant: {
         id: string;
+        participantIdentity: string;
         displayName: string | null;
         publishGrantedAt: Date | null;
         publishRevokedAt: Date | null;
+        grantReconcileNeeded: boolean;
     } | null;
 };
 
@@ -68,6 +70,7 @@ type RoomAccessResult =
 type ParticipantGrantState = {
     publishGrantedAt: Date | null;
     publishRevokedAt: Date | null;
+    grantReconcileNeeded: boolean;
 };
 
 async function recoverConcurrentParticipant(
@@ -104,6 +107,7 @@ async function recoverConcurrentParticipant(
         select: {
             publishGrantedAt: true,
             publishRevokedAt: true,
+            grantReconcileNeeded: true,
         },
     });
 }
@@ -285,7 +289,7 @@ async function resolveRoomAccess(
         role = staff.role;
     }
 
-    const identity = stableRoomIdentity(
+    const baselineIdentity = stableRoomIdentity(
         scheduledSession.id,
         principalKind,
         principalId,
@@ -301,9 +305,11 @@ async function resolveRoomAccess(
         },
         select: {
             id: true,
+            participantIdentity: true,
             displayName: true,
             publishGrantedAt: true,
             publishRevokedAt: true,
+            grantReconcileNeeded: true,
         },
     });
 
@@ -317,7 +323,10 @@ async function resolveRoomAccess(
                 status: scheduledSession.status,
                 startedAt: scheduledSession.startedAt,
             },
-            identity,
+            // Once materialized, the participant row is the durable authority.
+            // Revocations rotate this identity so stale JWTs and late RPCs are
+            // fenced away from the current connection.
+            identity: existingParticipant?.participantIdentity ?? baselineIdentity,
             displayName: existingParticipant?.displayName?.trim() || displayName,
             role,
             isAssignedFacilitator,
@@ -357,7 +366,8 @@ export async function resolveRoomViewer(
             canPublish:
                 access.existingParticipant !== null &&
                 access.existingParticipant.publishGrantedAt !== null &&
-                access.existingParticipant.publishRevokedAt === null,
+                access.existingParticipant.publishRevokedAt === null &&
+                !access.existingParticipant.grantReconcileNeeded,
             ticketEntitlementId: access.ticketEntitlementId,
             staffUserId: access.staffUserId,
         },
@@ -387,24 +397,23 @@ export async function resolveRoomPrincipal(
     }
     const { access } = result;
     const existingParticipant = access.existingParticipant;
-    // The seed reserves Julián's slot before a LiveKit identity exists, so that
-    // row initially carries a random placeholder identity. Resolve by the
-    // event-scoped principal first and migrate that row to the stable identity.
-    // Otherwise an upsert keyed only by identity attempts to insert a second
-    // `(session, staff)` row and hits the migration's partial unique index.
+    // Once a participant exists, its identity is durable authority. Grant
+    // revocations may rotate it specifically to fence old tokens; routine
+    // login must never overwrite that rotation with a recomputed baseline.
     let participant: ParticipantGrantState;
     try {
         participant = existingParticipant
             ? await prisma.sessionParticipant.update({
                 where: { id: existingParticipant.id },
                 data: {
-                    participantIdentity: access.identity,
-                    // Preserve the alias already captured for this participation.
+                    // Joining again resumes presence without rewriting identity
+                    // or the alias already captured for this participation.
                     leftAt: null,
                 },
                 select: {
                     publishGrantedAt: true,
                     publishRevokedAt: true,
+                    grantReconcileNeeded: true,
                 },
             })
             : await prisma.sessionParticipant.upsert({
@@ -432,6 +441,7 @@ export async function resolveRoomPrincipal(
                 select: {
                     publishGrantedAt: true,
                     publishRevokedAt: true,
+                    grantReconcileNeeded: true,
                 },
             });
     } catch (error) {
@@ -448,7 +458,8 @@ export async function resolveRoomPrincipal(
             isAssignedFacilitator: access.isAssignedFacilitator,
             canPublish:
                 participant.publishGrantedAt !== null &&
-                participant.publishRevokedAt === null,
+                participant.publishRevokedAt === null &&
+                !participant.grantReconcileNeeded,
             ticketEntitlementId: access.ticketEntitlementId,
             staffUserId: access.staffUserId,
         },

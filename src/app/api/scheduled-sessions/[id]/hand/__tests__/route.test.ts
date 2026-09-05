@@ -72,7 +72,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         mocks.getHandState.mockResolvedValue(handState());
         mocks.declineStageInvitation.mockResolvedValue({
             participantId: 'participant-1',
-            participantIdentity: 'opaque-attendee-1',
+            participantIdentity: 'opaque-attendee-rotated',
             canPublish: false,
             reconcileNeeded: false,
             grantVersion: 2,
@@ -178,6 +178,10 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         expect(mocks.declineStageInvitation).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1',
             participantIdentity: 'opaque-attendee-1',
+        });
+        expect(mocks.getHandState).toHaveBeenCalledWith({
+            scheduledSessionId: 'event-1',
+            participantIdentity: 'opaque-attendee-rotated',
         });
     });
 

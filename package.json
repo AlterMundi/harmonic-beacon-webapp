@@ -19,6 +19,8 @@
     "event:stabilize": "tsx scripts/weekend-stabilize.ts",
     "contract:commerce:verify": "python3 scripts/verify-commerce-contract.py",
     "commerce:reconcile": "tsx scripts/commerce-media-worker.ts",
+    "stage-grants:rollback-preflight": "tsx scripts/stage-grant-rollback-preflight.ts",
+    "stage-grants:forward-drain": "tsx scripts/stage-grant-forward-drain.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "test": "vitest run",

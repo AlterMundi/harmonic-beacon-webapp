@@ -178,13 +178,13 @@ export async function PATCH(
     }
 
     try {
-        await declineStageInvitation({
+        const declined = await declineStageInvitation({
             scheduledSessionId: id,
             participantIdentity: principal.identity,
         });
         return NextResponse.json(serialize(await getHandState({
             scheduledSessionId: id,
-            participantIdentity: principal.identity,
+            participantIdentity: declined.participantIdentity,
         })));
     } catch (failure) {
         return handErrorResponse(failure);

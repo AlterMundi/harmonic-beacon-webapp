@@ -7,6 +7,8 @@ const media = vi.hoisted(() => ({
 
 vi.mock('@/lib/livekit-server', () => ({
     bedRoomIdentity: (identity: string) => `bed-${identity}`,
+    rotatedRoomIdentity: (_sessionId: string, _participantId: string, version: number) =>
+        `rotated-${version}`,
     getRoomService: () => ({
         listParticipants: async (room: string) => {
             if (media.fail) throw new Error('synthetic LiveKit outage');
@@ -21,11 +23,11 @@ vi.mock('@/lib/livekit-server', () => ({
 import { parseCommerceCommand } from '@/lib/commerce-contract';
 import {
     applyCommerceCommand,
-    finalizeTicketTokenIssue,
     getCommerceEntitlement,
 } from '@/lib/commerce-entitlement';
 import { prisma } from '@/lib/db';
 import { processNextCommerceMediaJob } from '@/lib/commerce-media-reconciler';
+import { finalizeRoomTokenIssue } from '@/lib/room-token-issue';
 import { digestSessionToken } from '@/lib/session-auth';
 
 const integration = process.env.COMMERCE_INTEGRATION_TEST === '1' ? describe : describe.skip;
@@ -79,6 +81,7 @@ integration('commerce entitlement PostgreSQL contract', () => {
         await prisma.commerceRequestReceipt.deleteMany();
         await prisma.commerceEntitlementCommand.deleteMany();
         await prisma.commerceMediaOutbox.deleteMany();
+        await prisma.stageGrantEffectOutbox.deleteMany();
         await prisma.commerceEntitlement.deleteMany();
         await prisma.webSession.deleteMany();
         await prisma.sessionParticipant.deleteMany();
@@ -157,13 +160,31 @@ integration('commerce entitlement PostgreSQL contract', () => {
                 participantIdentity: 'event-commerce-participant',
             },
         });
+        const tokenPrincipal = {
+            session: {
+                id: SESSION_ID,
+                title: 'Commerce integration',
+                roomName: 'commerce-integration',
+                status: 'LIVE' as const,
+                startedAt: NOW,
+            },
+            identity: 'event-commerce-participant',
+            displayName: 'Synthetic attendee',
+            role: 'ATTENDEE' as const,
+            isAssignedFacilitator: false,
+            canPublish: false,
+            ticketEntitlementId: row.ticketEntitlementId,
+            staffUserId: null,
+        };
         const tokenHorizon = new Date(NOW.getTime() + 5 * 60_000);
-        await expect(finalizeTicketTokenIssue(
-            'commerce-cookie-value',
-            row.ticketEntitlementId,
-            tokenHorizon,
-            NOW,
-        )).resolves.toBe(true);
+        await expect(finalizeRoomTokenIssue({
+            cookieValue: 'commerce-cookie-value',
+            principal: tokenPrincipal,
+            expectedIdentity: tokenPrincipal.identity,
+            expectedCanPublish: false,
+            tokenExpiresAt: tokenHorizon,
+            now: NOW,
+        })).resolves.toBe(true);
 
         const rotated = command({
             request_id: '40000000-0000-4000-8000-000000000003',
@@ -188,6 +209,30 @@ integration('commerce entitlement PostgreSQL contract', () => {
         await expect(prisma.commerceEntitlement.findFirstOrThrow()).resolves.toMatchObject({
             livekitIdentityVersion: 2,
         });
+        const participantAfterRotation = await prisma.sessionParticipant.findFirstOrThrow({
+            where: { scheduledSessionId: SESSION_ID },
+        });
+        expect(participantAfterRotation).toMatchObject({
+            grantVersion: 1,
+            grantReconcileNeeded: true,
+            publishRevokedAt: NOW,
+            raisedAt: null,
+            leftAt: NOW,
+        });
+        await expect(prisma.stageGrantEffectOutbox.findUniqueOrThrow({
+            where: {
+                participantId_grantVersion: {
+                    participantId: participantAfterRotation.id,
+                    grantVersion: 1,
+                },
+            },
+        })).resolves.toMatchObject({
+            canPublish: false,
+            disconnectParticipant: true,
+            participantIdentity: 'event-commerce-participant',
+            tokenHorizonAt: tokenHorizon,
+            status: 'PENDING',
+        });
 
         const stale = command({ request_id: '40000000-0000-4000-8000-000000000004' });
         await expect(applyCommerceCommand(stale, stale.external_ticket_id, NOW)).resolves.toMatchObject({
@@ -210,15 +255,36 @@ integration('commerce entitlement PostgreSQL contract', () => {
             credential_action: 'REVOKED',
             credential_binding: null,
         });
-        await expect(finalizeTicketTokenIssue(
-            'commerce-cookie-value',
-            row.ticketEntitlementId,
-            new Date(NOW.getTime() + 10 * 60_000),
-            NOW,
-        )).resolves.toBe(false);
+        await expect(finalizeRoomTokenIssue({
+            cookieValue: 'commerce-cookie-value',
+            principal: tokenPrincipal,
+            expectedIdentity: tokenPrincipal.identity,
+            expectedCanPublish: false,
+            tokenExpiresAt: new Date(NOW.getTime() + 10 * 60_000),
+            now: NOW,
+        })).resolves.toBe(false);
         await expect(getCommerceEntitlement(first.external_ticket_id, NOW)).resolves.toMatchObject({
             applied_revision: 3,
             credential_binding: null,
+        });
+        await expect(prisma.sessionParticipant.findUniqueOrThrow({
+            where: { id: participantAfterRotation.id },
+        })).resolves.toMatchObject({
+            grantVersion: 2,
+            grantReconcileNeeded: true,
+        });
+        await expect(prisma.stageGrantEffectOutbox.findUniqueOrThrow({
+            where: {
+                participantId_grantVersion: {
+                    participantId: participantAfterRotation.id,
+                    grantVersion: 2,
+                },
+            },
+        })).resolves.toMatchObject({
+            canPublish: false,
+            disconnectParticipant: true,
+            participantIdentity: 'rotated-1',
+            status: 'PENDING',
         });
 
         await prisma.commerceEntitlement.update({
@@ -310,10 +376,12 @@ integration('commerce entitlement PostgreSQL contract', () => {
         media.rooms.get('beacon')?.add('bed-event-commerce-participant');
         expect(await processNextCommerceMediaJob(NOW)).toBe(true);
         expect(media.rooms.get('commerce-integration')).toEqual(new Set([
+            'event-commerce-participant',
             'event-commerce-participant-v3',
             'other-event',
         ]));
         expect(media.rooms.get('beacon')).toEqual(new Set([
+            'bed-event-commerce-participant',
             'bed-event-commerce-participant-v3',
             'playlist-bot',
             'bed-other-event',
@@ -324,6 +392,8 @@ integration('commerce entitlement PostgreSQL contract', () => {
         expect(await processNextCommerceMediaJob(afterHorizon)).toBe(true);
         expect(await processNextCommerceMediaJob(afterHorizon)).toBe(true);
         expect(await processNextCommerceMediaJob(afterHorizon)).toBe(true);
+        expect(media.rooms.get('commerce-integration')).not.toContain('event-commerce-participant');
+        expect(media.rooms.get('beacon')).not.toContain('bed-event-commerce-participant');
         expect(await prisma.commerceMediaOutbox.count({ where: { status: 'COMPLETED' } })).toBe(3);
 
         const entitlement = await prisma.commerceEntitlement.findFirstOrThrow();
