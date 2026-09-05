@@ -54,6 +54,7 @@ function handState(overrides: Record<string, unknown> = {}) {
         raisedAt: new Date('2026-08-01T15:10:00Z'),
         queuePosition: 2,
         canPublish: false,
+        grantVersion: 1,
         ...overrides,
     };
 }
@@ -141,6 +142,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
             raisedAt: '2026-08-01T15:10:00.000Z',
             queuePosition: 2,
             canPublish: false,
+            grantVersion: 1,
         });
         expect(mocks.raiseHand).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1',
@@ -177,7 +179,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         const { status, body } = await parseResponse(await PATCH(
             createRequest('/api/scheduled-sessions/event-1/hand', {
                 method: 'PATCH',
-                body: { action: 'decline_invitation' },
+                body: { action: 'decline_invitation', expectedGrantVersion: 1 },
             }),
             mockParams({ id: 'event-1' }),
         ));
@@ -187,6 +189,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         expect(mocks.declineStageInvitation).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1',
             participantIdentity: 'opaque-attendee-1',
+            expectedGrantVersion: 1,
         });
         expect(mocks.getHandState).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1',
@@ -206,7 +209,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         const { status, body } = await parseResponse(await PATCH(
             createRequest('/api/scheduled-sessions/event-1/hand', {
                 method: 'PATCH',
-                body: { action: 'leave_stage' },
+                body: { action: 'leave_stage', expectedGrantVersion: 1 },
             }),
             mockParams({ id: 'event-1' }),
         ));
@@ -216,6 +219,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         expect(mocks.leaveStage).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1',
             participantIdentity: 'opaque-attendee-1',
+            expectedGrantVersion: 1,
         });
         expect(mocks.declineStageInvitation).not.toHaveBeenCalled();
     });
@@ -234,6 +238,21 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         expect(response.status).toBe(400);
         expect(mocks.declineStageInvitation).not.toHaveBeenCalled();
         expect(mocks.leaveStage).not.toHaveBeenCalled();
+    });
+
+    it('requires the grant version for every attendee stage exit', async () => {
+        const { PATCH } = await import('../route');
+        const response = await PATCH(
+            createRequest('/api/scheduled-sessions/event-1/hand', {
+                method: 'PATCH',
+                body: { action: 'leave_stage' },
+            }),
+            mockParams({ id: 'event-1' }),
+        );
+
+        expect(response.status).toBe(400);
+        expect(mocks.leaveStage).not.toHaveBeenCalled();
+        expect(mocks.declineStageInvitation).not.toHaveBeenCalled();
     });
 
     it('returns the caller\u2019s own state for the polling loop, without PII', async () => {

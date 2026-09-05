@@ -241,6 +241,12 @@ async function resolveRoomAccess(
         ) {
             return { ok: false, status: 403, error: 'Not authorized' };
         }
+        // The entry gate is the sole place where an attendee authorizes the
+        // event alias. Direct token/hand URLs must not materialize a room
+        // participant or expose that alias before the explicit confirmation.
+        if (!webSession.displayNameConfirmedAt) {
+            return { ok: false, status: 403, error: 'Not authorized' };
+        }
 
         principalId = ticket.commerceEntitlement
             ? `${ticket.id}:v${ticket.commerceEntitlement.livekitIdentityVersion}`

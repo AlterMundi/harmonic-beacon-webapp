@@ -37,6 +37,7 @@ export class StageControlError extends Error {
             | 'entitlement_inactive'
             | 'not_publisher'
             | 'facilitator_required'
+            | 'stale_grant_version'
             | 'invalid_request'
             | 'livekit_failed',
         public readonly status: 400 | 404 | 409 | 502,
@@ -82,11 +83,13 @@ type DemoteInput = Omit<GrantInput, 'actorUserId'> & {
     actorUserId: string | null;
     auditAction?: 'stage.demote' | 'stage.invitation.decline' | 'stage.attendee.leave';
     clearHand?: boolean;
+    expectedGrantVersion?: number;
 };
 
 type DeclineInvitationInput = {
     scheduledSessionId: string;
     participantIdentity: string;
+    expectedGrantVersion: number;
     now?: Date;
 };
 
@@ -272,7 +275,6 @@ export async function promoteParticipant(
                 'Participant not found',
             );
         }
-
         const ticket = target.ticketEntitlement;
         const hasActiveEntitlement = target.ticketEntitlementId !== null &&
             target.ticketEntitlementId !== undefined &&
@@ -398,6 +400,29 @@ export async function demoteParticipant(
                 'Participant not found',
             );
         }
+        const activeGrant = target.publishGrantedAt !== null &&
+            target.publishRevokedAt === null;
+        if (input.expectedGrantVersion !== undefined &&
+            target.grantVersion !== input.expectedGrantVersion) {
+            const isCompletedDuplicate =
+                target.grantVersion === input.expectedGrantVersion + 1 &&
+                !activeGrant &&
+                (!input.clearHand || target.raisedAt === null);
+            if (!isCompletedDuplicate) {
+                throw new StageControlError(
+                    'stale_grant_version',
+                    409,
+                    'The stage grant changed; refresh before trying again',
+                );
+            }
+            return {
+                participantId: target.id,
+                participantIdentity: target.participantIdentity,
+                canPublish: false,
+                grantVersion: target.grantVersion,
+                reconcileNeeded: target.grantReconcileNeeded,
+            };
+        }
         if (
             target.staffUserId === scheduledSession.facilitatorId &&
             target.staffUser?.disabledAt === null
@@ -409,8 +434,6 @@ export async function demoteParticipant(
             );
         }
 
-        const activeGrant = target.publishGrantedAt !== null &&
-            target.publishRevokedAt === null;
         if (!activeGrant) {
             const clearsRaisedHand = input.clearHand === true && target.raisedAt !== null;
             if (clearsRaisedHand) {
@@ -500,6 +523,7 @@ export async function declineStageInvitation(
         reason: 'Attendee declined stage invitation',
         auditAction: 'stage.invitation.decline',
         clearHand: true,
+        expectedGrantVersion: input.expectedGrantVersion,
         now: input.now,
     });
 }
@@ -535,6 +559,7 @@ export async function leaveStage(
         reason: 'Attendee voluntarily left the stage',
         auditAction: 'stage.attendee.leave',
         clearHand: true,
+        expectedGrantVersion: input.expectedGrantVersion,
         now: input.now,
     });
 }

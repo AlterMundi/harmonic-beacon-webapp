@@ -65,6 +65,7 @@ beforeEach(() => {
     process.env.TAPESTRY_INTERNAL_SECRET = 'test-secret';
     mocks.webSessionFindUnique.mockResolvedValue({
         displayName: 'Ana',
+        displayNameConfirmedAt: new Date('2026-08-01T12:00:00Z'),
         expiresAt: FUTURE,
         revokedAt: null,
         staffUser: null,

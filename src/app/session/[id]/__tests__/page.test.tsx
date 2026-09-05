@@ -344,6 +344,23 @@ describe('SessionRoomPage - event entry', () => {
         expect(Room).not.toHaveBeenCalled();
     });
 
+    it('shows terminal state before asking an unconfirmed attendee for an alias', async () => {
+        vi.mocked(global.fetch).mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                state: 'CANCELLED',
+                identity: { kind: 'attendee', displayName: 'Draft', confirmed: false },
+                session: { ...ENTRY_RESPONSE.session, status: 'CANCELLED' },
+            }),
+        } as Response);
+
+        renderPage();
+
+        expect(await screen.findByText('Session cancelled')).toBeInTheDocument();
+        expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+        expect(Room).not.toHaveBeenCalled();
+    });
+
     it('enters automatically when a status refresh observes open doors', async () => {
         let entryChecks = 0;
         vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
@@ -692,6 +709,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
                         raisedAt: null,
                         queuePosition: null,
                         canPublish,
+                        grantVersion: canPublish ? 1 : 2,
                     }),
                 } as Response);
             }
@@ -827,7 +845,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
             '/api/scheduled-sessions/session-1/hand',
             expect.objectContaining({
                 method: 'PATCH',
-                body: JSON.stringify({ action: 'decline_invitation' }),
+                body: JSON.stringify({ action: 'decline_invitation', expectedGrantVersion: 1 }),
             }),
         );
         expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
@@ -858,6 +876,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Leave the scene' }));
         const confirmation = await screen.findByRole('alertdialog', { name: 'Return to the audience?' });
+        expect(confirmation).toHaveAttribute('aria-modal', 'true');
         expect(confirmation).toHaveTextContent(/keep hearing the session and Beacon without reconnecting/i);
         expect(screen.getByRole('button', { name: 'Stay on stage' })).toHaveFocus();
         expect(room.disconnect).not.toHaveBeenCalled();
@@ -868,13 +887,75 @@ describe('SessionRoomPage - stage invitation consent', () => {
 
         await waitFor(() => expect(screen.queryByRole('button', { name: 'Leave the scene' })).not.toBeInTheDocument());
         const leaveRequests = vi.mocked(global.fetch).mock.calls.filter(([, init]) =>
-            init?.method === 'PATCH' && init.body === JSON.stringify({ action: 'leave_stage' }));
+            init?.method === 'PATCH' &&
+            init.body === JSON.stringify({ action: 'leave_stage', expectedGrantVersion: 1 }));
         expect(leaveRequests).toHaveLength(1);
         expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
         expect(room.disconnect).not.toHaveBeenCalled();
         expect(audioMocks.startBeaconAudio).toHaveBeenCalledTimes(beaconStarts);
         expect(room.startAudio).toHaveBeenCalledTimes(stageAudioStarts);
         expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected');
+    });
+
+    it('keeps an old device completion from restoring stage authority after leaving', async () => {
+        const { room } = await receiveInvitation();
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+        await screen.findByRole('button', { name: 'Turn camera off' });
+
+        let releaseCamera: (() => void) | undefined;
+        room.localParticipant.setCameraEnabled.mockImplementationOnce(async (enabled: boolean) => {
+            await new Promise<void>((resolve) => { releaseCamera = resolve; });
+            room.localParticipant.isCameraEnabled = enabled;
+        });
+        const fetchMock = vi.mocked(global.fetch);
+        const fallback = fetchMock.getMockImplementation();
+        fetchMock.mockImplementation((url, init) => {
+            if (String(url).includes('/hand') && init?.method === 'PATCH') {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        participantId: 'participant-1',
+                        raised: false,
+                        raisedAt: null,
+                        queuePosition: null,
+                        canPublish: false,
+                        grantVersion: 2,
+                    }),
+                } as Response);
+            }
+            return fallback!(url, init);
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Turn camera off' }));
+        await waitFor(() => expect(releaseCamera).toBeTypeOf('function'));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the scene' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the scene' }));
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Leave the scene' })).not.toBeInTheDocument());
+
+        releaseCamera?.();
+        await act(async () => {});
+
+        expect(screen.queryByRole('button', { name: 'Leave the scene' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Unmute microphone' })).not.toBeInTheDocument();
+        expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('traps focus in the stage exit confirmation and restores it on Escape', async () => {
+        await receiveInvitation();
+        fireEvent.click(screen.getByRole('button', { name: 'Accept and join' }));
+        const trigger = await screen.findByRole('button', { name: 'Leave the scene' });
+        fireEvent.click(trigger);
+        const confirmation = await screen.findByRole('alertdialog', { name: 'Return to the audience?' });
+        const cancel = screen.getByRole('button', { name: 'Stay on stage' });
+        const confirm = screen.getByRole('button', { name: 'Yes, leave the scene' });
+
+        expect(cancel).toHaveFocus();
+        fireEvent.keyDown(confirmation, { key: 'Tab' });
+        expect(confirm).toHaveFocus();
+        fireEvent.keyDown(confirmation, { key: 'Escape' });
+
+        expect(screen.queryByRole('alertdialog', { name: 'Return to the audience?' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Leave the scene' })).toHaveFocus();
     });
 
     it('stays on stage with retryable feedback when the voluntary exit request fails', async () => {
@@ -889,7 +970,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
             if (
                 String(url).includes('/hand') &&
                 init?.method === 'PATCH' &&
-                init.body === JSON.stringify({ action: 'leave_stage' })
+                init.body === JSON.stringify({ action: 'leave_stage', expectedGrantVersion: 1 })
             ) {
                 return Promise.resolve({
                     ok: false,
@@ -919,12 +1000,14 @@ describe('SessionRoomPage - deliberate session exit', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
         const confirmation = screen.getByRole('alertdialog', { name: 'Leave session' });
+        expect(confirmation).toHaveAttribute('aria-modal', 'true');
         expect(confirmation).toHaveTextContent(/disconnects this page from the session and Beacon/i);
         expect(room.disconnect).not.toHaveBeenCalled();
         expect(screen.getByRole('button', { name: 'Stay in the session' })).toHaveFocus();
 
         fireEvent.click(screen.getByRole('button', { name: 'Stay in the session' }));
         expect(room.disconnect).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Leave session' })).toHaveFocus();
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
         fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the session' }));
 

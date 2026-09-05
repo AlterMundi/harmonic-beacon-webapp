@@ -20,6 +20,7 @@ function state(overrides: Partial<HandState> = {}): HandState {
         raisedAt: null,
         queuePosition: null,
         canPublish: false,
+        grantVersion: 0,
         ...overrides,
     };
 }
@@ -107,17 +108,17 @@ describe('HandRaiseButton', () => {
     it('notifies the room page when polling observes a promotion, without a reconnect', async () => {
         const { fetchMock } = mockFetchSequence([
             state({ raised: true, queuePosition: 1 }),
-            state({ canPublish: true }),
+            state({ canPublish: true, grantVersion: 1 }),
         ]);
         vi.stubGlobal('fetch', fetchMock);
         const onGrant = vi.fn();
         const view = render(<HandRaiseButton sessionId="event-1" onPublishGrantChange={onGrant} />);
 
         // First poll: no grant, callback fires once with false.
-        await waitFor(() => expect(onGrant).toHaveBeenCalledWith(false));
+        await waitFor(() => expect(onGrant).toHaveBeenCalledWith(false, 0));
         // Second poll (2s interval): the durable grant flipped — the room page
         // can now offer mic/camera. No token refetch, no reconnect.
-        await waitFor(() => expect(onGrant).toHaveBeenCalledWith(true), { timeout: 4000 });
+        await waitFor(() => expect(onGrant).toHaveBeenCalledWith(true, 1), { timeout: 4000 });
         expect(screen.queryByText(/You are on stage — enable microphone and camera/)).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /hand/i })).not.toBeInTheDocument();
 

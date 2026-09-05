@@ -45,13 +45,19 @@ export async function GET(
             role: principal.role,
             isAssignedFacilitator: principal.isAssignedFacilitator,
         };
+        // Ticket-holder aliases remain server-side until publication is
+        // explicitly activated. A subscribe-only audience JWT therefore
+        // carries a neutral name even if it is inspected or replayed.
+        const livekitName = principal.ticketEntitlementId
+            ? 'Participant'
+            : principal.displayName;
         // Every credential is subscribe-only. The connected browser requests
         // publication activation separately; that server-side step rechecks
         // the current identity and grant while holding the authority locks.
         const token = await createSessionJoinToken(
             principal.session.roomName,
             principal.identity,
-            principal.displayName,
+            livekitName,
             tokenMetadata,
             tokenTtl,
         );

@@ -208,6 +208,16 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
         });
     });
 
+    it.each(['ENDED', 'CANCELLED'])('does not accept an alias mutation after a session is %s', async (status) => {
+        findUnique.mockResolvedValue({ ...session, status });
+
+        expect((await patchEntry({ displayName: 'Late alias' }))).toMatchObject({
+            status: 409,
+            body: { error: 'session_terminal' },
+        });
+        expect(confirmAttendeeDisplayName).not.toHaveBeenCalled();
+    });
+
     it('does not let staff mutate an attendee alias', async () => {
         principalFromToken.mockResolvedValue({
             kind: 'staff',

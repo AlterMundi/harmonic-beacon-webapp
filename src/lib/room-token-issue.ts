@@ -22,6 +22,7 @@ type CurrentPrincipalInput = {
 type LockedCurrentPrincipal = {
     participantId: string;
     roomName: string;
+    displayName: string;
     effectiveCanPublish: boolean;
     isAssignedFacilitator: boolean;
     commerceEntitlementId: string | null;
@@ -157,6 +158,7 @@ async function lockCurrentPrincipal(
         },
         select: {
             id: true,
+            displayName: true,
             publishGrantedAt: true,
             publishRevokedAt: true,
             grantReconcileNeeded: true,
@@ -167,6 +169,7 @@ async function lockCurrentPrincipal(
     return {
         participantId: participant.id,
         roomName: session.room_name,
+        displayName: participant.displayName?.trim() || 'Participant',
         effectiveCanPublish: participant.publishGrantedAt !== null &&
             participant.publishRevokedAt === null &&
             !participant.grantReconcileNeeded,
@@ -240,7 +243,10 @@ export async function activateRoomPublication(
         await getRoomService(LIVEKIT_PERMISSION_TIMEOUT_SECONDS).updateParticipant(
             current.roomName,
             input.expectedIdentity,
-            { permission: stagePublisherPermission(current.isAssignedFacilitator) },
+            {
+                name: current.displayName,
+                permission: stagePublisherPermission(current.isAssignedFacilitator),
+            },
         );
         return true;
     }, TRANSACTION_OPTIONS);

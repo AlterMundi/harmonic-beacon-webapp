@@ -519,6 +519,7 @@ describe('stage control', () => {
         const result = await declineStageInvitation({
             scheduledSessionId: event.id,
             participantIdentity: 'opaque-target',
+            expectedGrantVersion: 1,
         });
 
         expect(result).toMatchObject({ canPublish: false, reconcileNeeded: false });
@@ -547,6 +548,7 @@ describe('stage control', () => {
         const result = await leaveStage({
             scheduledSessionId: event.id,
             participantIdentity: 'opaque-target',
+            expectedGrantVersion: 1,
         });
 
         expect(result).toMatchObject({ canPublish: false, reconcileNeeded: false });
@@ -572,10 +574,12 @@ describe('stage control', () => {
             leaveStage({
                 scheduledSessionId: event.id,
                 participantIdentity: 'opaque-target',
+                expectedGrantVersion: 1,
             }),
             leaveStage({
                 scheduledSessionId: event.id,
                 participantIdentity: 'opaque-target',
+                expectedGrantVersion: 1,
             }),
         ]);
 
@@ -597,6 +601,7 @@ describe('stage control', () => {
             leaveStage({
                 scheduledSessionId: event.id,
                 participantIdentity: 'opaque-target',
+                expectedGrantVersion: 1,
             }),
             demoteParticipant({
                 scheduledSessionId: event.id,
@@ -615,6 +620,24 @@ describe('stage control', () => {
             grantVersion: 2,
         });
         expect(mocks.auditCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an old exit after the attendee has been promoted again', async () => {
+        participants = [attendee('target', true, new Date('2026-08-01T15:10:00Z'))];
+        participants[0].grantVersion = 3;
+        const before = { ...participants[0] };
+        const { leaveStage } = await import('../stage-control');
+
+        await expect(leaveStage({
+            scheduledSessionId: event.id,
+            participantIdentity: 'opaque-target',
+            expectedGrantVersion: 1,
+        })).rejects.toMatchObject({ code: 'stale_grant_version', status: 409 });
+
+        expect(participants[0]).toEqual(before);
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+        expect(mocks.auditCreate).not.toHaveBeenCalled();
+        expect(mocks.processGrant).not.toHaveBeenCalled();
     });
 
     it('refuses to demote the assigned facilitator reserved by the weekend contract', async () => {

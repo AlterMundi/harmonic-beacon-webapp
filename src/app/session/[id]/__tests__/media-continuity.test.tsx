@@ -113,7 +113,14 @@ beforeEach(() => {
             if (init?.method === 'DELETE') handRaised = false;
             return Promise.resolve({
                 ok: true,
-                json: async () => ({ raised: handRaised, canPublish: false }),
+                json: async () => ({
+                    participantId: 'participant-1',
+                    raised: handRaised,
+                    raisedAt: handRaised ? '2026-08-01T15:10:00.000Z' : null,
+                    queuePosition: handRaised ? 1 : null,
+                    canPublish: false,
+                    grantVersion: 0,
+                }),
             });
         }
         return Promise.resolve({ ok: true, json: async () => ({}) });

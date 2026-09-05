@@ -39,6 +39,7 @@ const activeEvent = {
 };
 const activeTicketSession = {
     displayName: 'Ana',
+    displayNameConfirmedAt: now,
     expiresAt: new Date('2026-08-03T00:00:00Z'),
     revokedAt: null,
     staffUser: null,
@@ -139,6 +140,23 @@ describe('resolveRoomPrincipal', () => {
             error: 'Authentication required',
         });
         expect(findWebSession).not.toHaveBeenCalled();
+    });
+
+    it('rejects a direct room or hand request until the attendee confirms the event alias', async () => {
+        findWebSession.mockResolvedValue({
+            ...activeTicketSession,
+            displayNameConfirmedAt: null,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        await expect(resolveRoomPrincipal(request(), 'event-1', now)).resolves.toEqual({
+            ok: false,
+            status: 403,
+            error: 'Not authorized',
+        });
+        expect(findParticipant).not.toHaveBeenCalled();
+        expect(upsertParticipant).not.toHaveBeenCalled();
+        expect(updateParticipant).not.toHaveBeenCalled();
     });
 
     it.each([

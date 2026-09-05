@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import {
     AudioPresets,
@@ -67,6 +68,39 @@ function stageRoomOptions(isAssignedFacilitator: boolean): RoomOptions {
 
 const STAGE_REFRESH_MS = 100;
 const STAGE_HANDOFF_MAX_AGE_MS = 30_000;
+
+function keepFocusInsideDialog(
+    event: ReactKeyboardEvent<HTMLElement>,
+    onEscape: () => void,
+    escapeDisabled = false,
+): void {
+    if (event.key === 'Escape') {
+        if (!escapeDisabled) {
+            event.preventDefault();
+            event.stopPropagation();
+            onEscape();
+        }
+        return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => !element.hasAttribute('hidden'));
+    if (controls.length === 0) {
+        event.preventDefault();
+        return;
+    }
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
 
 type StageHandoff = {
     microphone: boolean;
@@ -222,6 +256,7 @@ function SessionRoom() {
     const [isConnecting, setIsConnecting] = useState(true);
     const [connectionError, setConnectionError] = useState(false);
     const [canPublish, setCanPublish] = useState(false);
+    const [grantVersion, setGrantVersion] = useState<number | null>(null);
     const [principalKind, setPrincipalKind] = useState<"ticket" | "staff">("ticket");
     const [isMicOn, setIsMicOn] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(false);
@@ -270,8 +305,14 @@ function SessionRoom() {
     const deviceOperationRef = useRef<Promise<void> | null>(null);
     const stageInvitationAcceptedRef = useRef(false);
     const stageExitInFlightRef = useRef(false);
+    const stageAuthoritySuppressedRef = useRef(false);
+    const grantVersionRef = useRef<number | null>(null);
     const terminalViewRef = useRef<HTMLDivElement>(null);
     const stageInvitationRef = useRef<HTMLDivElement>(null);
+    const stageExitCancelRef = useRef<HTMLButtonElement>(null);
+    const stageExitTriggerRef = useRef<HTMLButtonElement>(null);
+    const sessionExitCancelRef = useRef<HTMLButtonElement>(null);
+    const sessionExitTriggerRef = useRef<HTMLButtonElement>(null);
     const participantFallbackRef = useRef(copy.session.participantFallback);
     participantFallbackRef.current = copy.session.participantFallback;
     stageInvitationAcceptedRef.current = stageInvitationAccepted;
@@ -292,7 +333,9 @@ function SessionRoom() {
         const everyone: Participant[] = [local, ...room.remoteParticipants.values()];
 
         const publishers: StagePublisherView[] = everyone
-            .filter(isStagePublisher)
+            .filter((participant) =>
+                !(participant === local && stageAuthoritySuppressedRef.current) &&
+                isStagePublisher(participant))
             .map((participant) => {
                 const label = participant.name?.trim() || participantFallbackRef.current;
                 return {
@@ -312,9 +355,11 @@ function SessionRoom() {
         setStagePublishers(publishers);
         setParticipantCount(room.remoteParticipants.size + 1);
         setConnectionState(room.state);
-        setCanPublish(Boolean(local.permissions?.canPublish));
-        setIsMicOn(local.isMicrophoneEnabled);
-        setIsCameraOn(local.isCameraEnabled);
+        const localCanPublish = !stageAuthoritySuppressedRef.current &&
+            Boolean(local.permissions?.canPublish);
+        setCanPublish(localCanPublish);
+        setIsMicOn(localCanPublish && local.isMicrophoneEnabled);
+        setIsCameraOn(localCanPublish && local.isCameraEnabled);
 
         const newestSlot = publishers.reduce((max, p) => Math.max(max, p.grantOrder), -1);
         if (newestSlot > highestSlotRef.current) {
@@ -494,7 +539,7 @@ function SessionRoom() {
     ]);
 
     const declineStageInvitation = useCallback(async () => {
-        if (principalKind !== 'ticket' || !canPublish || stageInvitationBusy) return;
+        if (principalKind !== 'ticket' || !canPublish || stageInvitationBusy || grantVersion === null) return;
 
         setStageInvitationBusy('decline');
         setStageInvitationError(null);
@@ -502,9 +547,18 @@ function SessionRoom() {
             const response = await fetch(`/api/scheduled-sessions/${id}/hand`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'decline_invitation' }),
+                body: JSON.stringify({
+                    action: 'decline_invitation',
+                    expectedGrantVersion: grantVersion,
+                }),
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const next = await response.json() as { grantVersion?: unknown };
+            if (Number.isInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
+                grantVersionRef.current = next.grantVersion as number;
+                setGrantVersion(next.grantVersion as number);
+            }
+            stageAuthoritySuppressedRef.current = true;
             setStageInvitationAccepted(false);
             setCanPublish(false);
         } catch (failure) {
@@ -513,14 +567,15 @@ function SessionRoom() {
         } finally {
             setStageInvitationBusy(null);
         }
-    }, [canPublish, copy.session.invitationDeclineError, id, principalKind, stageInvitationBusy]);
+    }, [canPublish, copy.session.invitationDeclineError, grantVersion, id, principalKind, stageInvitationBusy]);
 
     const leaveStage = useCallback(async () => {
         if (
             principalKind !== 'ticket' ||
             !canPublish ||
             stageExitBusy ||
-            stageExitInFlightRef.current
+            stageExitInFlightRef.current ||
+            grantVersion === null
         ) return;
 
         stageExitInFlightRef.current = true;
@@ -530,21 +585,29 @@ function SessionRoom() {
             const response = await fetch(`/api/scheduled-sessions/${id}/hand`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'leave_stage' }),
+                body: JSON.stringify({
+                    action: 'leave_stage',
+                    expectedGrantVersion: grantVersion,
+                }),
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const next = await response.json() as { grantVersion?: unknown };
+            if (Number.isInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
+                grantVersionRef.current = next.grantVersion as number;
+                setGrantVersion(next.grantVersion as number);
+            }
 
             // LiveKit's permission event releases the local devices. These
             // state updates make the attendee UI converge immediately while
             // both receiving rooms and their audio activation stay mounted.
             desiredCameraRef.current = false;
             desiredMicRef.current = false;
+            stageAuthoritySuppressedRef.current = true;
             setStageInvitationAccepted(false);
             setCanPublish(false);
             setIsCameraOn(false);
             setIsMicOn(false);
             setStageExitConfirming(false);
-            readStage();
         } catch (failure) {
             console.error('Failed to leave the stage:', redactErrorDetail(failure));
             setStageExitError(copy.session.leaveStageFailed);
@@ -552,7 +615,28 @@ function SessionRoom() {
             stageExitInFlightRef.current = false;
             setStageExitBusy(false);
         }
-    }, [canPublish, copy.session.leaveStageFailed, id, principalKind, readStage, stageExitBusy]);
+    }, [canPublish, copy.session.leaveStageFailed, grantVersion, id, principalKind, stageExitBusy]);
+
+    const applyGrantState = useCallback((nextCanPublish: boolean, nextGrantVersion: number) => {
+        const currentGrantVersion = grantVersionRef.current;
+        if (
+            !Number.isInteger(nextGrantVersion) ||
+            nextGrantVersion < 0 ||
+            (currentGrantVersion !== null && nextGrantVersion < currentGrantVersion) ||
+            (stageAuthoritySuppressedRef.current &&
+                nextCanPublish &&
+                currentGrantVersion !== null &&
+                nextGrantVersion <= currentGrantVersion)
+        ) return;
+
+        grantVersionRef.current = nextGrantVersion;
+        setGrantVersion(nextGrantVersion);
+        if (
+            nextCanPublish &&
+            (currentGrantVersion === null || nextGrantVersion > currentGrantVersion)
+        ) stageAuthoritySuppressedRef.current = false;
+        setCanPublish(nextCanPublish);
+    }, []);
 
     // Connect to LiveKit room
     useEffect(() => {
@@ -586,7 +670,9 @@ function SessionRoom() {
                 if (cancelled) return;
 
                 setSessionInfo(data.session);
-                setCanPublish(data.canPublish);
+                setCanPublish(
+                    !stageAuthoritySuppressedRef.current && data.canPublish === true,
+                );
                 setPrincipalKind(data.principalKind === "staff" ? "staff" : "ticket");
                 setViewerInfo({
                     name: typeof data.displayName === "string" ? data.displayName : participantFallbackRef.current,
@@ -705,7 +791,7 @@ function SessionRoom() {
                     return;
                 }
 
-                if (data.canPublish) {
+                if (data.canPublish && !stageAuthoritySuppressedRef.current) {
                     const publicationResponse = await fetch(
                         `/api/scheduled-sessions/${id}/publication`,
                         { method: "POST" },
@@ -833,6 +919,22 @@ function SessionRoom() {
             setStageInvitationError(null);
         }
     }, [canPublish, principalKind, stageInvitationAccepted]);
+
+    useEffect(() => {
+        if (stageExitConfirming) {
+            stageExitCancelRef.current?.focus();
+        } else {
+            stageExitTriggerRef.current?.focus();
+        }
+    }, [stageExitConfirming]);
+
+    useEffect(() => {
+        if (sessionExitConfirming) {
+            sessionExitCancelRef.current?.focus();
+        } else {
+            sessionExitTriggerRef.current?.focus();
+        }
+    }, [sessionExitConfirming]);
 
     useEffect(() => {
         const sessionVol = volume * mix;
@@ -1170,7 +1272,7 @@ function SessionRoom() {
                                     type="button"
                                     className="event-button event-button--secondary w-full"
                                     onClick={() => void declineStageInvitation()}
-                                    disabled={stageInvitationBusy !== null}
+                                    disabled={stageInvitationBusy !== null || grantVersion === null}
                                 >
                                     {stageInvitationBusy === 'decline'
                                         ? copy.session.decliningInvitation
@@ -1275,7 +1377,7 @@ function SessionRoom() {
                         <div className="mb-4 flex justify-center">
                             <HandRaiseButton
                                 sessionId={id}
-                                onPublishGrantChange={setCanPublish}
+                                onPublishGrantChange={applyGrantState}
                                 stageInvitationAccepted={stageInvitationAccepted}
                             />
                         </div>
@@ -1285,6 +1387,7 @@ function SessionRoom() {
                             {!stageExitConfirming ? (
                                 <button
                                     type="button"
+                                    ref={stageExitTriggerRef}
                                     onClick={() => {
                                         setStageExitError(null);
                                         setStageExitConfirming(true);
@@ -1296,8 +1399,14 @@ function SessionRoom() {
                             ) : (
                                 <section
                                     role="alertdialog"
+                                    aria-modal="true"
                                     aria-labelledby="leave-stage-heading"
                                     aria-describedby="leave-stage-body"
+                                    onKeyDown={(event) => keepFocusInsideDialog(
+                                        event,
+                                        () => setStageExitConfirming(false),
+                                        stageExitBusy,
+                                    )}
                                     className="rounded border border-[var(--gold)]/40 bg-[var(--surface-alt)] p-4 text-center"
                                 >
                                     <h2 id="leave-stage-heading" className="font-serif text-xl text-[var(--paper)]">
@@ -1310,7 +1419,7 @@ function SessionRoom() {
                                         <button
                                             type="button"
                                             onClick={() => void leaveStage()}
-                                            disabled={stageExitBusy}
+                                            disabled={stageExitBusy || grantVersion === null}
                                             className="event-button event-button--primary w-full"
                                         >
                                             {stageExitBusy
@@ -1319,9 +1428,9 @@ function SessionRoom() {
                                         </button>
                                         <button
                                             type="button"
+                                            ref={stageExitCancelRef}
                                             onClick={() => setStageExitConfirming(false)}
                                             disabled={stageExitBusy}
-                                            autoFocus
                                             className="event-button event-button--secondary w-full"
                                         >
                                             {copy.session.leaveStageCancel}
@@ -1438,6 +1547,7 @@ function SessionRoom() {
                         {!sessionExitConfirming ? (
                             <button
                                 type="button"
+                                ref={sessionExitTriggerRef}
                                 onClick={() => setSessionExitConfirming(true)}
                                 className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
                             >
@@ -1446,7 +1556,12 @@ function SessionRoom() {
                         ) : (
                             <div
                                 role="alertdialog"
+                                aria-modal="true"
                                 aria-label={copy.session.leaveSession}
+                                onKeyDown={(event) => keepFocusInsideDialog(
+                                    event,
+                                    () => setSessionExitConfirming(false),
+                                )}
                                 className="rounded border border-[var(--danger)]/40 bg-[var(--surface-alt)] p-3"
                             >
                                 <p className="text-sm leading-6 text-[var(--text-secondary)]">{copy.session.leaveSessionBody}</p>
@@ -1460,8 +1575,8 @@ function SessionRoom() {
                                     </button>
                                     <button
                                         type="button"
+                                        ref={sessionExitCancelRef}
                                         onClick={() => setSessionExitConfirming(false)}
-                                        autoFocus
                                         className="event-button event-button--secondary"
                                     >
                                         {copy.session.leaveSessionCancel}
@@ -1601,6 +1716,32 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
         );
     }
 
+    if (entry.state === 'ENDED' || entry.state === 'CANCELLED') {
+        const cancelled = entry.state === 'CANCELLED';
+        return (
+            <main className="event-shell">
+                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                    <section role="status" aria-live="polite" className="event-card w-full max-w-sm text-center">
+                        <div className="terminal-state__icon">&#10022;</div>
+                        <h1 className="terminal-state__title">
+                            {cancelled ? copy.session.cancelledHeading : copy.session.endedHeading}
+                        </h1>
+                        <p className="terminal-state__body">
+                            {cancelled ? copy.session.cancelledBody : copy.session.closingBody}
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => router.push('/')}
+                            className="event-button event-button--secondary mt-4 w-full"
+                        >
+                            {copy.session.backToSessions}
+                        </button>
+                    </section>
+                </div>
+            </main>
+        );
+    }
+
     if (entry.identity.kind === 'attendee' && !entry.identity.confirmed) {
         return (
             <SessionIdentityGate
@@ -1651,32 +1792,6 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                     {/* Guidance waits outside the live region: the disclosure
                         toggling must not be announced as a door-state change. */}
                     <SessionGuidance copy={copy.session.guidance} className="w-full max-w-md" />
-                </div>
-            </main>
-        );
-    }
-
-    if (entry.state === 'ENDED' || entry.state === 'CANCELLED') {
-        const cancelled = entry.state === 'CANCELLED';
-        return (
-            <main className="event-shell">
-                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
-                    <section role="status" aria-live="polite" className="event-card w-full max-w-sm text-center">
-                        <div className="terminal-state__icon">&#10022;</div>
-                        <h1 className="terminal-state__title">
-                            {cancelled ? copy.session.cancelledHeading : copy.session.endedHeading}
-                        </h1>
-                        <p className="terminal-state__body">
-                            {cancelled ? copy.session.cancelledBody : copy.session.closingBody}
-                        </p>
-                        <button
-                            type="button"
-                            onClick={() => router.push('/')}
-                            className="event-button event-button--secondary mt-4 w-full"
-                        >
-                            {copy.session.backToSessions}
-                        </button>
-                    </section>
                 </div>
             </main>
         );

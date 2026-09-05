@@ -132,6 +132,9 @@ export async function PATCH(
     if (resolved.principal.kind !== 'attendee') {
         return response({ error: 'Not authorized' }, 403);
     }
+    if (resolved.session.status === 'ENDED' || resolved.session.status === 'CANCELLED') {
+        return response({ error: 'session_terminal' }, 409);
+    }
 
     let displayName = '';
     try {

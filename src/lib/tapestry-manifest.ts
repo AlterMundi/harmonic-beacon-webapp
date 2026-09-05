@@ -14,8 +14,9 @@ import type { CompositeLayout } from '@/lib/tapestry-layout';
  *
  * Privacy contract: entries are keyed by the opaque tapestry tile id (HMAC),
  * never by LiveKit identity or any internal id. Names come from the
- * already-authorized room name / staff account name — the same source the
- * room itself shows. Nothing here exposes emails, ticket ids, LiveKit
+ * confirmed event alias / staff account name stored in PostgreSQL. LiveKit's
+ * audience name is intentionally neutral and is never the authority for a
+ * known participant. Nothing here exposes emails, ticket ids, LiveKit
  * identities or join history.
  *
  * Truthfulness contract: the manifest never invents state. Tiles come from
@@ -80,6 +81,7 @@ export type TapestryManifest = {
 
 export type ManifestParticipant = {
     identity: string;
+    displayName: string | null;
     leftAt: Date | null;
     raisedAt: Date | null;
     publishGrantedAt: Date | null;
@@ -119,6 +121,7 @@ function displayNameFor(
 ): string {
     return (
         participant?.staffName ??
+        participant?.displayName?.trim() ??
         (identity ? live.get(identity)?.name.trim() : '') ??
         'Attendee'
     ) || 'Attendee';
