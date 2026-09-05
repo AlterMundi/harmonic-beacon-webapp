@@ -307,6 +307,7 @@ function SessionRoom() {
     const stageExitInFlightRef = useRef(false);
     const stageAuthoritySuppressedRef = useRef(false);
     const grantVersionRef = useRef<number | null>(null);
+    const principalKindRef = useRef<"ticket" | "staff">("ticket");
     const terminalViewRef = useRef<HTMLDivElement>(null);
     const stageInvitationRef = useRef<HTMLDivElement>(null);
     const stageExitCancelRef = useRef<HTMLButtonElement>(null);
@@ -316,6 +317,7 @@ function SessionRoom() {
     const participantFallbackRef = useRef(copy.session.participantFallback);
     participantFallbackRef.current = copy.session.participantFallback;
     stageInvitationAcceptedRef.current = stageInvitationAccepted;
+    principalKindRef.current = principalKind;
 
     const slotFor = useCallback((identity: string): number => {
         const existing = slotOrderRef.current.get(identity);
@@ -357,7 +359,14 @@ function SessionRoom() {
         setConnectionState(room.state);
         const localCanPublish = !stageAuthoritySuppressedRef.current &&
             Boolean(local.permissions?.canPublish);
-        setCanPublish(localCanPublish);
+        // A ticket holder's LiveKit permission can arrive before the next
+        // authoritative hand-state poll. Do not expose an invitation backed
+        // by the previous grantVersion: declining it would correctly fail the
+        // server CAS with a stale revision. Staff have no attendee hand poll,
+        // so their event-scoped permission remains LiveKit-driven.
+        if (principalKindRef.current === 'staff' || !localCanPublish) {
+            setCanPublish(localCanPublish);
+        }
         setIsMicOn(localCanPublish && local.isMicrophoneEnabled);
         setIsCameraOn(localCanPublish && local.isCameraEnabled);
 
@@ -670,10 +679,22 @@ function SessionRoom() {
                 if (cancelled) return;
 
                 setSessionInfo(data.session);
-                setCanPublish(
-                    !stageAuthoritySuppressedRef.current && data.canPublish === true,
-                );
-                setPrincipalKind(data.principalKind === "staff" ? "staff" : "ticket");
+                const resolvedPrincipalKind = data.principalKind === "staff" ? "staff" : "ticket";
+                principalKindRef.current = resolvedPrincipalKind;
+                setPrincipalKind(resolvedPrincipalKind);
+                // On a fresh attendee page, wait for HandRaiseButton to pair
+                // canPublish with its exact grantVersion. During an accepted
+                // transport reconnect the existing authority is already
+                // paired, so preserve it without UI flicker.
+                if (
+                    resolvedPrincipalKind === "staff" ||
+                    data.canPublish !== true ||
+                    stageInvitationAcceptedRef.current
+                ) {
+                    setCanPublish(
+                        !stageAuthoritySuppressedRef.current && data.canPublish === true,
+                    );
+                }
                 setViewerInfo({
                     name: typeof data.displayName === "string" ? data.displayName : participantFallbackRef.current,
                     role: typeof data.role === "string" ? data.role : "PARTICIPANT",
