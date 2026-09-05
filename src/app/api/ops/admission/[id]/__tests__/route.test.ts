@@ -36,8 +36,10 @@ const entitlementRow = {
     revokedAt: null,
     revocationReason: null,
     createdAt: new Date('2026-07-28T00:00:00Z'),
+    scheduledSessionId: '3f6b1a2e-1234-4abc-9def-0123456789ab',
     scheduledSession: {
         id: '3f6b1a2e-1234-4abc-9def-0123456789ab',
+        roomName: 'weekend-stage',
         title: 'Saturday Session',
         language: 'ENGLISH',
         scheduledAt: new Date('2026-08-01T18:00:00Z'),
@@ -68,9 +70,11 @@ type MockPrisma = {
 
 describe('/api/ops/admission/[id]', () => {
     let mockPrisma: MockPrisma;
+    let transitionGrant: MockFn;
 
     beforeEach(() => {
         vi.resetModules();
+        transitionGrant = vi.fn().mockResolvedValue({});
         mockPrisma = {
             webSession: {
                 findUnique: vi.fn().mockResolvedValue(staffSession('ADMIN')),
@@ -94,6 +98,9 @@ describe('/api/ops/admission/[id]', () => {
         vi.doMock('@/lib/db', () => ({ prisma: mockPrisma, default: mockPrisma }));
         vi.doMock('@/lib/livekit-server', () => ({
             bedRoomIdentity: (identity: string) => `bed-${identity}`,
+        }));
+        vi.doMock('@/lib/stage-grant-effects', () => ({
+            transitionParticipantGrant: transitionGrant,
         }));
     });
 
@@ -224,6 +231,7 @@ describe('/api/ops/admission/[id]', () => {
                 scheduledSession: { roomName: 'weekend-stage' },
             });
             mockPrisma.sessionParticipant.findFirst.mockResolvedValue({
+                id: 'participant-1',
                 participantIdentity: 'event-target',
             });
             const { POST } = await loadRoute();
@@ -239,6 +247,14 @@ describe('/api/ops/admission/[id]', () => {
                     mediaStatus: 'RECONCILIATION_REQUIRED',
                 },
             });
+            expect(transitionGrant).toHaveBeenCalledWith(
+                mockPrisma,
+                expect.objectContaining({
+                    participantId: 'participant-1',
+                    canPublish: false,
+                    disconnectParticipant: true,
+                }),
+            );
             expect(mockPrisma.commerceMediaOutbox.upsert).toHaveBeenCalledWith(
                 expect.objectContaining({
                     create: expect.objectContaining({

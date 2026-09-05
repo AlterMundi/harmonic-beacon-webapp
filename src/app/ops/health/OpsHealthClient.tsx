@@ -23,6 +23,7 @@ const CHECK_KEYS: Array<keyof OperatorHealthReport['checks']> = [
     'livekit',
     'stageRoom',
     'publisherGrants',
+    'grantDelivery',
     'bedPublisher',
     'tapestry',
 ];

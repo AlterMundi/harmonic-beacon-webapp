@@ -14,6 +14,7 @@ const NOMINAL_HEALTH = {
         livekit: NOMINAL_CHECK,
         stageRoom: NOMINAL_CHECK,
         publisherGrants: NOMINAL_CHECK,
+        grantDelivery: NOMINAL_CHECK,
         bedPublisher: NOMINAL_CHECK,
         tapestry: NOMINAL_CHECK,
     },

@@ -68,6 +68,12 @@ async function leaveConnectedRoom(
     const leave = surface.getByRole('button', { name: /Leave session|Salir de la sesión/i });
     if (await leave.isVisible()) {
         await leave.click();
+        const confirmation = surface.getByRole('alertdialog', {
+            name: /Leave session|Salir de la sesión/i,
+        });
+        await confirmation.getByRole('button', {
+            name: /Yes, leave the session|Sí, salir de la sesión/i,
+        }).click();
         await expect(surface.getByTestId('connection-state')).toHaveCount(0);
     }
 }

@@ -40,7 +40,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         listParticipants.mockResolvedValue([
             {
                 identity: 'opaque-publisher',
-                name: 'Ana',
+                name: 'Participant',
                 tracks: [
                     {
                         sid: 'TR_audio',
@@ -59,6 +59,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
                 {
                     id: 'publisher',
                     participantIdentity: 'opaque-publisher',
+                    displayName: 'Ana',
                     joinedAt: new Date('2026-08-01T15:00:00Z'),
                     leftAt: null,
                     raisedAt: null,
@@ -71,6 +72,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
                 {
                     id: 'waiting',
                     participantIdentity: 'opaque-waiting',
+                    displayName: 'Beto',
                     joinedAt: new Date('2026-08-01T15:01:00Z'),
                     leftAt: null,
                     raisedAt: new Date('2026-08-01T15:11:00Z'),
@@ -222,8 +224,8 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         expect(body).toMatchObject({
             liveStateAvailable: false,
             participants: [
-                { id: 'publisher', connected: null, media: [], stageState: 'UNKNOWN' },
-                { id: 'waiting', connected: null, media: [] },
+                { id: 'publisher', displayName: 'Ana', connected: null, media: [], stageState: 'UNKNOWN' },
+                { id: 'waiting', displayName: 'Beto', connected: null, media: [] },
             ],
         });
     });

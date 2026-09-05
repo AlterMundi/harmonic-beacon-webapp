@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import {
     AudioPresets,
@@ -20,6 +21,7 @@ import HandRaiseButton from "@/components/session/HandRaiseButton";
 import FacilitatorAudioQuality from "@/components/session/FacilitatorAudioQuality";
 import SessionContributions from "@/components/session/SessionContributions";
 import SessionGuidance from "@/components/session/SessionGuidance";
+import SessionIdentityGate from "@/components/session/SessionIdentityGate";
 import StageLayout, { type StagePublisherView } from "@/components/session/StageLayout";
 import ThumbnailSender from "@/components/session/ThumbnailSender";
 import ThumbnailTapestry from "@/components/session/ThumbnailTapestry";
@@ -67,6 +69,39 @@ function stageRoomOptions(isAssignedFacilitator: boolean): RoomOptions {
 
 const STAGE_REFRESH_MS = 100;
 const STAGE_HANDOFF_MAX_AGE_MS = 30_000;
+
+function keepFocusInsideDialog(
+    event: ReactKeyboardEvent<HTMLElement>,
+    onEscape: () => void,
+    escapeDisabled = false,
+): void {
+    if (event.key === 'Escape') {
+        if (!escapeDisabled) {
+            event.preventDefault();
+            event.stopPropagation();
+            onEscape();
+        }
+        return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => !element.hasAttribute('hidden'));
+    if (controls.length === 0) {
+        event.preventDefault();
+        return;
+    }
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
 
 type StageHandoff = {
     microphone: boolean;
@@ -118,14 +153,29 @@ type DisconnectKind = "ended" | "transport" | "duplicate" | "unknown";
 type CameraFacingMode = "user" | "environment";
 
 const AUTO_RECONNECT_DELAYS_MS = [500, 1_500, 3_000] as const;
+const PUBLICATION_ACTIVATION_TIMEOUT_MS = 5_000;
+
+async function waitForPublicationActivation(room: Room): Promise<void> {
+    const deadline = Date.now() + PUBLICATION_ACTIVATION_TIMEOUT_MS;
+    while (!room.localParticipant.permissions?.canPublish) {
+        if (Date.now() >= deadline) {
+            throw new Error("LiveKit publication permission did not arrive");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+}
 
 function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
     switch (reason) {
         case DisconnectReason.ROOM_DELETED:
         case DisconnectReason.ROOM_CLOSED:
-        case DisconnectReason.PARTICIPANT_REMOVED:
         case DisconnectReason.SERVER_SHUTDOWN:
             return "ended";
+        // Durable demotion/revocation rotates the participant identity and
+        // removes the fenced connection. A still-authorized attendee must
+        // fetch a fresh token and return as audience; room deletion remains
+        // the authoritative terminal signal for an ended session.
+        case DisconnectReason.PARTICIPANT_REMOVED:
         case DisconnectReason.SIGNAL_CLOSE:
         case DisconnectReason.STATE_MISMATCH:
         case DisconnectReason.CONNECTION_TIMEOUT:
@@ -207,6 +257,7 @@ function SessionRoom() {
     const [isConnecting, setIsConnecting] = useState(true);
     const [connectionError, setConnectionError] = useState(false);
     const [canPublish, setCanPublish] = useState(false);
+    const [grantVersion, setGrantVersion] = useState<number | null>(null);
     const [principalKind, setPrincipalKind] = useState<"ticket" | "staff">("ticket");
     const [isMicOn, setIsMicOn] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(false);
@@ -231,6 +282,10 @@ function SessionRoom() {
     const [stageInvitationAccepted, setStageInvitationAccepted] = useState(false);
     const [stageInvitationBusy, setStageInvitationBusy] = useState<'accept' | 'decline' | null>(null);
     const [stageInvitationError, setStageInvitationError] = useState<string | null>(null);
+    const [stageExitConfirming, setStageExitConfirming] = useState(false);
+    const [stageExitBusy, setStageExitBusy] = useState(false);
+    const [stageExitError, setStageExitError] = useState<string | null>(null);
+    const [sessionExitConfirming, setSessionExitConfirming] = useState(false);
 
     const roomRef = useRef<Room | null>(null);
     // Keep ownership by track so an unsubscribe can remove the exact DOM node
@@ -250,11 +305,20 @@ function SessionRoom() {
     const desiredCameraRef = useRef(false);
     const deviceOperationRef = useRef<Promise<void> | null>(null);
     const stageInvitationAcceptedRef = useRef(false);
+    const stageExitInFlightRef = useRef(false);
+    const stageAuthoritySuppressedRef = useRef(false);
+    const grantVersionRef = useRef<number | null>(null);
+    const principalKindRef = useRef<"ticket" | "staff">("ticket");
     const terminalViewRef = useRef<HTMLDivElement>(null);
     const stageInvitationRef = useRef<HTMLDivElement>(null);
+    const stageExitCancelRef = useRef<HTMLButtonElement>(null);
+    const stageExitTriggerRef = useRef<HTMLButtonElement>(null);
+    const sessionExitCancelRef = useRef<HTMLButtonElement>(null);
+    const sessionExitTriggerRef = useRef<HTMLButtonElement>(null);
     const participantFallbackRef = useRef(copy.session.participantFallback);
     participantFallbackRef.current = copy.session.participantFallback;
     stageInvitationAcceptedRef.current = stageInvitationAccepted;
+    principalKindRef.current = principalKind;
 
     const slotFor = useCallback((identity: string): number => {
         const existing = slotOrderRef.current.get(identity);
@@ -272,7 +336,9 @@ function SessionRoom() {
         const everyone: Participant[] = [local, ...room.remoteParticipants.values()];
 
         const publishers: StagePublisherView[] = everyone
-            .filter(isStagePublisher)
+            .filter((participant) =>
+                !(participant === local && stageAuthoritySuppressedRef.current) &&
+                isStagePublisher(participant))
             .map((participant) => {
                 const label = participant.name?.trim() || participantFallbackRef.current;
                 return {
@@ -292,9 +358,18 @@ function SessionRoom() {
         setStagePublishers(publishers);
         setParticipantCount(room.remoteParticipants.size + 1);
         setConnectionState(room.state);
-        setCanPublish(Boolean(local.permissions?.canPublish));
-        setIsMicOn(local.isMicrophoneEnabled);
-        setIsCameraOn(local.isCameraEnabled);
+        const localCanPublish = !stageAuthoritySuppressedRef.current &&
+            Boolean(local.permissions?.canPublish);
+        // A ticket holder's LiveKit permission can arrive before the next
+        // authoritative hand-state poll. Do not expose an invitation backed
+        // by the previous grantVersion: declining it would correctly fail the
+        // server CAS with a stale revision. Staff have no attendee hand poll,
+        // so their event-scoped permission remains LiveKit-driven.
+        if (principalKindRef.current === 'staff' || !localCanPublish) {
+            setCanPublish(localCanPublish);
+        }
+        setIsMicOn(localCanPublish && local.isMicrophoneEnabled);
+        setIsCameraOn(localCanPublish && local.isCameraEnabled);
 
         const newestSlot = publishers.reduce((max, p) => Math.max(max, p.grantOrder), -1);
         if (newestSlot > highestSlotRef.current) {
@@ -474,7 +549,7 @@ function SessionRoom() {
     ]);
 
     const declineStageInvitation = useCallback(async () => {
-        if (principalKind !== 'ticket' || !canPublish || stageInvitationBusy) return;
+        if (principalKind !== 'ticket' || !canPublish || stageInvitationBusy || grantVersion === null) return;
 
         setStageInvitationBusy('decline');
         setStageInvitationError(null);
@@ -482,9 +557,18 @@ function SessionRoom() {
             const response = await fetch(`/api/scheduled-sessions/${id}/hand`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'decline_invitation' }),
+                body: JSON.stringify({
+                    action: 'decline_invitation',
+                    expectedGrantVersion: grantVersion,
+                }),
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const next = await response.json() as { grantVersion?: unknown };
+            if (Number.isSafeInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
+                grantVersionRef.current = next.grantVersion as number;
+                setGrantVersion(next.grantVersion as number);
+            }
+            stageAuthoritySuppressedRef.current = true;
             setStageInvitationAccepted(false);
             setCanPublish(false);
         } catch (failure) {
@@ -493,7 +577,76 @@ function SessionRoom() {
         } finally {
             setStageInvitationBusy(null);
         }
-    }, [canPublish, copy.session.invitationDeclineError, id, principalKind, stageInvitationBusy]);
+    }, [canPublish, copy.session.invitationDeclineError, grantVersion, id, principalKind, stageInvitationBusy]);
+
+    const leaveStage = useCallback(async () => {
+        if (
+            principalKind !== 'ticket' ||
+            !canPublish ||
+            stageExitBusy ||
+            stageExitInFlightRef.current ||
+            grantVersion === null
+        ) return;
+
+        stageExitInFlightRef.current = true;
+        setStageExitBusy(true);
+        setStageExitError(null);
+        try {
+            const response = await fetch(`/api/scheduled-sessions/${id}/hand`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'leave_stage',
+                    expectedGrantVersion: grantVersion,
+                }),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const next = await response.json() as { grantVersion?: unknown };
+            if (Number.isSafeInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
+                grantVersionRef.current = next.grantVersion as number;
+                setGrantVersion(next.grantVersion as number);
+            }
+
+            // LiveKit's permission event releases the local devices. These
+            // state updates make the attendee UI converge immediately while
+            // both receiving rooms and their audio activation stay mounted.
+            desiredCameraRef.current = false;
+            desiredMicRef.current = false;
+            stageAuthoritySuppressedRef.current = true;
+            setStageInvitationAccepted(false);
+            setCanPublish(false);
+            setIsCameraOn(false);
+            setIsMicOn(false);
+            setStageExitConfirming(false);
+        } catch (failure) {
+            console.error('Failed to leave the stage:', redactErrorDetail(failure));
+            setStageExitError(copy.session.leaveStageFailed);
+        } finally {
+            stageExitInFlightRef.current = false;
+            setStageExitBusy(false);
+        }
+    }, [canPublish, copy.session.leaveStageFailed, grantVersion, id, principalKind, stageExitBusy]);
+
+    const applyGrantState = useCallback((nextCanPublish: boolean, nextGrantVersion: number) => {
+        const currentGrantVersion = grantVersionRef.current;
+        if (
+            !Number.isSafeInteger(nextGrantVersion) ||
+            nextGrantVersion < 0 ||
+            (currentGrantVersion !== null && nextGrantVersion < currentGrantVersion) ||
+            (stageAuthoritySuppressedRef.current &&
+                nextCanPublish &&
+                currentGrantVersion !== null &&
+                nextGrantVersion <= currentGrantVersion)
+        ) return;
+
+        grantVersionRef.current = nextGrantVersion;
+        setGrantVersion(nextGrantVersion);
+        if (
+            nextCanPublish &&
+            (currentGrantVersion === null || nextGrantVersion > currentGrantVersion)
+        ) stageAuthoritySuppressedRef.current = false;
+        setCanPublish(nextCanPublish);
+    }, []);
 
     // Connect to LiveKit room
     useEffect(() => {
@@ -527,8 +680,22 @@ function SessionRoom() {
                 if (cancelled) return;
 
                 setSessionInfo(data.session);
-                setCanPublish(data.canPublish);
-                setPrincipalKind(data.principalKind === "staff" ? "staff" : "ticket");
+                const resolvedPrincipalKind = data.principalKind === "staff" ? "staff" : "ticket";
+                principalKindRef.current = resolvedPrincipalKind;
+                setPrincipalKind(resolvedPrincipalKind);
+                // On a fresh attendee page, wait for HandRaiseButton to pair
+                // canPublish with its exact grantVersion. During an accepted
+                // transport reconnect the existing authority is already
+                // paired, so preserve it without UI flicker.
+                if (
+                    resolvedPrincipalKind === "staff" ||
+                    data.canPublish !== true ||
+                    stageInvitationAcceptedRef.current
+                ) {
+                    setCanPublish(
+                        !stageAuthoritySuppressedRef.current && data.canPublish === true,
+                    );
+                }
                 setViewerInfo({
                     name: typeof data.displayName === "string" ? data.displayName : participantFallbackRef.current,
                     role: typeof data.role === "string" ? data.role : "PARTICIPANT",
@@ -647,6 +814,17 @@ function SessionRoom() {
                     return;
                 }
 
+                if (data.canPublish && !stageAuthoritySuppressedRef.current) {
+                    const publicationResponse = await fetch(
+                        `/api/scheduled-sessions/${id}/publication`,
+                        { method: "POST" },
+                    );
+                    if (!publicationResponse.ok) {
+                        throw new Error("Failed to activate publication permission");
+                    }
+                    await waitForPublicationActivation(room);
+                }
+
                 const wasReconnect = autoReconnectAttemptRef.current > 0;
                 setIsConnected(true);
                 setIsConnecting(false);
@@ -684,6 +862,14 @@ function SessionRoom() {
                 readStage();
             } catch (e) {
                 if (!cancelled) {
+                    if (ownedRoom) {
+                        intentionalDisconnectRef.current = true;
+                        ownedRoom.disconnect();
+                        if (roomRef.current === ownedRoom) {
+                            roomRef.current = null;
+                            setActiveRoom(null);
+                        }
+                    }
                     if (autoReconnectAttemptRef.current > 0) {
                         scheduleAutoReconnect();
                     } else {
@@ -756,6 +942,22 @@ function SessionRoom() {
             setStageInvitationError(null);
         }
     }, [canPublish, principalKind, stageInvitationAccepted]);
+
+    useEffect(() => {
+        if (stageExitConfirming) {
+            stageExitCancelRef.current?.focus();
+        } else {
+            stageExitTriggerRef.current?.focus();
+        }
+    }, [stageExitConfirming]);
+
+    useEffect(() => {
+        if (sessionExitConfirming) {
+            sessionExitCancelRef.current?.focus();
+        } else {
+            sessionExitTriggerRef.current?.focus();
+        }
+    }, [sessionExitConfirming]);
 
     useEffect(() => {
         const gains = roomMixGains(volume, mix);
@@ -1095,7 +1297,7 @@ function SessionRoom() {
                                     type="button"
                                     className="event-button event-button--secondary w-full"
                                     onClick={() => void declineStageInvitation()}
-                                    disabled={stageInvitationBusy !== null}
+                                    disabled={stageInvitationBusy !== null || grantVersion === null}
                                 >
                                     {stageInvitationBusy === 'decline'
                                         ? copy.session.decliningInvitation
@@ -1207,11 +1409,74 @@ function SessionRoom() {
                         <div className="mb-4 flex justify-center">
                             <HandRaiseButton
                                 sessionId={id}
-                                onPublishGrantChange={setCanPublish}
+                                onPublishGrantChange={applyGrantState}
                                 stageInvitationAccepted={stageInvitationAccepted}
                             />
                         </div>
                     )}
+                    {canControlStageDevices && principalKind === 'ticket' ? (
+                        <div className="mx-auto mb-4 w-full max-w-md">
+                            {!stageExitConfirming ? (
+                                <button
+                                    type="button"
+                                    ref={stageExitTriggerRef}
+                                    onClick={() => {
+                                        setStageExitError(null);
+                                        setStageExitConfirming(true);
+                                    }}
+                                    className="event-button event-button--secondary w-full"
+                                >
+                                    {copy.session.leaveStage}
+                                </button>
+                            ) : (
+                                <section
+                                    role="alertdialog"
+                                    aria-modal="true"
+                                    aria-labelledby="leave-stage-heading"
+                                    aria-describedby="leave-stage-body"
+                                    onKeyDown={(event) => keepFocusInsideDialog(
+                                        event,
+                                        () => setStageExitConfirming(false),
+                                        stageExitBusy,
+                                    )}
+                                    className="rounded border border-[var(--gold)]/40 bg-[var(--surface-alt)] p-4 text-center"
+                                >
+                                    <h2 id="leave-stage-heading" className="font-serif text-xl text-[var(--paper)]">
+                                        {copy.session.leaveStageHeading}
+                                    </h2>
+                                    <p id="leave-stage-body" className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                                        {copy.session.leaveStageBody}
+                                    </p>
+                                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => void leaveStage()}
+                                            disabled={stageExitBusy || grantVersion === null}
+                                            className="event-button event-button--primary w-full"
+                                        >
+                                            {stageExitBusy
+                                                ? copy.session.leavingStage
+                                                : copy.session.leaveStageConfirm}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            ref={stageExitCancelRef}
+                                            onClick={() => setStageExitConfirming(false)}
+                                            disabled={stageExitBusy}
+                                            className="event-button event-button--secondary w-full"
+                                        >
+                                            {copy.session.leaveStageCancel}
+                                        </button>
+                                    </div>
+                                </section>
+                            )}
+                            {stageExitError ? (
+                                <p role="alert" className="mt-3 text-center text-sm text-[var(--danger)]">
+                                    {stageExitError}
+                                </p>
+                            ) : null}
+                        </div>
+                    ) : null}
                     <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-3">
                         {canControlStageDevices && (
                             <div className="flex flex-col items-center gap-1">
@@ -1304,24 +1569,54 @@ function SessionRoom() {
                             <span className="text-xs text-[var(--text-secondary)]">{copy.session.audioOnly}</span>
                         </div>
 
-                        <div className="flex flex-col items-center gap-1">
-                            <button
-                                onClick={leaveSession}
-                                className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-[var(--text-muted)] transition-all hover:bg-white/20"
-                                aria-label={copy.session.leaveSession}
-                            >
-                                <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                </svg>
-                            </button>
-                            <span className="text-xs text-[var(--text-secondary)]">{copy.session.leave}</span>
-                        </div>
                     </div>
                     {cameraSwitchError && (
                         <p className="mx-auto mt-3 max-w-md text-center text-sm text-[var(--danger)]" role="alert">
                             {cameraSwitchError}
                         </p>
                     )}
+                    <div className="mx-auto mt-5 max-w-md border-t border-[var(--border-subtle)] pt-4 text-center">
+                        {!sessionExitConfirming ? (
+                            <button
+                                type="button"
+                                ref={sessionExitTriggerRef}
+                                onClick={() => setSessionExitConfirming(true)}
+                                className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
+                            >
+                                {copy.session.leaveSession}
+                            </button>
+                        ) : (
+                            <div
+                                role="alertdialog"
+                                aria-modal="true"
+                                aria-label={copy.session.leaveSession}
+                                onKeyDown={(event) => keepFocusInsideDialog(
+                                    event,
+                                    () => setSessionExitConfirming(false),
+                                )}
+                                className="rounded border border-[var(--danger)]/40 bg-[var(--surface-alt)] p-3"
+                            >
+                                <p className="text-sm leading-6 text-[var(--text-secondary)]">{copy.session.leaveSessionBody}</p>
+                                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                                    <button
+                                        type="button"
+                                        onClick={leaveSession}
+                                        className="event-button event-button--secondary"
+                                    >
+                                        {copy.session.leaveSessionConfirm}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        ref={sessionExitCancelRef}
+                                        onClick={() => setSessionExitConfirming(false)}
+                                        className="event-button event-button--secondary"
+                                    >
+                                        {copy.session.leaveSessionCancel}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </main>
@@ -1346,6 +1641,11 @@ type EntrySession = {
 
 type EntryResponse = {
     state: EntryState;
+    identity: { kind: 'staff' } | {
+        kind: 'attendee';
+        displayName: string;
+        confirmed: boolean;
+    };
     session: EntrySession;
 };
 
@@ -1357,11 +1657,14 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
     const [entry, setEntry] = useState<EntryResponse | null>(null);
     const [entryError, setEntryError] = useState<string | null>(null);
     const [retryEntry, setRetryEntry] = useState(0);
+    const entryRequestGenerationRef = useRef(0);
+    const entryAbortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | null = null;
         let inFlight = false;
+        const effectGeneration = ++entryRequestGenerationRef.current;
 
         const checkEntry = async () => {
             if (cancelled || inFlight) return;
@@ -1370,25 +1673,30 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                 timer = null;
             }
             inFlight = true;
+            const requestGeneration = entryRequestGenerationRef.current;
+            const controller = new AbortController();
+            entryAbortRef.current = controller;
             try {
                 const response = await fetch(`/api/scheduled-sessions/${sessionId}/entry`, {
                     cache: 'no-store',
+                    signal: controller.signal,
                 });
                 const data = await response.json().catch(() => ({})) as Partial<EntryResponse> & { error?: string };
                 if (!response.ok || !data.state || !data.session) {
                     throw new Error(data.error || `Entry status unavailable (HTTP ${response.status})`);
                 }
-                if (!cancelled) {
+                if (!cancelled && requestGeneration === entryRequestGenerationRef.current) {
                     seedLocale(localeForEventLanguage(data.session.language));
                     setEntry(data as EntryResponse);
                     setEntryError(null);
                 }
             } catch (failure) {
-                if (!cancelled) {
+                if (!cancelled && requestGeneration === entryRequestGenerationRef.current) {
                     console.error('Failed to confirm event entry:', redactErrorDetail(failure));
                     setEntryError(copy.session.entryUnavailable);
                 }
             } finally {
+                if (entryAbortRef.current === controller) entryAbortRef.current = null;
                 inFlight = false;
                 if (!cancelled) timer = setTimeout(checkEntry, ENTRY_POLL_MS);
             }
@@ -1403,6 +1711,11 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
         document.addEventListener('visibilitychange', checkWhenVisible);
         return () => {
             cancelled = true;
+            if (entryRequestGenerationRef.current === effectGeneration) {
+                entryRequestGenerationRef.current += 1;
+            }
+            entryAbortRef.current?.abort();
+            entryAbortRef.current = null;
             if (timer) clearTimeout(timer);
             window.removeEventListener('focus', checkWhenVisible);
             window.removeEventListener('online', checkWhenVisible);
@@ -1432,6 +1745,51 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                     </div>
                 </div>
             </main>
+        );
+    }
+
+    if (entry.state === 'ENDED' || entry.state === 'CANCELLED') {
+        const cancelled = entry.state === 'CANCELLED';
+        return (
+            <main className="event-shell">
+                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                    <section role="status" aria-live="polite" className="event-card w-full max-w-sm text-center">
+                        <div className="terminal-state__icon">&#10022;</div>
+                        <h1 className="terminal-state__title">
+                            {cancelled ? copy.session.cancelledHeading : copy.session.endedHeading}
+                        </h1>
+                        <p className="terminal-state__body">
+                            {cancelled ? copy.session.cancelledBody : copy.session.closingBody}
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => router.push('/')}
+                            className="event-button event-button--secondary mt-4 w-full"
+                        >
+                            {copy.session.backToSessions}
+                        </button>
+                    </section>
+                </div>
+            </main>
+        );
+    }
+
+    if (entry.identity.kind === 'attendee' && !entry.identity.confirmed) {
+        return (
+            <SessionIdentityGate
+                sessionId={sessionId}
+                sessionTitle={entry.session.title}
+                initialDisplayName={entry.identity.displayName}
+                onConfirmed={(displayName) => {
+                    entryRequestGenerationRef.current += 1;
+                    entryAbortRef.current?.abort();
+                    entryAbortRef.current = null;
+                    setEntry((current) => current ? {
+                        ...current,
+                        identity: { kind: 'attendee', displayName, confirmed: true },
+                    } : current);
+                }}
+            />
         );
     }
 
@@ -1466,32 +1824,6 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                     {/* Guidance waits outside the live region: the disclosure
                         toggling must not be announced as a door-state change. */}
                     <SessionGuidance copy={copy.session.guidance} className="w-full max-w-md" />
-                </div>
-            </main>
-        );
-    }
-
-    if (entry.state === 'ENDED' || entry.state === 'CANCELLED') {
-        const cancelled = entry.state === 'CANCELLED';
-        return (
-            <main className="event-shell">
-                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
-                    <section role="status" aria-live="polite" className="event-card w-full max-w-sm text-center">
-                        <div className="terminal-state__icon">&#10022;</div>
-                        <h1 className="terminal-state__title">
-                            {cancelled ? copy.session.cancelledHeading : copy.session.endedHeading}
-                        </h1>
-                        <p className="terminal-state__body">
-                            {cancelled ? copy.session.cancelledBody : copy.session.closingBody}
-                        </p>
-                        <button
-                            type="button"
-                            onClick={() => router.push('/')}
-                            className="event-button event-button--secondary mt-4 w-full"
-                        >
-                            {copy.session.backToSessions}
-                        </button>
-                    </section>
                 </div>
             </main>
         );

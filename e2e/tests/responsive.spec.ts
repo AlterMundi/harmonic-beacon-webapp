@@ -76,6 +76,7 @@ stackTest.describe('responsive live surfaces', () => {
                     livekit: check,
                     stageRoom: check,
                     publisherGrants: check,
+                    grantDelivery: check,
                     bedPublisher: check,
                     tapestry: check,
                 },

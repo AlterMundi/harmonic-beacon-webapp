@@ -9,11 +9,11 @@ const mocks = vi.hoisted(() => ({
     campaignUpdate: vi.fn(),
     redemptionFindMany: vi.fn(),
     participantFindMany: vi.fn(),
-    participantUpdateMany: vi.fn(),
     entitlementUpdateMany: vi.fn(),
     webSessionUpdateMany: vi.fn(),
     auditCreate: vi.fn(),
-    removeParticipant: vi.fn(),
+    transitionGrant: vi.fn(),
+    processGrant: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => {
@@ -27,7 +27,6 @@ vi.mock('@/lib/db', () => {
         promoRedemption: { findMany: mocks.redemptionFindMany },
         sessionParticipant: {
             findMany: mocks.participantFindMany,
-            updateMany: mocks.participantUpdateMany,
         },
         ticketEntitlement: { updateMany: mocks.entitlementUpdateMany },
         webSession: { updateMany: mocks.webSessionUpdateMany },
@@ -41,7 +40,10 @@ vi.mock('@/lib/db', () => {
 vi.mock('@/lib/ops-auth', () => ({ resolveStaffSession: mocks.resolveStaffSession }));
 vi.mock('@/lib/livekit-server', () => ({
     bedRoomIdentity: (identity: string) => `bed-${identity}`,
-    getRoomService: () => ({ removeParticipant: mocks.removeParticipant }),
+}));
+vi.mock('@/lib/stage-grant-effects', () => ({
+    transitionParticipantGrant: mocks.transitionGrant,
+    processParticipantGrantEffects: mocks.processGrant,
 }));
 
 import { POST } from '../route';
@@ -73,13 +75,13 @@ beforeEach(() => {
         { ticketEntitlementId: 'entitlement-2' },
     ]);
     mocks.participantFindMany.mockResolvedValue([
-        { participantIdentity: 'participant-1' },
+        { id: 'participant-row-1', participantIdentity: 'participant-1' },
     ]);
-    mocks.participantUpdateMany.mockResolvedValue({ count: 1 });
     mocks.entitlementUpdateMany.mockResolvedValue({ count: 2 });
     mocks.webSessionUpdateMany.mockResolvedValue({ count: 2 });
     mocks.auditCreate.mockResolvedValue({});
-    mocks.removeParticipant.mockResolvedValue(undefined);
+    mocks.transitionGrant.mockResolvedValue({});
+    mocks.processGrant.mockResolvedValue({ processed: 1, pending: 0 });
 });
 
 describe('disable promotion invitation', () => {
@@ -114,7 +116,7 @@ describe('disable promotion invitation', () => {
         });
         expect(mocks.redemptionFindMany).not.toHaveBeenCalled();
         expect(mocks.entitlementUpdateMany).not.toHaveBeenCalled();
-        expect(mocks.removeParticipant).not.toHaveBeenCalled();
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
     });
 
     it('atomically revokes derived access and removes both stage and bed identities', async () => {
@@ -133,17 +135,19 @@ describe('disable promotion invitation', () => {
                 scheduledSessionId: CAMPAIGN.scheduledSessionId,
                 ticketEntitlementId: { in: ['entitlement-1', 'entitlement-2'] },
             },
-            select: { participantIdentity: true },
+            select: { id: true, participantIdentity: true },
         });
-        expect(mocks.participantUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
-            data: expect.objectContaining({
-                leftAt: expect.any(Date),
-                publishGrantedAt: null,
-                grantReconcileNeeded: false,
+        expect(mocks.transitionGrant).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({
+                participantId: 'participant-row-1',
+                canPublish: false,
+                disconnectParticipant: true,
+                clearHand: true,
+                markLeft: true,
             }),
-        }));
-        expect(mocks.removeParticipant).toHaveBeenCalledWith('event-stage', 'participant-1');
-        expect(mocks.removeParticipant).toHaveBeenCalledWith('beacon', 'bed-participant-1');
+        );
+        expect(mocks.processGrant).toHaveBeenCalledWith('participant-row-1');
         expect(mocks.auditCreate).toHaveBeenCalledWith(expect.objectContaining({
             data: expect.objectContaining({
                 action: 'promo.disable',
@@ -153,7 +157,7 @@ describe('disable promotion invitation', () => {
     });
 
     it('returns a retryable warning when durable revocation succeeds but media cleanup fails', async () => {
-        mocks.removeParticipant.mockRejectedValueOnce(new Error('LiveKit unavailable'));
+        mocks.processGrant.mockResolvedValueOnce({ processed: 1, pending: 1 });
         const { status, body } = await parseResponse(await POST(disableRequest({
             action: 'disable',
             reason: 'Controlled invitation revoked',

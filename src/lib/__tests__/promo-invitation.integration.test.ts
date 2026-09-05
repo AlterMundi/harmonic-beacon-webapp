@@ -32,6 +32,7 @@ integration('promotion invitation PostgreSQL contract', () => {
         await prisma.commerceRequestReceipt.deleteMany();
         await prisma.commerceEntitlementCommand.deleteMany();
         await prisma.commerceMediaOutbox.deleteMany();
+        await prisma.stageGrantEffectOutbox.deleteMany();
         await prisma.commerceEntitlement.deleteMany();
         await prisma.webSession.deleteMany();
         await prisma.sessionParticipant.deleteMany();

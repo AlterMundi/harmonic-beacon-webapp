@@ -19,17 +19,10 @@ round trip remain required gates because the Sharp override crosses a major.
 Remove the overrides once a stable Next.js release declares fixed ranges.
 
 `npm run audit:production` is the root pull-request and deploy gate. It parses
-the structured npm audit report and fails on every unreviewed high or critical
-finding. Its sole temporary exception is advisory 1145093
-(`GHSA-ggr8-5vv4-36mx`) for exactly `deepmerge-ts@7.1.5` through
-`@prisma/config@7.9.1` and `prisma@7.9.1`. Prisma pins that dependency and the
-patched deepmerge release is a major while Prisma 8 remains pre-release. The
-exposure is bounded because Prisma config processes only the repository-owned
-`prisma.config.ts` during trusted build and migration operations, never request
-or user data. The guard checks the advisory ID, dependency versions and exact
-installed paths, rejects any additional high/critical finding, and expires
-closed on 2026-09-15. Remove it earlier when a stable Prisma release adopts the
-patched dependency.
+the structured npm audit report and fails on every high or critical finding.
+The former temporary Prisma/deepmerge exception was retired early: the root
+lockfile now overrides Prisma's compatible transitive range to
+`deepmerge-ts@8.0.1`, and the guard contains no advisory allowlist.
 
 The prior production `tsx` chain now resolves to `tsx@4.23.12` and patched
 `esbuild@0.28.2` within the already-declared compatible range.

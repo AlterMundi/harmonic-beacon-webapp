@@ -2,15 +2,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 
-const { principalFromToken, accountIdentityFromToken, attachPublicSessionAccess, findUnique } = vi.hoisted(() => ({
+const {
+    principalFromToken,
+    accountIdentityFromToken,
+    attachPublicSessionAccess,
+    findUnique,
+    readAttendeeDisplayName,
+    confirmAttendeeDisplayName,
+} = vi.hoisted(() => ({
     principalFromToken: vi.fn(),
     accountIdentityFromToken: vi.fn(),
     attachPublicSessionAccess: vi.fn(),
     findUnique: vi.fn(),
+    readAttendeeDisplayName: vi.fn(),
+    confirmAttendeeDisplayName: vi.fn(),
 }));
 
 vi.mock('@/lib/principal', () => ({ principalFromToken, accountIdentityFromToken }));
 vi.mock('@/lib/public-session-access', () => ({ attachPublicSessionAccess }));
+vi.mock('@/lib/attendee-display-name', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@/lib/attendee-display-name')>();
+    return {
+        ...original,
+        readAttendeeDisplayName,
+        confirmAttendeeDisplayName,
+    };
+});
 vi.mock('@/lib/db', () => ({
     prisma: { scheduledSession: { findUnique } },
 }));
@@ -44,6 +61,21 @@ async function getEntry() {
     ));
 }
 
+async function patchEntry(body: unknown) {
+    const { PATCH } = await import('../route');
+    return parseResponse(await PATCH(
+        createRequest('/api/scheduled-sessions/event-1/entry', {
+            method: 'PATCH',
+            headers: {
+                cookie: 'hb_session=opaque',
+                'content-type': 'application/json',
+            },
+            body,
+        }),
+        mockParams({ id: 'event-1' }),
+    ));
+}
+
 describe('GET /api/scheduled-sessions/[id]/entry', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -51,6 +83,14 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
         accountIdentityFromToken.mockResolvedValue(null);
         attachPublicSessionAccess.mockResolvedValue(false);
         findUnique.mockResolvedValue(session);
+        readAttendeeDisplayName.mockResolvedValue({
+            displayName: 'Annie',
+            confirmed: false,
+        });
+        confirmAttendeeDisplayName.mockResolvedValue({
+            displayName: 'Annie ✿',
+            confirmed: true,
+        });
     });
 
     it('confirms a valid ticket and returns WAITING before doors open', async () => {
@@ -58,6 +98,11 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
         expect(status).toBe(200);
         expect(body).toEqual({
             state: 'WAITING',
+            identity: {
+                kind: 'attendee',
+                displayName: 'Annie',
+                confirmed: false,
+            },
             session: {
                 id: 'event-1',
                 title: 'The Return',
@@ -67,6 +112,7 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
             },
         });
         expect(JSON.stringify(body)).not.toMatch(/token|email|1234/i);
+        expect(readAttendeeDisplayName).toHaveBeenCalledWith('web-1', 'event-1', 'ticket-1');
     });
 
     it.each([
@@ -113,7 +159,11 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
             userId: 'facilitator-1',
             role: 'FACILITATOR',
         });
-        expect((await getEntry()).body).toMatchObject({ state: 'READY' });
+        expect((await getEntry()).body).toMatchObject({
+            state: 'READY',
+            identity: { kind: 'staff' },
+        });
+        expect(readAttendeeDisplayName).not.toHaveBeenCalled();
     });
 
     it('rejects an unassigned facilitator', async () => {
@@ -141,5 +191,42 @@ describe('GET /api/scheduled-sessions/[id]/entry', () => {
         accountIdentityFromToken.mockResolvedValue(null);
         expect((await getEntry()).status).toBe(401);
         expect(findUnique).not.toHaveBeenCalled();
+    });
+
+    it('confirms a normalized international display name for the current attendee only', async () => {
+        const result = await patchEntry({ displayName: '  Anahí   李  ' });
+
+        expect(result).toEqual({
+            status: 200,
+            body: { displayName: 'Annie ✿', confirmed: true },
+        });
+        expect(confirmAttendeeDisplayName).toHaveBeenCalledWith({
+            webSessionId: 'web-1',
+            scheduledSessionId: 'event-1',
+            ticketEntitlementId: 'ticket-1',
+            displayName: '  Anahí   李  ',
+        });
+    });
+
+    it.each(['ENDED', 'CANCELLED'])('does not accept an alias mutation after a session is %s', async (status) => {
+        findUnique.mockResolvedValue({ ...session, status });
+
+        expect((await patchEntry({ displayName: 'Late alias' }))).toMatchObject({
+            status: 409,
+            body: { error: 'session_terminal' },
+        });
+        expect(confirmAttendeeDisplayName).not.toHaveBeenCalled();
+    });
+
+    it('does not let staff mutate an attendee alias', async () => {
+        principalFromToken.mockResolvedValue({
+            kind: 'staff',
+            webSessionId: 'web-staff',
+            userId: 'facilitator-1',
+            role: 'FACILITATOR',
+        });
+
+        expect((await patchEntry({ displayName: 'Someone else' })).status).toBe(403);
+        expect(confirmAttendeeDisplayName).not.toHaveBeenCalled();
     });
 });

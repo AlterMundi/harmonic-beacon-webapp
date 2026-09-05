@@ -164,4 +164,31 @@ describe('AdmissionConsole promotion invitations', () => {
             revokeDerived: true,
         });
     });
+
+    it('explains that a pending live disconnect retries automatically', async () => {
+        const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => ({
+            ok: true,
+            status: init?.method === 'POST' ? 202 : 200,
+            json: async () => init?.method === 'POST'
+                ? {
+                    id: CAMPAIGN.id,
+                    status: 'DISABLED',
+                    revokeDerived: true,
+                    revokedEntitlements: 2,
+                    mediaCleanupFailed: true,
+                }
+                : { redemptionEnabled: true, campaigns: [CAMPAIGN] },
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(<AdmissionConsole role="OPERATOR" events={[EVENT]} />);
+
+        await userEvent.click(screen.getByRole('button', { name: 'Load invitations' }));
+        await userEvent.type(screen.getByPlaceholderText(/Disable reason/), 'Guest list withdrawn');
+        await userEvent.click(screen.getByRole('checkbox', { name: /Also revoke every entitlement/ }));
+        await userEvent.click(screen.getByRole('button', { name: 'Disable invitation' }));
+
+        expect(await screen.findByText(
+            /2 derived access grant\(s\) revoked; pending live disconnects retry automatically/,
+        )).toBeInTheDocument();
+    });
 });

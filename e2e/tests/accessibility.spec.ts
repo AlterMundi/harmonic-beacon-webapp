@@ -76,6 +76,21 @@ test.describe('public surfaces', () => {
 });
 
 stackTest.describe('role surfaces', () => {
+    stackTest('attendee name confirmation is accessible before LiveKit mounts', async ({ page }, testInfo) => {
+        await loginViaDashboard(
+            page,
+            'ATTENDEE',
+            'Participante',
+            ROUTES.session(SESSION_ES.id),
+            { nameConfirmed: false },
+        );
+        await expect(page.getByRole('textbox', {
+            name: /Tu nombre visible|Your visible name/i,
+        })).toBeVisible();
+        await expect(page.getByTestId('connection-state')).toHaveCount(0);
+        await assertAccessible(page, 'attendee-name-confirmation', testInfo);
+    });
+
     stackTest('attendee session shell is accessible', async ({ page }, testInfo) => {
         // Doors open so the attendee reaches the real shell; without LiveKit
         // the deterministic connection-error card is checked instead.

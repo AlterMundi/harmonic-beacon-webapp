@@ -78,6 +78,7 @@ describe('attachPublicSessionAccess', () => {
             data: {
                 ticketEntitlementId: 'free-entitlement-1',
                 displayName: 'Sai',
+                displayNameConfirmedAt: null,
                 lastSeenAt: now,
             },
         });

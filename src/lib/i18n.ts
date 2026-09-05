@@ -61,6 +61,7 @@ export type Messages = {
         accountError: string;
         accountReconnectHint: string;
         displayName: string;
+        displayNameHint: string;
         ticketCode: string;
         ticketCodeHint: string;
         email: string;
@@ -189,9 +190,29 @@ export type Messages = {
         switchToAudioOnly: string;
         leave: string;
         leaveSession: string;
+        leaveSessionBody: string;
+        leaveSessionConfirm: string;
+        leaveSessionCancel: string;
+        leaveStage: string;
+        leaveStageHeading: string;
+        leaveStageBody: string;
+        leaveStageConfirm: string;
+        leaveStageCancel: string;
+        leavingStage: string;
+        leaveStageFailed: string;
         preparingRoom: string;
         confirmingEntry: string;
         entryUnavailable: string;
+        nameConfirmationEyebrow: string;
+        nameConfirmationHeading: string;
+        nameConfirmationBody: string;
+        nameConfirmationLabel: string;
+        nameConfirmationHint: string;
+        nameConfirmationAction: string;
+        nameConfirmationSaving: string;
+        nameConfirmationRequired: string;
+        nameConfirmationFailed: string;
+        nameConfirmationPrivacy: string;
         ticketConfirmed: string;
         doorsClosed: string;
         doorsReconnecting: string;
@@ -375,7 +396,7 @@ export type Messages = {
             headlines: Record<'green' | 'yellow' | 'red', string>;
             levels: Record<'green' | 'yellow' | 'red', string>;
             sessionStatuses: Record<'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED', string>;
-            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'bedPublisher' | 'tapestry', string>;
+            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'grantDelivery' | 'bedPublisher' | 'tapestry', string>;
             endpointHttp: string;
             endpointUnavailable: string;
             endpointAlarm: string;
@@ -582,6 +603,7 @@ export const messages: Record<UiLocale, Messages> = {
             accountError: 'No pudimos confirmar tu cuenta. Intentá de nuevo.',
             accountReconnectHint: 'Tu entrada admite a una persona. El mismo código funciona de nuevo si recargás o se corta la conexión.',
             displayName: 'Nombre visible en la sala',
+            displayNameHint: 'El equipo y las personas en escena usarán este nombre para reconocerte. Vas a poder confirmarlo antes de entrar.',
             ticketCode: 'Código de entrada',
             ticketCodeHint: 'Exactamente como aparece en tu entrada o invitación',
             email: 'Correo con el que compraste la entrada',
@@ -725,9 +747,29 @@ export const messages: Record<UiLocale, Messages> = {
             switchToAudioOnly: 'Cambiar a solo audio',
             leave: 'Salir',
             leaveSession: 'Salir de la sesión',
+            leaveSessionBody: 'Esto desconecta esta página de la sesión y del Beacon. Para volver, vas a tener que ingresar otra vez.',
+            leaveSessionConfirm: 'Sí, salir de la sesión',
+            leaveSessionCancel: 'Seguir en la sesión',
+            leaveStage: 'Dejar la escena',
+            leaveStageHeading: '¿Querés volver al público?',
+            leaveStageBody: 'Tu cámara y micrófono dejarán de publicarse. Vas a seguir escuchando la sesión y el Beacon sin reconectarte.',
+            leaveStageConfirm: 'Sí, dejar la escena',
+            leaveStageCancel: 'Seguir en escena',
+            leavingStage: 'Volviendo al público…',
+            leaveStageFailed: 'No pudimos completar la vuelta al público. Tu permiso se está reconciliando; intentá de nuevo.',
             preparingRoom: 'Preparando tu sala',
             confirmingEntry: 'Confirmando tu entrada y el estado del evento…',
             entryUnavailable: 'No se pudo comprobar el ingreso',
+            nameConfirmationEyebrow: 'Antes de entrar',
+            nameConfirmationHeading: '¿Cómo querés que te nombremos?',
+            nameConfirmationBody: 'Confirmá o corregí el nombre que verá el equipo para reconocerte cuando levantes la mano o entres en escena.',
+            nameConfirmationLabel: 'Tu nombre visible',
+            nameConfirmationHint: 'Hasta 60 caracteres. Puede ser tu nombre, apodo o el nombre con el que querés participar.',
+            nameConfirmationAction: 'Confirmar y continuar',
+            nameConfirmationSaving: 'Guardando nombre…',
+            nameConfirmationRequired: 'Escribí un nombre visible de hasta 60 caracteres.',
+            nameConfirmationFailed: 'No pudimos guardar tu nombre. Tu acceso sigue vigente; intentá de nuevo.',
+            nameConfirmationPrivacy: 'No convierte el tapiz en un directorio público. Tu nombre se muestra solo en las superficies autorizadas y, públicamente, cuando levantás la mano.',
             ticketConfirmed: 'Entrada confirmada',
             doorsClosed: 'Las puertas todavía están cerradas. Esta página te hará entrar automáticamente cuando el equipo las abra.',
             doorsReconnecting: 'Estamos recuperando la conexión para comprobar las puertas. Tu entrada sigue confirmada.',
@@ -940,6 +982,7 @@ export const messages: Record<UiLocale, Messages> = {
                     livekit: 'API de LiveKit',
                     stageRoom: 'Sala de Escena',
                     publisherGrants: 'Permisos de publicación',
+                    grantDelivery: 'Entrega durable de permisos',
                     bedPublisher: 'Fuente del Beacon (playlist bot)',
                     tapestry: 'Tapiz (prescindible)',
                 },
@@ -970,7 +1013,7 @@ export const messages: Record<UiLocale, Messages> = {
                     compIssued: 'Cortesía o excepción emitida. Copiá o descargá el CSV ahora: se muestra una sola vez.',
                     invitationReady: 'Invitación creada y lista para usar.',
                     invitationSwitchOff: 'Invitación creada, pero el canje público global sigue DESACTIVADO.',
-                    invitationCleanupFailed: 'Invitación desactivada y accesos revocados; algunas conexiones en vivo requieren otro intento.',
+                    invitationCleanupFailed: 'Invitación desactivada. Se revocaron {count} accesos derivados; las desconexiones pendientes se reintentan automáticamente.',
                     invitationDisabled: 'Invitación desactivada. Se revocaron {count} accesos derivados.',
                 },
                 lookup: {
@@ -1173,6 +1216,7 @@ export const messages: Record<UiLocale, Messages> = {
             accountError: 'We could not confirm your account. Try again.',
             accountReconnectHint: 'Your ticket admits one person. The same code works again after a refresh or a dropped connection.',
             displayName: 'Name shown in the room',
+            displayNameHint: 'The team and people on stage will use this name to recognize you. You can confirm it before joining.',
             ticketCode: 'Ticket code',
             ticketCodeHint: 'Exactly as it appears on your ticket or invitation',
             email: 'Email used to buy the ticket',
@@ -1316,9 +1360,29 @@ export const messages: Record<UiLocale, Messages> = {
             switchToAudioOnly: 'Switch to audio only',
             leave: 'Leave',
             leaveSession: 'Leave session',
+            leaveSessionBody: 'This disconnects this page from the session and Beacon. To return, you will need to join again.',
+            leaveSessionConfirm: 'Yes, leave the session',
+            leaveSessionCancel: 'Stay in the session',
+            leaveStage: 'Leave the scene',
+            leaveStageHeading: 'Return to the audience?',
+            leaveStageBody: 'Your camera and microphone will stop publishing. You will keep hearing the session and Beacon without reconnecting.',
+            leaveStageConfirm: 'Yes, leave the scene',
+            leaveStageCancel: 'Stay on stage',
+            leavingStage: 'Returning to the audience…',
+            leaveStageFailed: 'We could not complete your return to the audience. Your permission is being reconciled; try again.',
             preparingRoom: 'Preparing your room',
             confirmingEntry: 'Confirming your ticket and event status…',
             entryUnavailable: 'Entry status unavailable',
+            nameConfirmationEyebrow: 'Before joining',
+            nameConfirmationHeading: 'What should we call you?',
+            nameConfirmationBody: 'Confirm or correct the name the team will use to recognize you when you raise your hand or join the stage.',
+            nameConfirmationLabel: 'Your visible name',
+            nameConfirmationHint: 'Up to 60 characters. Use your name, nickname, or the name you want to participate with.',
+            nameConfirmationAction: 'Confirm and continue',
+            nameConfirmationSaving: 'Saving name…',
+            nameConfirmationRequired: 'Enter a visible name of up to 60 characters.',
+            nameConfirmationFailed: 'We could not save your name. Your access is still valid; try again.',
+            nameConfirmationPrivacy: 'This does not turn the tapestry into a public directory. Your name appears only on authorized surfaces and, publicly, when you raise your hand.',
             ticketConfirmed: 'Ticket confirmed',
             doorsClosed: 'The doors are not open yet. This page will bring you in automatically when the team opens them.',
             doorsReconnecting: 'We are reconnecting to check the doors. Your ticket remains confirmed.',
@@ -1531,6 +1595,7 @@ export const messages: Record<UiLocale, Messages> = {
                     livekit: 'LiveKit API',
                     stageRoom: 'Stage room',
                     publisherGrants: 'Publisher grants',
+                    grantDelivery: 'Durable grant delivery',
                     bedPublisher: 'Bed publisher (playlist bot)',
                     tapestry: 'Tapestry (cuttable)',
                 },
@@ -1561,7 +1626,7 @@ export const messages: Record<UiLocale, Messages> = {
                     compIssued: 'Comp/override issued. Copy or download the CSV now — it is shown only once.',
                     invitationReady: 'Invitation created and ready to redeem.',
                     invitationSwitchOff: 'Invitation created, but the global redemption switch remains OFF.',
-                    invitationCleanupFailed: 'Invitation disabled and access revoked; some live connections need a retry.',
+                    invitationCleanupFailed: 'Invitation disabled. {count} derived access grant(s) revoked; pending live disconnects retry automatically.',
                     invitationDisabled: 'Invitation disabled. {count} derived access grant(s) revoked.',
                 },
                 lookup: {
