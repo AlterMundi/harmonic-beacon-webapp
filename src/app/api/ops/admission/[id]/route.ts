@@ -16,6 +16,8 @@ import { prisma } from '@/lib/db';
 import { resolveStaffSession, type StaffPrincipal } from '@/lib/ops-auth';
 import { hasStaffCapability } from '@/lib/staff-capabilities';
 import { bedRoomIdentity } from '@/lib/livekit-server';
+import { TICKET_LIVEKIT_TOKEN_TTL_SECONDS } from '@/lib/commerce-entitlement';
+import { transitionParticipantGrant } from '@/lib/stage-grant-effects';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,6 +80,7 @@ async function handleRevoke(staff: StaffPrincipal, id: string, reason: string) {
             state: true,
             tier: true,
             codeLastFour: true,
+            scheduledSessionId: true,
             commerceEntitlement: { select: { administrativeState: true } },
         },
     });
@@ -111,17 +114,36 @@ async function handleRevoke(staff: StaffPrincipal, id: string, reason: string) {
             data: { revokedAt: now, revokedByUserId: staff.id, revocationReason: reason },
         });
 
+        const participant = await tx.sessionParticipant.findFirst({
+            where: {
+                scheduledSessionId: entitlement.scheduledSessionId,
+                ticketEntitlementId: id,
+            },
+            select: { id: true, participantIdentity: true },
+        });
         const commerce = await tx.commerceEntitlement.findUnique({
             where: { ticketEntitlementId: id },
             include: { scheduledSession: { select: { roomName: true } } },
         });
-        if (commerce) {
-            const participant = await tx.sessionParticipant.findFirst({
-                where: {
-                    scheduledSessionId: commerce.scheduledSessionId,
-                    ticketEntitlementId: id,
-                },
+        const horizon = commerce?.maxLivekitTokenExpiresAt &&
+            commerce.maxLivekitTokenExpiresAt > now
+            ? commerce.maxLivekitTokenExpiresAt
+            : new Date(now.getTime() + TICKET_LIVEKIT_TOKEN_TTL_SECONDS * 1000);
+        if (participant) {
+            await transitionParticipantGrant(tx, {
+                scheduledSessionId: entitlement.scheduledSessionId,
+                participantId: participant.id,
+                canPublish: false,
+                now,
+                actorUserId: staff.id,
+                reason,
+                clearHand: true,
+                markLeft: true,
+                disconnectParticipant: true,
+                tokenHorizonAt: horizon,
             });
+        }
+        if (commerce) {
             await tx.commerceEntitlement.update({
                 where: { id: commerce.id },
                 data: {
@@ -130,10 +152,6 @@ async function handleRevoke(staff: StaffPrincipal, id: string, reason: string) {
                 },
             });
             if (participant) {
-                const horizon = commerce.maxLivekitTokenExpiresAt &&
-                    commerce.maxLivekitTokenExpiresAt > now
-                    ? commerce.maxLivekitTokenExpiresAt
-                    : now;
                 await tx.commerceMediaOutbox.upsert({
                     where: {
                         commerceEntitlementId_provisionRevision: {

@@ -13,6 +13,7 @@ import { prisma } from '@/lib/db';
 import { bedRoomIdentity } from '@/lib/livekit-server';
 import { ticketCodeStorage } from '@/lib/ticket-code';
 import { digestSessionToken } from '@/lib/session-auth';
+import { transitionParticipantGrant } from '@/lib/stage-grant-effects';
 
 type CommerceRow = Prisma.CommerceEntitlementGetPayload<{
     include: {
@@ -310,15 +311,21 @@ async function applyInTransaction(
             where: { scheduledSessionId: session.id, ticketEntitlementId: ticket.id },
         })
         : null;
+    const tokenHorizon = current?.maxLivekitTokenExpiresAt && current.maxLivekitTokenExpiresAt > now
+        ? current.maxLivekitTokenExpiresAt
+        : now;
     if (participant) {
-        await tx.sessionParticipant.update({
-            where: { id: participant.id },
-            data: {
-                publishRevokedAt: now,
-                grantReconcileNeeded: false,
-                raisedAt: null,
-                leftAt: now,
-            },
+        await transitionParticipantGrant(tx, {
+            scheduledSessionId: session.id,
+            participantId: participant.id,
+            canPublish: false,
+            now,
+            actorUserId: null,
+            reason: `Commerce ${command.reason_code}`,
+            clearHand: true,
+            markLeft: true,
+            disconnectParticipant: true,
+            tokenHorizonAt: tokenHorizon,
         });
     }
 
@@ -408,9 +415,6 @@ async function applyInTransaction(
     });
 
     if (participant) {
-        const tokenHorizon = current?.maxLivekitTokenExpiresAt && current.maxLivekitTokenExpiresAt > now
-            ? current.maxLivekitTokenExpiresAt
-            : now;
         await tx.commerceMediaOutbox.create({
             data: {
                 commerceEntitlementId: saved.id,

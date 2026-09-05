@@ -79,6 +79,7 @@ integration('commerce entitlement PostgreSQL contract', () => {
         await prisma.commerceRequestReceipt.deleteMany();
         await prisma.commerceEntitlementCommand.deleteMany();
         await prisma.commerceMediaOutbox.deleteMany();
+        await prisma.stageGrantEffectOutbox.deleteMany();
         await prisma.commerceEntitlement.deleteMany();
         await prisma.webSession.deleteMany();
         await prisma.sessionParticipant.deleteMany();
@@ -188,6 +189,30 @@ integration('commerce entitlement PostgreSQL contract', () => {
         await expect(prisma.commerceEntitlement.findFirstOrThrow()).resolves.toMatchObject({
             livekitIdentityVersion: 2,
         });
+        const participantAfterRotation = await prisma.sessionParticipant.findFirstOrThrow({
+            where: { scheduledSessionId: SESSION_ID },
+        });
+        expect(participantAfterRotation).toMatchObject({
+            grantVersion: 1,
+            grantReconcileNeeded: true,
+            publishRevokedAt: NOW,
+            raisedAt: null,
+            leftAt: NOW,
+        });
+        await expect(prisma.stageGrantEffectOutbox.findUniqueOrThrow({
+            where: {
+                participantId_grantVersion: {
+                    participantId: participantAfterRotation.id,
+                    grantVersion: 1,
+                },
+            },
+        })).resolves.toMatchObject({
+            canPublish: false,
+            disconnectParticipant: true,
+            participantIdentity: 'event-commerce-participant',
+            tokenHorizonAt: tokenHorizon,
+            status: 'PENDING',
+        });
 
         const stale = command({ request_id: '40000000-0000-4000-8000-000000000004' });
         await expect(applyCommerceCommand(stale, stale.external_ticket_id, NOW)).resolves.toMatchObject({
@@ -219,6 +244,25 @@ integration('commerce entitlement PostgreSQL contract', () => {
         await expect(getCommerceEntitlement(first.external_ticket_id, NOW)).resolves.toMatchObject({
             applied_revision: 3,
             credential_binding: null,
+        });
+        await expect(prisma.sessionParticipant.findUniqueOrThrow({
+            where: { id: participantAfterRotation.id },
+        })).resolves.toMatchObject({
+            grantVersion: 2,
+            grantReconcileNeeded: true,
+        });
+        await expect(prisma.stageGrantEffectOutbox.findUniqueOrThrow({
+            where: {
+                participantId_grantVersion: {
+                    participantId: participantAfterRotation.id,
+                    grantVersion: 2,
+                },
+            },
+        })).resolves.toMatchObject({
+            canPublish: false,
+            disconnectParticipant: true,
+            participantIdentity: 'event-commerce-participant',
+            status: 'PENDING',
         });
 
         await prisma.commerceEntitlement.update({

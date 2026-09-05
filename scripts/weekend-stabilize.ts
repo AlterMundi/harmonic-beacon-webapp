@@ -19,7 +19,9 @@ import {
     type StabilizationSnapshot,
     validateStabilizationSnapshot,
 } from '../src/lib/event-stabilization';
+import { TICKET_LIVEKIT_TOKEN_TTL_SECONDS } from '../src/lib/commerce-entitlement';
 import { redactError } from '../src/lib/redact';
+import { transitionParticipantGrant } from '../src/lib/stage-grant-effects';
 
 type DbClient = Prisma.TransactionClient | PrismaClient;
 
@@ -227,7 +229,6 @@ async function applyStabilization(
             webSessionsRevoked: 0,
             grantsRevoked: 0,
             participantFlagsCleared: 0,
-            realReconciliationFlagsCleared: 0,
             livekitRooms,
         };
 
@@ -267,45 +268,40 @@ async function applyStabilization(
                 });
                 summary.webSessionsRevoked += webSessions.count;
 
-                const grants = await tx.sessionParticipant.updateMany({
+                const grants = await tx.sessionParticipant.findMany({
                     where: {
                         scheduledSessionId: contract.id,
                         publishGrantedAt: { not: null },
                         publishRevokedAt: null,
                     },
-                    data: {
-                        publishRevokedAt: now,
-                        grantVersion: { increment: 1 },
-                        grantReconcileNeeded: false,
-                        grantReason: 'Test event fixture retired before production event',
-                    },
+                    select: { id: true },
                 });
-                summary.grantsRevoked += grants.count;
+                for (const participant of grants) {
+                    await transitionParticipantGrant(tx, {
+                        scheduledSessionId: contract.id,
+                        participantId: participant.id,
+                        canPublish: false,
+                        now,
+                        actorUserId: null,
+                        reason: 'Test event fixture retired before production event',
+                        clearHand: true,
+                        markLeft: true,
+                        disconnectParticipant: true,
+                        tokenHorizonAt: new Date(
+                            now.getTime() + TICKET_LIVEKIT_TOKEN_TTL_SECONDS * 1000,
+                        ),
+                    });
+                }
+                summary.grantsRevoked += grants.length;
 
                 const flags = await tx.sessionParticipant.updateMany({
                     where: {
                         scheduledSessionId: contract.id,
-                        OR: [
-                            { raisedAt: { not: null } },
-                            { grantReconcileNeeded: true },
-                        ],
+                        raisedAt: { not: null },
                     },
-                    data: { raisedAt: null, grantReconcileNeeded: false },
+                    data: { raisedAt: null },
                 });
                 summary.participantFlagsCleared += flags.count;
-            } else {
-                // Every stage room was checked empty twice. A reconciliation
-                // flag on a disconnected real-event participant cannot
-                // represent a live LiveKit disagreement and would otherwise
-                // create a false incident in the event cockpit.
-                const flags = await tx.sessionParticipant.updateMany({
-                    where: {
-                        scheduledSessionId: contract.id,
-                        grantReconcileNeeded: true,
-                    },
-                    data: { grantReconcileNeeded: false },
-                });
-                summary.realReconciliationFlagsCleared += flags.count;
             }
         }
 
