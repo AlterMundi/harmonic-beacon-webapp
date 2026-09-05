@@ -106,6 +106,10 @@ jobs:
           npm run db:fixture:load
           DATABASE_URL="$E2E_DATABASE_URL" npx prisma migrate deploy
           DATABASE_URL="$E2E_DATABASE_URL" npm run stage-grants:forward-drain
+        env:
+          LIVEKIT_INTERNAL_URL: http://localhost:7880
+          LIVEKIT_API_KEY: ${{ env.E2E_LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ env.E2E_LIVEKIT_API_SECRET }}
 
       - name: Verify session contributions contract in PostgreSQL
         # Real-database proof of the CHAT-01 guarantees: idempotency unique
