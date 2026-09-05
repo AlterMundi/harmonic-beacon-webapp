@@ -182,7 +182,7 @@ export async function PATCH(
             { status: 400 },
         );
     }
-    if (!Number.isInteger(body.expectedGrantVersion) ||
+    if (!Number.isSafeInteger(body.expectedGrantVersion) ||
         (body.expectedGrantVersion as number) < 0) {
         return NextResponse.json(
             { error: 'invalid_request', message: 'A current grant version is required' },

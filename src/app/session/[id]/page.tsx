@@ -554,7 +554,7 @@ function SessionRoom() {
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const next = await response.json() as { grantVersion?: unknown };
-            if (Number.isInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
+            if (Number.isSafeInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
                 grantVersionRef.current = next.grantVersion as number;
                 setGrantVersion(next.grantVersion as number);
             }
@@ -592,7 +592,7 @@ function SessionRoom() {
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const next = await response.json() as { grantVersion?: unknown };
-            if (Number.isInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
+            if (Number.isSafeInteger(next.grantVersion) && (next.grantVersion as number) >= 0) {
                 grantVersionRef.current = next.grantVersion as number;
                 setGrantVersion(next.grantVersion as number);
             }
@@ -620,7 +620,7 @@ function SessionRoom() {
     const applyGrantState = useCallback((nextCanPublish: boolean, nextGrantVersion: number) => {
         const currentGrantVersion = grantVersionRef.current;
         if (
-            !Number.isInteger(nextGrantVersion) ||
+            !Number.isSafeInteger(nextGrantVersion) ||
             nextGrantVersion < 0 ||
             (currentGrantVersion !== null && nextGrantVersion < currentGrantVersion) ||
             (stageAuthoritySuppressedRef.current &&

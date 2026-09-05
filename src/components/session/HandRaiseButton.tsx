@@ -47,7 +47,7 @@ async function handStateFrom(response: Response): Promise<OwnHandState> {
     }
     if (
         typeof body.canPublish !== 'boolean' ||
-        !Number.isInteger(body.grantVersion) ||
+        !Number.isSafeInteger(body.grantVersion) ||
         (body.grantVersion as number) < 0
     ) {
         throw new HandRequestError(502, 'invalid_hand_state');
