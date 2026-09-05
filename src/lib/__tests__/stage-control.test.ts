@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     participantFindMany: vi.fn(),
     participantFindFirst: vi.fn(),
     participantUpdate: vi.fn(),
+    participantUpdateMany: vi.fn(),
     auditCreate: vi.fn(),
     queryRaw: vi.fn(),
     updateParticipant: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('@/lib/db', () => ({
         sessionParticipant: {
             findFirst: mocks.participantFindFirst,
             update: mocks.participantUpdate,
+            updateMany: mocks.participantUpdateMany,
         },
         auditLog: { create: mocks.auditCreate },
     },
@@ -56,6 +58,16 @@ const event = {
 
 let participants: Participant[];
 let transactionTail: Promise<unknown>;
+
+function deferred<T = void>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+}
 
 function attendee(
     id: string,
@@ -118,6 +130,7 @@ describe('stage control', () => {
                 findMany: mocks.participantFindMany,
                 findFirst: mocks.participantFindFirst,
                 update: mocks.participantUpdate,
+                updateMany: mocks.participantUpdateMany,
             },
             auditLog: { create: mocks.auditCreate },
         };
@@ -137,8 +150,7 @@ describe('stage control', () => {
                         participants: participants.map((participant) => ({
                             id: participant.id,
                             participantIdentity: participant.participantIdentity,
-                            publishGrantedAt: participant.publishGrantedAt,
-                            publishRevokedAt: participant.publishRevokedAt,
+                            grantVersion: participant.grantVersion,
                         })),
                     };
                 }
@@ -167,6 +179,22 @@ describe('stage control', () => {
                 where: { id: string };
                 data: Record<string, unknown>;
             }) => applyUpdate(where.id, data),
+        );
+        mocks.participantUpdateMany.mockImplementation(
+            ({ where, data }: {
+                where: { id: string; grantVersion?: number };
+                data: Record<string, unknown>;
+            }) => {
+                const participant = participants.find((item) => item.id === where.id);
+                if (!participant || (
+                    where.grantVersion !== undefined &&
+                    participant.grantVersion !== where.grantVersion
+                )) {
+                    return { count: 0 };
+                }
+                applyUpdate(where.id, data);
+                return { count: 1 };
+            },
         );
         mocks.auditCreate.mockResolvedValue({});
         mocks.updateParticipant.mockResolvedValue({});
@@ -300,11 +328,11 @@ describe('stage control', () => {
         })).rejects.toMatchObject({
             code: 'livekit_failed',
             status: 502,
-            details: { reconcileNeeded: true },
+            details: { reconcileNeeded: false },
         });
 
         expect(participants[0]).toMatchObject({
-            grantReconcileNeeded: true,
+            grantReconcileNeeded: false,
         });
         expect(participants[0].publishRevokedAt).not.toBeNull();
         expect(mocks.updateParticipant).toHaveBeenLastCalledWith(
@@ -315,6 +343,148 @@ describe('stage control', () => {
             }),
         );
         expect(mocks.mutePublishedTrack).toHaveBeenCalledTimes(2);
+    });
+
+    it('reapplies a newer demotion after an older promotion effect finishes last', async () => {
+        participants = [attendee('target')];
+        const oldEffect = deferred();
+        const applied: boolean[] = [];
+        mocks.updateParticipant
+            .mockImplementationOnce(async (
+                _room: string,
+                _identity: string,
+                update: { permission: { canPublish: boolean } },
+            ) => {
+                await oldEffect.promise;
+                applied.push(update.permission.canPublish);
+            })
+            .mockImplementation(async (
+                _room: string,
+                _identity: string,
+                update: { permission: { canPublish: boolean } },
+            ) => {
+                applied.push(update.permission.canPublish);
+            });
+        const { demoteParticipant, promoteParticipant } = await import('../stage-control');
+
+        const promotion = promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        });
+        await vi.waitFor(() => expect(mocks.updateParticipant).toHaveBeenCalledTimes(1));
+        expect(participants[0]).toMatchObject({
+            grantVersion: 1,
+            grantReconcileNeeded: true,
+        });
+
+        const demotion = await demoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        });
+        expect(demotion).toMatchObject({ canPublish: false, grantVersion: 2 });
+        expect(applied).toEqual([false]);
+
+        oldEffect.resolve();
+        const stalePromotion = await promotion;
+
+        expect(stalePromotion).toMatchObject({ canPublish: false, grantVersion: 2 });
+        expect(applied).toEqual([false, true, false]);
+        expect(participants[0]).toMatchObject({
+            publishRevokedAt: expect.any(Date),
+            grantReconcileNeeded: false,
+            grantVersion: 2,
+        });
+    });
+
+    it('reapplies a newer promotion after an older demotion effect finishes last', async () => {
+        participants = [attendee('target', true)];
+        const oldEffect = deferred();
+        const applied: boolean[] = [];
+        mocks.updateParticipant
+            .mockImplementationOnce(async (
+                _room: string,
+                _identity: string,
+                update: { permission: { canPublish: boolean } },
+            ) => {
+                await oldEffect.promise;
+                applied.push(update.permission.canPublish);
+            })
+            .mockImplementation(async (
+                _room: string,
+                _identity: string,
+                update: { permission: { canPublish: boolean } },
+            ) => {
+                applied.push(update.permission.canPublish);
+            });
+        const { demoteParticipant, promoteParticipant } = await import('../stage-control');
+
+        const demotion = demoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        });
+        await vi.waitFor(() => expect(mocks.updateParticipant).toHaveBeenCalledTimes(1));
+        expect(participants[0]).toMatchObject({
+            grantVersion: 2,
+            grantReconcileNeeded: true,
+        });
+
+        const promotion = await promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        });
+        expect(promotion).toMatchObject({ canPublish: true, grantVersion: 3 });
+        expect(applied).toEqual([true]);
+
+        oldEffect.resolve();
+        const staleDemotion = await demotion;
+
+        expect(staleDemotion).toMatchObject({ canPublish: true, grantVersion: 3 });
+        expect(applied).toEqual([true, false, true]);
+        expect(participants[0]).toMatchObject({
+            publishRevokedAt: null,
+            grantReconcileNeeded: false,
+            grantVersion: 3,
+        });
+    });
+
+    it('does not let an obsolete promotion failure compensate a newer promotion', async () => {
+        participants = [attendee('target')];
+        const oldEffect = deferred();
+        mocks.updateParticipant
+            .mockImplementationOnce(async () => oldEffect.promise)
+            .mockResolvedValue({});
+        const { promoteParticipant } = await import('../stage-control');
+
+        const oldPromotion = promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        });
+        await vi.waitFor(() => expect(mocks.updateParticipant).toHaveBeenCalledTimes(1));
+
+        const currentPromotion = await promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-2',
+        });
+        expect(currentPromotion).toMatchObject({ canPublish: true, grantVersion: 2 });
+
+        oldEffect.reject(new Error('obsolete LiveKit failure'));
+        const stalePromotion = await oldPromotion;
+
+        expect(stalePromotion).toMatchObject({ canPublish: true, grantVersion: 2 });
+        expect(participants[0]).toMatchObject({
+            publishRevokedAt: null,
+            grantReconcileNeeded: false,
+            grantVersion: 2,
+        });
+        expect(mocks.auditCreate).not.toHaveBeenCalledWith({
+            data: expect.objectContaining({ action: 'stage.promote.livekit_failed' }),
+        });
     });
 
     it('demotes before revoking LiveKit permission and force-mutes every track', async () => {

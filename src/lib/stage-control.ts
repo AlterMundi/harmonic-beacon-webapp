@@ -23,8 +23,6 @@ const SUBSCRIBE_PERMISSION = {
     canPublishSources: [] as TrackSource[],
 };
 
-type StageAction = 'promote' | 'demote' | 'mute' | 'reconcile';
-
 type ParticipantSnapshot = {
     id: string;
     participantIdentity: string;
@@ -32,6 +30,26 @@ type ParticipantSnapshot = {
     publishRevokedAt: Date | null;
     raisedAt: Date | null;
 };
+
+type GrantEffectSnapshot = {
+    id: string;
+    participantIdentity: string;
+    roomName: string;
+    publishGrantedAt: Date | null;
+    publishRevokedAt: Date | null;
+    grantVersion: number;
+};
+
+const MAX_GRANT_SYNC_PASSES = 16;
+
+class GrantEffectApplyError extends Error {
+    constructor(
+        public readonly snapshot: GrantEffectSnapshot,
+    ) {
+        super('LiveKit grant effect failed for the current durable version');
+        this.name = 'GrantEffectApplyError';
+    }
+}
 
 export class StageControlError extends Error {
     constructor(
@@ -252,43 +270,208 @@ async function enforceSubscriber(
     await forceMuteParticipant(roomName, participantIdentity);
 }
 
-async function markReconcileNeeded(
+async function readGrantEffectSnapshot(
     scheduledSessionId: string,
     participantId: string,
-    actorUserId: string,
-    action: StageAction,
-    now: Date,
+): Promise<GrantEffectSnapshot> {
+    const participant = await prisma.sessionParticipant.findFirst({
+        where: { id: participantId, scheduledSessionId },
+        select: {
+            id: true,
+            participantIdentity: true,
+            publishGrantedAt: true,
+            publishRevokedAt: true,
+            grantVersion: true,
+            scheduledSession: { select: { roomName: true } },
+        },
+    });
+    if (!participant) {
+        throw new StageControlError(
+            'participant_not_found',
+            404,
+            'Participant not found',
+        );
+    }
+    return {
+        id: participant.id,
+        participantIdentity: participant.participantIdentity,
+        roomName: participant.scheduledSession.roomName,
+        publishGrantedAt: participant.publishGrantedAt,
+        publishRevokedAt: participant.publishRevokedAt,
+        grantVersion: participant.grantVersion,
+    };
+}
+
+function grantResult(
+    snapshot: GrantEffectSnapshot,
+    reconcileNeeded: boolean,
+): StageGrantResult {
+    return {
+        participantId: snapshot.id,
+        participantIdentity: snapshot.participantIdentity,
+        canPublish: hasActiveGrant({ ...snapshot, raisedAt: null }),
+        reconcileNeeded,
+        grantVersion: snapshot.grantVersion,
+    };
+}
+
+/**
+ * Apply the newest durable grant version and clear its pending marker only
+ * with a compare-by-version update. If a newer transition commits while an
+ * older LiveKit request is in flight, the older caller loops and reapplies the
+ * new state so an obsolete effect can never be the final effect.
+ */
+async function synchronizeLatestGrantEffect(
+    scheduledSessionId: string,
+    participantId: string,
 ): Promise<StageGrantResult> {
+    let lastSnapshot: GrantEffectSnapshot | null = null;
+    for (let pass = 0; pass < MAX_GRANT_SYNC_PASSES; pass += 1) {
+        const snapshot = await readGrantEffectSnapshot(scheduledSessionId, participantId);
+        lastSnapshot = snapshot;
+        const canPublish = hasActiveGrant({ ...snapshot, raisedAt: null });
+        try {
+            if (canPublish) {
+                await setLiveKitPermission(
+                    snapshot.roomName,
+                    snapshot.participantIdentity,
+                    true,
+                );
+            } else {
+                await enforceSubscriber(
+                    snapshot.roomName,
+                    snapshot.participantIdentity,
+                );
+            }
+        } catch {
+            const latest = await readGrantEffectSnapshot(scheduledSessionId, participantId);
+            if (latest.grantVersion !== snapshot.grantVersion) continue;
+            throw new GrantEffectApplyError(snapshot);
+        }
+
+        const cleared = await prisma.sessionParticipant.updateMany({
+            where: {
+                id: snapshot.id,
+                scheduledSessionId,
+                grantVersion: snapshot.grantVersion,
+            },
+            data: { grantReconcileNeeded: false },
+        });
+        if (cleared.count === 1) return grantResult(snapshot, false);
+    }
+
+    throw new GrantEffectApplyError(lastSnapshot ??
+        await readGrantEffectSnapshot(scheduledSessionId, participantId));
+}
+
+async function clearDisconnectedGrantMarker(
+    scheduledSessionId: string,
+    participantId: string,
+): Promise<boolean> {
+    for (let pass = 0; pass < MAX_GRANT_SYNC_PASSES; pass += 1) {
+        const snapshot = await readGrantEffectSnapshot(scheduledSessionId, participantId);
+        const cleared = await prisma.sessionParticipant.updateMany({
+            where: {
+                id: snapshot.id,
+                scheduledSessionId,
+                grantVersion: snapshot.grantVersion,
+            },
+            data: { grantReconcileNeeded: false },
+        });
+        if (cleared.count === 1) return true;
+    }
+    return false;
+}
+
+async function recordGrantEffectFailureIfCurrent(input: {
+    scheduledSessionId: string;
+    participantId: string;
+    expectedVersion: number;
+    actorUserId: string | null;
+    action: string;
+    reason: string;
+}): Promise<boolean> {
     return prisma.$transaction(async (transaction) => {
-        await lockScheduledSession(transaction, scheduledSessionId);
-        const participant = await transaction.sessionParticipant.update({
-            where: { id: participantId },
-            data: {
-                publishRevokedAt: now,
-                grantReconcileNeeded: true,
-                grantVersion: { increment: 1 },
+        await lockScheduledSession(transaction, input.scheduledSessionId);
+        const participant = await transaction.sessionParticipant.findFirst({
+            where: {
+                id: input.participantId,
+                scheduledSessionId: input.scheduledSessionId,
             },
-            select: {
-                id: true,
-                participantIdentity: true,
-                grantVersion: true,
-            },
+            select: { grantVersion: true },
+        });
+        if (!participant || participant.grantVersion !== input.expectedVersion) return false;
+        await transaction.sessionParticipant.update({
+            where: { id: input.participantId },
+            data: { grantReconcileNeeded: true },
         });
         await audit(
             transaction,
-            actorUserId,
-            `stage.${action}.livekit_failed`,
-            participantId,
-            'LiveKit update failed; durable grant revoked',
-            { reconcileNeeded: true },
+            input.actorUserId,
+            `${input.action}.livekit_failed`,
+            input.participantId,
+            input.reason,
+            { grantVersion: input.expectedVersion, reconcileNeeded: true },
         );
-        return {
-            participantId: participant.id,
-            participantIdentity: participant.participantIdentity,
-            canPublish: false,
-            reconcileNeeded: true,
-            grantVersion: participant.grantVersion,
-        };
+        return true;
+    });
+}
+
+async function compensatePromotionFailureIfCurrent(input: {
+    scheduledSessionId: string;
+    participantId: string;
+    expectedVersion: number;
+    actorUserId: string;
+    now: Date;
+}): Promise<boolean> {
+    return prisma.$transaction(async (transaction) => {
+        await lockScheduledSession(transaction, input.scheduledSessionId);
+        const current = await transaction.sessionParticipant.findFirst({
+            where: {
+                id: input.participantId,
+                scheduledSessionId: input.scheduledSessionId,
+            },
+            select: {
+                id: true,
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+                grantVersion: true,
+            },
+        });
+        if (
+            !current ||
+            current.grantVersion !== input.expectedVersion ||
+            !hasActiveGrant({
+                ...current,
+                participantIdentity: '',
+                raisedAt: null,
+            })
+        ) {
+            return false;
+        }
+
+        const compensated = await transaction.sessionParticipant.update({
+            where: { id: current.id },
+            data: {
+                publishRevokedAt: input.now,
+                grantReconcileNeeded: true,
+                grantVersion: { increment: 1 },
+            },
+            select: { grantVersion: true },
+        });
+        await audit(
+            transaction,
+            input.actorUserId,
+            'stage.promote.livekit_failed',
+            current.id,
+            'LiveKit promotion failed; durable grant revoked',
+            {
+                failedGrantVersion: input.expectedVersion,
+                grantVersion: compensated.grantVersion,
+                reconcileNeeded: true,
+            },
+        );
+        return true;
     });
 }
 
@@ -371,7 +554,7 @@ export async function promoteParticipant(
                     ? target.publishGrantedAt
                     : now,
                 publishRevokedAt: null,
-                grantReconcileNeeded: false,
+                grantReconcileNeeded: true,
                 grantChangedByUserId: input.actorUserId,
                 grantReason: input.reason?.trim() || 'Promoted to stage',
                 grantVersion: { increment: 1 },
@@ -397,40 +580,46 @@ export async function promoteParticipant(
     });
 
     try {
-        await setLiveKitPermission(
-            reservation.roomName,
-            reservation.participantIdentity,
-            true,
-        );
-        return {
-            participantId: reservation.id,
-            participantIdentity: reservation.participantIdentity,
-            canPublish: true,
-            reconcileNeeded: false,
-            grantVersion: reservation.grantVersion,
-        };
-    } catch {
-        const compensated = await markReconcileNeeded(
+        return await synchronizeLatestGrantEffect(
             input.scheduledSessionId,
             input.participantId,
-            input.actorUserId,
-            'promote',
-            now,
         );
-        try {
-            await enforceSubscriber(
-                reservation.roomName,
-                reservation.participantIdentity,
+    } catch (failure) {
+        if (!(failure instanceof GrantEffectApplyError)) throw failure;
+        const compensated = await compensatePromotionFailureIfCurrent({
+            scheduledSessionId: input.scheduledSessionId,
+            participantId: input.participantId,
+            expectedVersion: reservation.grantVersion,
+            actorUserId: input.actorUserId,
+            now,
+        });
+
+        if (!compensated) {
+            // A newer transition superseded the failed effect before its
+            // compensation could commit. Converge to that version and report
+            // the current truth instead of revoking it from this stale caller.
+            return synchronizeLatestGrantEffect(
+                input.scheduledSessionId,
+                input.participantId,
             );
+        }
+
+        let reconcileNeeded = true;
+        try {
+            await synchronizeLatestGrantEffect(
+                input.scheduledSessionId,
+                input.participantId,
+            );
+            reconcileNeeded = false;
         } catch {
-            // The durable state is already safe. Reconcile retries both the
-            // negative permission update and forced track mute.
+            // The compensated durable state is subscriber-only and remains
+            // marked until a later reconciliation can enforce it in LiveKit.
         }
         throw new StageControlError(
             'livekit_failed',
             502,
             'LiveKit promotion failed',
-            { reconcileNeeded: compensated.reconcileNeeded },
+            { reconcileNeeded },
         );
     }
 }
@@ -496,7 +685,7 @@ export async function demoteParticipant(
             data: {
                 ...(activeGrant ? { publishRevokedAt: now } : {}),
                 ...(input.clearHand ? { raisedAt: null } : {}),
-                grantReconcileNeeded: false,
+                grantReconcileNeeded: true,
                 grantChangedByUserId: input.actorUserId,
                 grantReason: input.reason?.trim() || 'Demoted from stage',
                 ...(activeGrant ? { grantVersion: { increment: 1 } } : {}),
@@ -522,33 +711,26 @@ export async function demoteParticipant(
     });
 
     try {
-        await enforceSubscriber(
-            revocation.roomName,
-            revocation.participantIdentity,
+        return await synchronizeLatestGrantEffect(
+            input.scheduledSessionId,
+            input.participantId,
         );
-        return {
-            participantId: revocation.id,
-            participantIdentity: revocation.participantIdentity,
-            canPublish: false,
-            reconcileNeeded: false,
-            grantVersion: revocation.grantVersion,
-        };
-    } catch {
-        await prisma.$transaction(async (transaction) => {
-            await lockScheduledSession(transaction, input.scheduledSessionId);
-            await transaction.sessionParticipant.update({
-                where: { id: input.participantId },
-                data: { grantReconcileNeeded: true },
-            });
-            await audit(
-                transaction,
-                input.actorUserId,
-                `${input.auditAction ?? 'stage.demote'}.livekit_failed`,
-                input.participantId,
-                'LiveKit demotion or forced mute failed',
-                { reconcileNeeded: true },
-            );
+    } catch (failure) {
+        if (!(failure instanceof GrantEffectApplyError)) throw failure;
+        const failureIsCurrent = await recordGrantEffectFailureIfCurrent({
+            scheduledSessionId: input.scheduledSessionId,
+            participantId: input.participantId,
+            expectedVersion: failure.snapshot.grantVersion,
+            actorUserId: input.actorUserId,
+            action: input.auditAction ?? 'stage.demote',
+            reason: 'LiveKit demotion or forced mute failed',
         });
+        if (!failureIsCurrent) {
+            return synchronizeLatestGrantEffect(
+                input.scheduledSessionId,
+                input.participantId,
+            );
+        }
         throw new StageControlError(
             'livekit_failed',
             502,
@@ -711,8 +893,7 @@ export async function reconcileParticipants(input: {
                 select: {
                     id: true,
                     participantIdentity: true,
-                    publishGrantedAt: true,
-                    publishRevokedAt: true,
+                    grantVersion: true,
                 },
             },
         },
@@ -748,8 +929,12 @@ export async function reconcileParticipants(input: {
     }
     for (const participant of scheduledSession.participants) {
         if (failed.includes(participant.id)) {
-            await prisma.sessionParticipant.update({
-                where: { id: participant.id },
+            await prisma.sessionParticipant.updateMany({
+                where: {
+                    id: participant.id,
+                    scheduledSessionId: input.scheduledSessionId,
+                    grantVersion: participant.grantVersion,
+                },
                 data: { grantReconcileNeeded: true },
             });
             continue;
@@ -757,38 +942,32 @@ export async function reconcileParticipants(input: {
         // A disconnected identity has no live permission or tracks to disagree
         // with the database. Its next token is minted from the durable grant.
         if (!connectedIdentities.has(participant.participantIdentity)) {
-            await prisma.sessionParticipant.update({
-                where: { id: participant.id },
-                data: { grantReconcileNeeded: false },
-            });
-            reconciled.push(participant.id);
+            if (await clearDisconnectedGrantMarker(
+                input.scheduledSessionId,
+                participant.id,
+            )) {
+                reconciled.push(participant.id);
+            } else {
+                failed.push(participant.id);
+            }
             continue;
         }
-        const canPublish = hasActiveGrant({
-            ...participant,
-            raisedAt: null,
-        });
         try {
-            if (canPublish) {
-                await setLiveKitPermission(
-                    scheduledSession.roomName,
-                    participant.participantIdentity,
-                    true,
-                );
-            } else {
-                await enforceSubscriber(
-                    scheduledSession.roomName,
-                    participant.participantIdentity,
-                );
-            }
-            await prisma.sessionParticipant.update({
-                where: { id: participant.id },
-                data: { grantReconcileNeeded: false },
-            });
+            await synchronizeLatestGrantEffect(
+                input.scheduledSessionId,
+                participant.id,
+            );
             reconciled.push(participant.id);
-        } catch {
-            await prisma.sessionParticipant.update({
-                where: { id: participant.id },
+        } catch (failure) {
+            const snapshot = failure instanceof GrantEffectApplyError
+                ? failure.snapshot
+                : await readGrantEffectSnapshot(input.scheduledSessionId, participant.id);
+            await prisma.sessionParticipant.updateMany({
+                where: {
+                    id: participant.id,
+                    scheduledSessionId: input.scheduledSessionId,
+                    grantVersion: snapshot.grantVersion,
+                },
                 data: { grantReconcileNeeded: true },
             });
             failed.push(participant.id);
