@@ -76,6 +76,10 @@
     "vitest": "^4.0.18"
   },
   "overrides": {
+    "deepmerge-ts": "8.0.1",
+    "esbuild": "0.28.2",
+    "fast-uri": "3.1.6",
+    "mysql2": "3.24.3",
     "playwright-core": "1.61.0",
     "next": {
       "postcss": "8.5.25",
