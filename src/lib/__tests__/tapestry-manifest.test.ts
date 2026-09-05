@@ -12,6 +12,7 @@ const SESSION_ID = 'session-1';
 function participant(overrides: Partial<ManifestParticipant> = {}): ManifestParticipant {
     return {
         identity: 'lk-ana',
+        displayName: null,
         leftAt: null,
         raisedAt: null,
         publishGrantedAt: null,
@@ -106,6 +107,21 @@ describe('buildTapestryManifest', () => {
             participants: [participant({ staffName: 'Julián' })],
         });
         expect(manifest.entries[0].displayName).toBe('Julián');
+    });
+
+    it('keeps the confirmed database alias when LiveKit is neutral or unavailable', () => {
+        const neutral = build({
+            participants: [participant({ displayName: 'Ana DB' })],
+            live: new Map([['lk-ana', live('Participant')]]),
+        });
+        expect(neutral.entries[0].displayName).toBe('Ana DB');
+
+        const unavailable = build({
+            participants: [participant({ displayName: 'Ana DB' })],
+            live: new Map(),
+            liveStateAvailable: false,
+        });
+        expect(unavailable.entries[0].displayName).toBe('Ana DB');
     });
 
     it('reports presence states truthfully', () => {

@@ -366,6 +366,7 @@ async function redeem(
             data: {
                 tokenDigest: issued.database.tokenDigest,
                 displayName,
+                displayNameConfirmedAt: now,
                 ticketEntitlementId: entitlement.id,
                 ...(account ? {
                     accountIssuer: account.issuer,

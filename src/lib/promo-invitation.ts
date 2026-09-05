@@ -227,6 +227,7 @@ export async function redeemPromoInvitationByDigest(
             data: {
                 tokenDigest: issued.database.tokenDigest,
                 displayName,
+                displayNameConfirmedAt: now,
                 ticketEntitlementId: entitlement.id,
                 ...(account ? {
                     accountIssuer: account.issuer,

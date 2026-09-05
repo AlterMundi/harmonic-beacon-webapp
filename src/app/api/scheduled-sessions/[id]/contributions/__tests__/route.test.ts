@@ -54,6 +54,7 @@ function request(method: string, body?: unknown, searchParams?: Record<string, s
 function mockAttendee(sessionId = SESSION_ID) {
     mocks.webSessionFindUnique.mockResolvedValue({
         displayName: 'Ana',
+        displayNameConfirmedAt: new Date('2026-08-01T12:00:00Z'),
         expiresAt: FUTURE,
         revokedAt: null,
         staffUser: null,
@@ -72,6 +73,7 @@ function mockAttendee(sessionId = SESSION_ID) {
 function mockStaff() {
     mocks.webSessionFindUnique.mockResolvedValue({
         displayName: null,
+        displayNameConfirmedAt: null,
         expiresAt: FUTURE,
         revokedAt: null,
         staffUser: {

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     lowerHand: vi.fn(),
     getHandState: vi.fn(),
     declineStageInvitation: vi.fn(),
+    leaveStage: vi.fn(),
 }));
 
 vi.mock('@/lib/room-entitlement', () => ({
@@ -27,6 +28,7 @@ vi.mock('@/lib/stage-control', async (importOriginal) => {
     return {
         ...original,
         declineStageInvitation: mocks.declineStageInvitation,
+        leaveStage: mocks.leaveStage,
     };
 });
 
@@ -52,6 +54,7 @@ function handState(overrides: Record<string, unknown> = {}) {
         raisedAt: new Date('2026-08-01T15:10:00Z'),
         queuePosition: 2,
         canPublish: false,
+        grantVersion: 1,
         ...overrides,
     };
 }
@@ -76,6 +79,13 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
             canPublish: false,
             reconcileNeeded: false,
             grantVersion: 2,
+        });
+        mocks.leaveStage.mockResolvedValue({
+            participantId: 'participant-1',
+            participantIdentity: 'opaque-attendee-1',
+            canPublish: false,
+            reconcileNeeded: false,
+            grantVersion: 3,
         });
     });
 
@@ -132,6 +142,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
             raisedAt: '2026-08-01T15:10:00.000Z',
             queuePosition: 2,
             canPublish: false,
+            grantVersion: 1,
         });
         expect(mocks.raiseHand).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1',
@@ -168,7 +179,7 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         const { status, body } = await parseResponse(await PATCH(
             createRequest('/api/scheduled-sessions/event-1/hand', {
                 method: 'PATCH',
-                body: { action: 'decline_invitation' },
+                body: { action: 'decline_invitation', expectedGrantVersion: 1 },
             }),
             mockParams({ id: 'event-1' }),
         ));
@@ -178,11 +189,39 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         expect(mocks.declineStageInvitation).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1',
             participantIdentity: 'opaque-attendee-1',
+            expectedGrantVersion: 1,
         });
         expect(mocks.getHandState).toHaveBeenCalledWith({
             scheduledSessionId: 'event-1',
             participantIdentity: 'opaque-attendee-rotated',
         });
+    });
+
+    it('lets the caller leave their own stage grant and returns the converged hand state', async () => {
+        mocks.getHandState.mockResolvedValue(handState({
+            raised: false,
+            raisedAt: null,
+            queuePosition: null,
+            canPublish: false,
+        }));
+        const { PATCH } = await import('../route');
+
+        const { status, body } = await parseResponse(await PATCH(
+            createRequest('/api/scheduled-sessions/event-1/hand', {
+                method: 'PATCH',
+                body: { action: 'leave_stage', expectedGrantVersion: 1 },
+            }),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(status).toBe(200);
+        expect(body).toMatchObject({ raised: false, canPublish: false });
+        expect(mocks.leaveStage).toHaveBeenCalledWith({
+            scheduledSessionId: 'event-1',
+            participantIdentity: 'opaque-attendee-1',
+            expectedGrantVersion: 1,
+        });
+        expect(mocks.declineStageInvitation).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown invitation action without changing a grant', async () => {
@@ -197,6 +236,22 @@ describe('/api/scheduled-sessions/[id]/hand', () => {
         );
 
         expect(response.status).toBe(400);
+        expect(mocks.declineStageInvitation).not.toHaveBeenCalled();
+        expect(mocks.leaveStage).not.toHaveBeenCalled();
+    });
+
+    it('requires the grant version for every attendee stage exit', async () => {
+        const { PATCH } = await import('../route');
+        const response = await PATCH(
+            createRequest('/api/scheduled-sessions/event-1/hand', {
+                method: 'PATCH',
+                body: { action: 'leave_stage' },
+            }),
+            mockParams({ id: 'event-1' }),
+        );
+
+        expect(response.status).toBe(400);
+        expect(mocks.leaveStage).not.toHaveBeenCalled();
         expect(mocks.declineStageInvitation).not.toHaveBeenCalled();
     });
 

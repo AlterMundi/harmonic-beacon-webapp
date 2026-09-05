@@ -103,7 +103,7 @@ async function recoverConcurrentParticipant(
 
     return prisma.sessionParticipant.update({
         where: { id: winner.id },
-        data: { leftAt: null },
+        data: { leftAt: null, displayName: access.displayName },
         select: {
             publishGrantedAt: true,
             publishRevokedAt: true,
@@ -134,6 +134,7 @@ async function resolveRoomAccess(
         select: {
             id: true,
             displayName: true,
+            displayNameConfirmedAt: true,
             accountIssuer: true,
             accountSubject: true,
             accountSessionId: true,
@@ -240,6 +241,12 @@ async function resolveRoomAccess(
         ) {
             return { ok: false, status: 403, error: 'Not authorized' };
         }
+        // The entry gate is the sole place where an attendee authorizes the
+        // event alias. Direct token/hand URLs must not materialize a room
+        // participant or expose that alias before the explicit confirmation.
+        if (!webSession.displayNameConfirmedAt) {
+            return { ok: false, status: 403, error: 'Not authorized' };
+        }
 
         principalId = ticket.commerceEntitlement
             ? `${ticket.id}:v${ticket.commerceEntitlement.livekitIdentityVersion}`
@@ -327,7 +334,9 @@ async function resolveRoomAccess(
             // Revocations rotate this identity so stale JWTs and late RPCs are
             // fenced away from the current connection.
             identity: existingParticipant?.participantIdentity ?? baselineIdentity,
-            displayName: existingParticipant?.displayName?.trim() || displayName,
+            displayName: ticketEntitlementId && webSession.displayNameConfirmedAt
+                ? webSession.displayName?.trim() || existingParticipant?.displayName?.trim() || displayName
+                : existingParticipant?.displayName?.trim() || displayName,
             role,
             isAssignedFacilitator,
             canPublishInitially,
@@ -407,7 +416,9 @@ export async function resolveRoomPrincipal(
                 where: { id: existingParticipant.id },
                 data: {
                     // Joining again resumes presence without rewriting identity
-                    // or the alias already captured for this participation.
+                    // after a grant fence. A newly confirmed alias from another
+                    // device becomes the durable event name.
+                    displayName: access.displayName,
                     leftAt: null,
                 },
                 select: {

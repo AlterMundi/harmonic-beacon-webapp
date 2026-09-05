@@ -96,6 +96,7 @@ export async function GET(
                 select: {
                     id: true,
                     participantIdentity: true,
+                    displayName: true,
                     joinedAt: true,
                     leftAt: true,
                     raisedAt: true,
@@ -196,7 +197,11 @@ export async function GET(
         return {
             id: participant.id,
             identity: participant.participantIdentity,
-            displayName: participant.staffUser?.name ?? (live?.name?.trim() || 'Attendee'),
+            // The confirmed database alias is authoritative. LiveKit carries
+            // a neutral audience name until publication and may be offline.
+            displayName: participant.staffUser?.name ??
+                participant.displayName?.trim() ??
+                'Attendee',
             principalType: participant.staffUser ? 'staff' : 'attendee',
             staffRole: participant.staffUser?.role ?? null,
             isAssignedFacilitator,

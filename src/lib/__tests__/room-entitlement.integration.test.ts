@@ -91,6 +91,7 @@ integration('room entitlement PostgreSQL concurrency', () => {
                 {
                     tokenDigest: digestSessionToken(TICKET_COOKIE),
                     displayName: 'Race attendee',
+                    displayNameConfirmedAt: NOW,
                     ticketEntitlementId: TICKET_ID,
                     expiresAt: new Date('2026-08-06T12:00:00.000Z'),
                 },

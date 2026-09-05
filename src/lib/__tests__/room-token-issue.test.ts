@@ -84,6 +84,7 @@ describe('finalizeRoomTokenIssue', () => {
         });
         mocks.participantFindFirst.mockResolvedValue({
             id: 'participant-1',
+            displayName: 'Ana',
             publishGrantedAt: new Date('2026-09-05T12:00:00Z'),
             publishRevokedAt: null,
             grantReconcileNeeded: false,
@@ -106,6 +107,7 @@ describe('finalizeRoomTokenIssue', () => {
             'stage',
             'identity-current',
             {
+                name: 'Ana',
                 permission: {
                     canPublish: true,
                     canPublishData: false,

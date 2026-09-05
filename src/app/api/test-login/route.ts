@@ -76,6 +76,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let name: string;
     let role: DashboardRole;
     let landing: string | null;
+    let nameConfirmed: boolean;
     try {
         const body = (await request.json()) as unknown;
         const fields = (body ?? {}) as Record<string, unknown>;
@@ -84,6 +85,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             ? (fields.role as DashboardRole)
             : 'ATTENDEE';
         landing = sanitizeLanding(fields.landing);
+        // E2E-only hook for exercising the pre-room confirmation gate. The
+        // default mirrors a tester explicitly choosing the dashboard name.
+        nameConfirmed = fields.nameConfirmed !== false;
     } catch {
         return NextResponse.json({ error: 'Malformed request.' }, { status: 400 });
     }
@@ -150,6 +154,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             data: {
                 tokenDigest: issued.database.tokenDigest,
                 displayName: name,
+                displayNameConfirmedAt: nameConfirmed ? now : null,
                 staffUserId,
                 ticketEntitlementId,
                 expiresAt: webSessionExpiry(now),

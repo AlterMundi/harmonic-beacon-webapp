@@ -16,11 +16,12 @@ type OwnHandState = {
     raisedAt: string | null;
     queuePosition: number | null;
     canPublish: boolean;
+    grantVersion: number;
 };
 
 type Props = {
     sessionId: string;
-    onPublishGrantChange?: (canPublish: boolean) => void;
+    onPublishGrantChange?: (canPublish: boolean, grantVersion: number) => void;
     stageInvitationAccepted?: boolean;
 };
 
@@ -43,6 +44,13 @@ async function handStateFrom(response: Response): Promise<OwnHandState> {
             response.status,
             typeof body.error === 'string' ? body.error : null,
         );
+    }
+    if (
+        typeof body.canPublish !== 'boolean' ||
+        !Number.isSafeInteger(body.grantVersion) ||
+        (body.grantVersion as number) < 0
+    ) {
+        throw new HandRequestError(502, 'invalid_hand_state');
     }
     return body as OwnHandState;
 }
@@ -75,13 +83,21 @@ export default function HandRaiseButton({
     const [authorizationBlocked, setAuthorizationBlocked] = useState(false);
     const mounted = useRef(true);
     const authorizationBlockedRef = useRef(false);
-    const lastGrant = useRef<boolean | null>(null);
+    const lastAuthority = useRef<{ canPublish: boolean; grantVersion: number } | null>(null);
 
     const applyState = useCallback((next: OwnHandState) => {
         setState(next);
-        if (lastGrant.current !== next.canPublish) {
-            lastGrant.current = next.canPublish;
-            onPublishGrantChange?.(next.canPublish);
+        const previous = lastAuthority.current;
+        if (
+            !previous ||
+            previous.canPublish !== next.canPublish ||
+            previous.grantVersion !== next.grantVersion
+        ) {
+            lastAuthority.current = {
+                canPublish: next.canPublish,
+                grantVersion: next.grantVersion,
+            };
+            onPublishGrantChange?.(next.canPublish, next.grantVersion);
         }
     }, [onPublishGrantChange]);
 

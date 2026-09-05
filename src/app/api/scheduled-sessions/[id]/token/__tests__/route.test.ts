@@ -82,7 +82,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
         expect(createSessionJoinToken).toHaveBeenCalledWith(
             'weekend-stage',
             'event-stable-opaque',
-            'Attendee',
+            'Participant',
             { role: 'ATTENDEE', isAssignedFacilitator: false },
             '300s',
         );
@@ -177,7 +177,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
         expect(createSessionJoinToken).toHaveBeenCalledWith(
             'weekend-stage',
             'event-stable-opaque',
-            'Attendee',
+            'Participant',
             { role: 'ATTENDEE', isAssignedFacilitator: false },
             '300s',
         );

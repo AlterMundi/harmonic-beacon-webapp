@@ -81,7 +81,11 @@ export default function LoginClient({
                     maxLength={60}
                     autoComplete="name"
                     className="event-field"
+                    aria-describedby="display-name-hint"
                 />
+                <p id="display-name-hint" className="text-xs leading-5 text-[var(--text-muted)]">
+                    {messages.displayNameHint}
+                </p>
             </div>
 
             <div className="space-y-1.5">

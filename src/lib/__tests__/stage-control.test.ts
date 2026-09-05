@@ -519,6 +519,7 @@ describe('stage control', () => {
         const result = await declineStageInvitation({
             scheduledSessionId: event.id,
             participantIdentity: 'opaque-target',
+            expectedGrantVersion: 1,
         });
 
         expect(result).toMatchObject({ canPublish: false, reconcileNeeded: false });
@@ -538,6 +539,105 @@ describe('stage control', () => {
                 permission: expect.objectContaining({ canPublish: false }),
             }),
         );
+    });
+
+    it('lets a ticket-backed attendee leave the stage, clears their hand, and audits the voluntary action', async () => {
+        participants = [attendee('target', true, new Date('2026-08-01T15:10:00Z'))];
+        const { leaveStage } = await import('../stage-control');
+
+        const result = await leaveStage({
+            scheduledSessionId: event.id,
+            participantIdentity: 'opaque-target',
+            expectedGrantVersion: 1,
+        });
+
+        expect(result).toMatchObject({ canPublish: false, reconcileNeeded: false });
+        expect(participants[0]).toMatchObject({
+            raisedAt: null,
+            grantVersion: 2,
+        });
+        expect(participants[0].publishRevokedAt).not.toBeNull();
+        expect(mocks.auditCreate).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                actorUserId: null,
+                action: 'stage.attendee.leave',
+                targetId: 'target',
+            }),
+        });
+    });
+
+    it('makes repeated voluntary exits idempotent, including a double click race', async () => {
+        participants = [attendee('target', true, new Date('2026-08-01T15:10:00Z'))];
+        const { leaveStage } = await import('../stage-control');
+
+        const [first, second] = await Promise.all([
+            leaveStage({
+                scheduledSessionId: event.id,
+                participantIdentity: 'opaque-target',
+                expectedGrantVersion: 1,
+            }),
+            leaveStage({
+                scheduledSessionId: event.id,
+                participantIdentity: 'opaque-target',
+                expectedGrantVersion: 1,
+            }),
+        ]);
+
+        expect(first.grantVersion).toBe(2);
+        expect(second.grantVersion).toBe(2);
+        expect(participants[0]).toMatchObject({
+            raisedAt: null,
+            grantVersion: 2,
+        });
+        expect(mocks.auditCreate).toHaveBeenCalledTimes(1);
+        expect(mocks.updateParticipant).toHaveBeenCalledTimes(2);
+    });
+
+    it('converges a simultaneous voluntary exit and staff demotion on one revoked grant', async () => {
+        participants = [attendee('target', true, new Date('2026-08-01T15:10:00Z'))];
+        const { demoteParticipant, leaveStage } = await import('../stage-control');
+
+        const results = await Promise.all([
+            leaveStage({
+                scheduledSessionId: event.id,
+                participantIdentity: 'opaque-target',
+                expectedGrantVersion: 1,
+            }),
+            demoteParticipant({
+                scheduledSessionId: event.id,
+                participantId: 'target',
+                actorUserId: 'operator-1',
+                clearHand: true,
+            }),
+        ]);
+
+        expect(results).toEqual([
+            expect.objectContaining({ canPublish: false, grantVersion: 2 }),
+            expect.objectContaining({ canPublish: false, grantVersion: 2 }),
+        ]);
+        expect(participants[0]).toMatchObject({
+            raisedAt: null,
+            grantVersion: 2,
+        });
+        expect(mocks.auditCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an old exit after the attendee has been promoted again', async () => {
+        participants = [attendee('target', true, new Date('2026-08-01T15:10:00Z'))];
+        participants[0].grantVersion = 3;
+        const before = { ...participants[0] };
+        const { leaveStage } = await import('../stage-control');
+
+        await expect(leaveStage({
+            scheduledSessionId: event.id,
+            participantIdentity: 'opaque-target',
+            expectedGrantVersion: 1,
+        })).rejects.toMatchObject({ code: 'stale_grant_version', status: 409 });
+
+        expect(participants[0]).toEqual(before);
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+        expect(mocks.auditCreate).not.toHaveBeenCalled();
+        expect(mocks.processGrant).not.toHaveBeenCalled();
     });
 
     it('refuses to demote the assigned facilitator reserved by the weekend contract', async () => {
