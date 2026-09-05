@@ -1,4 +1,5 @@
 import { processNextCommerceMediaJob } from '../src/lib/commerce-media-reconciler';
+import { processNextStageGrantEffect } from '../src/lib/stage-grant-effects';
 import { writeFileSync } from 'node:fs';
 
 let stopping = false;
@@ -13,7 +14,7 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 async function main(): Promise<void> {
-    console.info('[commerce-media] Beacon reconciler started');
+    console.info('[commerce-media] Beacon media reconciler started');
     const watchdog = setInterval(() => {
         if (Date.now() - lastProgressAt > WATCHDOG_MS) {
             // Docker does not restart a merely unhealthy container. Exiting is
@@ -25,7 +26,11 @@ async function main(): Promise<void> {
     }, 5_000);
     while (!stopping) {
         try {
-            const processed = await processNextCommerceMediaJob();
+            // Publication grants are ordered per participant and protect the
+            // live stage boundary, so drain one before legacy commerce removal
+            // work. Both queues remain bounded to one job per loop.
+            const grantProcessed = await processNextStageGrantEffect();
+            const processed = grantProcessed || await processNextCommerceMediaJob();
             lastProgressAt = Date.now();
             consecutiveFailures = 0;
             writeFileSync('/tmp/commerce-reconciler-heartbeat', String(Date.now()), 'utf8');
