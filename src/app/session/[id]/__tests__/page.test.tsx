@@ -746,6 +746,65 @@ describe('SessionRoomPage - stage invitation consent', () => {
         };
     }
 
+    it('waits for the matching durable grant version before showing a live permission', async () => {
+        let releaseHandState: (response: Response) => void = () => {};
+        const handState = new Promise<Response>((resolve) => {
+            releaseHandState = resolve;
+        });
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+            const target = String(url);
+            if (target.includes('/entry')) {
+                return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+            }
+            if (target.includes('/token')) {
+                return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+            }
+            if (target.includes('/hand') && init?.method === 'PATCH') {
+                currentRoom().localParticipant.permissions.canPublish = false;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({ canPublish: false, grantVersion: 8 }),
+                } as Response);
+            }
+            if (target.includes('/hand')) return handState;
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        await renderConnected();
+        const room = currentRoom();
+        room.localParticipant.permissions.canPublish = true;
+        act(() => room.emit('participantPermissionsChanged', null, room.localParticipant));
+
+        expect(screen.queryByRole('dialog', { name: 'You’re invited into the scene' }))
+            .not.toBeInTheDocument();
+
+        await act(async () => {
+            releaseHandState({
+                ok: true,
+                json: async () => ({
+                    participantId: 'participant-1',
+                    raised: false,
+                    raisedAt: null,
+                    queuePosition: null,
+                    canPublish: true,
+                    grantVersion: 7,
+                }),
+            } as Response);
+            await handState;
+        });
+
+        const dialog = await screen.findByRole('dialog', { name: 'You’re invited into the scene' });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Not now' }));
+        await waitFor(() => expect(dialog).not.toBeInTheDocument());
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/scheduled-sessions/session-1/hand',
+            expect.objectContaining({
+                method: 'PATCH',
+                body: JSON.stringify({ action: 'decline_invitation', expectedGrantVersion: 7 }),
+            }),
+        );
+    });
+
     it('requests no device and exposes no stage controls before the attendee accepts', async () => {
         const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
         const { room, dialog } = await receiveInvitation();
@@ -1111,7 +1170,14 @@ describe('SessionRoomPage - transport-failure disconnect', () => {
                 if (target.includes('/hand')) {
                     return Promise.resolve({
                         ok: true,
-                        json: async () => ({ canPublish }),
+                        json: async () => ({
+                            participantId: 'participant-1',
+                            raised: false,
+                            raisedAt: null,
+                            queuePosition: null,
+                            canPublish,
+                            grantVersion: 1,
+                        }),
                     } as Response);
                 }
                 return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
