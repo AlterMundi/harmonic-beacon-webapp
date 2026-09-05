@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/ops/health
  * Operator event health — aggregates Postgres, the LiveKit API, the stage
- * room, the publish-grant invariant, the bed publisher, and the tapestry into
+ * room, the publish-grant invariant, durable delivery, the bed publisher, and the tapestry into
  * one green/yellow/red report for the `/ops/health` dashboard.
  *
  * Staff-only: the report names internal hosts, rooms, and failure detail that

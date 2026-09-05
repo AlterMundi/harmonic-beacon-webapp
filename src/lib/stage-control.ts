@@ -1,29 +1,23 @@
 import { Prisma } from '@prisma/client';
-import { TrackSource } from 'livekit-server-sdk';
 
 import { prisma } from '@/lib/db';
 import { getRoomService } from '@/lib/livekit-server';
+import {
+    processParticipantGrantEffects,
+    transitionParticipantGrant,
+} from '@/lib/stage-grant-effects';
+import {
+    lockGrantParticipants,
+    lockGrantSession,
+    lockGrantStaff,
+    lockGrantTickets,
+} from '@/lib/stage-grant-locks';
+import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 const ACTIVE_GRANT = {
     publishGrantedAt: { not: null },
     publishRevokedAt: null,
 } as const;
-
-const PUBLISH_PERMISSION = {
-    canPublish: true,
-    canPublishData: false,
-    canSubscribe: true,
-    canPublishSources: [TrackSource.MICROPHONE, TrackSource.CAMERA],
-};
-
-const SUBSCRIBE_PERMISSION = {
-    canPublish: false,
-    canPublishData: false,
-    canSubscribe: true,
-    canPublishSources: [] as TrackSource[],
-};
-
-type StageAction = 'promote' | 'demote' | 'mute' | 'reconcile';
 
 type ParticipantSnapshot = {
     id: string;
@@ -40,6 +34,7 @@ export class StageControlError extends Error {
             | 'participant_not_found'
             | 'participant_not_connected'
             | 'stage_full'
+            | 'entitlement_inactive'
             | 'not_publisher'
             | 'facilitator_required'
             | 'invalid_request'
@@ -149,20 +144,6 @@ async function requireConnectedParticipant(input: GrantInput): Promise<void> {
  * holds this lock until the surrounding transaction ends, making the count and
  * reservation one serialized operation across every app process.
  */
-async function lockScheduledSession(
-    transaction: Prisma.TransactionClient,
-    scheduledSessionId: string,
-): Promise<void> {
-    await transaction.$queryRaw(
-        Prisma.sql`
-            SELECT "id"
-            FROM "scheduled_sessions"
-            WHERE "id"::text = ${scheduledSessionId}
-            FOR UPDATE
-        `,
-    );
-}
-
 function hasActiveGrant(participant: ParticipantSnapshot): boolean {
     return participant.publishGrantedAt !== null &&
         participant.publishRevokedAt === null;
@@ -204,92 +185,6 @@ async function audit(
     });
 }
 
-async function setLiveKitPermission(
-    roomName: string,
-    participantIdentity: string,
-    canPublish: boolean,
-): Promise<void> {
-    await getRoomService().updateParticipant(
-        roomName,
-        participantIdentity,
-        {
-            permission: canPublish
-                ? { ...PUBLISH_PERMISSION }
-                : { ...SUBSCRIBE_PERMISSION },
-        },
-    );
-}
-
-async function forceMuteParticipant(
-    roomName: string,
-    participantIdentity: string,
-): Promise<void> {
-    const roomService = getRoomService();
-    const participant = await roomService.getParticipant(
-        roomName,
-        participantIdentity,
-    );
-    await Promise.all(
-        participant.tracks
-            .filter((track) => Boolean(track.sid))
-            .map((track) =>
-                roomService.mutePublishedTrack(
-                    roomName,
-                    participantIdentity,
-                    track.sid,
-                    true,
-                )),
-    );
-}
-
-async function enforceSubscriber(
-    roomName: string,
-    participantIdentity: string,
-): Promise<void> {
-    await setLiveKitPermission(roomName, participantIdentity, false);
-    await forceMuteParticipant(roomName, participantIdentity);
-}
-
-async function markReconcileNeeded(
-    scheduledSessionId: string,
-    participantId: string,
-    actorUserId: string,
-    action: StageAction,
-    now: Date,
-): Promise<StageGrantResult> {
-    return prisma.$transaction(async (transaction) => {
-        await lockScheduledSession(transaction, scheduledSessionId);
-        const participant = await transaction.sessionParticipant.update({
-            where: { id: participantId },
-            data: {
-                publishRevokedAt: now,
-                grantReconcileNeeded: true,
-                grantVersion: { increment: 1 },
-            },
-            select: {
-                id: true,
-                participantIdentity: true,
-                grantVersion: true,
-            },
-        });
-        await audit(
-            transaction,
-            actorUserId,
-            `stage.${action}.livekit_failed`,
-            participantId,
-            'LiveKit update failed; durable grant revoked',
-            { reconcileNeeded: true },
-        );
-        return {
-            participantId: participant.id,
-            participantIdentity: participant.participantIdentity,
-            canPublish: false,
-            reconcileNeeded: true,
-            grantVersion: participant.grantVersion,
-        };
-    });
-}
-
 export async function promoteParticipant(
     input: GrantInput,
 ): Promise<StageGrantResult> {
@@ -299,7 +194,7 @@ export async function promoteParticipant(
     await requireConnectedParticipant(input);
     const now = input.now ?? new Date();
     const reservation = await prisma.$transaction(async (transaction) => {
-        await lockScheduledSession(transaction, input.scheduledSessionId);
+        await lockGrantSession(transaction, input.scheduledSessionId);
         const scheduledSession = await transaction.scheduledSession.findUnique({
             where: { id: input.scheduledSessionId },
             select: {
@@ -317,6 +212,28 @@ export async function promoteParticipant(
             );
         }
 
+        const targetKeys = await transaction.sessionParticipant.findFirst({
+            where: {
+                id: input.participantId,
+                scheduledSessionId: input.scheduledSessionId,
+            },
+            select: { id: true, ticketEntitlementId: true, staffUserId: true },
+        });
+        if (!targetKeys) {
+            throw new StageControlError('participant_not_found', 404, 'Participant not found');
+        }
+        await lockGrantTickets(
+            transaction,
+            targetKeys.ticketEntitlementId ? [targetKeys.ticketEntitlementId] : [],
+        );
+        await lockGrantStaff(
+            transaction,
+            targetKeys.staffUserId ? [targetKeys.staffUserId] : [],
+        );
+        await lockGrantParticipants(transaction, [targetKeys.id]);
+
+        // Authorization is deliberately reread only after the complete lock
+        // scope is held; the earlier lookup supplied immutable lock keys only.
         const participants = await transaction.sessionParticipant.findMany({
             where: { scheduledSessionId: input.scheduledSessionId },
             select: {
@@ -326,6 +243,21 @@ export async function promoteParticipant(
                 publishRevokedAt: true,
                 raisedAt: true,
                 staffUserId: true,
+                staffUser: { select: { role: true, disabledAt: true } },
+                ticketEntitlementId: true,
+                ticketEntitlement: {
+                    select: {
+                        state: true,
+                        revokedAt: true,
+                        expiresAt: true,
+                        commerceEntitlement: {
+                            select: {
+                                providerState: true,
+                                administrativeState: true,
+                            },
+                        },
+                    },
+                },
             },
         });
         const target = participants.find(
@@ -336,6 +268,35 @@ export async function promoteParticipant(
                 'participant_not_found',
                 404,
                 'Participant not found',
+            );
+        }
+
+        const ticket = target.ticketEntitlement;
+        const hasActiveEntitlement = target.ticketEntitlementId !== null &&
+            target.ticketEntitlementId !== undefined &&
+            ticket !== null &&
+            ticket !== undefined &&
+            ticket.state === 'BOUND' &&
+            ticket.revokedAt === null &&
+            ticket.expiresAt > now &&
+            (ticket.commerceEntitlement === null || (
+                ticket.commerceEntitlement.providerState === 'ACTIVE' &&
+                ticket.commerceEntitlement.administrativeState === 'CLEAR'
+            ));
+        const isAuthorizedStaff = target.staffUserId !== null &&
+            target.staffUserId !== undefined &&
+            target.staffUser !== null &&
+            target.staffUser !== undefined &&
+            target.staffUser.disabledAt === null &&
+            eventStaffPolicy(
+                target.staffUser.role,
+                target.staffUserId === scheduledSession.facilitatorId,
+            ).canOperateEvent;
+        if (!hasActiveEntitlement && !isAuthorizedStaff) {
+            throw new StageControlError(
+                'entitlement_inactive',
+                409,
+                'This attendee no longer has active event access',
             );
         }
 
@@ -362,75 +323,35 @@ export async function promoteParticipant(
             }
         }
 
-        const participant = await transaction.sessionParticipant.update({
-            where: { id: target.id },
-            data: {
-                publishGrantedAt: hasActiveGrant(target)
-                    ? target.publishGrantedAt
-                    : now,
-                publishRevokedAt: null,
-                grantReconcileNeeded: false,
-                grantChangedByUserId: input.actorUserId,
-                grantReason: input.reason?.trim() || 'Promoted to stage',
-                grantVersion: { increment: 1 },
-            },
-            select: {
-                id: true,
-                participantIdentity: true,
-                grantVersion: true,
-            },
+        const participant = await transitionParticipantGrant(transaction, {
+            scheduledSessionId: input.scheduledSessionId,
+            participantId: target.id,
+            canPublish: true,
+            now,
+            actorUserId: input.actorUserId,
+            reason: input.reason?.trim() || 'Promoted to stage',
         });
         await audit(
             transaction,
             input.actorUserId,
             'stage.promote',
-            participant.id,
+            participant.participantId,
             input.reason,
             { grantVersion: participant.grantVersion },
         );
-        return {
-            ...participant,
-            roomName: scheduledSession.roomName,
-        };
+        return participant;
     });
 
-    try {
-        await setLiveKitPermission(
-            reservation.roomName,
-            reservation.participantIdentity,
-            true,
-        );
-        return {
-            participantId: reservation.id,
-            participantIdentity: reservation.participantIdentity,
-            canPublish: true,
-            reconcileNeeded: false,
-            grantVersion: reservation.grantVersion,
-        };
-    } catch {
-        const compensated = await markReconcileNeeded(
-            input.scheduledSessionId,
-            input.participantId,
-            input.actorUserId,
-            'promote',
-            now,
-        );
-        try {
-            await enforceSubscriber(
-                reservation.roomName,
-                reservation.participantIdentity,
-            );
-        } catch {
-            // The durable state is already safe. Reconcile retries both the
-            // negative permission update and forced track mute.
-        }
+    const delivery = await processParticipantGrantEffects(reservation.participantId);
+    if (delivery.pending > 0) {
         throw new StageControlError(
             'livekit_failed',
             502,
             'LiveKit promotion failed',
-            { reconcileNeeded: compensated.reconcileNeeded },
+            { reconcileNeeded: true },
         );
     }
+    return { ...reservation, reconcileNeeded: false };
 }
 
 export async function demoteParticipant(
@@ -438,7 +359,7 @@ export async function demoteParticipant(
 ): Promise<StageGrantResult> {
     const now = input.now ?? new Date();
     const revocation = await prisma.$transaction(async (transaction) => {
-        await lockScheduledSession(transaction, input.scheduledSessionId);
+        await lockGrantSession(transaction, input.scheduledSessionId);
         const scheduledSession = await transaction.scheduledSession.findUnique({
             where: { id: input.scheduledSessionId },
             select: { roomName: true, facilitatorId: true },
@@ -455,7 +376,12 @@ export async function demoteParticipant(
                 id: input.participantId,
                 scheduledSessionId: input.scheduledSessionId,
             },
-            select: { id: true, participantIdentity: true, staffUserId: true },
+            select: {
+                id: true,
+                participantIdentity: true,
+                staffUserId: true,
+                staffUser: { select: { disabledAt: true } },
+            },
         });
         if (!target) {
             throw new StageControlError(
@@ -464,71 +390,38 @@ export async function demoteParticipant(
                 'Participant not found',
             );
         }
-        if (target.staffUserId === scheduledSession.facilitatorId) {
+        if (
+            target.staffUserId === scheduledSession.facilitatorId &&
+            target.staffUser?.disabledAt === null
+        ) {
             throw new StageControlError(
                 'facilitator_required',
                 409,
                 'The assigned facilitator holds the reserved stage slot and cannot be demoted',
             );
         }
-        const participant = await transaction.sessionParticipant.update({
-            where: { id: target.id },
-            data: {
-                publishRevokedAt: now,
-                ...(input.clearHand ? { raisedAt: null } : {}),
-                grantReconcileNeeded: false,
-                grantChangedByUserId: input.actorUserId,
-                grantReason: input.reason?.trim() || 'Demoted from stage',
-                grantVersion: { increment: 1 },
-            },
-            select: {
-                id: true,
-                participantIdentity: true,
-                grantVersion: true,
-            },
+        const participant = await transitionParticipantGrant(transaction, {
+            scheduledSessionId: input.scheduledSessionId,
+            participantId: target.id,
+            canPublish: false,
+            now,
+            actorUserId: input.actorUserId,
+            reason: input.reason?.trim() || 'Demoted from stage',
+            clearHand: input.clearHand,
         });
         await audit(
             transaction,
             input.actorUserId,
             input.auditAction ?? 'stage.demote',
-            participant.id,
+            participant.participantId,
             input.reason,
             { grantVersion: participant.grantVersion },
         );
-        return {
-            ...participant,
-            roomName: scheduledSession.roomName,
-        };
+        return participant;
     });
 
-    try {
-        await enforceSubscriber(
-            revocation.roomName,
-            revocation.participantIdentity,
-        );
-        return {
-            participantId: revocation.id,
-            participantIdentity: revocation.participantIdentity,
-            canPublish: false,
-            reconcileNeeded: false,
-            grantVersion: revocation.grantVersion,
-        };
-    } catch {
-        await prisma.$transaction(async (transaction) => {
-            await lockScheduledSession(transaction, input.scheduledSessionId);
-            await transaction.sessionParticipant.update({
-                where: { id: input.participantId },
-                data: { grantReconcileNeeded: true },
-            });
-            await audit(
-                transaction,
-                input.actorUserId,
-                `${input.auditAction ?? 'stage.demote'}.livekit_failed`,
-                input.participantId,
-                'LiveKit demotion or forced mute failed',
-                { reconcileNeeded: true },
-            );
-        });
+    const delivery = await processParticipantGrantEffects(revocation.participantId);
+    if (delivery.pending > 0) {
         throw new StageControlError(
             'livekit_failed',
             502,
@@ -536,6 +429,7 @@ export async function demoteParticipant(
             { reconcileNeeded: true },
         );
     }
+    return { ...revocation, reconcileNeeded: false };
 }
 
 /**
@@ -647,96 +541,56 @@ export async function reconcileParticipants(input: {
     actorUserId: string;
     participantId?: string;
 }): Promise<ReconcileResult> {
-    const scheduledSession = await prisma.scheduledSession.findUnique({
-        where: { id: input.scheduledSessionId },
-        select: {
-            roomName: true,
-            participants: {
-                where: input.participantId ? { id: input.participantId } : {},
-                select: {
-                    id: true,
-                    participantIdentity: true,
-                    publishGrantedAt: true,
-                    publishRevokedAt: true,
-                },
+    const participantIds = await prisma.$transaction(async (transaction) => {
+        await lockGrantSession(transaction, input.scheduledSessionId);
+        const scheduledSession = await transaction.scheduledSession.findUnique({
+            where: { id: input.scheduledSessionId },
+            select: { id: true },
+        });
+        if (!scheduledSession) {
+            throw new StageControlError(
+                'session_not_found',
+                404,
+                'Session not found',
+            );
+        }
+        await transaction.$queryRaw(Prisma.sql`
+            SELECT "id"
+            FROM "session_participants"
+            WHERE "scheduled_session_id"::text = ${input.scheduledSessionId}
+              AND (${input.participantId ?? null}::text IS NULL OR "id"::text = ${input.participantId ?? null})
+            ORDER BY "id"
+            FOR UPDATE
+        `);
+        const participants = await transaction.sessionParticipant.findMany({
+            where: {
+                scheduledSessionId: input.scheduledSessionId,
+                ...(input.participantId ? { id: input.participantId } : {}),
             },
-        },
+            select: {
+                id: true,
+                publishGrantedAt: true,
+                publishRevokedAt: true,
+            },
+        });
+        if (input.participantId && participants.length === 0) {
+            throw new StageControlError(
+                'participant_not_found',
+                404,
+                'Participant not found',
+            );
+        }
+        return participants.map((participant) => participant.id);
     });
-    if (!scheduledSession) {
-        throw new StageControlError(
-            'session_not_found',
-            404,
-            'Session not found',
-        );
-    }
-    if (input.participantId && scheduledSession.participants.length === 0) {
-        throw new StageControlError(
-            'participant_not_found',
-            404,
-            'Participant not found',
-        );
-    }
 
     const reconciled: string[] = [];
     const failed: string[] = [];
-    let connectedIdentities: Set<string>;
-    try {
-        connectedIdentities = new Set(
-            (await getRoomService().listParticipants(scheduledSession.roomName))
-                .map((participant) => participant.identity),
-        );
-    } catch {
-        connectedIdentities = new Set();
-        failed.push(
-            ...scheduledSession.participants.map((participant) => participant.id),
-        );
-    }
-    for (const participant of scheduledSession.participants) {
-        if (failed.includes(participant.id)) {
-            await prisma.sessionParticipant.update({
-                where: { id: participant.id },
-                data: { grantReconcileNeeded: true },
-            });
-            continue;
-        }
-        // A disconnected identity has no live permission or tracks to disagree
-        // with the database. Its next token is minted from the durable grant.
-        if (!connectedIdentities.has(participant.participantIdentity)) {
-            await prisma.sessionParticipant.update({
-                where: { id: participant.id },
-                data: { grantReconcileNeeded: false },
-            });
-            reconciled.push(participant.id);
-            continue;
-        }
-        const canPublish = hasActiveGrant({
-            ...participant,
-            raisedAt: null,
-        });
-        try {
-            if (canPublish) {
-                await setLiveKitPermission(
-                    scheduledSession.roomName,
-                    participant.participantIdentity,
-                    true,
-                );
-            } else {
-                await enforceSubscriber(
-                    scheduledSession.roomName,
-                    participant.participantIdentity,
-                );
-            }
-            await prisma.sessionParticipant.update({
-                where: { id: participant.id },
-                data: { grantReconcileNeeded: false },
-            });
-            reconciled.push(participant.id);
-        } catch {
-            await prisma.sessionParticipant.update({
-                where: { id: participant.id },
-                data: { grantReconcileNeeded: true },
-            });
-            failed.push(participant.id);
+    for (const participantId of participantIds) {
+        const delivery = await processParticipantGrantEffects(participantId);
+        if (delivery.pending === 0) {
+            reconciled.push(participantId);
+        } else {
+            failed.push(participantId);
         }
     }
 

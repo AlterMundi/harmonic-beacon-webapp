@@ -12,7 +12,7 @@ import {
 import { prisma } from '@/lib/db';
 import { bedRoomIdentity } from '@/lib/livekit-server';
 import { ticketCodeStorage } from '@/lib/ticket-code';
-import { digestSessionToken } from '@/lib/session-auth';
+import { transitionParticipantGrant } from '@/lib/stage-grant-effects';
 
 type CommerceRow = Prisma.CommerceEntitlementGetPayload<{
     include: {
@@ -310,15 +310,21 @@ async function applyInTransaction(
             where: { scheduledSessionId: session.id, ticketEntitlementId: ticket.id },
         })
         : null;
+    const tokenHorizon = current?.maxLivekitTokenExpiresAt && current.maxLivekitTokenExpiresAt > now
+        ? current.maxLivekitTokenExpiresAt
+        : now;
     if (participant) {
-        await tx.sessionParticipant.update({
-            where: { id: participant.id },
-            data: {
-                publishRevokedAt: now,
-                grantReconcileNeeded: false,
-                raisedAt: null,
-                leftAt: now,
-            },
+        await transitionParticipantGrant(tx, {
+            scheduledSessionId: session.id,
+            participantId: participant.id,
+            canPublish: false,
+            now,
+            actorUserId: null,
+            reason: `Commerce ${command.reason_code}`,
+            clearHand: true,
+            markLeft: true,
+            disconnectParticipant: true,
+            tokenHorizonAt: tokenHorizon,
         });
     }
 
@@ -408,9 +414,6 @@ async function applyInTransaction(
     });
 
     if (participant) {
-        const tokenHorizon = current?.maxLivekitTokenExpiresAt && current.maxLivekitTokenExpiresAt > now
-            ? current.maxLivekitTokenExpiresAt
-            : now;
         await tx.commerceMediaOutbox.create({
             data: {
                 commerceEntitlementId: saved.id,
@@ -474,62 +477,3 @@ export async function getCommerceEntitlement(
 }
 
 export const TICKET_LIVEKIT_TOKEN_TTL_SECONDS = 5 * 60;
-
-/**
- * Final gate between minting and returning a ticket-backed LiveKit token.
- * A concurrent commerce revocation either obtains the ticket lock first and
- * makes this return false, or waits and observes the persisted token horizon.
- */
-export async function finalizeTicketTokenIssue(
-    cookieValue: string,
-    ticketEntitlementId: string,
-    tokenExpiresAt: Date,
-    now = new Date(),
-): Promise<boolean> {
-    return prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(
-            Prisma.sql`SELECT "id" FROM "ticket_entitlements" WHERE "id"::text = ${ticketEntitlementId} FOR UPDATE`,
-        );
-        const webSession = await tx.webSession.findUnique({
-            where: { tokenDigest: digestSessionToken(cookieValue) },
-            select: {
-                ticketEntitlementId: true,
-                revokedAt: true,
-                expiresAt: true,
-                ticketEntitlement: {
-                    select: { state: true, revokedAt: true, expiresAt: true },
-                },
-            },
-        });
-        if (
-            !webSession ||
-            webSession.ticketEntitlementId !== ticketEntitlementId ||
-            webSession.revokedAt ||
-            webSession.expiresAt <= now ||
-            webSession.ticketEntitlement?.state !== 'BOUND' ||
-            webSession.ticketEntitlement.revokedAt ||
-            webSession.ticketEntitlement.expiresAt <= now
-        ) {
-            return false;
-        }
-        const commerce = await tx.commerceEntitlement.findUnique({
-            where: { ticketEntitlementId },
-            select: { id: true, providerState: true, administrativeState: true },
-        });
-        if (!commerce) return true;
-        if (commerce.providerState !== 'ACTIVE' || commerce.administrativeState !== 'CLEAR') {
-            return false;
-        }
-        await tx.commerceEntitlement.updateMany({
-            where: {
-                id: commerce.id,
-                OR: [
-                    { maxLivekitTokenExpiresAt: null },
-                    { maxLivekitTokenExpiresAt: { lt: tokenExpiresAt } },
-                ],
-            },
-            data: { maxLivekitTokenExpiresAt: tokenExpiresAt },
-        });
-        return true;
-    });
-}

@@ -77,6 +77,13 @@ enum CommerceOutboxStatus {
   COMPLETED
 }
 
+enum StageGrantEffectStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  SUPERSEDED
+}
+
 enum ContributionVisibility {
   NAMED
   ANONYMOUS
@@ -153,6 +160,7 @@ model ScheduledSession {
   promoInvitations     PromoInvitation[]
   contributions        SessionContribution[]
   presenceIntervals    LivePresenceInterval[]
+  grantEffects         StageGrantEffectOutbox[]
 
   @@index([status, scheduledAt])
   @@map("scheduled_sessions")
@@ -413,6 +421,7 @@ model SessionParticipant {
   publishRevokedAt     DateTime?          @map("publish_revoked_at")
   grantVersion         Int                @default(0) @map("grant_version")
   grantReconcileNeeded Boolean            @default(false) @map("grant_reconcile_needed")
+  maxLivekitTokenExpiresAt DateTime?       @map("max_livekit_token_expires_at")
   grantChangedByUserId String?            @map("grant_changed_by_user_id") @db.Uuid
   grantChangedBy       User?              @relation("StageGrantActor", fields: [grantChangedByUserId], references: [id], onDelete: SetNull)
   grantReason          String?            @map("grant_reason")
@@ -421,11 +430,50 @@ model SessionParticipant {
 
   contributions     SessionContribution[]
   presenceIntervals LivePresenceInterval[]
+  grantEffects      StageGrantEffectOutbox[]
 
   @@unique([scheduledSessionId, participantIdentity])
   @@index([scheduledSessionId, raisedAt])
   @@index([scheduledSessionId, publishGrantedAt])
   @@map("session_participants")
+}
+
+/// Durable, per-participant ordering boundary between PostgreSQL grant state
+/// and LiveKit side effects. Every writer advances grantVersion and appends one
+/// exact desired effect in the same transaction; workers never apply a newer
+/// grant change before an older one. Applied old-identity fences may continue
+/// through their token horizon without blocking a newer identity epoch.
+model StageGrantEffectOutbox {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  scheduledSessionId    String                 @map("scheduled_session_id") @db.Uuid
+  scheduledSession      ScheduledSession       @relation(fields: [scheduledSessionId], references: [id], onDelete: Cascade)
+  participantId         String                 @map("participant_id") @db.Uuid
+  participant           SessionParticipant     @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  grantVersion          Int                    @map("grant_version")
+  roomName              String                 @map("room_name")
+  participantIdentity   String                 @map("participant_identity")
+  resultingParticipantIdentity String          @map("resulting_participant_identity")
+  canPublish            Boolean                @map("can_publish")
+  disconnectParticipant Boolean                @default(false) @map("disconnect_participant")
+  bedRoomName           String?                @map("bed_room_name")
+  bedIdentity           String?                @map("bed_identity")
+  tokenHorizonAt        DateTime?              @map("token_horizon_at")
+  status                StageGrantEffectStatus @default(PENDING)
+  attempts              Int                    @default(0)
+  claimToken            String?                @map("claim_token") @db.Uuid
+  claimedAt             DateTime?              @map("claimed_at")
+  leaseExpiresAt        DateTime?              @map("lease_expires_at")
+  nextAttemptAt         DateTime               @default(now()) @map("next_attempt_at")
+  lastErrorCode         String?                @map("last_error_code")
+  grantAppliedAt        DateTime?              @map("grant_applied_at")
+  completedAt           DateTime?              @map("completed_at")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+
+  @@unique([participantId, grantVersion])
+  @@index([status, nextAttemptAt])
+  @@index([participantId, status, grantVersion])
+  @@map("stage_grant_effect_outbox")
 }
 
 // Server-observed event presence. The browser can heartbeat an authenticated

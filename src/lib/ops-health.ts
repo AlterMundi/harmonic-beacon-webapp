@@ -1,11 +1,11 @@
 /**
  * Operator event health — the subsystem checks behind `/api/ops/health`.
  *
- * One report, six subsystems, three states:
+ * One report, seven subsystems, three states:
  *
  *   green  — verified working within the timeout.
- *   yellow — degraded but cuttable under the roadmap's cut-lines. Only the
- *            tapestry may be yellow; the event can run without it.
+ *   yellow — degraded but still within a bounded recovery window. Tapestry
+ *            may be cut; a fresh grant retry remains visible while it heals.
  *   red    — launch-blocking: PostgreSQL, the LiveKit API, a LIVE stage room,
  *            the bed publisher, or the six-publisher grant invariant.
  *
@@ -61,6 +61,13 @@ export interface OperatorHealthDeps {
     getWatchedSession: () => Promise<WatchedSession | null>;
     /** Participants holding an unrevoked publish grant for the session. */
     countActivePublishGrants: (sessionId: string) => Promise<number>;
+    getGrantEffectBacklog: (sessionId: string | null) => Promise<{
+        pending: number;
+        fences: number;
+        oldestCreatedAt: Date | null;
+        maxAttempts: number;
+        lastErrorCode: string | null;
+    }>;
     listRooms: () => Promise<RoomSummary[]>;
     listParticipants: (roomName: string) => Promise<RoomParticipantSummary[]>;
     fetchTapestryHealth: () => Promise<{ ok: boolean }>;
@@ -84,6 +91,7 @@ export interface OperatorHealthReport {
         livekit: SubsystemCheck;
         stageRoom: SubsystemCheck;
         publisherGrants: SubsystemCheck;
+        grantDelivery: SubsystemCheck;
         bedPublisher: SubsystemCheck;
         tapestry: SubsystemCheck;
     };
@@ -196,9 +204,23 @@ export async function collectOperatorHealth(
         watchedUnknown,
         timeout,
     );
+    const grantDelivery: SubsystemCheck = await evaluateGrantDelivery(
+        deps,
+        watched,
+        watchedUnknown,
+        timeout,
+    );
     const bedPublisher: SubsystemCheck = await evaluateBedPublisher(deps, livekit, timeout);
 
-    const checks = { postgres, livekit, stageRoom, publisherGrants, bedPublisher, tapestry };
+    const checks = {
+        postgres,
+        livekit,
+        stageRoom,
+        publisherGrants,
+        grantDelivery,
+        bedPublisher,
+        tapestry,
+    };
     const status = worstOf(Object.values(checks).map((check) => check.status));
 
     return {
@@ -209,6 +231,51 @@ export async function collectOperatorHealth(
             : null,
         checks,
     };
+}
+
+async function evaluateGrantDelivery(
+    deps: OperatorHealthDeps,
+    watched: WatchedSession | null,
+    watchedUnknown: boolean,
+    timeout: number,
+): Promise<SubsystemCheck> {
+    if (watchedUnknown) {
+        return { status: 'red', detail: 'Cannot inspect grant delivery: database unreachable', latencyMs: 0 };
+    }
+    const started = Date.now();
+    try {
+        const backlog = await withTimeout(
+            deps.getGrantEffectBacklog(watched?.id ?? null),
+            timeout,
+            'Grant delivery backlog',
+        );
+        if (backlog.pending === 0 && backlog.lastErrorCode === null) {
+            return ok(
+                backlog.fences > 0
+                    ? `${backlog.fences} old-token identity fence(s) active; current grants converged`
+                    : 'No pending LiveKit grant effects',
+                Date.now() - started,
+            );
+        }
+        const ageSeconds = backlog.oldestCreatedAt
+            ? Math.max(0, Math.floor((Date.now() - backlog.oldestCreatedAt.getTime()) / 1_000))
+            : 0;
+        const persistent = ageSeconds >= 60 || backlog.maxAttempts >= 3;
+        const detail = `${backlog.pending} unresolved effect(s), ${backlog.fences} identity fence(s); oldest ${ageSeconds}s; max attempts ${backlog.maxAttempts}` +
+            (backlog.lastErrorCode ? `; last error ${backlog.lastErrorCode}` : '');
+        return {
+            status: persistent ? 'red' : 'yellow',
+            detail,
+            latencyMs: Date.now() - started,
+        };
+    } catch (error) {
+        return notOk(
+            'red',
+            'Cannot inspect durable LiveKit grant delivery',
+            Date.now() - started,
+            error,
+        );
+    }
 }
 
 function evaluateStageRoom(
@@ -429,6 +496,41 @@ export function productionDeps(options: {
                     publishRevokedAt: null,
                 },
             }),
+
+        getGrantEffectBacklog: async (sessionId) => {
+            const where = {
+                status: { in: ['PENDING' as const, 'PROCESSING' as const] },
+                ...(sessionId ? { scheduledSessionId: sessionId } : {}),
+            };
+            const [aggregate, unresolved, latestFailure] = await Promise.all([
+                prisma.stageGrantEffectOutbox.aggregate({
+                    where,
+                    _count: { _all: true },
+                    _min: { createdAt: true },
+                    _max: { attempts: true },
+                }),
+                prisma.stageGrantEffectOutbox.count({
+                    where: { ...where, grantAppliedAt: null },
+                }),
+                prisma.stageGrantEffectOutbox.findFirst({
+                    where: {
+                        ...where,
+                        lastErrorCode: {
+                            notIn: ['TOKEN_HORIZON_ACTIVE'],
+                        },
+                    },
+                    orderBy: { updatedAt: 'desc' },
+                    select: { lastErrorCode: true },
+                }),
+            ]);
+            return {
+                pending: unresolved,
+                fences: aggregate._count._all - unresolved,
+                oldestCreatedAt: aggregate._min.createdAt,
+                maxAttempts: aggregate._max.attempts ?? 0,
+                lastErrorCode: latestFailure?.lastErrorCode ?? null,
+            };
+        },
 
         listRooms: async () => {
             const rooms = await getRoomService().listRooms();

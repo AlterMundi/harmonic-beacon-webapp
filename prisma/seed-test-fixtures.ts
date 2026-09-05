@@ -45,6 +45,12 @@ import { Pool } from 'pg';
 
 import { ticketExpiresAt } from '../src/lib/admission';
 import { ticketCodeStorage } from '../src/lib/ticket-code';
+import { transitionParticipantGrant } from '../src/lib/stage-grant-effects';
+import {
+    lockGrantParticipants,
+    lockGrantSession,
+    lockGrantStaff,
+} from '../src/lib/stage-grant-locks';
 
 const scryptAsync = promisify(scrypt);
 
@@ -179,32 +185,55 @@ async function main() {
                 // email changes, the re-seed creates a new user and the old
                 // baseline row must be reassigned, not duplicated (the
                 // (session, identity) unique index would reject the insert).
+                await lockGrantSession(tx, event.id);
+                await lockGrantStaff(tx, [facilitator.id]);
                 const existingFacilitator = await tx.sessionParticipant.findFirst({
                     where: {
                         scheduledSessionId: event.id,
                         participantIdentity: 'test-facilitator-identity',
                     },
-                    select: { id: true },
+                    select: {
+                        id: true,
+                        publishGrantedAt: true,
+                        publishRevokedAt: true,
+                    },
                 });
-                if (existingFacilitator) {
-                    await tx.sessionParticipant.update({
+                const facilitatorParticipant = existingFacilitator
+                    ? await tx.sessionParticipant.update({
                         where: { id: existingFacilitator.id },
                         data: {
                             staffUserId: facilitator.id,
-                            publishRevokedAt: null,
-                            grantReconcileNeeded: false,
                         },
-                    });
-                } else {
-                    await tx.sessionParticipant.create({
+                        select: {
+                            id: true,
+                            publishGrantedAt: true,
+                            publishRevokedAt: true,
+                        },
+                    })
+                    : await tx.sessionParticipant.create({
                         data: {
                             scheduledSessionId: event.id,
                             staffUserId: facilitator.id,
                             participantIdentity: 'test-facilitator-identity',
-                            publishGrantedAt: new Date(),
-                            grantChangedByUserId: facilitator.id,
-                            grantReason: 'Test fixture facilitator baseline grant',
                         },
+                        select: {
+                            id: true,
+                            publishGrantedAt: true,
+                            publishRevokedAt: true,
+                        },
+                    });
+                await lockGrantParticipants(tx, [facilitatorParticipant.id]);
+                if (
+                    facilitatorParticipant.publishGrantedAt === null ||
+                    facilitatorParticipant.publishRevokedAt !== null
+                ) {
+                    await transitionParticipantGrant(tx, {
+                        scheduledSessionId: event.id,
+                        participantId: facilitatorParticipant.id,
+                        canPublish: true,
+                        now: new Date(),
+                        actorUserId: facilitator.id,
+                        reason: 'Test fixture facilitator baseline grant',
                     });
                 }
 

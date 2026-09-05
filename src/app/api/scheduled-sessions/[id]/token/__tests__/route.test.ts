@@ -4,13 +4,16 @@ import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 
 const resolveRoomPrincipal = vi.fn();
 const createSessionToken = vi.fn();
-const finalizeTicketTokenIssue = vi.fn();
+const finalizeRoomTokenIssue = vi.fn();
 
 vi.mock('@/lib/room-entitlement', () => ({ resolveRoomPrincipal }));
 vi.mock('@/lib/livekit-server', () => ({ createSessionToken }));
 vi.mock('@/lib/commerce-entitlement', () => ({
-    finalizeTicketTokenIssue,
     TICKET_LIVEKIT_TOKEN_TTL_SECONDS: 300,
+}));
+vi.mock('@/lib/room-token-issue', () => ({
+    finalizeRoomTokenIssue,
+    STAFF_LIVEKIT_TOKEN_TTL_SECONDS: 14_400,
 }));
 
 const principal = {
@@ -26,13 +29,15 @@ const principal = {
     role: 'ATTENDEE',
     isAssignedFacilitator: false,
     canPublish: false,
+    ticketEntitlementId: 'ticket-1',
+    staffUserId: null,
 };
 
 describe('GET /api/scheduled-sessions/[id]/token', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         createSessionToken.mockResolvedValue('stage-jwt');
-        finalizeTicketTokenIssue.mockResolvedValue(true);
+        finalizeRoomTokenIssue.mockResolvedValue(true);
     });
 
     it.each([
@@ -49,7 +54,9 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
 
         const { GET } = await import('../route');
         const response = await GET(
-            createRequest('/api/scheduled-sessions/event-1/token'),
+            createRequest('/api/scheduled-sessions/event-1/token', {
+                headers: { cookie: 'hb_session=cookie-value' },
+            }),
             mockParams({ id: 'event-1' }),
         );
 
@@ -63,7 +70,9 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
 
         const { GET } = await import('../route');
         const response = await GET(
-            createRequest('/api/scheduled-sessions/event-1/token'),
+            createRequest('/api/scheduled-sessions/event-1/token', {
+                headers: { cookie: 'hb_session=cookie-value' },
+            }),
             mockParams({ id: 'event-1' }),
         );
         const { status, body } = await parseResponse(response);
@@ -76,6 +85,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             'Attendee',
             false,
             { role: 'ATTENDEE', isAssignedFacilitator: false },
+            '300s',
         );
         expect(body).toMatchObject({
             token: 'stage-jwt',
@@ -83,7 +93,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             room: 'weekend-stage',
             canPublish: false,
         });
-        expect(JSON.stringify(body)).not.toMatch(/email|ticket/i);
+        expect(JSON.stringify(body)).not.toMatch(/email|ticketEntitlement/i);
     });
 
     it('preserves a current facilitator or promoted grant', async () => {
@@ -95,12 +105,16 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
                 role: 'FACILITATOR',
                 isAssignedFacilitator: true,
                 canPublish: true,
+                ticketEntitlementId: null,
+                staffUserId: 'staff-1',
             },
         });
 
         const { GET } = await import('../route');
         await GET(
-            createRequest('/api/scheduled-sessions/event-1/token'),
+            createRequest('/api/scheduled-sessions/event-1/token', {
+                headers: { cookie: 'hb_session=cookie-value' },
+            }),
             mockParams({ id: 'event-1' }),
         );
 
@@ -110,6 +124,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             'Facilitator',
             true,
             { role: 'FACILITATOR', isAssignedFacilitator: true },
+            '14400s',
         );
     });
 
@@ -122,12 +137,16 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
                 role: 'FACILITATOR_OP',
                 isAssignedFacilitator: true,
                 canPublish: true,
+                ticketEntitlementId: null,
+                staffUserId: 'staff-1',
             },
         });
 
         const { GET } = await import('../route');
         const { body } = await parseResponse(await GET(
-            createRequest('/api/scheduled-sessions/event-1/token'),
+            createRequest('/api/scheduled-sessions/event-1/token', {
+                headers: { cookie: 'hb_session=cookie-value' },
+            }),
             mockParams({ id: 'event-1' }),
         ));
 
@@ -137,6 +156,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             'Julián',
             true,
             { role: 'FACILITATOR_OP', isAssignedFacilitator: true },
+            '14400s',
         );
         expect(body).toMatchObject({
             role: 'FACILITATOR_OP',
@@ -165,10 +185,37 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             { role: 'ATTENDEE', isAssignedFacilitator: false },
             '300s',
         );
-        expect(finalizeTicketTokenIssue).toHaveBeenCalledWith(
-            'cookie-value',
-            'ticket-1',
-            expect.any(Date),
+        expect(finalizeRoomTokenIssue).toHaveBeenCalledWith(expect.objectContaining({
+            cookieValue: 'cookie-value',
+            expectedIdentity: 'event-stable-opaque',
+            expectedCanPublish: false,
+            tokenExpiresAt: expect.any(Date),
+        }));
+    });
+
+    it('returns a generic error and logs a redacted diagnostic when finalization fails', async () => {
+        resolveRoomPrincipal.mockResolvedValue({ ok: true, principal });
+        finalizeRoomTokenIssue.mockRejectedValue(
+            new Error('transaction failed at postgresql://worker:private@db.example/token'),
         );
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        try {
+            const { GET } = await import('../route');
+            const response = await GET(
+                createRequest('/api/scheduled-sessions/event-1/token', {
+                    headers: { cookie: 'hb_session=cookie-value' },
+                }),
+                mockParams({ id: 'event-1' }),
+            );
+            const { status, body } = await parseResponse(response);
+
+            expect(status).toBe(500);
+            expect(body).toEqual({ error: 'Unable to issue room token' });
+            expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('[REDACTED]'));
+            expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining('private'));
+        } finally {
+            consoleError.mockRestore();
+        }
     });
 });

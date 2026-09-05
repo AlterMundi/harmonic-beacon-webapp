@@ -136,6 +136,14 @@ jobs:
           CLEAN_URL="${E2E_DATABASE_URL/beacon_test/beacon_migration_check}"
           DATABASE_URL="$CLEAN_URL" npx prisma migrate deploy
 
+      - name: Verify concurrent room token finalization in PostgreSQL
+        # A login burst shares the event session lock. This catches isolation
+        # regressions that unit mocks and a single browser cannot reproduce.
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/room-token-issue.integration.test.ts
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          ROOM_TOKEN_ISSUE_INTEGRATION_TEST: '1'
+
       - name: Run Chromium and Android gates
         run: >-
           npx playwright test
@@ -159,14 +167,32 @@ jobs:
       - name: Run iPhone/WebKit media gate
         run: npx playwright test e2e/tests/media-continuity.spec.ts --project=iphone-webkit
 
-      - name: Verify commerce transaction and durable outbox contract
-        run: npx vitest run --no-file-parallelism src/lib/__tests__/commerce-entitlement.integration.test.ts src/lib/__tests__/promo-invitation.integration.test.ts
+      - name: Verify grant, commerce, and invitation durable outbox contracts
+        # Real-PostgreSQL proof that grant revisions are serialized across two
+        # workers and that stage, commerce, and invitation revocations all
+        # commit their durable effects before LiveKit delivery.
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/stage-grant-effects.integration.test.ts src/lib/__tests__/commerce-entitlement.integration.test.ts src/lib/__tests__/promo-invitation.integration.test.ts
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
           COMMERCE_INTEGRATION_TEST: '1'
           TICKET_CODE_PEPPER: commerce-ci-ticket-pepper-at-least-32-characters
           LIVEKIT_API_KEY: devkey
           LIVEKIT_API_SECRET: commerce-ci-livekit-secret-at-least-32-characters
+
+      - name: Smoke production worker and stabilization entrypoints
+        run: |
+          docker build -t beacon-runtime-smoke \
+            --build-arg NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880 .
+          docker run --rm \
+            -e BEACON_WORKER_IMPORT_SMOKE=1 \
+            beacon-runtime-smoke \
+            npx tsx scripts/commerce-media-worker.ts
+          docker run --rm \
+            beacon-runtime-smoke \
+            npx tsx scripts/weekend-stabilize.ts --help
+          docker run --rm \
+            beacon-runtime-smoke \
+            npx tsx scripts/stage-grant-rollback-preflight.ts --help
 
       - name: Capture LiveKit diagnostics
         if: failure()

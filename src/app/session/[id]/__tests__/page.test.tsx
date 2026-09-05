@@ -699,7 +699,7 @@ describe('SessionRoomPage - stage invitation consent', () => {
         expect(screen.getByRole('button', { name: 'Unmute microphone' })).toBeInTheDocument();
     });
 
-    it('declines the invitation durably without touching devices or the room lifecycle', async () => {
+    it('declines durably and reconnects as audience after the old identity is fenced', async () => {
         const { room } = await receiveInvitation();
         const roomCount = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
 
@@ -717,6 +717,18 @@ describe('SessionRoomPage - stage invitation consent', () => {
         expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
         expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(roomCount);
         expect(room.disconnect).not.toHaveBeenCalled();
+
+        act(() => {
+            room.emit('disconnected', DisconnectReason.PARTICIPANT_REMOVED);
+        });
+        expect(screen.getByTestId('connection-state')).toHaveTextContent('Reconnecting');
+        await waitFor(
+            () => expect((Room as unknown as { mock: { calls: unknown[] } }).mock.calls)
+                .toHaveLength(roomCount + 1),
+            { timeout: 2_000 },
+        );
+        expect(await screen.findByRole('button', { name: 'Raise hand' })).toBeInTheDocument();
+        expect(screen.queryByText('Session ended')).not.toBeInTheDocument();
     });
 });
 
@@ -743,8 +755,8 @@ describe('SessionRoomPage - server-ended disconnect', () => {
         expect(mockPush).toHaveBeenCalledWith('/');
     });
 
-    it('treats a participant removal and a server shutdown the same way', async () => {
-        for (const reason of [DisconnectReason.PARTICIPANT_REMOVED, DisconnectReason.ROOM_CLOSED, DisconnectReason.SERVER_SHUTDOWN]) {
+    it('treats room closure and a server shutdown as terminal', async () => {
+        for (const reason of [DisconnectReason.ROOM_CLOSED, DisconnectReason.SERVER_SHUTDOWN]) {
             cleanup();
             await renderConnected();
             act(() => {

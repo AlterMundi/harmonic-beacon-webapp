@@ -375,7 +375,7 @@ export type Messages = {
             headlines: Record<'green' | 'yellow' | 'red', string>;
             levels: Record<'green' | 'yellow' | 'red', string>;
             sessionStatuses: Record<'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED', string>;
-            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'bedPublisher' | 'tapestry', string>;
+            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'grantDelivery' | 'bedPublisher' | 'tapestry', string>;
             endpointHttp: string;
             endpointUnavailable: string;
             endpointAlarm: string;
@@ -940,6 +940,7 @@ export const messages: Record<UiLocale, Messages> = {
                     livekit: 'API de LiveKit',
                     stageRoom: 'Sala de Escena',
                     publisherGrants: 'Permisos de publicación',
+                    grantDelivery: 'Entrega durable de permisos',
                     bedPublisher: 'Fuente del Beacon (playlist bot)',
                     tapestry: 'Tapiz (prescindible)',
                 },
@@ -970,7 +971,7 @@ export const messages: Record<UiLocale, Messages> = {
                     compIssued: 'Cortesía o excepción emitida. Copiá o descargá el CSV ahora: se muestra una sola vez.',
                     invitationReady: 'Invitación creada y lista para usar.',
                     invitationSwitchOff: 'Invitación creada, pero el canje público global sigue DESACTIVADO.',
-                    invitationCleanupFailed: 'Invitación desactivada y accesos revocados; algunas conexiones en vivo requieren otro intento.',
+                    invitationCleanupFailed: 'Invitación desactivada. Se revocaron {count} accesos derivados; las desconexiones pendientes se reintentan automáticamente.',
                     invitationDisabled: 'Invitación desactivada. Se revocaron {count} accesos derivados.',
                 },
                 lookup: {
@@ -1531,6 +1532,7 @@ export const messages: Record<UiLocale, Messages> = {
                     livekit: 'LiveKit API',
                     stageRoom: 'Stage room',
                     publisherGrants: 'Publisher grants',
+                    grantDelivery: 'Durable grant delivery',
                     bedPublisher: 'Bed publisher (playlist bot)',
                     tapestry: 'Tapestry (cuttable)',
                 },
@@ -1561,7 +1563,7 @@ export const messages: Record<UiLocale, Messages> = {
                     compIssued: 'Comp/override issued. Copy or download the CSV now — it is shown only once.',
                     invitationReady: 'Invitation created and ready to redeem.',
                     invitationSwitchOff: 'Invitation created, but the global redemption switch remains OFF.',
-                    invitationCleanupFailed: 'Invitation disabled and access revoked; some live connections need a retry.',
+                    invitationCleanupFailed: 'Invitation disabled. {count} derived access grant(s) revoked; pending live disconnects retry automatically.',
                     invitationDisabled: 'Invitation disabled. {count} derived access grant(s) revoked.',
                 },
                 lookup: {
