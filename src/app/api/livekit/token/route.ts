@@ -12,6 +12,7 @@ import {
     finalizeRoomTokenIssue,
     STAFF_LIVEKIT_TOKEN_TTL_SECONDS,
 } from '@/lib/room-token-issue';
+import { redactError } from '@/lib/redact';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
@@ -69,7 +70,8 @@ export async function GET(request: NextRequest) {
             room: BED_ROOM_NAME,
             canPublish: false,
         });
-    } catch {
-        return tokenResponse({ error: 'LiveKit API credentials not configured' }, 500);
+    } catch (error) {
+        console.error(`[room-token] bed token issue failed: ${redactError(error)}`);
+        return tokenResponse({ error: 'Unable to issue room token' }, 500);
     }
 }

@@ -192,4 +192,30 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             tokenExpiresAt: expect.any(Date),
         }));
     });
+
+    it('returns a generic error and logs a redacted diagnostic when finalization fails', async () => {
+        resolveRoomPrincipal.mockResolvedValue({ ok: true, principal });
+        finalizeRoomTokenIssue.mockRejectedValue(
+            new Error('transaction failed at postgresql://worker:private@db.example/token'),
+        );
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        try {
+            const { GET } = await import('../route');
+            const response = await GET(
+                createRequest('/api/scheduled-sessions/event-1/token', {
+                    headers: { cookie: 'hb_session=cookie-value' },
+                }),
+                mockParams({ id: 'event-1' }),
+            );
+            const { status, body } = await parseResponse(response);
+
+            expect(status).toBe(500);
+            expect(body).toEqual({ error: 'Unable to issue room token' });
+            expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('[REDACTED]'));
+            expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining('private'));
+        } finally {
+            consoleError.mockRestore();
+        }
+    });
 });

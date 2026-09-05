@@ -136,6 +136,14 @@ jobs:
           CLEAN_URL="${E2E_DATABASE_URL/beacon_test/beacon_migration_check}"
           DATABASE_URL="$CLEAN_URL" npx prisma migrate deploy
 
+      - name: Verify concurrent room token finalization in PostgreSQL
+        # A login burst shares the event session lock. This catches isolation
+        # regressions that unit mocks and a single browser cannot reproduce.
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/room-token-issue.integration.test.ts
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          ROOM_TOKEN_ISSUE_INTEGRATION_TEST: '1'
+
       - name: Run Chromium and Android gates
         run: >-
           npx playwright test

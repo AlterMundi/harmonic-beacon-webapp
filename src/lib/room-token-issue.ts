@@ -166,5 +166,12 @@ export async function finalizeRoomTokenIssue(
             data: { maxLivekitTokenExpiresAt: input.tokenExpiresAt },
         });
         return true;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, {
+        // The explicit session -> principal -> participant row locks are the
+        // serialization boundary. READ COMMITTED gives a queued token issuer
+        // a fresh snapshot after each lock wait; SERIALIZABLE instead aborts
+        // otherwise-valid concurrent joins to the same event with SQLSTATE
+        // 40001, which turns a harmless login burst into room-token 500s.
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    });
 }
