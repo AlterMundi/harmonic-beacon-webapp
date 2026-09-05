@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createSessionToken } from '@/lib/livekit-server';
 import {
-    finalizeTicketTokenIssue,
     TICKET_LIVEKIT_TOKEN_TTL_SECONDS,
 } from '@/lib/commerce-entitlement';
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import {
+    finalizeRoomTokenIssue,
+    STAFF_LIVEKIT_TOKEN_TTL_SECONDS,
+} from '@/lib/room-token-issue';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +36,10 @@ export async function GET(
 
     const { principal } = entitlement;
     try {
-        const ticketTtl = `${TICKET_LIVEKIT_TOKEN_TTL_SECONDS}s`;
+        const ttlSeconds = principal.ticketEntitlementId
+            ? TICKET_LIVEKIT_TOKEN_TTL_SECONDS
+            : STAFF_LIVEKIT_TOKEN_TTL_SECONDS;
+        const tokenTtl = `${ttlSeconds}s`;
         const tokenMetadata = {
             role: principal.role,
             isAssignedFacilitator: principal.isAssignedFacilitator,
@@ -45,7 +51,7 @@ export async function GET(
                 principal.displayName,
                 principal.canPublish,
                 tokenMetadata,
-                ticketTtl,
+                tokenTtl,
             )
             : await createSessionToken(
                 principal.session.roomName,
@@ -53,18 +59,19 @@ export async function GET(
                 principal.displayName,
                 principal.canPublish,
                 tokenMetadata,
+                tokenTtl,
             );
 
-        if (principal.ticketEntitlementId) {
-            const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-            const tokenExpiresAt = new Date(Date.now() + TICKET_LIVEKIT_TOKEN_TTL_SECONDS * 1000);
-            if (!cookieValue || !await finalizeTicketTokenIssue(
-                cookieValue,
-                principal.ticketEntitlementId,
-                tokenExpiresAt,
-            )) {
-                return tokenResponse({ error: 'Not authorized' }, 403);
-            }
+        const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+        const tokenExpiresAt = new Date(Date.now() + ttlSeconds * 1000);
+        if (!cookieValue || !await finalizeRoomTokenIssue({
+            cookieValue,
+            principal,
+            expectedIdentity: principal.identity,
+            expectedCanPublish: principal.canPublish,
+            tokenExpiresAt,
+        })) {
+            return tokenResponse({ error: 'Not authorized' }, 403);
         }
 
         return tokenResponse({

@@ -7,6 +7,8 @@ const media = vi.hoisted(() => ({
 
 vi.mock('@/lib/livekit-server', () => ({
     bedRoomIdentity: (identity: string) => `bed-${identity}`,
+    rotatedRoomIdentity: (_sessionId: string, _participantId: string, version: number) =>
+        `rotated-${version}`,
     getRoomService: () => ({
         listParticipants: async (room: string) => {
             if (media.fail) throw new Error('synthetic LiveKit outage');
@@ -21,11 +23,11 @@ vi.mock('@/lib/livekit-server', () => ({
 import { parseCommerceCommand } from '@/lib/commerce-contract';
 import {
     applyCommerceCommand,
-    finalizeTicketTokenIssue,
     getCommerceEntitlement,
 } from '@/lib/commerce-entitlement';
 import { prisma } from '@/lib/db';
 import { processNextCommerceMediaJob } from '@/lib/commerce-media-reconciler';
+import { finalizeRoomTokenIssue } from '@/lib/room-token-issue';
 import { digestSessionToken } from '@/lib/session-auth';
 
 const integration = process.env.COMMERCE_INTEGRATION_TEST === '1' ? describe : describe.skip;
@@ -158,13 +160,31 @@ integration('commerce entitlement PostgreSQL contract', () => {
                 participantIdentity: 'event-commerce-participant',
             },
         });
+        const tokenPrincipal = {
+            session: {
+                id: SESSION_ID,
+                title: 'Commerce integration',
+                roomName: 'commerce-integration',
+                status: 'LIVE' as const,
+                startedAt: NOW,
+            },
+            identity: 'event-commerce-participant',
+            displayName: 'Synthetic attendee',
+            role: 'ATTENDEE' as const,
+            isAssignedFacilitator: false,
+            canPublish: false,
+            ticketEntitlementId: row.ticketEntitlementId,
+            staffUserId: null,
+        };
         const tokenHorizon = new Date(NOW.getTime() + 5 * 60_000);
-        await expect(finalizeTicketTokenIssue(
-            'commerce-cookie-value',
-            row.ticketEntitlementId,
-            tokenHorizon,
-            NOW,
-        )).resolves.toBe(true);
+        await expect(finalizeRoomTokenIssue({
+            cookieValue: 'commerce-cookie-value',
+            principal: tokenPrincipal,
+            expectedIdentity: tokenPrincipal.identity,
+            expectedCanPublish: false,
+            tokenExpiresAt: tokenHorizon,
+            now: NOW,
+        })).resolves.toBe(true);
 
         const rotated = command({
             request_id: '40000000-0000-4000-8000-000000000003',
@@ -235,12 +255,14 @@ integration('commerce entitlement PostgreSQL contract', () => {
             credential_action: 'REVOKED',
             credential_binding: null,
         });
-        await expect(finalizeTicketTokenIssue(
-            'commerce-cookie-value',
-            row.ticketEntitlementId,
-            new Date(NOW.getTime() + 10 * 60_000),
-            NOW,
-        )).resolves.toBe(false);
+        await expect(finalizeRoomTokenIssue({
+            cookieValue: 'commerce-cookie-value',
+            principal: tokenPrincipal,
+            expectedIdentity: tokenPrincipal.identity,
+            expectedCanPublish: false,
+            tokenExpiresAt: new Date(NOW.getTime() + 10 * 60_000),
+            now: NOW,
+        })).resolves.toBe(false);
         await expect(getCommerceEntitlement(first.external_ticket_id, NOW)).resolves.toMatchObject({
             applied_revision: 3,
             credential_binding: null,
@@ -261,7 +283,7 @@ integration('commerce entitlement PostgreSQL contract', () => {
         })).resolves.toMatchObject({
             canPublish: false,
             disconnectParticipant: true,
-            participantIdentity: 'event-commerce-participant',
+            participantIdentity: 'rotated-1',
             status: 'PENDING',
         });
 
@@ -354,10 +376,12 @@ integration('commerce entitlement PostgreSQL contract', () => {
         media.rooms.get('beacon')?.add('bed-event-commerce-participant');
         expect(await processNextCommerceMediaJob(NOW)).toBe(true);
         expect(media.rooms.get('commerce-integration')).toEqual(new Set([
+            'event-commerce-participant',
             'event-commerce-participant-v3',
             'other-event',
         ]));
         expect(media.rooms.get('beacon')).toEqual(new Set([
+            'bed-event-commerce-participant',
             'bed-event-commerce-participant-v3',
             'playlist-bot',
             'bed-other-event',
@@ -368,6 +392,8 @@ integration('commerce entitlement PostgreSQL contract', () => {
         expect(await processNextCommerceMediaJob(afterHorizon)).toBe(true);
         expect(await processNextCommerceMediaJob(afterHorizon)).toBe(true);
         expect(await processNextCommerceMediaJob(afterHorizon)).toBe(true);
+        expect(media.rooms.get('commerce-integration')).not.toContain('event-commerce-participant');
+        expect(media.rooms.get('beacon')).not.toContain('bed-event-commerce-participant');
         expect(await prisma.commerceMediaOutbox.count({ where: { status: 'COMPLETED' } })).toBe(3);
 
         const entitlement = await prisma.commerceEntitlement.findFirstOrThrow();

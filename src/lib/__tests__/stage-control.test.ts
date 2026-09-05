@@ -54,6 +54,7 @@ type Participant = {
     grantVersion: number;
     staffUser?: {
         role: 'FACILITATOR' | 'FACILITATOR_OP' | 'OPERATOR' | 'ADMIN';
+        disabledAt: Date | null;
     } | null;
     ticketEntitlementId?: string | null;
     ticketEntitlement?: {
@@ -357,7 +358,7 @@ describe('stage control', () => {
         participants = [{
             ...attendee('operator'),
             staffUserId: 'operator-2',
-            staffUser: { role: 'OPERATOR' },
+            staffUser: { role: 'OPERATOR', disabledAt: null },
             ticketEntitlementId: null,
             ticketEntitlement: null,
         }];
@@ -375,7 +376,7 @@ describe('stage control', () => {
         participants = [{
             ...attendee('former-facilitator'),
             staffUserId: 'former-facilitator',
-            staffUser: { role: 'FACILITATOR' },
+            staffUser: { role: 'FACILITATOR', disabledAt: null },
             ticketEntitlementId: null,
             ticketEntitlement: null,
         }];
@@ -384,6 +385,24 @@ describe('stage control', () => {
         await expect(promoteParticipant({
             scheduledSessionId: event.id,
             participantId: 'former-facilitator',
+            actorUserId: 'operator-1',
+        })).rejects.toMatchObject({ code: 'entitlement_inactive', status: 409 });
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+    });
+
+    it('refuses to promote a disabled staff principal', async () => {
+        participants = [{
+            ...attendee('disabled-operator'),
+            staffUserId: 'disabled-operator',
+            staffUser: { role: 'OPERATOR', disabledAt: new Date('2026-09-05T05:00:00Z') },
+            ticketEntitlementId: null,
+            ticketEntitlement: null,
+        }];
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'disabled-operator',
             actorUserId: 'operator-1',
         })).rejects.toMatchObject({ code: 'entitlement_inactive', status: 409 });
         expect(mocks.transitionGrant).not.toHaveBeenCalled();
@@ -525,6 +544,7 @@ describe('stage control', () => {
         participants = [{
             ...attendee('facilitator', true),
             staffUserId: event.facilitatorId,
+            staffUser: { role: 'FACILITATOR', disabledAt: null },
         }];
         const { demoteParticipant } = await import('../stage-control');
 
@@ -538,6 +558,25 @@ describe('stage control', () => {
         });
         expect(mocks.updateParticipant).not.toHaveBeenCalled();
         expect(mocks.mutePublishedTrack).not.toHaveBeenCalled();
+    });
+
+    it('allows a disabled assigned facilitator to be revoked safely', async () => {
+        participants = [{
+            ...attendee('facilitator', true),
+            staffUserId: event.facilitatorId,
+            staffUser: {
+                role: 'FACILITATOR',
+                disabledAt: new Date('2026-09-05T05:00:00Z'),
+            },
+        }];
+        const { demoteParticipant } = await import('../stage-control');
+
+        await expect(demoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'facilitator',
+            actorUserId: 'operator-1',
+        })).resolves.toMatchObject({ canPublish: false });
+        expect(mocks.transitionGrant).toHaveBeenCalledOnce();
     });
 
     it('mutes a current publisher track', async () => {

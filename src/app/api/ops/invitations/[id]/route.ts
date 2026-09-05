@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { TICKET_LIVEKIT_TOKEN_TTL_SECONDS } from '@/lib/commerce-entitlement';
@@ -9,6 +8,12 @@ import {
     processParticipantGrantEffects,
     transitionParticipantGrant,
 } from '@/lib/stage-grant-effects';
+import {
+    lockGrantCampaigns,
+    lockGrantParticipants,
+    lockGrantSession,
+    lockGrantTickets,
+} from '@/lib/stage-grant-locks';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,10 +45,14 @@ export async function POST(
 
     const { id } = await params;
     const now = new Date();
+    const scope = await prisma.promoInvitation.findUnique({
+        where: { id },
+        select: { scheduledSessionId: true },
+    });
+    if (!scope) return error(404, 'not_found', 'No invitation with that ID');
     const result = await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(
-            Prisma.sql`SELECT "id" FROM "promo_invitations" WHERE "id"::text = ${id} FOR UPDATE`,
-        );
+        await lockGrantSession(tx, scope.scheduledSessionId);
+        await lockGrantCampaigns(tx, [id]);
         const campaign = await tx.promoInvitation.findUnique({
             where: { id },
         });
@@ -66,6 +75,7 @@ export async function POST(
                 select: { ticketEntitlementId: true },
             });
             entitlementIds = redemptions.map((redemption) => redemption.ticketEntitlementId);
+            await lockGrantTickets(tx, entitlementIds);
             participants = entitlementIds.length === 0 ? [] : await tx.sessionParticipant.findMany({
                 where: {
                     scheduledSessionId: campaign.scheduledSessionId,
@@ -73,6 +83,7 @@ export async function POST(
                 },
                 select: { id: true, participantIdentity: true },
             });
+            await lockGrantParticipants(tx, participants.map((participant) => participant.id));
             if (entitlementIds.length > 0) {
                 await tx.ticketEntitlement.updateMany({
                     where: { id: { in: entitlementIds }, state: { not: 'REVOKED' } },

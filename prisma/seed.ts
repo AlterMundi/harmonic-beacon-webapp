@@ -17,6 +17,12 @@ import { randomUUID } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
+import { transitionParticipantGrant } from '../src/lib/stage-grant-effects';
+import {
+    lockGrantParticipants,
+    lockGrantSession,
+    lockGrantStaff,
+} from '../src/lib/stage-grant-locks';
 
 import {
     WEEKEND_ATTENDEE_CAP,
@@ -104,32 +110,37 @@ async function main() {
                     },
                 });
 
+                await lockGrantSession(tx, event.id);
+                await lockGrantStaff(tx, [facilitator.id]);
                 const existingFacilitator = await tx.sessionParticipant.findFirst({
                     where: {
                         scheduledSessionId: event.id,
                         staffUserId: facilitator.id,
                     },
-                    select: { id: true },
+                    select: { id: true, publishGrantedAt: true, publishRevokedAt: true },
                 });
 
-                if (existingFacilitator) {
-                    await tx.sessionParticipant.update({
-                        where: { id: existingFacilitator.id },
-                        data: {
-                            publishRevokedAt: null,
-                            grantReconcileNeeded: false,
-                        },
-                    });
-                } else {
+                const facilitatorParticipant = existingFacilitator ??
                     await tx.sessionParticipant.create({
                         data: {
                             scheduledSessionId: event.id,
                             staffUserId: facilitator.id,
                             participantIdentity: randomUUID(),
-                            publishGrantedAt: new Date(),
-                            grantChangedByUserId: facilitator.id,
-                            grantReason: 'Weekend facilitator baseline grant',
                         },
+                        select: { id: true, publishGrantedAt: true, publishRevokedAt: true },
+                    });
+                await lockGrantParticipants(tx, [facilitatorParticipant.id]);
+                if (
+                    facilitatorParticipant.publishGrantedAt === null ||
+                    facilitatorParticipant.publishRevokedAt !== null
+                ) {
+                    await transitionParticipantGrant(tx, {
+                        scheduledSessionId: event.id,
+                        participantId: facilitatorParticipant.id,
+                        canPublish: true,
+                        now: new Date(),
+                        actorUserId: facilitator.id,
+                        reason: 'Weekend facilitator baseline grant',
                     });
                 }
             }

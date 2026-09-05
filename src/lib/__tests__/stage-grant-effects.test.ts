@@ -41,6 +41,8 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/livekit-server', () => ({
     bedRoomIdentity: (identity: string) => `bed-${identity}`,
+    rotatedRoomIdentity: (_sessionId: string, _participantId: string, version: number) =>
+        `rotated-${version}`,
     getRoomService: () => ({
         listParticipants: mocks.listParticipants,
         updateParticipant: mocks.updateParticipant,
@@ -59,12 +61,15 @@ function claimedJob(overrides: Record<string, unknown> = {}) {
         grantVersion: 3,
         roomName: 'event-stage',
         participantIdentity: 'opaque-participant',
+        resultingParticipantIdentity: 'opaque-participant-next',
         canPublish: false,
         disconnectParticipant: false,
         bedRoomName: null,
         bedIdentity: null,
         tokenHorizonAt: null,
         claimToken: 'claim-token',
+        attempts: 1,
+        grantAppliedAt: null,
         ...overrides,
     };
 }
@@ -81,6 +86,7 @@ describe('durable stage grant effects', () => {
             participantIdentity: 'opaque-participant',
             publishGrantedAt: new Date('2026-09-05T05:00:00.000Z'),
             grantVersion: 2,
+            maxLivekitTokenExpiresAt: null,
             scheduledSession: { roomName: 'event-stage' },
         });
         mocks.participantUpdate.mockResolvedValue({
@@ -130,6 +136,8 @@ describe('durable stage grant effects', () => {
                 raisedAt: null,
                 grantReconcileNeeded: true,
                 grantVersion: { increment: 1 },
+                participantIdentity: 'rotated-3',
+                maxLivekitTokenExpiresAt: null,
             }),
             select: expect.anything(),
         });
@@ -140,6 +148,8 @@ describe('durable stage grant effects', () => {
                 canPublish: false,
                 disconnectParticipant: true,
                 bedIdentity: 'bed-opaque-participant',
+                participantIdentity: 'opaque-participant',
+                resultingParticipantIdentity: 'rotated-3',
             }),
         });
     });
@@ -179,7 +189,11 @@ describe('durable stage grant effects', () => {
             data: expect.objectContaining({ status: 'COMPLETED' }),
         });
         expect(mocks.participantUpdateMany).toHaveBeenCalledWith({
-            where: { id: 'participant-1', grantVersion: 3 },
+            where: {
+                id: 'participant-1',
+                grantVersion: 3,
+                participantIdentity: 'opaque-participant-next',
+            },
             data: { grantReconcileNeeded: false },
         });
     });

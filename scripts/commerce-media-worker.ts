@@ -1,5 +1,8 @@
 import { processNextCommerceMediaJob } from '../src/lib/commerce-media-reconciler';
-import { processNextStageGrantEffect } from '../src/lib/stage-grant-effects';
+import {
+    processNextStageGrantEffect,
+    repairNextUncoveredGrantEffect,
+} from '../src/lib/stage-grant-effects';
 import { writeFileSync } from 'node:fs';
 
 let stopping = false;
@@ -29,7 +32,8 @@ async function main(): Promise<void> {
             // Publication grants are ordered per participant and protect the
             // live stage boundary, so drain one before legacy commerce removal
             // work. Both queues remain bounded to one job per loop.
-            const grantProcessed = await processNextStageGrantEffect();
+            const grantRepaired = await repairNextUncoveredGrantEffect();
+            const grantProcessed = grantRepaired || await processNextStageGrantEffect();
             const processed = grantProcessed || await processNextCommerceMediaJob();
             lastProgressAt = Date.now();
             consecutiveFailures = 0;
@@ -50,4 +54,8 @@ async function main(): Promise<void> {
     console.info('[commerce-media] Beacon reconciler stopped');
 }
 
-void main();
+if (process.env.BEACON_WORKER_IMPORT_SMOKE === '1') {
+    console.info('[commerce-media] runtime imports loaded');
+} else {
+    void main();
+}

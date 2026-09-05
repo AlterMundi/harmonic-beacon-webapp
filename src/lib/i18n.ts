@@ -375,7 +375,7 @@ export type Messages = {
             headlines: Record<'green' | 'yellow' | 'red', string>;
             levels: Record<'green' | 'yellow' | 'red', string>;
             sessionStatuses: Record<'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED', string>;
-            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'bedPublisher' | 'tapestry', string>;
+            checks: Record<'postgres' | 'livekit' | 'stageRoom' | 'publisherGrants' | 'grantDelivery' | 'bedPublisher' | 'tapestry', string>;
             endpointHttp: string;
             endpointUnavailable: string;
             endpointAlarm: string;
@@ -940,6 +940,7 @@ export const messages: Record<UiLocale, Messages> = {
                     livekit: 'API de LiveKit',
                     stageRoom: 'Sala de Escena',
                     publisherGrants: 'Permisos de publicación',
+                    grantDelivery: 'Entrega durable de permisos',
                     bedPublisher: 'Fuente del Beacon (playlist bot)',
                     tapestry: 'Tapiz (prescindible)',
                 },
@@ -1531,6 +1532,7 @@ export const messages: Record<UiLocale, Messages> = {
                     livekit: 'LiveKit API',
                     stageRoom: 'Stage room',
                     publisherGrants: 'Publisher grants',
+                    grantDelivery: 'Durable grant delivery',
                     bedPublisher: 'Bed publisher (playlist bot)',
                     tapestry: 'Tapestry (cuttable)',
                 },

@@ -6,6 +6,12 @@ import {
     processParticipantGrantEffects,
     transitionParticipantGrant,
 } from '@/lib/stage-grant-effects';
+import {
+    lockGrantParticipants,
+    lockGrantSession,
+    lockGrantStaff,
+    lockGrantTickets,
+} from '@/lib/stage-grant-locks';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
 
 const ACTIVE_GRANT = {
@@ -138,20 +144,6 @@ async function requireConnectedParticipant(input: GrantInput): Promise<void> {
  * holds this lock until the surrounding transaction ends, making the count and
  * reservation one serialized operation across every app process.
  */
-async function lockScheduledSession(
-    transaction: Prisma.TransactionClient,
-    scheduledSessionId: string,
-): Promise<void> {
-    await transaction.$queryRaw(
-        Prisma.sql`
-            SELECT "id"
-            FROM "scheduled_sessions"
-            WHERE "id"::text = ${scheduledSessionId}
-            FOR UPDATE
-        `,
-    );
-}
-
 function hasActiveGrant(participant: ParticipantSnapshot): boolean {
     return participant.publishGrantedAt !== null &&
         participant.publishRevokedAt === null;
@@ -202,7 +194,7 @@ export async function promoteParticipant(
     await requireConnectedParticipant(input);
     const now = input.now ?? new Date();
     const reservation = await prisma.$transaction(async (transaction) => {
-        await lockScheduledSession(transaction, input.scheduledSessionId);
+        await lockGrantSession(transaction, input.scheduledSessionId);
         const scheduledSession = await transaction.scheduledSession.findUnique({
             where: { id: input.scheduledSessionId },
             select: {
@@ -220,6 +212,28 @@ export async function promoteParticipant(
             );
         }
 
+        const targetKeys = await transaction.sessionParticipant.findFirst({
+            where: {
+                id: input.participantId,
+                scheduledSessionId: input.scheduledSessionId,
+            },
+            select: { id: true, ticketEntitlementId: true, staffUserId: true },
+        });
+        if (!targetKeys) {
+            throw new StageControlError('participant_not_found', 404, 'Participant not found');
+        }
+        await lockGrantTickets(
+            transaction,
+            targetKeys.ticketEntitlementId ? [targetKeys.ticketEntitlementId] : [],
+        );
+        await lockGrantStaff(
+            transaction,
+            targetKeys.staffUserId ? [targetKeys.staffUserId] : [],
+        );
+        await lockGrantParticipants(transaction, [targetKeys.id]);
+
+        // Authorization is deliberately reread only after the complete lock
+        // scope is held; the earlier lookup supplied immutable lock keys only.
         const participants = await transaction.sessionParticipant.findMany({
             where: { scheduledSessionId: input.scheduledSessionId },
             select: {
@@ -229,7 +243,7 @@ export async function promoteParticipant(
                 publishRevokedAt: true,
                 raisedAt: true,
                 staffUserId: true,
-                staffUser: { select: { role: true } },
+                staffUser: { select: { role: true, disabledAt: true } },
                 ticketEntitlementId: true,
                 ticketEntitlement: {
                     select: {
@@ -273,6 +287,7 @@ export async function promoteParticipant(
             target.staffUserId !== undefined &&
             target.staffUser !== null &&
             target.staffUser !== undefined &&
+            target.staffUser.disabledAt === null &&
             eventStaffPolicy(
                 target.staffUser.role,
                 target.staffUserId === scheduledSession.facilitatorId,
@@ -344,7 +359,7 @@ export async function demoteParticipant(
 ): Promise<StageGrantResult> {
     const now = input.now ?? new Date();
     const revocation = await prisma.$transaction(async (transaction) => {
-        await lockScheduledSession(transaction, input.scheduledSessionId);
+        await lockGrantSession(transaction, input.scheduledSessionId);
         const scheduledSession = await transaction.scheduledSession.findUnique({
             where: { id: input.scheduledSessionId },
             select: { roomName: true, facilitatorId: true },
@@ -361,7 +376,12 @@ export async function demoteParticipant(
                 id: input.participantId,
                 scheduledSessionId: input.scheduledSessionId,
             },
-            select: { id: true, participantIdentity: true, staffUserId: true },
+            select: {
+                id: true,
+                participantIdentity: true,
+                staffUserId: true,
+                staffUser: { select: { disabledAt: true } },
+            },
         });
         if (!target) {
             throw new StageControlError(
@@ -370,7 +390,10 @@ export async function demoteParticipant(
                 'Participant not found',
             );
         }
-        if (target.staffUserId === scheduledSession.facilitatorId) {
+        if (
+            target.staffUserId === scheduledSession.facilitatorId &&
+            target.staffUser?.disabledAt === null
+        ) {
             throw new StageControlError(
                 'facilitator_required',
                 409,
@@ -520,7 +543,7 @@ export async function reconcileParticipants(input: {
 }): Promise<ReconcileResult> {
     const now = new Date();
     const participantIds = await prisma.$transaction(async (transaction) => {
-        await lockScheduledSession(transaction, input.scheduledSessionId);
+        await lockGrantSession(transaction, input.scheduledSessionId);
         const scheduledSession = await transaction.scheduledSession.findUnique({
             where: { id: input.scheduledSessionId },
             select: { id: true },

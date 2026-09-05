@@ -124,4 +124,16 @@ describe('livekit-server', () => {
             'secret-long-enough',
         );
     });
+
+    it('uses the SDK transport timeout when a mutating worker requests one', async () => {
+        const { getRoomService } = await import('../livekit-server');
+        getRoomService(5);
+
+        expect(RoomServiceClient).toHaveBeenCalledWith(
+            expect.any(String),
+            'key',
+            'secret-long-enough',
+            { requestTimeout: 5 },
+        );
+    });
 });

@@ -5,10 +5,13 @@ import {
     createBedToken,
 } from '@/lib/livekit-server';
 import {
-    finalizeTicketTokenIssue,
     TICKET_LIVEKIT_TOKEN_TTL_SECONDS,
 } from '@/lib/commerce-entitlement';
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
+import {
+    finalizeRoomTokenIssue,
+    STAFF_LIVEKIT_TOKEN_TTL_SECONDS,
+} from '@/lib/room-token-issue';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
 
 export const dynamic = 'force-dynamic';
@@ -39,19 +42,26 @@ export async function GET(request: NextRequest) {
     try {
         const identity = bedRoomIdentity(entitlement.principal.identity);
         const ticketId = entitlement.principal.ticketEntitlementId;
+        const ttlSeconds = ticketId
+            ? TICKET_LIVEKIT_TOKEN_TTL_SECONDS
+            : STAFF_LIVEKIT_TOKEN_TTL_SECONDS;
         const token = ticketId
             ? await createBedToken(
                 BED_ROOM_NAME,
                 identity,
-                `${TICKET_LIVEKIT_TOKEN_TTL_SECONDS}s`,
+                `${ttlSeconds}s`,
             )
-            : await createBedToken(BED_ROOM_NAME, identity);
-        if (ticketId) {
-            const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-            const tokenExpiresAt = new Date(Date.now() + TICKET_LIVEKIT_TOKEN_TTL_SECONDS * 1000);
-            if (!cookieValue || !await finalizeTicketTokenIssue(cookieValue, ticketId, tokenExpiresAt)) {
-                return tokenResponse({ error: 'Not authorized' }, 403);
-            }
+            : await createBedToken(BED_ROOM_NAME, identity, `${ttlSeconds}s`);
+        const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+        const tokenExpiresAt = new Date(Date.now() + ttlSeconds * 1000);
+        if (!cookieValue || !await finalizeRoomTokenIssue({
+            cookieValue,
+            principal: entitlement.principal,
+            expectedIdentity: entitlement.principal.identity,
+            expectedCanPublish: entitlement.principal.canPublish,
+            tokenExpiresAt,
+        })) {
+            return tokenResponse({ error: 'Not authorized' }, 403);
         }
         return tokenResponse({
             token,

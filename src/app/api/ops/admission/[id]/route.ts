@@ -11,13 +11,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 
 import { normalizeEmail } from '@/lib/admission';
-import { recordAuditEvent } from '@/lib/audit';
 import { prisma } from '@/lib/db';
 import { resolveStaffSession, type StaffPrincipal } from '@/lib/ops-auth';
 import { hasStaffCapability } from '@/lib/staff-capabilities';
 import { bedRoomIdentity } from '@/lib/livekit-server';
 import { TICKET_LIVEKIT_TOKEN_TTL_SECONDS } from '@/lib/commerce-entitlement';
 import { transitionParticipantGrant } from '@/lib/stage-grant-effects';
+import {
+    lockGrantParticipants,
+    lockGrantSession,
+    lockGrantTickets,
+} from '@/lib/stage-grant-locks';
 
 export const dynamic = 'force-dynamic';
 
@@ -95,9 +99,8 @@ async function handleRevoke(staff: StaffPrincipal, id: string, reason: string) {
 
     const now = new Date();
     await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(
-            Prisma.sql`SELECT "id" FROM "ticket_entitlements" WHERE "id"::text = ${id} FOR UPDATE`,
-        );
+        await lockGrantSession(tx, entitlement.scheduledSessionId);
+        await lockGrantTickets(tx, [id]);
         await tx.ticketEntitlement.update({
             where: { id },
             data: {
@@ -121,6 +124,7 @@ async function handleRevoke(staff: StaffPrincipal, id: string, reason: string) {
             },
             select: { id: true, participantIdentity: true },
         });
+        await lockGrantParticipants(tx, participant ? [participant.id] : []);
         const commerce = await tx.commerceEntitlement.findUnique({
             where: { ticketEntitlementId: id },
             include: { scheduledSession: { select: { roomName: true } } },
@@ -203,6 +207,7 @@ async function handleRebind(staff: StaffPrincipal, id: string, email: string | u
             tier: true,
             codeLastFour: true,
             boundEmail: true,
+            scheduledSessionId: true,
             commerceEntitlement: { select: { id: true } },
         },
     });
@@ -226,8 +231,18 @@ async function handleRebind(staff: StaffPrincipal, id: string, email: string | u
     }
 
     const now = new Date();
-    const [updated] = await prisma.$transaction([
-        prisma.ticketEntitlement.update({
+    const updated = await prisma.$transaction(async (tx) => {
+        await lockGrantSession(tx, entitlement.scheduledSessionId);
+        await lockGrantTickets(tx, [id]);
+        const participant = await tx.sessionParticipant.findFirst({
+            where: {
+                scheduledSessionId: entitlement.scheduledSessionId,
+                ticketEntitlementId: id,
+            },
+            select: { id: true },
+        });
+        await lockGrantParticipants(tx, participant ? [participant.id] : []);
+        const saved = await tx.ticketEntitlement.update({
             where: { id },
             data: {
                 boundEmail: newEmail,
@@ -237,43 +252,64 @@ async function handleRebind(staff: StaffPrincipal, id: string, email: string | u
                 state: newEmail === null ? 'ISSUED' : 'BOUND',
             },
             select: { id: true, state: true, boundEmail: true },
-        }),
+        });
         // A binding change is a credential rotation. Any browser authenticated
         // with the old binding must sign in again before receiving room tokens.
-        prisma.webSession.updateMany({
+        await tx.webSession.updateMany({
             where: { ticketEntitlementId: id, revokedAt: null },
             data: {
                 revokedAt: now,
                 revokedByUserId: staff.id,
                 revocationReason: `Ticket binding changed: ${reason}`,
             },
-        }),
-    ]);
-
-    await recordAuditEvent({
-        actorUserId: staff.id,
-        actorRole: staff.role,
-        action: 'ticket.rebind',
-        targetType: 'TICKET_ENTITLEMENT',
-        targetId: id,
-        reason,
-        metadata: {
-            last4: entitlement.codeLastFour,
-            tier: entitlement.tier,
-            cleared: newEmail === null,
-            hadBinding: entitlement.boundEmail !== null,
-        },
-    });
+        });
+        if (participant) {
+            await transitionParticipantGrant(tx, {
+                scheduledSessionId: entitlement.scheduledSessionId,
+                participantId: participant.id,
+                canPublish: false,
+                now,
+                actorUserId: staff.id,
+                reason: `Ticket binding changed: ${reason}`,
+                clearHand: true,
+                markLeft: true,
+                disconnectParticipant: true,
+            });
+        }
+        await tx.auditLog.create({
+            data: {
+                actorUserId: staff.id,
+                actorRole: staff.role,
+                action: 'ticket.rebind',
+                targetType: 'TICKET_ENTITLEMENT',
+                targetId: id,
+                reason,
+                metadata: {
+                    last4: entitlement.codeLastFour,
+                    tier: entitlement.tier,
+                    cleared: newEmail === null,
+                    hadBinding: entitlement.boundEmail !== null,
+                },
+            },
+        });
+        return saved;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     return NextResponse.json({ id: updated.id, state: updated.state, boundEmail: updated.boundEmail });
 }
 
 async function handleResume(staff: StaffPrincipal, id: string, reason: string) {
     const now = new Date();
+    const scope = await prisma.ticketEntitlement.findUnique({
+        where: { id },
+        select: { scheduledSessionId: true },
+    });
+    if (!scope) {
+        return error(404, 'not_commerce_managed', 'Only commerce-managed access can be resumed');
+    }
     const result = await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(
-            Prisma.sql`SELECT "id" FROM "ticket_entitlements" WHERE "id"::text = ${id} FOR UPDATE`,
-        );
+        await lockGrantSession(tx, scope.scheduledSessionId);
+        await lockGrantTickets(tx, [id]);
         const commerce = await tx.commerceEntitlement.findUnique({
             where: { ticketEntitlementId: id },
             include: { ticketEntitlement: true },

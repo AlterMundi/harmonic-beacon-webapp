@@ -37,8 +37,15 @@ function getLivekitHttpUrl(): string {
     return LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
 }
 
-export function getRoomService(): RoomServiceClient {
-    return new RoomServiceClient(getLivekitHttpUrl(), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+export function getRoomService(requestTimeoutSeconds?: number): RoomServiceClient {
+    return requestTimeoutSeconds
+        ? new RoomServiceClient(
+            getLivekitHttpUrl(),
+            LIVEKIT_API_KEY,
+            LIVEKIT_API_SECRET,
+            { requestTimeout: requestTimeoutSeconds },
+        )
+        : new RoomServiceClient(getLivekitHttpUrl(), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
 }
 
 function requireLiveKitCredentials(): void {
@@ -60,6 +67,25 @@ export function stableRoomIdentity(
     requireLiveKitCredentials();
     const digest = createHmac('sha256', LIVEKIT_IDENTITY_SECRET)
         .update(`${scheduledSessionId}:${principalKind}:${principalId}`)
+        .digest('base64url')
+        .slice(0, 32);
+    return `event-${digest}`;
+}
+
+/**
+ * Rotate a participant onto a fresh, non-PII LiveKit identity whenever a
+ * publication grant is revoked. A delayed RPC or previously issued editor JWT
+ * can then affect only the fenced identity captured by the outbox, never the
+ * participant's current room identity.
+ */
+export function rotatedRoomIdentity(
+    scheduledSessionId: string,
+    participantId: string,
+    grantVersion: number,
+): string {
+    requireLiveKitCredentials();
+    const digest = createHmac('sha256', LIVEKIT_IDENTITY_SECRET)
+        .update(`grant:${scheduledSessionId}:${participantId}:${grantVersion}`)
         .digest('base64url')
         .slice(0, 32);
     return `event-${digest}`;

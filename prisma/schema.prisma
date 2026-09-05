@@ -81,6 +81,7 @@ enum StageGrantEffectStatus {
   PENDING
   PROCESSING
   COMPLETED
+  SUPERSEDED
 }
 
 enum ContributionVisibility {
@@ -420,6 +421,7 @@ model SessionParticipant {
   publishRevokedAt     DateTime?          @map("publish_revoked_at")
   grantVersion         Int                @default(0) @map("grant_version")
   grantReconcileNeeded Boolean            @default(false) @map("grant_reconcile_needed")
+  maxLivekitTokenExpiresAt DateTime?       @map("max_livekit_token_expires_at")
   grantChangedByUserId String?            @map("grant_changed_by_user_id") @db.Uuid
   grantChangedBy       User?              @relation("StageGrantActor", fields: [grantChangedByUserId], references: [id], onDelete: SetNull)
   grantReason          String?            @map("grant_reason")
@@ -438,8 +440,9 @@ model SessionParticipant {
 
 /// Durable, per-participant ordering boundary between PostgreSQL grant state
 /// and LiveKit side effects. Every writer advances grantVersion and appends one
-/// exact desired effect in the same transaction; workers never process a newer
-/// revision while an older one is pending or leased.
+/// exact desired effect in the same transaction; workers never apply a newer
+/// grant change before an older one. Applied old-identity fences may continue
+/// through their token horizon without blocking a newer identity epoch.
 model StageGrantEffectOutbox {
   id                    String                 @id @default(uuid()) @db.Uuid
   scheduledSessionId    String                 @map("scheduled_session_id") @db.Uuid
@@ -449,6 +452,7 @@ model StageGrantEffectOutbox {
   grantVersion          Int                    @map("grant_version")
   roomName              String                 @map("room_name")
   participantIdentity   String                 @map("participant_identity")
+  resultingParticipantIdentity String          @map("resulting_participant_identity")
   canPublish            Boolean                @map("can_publish")
   disconnectParticipant Boolean                @default(false) @map("disconnect_participant")
   bedRoomName           String?                @map("bed_room_name")
@@ -461,6 +465,7 @@ model StageGrantEffectOutbox {
   leaseExpiresAt        DateTime?              @map("lease_expires_at")
   nextAttemptAt         DateTime               @default(now()) @map("next_attempt_at")
   lastErrorCode         String?                @map("last_error_code")
+  grantAppliedAt        DateTime?              @map("grant_applied_at")
   completedAt           DateTime?              @map("completed_at")
   createdAt             DateTime               @default(now()) @map("created_at")
   updatedAt             DateTime               @updatedAt @map("updated_at")

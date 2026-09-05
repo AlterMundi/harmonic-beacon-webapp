@@ -171,6 +171,21 @@ jobs:
           LIVEKIT_API_KEY: devkey
           LIVEKIT_API_SECRET: commerce-ci-livekit-secret-at-least-32-characters
 
+      - name: Smoke production worker and stabilization entrypoints
+        run: |
+          docker build -t beacon-runtime-smoke \
+            --build-arg NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880 .
+          docker run --rm \
+            -e BEACON_WORKER_IMPORT_SMOKE=1 \
+            beacon-runtime-smoke \
+            npx tsx scripts/commerce-media-worker.ts
+          docker run --rm \
+            beacon-runtime-smoke \
+            npx tsx scripts/weekend-stabilize.ts --help
+          docker run --rm \
+            beacon-runtime-smoke \
+            npx tsx scripts/stage-grant-rollback-preflight.ts --help
+
       - name: Capture LiveKit diagnostics
         if: failure()
         run: docker logs --tail 300 e2e-livekit
