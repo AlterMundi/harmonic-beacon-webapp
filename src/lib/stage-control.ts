@@ -541,7 +541,6 @@ export async function reconcileParticipants(input: {
     actorUserId: string;
     participantId?: string;
 }): Promise<ReconcileResult> {
-    const now = new Date();
     const participantIds = await prisma.$transaction(async (transaction) => {
         await lockGrantSession(transaction, input.scheduledSessionId);
         const scheduledSession = await transaction.scheduledSession.findUnique({
@@ -580,17 +579,6 @@ export async function reconcileParticipants(input: {
                 404,
                 'Participant not found',
             );
-        }
-        for (const participant of participants) {
-            await transitionParticipantGrant(transaction, {
-                scheduledSessionId: input.scheduledSessionId,
-                participantId: participant.id,
-                canPublish: participant.publishGrantedAt !== null &&
-                    participant.publishRevokedAt === null,
-                now,
-                actorUserId: input.actorUserId,
-                reason: 'Manual stage grant reconciliation',
-            });
         }
         return participants.map((participant) => participant.id);
     });

@@ -615,7 +615,7 @@ describe('stage control', () => {
         expect(mocks.mutePublishedTrack).not.toHaveBeenCalled();
     });
 
-    it('reconciles durable grants into LiveKit and clears successful flags', async () => {
+    it('retries durable grant debt without manufacturing no-op transitions', async () => {
         participants = [
             { ...attendee('publisher', true), grantReconcileNeeded: true },
             {
@@ -635,16 +635,7 @@ describe('stage control', () => {
             reconciled: ['publisher', 'subscriber'],
             failed: [],
         });
-        expect(mocks.transitionGrant).toHaveBeenNthCalledWith(
-            1,
-            expect.anything(),
-            expect.objectContaining({ participantId: 'publisher', canPublish: true }),
-        );
-        expect(mocks.transitionGrant).toHaveBeenNthCalledWith(
-            2,
-            expect.anything(),
-            expect.objectContaining({ participantId: 'subscriber', canPublish: false }),
-        );
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
         expect(mocks.updateParticipant).toHaveBeenCalledTimes(2);
         expect(mocks.mutePublishedTrack).toHaveBeenCalledTimes(2);
         expect(participants.every(

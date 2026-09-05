@@ -422,6 +422,11 @@ export async function processNextStageGrantEffect(
 export async function processParticipantGrantEffects(
     participantId: string,
 ): Promise<{ processed: number; pending: number }> {
+    // Manual reconciliation must first recover a legacy/uncovered mutation for
+    // this participant, but it must not manufacture a new grant transition for
+    // an already-consistent participant. In particular, a no-op audience
+    // reconciliation must never rotate its identity and disconnect it.
+    await repairUncoveredGrantEffect(new Date(), participantId);
     let processed = 0;
     while (processed < MAX_INLINE_JOBS) {
         const didProcess = await processNextStageGrantEffect(new Date(), participantId);
@@ -446,7 +451,10 @@ export async function processParticipantGrantEffects(
  * state as a fresh revision. This prevents a stale pre-rollback job from being
  * the last remote write after the forward deploy.
  */
-export async function repairNextUncoveredGrantEffect(now = new Date()): Promise<boolean> {
+async function repairUncoveredGrantEffect(
+    now: Date,
+    participantId?: string,
+): Promise<boolean> {
     const candidates = await prisma.$queryRaw<Array<{
         id: string;
         scheduled_session_id: string;
@@ -461,7 +469,8 @@ export async function repairNextUncoveredGrantEffect(now = new Date()): Promise<
             ORDER BY effect."grant_version" DESC
             LIMIT 1
         ) tail ON true
-        WHERE (
+        WHERE (${participantId ?? null}::text IS NULL OR participant."id"::text = ${participantId ?? null})
+          AND (
             (tail."id" IS NULL AND participant."grant_reconcile_needed" = true)
             OR
             (tail."id" IS NOT NULL AND (
@@ -552,4 +561,8 @@ export async function repairNextUncoveredGrantEffect(now = new Date()): Promise<
         }));
     }
     return repaired !== null;
+}
+
+export async function repairNextUncoveredGrantEffect(now = new Date()): Promise<boolean> {
+    return repairUncoveredGrantEffect(now);
 }

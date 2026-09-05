@@ -62,7 +62,7 @@ import {
     lockGrantSession,
     lockGrantTickets,
 } from '@/lib/stage-grant-locks';
-import { promoteParticipant } from '@/lib/stage-control';
+import { promoteParticipant, reconcileParticipants } from '@/lib/stage-control';
 
 const DATABASE_URL = process.env.E2E_DATABASE_URL;
 const suite = DATABASE_URL ? describe : describe.skip;
@@ -125,6 +125,70 @@ suite('stage grant outbox PostgreSQL contract', () => {
 
     afterAll(async () => {
         await prisma.$disconnect();
+    });
+
+    it('leaves an already-reconciled audience identity connected during manual reconciliation', async () => {
+        const before = await prisma.sessionParticipant.findUniqueOrThrow({
+            where: { id: participantId },
+        });
+
+        await expect(reconcileParticipants({
+            scheduledSessionId: sessionId,
+            actorUserId: userId,
+            participantId,
+        })).resolves.toEqual({ reconciled: [participantId], failed: [] });
+
+        const after = await prisma.sessionParticipant.findUniqueOrThrow({
+            where: { id: participantId },
+        });
+        expect(after).toMatchObject({
+            participantIdentity: before.participantIdentity,
+            grantVersion: before.grantVersion,
+            grantReconcileNeeded: false,
+            publishGrantedAt: null,
+            publishRevokedAt: null,
+        });
+        await expect(prisma.stageGrantEffectOutbox.count({
+            where: { participantId },
+        })).resolves.toBe(0);
+        expect(live.rooms.get(`grant-room-${sessionId}`)).toContain(participantIdentity);
+        expect(live.permissions).toEqual([]);
+        expect(live.mutedTracks).toEqual([]);
+    });
+
+    it('repairs real pre-outbox debt during manual reconciliation', async () => {
+        await prisma.sessionParticipant.update({
+            where: { id: participantId },
+            data: {
+                publishRevokedAt: NOW,
+                grantReconcileNeeded: true,
+            },
+        });
+
+        await expect(reconcileParticipants({
+            scheduledSessionId: sessionId,
+            actorUserId: userId,
+            participantId,
+        })).resolves.toEqual({ reconciled: [participantId], failed: [] });
+
+        await expect(prisma.sessionParticipant.findUniqueOrThrow({
+            where: { id: participantId },
+        })).resolves.toMatchObject({
+            participantIdentity: 'rotated-1',
+            grantVersion: 1,
+            grantReconcileNeeded: false,
+            publishGrantedAt: null,
+        });
+        await expect(prisma.stageGrantEffectOutbox.findFirstOrThrow({
+            where: { participantId },
+        })).resolves.toMatchObject({
+            grantVersion: 1,
+            participantIdentity,
+            resultingParticipantIdentity: 'rotated-1',
+            canPublish: false,
+            status: 'COMPLETED',
+        });
+        expect(live.rooms.get(`grant-room-${sessionId}`)).not.toContain(participantIdentity);
     });
 
     it('processes revisions in order and clears the marker only after the tail', async () => {

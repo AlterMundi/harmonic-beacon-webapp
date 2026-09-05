@@ -82,6 +82,11 @@ state/revision mismatch against an existing outbox tail after a forward deploy.
 It never creates a same-identity negative backfill that could preserve an old
 editor JWT.
 
+The staff reconciliation action follows the same rule for the selected
+participants: it repairs uncovered legacy debt and retries queued effects, but
+an already-consistent participant is a strict no-op. In particular, reconciling
+healthy audience members does not rotate their identity or disconnect them.
+
 Application-first rollback to an arbitrary legacy image is **not supported**.
 Before a temporary legacy rollback, stop routing grant mutations and run
 `npm run stage-grants:rollback-preflight`; it fails closed if any session is
