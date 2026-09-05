@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
     getParticipant: vi.fn(),
     mutePublishedTrack: vi.fn(),
     listParticipants: vi.fn(),
+    transitionGrant: vi.fn(),
+    processGrant: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -36,6 +38,11 @@ vi.mock('@/lib/livekit-server', () => ({
     }),
 }));
 
+vi.mock('@/lib/stage-grant-effects', () => ({
+    transitionParticipantGrant: mocks.transitionGrant,
+    processParticipantGrantEffects: mocks.processGrant,
+}));
+
 type Participant = {
     id: string;
     participantIdentity: string;
@@ -45,6 +52,19 @@ type Participant = {
     publishRevokedAt: Date | null;
     grantReconcileNeeded: boolean;
     grantVersion: number;
+    staffUser?: {
+        role: 'FACILITATOR' | 'FACILITATOR_OP' | 'OPERATOR' | 'ADMIN';
+    } | null;
+    ticketEntitlementId?: string | null;
+    ticketEntitlement?: {
+        state: 'BOUND' | 'REVOKED';
+        revokedAt: Date | null;
+        expiresAt: Date;
+        commerceEntitlement: {
+            providerState: 'ACTIVE' | 'REVOKED';
+            administrativeState: 'CLEAR' | 'SUSPENDED';
+        } | null;
+    } | null;
 };
 
 const event = {
@@ -71,6 +91,13 @@ function attendee(
         publishRevokedAt: null,
         grantReconcileNeeded: false,
         grantVersion: active ? 1 : 0,
+        ticketEntitlementId: `ticket-${id}`,
+        ticketEntitlement: {
+            state: 'BOUND',
+            revokedAt: null,
+            expiresAt: new Date('2030-01-01T00:00:00Z'),
+            commerceEntitlement: null,
+        },
     };
 }
 
@@ -179,6 +206,68 @@ describe('stage control', () => {
                 identity: participant.participantIdentity,
             })),
         );
+        mocks.transitionGrant.mockImplementation((
+            _transaction: unknown,
+            input: {
+                participantId: string;
+                canPublish: boolean;
+                now: Date;
+                clearHand?: boolean;
+            },
+        ) => {
+            const participant = participants.find((item) => item.id === input.participantId)!;
+            const updated = applyUpdate(input.participantId, {
+                publishGrantedAt: input.canPublish
+                    ? participant.publishGrantedAt ?? input.now
+                    : participant.publishGrantedAt,
+                publishRevokedAt: input.canPublish ? null : input.now,
+                ...(input.clearHand ? { raisedAt: null } : {}),
+                grantReconcileNeeded: true,
+                grantVersion: { increment: 1 },
+            });
+            return {
+                participantId: updated.id,
+                participantIdentity: updated.participantIdentity,
+                roomName: event.roomName,
+                canPublish: input.canPublish,
+                grantVersion: updated.grantVersion,
+                reconcileNeeded: true,
+            };
+        });
+        mocks.processGrant.mockImplementation(async (participantId: string) => {
+            const participant = participants.find((item) => item.id === participantId)!;
+            const canPublish = participant.publishGrantedAt !== null &&
+                participant.publishRevokedAt === null;
+            await mocks.updateParticipant(
+                event.roomName,
+                participant.participantIdentity,
+                {
+                    permission: canPublish ? {
+                        canPublish: true,
+                        canPublishData: false,
+                        canSubscribe: true,
+                        canPublishSources: [TrackSource.MICROPHONE, TrackSource.CAMERA],
+                    } : {
+                        canPublish: false,
+                        canPublishData: false,
+                        canSubscribe: true,
+                        canPublishSources: [],
+                    },
+                },
+            );
+            if (!canPublish) {
+                const live = await mocks.getParticipant();
+                await Promise.all(live.tracks.map((track: { sid: string }) =>
+                    mocks.mutePublishedTrack(
+                        event.roomName,
+                        participant.participantIdentity,
+                        track.sid,
+                        true,
+                    )));
+            }
+            participant.grantReconcileNeeded = false;
+            return { processed: 1, pending: 0 };
+        });
     });
 
     it('promotes with only microphone and camera publication permission', async () => {
@@ -238,6 +327,68 @@ describe('stage control', () => {
         expect(mocks.updateParticipant).not.toHaveBeenCalled();
     });
 
+    it('refuses to promote an attendee whose entitlement was revoked', async () => {
+        participants = [{
+            ...attendee('target'),
+            ticketEntitlementId: 'ticket-1',
+            ticketEntitlement: {
+                state: 'REVOKED',
+                revokedAt: new Date('2026-09-05T05:00:00Z'),
+                expiresAt: new Date('2026-09-06T05:00:00Z'),
+                commerceEntitlement: null,
+            },
+        }];
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+            now: new Date('2026-09-05T06:00:00Z'),
+        })).rejects.toMatchObject({
+            code: 'entitlement_inactive',
+            status: 409,
+        });
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+        expect(mocks.processGrant).not.toHaveBeenCalled();
+    });
+
+    it('allows a currently authorized staff principal without an attendee ticket', async () => {
+        participants = [{
+            ...attendee('operator'),
+            staffUserId: 'operator-2',
+            staffUser: { role: 'OPERATOR' },
+            ticketEntitlementId: null,
+            ticketEntitlement: null,
+        }];
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'operator',
+            actorUserId: 'operator-1',
+        })).resolves.toMatchObject({ canPublish: true, reconcileNeeded: false });
+        expect(mocks.transitionGrant).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a stale unassigned facilitator principal without an attendee ticket', async () => {
+        participants = [{
+            ...attendee('former-facilitator'),
+            staffUserId: 'former-facilitator',
+            staffUser: { role: 'FACILITATOR' },
+            ticketEntitlementId: null,
+            ticketEntitlement: null,
+        }];
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'former-facilitator',
+            actorUserId: 'operator-1',
+        })).rejects.toMatchObject({ code: 'entitlement_inactive', status: 409 });
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+    });
+
     it('serializes concurrent promotions across slots five, six, and seven', async () => {
         participants = [
             attendee('active-1', true),
@@ -286,11 +437,9 @@ describe('stage control', () => {
         expect(mocks.updateParticipant).toHaveBeenCalledTimes(2);
     });
 
-    it('revokes the durable grant and compensates after LiveKit promotion fails', async () => {
+    it('keeps the durable effect pending instead of compensating when delivery fails', async () => {
         participants = [attendee('target')];
-        mocks.updateParticipant
-            .mockRejectedValueOnce(new Error('LiveKit unavailable'))
-            .mockResolvedValueOnce({});
+        mocks.processGrant.mockResolvedValueOnce({ processed: 1, pending: 1 });
         const { promoteParticipant } = await import('../stage-control');
 
         await expect(promoteParticipant({
@@ -306,15 +455,9 @@ describe('stage control', () => {
         expect(participants[0]).toMatchObject({
             grantReconcileNeeded: true,
         });
-        expect(participants[0].publishRevokedAt).not.toBeNull();
-        expect(mocks.updateParticipant).toHaveBeenLastCalledWith(
-            event.roomName,
-            'opaque-target',
-            expect.objectContaining({
-                permission: expect.objectContaining({ canPublish: false }),
-            }),
-        );
-        expect(mocks.mutePublishedTrack).toHaveBeenCalledTimes(2);
+        expect(participants[0].publishGrantedAt).not.toBeNull();
+        expect(participants[0].publishRevokedAt).toBeNull();
+        expect(mocks.updateParticipant).not.toHaveBeenCalled();
     });
 
     it('demotes before revoking LiveKit permission and force-mutes every track', async () => {
@@ -453,6 +596,16 @@ describe('stage control', () => {
             reconciled: ['publisher', 'subscriber'],
             failed: [],
         });
+        expect(mocks.transitionGrant).toHaveBeenNthCalledWith(
+            1,
+            expect.anything(),
+            expect.objectContaining({ participantId: 'publisher', canPublish: true }),
+        );
+        expect(mocks.transitionGrant).toHaveBeenNthCalledWith(
+            2,
+            expect.anything(),
+            expect.objectContaining({ participantId: 'subscriber', canPublish: false }),
+        );
         expect(mocks.updateParticipant).toHaveBeenCalledTimes(2);
         expect(mocks.mutePublishedTrack).toHaveBeenCalledTimes(2);
         expect(participants.every(

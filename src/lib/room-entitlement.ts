@@ -54,6 +54,7 @@ type RoomAccessBase = {
         displayName: string | null;
         publishGrantedAt: Date | null;
         publishRevokedAt: Date | null;
+        grantReconcileNeeded: boolean;
     } | null;
 };
 
@@ -68,6 +69,7 @@ type RoomAccessResult =
 type ParticipantGrantState = {
     publishGrantedAt: Date | null;
     publishRevokedAt: Date | null;
+    grantReconcileNeeded: boolean;
 };
 
 async function recoverConcurrentParticipant(
@@ -104,6 +106,7 @@ async function recoverConcurrentParticipant(
         select: {
             publishGrantedAt: true,
             publishRevokedAt: true,
+            grantReconcileNeeded: true,
         },
     });
 }
@@ -304,6 +307,7 @@ async function resolveRoomAccess(
             displayName: true,
             publishGrantedAt: true,
             publishRevokedAt: true,
+            grantReconcileNeeded: true,
         },
     });
 
@@ -357,7 +361,8 @@ export async function resolveRoomViewer(
             canPublish:
                 access.existingParticipant !== null &&
                 access.existingParticipant.publishGrantedAt !== null &&
-                access.existingParticipant.publishRevokedAt === null,
+                access.existingParticipant.publishRevokedAt === null &&
+                !access.existingParticipant.grantReconcileNeeded,
             ticketEntitlementId: access.ticketEntitlementId,
             staffUserId: access.staffUserId,
         },
@@ -405,6 +410,7 @@ export async function resolveRoomPrincipal(
                 select: {
                     publishGrantedAt: true,
                     publishRevokedAt: true,
+                    grantReconcileNeeded: true,
                 },
             })
             : await prisma.sessionParticipant.upsert({
@@ -432,6 +438,7 @@ export async function resolveRoomPrincipal(
                 select: {
                     publishGrantedAt: true,
                     publishRevokedAt: true,
+                    grantReconcileNeeded: true,
                 },
             });
     } catch (error) {
@@ -448,7 +455,8 @@ export async function resolveRoomPrincipal(
             isAssignedFacilitator: access.isAssignedFacilitator,
             canPublish:
                 participant.publishGrantedAt !== null &&
-                participant.publishRevokedAt === null,
+                participant.publishRevokedAt === null &&
+                !participant.grantReconcileNeeded,
             ticketEntitlementId: access.ticketEntitlementId,
             staffUserId: access.staffUserId,
         },

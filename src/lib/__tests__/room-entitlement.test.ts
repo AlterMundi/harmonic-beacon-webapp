@@ -189,6 +189,7 @@ describe('resolveRoomPrincipal', () => {
         upsertParticipant.mockResolvedValue({
             publishGrantedAt: new Date('2026-08-01T15:30:00Z'),
             publishRevokedAt: null,
+            grantReconcileNeeded: false,
         });
         const { resolveRoomPrincipal } = await import('../room-entitlement');
         const first = await resolveRoomPrincipal(request(), 'event-1', now);
@@ -208,6 +209,22 @@ describe('resolveRoomPrincipal', () => {
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
             update: { leftAt: null },
         }));
+    });
+
+    it('mints subscriber-only access while the durable grant effect is pending', async () => {
+        upsertParticipant.mockResolvedValue({
+            publishGrantedAt: new Date('2026-08-01T15:30:00Z'),
+            publishRevokedAt: null,
+            grantReconcileNeeded: true,
+        });
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: { canPublish: false },
+        });
     });
 
     it('recovers a concurrent ticket insert only from the exact canonical winner', async () => {
@@ -242,6 +259,7 @@ describe('resolveRoomPrincipal', () => {
             where: { id: 'ticket-race-winner' },
             data: { leftAt: null },
             select: {
+                grantReconcileNeeded: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
             },
@@ -368,6 +386,7 @@ describe('resolveRoomPrincipal', () => {
                 leftAt: null,
             },
             select: {
+                grantReconcileNeeded: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
             },
