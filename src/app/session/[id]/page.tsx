@@ -1510,11 +1510,14 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
     const [entry, setEntry] = useState<EntryResponse | null>(null);
     const [entryError, setEntryError] = useState<string | null>(null);
     const [retryEntry, setRetryEntry] = useState(0);
+    const entryRequestGenerationRef = useRef(0);
+    const entryAbortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | null = null;
         let inFlight = false;
+        const effectGeneration = ++entryRequestGenerationRef.current;
 
         const checkEntry = async () => {
             if (cancelled || inFlight) return;
@@ -1523,25 +1526,30 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                 timer = null;
             }
             inFlight = true;
+            const requestGeneration = entryRequestGenerationRef.current;
+            const controller = new AbortController();
+            entryAbortRef.current = controller;
             try {
                 const response = await fetch(`/api/scheduled-sessions/${sessionId}/entry`, {
                     cache: 'no-store',
+                    signal: controller.signal,
                 });
                 const data = await response.json().catch(() => ({})) as Partial<EntryResponse> & { error?: string };
                 if (!response.ok || !data.state || !data.session) {
                     throw new Error(data.error || `Entry status unavailable (HTTP ${response.status})`);
                 }
-                if (!cancelled) {
+                if (!cancelled && requestGeneration === entryRequestGenerationRef.current) {
                     seedLocale(localeForEventLanguage(data.session.language));
                     setEntry(data as EntryResponse);
                     setEntryError(null);
                 }
             } catch (failure) {
-                if (!cancelled) {
+                if (!cancelled && requestGeneration === entryRequestGenerationRef.current) {
                     console.error('Failed to confirm event entry:', redactErrorDetail(failure));
                     setEntryError(copy.session.entryUnavailable);
                 }
             } finally {
+                if (entryAbortRef.current === controller) entryAbortRef.current = null;
                 inFlight = false;
                 if (!cancelled) timer = setTimeout(checkEntry, ENTRY_POLL_MS);
             }
@@ -1556,6 +1564,11 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
         document.addEventListener('visibilitychange', checkWhenVisible);
         return () => {
             cancelled = true;
+            if (entryRequestGenerationRef.current === effectGeneration) {
+                entryRequestGenerationRef.current += 1;
+            }
+            entryAbortRef.current?.abort();
+            entryAbortRef.current = null;
             if (timer) clearTimeout(timer);
             window.removeEventListener('focus', checkWhenVisible);
             window.removeEventListener('online', checkWhenVisible);
@@ -1594,10 +1607,15 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                 sessionId={sessionId}
                 sessionTitle={entry.session.title}
                 initialDisplayName={entry.identity.displayName}
-                onConfirmed={(displayName) => setEntry((current) => current ? {
-                    ...current,
-                    identity: { kind: 'attendee', displayName, confirmed: true },
-                } : current)}
+                onConfirmed={(displayName) => {
+                    entryRequestGenerationRef.current += 1;
+                    entryAbortRef.current?.abort();
+                    entryAbortRef.current = null;
+                    setEntry((current) => current ? {
+                        ...current,
+                        identity: { kind: 'attendee', displayName, confirmed: true },
+                    } : current);
+                }}
             />
         );
     }

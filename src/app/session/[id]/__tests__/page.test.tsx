@@ -446,6 +446,63 @@ describe('SessionRoomPage - event entry', () => {
         ).toHaveLength(roomsBefore + 1));
         expect(await screen.findByTestId('viewer-identity')).toHaveTextContent('Anahí 李');
     });
+
+    it('ignores an entry poll that started before the attendee confirmed their name', async () => {
+        const roomsBefore = (Room as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+        const unconfirmed = {
+            ...ENTRY_RESPONSE,
+            identity: { kind: 'attendee', displayName: 'Participante', confirmed: false },
+        };
+        let entryGets = 0;
+        let releaseStalePoll: (value: typeof unconfirmed) => void = () => {};
+        const stalePoll = new Promise<typeof unconfirmed>((resolve) => {
+            releaseStalePoll = resolve;
+        });
+        vi.mocked(global.fetch).mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+            if (String(url).includes('/entry') && init?.method === 'PATCH') {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ displayName: 'Anahí 李', confirmed: true }),
+                } as Response);
+            }
+            if (String(url).includes('/entry')) {
+                entryGets += 1;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => entryGets === 1 ? unconfirmed : stalePoll,
+                } as Response);
+            }
+            if (String(url).includes('/token')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({ ...TOKEN_RESPONSE, displayName: 'Anahí 李' }),
+                } as Response);
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+        });
+
+        renderPage('es');
+        const input = await screen.findByRole('textbox', { name: /Tu nombre visible|Your visible name/i });
+        fireEvent.focus(window);
+        await waitFor(() => expect(entryGets).toBe(2));
+
+        fireEvent.change(input, { target: { value: 'Anahí 李' } });
+        fireEvent.click(screen.getByRole('button', { name: /Confirmar y continuar|Confirm and continue/i }));
+        await waitFor(() => expect(
+            (Room as unknown as { mock: { calls: unknown[] } }).mock.calls,
+        ).toHaveLength(roomsBefore + 1));
+        const connectedRoom = currentRoom();
+
+        await act(async () => {
+            releaseStalePoll(unconfirmed);
+            await stalePoll;
+        });
+
+        expect(screen.queryByRole('textbox', { name: /Tu nombre visible|Your visible name/i })).toBeNull();
+        expect(await screen.findByTestId('viewer-identity')).toHaveTextContent('Anahí 李');
+        expect(connectedRoom.disconnect).not.toHaveBeenCalled();
+    });
 });
 
 describe('SessionRoomPage - participant identity', () => {
