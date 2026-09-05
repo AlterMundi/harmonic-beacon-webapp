@@ -122,9 +122,13 @@ function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
     switch (reason) {
         case DisconnectReason.ROOM_DELETED:
         case DisconnectReason.ROOM_CLOSED:
-        case DisconnectReason.PARTICIPANT_REMOVED:
         case DisconnectReason.SERVER_SHUTDOWN:
             return "ended";
+        // Durable demotion/revocation rotates the participant identity and
+        // removes the fenced connection. A still-authorized attendee must
+        // fetch a fresh token and return as audience; room deletion remains
+        // the authoritative terminal signal for an ended session.
+        case DisconnectReason.PARTICIPANT_REMOVED:
         case DisconnectReason.SIGNAL_CLOSE:
         case DisconnectReason.STATE_MISMATCH:
         case DisconnectReason.CONNECTION_TIMEOUT:

@@ -86,6 +86,10 @@ The staff reconciliation action follows the same rule for the selected
 participants: it repairs uncovered legacy debt and retries queued effects, but
 an already-consistent participant is a strict no-op. In particular, reconciling
 healthy audience members does not rotate their identity or disconnect them.
+When a real negative transition does fence an active connection, the attendee
+client treats LiveKit `PARTICIPANT_REMOVED` as a reauthorization boundary: it
+fetches a fresh token and returns as audience. Room deletion/closure remains
+the terminal session signal.
 
 Application-first rollback to an arbitrary legacy image is **not supported**.
 Before a temporary legacy rollback, stop routing grant mutations and run

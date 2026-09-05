@@ -187,6 +187,7 @@ stackTest('hidden health preview spends 0/N/0 requests while the rail stays live
                     livekit: green,
                     stageRoom: green,
                     publisherGrants: green,
+                    grantDelivery: green,
                     bedPublisher: green,
                     tapestry: green,
                 },
