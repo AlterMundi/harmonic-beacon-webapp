@@ -117,6 +117,17 @@ type DisconnectKind = "ended" | "transport" | "duplicate" | "unknown";
 type CameraFacingMode = "user" | "environment";
 
 const AUTO_RECONNECT_DELAYS_MS = [500, 1_500, 3_000] as const;
+const PUBLICATION_ACTIVATION_TIMEOUT_MS = 5_000;
+
+async function waitForPublicationActivation(room: Room): Promise<void> {
+    const deadline = Date.now() + PUBLICATION_ACTIVATION_TIMEOUT_MS;
+    while (!room.localParticipant.permissions?.canPublish) {
+        if (Date.now() >= deadline) {
+            throw new Error("LiveKit publication permission did not arrive");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+}
 
 function classifyDisconnectReason(reason?: DisconnectReason): DisconnectKind {
     switch (reason) {
@@ -649,6 +660,17 @@ function SessionRoom() {
                     return;
                 }
 
+                if (data.canPublish) {
+                    const publicationResponse = await fetch(
+                        `/api/scheduled-sessions/${id}/publication`,
+                        { method: "POST" },
+                    );
+                    if (!publicationResponse.ok) {
+                        throw new Error("Failed to activate publication permission");
+                    }
+                    await waitForPublicationActivation(room);
+                }
+
                 const wasReconnect = autoReconnectAttemptRef.current > 0;
                 setIsConnected(true);
                 setIsConnecting(false);
@@ -686,6 +708,14 @@ function SessionRoom() {
                 readStage();
             } catch (e) {
                 if (!cancelled) {
+                    if (ownedRoom) {
+                        intentionalDisconnectRef.current = true;
+                        ownedRoom.disconnect();
+                        if (roomRef.current === ownedRoom) {
+                            roomRef.current = null;
+                            setActiveRoom(null);
+                        }
+                    }
                     if (autoReconnectAttemptRef.current > 0) {
                         scheduleAutoReconnect();
                     } else {

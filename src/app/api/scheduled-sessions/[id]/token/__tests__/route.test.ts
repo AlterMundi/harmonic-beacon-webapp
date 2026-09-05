@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRequest, mockParams, parseResponse } from '@/__tests__/helpers';
 
 const resolveRoomPrincipal = vi.fn();
-const createSessionToken = vi.fn();
+const createSessionJoinToken = vi.fn();
 const finalizeRoomTokenIssue = vi.fn();
 
 vi.mock('@/lib/room-entitlement', () => ({ resolveRoomPrincipal }));
-vi.mock('@/lib/livekit-server', () => ({ createSessionToken }));
+vi.mock('@/lib/livekit-server', () => ({ createSessionJoinToken }));
 vi.mock('@/lib/commerce-entitlement', () => ({
     TICKET_LIVEKIT_TOKEN_TTL_SECONDS: 300,
 }));
@@ -36,7 +36,7 @@ const principal = {
 describe('GET /api/scheduled-sessions/[id]/token', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        createSessionToken.mockResolvedValue('stage-jwt');
+        createSessionJoinToken.mockResolvedValue('stage-jwt');
         finalizeRoomTokenIssue.mockResolvedValue(true);
     });
 
@@ -62,7 +62,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
 
         expect((await parseResponse(response)).status).toBe(status);
         expect(response.headers.get('cache-control')).toBe('private, no-store');
-        expect(createSessionToken).not.toHaveBeenCalled();
+        expect(createSessionJoinToken).not.toHaveBeenCalled();
     });
 
     it('issues the exact event room and stable subscribe-only identity', async () => {
@@ -79,11 +79,10 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
 
         expect(status).toBe(200);
         expect(response.headers.get('cache-control')).toBe('private, no-store');
-        expect(createSessionToken).toHaveBeenCalledWith(
+        expect(createSessionJoinToken).toHaveBeenCalledWith(
             'weekend-stage',
             'event-stable-opaque',
             'Attendee',
-            false,
             { role: 'ATTENDEE', isAssignedFacilitator: false },
             '300s',
         );
@@ -118,11 +117,10 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             mockParams({ id: 'event-1' }),
         );
 
-        expect(createSessionToken).toHaveBeenCalledWith(
+        expect(createSessionJoinToken).toHaveBeenCalledWith(
             'weekend-stage',
             'event-stable-opaque',
             'Facilitator',
-            true,
             { role: 'FACILITATOR', isAssignedFacilitator: true },
             '14400s',
         );
@@ -150,11 +148,10 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             mockParams({ id: 'event-1' }),
         ));
 
-        expect(createSessionToken).toHaveBeenCalledWith(
+        expect(createSessionJoinToken).toHaveBeenCalledWith(
             'weekend-stage',
             'event-stable-opaque',
             'Julián',
-            true,
             { role: 'FACILITATOR_OP', isAssignedFacilitator: true },
             '14400s',
         );
@@ -177,11 +174,10 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
             mockParams({ id: 'event-1' }),
         );
         expect(response.status).toBe(200);
-        expect(createSessionToken).toHaveBeenCalledWith(
+        expect(createSessionJoinToken).toHaveBeenCalledWith(
             'weekend-stage',
             'event-stable-opaque',
             'Attendee',
-            false,
             { role: 'ATTENDEE', isAssignedFacilitator: false },
             '300s',
         );

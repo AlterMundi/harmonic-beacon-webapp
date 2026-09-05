@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     participantFindFirst: vi.fn(),
     participantUpdateMany: vi.fn(),
     commerceUpdateMany: vi.fn(),
+    updateParticipant: vi.fn(),
 }));
 
 const tx = {
@@ -26,6 +27,15 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/session-auth', () => ({
     digestSessionToken: (value: string) => `digest:${value}`,
+}));
+vi.mock('@/lib/livekit-server', () => ({
+    getRoomService: () => ({ updateParticipant: mocks.updateParticipant }),
+    stagePublisherPermission: (isAssignedFacilitator: boolean) => ({
+        canPublish: true,
+        canPublishData: isAssignedFacilitator,
+        canSubscribe: true,
+        canPublishSources: ['microphone', 'camera'],
+    }),
 }));
 
 const principal = {
@@ -51,7 +61,11 @@ describe('finalizeRoomTokenIssue', () => {
         mocks.transaction.mockImplementation(
             (callback: (client: typeof tx) => unknown) => callback(tx),
         );
-        mocks.queryRaw.mockResolvedValue([{ facilitator_id: 'staff-1', status: 'LIVE' }]);
+        mocks.queryRaw.mockResolvedValue([{
+            facilitator_id: 'staff-1',
+            room_name: 'stage',
+            status: 'LIVE',
+        }]);
         mocks.webSessionFindUnique.mockResolvedValue({
             ticketEntitlementId: 'ticket-1',
             revokedAt: null,
@@ -76,6 +90,39 @@ describe('finalizeRoomTokenIssue', () => {
         });
         mocks.participantUpdateMany.mockResolvedValue({ count: 1 });
         mocks.commerceUpdateMany.mockResolvedValue({ count: 1 });
+        mocks.updateParticipant.mockResolvedValue({});
+    });
+
+    it('activates publication server-side only for the current durable identity', async () => {
+        const { activateRoomPublication } = await import('../room-token-issue');
+
+        await expect(activateRoomPublication({
+            cookieValue: 'cookie',
+            principal,
+            expectedIdentity: 'identity-current',
+            now: new Date('2026-09-05T13:00:00Z'),
+        })).resolves.toBe(true);
+        expect(mocks.updateParticipant).toHaveBeenCalledWith(
+            'stage',
+            'identity-current',
+            {
+                permission: {
+                    canPublish: true,
+                    canPublishData: false,
+                    canSubscribe: true,
+                    canPublishSources: ['microphone', 'camera'],
+                },
+            },
+        );
+
+        mocks.participantFindFirst.mockResolvedValue(null);
+        await expect(activateRoomPublication({
+            cookieValue: 'cookie',
+            principal,
+            expectedIdentity: 'identity-retired',
+            now: new Date('2026-09-05T13:00:00Z'),
+        })).resolves.toBe(false);
+        expect(mocks.updateParticipant).toHaveBeenCalledTimes(1);
     });
 
     it('records the returned token horizon only after the current identity and grant match', async () => {

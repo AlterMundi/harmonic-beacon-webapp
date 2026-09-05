@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { createSessionToken } from '@/lib/livekit-server';
+import { createSessionJoinToken } from '@/lib/livekit-server';
 import {
     TICKET_LIVEKIT_TOKEN_TTL_SECONDS,
 } from '@/lib/commerce-entitlement';
@@ -45,23 +45,16 @@ export async function GET(
             role: principal.role,
             isAssignedFacilitator: principal.isAssignedFacilitator,
         };
-        const token = principal.ticketEntitlementId
-            ? await createSessionToken(
-                principal.session.roomName,
-                principal.identity,
-                principal.displayName,
-                principal.canPublish,
-                tokenMetadata,
-                tokenTtl,
-            )
-            : await createSessionToken(
-                principal.session.roomName,
-                principal.identity,
-                principal.displayName,
-                principal.canPublish,
-                tokenMetadata,
-                tokenTtl,
-            );
+        // Every credential is subscribe-only. The connected browser requests
+        // publication activation separately; that server-side step rechecks
+        // the current identity and grant while holding the authority locks.
+        const token = await createSessionJoinToken(
+            principal.session.roomName,
+            principal.identity,
+            principal.displayName,
+            tokenMetadata,
+            tokenTtl,
+        );
 
         const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
         const tokenExpiresAt = new Date(Date.now() + ttlSeconds * 1000);

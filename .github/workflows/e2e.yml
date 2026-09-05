@@ -105,6 +105,7 @@ jobs:
         run: |
           npm run db:fixture:load
           DATABASE_URL="$E2E_DATABASE_URL" npx prisma migrate deploy
+          DATABASE_URL="$E2E_DATABASE_URL" npm run stage-grants:forward-drain
 
       - name: Verify session contributions contract in PostgreSQL
         # Real-database proof of the CHAT-01 guarantees: idempotency unique
@@ -167,13 +168,14 @@ jobs:
       - name: Run iPhone/WebKit media gate
         run: npx playwright test e2e/tests/media-continuity.spec.ts --project=iphone-webkit
 
-      - name: Verify grant, commerce, and invitation durable outbox contracts
+      - name: Verify grant, migration, commerce, and invitation durable outbox contracts
         # Real-PostgreSQL proof that grant revisions are serialized across two
         # workers and that stage, commerce, and invitation revocations all
         # commit their durable effects before LiveKit delivery.
-        run: npx vitest run --no-file-parallelism src/lib/__tests__/stage-grant-effects.integration.test.ts src/lib/__tests__/commerce-entitlement.integration.test.ts src/lib/__tests__/promo-invitation.integration.test.ts
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/stage-grant-effects.integration.test.ts src/lib/__tests__/stage-grant-migration.integration.test.ts src/lib/__tests__/commerce-entitlement.integration.test.ts src/lib/__tests__/promo-invitation.integration.test.ts
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          STAGE_GRANT_INTEGRATION_TEST: '1'
           COMMERCE_INTEGRATION_TEST: '1'
           TICKET_CODE_PEPPER: commerce-ci-ticket-pepper-at-least-32-characters
           LIVEKIT_API_KEY: devkey

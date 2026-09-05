@@ -103,11 +103,18 @@ export function bedRoomIdentity(stageIdentity: string): string {
 /**
  * Create a LiveKit access token for a scheduled session room.
  */
-export async function createSessionToken(
+/**
+ * Mint a room-join credential with no publication authority.
+ *
+ * Publication is deliberately granted only after the connection exists and
+ * the server has revalidated the current participant identity and durable
+ * grant under the database lock. A captured JWT can therefore be replayed to
+ * subscribe until it expires, but can never restore a revoked publisher.
+ */
+export async function createSessionJoinToken(
     room: string,
     identity: string,
     name: string,
-    canPublish: boolean,
     metadata?: SessionTokenMetadata,
     ttl: string = '4h',
 ): Promise<string> {
@@ -122,14 +129,9 @@ export async function createSessionToken(
     token.addGrant({
         roomJoin: true,
         room,
-        canPublish,
-        canPublishSources: canPublish
-            ? [TrackSource.MICROPHONE, TrackSource.CAMERA]
-            : [],
-        // Only the assigned facilitator may emit the small, bounded and
-        // identity-free audio-quality snapshot consumed by Staff monitors.
-        // Attendees and operational Staff remain unable to publish data.
-        canPublishData: metadata?.isAssignedFacilitator === true,
+        canPublish: false,
+        canPublishSources: [],
+        canPublishData: false,
         canSubscribe: true,
     });
 
@@ -141,5 +143,15 @@ export async function createBedToken(
     identity: string,
     ttl?: string,
 ): Promise<string> {
-    return createSessionToken(room, identity, 'Event audio', false, undefined, ttl);
+    return createSessionJoinToken(room, identity, 'Event audio', undefined, ttl);
+}
+
+/** The only publication grant projected onto a connected stage identity. */
+export function stagePublisherPermission(isAssignedFacilitator: boolean) {
+    return {
+        canPublish: true,
+        canPublishData: isAssignedFacilitator,
+        canSubscribe: true,
+        canPublishSources: [TrackSource.MICROPHONE, TrackSource.CAMERA],
+    };
 }

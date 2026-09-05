@@ -507,6 +507,8 @@ async function repairUncoveredGrantEffect(
                 publishGrantedAt: true,
                 publishRevokedAt: true,
                 grantVersion: true,
+                grantReconcileNeeded: true,
+                maxLivekitTokenExpiresAt: true,
             },
         });
         if (!participant) return null;
@@ -543,6 +545,33 @@ async function repairUncoveredGrantEffect(
                 lastErrorCode: 'SUPERSEDED_BY_FORWARD_REPAIR',
             },
         });
+        if (
+            !tail &&
+            desiredCanPublish &&
+            participant.grantReconcileNeeded &&
+            participant.maxLivekitTokenExpiresAt
+        ) {
+            // First deployment over a legacy active publisher: fence the old
+            // replayable publisher JWT, then restore the durable grant on the
+            // rotated identity. New room credentials are subscribe-only and
+            // publication is activated server-side after joining.
+            await transitionParticipantGrant(tx, {
+                scheduledSessionId: participant.scheduledSessionId,
+                participantId: participant.id,
+                canPublish: false,
+                now,
+                actorUserId: null,
+                reason: 'Legacy publisher credential fence',
+            });
+            return transitionParticipantGrant(tx, {
+                scheduledSessionId: participant.scheduledSessionId,
+                participantId: participant.id,
+                canPublish: true,
+                now,
+                actorUserId: null,
+                reason: 'Restore active grant after legacy credential fence',
+            });
+        }
         return transitionParticipantGrant(tx, {
             scheduledSessionId: participant.scheduledSessionId,
             participantId: participant.id,

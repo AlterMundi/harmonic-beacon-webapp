@@ -11,10 +11,13 @@ That primitive locks the participant, advances its monotonic `grantVersion`,
 sets `grantReconcileNeeded=true`, and inserts one `StageGrantEffectOutbox` row
 for the exact revision. No caller applies the remote effect before this commit.
 
-The only exception is first materialization of an authorized staff participant
-in `resolveRoomPrincipal()`: no older remote participant or grant revision
-exists, and the first token is derived from the newly persisted state. All
-subsequent transitions use the outbox.
+Room JWTs never carry publication authority, including for assigned
+facilitators. After connecting as a subscriber, a client with a durable grant
+calls the publication activation endpoint. That endpoint locks and rereads the
+session, principal and exact current participant identity, then applies the
+LiveKit permission while those authority locks remain held. A captured JWT can
+therefore reconnect only as audience and cannot replay a retired publisher
+grant.
 
 ## Processing contract
 
@@ -30,9 +33,9 @@ subsequent transitions use the outbox.
   independently. Ambiguity in either path keeps the job pending.
 - Every demotion or revocation rotates the participant's durable LiveKit
   identity. Disconnect jobs remove the previous stage and Beacon-bed
-  identities repeatedly through the last returned token horizon. A delayed
-  promotion or captured editor JWT can therefore affect only the fenced
-  previous identity.
+  identities repeatedly through the last returned token horizon. Those sweeps
+  are defense in depth for connections minted by an older release; current
+  room JWTs remain subscribe-only before, between and after the sweeps.
 - Token return is finalized transactionally after minting: the endpoint locks
   session, entitlement/staff and participant, checks exact current identity and
   effective grant, then records the token horizon. A concurrent revocation
@@ -47,7 +50,13 @@ subsequent transitions use the outbox.
 
 Before claiming a job, the worker repairs one uncovered legacy mutation. It
 supersedes unleased stale effects and appends the current desired state as a
-new revision; this is the forward-deploy fence after a legacy rollback.
+new revision; this is the forward-deploy fence after a legacy rollback. A
+legacy participant that ever held publication is conservatively marked with a
+four-hour token horizon by the migration. Revoked legacy participants receive
+a negative identity-rotation transition. Still-active legacy publishers first
+receive the same negative fence and then a positive transition on the rotated
+identity, preserving their durable grant without leaving the old JWT epoch
+usable.
 
 The application worker drains these jobs before the legacy commerce-media
 queue. The latter remains temporarily because the commerce v1 response exposes
@@ -75,12 +84,14 @@ liveness heartbeat remains independent. Retry and forward-repair logs are
 structured and contain only opaque internal identifiers. Do not clear
 participant markers manually.
 
-Before deployment, run `prisma migrate deploy`. The additive migration keeps
-legacy participant state intact; the compatible worker then discovers every
-marked pre-outbox debt and appends a fresh versioned effect. It also detects a
-state/revision mismatch against an existing outbox tail after a forward deploy.
-It never creates a same-identity negative backfill that could preserve an old
-editor JWT.
+Before deployment, verify no session is `LIVE`, stop the request-serving app,
+and repeat the check after the stop. Then run `prisma migrate deploy` and the
+bounded `stage-grants:forward-drain` command before starting the new app. The
+additive migration keeps legacy participant state intact; the candidate
+implementation discovers every marked pre-outbox debt and appends fresh
+versioned effects. It also detects a state/revision mismatch against an
+existing outbox tail after a forward deploy. It never creates a same-identity
+negative backfill that could preserve an old editor JWT.
 
 The staff reconciliation action follows the same rule for the selected
 participants: it repairs uncovered legacy debt and retries queued effects, but
@@ -92,10 +103,15 @@ fetches a fresh token and returns as audience. Room deletion/closure remains
 the terminal session signal.
 
 Application-first rollback to an arbitrary legacy image is **not supported**.
-Before a temporary legacy rollback, stop routing grant mutations and run
-`npm run stage-grants:rollback-preflight`; it fails closed if any session is
-LIVE, any effect is pending/processing, or any participant marker remains.
-Keep the additive schema and the last compatible worker image available.
+The automated rollback stops application writers, lets the compatible worker
+drain, performs a final stable preflight, stops that worker, and verifies that
+the previous image contains this durable grant contract before restoring app
+and worker together. If the queue cannot quiesce or the previous image is
+legacy, rollback fails closed with writers stopped. For a manual rollback use
+the same ordering and run `npm run stage-grants:rollback-preflight`; it fails
+closed if any session is LIVE, any effect is pending/processing, or any
+participant marker remains. Keep the additive schema and the last compatible
+worker image available.
 
 On the next forward deploy, `repairNextUncoveredGrantEffect()` runs before old
 jobs. If legacy code changed durable grant fields during the maintenance

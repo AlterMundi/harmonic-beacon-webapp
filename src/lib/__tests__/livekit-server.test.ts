@@ -46,9 +46,9 @@ describe('livekit-server', () => {
         expect(first).not.toContain('ticket-1');
     });
 
-    it('limits publishing grants to microphone and camera', async () => {
-        const { createSessionToken } = await import('../livekit-server');
-        await createSessionToken('stage', 'identity', 'Ana', true, {
+    it('makes every replayable room credential subscribe-only', async () => {
+        const { createSessionJoinToken } = await import('../livekit-server');
+        await createSessionJoinToken('stage', 'identity', 'Ana', {
             role: 'ATTENDEE',
             isAssignedFacilitator: false,
         });
@@ -70,23 +70,38 @@ describe('livekit-server', () => {
         expect(addGrant).toHaveBeenCalledWith({
             roomJoin: true,
             room: 'stage',
-            canPublish: true,
-            canPublishSources: [2, 1],
+            canPublish: false,
+            canPublishSources: [],
             canPublishData: false,
             canSubscribe: true,
         });
     });
 
-    it('allows only the assigned facilitator to send Staff audio telemetry', async () => {
-        const { createSessionToken } = await import('../livekit-server');
-        await createSessionToken('stage', 'identity', 'Julián', true, {
+    it('does not embed facilitator data publication in the join credential', async () => {
+        const { createSessionJoinToken } = await import('../livekit-server');
+        await createSessionJoinToken('stage', 'identity', 'Julián', {
             role: 'FACILITATOR_OP',
             isAssignedFacilitator: true,
         });
 
         expect(addGrant).toHaveBeenCalledWith(expect.objectContaining({
-            canPublishData: true,
+            canPublishData: false,
         }));
+    });
+
+    it('builds the server-side publisher permission for the current facilitator only', async () => {
+        const { stagePublisherPermission } = await import('../livekit-server');
+
+        expect(stagePublisherPermission(false)).toEqual({
+            canPublish: true,
+            canPublishData: false,
+            canSubscribe: true,
+            canPublishSources: [2, 1],
+        });
+        expect(stagePublisherPermission(true)).toMatchObject({
+            canPublish: true,
+            canPublishData: true,
+        });
     });
 
     it('makes the bed strictly subscribe-only', async () => {

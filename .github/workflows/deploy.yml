@@ -76,9 +76,18 @@ jobs:
           sudo -n /usr/local/sbin/hb-deploy build \
             "$GITHUB_WORKSPACE" "$GITHUB_SHA" "$build_time" "$database_schema_version"
 
-      - name: Apply additive migrations
+      - name: Quiesce request-serving writers
         shell: bash
         run: |
+          sudo -n /usr/local/sbin/hb-deploy quiesce \
+            "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+
+      - name: Apply additive migrations
+        id: migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'attempted=true' >> "$GITHUB_OUTPUT"
           sudo -n /usr/local/sbin/hb-deploy migrate \
             "$GITHUB_WORKSPACE" "$GITHUB_SHA"
 
@@ -164,11 +173,12 @@ jobs:
           done
 
       - name: Roll back immutable service images on failure
-        if: ${{ failure() && (steps.rollback.outputs.app_available == 'true' || steps.rollback.outputs.tapestry_available == 'true') }}
+        if: ${{ always() && (failure() || cancelled()) && (steps.rollback.outputs.app_available == 'true' || steps.rollback.outputs.tapestry_available == 'true') }}
         shell: bash
         run: |
           set -euo pipefail
           sudo -n /usr/local/sbin/hb-deploy rollback \
             "$GITHUB_WORKSPACE" "$GITHUB_RUN_ID" \
             "${{ steps.rollback.outputs.app_available }}" \
-            "${{ steps.rollback.outputs.tapestry_available }}"
+            "${{ steps.rollback.outputs.tapestry_available }}" \
+            "${{ steps.migration.outputs.attempted == 'true' }}"

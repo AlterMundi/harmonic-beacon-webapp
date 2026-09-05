@@ -30,7 +30,7 @@ import {
     loadSeedContract,
 } from './seed-contract';
 
-async function main() {
+export async function seedProductionData() {
     // Validate every secret and both event definitions before opening a database connection.
     const { staff, events } = loadSeedContract();
     const databaseUrl = process.env.DATABASE_URL?.trim();
@@ -42,6 +42,9 @@ async function main() {
     const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
     try {
+        // Materialize staff independently from event/grant work. Holding a
+        // users row lock while later waiting for a session inverts the shared
+        // session -> principal -> participant order used by live promotion.
         await prisma.$transaction(async (tx) => {
             for (const member of staff) {
                 const { accountSubject, ...staffRecord } = member;
@@ -81,35 +84,40 @@ async function main() {
                 }
             }
 
-            const facilitator = await tx.user.findUniqueOrThrow({
-                where: { email: staff[0].email },
-                select: { id: true },
+        });
+
+        const facilitator = await prisma.user.findUniqueOrThrow({
+            where: { email: staff[0].email },
+            select: { id: true },
+        });
+
+        for (const event of events) {
+            // The event row is materialized before the grant transaction so
+            // the latter can always acquire the canonical lock order.
+            await prisma.scheduledSession.upsert({
+                where: { id: event.id },
+                update: {
+                    title: event.title,
+                    description: event.description,
+                    roomName: event.roomName,
+                    language: event.language,
+                    scheduledAt: event.scheduledAt,
+                    isTest: event.isTest,
+                    paidMode: true,
+                    attendeeCap: WEEKEND_ATTENDEE_CAP,
+                    maxPublishers: WEEKEND_MAX_PUBLISHERS,
+                    facilitatorId: facilitator.id,
+                },
+                create: {
+                    ...event,
+                    paidMode: true,
+                    attendeeCap: WEEKEND_ATTENDEE_CAP,
+                    maxPublishers: WEEKEND_MAX_PUBLISHERS,
+                    facilitatorId: facilitator.id,
+                },
             });
 
-            for (const event of events) {
-                await tx.scheduledSession.upsert({
-                    where: { id: event.id },
-                    update: {
-                        title: event.title,
-                        description: event.description,
-                        roomName: event.roomName,
-                        language: event.language,
-                        scheduledAt: event.scheduledAt,
-                        isTest: event.isTest,
-                        paidMode: true,
-                        attendeeCap: WEEKEND_ATTENDEE_CAP,
-                        maxPublishers: WEEKEND_MAX_PUBLISHERS,
-                        facilitatorId: facilitator.id,
-                    },
-                    create: {
-                        ...event,
-                        paidMode: true,
-                        attendeeCap: WEEKEND_ATTENDEE_CAP,
-                        maxPublishers: WEEKEND_MAX_PUBLISHERS,
-                        facilitatorId: facilitator.id,
-                    },
-                });
-
+            await prisma.$transaction(async (tx) => {
                 await lockGrantSession(tx, event.id);
                 await lockGrantStaff(tx, [facilitator.id]);
                 const existingFacilitator = await tx.sessionParticipant.findFirst({
@@ -143,8 +151,8 @@ async function main() {
                         reason: 'Weekend facilitator baseline grant',
                     });
                 }
-            }
-        });
+            });
+        }
 
         console.log(`Seeded ${staff.length} staff records and ${events.length} weekend sessions.`);
     } finally {
@@ -153,8 +161,10 @@ async function main() {
     }
 }
 
-main().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : 'Unknown seed failure';
-    console.error(`Seed failed: ${message}`);
-    process.exitCode = 1;
-});
+if (process.env.SEED_IMPORT_ONLY !== '1') {
+    seedProductionData().catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : 'Unknown seed failure';
+        console.error(`Seed failed: ${message}`);
+        process.exitCode = 1;
+    });
+}

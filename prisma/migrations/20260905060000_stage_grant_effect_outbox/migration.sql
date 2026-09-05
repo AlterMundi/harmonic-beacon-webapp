@@ -43,16 +43,17 @@ FOREIGN KEY ("scheduled_session_id") REFERENCES "scheduled_sessions"("id")
 ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Every returned room token extends the horizon through which a previous
--- identity must be fenced after a demotion or credential rotation. Existing
--- grants may have been issued with the legacy four-hour staff TTL, so the
--- additive rollout starts conservatively.
+-- identity must be fenced after a demotion or credential rotation. Both active
+-- and already-revoked publishers may still hold a legacy four-hour publisher
+-- JWT, so the additive rollout starts conservatively for every participant who
+-- has ever held the grant.
 ALTER TABLE "session_participants"
 ADD COLUMN "max_livekit_token_expires_at" TIMESTAMP(3);
 
 UPDATE "session_participants"
-SET "max_livekit_token_expires_at" = CURRENT_TIMESTAMP + INTERVAL '4 hours'
-WHERE "publish_granted_at" IS NOT NULL
-  AND "publish_revoked_at" IS NULL;
+SET "max_livekit_token_expires_at" = CURRENT_TIMESTAMP + INTERVAL '4 hours',
+    "grant_reconcile_needed" = true
+WHERE "publish_granted_at" IS NOT NULL;
 
 ALTER TABLE "stage_grant_effect_outbox"
 ADD CONSTRAINT "stage_grant_effect_outbox_participant_id_fkey"
@@ -60,7 +61,7 @@ FOREIGN KEY ("participant_id") REFERENCES "session_participants"("id")
 ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Legacy reconciliation debt is deliberately not copied into an unversioned
--- same-identity effect here: doing that for a negative grant would preserve an
--- old editor JWT. The compatible worker detects every marked legacy debt and
--- appends a fresh revision, rotating the identity when the durable state is
--- non-publishing, before claiming work.
+-- same-identity effect here. The compatible worker rotates every marked legacy
+-- publisher identity before claiming work: one negative transition for an
+-- already-revoked publisher, or a negative/positive pair that preserves an
+-- active durable grant under a fresh identity.

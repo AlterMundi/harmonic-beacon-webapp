@@ -60,6 +60,7 @@ import {
 import {
     lockGrantParticipants,
     lockGrantSession,
+    lockGrantStaff,
     lockGrantTickets,
 } from '@/lib/stage-grant-locks';
 import { promoteParticipant, reconcileParticipants } from '@/lib/stage-control';
@@ -482,6 +483,66 @@ suite('stage grant outbox PostgreSQL contract', () => {
         });
     });
 
+    it('fences a legacy active publisher before restoring its grant on a fresh identity', async () => {
+        const horizon = new Date(NOW.getTime() + 4 * 60 * 60 * 1000);
+        await prisma.sessionParticipant.update({
+            where: { id: participantId },
+            data: {
+                publishGrantedAt: new Date(NOW.getTime() - 1_000),
+                publishRevokedAt: null,
+                grantReconcileNeeded: true,
+                maxLivekitTokenExpiresAt: horizon,
+            },
+        });
+
+        await expect(repairNextUncoveredGrantEffect(NOW)).resolves.toBe(true);
+        const participant = await prisma.sessionParticipant.findUniqueOrThrow({
+            where: { id: participantId },
+        });
+        expect(participant).toMatchObject({
+            participantIdentity: 'rotated-1',
+            grantVersion: 2,
+            publishRevokedAt: null,
+            grantReconcileNeeded: true,
+        });
+        await expect(prisma.stageGrantEffectOutbox.findMany({
+            where: { participantId },
+            orderBy: { grantVersion: 'asc' },
+            select: {
+                grantVersion: true,
+                participantIdentity: true,
+                resultingParticipantIdentity: true,
+                canPublish: true,
+                disconnectParticipant: true,
+                tokenHorizonAt: true,
+            },
+        })).resolves.toEqual([
+            {
+                grantVersion: 1,
+                participantIdentity,
+                resultingParticipantIdentity: 'rotated-1',
+                canPublish: false,
+                disconnectParticipant: true,
+                tokenHorizonAt: horizon,
+            },
+            {
+                grantVersion: 2,
+                participantIdentity: 'rotated-1',
+                resultingParticipantIdentity: 'rotated-1',
+                canPublish: true,
+                disconnectParticipant: false,
+                tokenHorizonAt: null,
+            },
+        ]);
+
+        await expect(processNextStageGrantEffect(NOW, participantId)).resolves.toBe(true);
+        await expect(processNextStageGrantEffect(NOW, participantId)).resolves.toBe(true);
+        await expect(prisma.sessionParticipant.findUniqueOrThrow({
+            where: { id: participantId },
+        })).resolves.toMatchObject({ grantReconcileNeeded: false });
+        expect(live.rooms.get(`grant-room-${sessionId}`)).not.toContain(participantIdentity);
+    });
+
     it('does not reinterpret a reconciled first facilitator materialization as debt', async () => {
         await prisma.sessionParticipant.update({
             where: { id: participantId },
@@ -648,4 +709,98 @@ suite('stage grant outbox PostgreSQL contract', () => {
             select: { grantVersion: true, canPublish: true },
         })).resolves.toEqual([{ grantVersion: 1, canPublish: false }]);
     });
+
+    it('does not deadlock production seed staff materialization against promotion', async () => {
+        const extraUserIds = [randomUUID(), randomUUID(), randomUUID()];
+        const secondSessionId = randomUUID();
+        const originalEnvironment = { ...process.env };
+        const digest = (byte: number) =>
+            `scrypt$${Buffer.alloc(16, byte).toString('base64url')}` +
+            `$${Buffer.alloc(32, byte).toString('base64url')}`;
+        Object.assign(process.env, {
+            SEED_IMPORT_ONLY: '1',
+            DATABASE_URL: `${DATABASE_URL}${DATABASE_URL?.includes('?') ? '&' : '?'}application_name=seed_deadlock_regression`,
+            BEACON_ACCOUNT_ENABLED: 'false',
+            SESSION_COOKIE_TTL_SECONDS: String(7 * 24 * 60 * 60),
+            STAFF_FACILITATOR_NAME: 'Seed facilitator',
+            STAFF_FACILITATOR_EMAIL: `${userId}@invalid.example`,
+            STAFF_FACILITATOR_PASSWORD_DIGEST: digest(1),
+            STAFF_OPERATOR_ONE_NAME: 'Seed operator one',
+            STAFF_OPERATOR_ONE_EMAIL: `${extraUserIds[0]}@invalid.example`,
+            STAFF_OPERATOR_ONE_PASSWORD_DIGEST: digest(2),
+            STAFF_OPERATOR_TWO_NAME: 'Seed operator two',
+            STAFF_OPERATOR_TWO_EMAIL: `${extraUserIds[1]}@invalid.example`,
+            STAFF_OPERATOR_TWO_PASSWORD_DIGEST: digest(3),
+            STAFF_ADMIN_NAME: 'Seed admin',
+            STAFF_ADMIN_EMAIL: `${extraUserIds[2]}@invalid.example`,
+            STAFF_ADMIN_PASSWORD_DIGEST: digest(4),
+            WEEKEND_SESSION_1_EVENT_JSON: JSON.stringify({
+                id: sessionId,
+                title: 'Seed lock-order event',
+                roomName: `grant-room-${sessionId}`,
+                scheduledAt: '2026-08-08T12:00:00.000Z',
+            }),
+            WEEKEND_SESSION_2_EVENT_JSON: JSON.stringify({
+                id: secondSessionId,
+                title: 'Seed lock-order second event',
+                roomName: `grant-room-${secondSessionId}`,
+                scheduledAt: '2026-08-08T15:00:00.000Z',
+            }),
+        });
+
+        let releaseUserLock!: () => void;
+        let userLocked!: () => void;
+        const locked = new Promise<void>((resolve) => { userLocked = resolve; });
+        const hold = new Promise<void>((resolve) => { releaseUserLock = resolve; });
+        const blocker = prisma.$transaction(async (tx) => {
+            await lockGrantStaff(tx, [userId]);
+            userLocked();
+            await hold;
+        });
+
+        try {
+            await locked;
+            const { seedProductionData } = await import('../../../prisma/seed');
+            const seed = seedProductionData();
+            await vi.waitFor(async () => {
+                const waiting = await prisma.$queryRaw<Array<{ count: bigint }>>`
+                    SELECT COUNT(*)::bigint AS count
+                    FROM pg_stat_activity
+                    WHERE application_name = 'seed_deadlock_regression'
+                      AND wait_event_type = 'Lock'
+                `;
+                expect(Number(waiting[0]?.count ?? 0)).toBeGreaterThan(0);
+            });
+
+            const promotion = promoteParticipant({
+                scheduledSessionId: sessionId,
+                participantId,
+                actorUserId: userId,
+                reason: 'Concurrent production seed regression',
+                now: new Date(NOW.getTime() + 1),
+            });
+            await vi.waitFor(async () => {
+                const waiting = await prisma.$queryRaw<Array<{ count: bigint }>>`
+                    SELECT COUNT(*)::bigint AS count
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                      AND wait_event_type = 'Lock'
+                `;
+                expect(Number(waiting[0]?.count ?? 0)).toBeGreaterThanOrEqual(2);
+            });
+
+            releaseUserLock();
+            await expect(Promise.all([blocker, promotion, seed])).resolves.toBeDefined();
+        } finally {
+            releaseUserLock();
+            await blocker.catch(() => undefined);
+            process.env = originalEnvironment;
+            await prisma.scheduledSession.deleteMany({ where: { id: secondSessionId } });
+            await prisma.user.deleteMany({
+                where: {
+                    email: { in: extraUserIds.map((id) => `${id}@invalid.example`) },
+                },
+            });
+        }
+    }, 15_000);
 });

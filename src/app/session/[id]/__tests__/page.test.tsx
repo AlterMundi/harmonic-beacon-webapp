@@ -244,7 +244,10 @@ afterEach(() => {
 
 async function renderConnected() {
     renderPage('en');
-    await waitFor(() => expect(screen.getByText('Test Session')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', {
+        level: 1,
+        name: 'Test Session',
+    })).toBeInTheDocument());
 }
 
 function renderPage(locale: UiLocale = 'en') {
@@ -436,10 +439,11 @@ describe('SessionRoomPage - participant identity', () => {
 describe('SessionRoomPage - staff cockpit handoff', () => {
     function installStaffToken(isAssignedFacilitator = true) {
         vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
-            if (String(url).includes('/entry')) {
+            const target = String(url);
+            if (target.includes('/entry')) {
                 return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
             }
-            if (String(url).includes('/token')) {
+            if (target.includes('/token')) {
                 return Promise.resolve({
                     ok: true,
                     json: async () => ({
@@ -450,6 +454,12 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
                         isAssignedFacilitator,
                     }),
                 } as Response);
+            }
+            if (target.includes('/publication')) {
+                const room = currentRoom();
+                room.localParticipant.permissions.canPublish = true;
+                room.emit('participantPermissionsChanged', null, room.localParticipant);
+                return Promise.resolve({ ok: true, json: async () => ({ canPublish: true }) } as Response);
             }
             return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
         });
@@ -484,6 +494,10 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
             },
         });
         expect(screen.getByTestId('facilitator-audio-quality')).toBeInTheDocument();
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/scheduled-sessions/session-1/publication',
+            { method: 'POST' },
+        );
     });
 
     it('explains that unassigned composite staff has operational access without publication', async () => {
@@ -802,6 +816,12 @@ describe('SessionRoomPage - transport-failure disconnect', () => {
                         ok: true,
                         json: async () => ({ ...TOKEN_RESPONSE, canPublish }),
                     } as Response);
+                }
+                if (target.includes('/publication')) {
+                    const activeRoom = currentRoom();
+                    activeRoom.localParticipant.permissions.canPublish = true;
+                    activeRoom.emit('participantPermissionsChanged', null, activeRoom.localParticipant);
+                    return Promise.resolve({ ok: true, json: async () => ({ canPublish: true }) } as Response);
                 }
                 if (target.includes('/hand')) {
                     return Promise.resolve({
