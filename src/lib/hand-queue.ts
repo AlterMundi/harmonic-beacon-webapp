@@ -30,6 +30,7 @@ export type HandState = {
     raisedAt: Date | null;
     queuePosition: number | null;
     canPublish: boolean;
+    grantVersion: number;
 };
 
 type HandTargetInput = {
@@ -67,6 +68,7 @@ async function computeQueuePosition(
         raisedAt: Date | null;
         publishGrantedAt: Date | null;
         publishRevokedAt: Date | null;
+        grantVersion: number;
     },
 ): Promise<number | null> {
     if (participant.raisedAt === null || hasActiveGrant(participant)) {
@@ -102,6 +104,7 @@ function toHandState(
         raisedAt: Date | null;
         publishGrantedAt: Date | null;
         publishRevokedAt: Date | null;
+        grantVersion: number;
     },
     queuePosition: number | null,
 ): HandState {
@@ -111,6 +114,7 @@ function toHandState(
         raisedAt: participant.raisedAt,
         queuePosition,
         canPublish: hasActiveGrant(participant),
+        grantVersion: participant.grantVersion,
     };
 }
 
@@ -144,6 +148,7 @@ export async function raiseHand(input: RaiseInput): Promise<HandState> {
             raisedAt: true,
             publishGrantedAt: true,
             publishRevokedAt: true,
+            grantVersion: true,
         },
     });
     // The upsert above matches on identity, so an existing row that has not
@@ -183,6 +188,7 @@ export async function lowerHand(input: LowerInput): Promise<HandState> {
             raisedAt: true,
             publishGrantedAt: true,
             publishRevokedAt: true,
+            grantVersion: true,
         },
     });
     if (!participant) {
@@ -203,6 +209,7 @@ export async function lowerHand(input: LowerInput): Promise<HandState> {
                 raisedAt: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
+                grantVersion: true,
             },
         });
 
@@ -268,6 +275,7 @@ export async function getHandState(
             raisedAt: true,
             publishGrantedAt: true,
             publishRevokedAt: true,
+            grantVersion: true,
         },
     });
     if (!participant) {

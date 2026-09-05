@@ -10,6 +10,7 @@ import {
 import { resolveRoomPrincipal } from '@/lib/room-entitlement';
 import {
     declineStageInvitation,
+    leaveStage,
     StageControlError,
 } from '@/lib/stage-control';
 
@@ -28,6 +29,7 @@ type HandResponse = {
     raisedAt: string | null;
     queuePosition: number | null;
     canPublish: boolean;
+    grantVersion: number;
 };
 
 function serialize(state: HandState): HandResponse {
@@ -37,6 +39,7 @@ function serialize(state: HandState): HandResponse {
         raisedAt: state.raisedAt?.toISOString() ?? null,
         queuePosition: state.queuePosition,
         canPublish: state.canPublish,
+        grantVersion: state.grantVersion,
     };
 }
 
@@ -161,30 +164,44 @@ export async function PATCH(
         return error;
     }
 
-    let body: { action?: unknown };
+    let body: { action?: unknown; expectedGrantVersion?: unknown };
     try {
-        body = await request.json() as { action?: unknown };
+        body = await request.json() as {
+            action?: unknown;
+            expectedGrantVersion?: unknown;
+        };
     } catch {
         return NextResponse.json(
             { error: 'invalid_request', message: 'A JSON request body is required' },
             { status: 400 },
         );
     }
-    if (body.action !== 'decline_invitation') {
+    if (body.action !== 'decline_invitation' && body.action !== 'leave_stage') {
         return NextResponse.json(
-            { error: 'invalid_request', message: 'Action must be decline_invitation' },
+            { error: 'invalid_request', message: 'Action must be decline_invitation or leave_stage' },
+            { status: 400 },
+        );
+    }
+    if (!Number.isSafeInteger(body.expectedGrantVersion) ||
+        (body.expectedGrantVersion as number) < 0) {
+        return NextResponse.json(
+            { error: 'invalid_request', message: 'A current grant version is required' },
             { status: 400 },
         );
     }
 
     try {
-        await declineStageInvitation({
+        const changeStage = body.action === 'leave_stage'
+            ? leaveStage
+            : declineStageInvitation;
+        const changed = await changeStage({
             scheduledSessionId: id,
             participantIdentity: principal.identity,
+            expectedGrantVersion: body.expectedGrantVersion as number,
         });
         return NextResponse.json(serialize(await getHandState({
             scheduledSessionId: id,
-            participantIdentity: principal.identity,
+            participantIdentity: changed.participantIdentity,
         })));
     } catch (failure) {
         return handErrorResponse(failure);

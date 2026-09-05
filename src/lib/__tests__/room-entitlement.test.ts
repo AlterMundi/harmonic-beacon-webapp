@@ -39,6 +39,7 @@ const activeEvent = {
 };
 const activeTicketSession = {
     displayName: 'Ana',
+    displayNameConfirmedAt: now,
     expiresAt: new Date('2026-08-03T00:00:00Z'),
     revokedAt: null,
     staffUser: null,
@@ -141,6 +142,23 @@ describe('resolveRoomPrincipal', () => {
         expect(findWebSession).not.toHaveBeenCalled();
     });
 
+    it('rejects a direct room or hand request until the attendee confirms the event alias', async () => {
+        findWebSession.mockResolvedValue({
+            ...activeTicketSession,
+            displayNameConfirmedAt: null,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        await expect(resolveRoomPrincipal(request(), 'event-1', now)).resolves.toEqual({
+            ok: false,
+            status: 403,
+            error: 'Not authorized',
+        });
+        expect(findParticipant).not.toHaveBeenCalled();
+        expect(upsertParticipant).not.toHaveBeenCalled();
+        expect(updateParticipant).not.toHaveBeenCalled();
+    });
+
     it.each([
         ['revoked web session', { revokedAt: now }],
         ['expired web session', { expiresAt: now }],
@@ -189,6 +207,7 @@ describe('resolveRoomPrincipal', () => {
         upsertParticipant.mockResolvedValue({
             publishGrantedAt: new Date('2026-08-01T15:30:00Z'),
             publishRevokedAt: null,
+            grantReconcileNeeded: false,
         });
         const { resolveRoomPrincipal } = await import('../room-entitlement');
         const first = await resolveRoomPrincipal(request(), 'event-1', now);
@@ -207,6 +226,51 @@ describe('resolveRoomPrincipal', () => {
         });
         expect(upsertParticipant).toHaveBeenCalledWith(expect.objectContaining({
             update: { leftAt: null },
+        }));
+    });
+
+    it('mints subscriber-only access while the durable grant effect is pending', async () => {
+        upsertParticipant.mockResolvedValue({
+            publishGrantedAt: new Date('2026-08-01T15:30:00Z'),
+            publishRevokedAt: null,
+            grantReconcileNeeded: true,
+        });
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: { canPublish: false },
+        });
+    });
+
+    it('lets a newly confirmed device correct the durable alias without changing identity', async () => {
+        findWebSession.mockResolvedValue({
+            ...activeTicketSession,
+            displayName: 'Anahí 李',
+            displayNameConfirmedAt: now,
+        });
+        findParticipant.mockResolvedValue({
+            id: 'participant-1',
+            displayName: 'Nombre anterior',
+            publishGrantedAt: null,
+            publishRevokedAt: null,
+        });
+
+        const { resolveRoomPrincipal } = await import('../room-entitlement');
+        const result = await resolveRoomPrincipal(request(), 'event-1', now);
+
+        expect(result).toMatchObject({
+            ok: true,
+            principal: {
+                identity: 'opaque:event-1:ticket:ticket-1',
+                displayName: 'Anahí 李',
+            },
+        });
+        expect(updateParticipant).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 'participant-1' },
+            data: expect.objectContaining({ displayName: 'Anahí 李' }),
         }));
     });
 
@@ -240,8 +304,9 @@ describe('resolveRoomPrincipal', () => {
         });
         expect(updateParticipant).toHaveBeenCalledWith({
             where: { id: 'ticket-race-winner' },
-            data: { leftAt: null },
+            data: { leftAt: null, displayName: 'Ana' },
             select: {
+                grantReconcileNeeded: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
             },
@@ -328,7 +393,7 @@ describe('resolveRoomPrincipal', () => {
         });
     });
 
-    it('migrates the seeded facilitator row to the stable identity instead of inserting a duplicate', async () => {
+    it('preserves the durable seeded facilitator identity instead of inserting a duplicate', async () => {
         findWebSession.mockResolvedValue({
             expiresAt: new Date('2026-08-03T00:00:00Z'),
             revokedAt: null,
@@ -344,7 +409,10 @@ describe('resolveRoomPrincipal', () => {
             ...activeEvent,
             status: 'SCHEDULED',
         });
-        findParticipant.mockResolvedValue({ id: 'seeded-facilitator-row' });
+        findParticipant.mockResolvedValue({
+            id: 'seeded-facilitator-row',
+            participantIdentity: 'seeded-durable-identity',
+        });
         updateParticipant.mockResolvedValue({
             publishGrantedAt: now,
             publishRevokedAt: null,
@@ -356,7 +424,7 @@ describe('resolveRoomPrincipal', () => {
         expect(result).toMatchObject({
             ok: true,
             principal: {
-                identity: 'opaque:event-1:staff:facilitator-1',
+                identity: 'seeded-durable-identity',
                 canPublish: true,
                 isAssignedFacilitator: true,
             },
@@ -364,10 +432,11 @@ describe('resolveRoomPrincipal', () => {
         expect(updateParticipant).toHaveBeenCalledWith({
             where: { id: 'seeded-facilitator-row' },
             data: {
-                participantIdentity: 'opaque:event-1:staff:facilitator-1',
+                displayName: 'Julián',
                 leftAt: null,
             },
             select: {
+                grantReconcileNeeded: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
             },

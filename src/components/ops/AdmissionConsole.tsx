@@ -313,7 +313,9 @@ export default function AdmissionConsole({ role, events, locale, copy }: Props) 
             ) ?? null);
             flash(
                 data.mediaCleanupFailed
-                    ? copy.notices.invitationCleanupFailed
+                    ? fill(copy.notices.invitationCleanupFailed, {
+                        count: String(data.revokedEntitlements),
+                    })
                     : fill(copy.notices.invitationDisabled, {
                         count: String(data.revokedEntitlements),
                     }),

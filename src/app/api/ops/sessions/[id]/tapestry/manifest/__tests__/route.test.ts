@@ -43,6 +43,7 @@ function sessionOk() {
         participants: [
             {
                 participantIdentity: 'lk-ana',
+                displayName: 'Ana',
                 leftAt: null,
                 raisedAt: RAISED_AT,
                 publishGrantedAt: null,
@@ -51,6 +52,7 @@ function sessionOk() {
             },
             {
                 participantIdentity: 'lk-beto',
+                displayName: 'Beto',
                 leftAt: null,
                 raisedAt: null,
                 publishGrantedAt: null,
@@ -88,12 +90,12 @@ beforeEach(() => {
     mocks.listParticipants.mockResolvedValue([
         {
             identity: 'lk-ana',
-            name: 'Ana',
+            name: 'Participant',
             tracks: [{ sid: 'TR_cam', source: 1, muted: false }],
         },
         {
             identity: 'lk-beto',
-            name: 'Beto',
+            name: 'Participant',
             tracks: [{ sid: 'TR_cam', source: 1, muted: true }],
         },
     ]);
@@ -220,6 +222,6 @@ describe('GET /api/ops/sessions/[id]/tapestry/manifest', () => {
         expect(body.entries[0]).toMatchObject({ presence: 'unknown', camera: 'unknown' });
         // Names, hands and tiles survive the outage.
         expect(body.entries[0].handRaised).toBe(true);
-        expect(body.entries[0].displayName).toBe('Attendee');
+        expect(body.entries[0].displayName).toBe('Ana');
     });
 });

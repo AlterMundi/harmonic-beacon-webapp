@@ -22,6 +22,7 @@ const GREEN_REPORT: OperatorHealthReport = {
         livekit: { status: 'green', detail: 'LiveKit API answered (2 room(s))', latencyMs: 12 },
         stageRoom: { status: 'green', detail: 'Stage room exists', latencyMs: 0 },
         publisherGrants: { status: 'green', detail: '6/6 active publish grants', latencyMs: 3 },
+        grantDelivery: { status: 'green', detail: 'No pending LiveKit grant effects', latencyMs: 2 },
         bedPublisher: { status: 'green', detail: 'Bed publisher live', latencyMs: 9 },
         tapestry: { status: 'green', detail: 'Tapestry health endpoint answered', latencyMs: 5 },
     },

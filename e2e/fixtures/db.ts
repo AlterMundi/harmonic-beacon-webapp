@@ -64,6 +64,49 @@ export async function withSessionStatus<T>(
 }
 
 /**
+ * Treat the fixture's preexisting publisher as a post-migration, reconciled
+ * participant for tests that target current token behavior rather than the
+ * separately covered legacy-upgrade path.
+ */
+export async function withReconciledPublicationGrant<T>(
+    databaseUrl: string,
+    sessionId: string,
+    run: () => Promise<T>,
+): Promise<T> {
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+        const { rows } = await client.query<{ id: string; previous: boolean }>(`
+            select id, grant_reconcile_needed as previous
+            from session_participants
+            where scheduled_session_id = $1
+              and staff_user_id is not null
+              and publish_granted_at is not null
+              and publish_revoked_at is null
+        `, [sessionId]);
+        if (rows.length !== 1) {
+            throw new Error(`fixture session ${sessionId} lacks one publisher grant`);
+        }
+        await client.query(`
+            update session_participants
+            set grant_reconcile_needed = false
+            where id = $1
+        `, [rows[0].id]);
+        try {
+            return await run();
+        } finally {
+            await client.query(`
+                update session_participants
+                set grant_reconcile_needed = $2
+                where id = $1
+            `, [rows[0].id, rows[0].previous]);
+        }
+    } finally {
+        await client.end();
+    }
+}
+
+/**
  * Delete a session's contributions before and after `run`, so chat tests
  * never leak messages into surfaces asserted by other specs (the visual
  * baselines capture the attendee room — and its contributions panel — with
@@ -82,6 +125,39 @@ export async function withoutContributions<T>(
             return await run();
         } finally {
             await client.query('delete from session_contributions where scheduled_session_id = $1', [sessionId]);
+        }
+    } finally {
+        await client.end();
+    }
+}
+
+/**
+ * Clear a fixture session's raised hands before and after `run`.
+ *
+ * Hand-flow specs exercise the real persistent queue. Keeping this cleanup
+ * close to those specs prevents their state from leaking into later cockpit
+ * screenshots while still allowing the product endpoints to own every
+ * transition under test.
+ */
+export async function withoutRaisedHands<T>(
+    databaseUrl: string,
+    sessionId: string,
+    run: () => Promise<T>,
+): Promise<T> {
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+        await client.query(
+            'update session_participants set raised_at = null where scheduled_session_id = $1',
+            [sessionId],
+        );
+        try {
+            return await run();
+        } finally {
+            await client.query(
+                'update session_participants set raised_at = null where scheduled_session_id = $1',
+                [sessionId],
+            );
         }
     } finally {
         await client.end();

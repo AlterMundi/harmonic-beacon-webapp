@@ -91,6 +91,7 @@ export async function GET(
             participants: {
                 select: {
                     participantIdentity: true,
+                    displayName: true,
                     leftAt: true,
                     raisedAt: true,
                     publishGrantedAt: true,
@@ -143,6 +144,7 @@ export async function GET(
     const participants: ManifestParticipant[] = scheduledSession.participants.map(
         (participant) => ({
             identity: participant.participantIdentity,
+            displayName: participant.displayName,
             leftAt: participant.leftAt,
             raisedAt: participant.raisedAt,
             publishGrantedAt: participant.publishGrantedAt,

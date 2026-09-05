@@ -174,6 +174,15 @@ describe('LoginClient', () => {
         expect(screen.getByLabelText('Ticket code')).toHaveAttribute('maxlength', '80');
     });
 
+    it('associates the name privacy explanation with the alias instead of the email', () => {
+        renderLogin('en');
+
+        expect(screen.getByLabelText('Name shown in the room')).toHaveAccessibleDescription(
+            'The team and people on stage will use this name to recognize you. You can confirm it before joining.',
+        );
+        expect(screen.getByLabelText('Email used to buy the ticket')).not.toHaveAccessibleDescription();
+    });
+
     it('keeps the Account profile name as an editable event alias and never asks for email', async () => {
         const fetchMock = mockFetch({
             status: 200,
@@ -188,6 +197,9 @@ describe('LoginClient', () => {
         const user = userEvent.setup();
         const alias = screen.getByLabelText(/Name shown in the room/);
         expect(alias).toHaveValue('Account profile');
+        expect(alias).toHaveAccessibleDescription(
+            'The team and people on stage will use this name to recognize you. You can confirm it before joining.',
+        );
         await user.clear(alias);
         await user.type(alias, 'Event alias');
         await user.type(screen.getByLabelText(/Ticket code/), CODE);
