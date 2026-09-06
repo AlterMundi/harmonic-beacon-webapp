@@ -19,6 +19,17 @@ describe('production operational entrypoints', () => {
         expect(worker).toContain('runtime imports loaded');
     });
 
+    it('keeps enough memory headroom for the durable grant worker to warm up', () => {
+        const compose = readFileSync('docker-compose.yml', 'utf8');
+        const reconciler = compose.slice(
+            compose.indexOf('  commerce-reconciler:'),
+            compose.indexOf('\n  # ── Playlist bot'),
+        );
+
+        expect(reconciler).toContain('memory: 512M');
+        expect(reconciler).not.toContain('memory: 256M');
+    });
+
     it('quiesces and preflights before any automatic application rollback', () => {
         const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
         const rollback = helper.slice(helper.indexOf('rollback() {'), helper.indexOf('\nusage() {'));
