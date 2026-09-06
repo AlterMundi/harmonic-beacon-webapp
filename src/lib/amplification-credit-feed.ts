@@ -201,6 +201,10 @@ export async function listAmplificationCreditEntries(input: {
             WHERE "session"."is_test" = FALSE
                 AND "participant"."staff_user_id" IS NULL
                 AND "participant"."ticket_entitlement_id" IS NOT NULL
+                AND (
+                    "ticket"."bound_email" IS NULL
+                    OR "ticket"."bound_email" NOT LIKE '%@anonymous.harmonicbeacon.invalid'
+                )
             GROUP BY
                 "participant"."id",
                 "participant"."scheduled_session_id",

@@ -3,13 +3,13 @@ import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
+import { isPublicCycleSession } from '@/lib/public-cycle';
 import { stableRoomIdentity } from '@/lib/livekit-server';
 import { eventStaffPolicy } from '@/lib/staff-capabilities';
 import {
     beaconAccountEnabled,
     validatedAccountIdentity,
 } from '@/lib/account-rp';
-import { isAnonymousPublicCycleAccess } from '@/lib/public-cycle';
 import {
     SESSION_COOKIE_NAME,
     digestSessionToken,
@@ -139,6 +139,9 @@ async function resolveRoomAccess(
             accountSubject: true,
             accountSessionId: true,
             accountDisplayName: true,
+            accountEmail: true,
+            accountEmailVerified: true,
+            accountAuthMethod: true,
             accountValidatedAt: true,
             expiresAt: true,
             revokedAt: true,
@@ -187,7 +190,7 @@ async function resolveRoomAccess(
     ) {
         return { ok: false, status: 401, error: 'Authentication required' };
     }
-    const accountRequired = beaconAccountEnabled() && !isAnonymousPublicCycleAccess(webSession);
+    const accountRequired = beaconAccountEnabled();
     const account = accountRequired
         ? await validatedAccountIdentity(webSession, now)
         : null;
@@ -234,7 +237,12 @@ async function resolveRoomAccess(
             ticket.state !== 'BOUND' ||
             (accountRequired
                 ? ticket.accountId !== account?.subject ||
-                    ticket.accountIssuer !== account?.issuer
+                    ticket.accountIssuer !== account?.issuer ||
+                    (isPublicCycleSession(ticket.scheduledSessionId) && (
+                        account?.authMethod !== 'google' ||
+                        account.emailVerified !== true ||
+                        ticket.boundEmail?.trim().toLowerCase() !== account.email
+                    ))
                 : !ticket.boundEmail) ||
             ticket.revokedAt ||
             ticket.expiresAt <= now

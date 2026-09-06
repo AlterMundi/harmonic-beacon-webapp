@@ -220,6 +220,9 @@ describe('principalFromToken', () => {
             accountSubject: 'acct_opaque_123',
             accountSessionId: 'central-sid',
             accountDisplayName: 'Ana',
+            accountEmail: 'ana@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod: 'google',
             accountValidatedAt: NOW,
         };
         withWebSession({
@@ -270,7 +273,7 @@ describe('principalFromToken', () => {
         vi.unstubAllEnvs();
     });
 
-    it('preserves only the exact registration-free public-cycle principal when Account is enabled', async () => {
+    it('rejects a legacy anonymous public-cycle principal when Account is enabled', async () => {
         vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
         withWebSession({
             ...attendeeSession({
@@ -286,44 +289,46 @@ describe('principalFromToken', () => {
             accountSubject: null,
             accountSessionId: null,
             accountDisplayName: null,
-            accountValidatedAt: null,
-        });
-
-        await expect((await importPrincipal()).principalFromToken(TOKEN, NOW)).resolves.toMatchObject({
-            kind: 'attendee',
-            scheduledSessionId: PUBLIC_CYCLE_SESSION_ID,
-            tier: 'COMP',
-            codeLastFour: 'FREE',
-        });
-    });
-
-    it.each([
-        ['arbitrary session', { scheduledSessionId: 'session-saturday' }],
-        ['paid tier', { tier: 'GLOBAL_NORTH' }],
-        ['non-public row', { scheduledSession: { publicAccess: false, isTest: false } }],
-        ['test row', { scheduledSession: { publicAccess: true, isTest: true } }],
-        ['Account-bound ticket', { accountId: 'opaque-account' }],
-    ])('does not widen the anonymous Account exception to a %s', async (_label, override) => {
-        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
-        withWebSession({
-            ...attendeeSession({
-                scheduledSessionId: PUBLIC_CYCLE_SESSION_ID,
-                tier: 'COMP',
-                codeLastFour: 'FREE',
-                boundEmail: 'public-opaque@anonymous.harmonicbeacon.invalid',
-                accountId: null,
-                accountIssuer: null,
-                scheduledSession: { publicAccess: true, isTest: false },
-                ...override,
-            }),
-            accountIssuer: null,
-            accountSubject: null,
-            accountSessionId: null,
-            accountDisplayName: null,
+            accountEmail: null,
+            accountEmailVerified: false,
+            accountAuthMethod: null,
             accountValidatedAt: null,
         });
 
         await expect((await importPrincipal()).principalFromToken(TOKEN, NOW)).resolves.toBeNull();
+    });
+
+    it.each([
+        ['google', true],
+        ['email', false],
+        ['apple', false],
+    ] as const)('requires Google for a public-cycle principal: %s', async (accountAuthMethod, allowed) => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        vi.stubEnv('BEACON_ACCOUNT_ISSUER_URL', 'https://account.harmonicbeacon.com');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_ID', 'hb-live');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET', 'test-secret-that-is-at-least-32-characters');
+        withWebSession({
+            ...attendeeSession({
+                scheduledSessionId: PUBLIC_CYCLE_SESSION_ID,
+                tier: 'COMP',
+                codeLastFour: 'FREE',
+                boundEmail: 'ana@example.com',
+                accountId: 'acct_opaque_123',
+                accountIssuer: 'https://account.harmonicbeacon.com',
+                scheduledSession: { publicAccess: true, isTest: false },
+            }),
+            accountIssuer: 'https://account.harmonicbeacon.com',
+            accountSubject: 'acct_opaque_123',
+            accountSessionId: 'central-sid',
+            accountDisplayName: 'Ana',
+            accountEmail: 'ana@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod,
+            accountValidatedAt: NOW,
+        });
+
+        const principal = await (await importPrincipal()).principalFromToken(TOKEN, NOW);
+        expect(Boolean(principal)).toBe(allowed);
     });
 });
 

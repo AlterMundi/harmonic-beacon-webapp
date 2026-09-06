@@ -15,6 +15,9 @@ const account = {
     subject: 'account-person-1',
     sessionId: 'central-session-1',
     displayName: '  Sai  ',
+    email: 'sai@example.com',
+    emailVerified: true as const,
+    authMethod: 'google' as const,
     validatedAt: new Date('2026-08-18T12:00:00Z'),
 };
 const publicSession = {
@@ -61,6 +64,7 @@ describe('attachPublicSessionAccess', () => {
                 codeLastFour: 'FREE',
                 tier: 'COMP',
                 state: 'BOUND',
+                boundEmail: account.email,
                 accountId: account.subject,
                 accountIssuer: account.issuer,
                 boundAt: now,
@@ -83,6 +87,16 @@ describe('attachPublicSessionAccess', () => {
             },
         });
         expect(webSessionUpdateMany.mock.calls[0][0].where.tokenDigest).not.toContain('opaque-cookie');
+    });
+
+    it.each(['email', 'apple'] as const)('rejects the %s access method', async (authMethod) => {
+        const { attachPublicSessionAccess } = await import('../public-session-access');
+        await expect(attachPublicSessionAccess(
+            'opaque-cookie',
+            publicSession,
+            { ...account, authMethod },
+        )).resolves.toBe(false);
+        expect(transaction).not.toHaveBeenCalled();
     });
 
     it('fails closed when the authenticated web session changed concurrently', async () => {

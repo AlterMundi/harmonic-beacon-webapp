@@ -183,6 +183,9 @@ integration('promotion invitation PostgreSQL contract', () => {
             subject: 'acct_opaque_integration_1',
             sessionId: 'central-device-integration-1',
             displayName: 'Account profile',
+            email: 'account-profile@example.com',
+            emailVerified: true as const,
+            authMethod: 'google' as const,
             validatedAt: NOW,
         };
         const result = await redeemPromoInvitation(

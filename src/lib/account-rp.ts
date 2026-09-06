@@ -13,7 +13,7 @@ export const ACCOUNT_STATE_COOKIE = '__Host-hb_account_state';
 export const ACCOUNT_LOGIN_TTL_SECONDS = 10 * 60;
 export const ACCOUNT_REVALIDATION_SECONDS = 15 * 60;
 
-const LOCAL_RETURN = /^\/(?:$|session(?:\/[A-Za-z0-9_-]+)*$|ops(?:\/[A-Za-z0-9_-]+)*$|staff\/login$)/;
+const LOCAL_RETURN = /^(?:\/|\/session(?:\/[A-Za-z0-9_-]+)*|\/api\/public-sessions\/[A-Za-z0-9_-]+\/enter|\/ops(?:\/[A-Za-z0-9_-]+)*|\/staff\/login)$/;
 const OPAQUE_CLAIM = /^[\x21-\x7e]{1,512}$/;
 const OAUTH_CREDENTIAL = /^[\x21-\x7e]{1,16384}$/;
 
@@ -24,6 +24,9 @@ export type AccountIdentity = {
     subject: string;
     sessionId: string;
     displayName: string | null;
+    email: string;
+    emailVerified: true;
+    authMethod: 'email' | 'google' | 'apple';
     validatedAt: Date;
 };
 
@@ -88,6 +91,10 @@ export function accountIssuerIsCurrent(issuer: string | null | undefined): boole
     } catch {
         return false;
     }
+}
+
+export function accountClaimIsOpaque(value: string | null | undefined): value is string {
+    return typeof value === 'string' && OPAQUE_CLAIM.test(value);
 }
 
 export function accountConfiguration(env: NodeJS.ProcessEnv = process.env): AccountConfiguration {
@@ -273,6 +280,7 @@ export async function startAccountAuthorization(input: {
     origin: string;
     now?: Date;
     pendingInvitation?: PendingAccountInvitation;
+    requiredAuthMethod?: 'google';
 }): Promise<{ authorizationUrl: string; stateCookie: ReturnType<typeof accountStateCookie> }> {
     const config = accountConfiguration();
     const discovery = await discoverAccountIssuer(config);
@@ -299,11 +307,14 @@ export async function startAccountAuthorization(input: {
     authorizationUrl.searchParams.set('response_type', 'code');
     authorizationUrl.searchParams.set('client_id', config.clientId);
     authorizationUrl.searchParams.set('redirect_uri', accountCallbackUrl(input.origin));
-    authorizationUrl.searchParams.set('scope', 'openid profile');
+    authorizationUrl.searchParams.set('scope', 'openid profile email');
     authorizationUrl.searchParams.set('state', state);
     authorizationUrl.searchParams.set('nonce', nonce);
     authorizationUrl.searchParams.set('code_challenge', pkceChallenge(verifier));
     authorizationUrl.searchParams.set('code_challenge_method', 'S256');
+    if (input.requiredAuthMethod === 'google') {
+        authorizationUrl.searchParams.set('prompt', 'login');
+    }
     return { authorizationUrl: authorizationUrl.href, stateCookie: accountStateCookie(state) };
 }
 
@@ -333,6 +344,50 @@ function profileDisplayName(payload: Record<string, unknown>): string | null {
             : '';
     const name = raw.trim().replace(/\s+/g, ' ').slice(0, 60);
     return name.length > 0 ? name : null;
+}
+
+function verifiedAccountEmail(payload: Record<string, unknown>): string {
+    if (payload.email_verified !== true || typeof payload.email !== 'string') {
+        throw new Error('Beacon Account email is not verified');
+    }
+    const email = payload.email.trim().toLowerCase();
+    const parts = email.split('@');
+    if (
+        email.length === 0 ||
+        email.length > 254 ||
+        /\s/.test(email) ||
+        parts.length !== 2 ||
+        parts[0].length === 0 ||
+        !parts[1].includes('.') ||
+        parts[1].startsWith('.') ||
+        parts[1].endsWith('.')
+    ) {
+        throw new Error('Beacon Account email claim is invalid');
+    }
+    return email;
+}
+
+function accountAuthMethod(payload: Record<string, unknown>): AccountIdentity['authMethod'] {
+    if (
+        payload.auth_method !== 'email' &&
+        payload.auth_method !== 'google' &&
+        payload.auth_method !== 'apple'
+    ) {
+        throw new Error('Beacon Account auth_method claim is invalid');
+    }
+    return payload.auth_method;
+}
+
+export function parseAccountUserInfoClaims(payload: Record<string, unknown>): Pick<
+    AccountIdentity,
+    'displayName' | 'email' | 'emailVerified' | 'authMethod'
+> {
+    return {
+        displayName: profileDisplayName(payload),
+        email: verifiedAccountEmail(payload),
+        emailVerified: true,
+        authMethod: accountAuthMethod(payload),
+    };
 }
 
 async function exchangeAuthorizationCode(input: {
@@ -417,11 +472,12 @@ async function exchangeAuthorizationCode(input: {
     const userInfo = await userInfoResponse.json() as Record<string, unknown>;
     if (userInfo.sub !== subject) throw new Error('Beacon Account UserInfo subject mismatch');
 
+    const claims = parseAccountUserInfoClaims(userInfo);
     return {
         issuer: config.issuer,
         subject,
         sessionId,
-        displayName: profileDisplayName(userInfo),
+        ...claims,
         validatedAt: new Date(),
     };
 }
@@ -493,6 +549,9 @@ export async function completeAccountAuthorization(input: {
                 accountSubject: identity.subject,
                 accountSessionId: identity.sessionId,
                 accountDisplayName: identity.displayName,
+                accountEmail: identity.email,
+                accountEmailVerified: identity.emailVerified,
+                accountAuthMethod: identity.authMethod,
                 accountValidatedAt: identity.validatedAt,
                 expiresAt: new Date(now.getTime() + sessionCookieTtlSeconds() * 1000),
                 lastSeenAt: now,
@@ -548,6 +607,9 @@ export type AccountSessionCandidate = {
     accountSubject: string | null;
     accountSessionId: string | null;
     accountDisplayName: string | null;
+    accountEmail: string | null;
+    accountEmailVerified: boolean;
+    accountAuthMethod: string | null;
     accountValidatedAt: Date | null;
 };
 
@@ -557,15 +619,21 @@ function identityFromCandidate(row: AccountSessionCandidate): AccountIdentity | 
         !row.accountIssuer ||
         !row.accountSubject ||
         !row.accountSessionId ||
+        !row.accountEmail ||
+        row.accountEmailVerified !== true ||
+        !['email', 'google', 'apple'].includes(row.accountAuthMethod ?? '') ||
         !row.accountValidatedAt ||
-        !OPAQUE_CLAIM.test(row.accountSubject) ||
-        !OPAQUE_CLAIM.test(row.accountSessionId)
+        !accountClaimIsOpaque(row.accountSubject) ||
+        !accountClaimIsOpaque(row.accountSessionId)
     ) return null;
     return {
         issuer: row.accountIssuer,
         subject: row.accountSubject,
         sessionId: row.accountSessionId,
         displayName: row.accountDisplayName,
+        email: row.accountEmail,
+        emailVerified: true,
+        authMethod: row.accountAuthMethod as AccountIdentity['authMethod'],
         validatedAt: row.accountValidatedAt,
     };
 }
@@ -674,6 +742,9 @@ export async function validatedAccountIdentity(
             accountSubject: true,
             accountSessionId: true,
             accountDisplayName: true,
+            accountEmail: true,
+            accountEmailVerified: true,
+            accountAuthMethod: true,
             accountValidatedAt: true,
             revokedAt: true,
         },
