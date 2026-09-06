@@ -63,6 +63,9 @@ type WebSessionRow = {
     accountSubject?: string | null;
     accountSessionId?: string | null;
     accountDisplayName?: string | null;
+    accountEmail?: string | null;
+    accountEmailVerified?: boolean;
+    accountAuthMethod?: string | null;
     accountValidatedAt?: Date | null;
 };
 
@@ -344,7 +347,7 @@ describe('POST /api/auth/ticket', () => {
         expect(db.webSessions[0].displayName).toBe(NAME);
     });
 
-    it('binds a provider ticket once to the opaque Account subject, never the email snapshot', async () => {
+    it('binds a provider ticket to the opaque Account subject without copying its provider email', async () => {
         vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
         const accountToken = 'central-account-local-session-token';
         const issuer = 'https://account.harmonicbeacon.com';
@@ -365,6 +368,9 @@ describe('POST /api/auth/ticket', () => {
             accountSubject: 'acct_opaque_123',
             accountSessionId: 'central-device-sid',
             accountDisplayName: 'Ana Account',
+            accountEmail: 'ana.account@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod: 'google',
             accountValidatedAt: new Date(),
         }]);
         const { POST } = await importRoute();
@@ -392,6 +398,9 @@ describe('POST /api/auth/ticket', () => {
             accountIssuer: issuer,
             accountSubject: 'acct_opaque_123',
             accountSessionId: 'central-device-sid',
+            accountEmail: 'ana.account@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod: 'google',
         });
         expect(JSON.stringify(attached)).not.toContain('buyer-audit-snapshot@example.com');
     });

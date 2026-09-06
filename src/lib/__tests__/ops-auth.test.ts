@@ -98,6 +98,9 @@ describe('resolveStaffByToken', () => {
             accountIssuer: issuer,
             accountSubject: 'acct_staff_1',
             accountSessionId: 'central-sid',
+            accountEmail: 'admin@harmonicbeacon.com',
+            accountEmailVerified: true,
+            accountAuthMethod: 'google',
             accountValidatedAt: new Date(),
         });
         mockDb(session, {

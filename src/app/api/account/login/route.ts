@@ -20,6 +20,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             flow,
             returnTo: request.nextUrl.searchParams.get('next'),
             origin,
+            requiredAuthMethod:
+                flow === 'attendee' && request.nextUrl.searchParams.get('method') === 'google'
+                    ? 'google'
+                    : undefined,
         });
         const response = NextResponse.redirect(started.authorizationUrl, { status: 303 });
         response.cookies.set(started.stateCookie);

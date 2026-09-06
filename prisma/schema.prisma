@@ -176,7 +176,8 @@ model TicketEntitlement {
   state              TicketEntitlementState @default(ISSUED)
   boundEmail         String?                @map("bound_email")
   // Central Beacon Account subject. This is the authorization binding when
-  // BEACON_ACCOUNT_ENABLED=true; boundEmail remains a provider audit snapshot.
+  // BEACON_ACCOUNT_ENABLED=true. boundEmail is a provider audit snapshot for
+  // commerce and a verified Account email snapshot for payment-free access.
   accountId          String?                @map("account_id")
   accountIssuer      String?                @map("account_issuer")
   boundAt            DateTime?              @map("bound_at")
@@ -347,6 +348,9 @@ model WebSession {
   accountSubject         String?            @map("account_subject")
   accountSessionId       String?            @map("account_session_id")
   accountDisplayName     String?            @map("account_display_name")
+  accountEmail           String?            @map("account_email")
+  accountEmailVerified   Boolean            @default(false) @map("account_email_verified")
+  accountAuthMethod      String?            @map("account_auth_method") @db.VarChar(16)
   accountValidatedAt     DateTime?          @map("account_validated_at")
   staffUserId            String?            @map("staff_user_id") @db.Uuid
   staffUser              User?              @relation("StaffWebSessions", fields: [staffUserId], references: [id], onDelete: Cascade)

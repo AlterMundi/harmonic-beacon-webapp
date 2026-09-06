@@ -102,6 +102,7 @@ export default async function LandingPage({
         ? await currentAccountIdentity().catch(() => null)
         : null;
     const accountError = params.account_error === '1';
+    const googleAccountRequired = params.account_method === 'google_required';
     const events = await weekendEvents();
     const hasTicketedEvents = events === null || events.some((event) => !isPublicCycleSession(event.id));
     const purchaseUrlSession1 = process.env.TICKET_PURCHASE_URL_SESSION_1 || process.env.TICKET_PURCHASE_URL;
@@ -136,6 +137,14 @@ export default async function LandingPage({
                     <h2 id="events-heading" className="hb-section-label">
                         {copy.sessionsHeading}
                     </h2>
+
+                    {googleAccountRequired && (
+                        <div className="event-alert event-alert--warning" role="alert">
+                            {locale === 'en'
+                                ? 'Free events require a Beacon Account signed in with Google. Sign out of the current Beacon Account and choose Continue with Google.'
+                                : 'Los eventos gratuitos requieren una Cuenta Beacon iniciada con Google. Cerrá la cuenta Beacon actual y elegí Continuar con Google.'}
+                        </div>
+                    )}
 
                     {events === null ? (
                         <div className="event-alert event-alert--warning">

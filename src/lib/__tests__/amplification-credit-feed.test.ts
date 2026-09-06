@@ -109,6 +109,8 @@ describe('amplification credit feed query', () => {
         expect(sql).toContain('"session"."is_test" = FALSE');
         expect(sql).toContain('"participant"."staff_user_id" IS NULL');
         expect(sql).toContain('"participant"."ticket_entitlement_id" IS NOT NULL');
+        expect(sql).toContain('NOT LIKE');
+        expect(sql).toContain('@anonymous.harmonicbeacon.invalid');
         expect(sql).toContain('LEFT JOIN "commerce_entitlements" AS "commerce"');
         expect(page.entries).toHaveLength(2);
         expect(page.entries[1]).toMatchObject({

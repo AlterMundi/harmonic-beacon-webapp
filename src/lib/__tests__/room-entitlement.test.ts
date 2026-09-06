@@ -87,7 +87,7 @@ describe('resolveRoomPrincipal', () => {
         vi.unstubAllEnvs();
     });
 
-    it('admits the exact anonymous public-cycle ticket while Account is enabled', async () => {
+    it('rejects a legacy anonymous public-cycle ticket while Account is enabled', async () => {
         vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
         findWebSession.mockResolvedValue({
             ...activeTicketSession,
@@ -96,6 +96,9 @@ describe('resolveRoomPrincipal', () => {
             accountSubject: null,
             accountSessionId: null,
             accountDisplayName: null,
+            accountEmail: null,
+            accountEmailVerified: false,
+            accountAuthMethod: null,
             accountValidatedAt: null,
             ticketEntitlement: {
                 ...activeTicketSession.ticketEntitlement,
@@ -120,14 +123,55 @@ describe('resolveRoomPrincipal', () => {
             now,
         );
 
-        expect(result).toMatchObject({
-            ok: true,
-            principal: {
-                role: 'ATTENDEE',
-                ticketEntitlementId: 'ticket-1',
-                displayName: 'Participante',
+        expect(result).toEqual({
+            ok: false,
+            status: 401,
+            error: 'Authentication required',
+        });
+    });
+
+    it.each([
+        ['google', true],
+        ['email', false],
+        ['apple', false],
+    ] as const)('requires Google at the room boundary for public-cycle access: %s', async (
+        accountAuthMethod,
+        allowed,
+    ) => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
+        vi.stubEnv('BEACON_ACCOUNT_ISSUER_URL', 'https://account.harmonicbeacon.com');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_ID', 'hb-live');
+        vi.stubEnv('BEACON_ACCOUNT_CLIENT_SECRET', 'test-secret-that-is-at-least-32-characters');
+        findWebSession.mockResolvedValue({
+            ...activeTicketSession,
+            accountIssuer: 'https://account.harmonicbeacon.com',
+            accountSubject: 'account-subject',
+            accountSessionId: 'account-session',
+            accountDisplayName: 'Ana',
+            accountEmail: 'ana@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod,
+            accountValidatedAt: now,
+            ticketEntitlement: {
+                ...activeTicketSession.ticketEntitlement,
+                scheduledSessionId: publicCycleSessionId,
+                tier: 'COMP',
+                codeLastFour: 'FREE',
+                boundEmail: 'ana@example.com',
+                accountId: 'account-subject',
+                accountIssuer: 'https://account.harmonicbeacon.com',
+                scheduledSession: { publicAccess: true, isTest: false },
             },
         });
+        findScheduledSession.mockResolvedValue({ ...activeEvent, id: publicCycleSessionId });
+
+        const result = await (await import('../room-entitlement')).resolveRoomPrincipal(
+            request(),
+            publicCycleSessionId,
+            now,
+        );
+
+        expect(result.ok).toBe(allowed);
     });
 
     it('rejects a missing opaque cookie without touching the database', async () => {

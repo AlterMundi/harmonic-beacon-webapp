@@ -120,6 +120,28 @@ afterEach(() => {
 });
 
 describe('Beacon Account OAuth 2.1 RP', () => {
+    it('accepts only a verified, plausible email and a known access method', async () => {
+        const { parseAccountUserInfoClaims } = await import('../account-rp');
+        expect(parseAccountUserInfoClaims({
+            name: '  Ana   Beacon ',
+            email: ' ANA@Example.com ',
+            email_verified: true,
+            auth_method: 'google',
+        })).toEqual({
+            displayName: 'Ana Beacon',
+            email: 'ana@example.com',
+            emailVerified: true,
+            authMethod: 'google',
+        });
+        for (const payload of [
+            { email: 'ana@example.com', email_verified: false, auth_method: 'google' },
+            { email: 'not-an-email', email_verified: true, auth_method: 'google' },
+            { email: 'ana@example.com', email_verified: true, auth_method: 'unknown' },
+        ]) {
+            expect(() => parseAccountUserInfoClaims(payload)).toThrow();
+        }
+    });
+
     it('uses the pinned public origin behind a loopback proxy and ignores forwarded host input', async () => {
         process.env.TICKET_LOGIN_URL_PREFIX = 'https://live-staging.harmonicbeacon.com/';
         const { trustedLiveRequestOrigin } = await import('../account-rp');
@@ -183,6 +205,7 @@ describe('Beacon Account OAuth 2.1 RP', () => {
         expect(redirect.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/);
         expect(redirect.searchParams.get('nonce')).toBeTruthy();
         expect(redirect.searchParams.get('redirect_uri')).toBe('http://localhost:3000/api/account/callback');
+        expect(redirect.searchParams.get('scope')).toBe('openid profile email');
         expect(createAttempt).toHaveBeenCalledWith({
             data: expect.objectContaining({
                 stateDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
@@ -196,6 +219,28 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             httpOnly: true,
             secure: true,
             sameSite: 'lax',
+        });
+    });
+
+    it('marks a free-event authorization as an explicit Google login', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(json(discovery()));
+        vi.stubGlobal('fetch', fetchMock);
+        const { startAccountAuthorization } = await import('../account-rp');
+
+        const result = await startAccountAuthorization({
+            flow: 'attendee',
+            returnTo: '/api/public-sessions/50000000-0000-4000-8000-202609120001/enter',
+            requiredAuthMethod: 'google',
+            origin: 'http://localhost:3000',
+            now: NOW,
+        });
+
+        const redirect = new URL(result.authorizationUrl);
+        expect(redirect.searchParams.get('prompt')).toBe('login');
+        expect(createAttempt).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                returnTo: '/api/public-sessions/50000000-0000-4000-8000-202609120001/enter',
+            }),
         });
     });
 
@@ -233,6 +278,9 @@ describe('Beacon Account OAuth 2.1 RP', () => {
                 sub: SUBJECT,
                 name: '  Ana   Beacon  ',
                 profile_revision: 2,
+                email: 'ANA@example.com',
+                email_verified: true,
+                auth_method: 'google',
             });
             throw new Error(`unexpected fetch ${url}`);
         });
@@ -252,6 +300,9 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             subject: SUBJECT,
             sessionId: SID,
             displayName: 'Ana Beacon',
+            email: 'ana@example.com',
+            emailVerified: true,
+            authMethod: 'google',
         });
         expect(claimAttempt).toHaveBeenCalledWith(expect.objectContaining({
             where: expect.objectContaining({ stateDigest: stateDigest(), consumedAt: null }),
@@ -262,6 +313,9 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             accountSubject: SUBJECT,
             accountSessionId: SID,
             accountDisplayName: 'Ana Beacon',
+            accountEmail: 'ana@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod: 'google',
         });
         expect(JSON.stringify(persisted)).not.toContain('opaque-access-token');
         expect(JSON.stringify(persisted)).not.toContain(signed);
@@ -435,6 +489,9 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             accountSubject: SUBJECT,
             accountSessionId: SID,
             accountDisplayName: 'Ana Beacon',
+            accountEmail: 'ana@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod: 'google',
             accountValidatedAt: NOW,
         };
 
@@ -467,6 +524,9 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             accountSubject: SUBJECT,
             accountSessionId: SID,
             accountDisplayName: null,
+            accountEmail: 'ana@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod: 'google',
             accountValidatedAt: NOW,
         }, later)).resolves.toBeNull();
         expect(updateSessions).toHaveBeenCalledWith({
@@ -489,6 +549,9 @@ describe('Beacon Account OAuth 2.1 RP', () => {
             accountSubject: SUBJECT,
             accountSessionId: SID,
             accountDisplayName: null,
+            accountEmail: 'ana@example.com',
+            accountEmailVerified: true,
+            accountAuthMethod: 'google',
             accountValidatedAt: NOW,
         }, new Date(NOW.getTime() + 16 * 60_000))).resolves.toBeNull();
         expect(updateSessions).not.toHaveBeenCalled();

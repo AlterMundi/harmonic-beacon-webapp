@@ -25,12 +25,15 @@ Runtime variables are:
 - `BEACON_ACCOUNT_CLIENT_ID`
 - `BEACON_ACCOUNT_CLIENT_SECRET` (server-side only, at least 32 characters)
 
-The RP discovers `/.well-known/openid-configuration` and requires same-origin
+The RP requests `openid profile email`, discovers
+`/.well-known/openid-configuration` and requires same-origin
 authorization, token, JWKS, introspection and end-session endpoints. Callback
 validation includes signature/JWKS, exact issuer, audience, expiry, issued-at,
 nonce, one-use state, PKCE and one server-side access-token introspection.
+UserInfo must carry a verified email and one unambiguous Account access method.
 Provider tokens are discarded after callback and never enter PostgreSQL, logs,
-cookies or browser JavaScript.
+cookies or browser JavaScript. The local session retains only the verified email
+and access-method snapshot needed for admission and private reconciliation.
 
 When local validation reaches 15 minutes, Live calls the fixed issuer endpoint
 `POST /api/account/session-status` with `client_secret_basic` and an
@@ -53,11 +56,19 @@ Readiness therefore reports `checks.account=unavailable` while remaining ready
 as long as the local database is healthy.
 
 `TicketEntitlement.accountIssuer/accountId` is a bind-once authorization key.
-One Account may own several tickets. Existing `boundEmail` remains only a
-Ticket Tailor/provider audit snapshot and is never consulted in Account mode.
+One Account may own several tickets. For commerce, `boundEmail` remains a
+Ticket Tailor/provider audit snapshot. For payment-free public sessions, it is
+the verified Account email snapshot used by the private amplification-credit
+feed. Email never authorizes room access in Account mode.
 Promo redemption derives a non-PII digest from issuer plus subject. The event
 alias defaults from the Account profile, remains editable, and is captured when
 the participation is first materialized.
+
+The reviewed public cycle is payment-free, not identity-free. Its entry route
+requires a Google-backed Account with `email_verified=true`, creates one
+deterministic COMP entitlement per Account and session, and never creates the
+former `@anonymous.harmonicbeacon.invalid` identity. Credential and Apple
+Accounts remain valid elsewhere but do not satisfy this public-free gate.
 
 Staff access uses `StaffAccountBinding`: one explicit central issuer/subject per
 existing local `User`. No email matching occurs. Roles, disabled state and event
@@ -80,4 +91,6 @@ four staff bindings, register exact clients/callbacks, verify discovery and
 front-channel logout, then enable staging. Rollback is the flag: legacy columns
 and code remain untouched while the migration is experimental. Enabling the
 flag deliberately rejects legacy email/password sessions and ticket-email
-matching; there is no implicit account/email migration.
+matching; there is no implicit account/email migration. The verified-email
+migration also requires existing Account sessions to authenticate again so the
+new snapshot is present.

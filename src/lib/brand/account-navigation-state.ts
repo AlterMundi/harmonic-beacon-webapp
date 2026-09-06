@@ -1,4 +1,4 @@
-import { storedAccountIdentity } from '@/lib/account-rp';
+import { accountClaimIsOpaque, accountIssuerIsCurrent } from '@/lib/account-rp';
 import { prisma } from '@/lib/db';
 import type { LocalizedStaffRole } from '@/lib/i18n';
 import { SESSION_COOKIE_NAME, digestSessionToken } from '@/lib/session-auth';
@@ -82,20 +82,24 @@ export async function locallyKnownLiveNavigationIdentity(
         });
         if (!row || row.revokedAt || row.expiresAt <= now) return null;
 
-        const identity = storedAccountIdentity(row);
-        if (!identity) return null;
+        if (
+            !accountIssuerIsCurrent(row.accountIssuer) ||
+            !accountClaimIsOpaque(row.accountSubject) ||
+            !accountClaimIsOpaque(row.accountSessionId) ||
+            !row.accountValidatedAt
+        ) return null;
         const binding = row.staffUser?.accountBinding;
         const isStaff = Boolean(
             row.staffUser &&
             row.staffUser.disabledAt === null &&
             binding &&
             binding.disabledAt === null &&
-            binding.accountIssuer === identity.issuer &&
-            binding.accountSubject === identity.subject
+            binding.accountIssuer === row.accountIssuer &&
+            binding.accountSubject === row.accountSubject
         );
 
         return {
-            displayName: identity.displayName?.trim() || null,
+            displayName: row.accountDisplayName?.trim() || null,
             staffRole: isStaff ? row.staffUser!.role : null,
         };
     } catch {

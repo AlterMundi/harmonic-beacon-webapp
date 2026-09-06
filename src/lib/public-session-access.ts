@@ -18,8 +18,8 @@ function publicEntitlementDigest(sessionId: string, account: AccountIdentity): s
 
 /**
  * Attach a free public event to an already authenticated Beacon Account.
- * This is the registration-free bridge into the existing ticket-shaped room
- * authorization boundary; it never changes the Account login implementation.
+ * This is the payment-free bridge into the existing ticket-shaped room
+ * authorization boundary. Only a verified Google-backed Account may use it.
  */
 export async function attachPublicSessionAccess(
     cookieValue: string,
@@ -27,7 +27,12 @@ export async function attachPublicSessionAccess(
     account: AccountIdentity,
     now = new Date(),
 ): Promise<boolean> {
-    if (!session.publicAccess) return false;
+    if (
+        !session.publicAccess ||
+        account.authMethod !== 'google' ||
+        account.emailVerified !== true ||
+        !account.email
+    ) return false;
 
     const expiresAt = new Date(Math.max(
         session.scheduledAt.getTime() + 24 * 60 * 60 * 1000,
@@ -38,13 +43,14 @@ export async function attachPublicSessionAccess(
     return prisma.$transaction(async (tx) => {
         const entitlement = await tx.ticketEntitlement.upsert({
             where: { codeDigest },
-            update: {},
+            update: { boundEmail: account.email },
             create: {
                 scheduledSessionId: session.id,
                 codeDigest,
                 codeLastFour: 'FREE',
                 tier: 'COMP',
                 state: 'BOUND',
+                boundEmail: account.email,
                 accountId: account.subject,
                 accountIssuer: account.issuer,
                 boundAt: now,
@@ -64,7 +70,7 @@ export async function attachPublicSessionAccess(
             },
             data: {
                 ticketEntitlementId: entitlement.id,
-                displayName: account.displayName?.trim() || 'Participante',
+                displayName: account.displayName?.trim() || null,
                 displayNameConfirmedAt: null,
                 lastSeenAt: now,
             },

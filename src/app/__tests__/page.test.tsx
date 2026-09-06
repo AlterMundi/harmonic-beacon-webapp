@@ -106,6 +106,15 @@ describe('landing page', () => {
         expect(screen.queryByText('PAGO → PRESENCIA')).toBeNull();
     });
 
+    it('explains how to recover when the current Beacon Account is not Google-backed', async () => {
+        mountDb(vi.fn().mockResolvedValue([]));
+        await renderPage({ account_method: 'google_required' });
+
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Los eventos gratuitos requieren una Cuenta Beacon iniciada con Google.',
+        );
+    });
+
     it('asks only for sessions an attendee could still join', async () => {
         const findMany = mountDb(vi.fn().mockResolvedValue([]));
         await renderPage();
