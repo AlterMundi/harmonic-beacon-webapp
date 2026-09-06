@@ -72,7 +72,7 @@ heartbeat path. The mode-0600 heartbeat is:
 Better Auth and `@better-auth/oauth-provider` are pinned to `1.6.30`. Dynamic
 registration is disabled. Static clients are confidential server-side clients,
 `client_secret_basic` only, authorization code only, PKCE S256 required,
-scopes exactly `openid profile`, public=false, subject type public, consent
+scopes up to `openid profile email`, public=false, subject type public, consent
 skipped and end-session enabled:
 
 | client | redirect | signed front-channel |
@@ -90,7 +90,14 @@ Better Auth profile/link/session/password/email alternatives are 404.
 
 ID tokens contain `iss/sub/aud/exp/iat/nonce/sid`; RPs verify JWKS, claims,
 nonce/state/PKCE and exact redirect, introspect once, discard Account/provider
-tokens and retain only issuer/sub/sid in a host-only local session. Private
+tokens and retain only the minimum local snapshot required by each product.
+UserInfo exposes `email` and `email_verified` only when the RP requests the
+standard `email` scope. The internal `auth_method` claim distinguishes the
+account's single durable method (`email`, `google` or `apple`) without exposing
+provider tokens. A signed `prompt=login` request from the fixed Live clients is
+the UI convention for the Google-only public-event path: Account hides the
+other methods and asks for an explicit Google continuation, while Live remains
+the server-side enforcement boundary. Private
 `POST /api/account/session-status` uses client-secret Basic and exact
 form-encoding; active responses contain only `active,iss,sub,sid`.
 
