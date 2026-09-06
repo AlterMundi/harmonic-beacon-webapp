@@ -189,7 +189,10 @@ services:
       resources:
         limits:
           cpus: '0.25'
-          memory: 256M
+          # The durable stage-grant migration briefly pushes the tsx worker
+          # above 256 MiB while its module graph and first backlog are warm.
+          # Keep enough cgroup headroom to avoid an OOM/restart during rollout.
+          memory: 512M
     logging:
       driver: "json-file"
       options:
