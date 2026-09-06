@@ -62,6 +62,56 @@ describe('Account cross-product logout completion', () => {
         expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ 'X-HB-Locale': 'en' });
     });
 
+    it('shows only Google when a product requires a Google-backed identity', () => {
+        render(createElement(AccountClient, {
+            initialSession: null,
+            providers: { google: true, apple: true },
+            locale: 'en',
+            returnTo: null,
+            requiredProvider: 'google',
+        }));
+
+        expect(screen.getByRole('heading', { name: 'Continue with Google' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+        expect(screen.queryByRole('textbox', { name: 'Email' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Continue with Apple' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
+    });
+
+    it('asks a signed-in credential account to sign out before Google-only access', () => {
+        render(createElement(AccountClient, {
+            initialSession: {
+                user: { email: 'listener@example.invalid', emailVerified: true, accessMethod: 'email' },
+                profile: { displayName: 'Test Listener', revision: 1 },
+            },
+            providers: { google: true, apple: false },
+            locale: 'en',
+            returnTo: null,
+            requiredProvider: 'google',
+        }));
+
+        expect(screen.getByRole('heading', { name: 'A Google account is required' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Sign out and continue' })).toBeVisible();
+        expect(screen.queryByRole('button', { name: 'Save profile' })).toBeNull();
+    });
+
+    it('lets an existing Google account explicitly resume the signed product flow', () => {
+        render(createElement(AccountClient, {
+            initialSession: {
+                user: { email: 'listener@gmail.com', emailVerified: true, accessMethod: 'google' },
+                profile: { displayName: 'Test Listener', revision: 1 },
+            },
+            providers: { google: true, apple: true },
+            locale: 'en',
+            returnTo: null,
+            requiredProvider: 'google',
+        }));
+
+        expect(screen.getByRole('heading', { name: 'Confirm your Google account' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+        expect(screen.queryByRole('button', { name: 'Save profile' })).toBeNull();
+    });
+
     it.each([
         ['en' as const, 'Use 8 to 128 characters. No special format is required.'],
         ['es' as const, 'Usá entre 8 y 128 caracteres. No se exige ningún formato especial.'],
