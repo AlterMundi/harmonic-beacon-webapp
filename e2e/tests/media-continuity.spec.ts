@@ -6,6 +6,7 @@ import {
     expectMediaContinuity,
     installMediaProbe,
     mediaProbeSnapshot,
+    rtcAudioStatsSnapshot,
 } from '../helpers/media-probe';
 
 /**
@@ -181,6 +182,17 @@ stackTest.describe('media continuity', () => {
         expect(snapshot.audioElements).toBe(activated.audioElements);
         expect(snapshot.duplicateMediaSources).toEqual([]);
         expect(snapshot.livekitSocketsClosed).toBe(activated.livekitSocketsClosed);
+
+        const rtcAudioStats = await rtcAudioStatsSnapshot(attendee);
+        expect(rtcAudioStats.collectionErrors).toBe(0);
+        expect(
+            rtcAudioStats.peerConnections.flatMap((connection) => connection.inbound),
+            'the subscribed facilitator audio never produced an inbound RTC stats report',
+        ).not.toHaveLength(0);
+        await testInfo.attach('rtc-audio-stats-attendee.json', {
+            body: Buffer.from(`${JSON.stringify(rtcAudioStats, null, 2)}\n`),
+            contentType: 'application/json',
+        });
 
         // Send an intentional LiveKit leave before destroying the browser
         // contexts. An abrupt context close keeps the publisher resumable for
