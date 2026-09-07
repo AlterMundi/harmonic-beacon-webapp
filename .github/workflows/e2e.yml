@@ -163,6 +163,21 @@ jobs:
       - name: Install Firefox after Chromium screenshot gates
         run: npx playwright install --with-deps firefox
 
+      - name: Start isolated browser audio backend
+        # Firefox needs a real audio backend even for synthesized RTP. Without
+        # one, AudioContext.resume() can remain pending after a genuine click.
+        # Use a job-private socket and null sink, not a browser-policy override.
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils
+          socket="$RUNNER_TEMP/beacon-pulse.sock"
+          pulseaudio --daemonize=yes --use-pid-file=no --exit-idle-time=-1 -n \
+            --load="module-native-protocol-unix socket=$socket" \
+            --load="module-null-sink sink_name=beacon_ci rate=48000"
+          PULSE_SERVER="unix:$socket" pactl info
+          printf 'PULSE_SERVER=unix:%s\n' "$socket" >> "$GITHUB_ENV"
+
       - name: Run Firefox functional and accessibility gates
         run: npx playwright test --project=firefox
 
