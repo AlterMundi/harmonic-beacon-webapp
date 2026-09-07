@@ -73,7 +73,10 @@ describe('ThumbnailSender', () => {
             audio: false,
         });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Switch to rear camera' }));
+        // getUserMedia resolving and React committing `enabled` are separate
+        // async boundaries. Wait for the control that proves the latter;
+        // checking only the mock call makes this test scheduler-dependent.
+        fireEvent.click(await screen.findByRole('button', { name: 'Switch to rear camera' }));
 
         await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
         expect(stops[0]).toHaveBeenCalledOnce();

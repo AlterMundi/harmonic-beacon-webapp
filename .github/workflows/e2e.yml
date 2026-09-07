@@ -170,7 +170,12 @@ jobs:
         run: npx playwright install --with-deps webkit
 
       - name: Run iPhone/WebKit media gate
-        run: npx playwright test e2e/tests/media-continuity.spec.ts --project=iphone-webkit
+        run: >-
+          npx playwright test
+          e2e/tests/media-continuity.spec.ts
+          e2e/tests/audio-activation.spec.ts
+          e2e/tests/continuity-navigation.spec.ts
+          --project=iphone-webkit
 
       - name: Verify grant, migration, commerce, and invitation durable outbox contracts
         # Real-PostgreSQL proof that grant revisions are serialized across two

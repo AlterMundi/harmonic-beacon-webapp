@@ -35,7 +35,9 @@ if (!process.env.E2E_BASE_URL) {
 /** Functional suites run once; responsive/visual suites run per width. */
 const PER_WIDTH = /(responsive|visual)\.spec\.ts/;
 const MEDIA_CONTINUITY = /media-continuity\.spec\.ts/;
+const LIVE_CONTINUITY = /(media-continuity|audio-activation|continuity-navigation)\.spec\.ts/;
 const WEBKIT_ATTENDEE_CONTINUITY = /attendee controls without capture/;
+const WEBKIT_NO_CAPTURE = /attendee controls without capture|live continuity without capture/;
 
 export default defineConfig({
     testDir: './e2e/tests',
@@ -77,7 +79,7 @@ export default defineConfig({
             // not replace the physical Android check in the rehearsal sheet.
             name: 'android-chrome',
             use: { ...devices['Pixel 7'] },
-            testMatch: MEDIA_CONTINUITY,
+            testMatch: LIVE_CONTINUITY,
             grepInvert: WEBKIT_ATTENDEE_CONTINUITY,
         },
         {
@@ -111,8 +113,8 @@ export default defineConfig({
                 // browser permissions through Playwright.
                 launchOptions: { args: [] },
             },
-            testMatch: MEDIA_CONTINUITY,
-            grep: WEBKIT_ATTENDEE_CONTINUITY,
+            testMatch: LIVE_CONTINUITY,
+            grep: WEBKIT_NO_CAPTURE,
         },
         {
             name: 'w1440',
