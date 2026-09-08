@@ -31,6 +31,23 @@ describe('public four-Saturday cycle', () => {
         expect(migration).not.toContain('14:00:00');
     });
 
+    it('moves only the final Umbral session to 10:00 Argentina / 13:00 UTC', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260908130000_move_final_umbral_to_1000_argentina/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain('50000000-0000-4000-8000-202609120001');
+        expect(migration).toContain("'2026-09-12 13:00:00'::timestamp");
+        expect(migration).toContain('corrected_count <> 1');
+        expect(migration).toContain('initialized_count = 0 AND corrected_count <> 0');
+        expect(migration).not.toContain('202609050001');
+        expect(migration).not.toContain("'2026-09-12 17:00:00'::timestamp");
+    });
+
     it('recognizes only an entirely anonymous COMP entitlement for a reviewed public room', () => {
         const candidate = {
             staffUser: null,
