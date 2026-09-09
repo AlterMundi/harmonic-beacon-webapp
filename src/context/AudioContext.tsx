@@ -12,6 +12,7 @@ import {
     type TrackPublication,
 } from 'livekit-client';
 import { redactErrorDetail } from '@/lib/redact';
+import { observeRoomAudioPlayback } from '@/lib/room-audio-playback';
 
 // Participant identity for the live USB audio source
 const BEACON_IDENTITY = "beacon01";
@@ -102,6 +103,9 @@ export function AudioProvider({
     const [currentMeditationFile, setCurrentMeditationFile] = useState<string | null>(null);
 
     const roomRef = useRef<Room | null>(null);
+    const activationRef = useRef<{ room: Room; promise: Promise<boolean> } | null>(null);
+    const connectRef = useRef<(() => Promise<boolean>) | null>(null);
+    const playbackRef = useRef<ReturnType<typeof observeRoomAudioPlayback> | null>(null);
     // Own exactly one DOM element per subscribed track. LiveKit may clear an
     // element's srcObject before TrackUnsubscribed and then return no elements
     // from detach(), so the application must retain and remove its own node.
@@ -113,12 +117,12 @@ export function AudioProvider({
     const meditationAudioRef = useRef<HTMLAudioElement | null>(null);
 
     // Refs for values accessed in callbacks (to avoid reconnection loops)
-    const isPlayingRef = useRef(isPlaying);
+    // Playback intent survives a blocked/new track; readiness is observed separately.
+    const isPlayingRef = useRef(false);
     const volumeRef = useRef(volume);
     const hasLiveStreamRef = useRef(hasLiveStream);
 
     // Keep refs in sync with state
-    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
     useEffect(() => { volumeRef.current = volume; }, [volume]);
     useEffect(() => { hasLiveStreamRef.current = hasLiveStream; }, [hasLiveStream]);
 
@@ -128,13 +132,28 @@ export function AudioProvider({
     useEffect(() => {
         let cancelled = false;
         const room = new Room();
+        let connected = false;
+        let connecting: Promise<boolean> | null = null;
+        setIsConnected(false);
+        setIsPlaying(false);
+        setAudioError(null);
         const audioElements = audioElementsRef.current;
         roomRef.current = room;
+
+        const playback = observeRoomAudioPlayback(room, (enabled) => {
+            setIsPlaying(enabled);
+            if (enabled) {
+                isPlayingRef.current = true;
+                setAudioError(null);
+            }
+        });
+        playbackRef.current = playback;
 
         const removeTrackedAudio = (track: RemoteTrack) => {
             const tracked = audioElementsRef.current.get(track);
             track.detach().forEach((element) => element.remove());
             if (tracked) {
+                playback.remove(tracked.element);
                 tracked.element.pause();
                 tracked.element.remove();
                 audioElementsRef.current.delete(track);
@@ -194,6 +213,7 @@ export function AudioProvider({
 
                 audioElementsRef.current.set(track, { element: audioElement, identity, publication });
                 syncSourceAvailability();
+                playback.add(audioElement);
 
                 // Tracks can arrive after the user has already unlocked audio.
                 // Start them immediately without rebuilding the SDK attachment.
@@ -201,9 +221,11 @@ export function AudioProvider({
                     try {
                         await audioElement.play();
                     } catch {
+                        if (cancelled || audioElements.get(track)?.element !== audioElement) return;
                         setAudioError("Audio was blocked. Press Start audio again.");
                     }
                 }
+                if (!cancelled) playback.sync();
             }
         });
 
@@ -228,12 +250,13 @@ export function AudioProvider({
         room.on(RoomEvent.Disconnected, () => {
             if (cancelled) return;
             console.log("Disconnected from LiveKit room");
+            connected = false;
             setIsConnected(false);
             setHasLiveStream(false);
             setHasPlaylistStream(false);
         });
 
-        async function connect() {
+        async function connect(): Promise<boolean> {
             try {
                 const res = await fetch(`/api/livekit/token?sessionId=${encodeURIComponent(sessionId)}`);
                 // The endpoint requires a session. Without this check a 401 body
@@ -243,28 +266,47 @@ export function AudioProvider({
                     throw new Error(`token request failed: ${res.status}`);
                 }
                 const { token } = await res.json();
-                if (cancelled) return;
+                if (cancelled) return false;
 
                 await room.connect(LIVEKIT_URL, token);
                 if (cancelled) {
                     room.disconnect();
-                    return;
+                    return false;
                 }
 
+                connected = true;
                 console.log("✓ Connected to LiveKit room");
                 setIsConnected(true);
                 setAudioError(null);
+                playback.sync();
+                return true;
             } catch (err) {
-                if (cancelled) return;
+                if (cancelled) return false;
                 console.error("Failed to connect to LiveKit:", redactErrorDetail(err));
                 setAudioError("Beacon audio could not connect. Check your connection and try again.");
+                return false;
             }
         }
 
-        void connect();
+        const ensureConnected = () => {
+            // The SDK owns transport recovery after a successful connection.
+            // Starting a second connect here would reset its in-flight engine.
+            if (connected && room.state !== 'disconnected') {
+                return Promise.resolve(room.state === 'connected');
+            }
+            if (!connecting) {
+                connecting = connect().finally(() => { connecting = null; });
+            }
+            return connecting;
+        };
+        connectRef.current = ensureConnected;
+        void ensureConnected();
 
         return () => {
             cancelled = true;
+            if (connectRef.current === ensureConnected) connectRef.current = null;
+            playback.dispose();
+            if (playbackRef.current === playback) playbackRef.current = null;
             room.disconnect();
             if (roomRef.current === room) roomRef.current = null;
             audioElements.forEach(({ element }) => {
@@ -298,39 +340,52 @@ export function AudioProvider({
     }, [meditationVolume]);
 
     /** Browser audio policies require this to run directly from a click. */
-    const startAudio = useCallback(async (): Promise<boolean> => {
-        // Set this before awaiting anything so a subscription delivered while
-        // either LiveKit room is still unlocking starts in the same gesture.
+    const startAudio = useCallback((): Promise<boolean> => {
+        const room = roomRef.current;
+        const playback = playbackRef.current;
+        if (!room) return Promise.resolve(false);
+        if (activationRef.current?.room === room) return activationRef.current.promise;
         isPlayingRef.current = true;
-        try {
-            // Invoke native playback before LiveKit resumes its AudioContext.
-            // With two rooms, a context resume can consume Safari/iOS's user
-            // activation before the other room gets a chance to call play().
+        const promise = (async () => {
+            const muted = new Map([...audioElementsRef.current.values()].map(
+                ({ element }) => [element, element.muted],
+            ));
+            // Invoke native playback before either room resumes its AudioContext.
+            // Async wrappers isolate synchronous throws without delaying invocation.
             const elementStarts = [...audioElementsRef.current.values()].map(
-                ({ element }) => element.play(),
+                async ({ element }) => element.play(),
             );
-            const roomStart = roomRef.current?.startAudio() ?? Promise.resolve();
-            await Promise.all([roomStart, ...elementStarts]);
-
-            // LiveKit's startAudio() unmutes all remote audio elements. Restore
-            // the live-source priority so playlist and beacon01 never overlap.
+            const roomStart = (async () => room.startAudio())();
+            // LiveKit unmutes synchronously. Restore source priority before yielding.
             audioElementsRef.current.forEach(({ element, identity }) => {
-                element.muted = hasLiveStreamRef.current && identity !== BEACON_IDENTITY;
+                element.muted = (muted.get(element) ?? element.muted) ||
+                    (identity !== BEACON_IDENTITY && hasLiveStreamRef.current);
             });
-
-            // Never detach/re-attach here: that discards a working element and
-            // leaks it in document.body.
-            isPlayingRef.current = true;
-            setIsPlaying(true);
-            setAudioError(null);
-            return true;
-        } catch (err) {
-            console.error("Failed to start Beacon audio:", redactErrorDetail(err));
-            isPlayingRef.current = false;
-            setIsPlaying(false);
+            // Invoke SDK playback in the gesture even if token/connection recovery
+            // needs network I/O; connecting first would lose browser activation.
+            const connection = connectRef.current?.() ?? Promise.resolve(false);
+            const results = await Promise.allSettled([roomStart, ...elementStarts, connection]);
+            const connected = await connection;
+            if (roomRef.current !== room) return false;
+            // Effective playback wins over a stale rejection if automatic recovery
+            // (or source replacement) succeeded while this attempt was pending.
+            if (!connected) return false;
+            if (playback?.sync()) {
+                setAudioError(null);
+                return true;
+            }
+            const failure = results.find((result) => result.status === 'rejected');
+            console.error("Failed to start Beacon audio:", redactErrorDetail(
+                failure?.status === 'rejected' ? failure.reason : new Error('Playback is still blocked'),
+            ));
             setAudioError("Audio could not start. Check that this tab is not muted, then try again.");
             return false;
-        }
+        })();
+        activationRef.current = { room, promise };
+        void promise.finally(() => {
+            if (activationRef.current?.promise === promise) activationRef.current = null;
+        });
+        return promise;
     }, []);
 
     const togglePlay = useCallback(() => {

@@ -16,6 +16,7 @@ import {
     type RoomOptions,
 } from "livekit-client";
 import { AudioProvider, useAudio } from "@/context/AudioContext";
+import { observeRoomAudioPlayback } from "@/lib/room-audio-playback";
 import { useLocale } from "@/context/LocaleContext";
 import HandRaiseButton from "@/components/session/HandRaiseButton";
 import FacilitatorAudioQuality from "@/components/session/FacilitatorAudioQuality";
@@ -276,6 +277,7 @@ function SessionRoom() {
     const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
     const [retryToken, setRetryToken] = useState(0);
     const [audioActivationError, setAudioActivationError] = useState<string | null>(null);
+    const [isStageAudioPlaying, setIsStageAudioPlaying] = useState(false);
     const [viewerInfo, setViewerInfo] = useState<ViewerInfo | null>(null);
     const [activeRoom, setActiveRoom] = useState<Room | null>(null);
     const [stageInvitationAccepted, setStageInvitationAccepted] = useState(false);
@@ -478,32 +480,47 @@ function SessionRoom() {
         }, AUTO_RECONNECT_DELAYS_MS[attempt]);
     }, []);
 
-    const startListening = useCallback(async () => {
+    const activationRef = useRef<{ room: Room; promise: Promise<void> } | null>(null);
+    const stagePlaybackRef = useRef<ReturnType<typeof observeRoomAudioPlayback> | null>(null);
+    const startListening = useCallback(() => {
+        const room = roomRef.current;
+        const playback = stagePlaybackRef.current;
+        if (!room) return Promise.resolve();
+        if (activationRef.current?.room === room) return activationRef.current.promise;
         setAudioActivationError(null);
-        try {
-            // Fire every native media play while the browser gesture is still
-            // active, before either LiveKit room resumes an AudioContext.
+        const promise = (async () => {
+            const muted = new Map([...audioElementsRef.current.values()].map(
+                (element) => [element, element.muted],
+            ));
+            // Fire every native media play in the gesture before either room
+            // resumes an AudioContext. Isolate synchronous throws as rejections.
             const stageElementStarts = [...audioElementsRef.current.values()].map(
-                (element) => element.play(),
+                async (element) => element.play(),
             );
-            const beaconStart = startBeaconAudio();
-            const stageStart = roomRef.current?.startAudio() ?? Promise.resolve();
-            const [, beaconStarted] = await Promise.all([
-                Promise.all(stageElementStarts),
-                beaconStart,
-                stageStart,
+            const beaconStart = (async () => startBeaconAudio())();
+            const stageStart = (async () => room.startAudio())();
+            // startAudio unmutes attached tracks synchronously; activation is
+            // permission recovery, not permission to override intentional mute.
+            muted.forEach((value, element) => { element.muted = value; });
+            const [beaconResult, ...stageResults] = await Promise.allSettled([
+                beaconStart, stageStart, ...stageElementStarts,
             ]);
-            if (!beaconStarted) {
-                setAudioActivationError(
-                    copy.session.beaconAudioError,
-                );
+            if (roomRef.current !== room) return;
+            const failure = stageResults.find((result) => result.status === 'rejected');
+            if (!playback?.sync()) {
+                console.error("Failed to start session audio:", redactErrorDetail(
+                    failure?.status === 'rejected' ? failure.reason : new Error('Playback is still blocked'),
+                ));
+                setAudioActivationError(copy.session.audioError);
+            } else if (beaconResult.status === 'rejected' || !beaconResult.value) {
+                setAudioActivationError(copy.session.beaconAudioError);
             }
-        } catch (e) {
-            console.error("Failed to start session audio:", redactErrorDetail(e));
-            setAudioActivationError(
-                copy.session.audioError,
-            );
-        }
+        })();
+        activationRef.current = { room, promise };
+        void promise.finally(() => {
+            if (activationRef.current?.promise === promise) activationRef.current = null;
+        });
+        return promise;
     }, [startBeaconAudio, copy.session.beaconAudioError, copy.session.audioError]);
 
     const acceptStageInvitation = useCallback(async () => {
@@ -651,6 +668,7 @@ function SessionRoom() {
     useEffect(() => {
         let cancelled = false;
         let ownedRoom: Room | null = null;
+        let playback: ReturnType<typeof observeRoomAudioPlayback> | null = null;
         let presenceTimer: ReturnType<typeof setInterval> | null = null;
         const audioElements = audioElementsRef.current;
         intentionalDisconnectRef.current = false;
@@ -720,6 +738,13 @@ function SessionRoom() {
                 roomRef.current = room;
                 setActiveRoom(room);
 
+                playback = observeRoomAudioPlayback(room, (enabled) => {
+                    setIsStageAudioPlaying(enabled);
+                    if (enabled) setAudioActivationError(null);
+                });
+                stagePlaybackRef.current = playback;
+                playback.sync();
+
                 room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication) => {
                     if (track.kind === Track.Kind.Audio) {
                         if (cancelled) {
@@ -728,6 +753,7 @@ function SessionRoom() {
                         }
                         const previous = audioElementsRef.current.get(track);
                         if (previous) {
+                            playback?.remove(previous);
                             previous.pause();
                             previous.remove();
                         }
@@ -736,7 +762,9 @@ function SessionRoom() {
                         audioElement.style.display = "none";
                         document.body.appendChild(audioElement);
                         audioElementsRef.current.set(track, audioElement);
+                        playback?.add(audioElement);
                         try { await audioElement.play(); } catch { /* Autoplay blocked */ }
+                        playback?.sync();
                     } else if (audioOnlyRef.current) {
                         publication.setSubscribed(false);
                     }
@@ -748,6 +776,7 @@ function SessionRoom() {
                         const tracked = audioElementsRef.current.get(track);
                         track.detach().forEach((el) => el.remove());
                         if (tracked) {
+                            playback?.remove(tracked);
                             tracked.pause();
                             tracked.remove();
                             audioElementsRef.current.delete(track);
@@ -824,6 +853,7 @@ function SessionRoom() {
                 }
 
                 const wasReconnect = autoReconnectAttemptRef.current > 0;
+                playback.sync();
                 setIsConnected(true);
                 setIsConnecting(false);
                 setDisconnectState(null);
@@ -883,6 +913,8 @@ function SessionRoom() {
 
         return () => {
             cancelled = true;
+            playback?.dispose();
+            if (stagePlaybackRef.current === playback) stagePlaybackRef.current = null;
             if (presenceTimer) clearInterval(presenceTimer);
             reportPresence('left');
             if (stageRefreshRef.current) {
@@ -1189,6 +1221,8 @@ function SessionRoom() {
                                 className="ml-2 inline-flex items-center gap-1"
                                 data-testid="connection-state"
                                 data-state={connectionState}
+                                data-beacon-audio={isBeaconPlaying ? 'ready' : 'blocked'}
+                                data-stage-audio={isStageAudioPlaying ? 'ready' : 'blocked'}
                             >
                                 <span className={`inline-block h-1.5 w-1.5 rounded-full ${CONNECTION_DOT[connectionState] ?? "bg-white/30"}`} />
                                 {connectionLabel}
@@ -1244,7 +1278,7 @@ function SessionRoom() {
                         audioOnly={audioOnly}
                     />
 
-                    {!isBeaconPlaying && (
+                    {(!isBeaconPlaying || !isStageAudioPlaying) && (
                         <div className="event-card w-full max-w-md text-center" role="group" aria-label={copy.session.audioActivationLabel}>
                             <p className="mb-3 text-sm text-[var(--text-secondary)]">
                                 {copy.session.audioPrompt}

@@ -2,6 +2,8 @@ import { expect, stackTest } from '../fixtures/stack';
 import { loginViaDashboard } from '../fixtures/auth';
 import { ROUTES, SESSION_ES } from '../fixtures/test-data';
 import { requireDirectDb, withSessionStatus } from '../fixtures/db';
+import { assertSafeFixtureDatabaseUrl } from '../fixtures/database-url';
+import { activateAudioAtMostOnce, expectEffectiveAudioReady, leaveConnectedRoom } from '../helpers/audio-readiness';
 import {
     expectMediaContinuity,
     installMediaProbe,
@@ -15,7 +17,7 @@ import {
  * with every panel/control mounted in the live session shell causes:
  * - zero room disconnects (signaling socket / RTCPeerConnection closures),
  * - zero duplicate or detached media elements,
- * - exactly one audio-activation gesture for the session lifetime,
+ * - zero or one activation followed by positive SDK + native readiness,
  * - zero new AudioContexts after activation (no gain/codec/buffer churn can
  *   hide behind a rebuilt audio pipeline).
  *
@@ -25,8 +27,7 @@ import {
  * boundary directly inside the frame.
  *
  * Requires the full local stack plus a LiveKit server (see e2e/README.md);
- * without LiveKit the suite skips with a precise reason rather than
- * weakening its assertions.
+ * without LiveKit local runs skip with a precise reason; CI fails closed.
  */
 
 const LIVEKIT_URL = process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880';
@@ -62,26 +63,15 @@ async function settledMediaSnapshot(
     throw new Error('cockpit preview media did not settle before panel exercise');
 }
 
-async function leaveConnectedRoom(
-    surface: import('@playwright/test').Frame | import('@playwright/test').Page,
-): Promise<void> {
-    const leave = surface.getByRole('button', { name: /Leave session|Salir de la sesión/i });
-    if (await leave.isVisible()) {
-        await leave.click();
-        const confirmation = surface.getByRole('alertdialog', {
-            name: /Leave session|Salir de la sesión/i,
-        });
-        await confirmation.getByRole('button', {
-            name: /Yes, leave the session|Sí, salir de la sesión/i,
-        }).click();
-        await expect(surface.getByTestId('connection-state')).toHaveCount(0);
-    }
-}
-
 stackTest.describe('media continuity', () => {
     stackTest.beforeEach(async ({}, testInfo) => {
+        const reachable = await livekitReachable();
+        if (process.env.CI) {
+            assertSafeFixtureDatabaseUrl(process.env.E2E_DATABASE_URL ?? '');
+            expect(reachable, `required LiveKit fixture not reachable at ${LIVEKIT_URL}`).toBe(true);
+        }
         testInfo.skip(
-            !(await livekitReachable()),
+            !reachable,
             `LiveKit not reachable at ${LIVEKIT_URL} — start the dev server (see e2e/README.md) or set E2E_LIVEKIT_URL`,
         );
     });
@@ -109,7 +99,7 @@ stackTest.describe('media continuity', () => {
             'connected',
             { timeout: 20_000 },
         );
-        await facilitator.getByRole('button', { name: /Start audio|Iniciar audio/i }).click();
+        await activateAudioAtMostOnce(facilitator);
         await facilitator.getByRole('button', { name: /Unmute microphone|Activar micrófono/i }).click();
         await expect(
             facilitator.getByRole('button', { name: /Mute microphone|Silenciar micrófono/i }),
@@ -123,7 +113,7 @@ stackTest.describe('media continuity', () => {
             facilitator.getByRole('button', { name: /Turn camera off|Apagar cámara/i }),
         ).toBeVisible();
 
-        // --- Attendee joins, activates audio exactly once. ---
+        // --- Attendee joins, activates audio at most once. ---
         const attendeeContext = await browser.newContext();
         const attendee = await attendeeContext.newPage();
         await installMediaProbe(attendee);
@@ -149,14 +139,14 @@ stackTest.describe('media continuity', () => {
             .toBe(1);
         await expect(attendee.getByTestId('stage-tile-video').first()).toBeAttached();
 
-        // The single audio-activation gesture for the whole session.
-        await attendee.getByRole('button', { name: /Start audio|Iniciar audio/i }).click();
+        // Automatic playback needs no CTA; otherwise allow one real gesture.
+        await activateAudioAtMostOnce(attendee);
         const activated = await mediaProbeSnapshot(attendee);
         expect(activated.playCalls).toBeGreaterThan(0);
 
         // --- Exercise every panel/control mounted in the live shell. ---
-        await attendee.getByRole('slider', { name: /Overall room volume|Volumen general de la sala/i }).fill('0.7');
-        await attendee.getByRole('slider', { name: /Beacon \/ Session balance|Balance Beacon \/ Sesión/i }).fill('0.25');
+        await attendee.getByRole('slider', { name: /Overall room volume|Volumen general de la sala/i }).press('ArrowRight');
+        await attendee.getByRole('slider', { name: /Beacon \/ Session balance|Balance Beacon \/ Sesión/i }).press('ArrowLeft');
         await attendee.getByRole('button', { name: /Raise hand|Levantar la mano/i }).click();
         await expect(
             attendee.getByRole('button', { name: /Lower hand|Bajar la mano/i }),
@@ -165,6 +155,7 @@ stackTest.describe('media continuity', () => {
 
         const after = await mediaProbeSnapshot(attendee);
         expectMediaContinuity(activated, after);
+        await expectEffectiveAudioReady(attendee);
 
         // --- Audio-only mode detaches exactly the video, never the audio. ---
         await attendee.getByRole('button', { name: /Switch to audio only|Cambiar a solo audio/i }).click();
@@ -182,6 +173,7 @@ stackTest.describe('media continuity', () => {
         expect(snapshot.duplicateMediaSources).toEqual([]);
         expect(snapshot.livekitSocketsClosed).toBe(activated.livekitSocketsClosed);
 
+        await expectEffectiveAudioReady(attendee);
         // Send an intentional LiveKit leave before destroying the browser
         // contexts. An abrupt context close keeps the publisher resumable for
         // the server departure timeout and leaks a phantom facilitator into
@@ -209,17 +201,17 @@ stackTest.describe('media continuity', () => {
                 { timeout: 20_000 },
             );
 
-            await page.getByRole('button', { name: /Start audio|Iniciar audio/i }).click();
+            await activateAudioAtMostOnce(page);
             const activated = await settledMediaSnapshot(page);
             expect(activated.livekitSocketsOpened).toBeGreaterThan(0);
             expect(activated.peerConnectionsCreated).toBeGreaterThan(0);
 
             await page.getByRole('slider', {
                 name: /Overall room volume|Volumen general de la sala/i,
-            }).fill('0.7');
+            }).press('ArrowRight');
             await page.getByRole('slider', {
                 name: /Beacon \/ Session balance|Balance Beacon \/ Sesión/i,
-            }).fill('0.25');
+            }).press('ArrowLeft');
             await page.getByRole('button', { name: /Raise hand|Levantar la mano/i }).click();
             await expect(
                 page.getByRole('button', { name: /Lower hand|Bajar la mano/i }),
@@ -236,6 +228,7 @@ stackTest.describe('media continuity', () => {
             expect(after.livekitSocketsClosed).toBe(activated.livekitSocketsClosed);
             expect(after.peerConnectionsClosed).toBe(activated.peerConnectionsClosed);
             expect(after.duplicateMediaSources).toEqual([]);
+            await expectEffectiveAudioReady(page);
         });
     });
 
@@ -260,6 +253,7 @@ stackTest.describe('media continuity', () => {
             await expect(
                 roomFrame.getByTestId('connection-state'),
             ).toHaveAttribute('data-state', 'connected', { timeout: 20_000 });
+            await activateAudioAtMostOnce(roomFrame);
             const before = await settledMediaSnapshot(roomFrame);
             expect(before.livekitSocketsOpened).toBeGreaterThan(0);
             expect(before.peerConnectionsCreated).toBeGreaterThan(0);
@@ -275,6 +269,7 @@ stackTest.describe('media continuity', () => {
 
             const after = await mediaProbeSnapshot(roomFrame);
             expectMediaContinuity(before, after);
+            await expectEffectiveAudioReady(roomFrame);
         });
     });
 
