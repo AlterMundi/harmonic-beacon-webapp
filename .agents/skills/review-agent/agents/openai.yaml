@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Agent"
+  short_description: "Find actionable defects in a code change"
+  default_prompt: "Use $review-agent to inspect this change read-only and report every concrete regression introduced by it."

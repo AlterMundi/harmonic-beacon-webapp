@@ -14,10 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify generated agent skill distributions
+        run: python3 .agents/skills/scripts/render_distributions.py --check
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22'
           cache: 'npm'
+
+      - name: Verify shared operations tooling
+        run: npm run test:ops-tooling
 
       - run: npm ci
       - name: Reject high-severity production dependency regressions

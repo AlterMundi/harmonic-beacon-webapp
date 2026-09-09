@@ -1,0 +1,13 @@
+{
+  "name": "review-agent",
+  "description": "Review code changes read-only and report concrete defects.",
+  "version": "0.1.0",
+  "author": "OpenAI, Nicolás Echániz, Codex",
+  "license": "Apache-2.0",
+  "platforms": ["linux", "macos", "windows"],
+  "hermes": {
+    "tags": ["review", "code-review", "quality", "read-only"],
+    "category": "development",
+    "related_skills": ["fast-forward-mode"]
+  }
+}
