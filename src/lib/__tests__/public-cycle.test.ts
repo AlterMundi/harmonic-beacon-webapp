@@ -60,7 +60,7 @@ describe('public four-Saturday cycle', () => {
         expect(migration).toContain('60000000-0000-4000-8000-202609090001');
         expect(migration).toContain('rehearsal-2026-09-09-1500-art');
         expect(migration).toContain("'2026-09-09 18:00:00'::timestamp");
-        expect(migration).toContain('true,\n    false,\n    false,');
+        expect(migration).toContain('true,\n    true,\n    false,');
         expect(migration).toContain('ON CONFLICT ("id") DO NOTHING');
         expect(migration).toContain('related_count <> 0');
         expect(migration).toContain('50000000-0000-4000-8000-202609120001');

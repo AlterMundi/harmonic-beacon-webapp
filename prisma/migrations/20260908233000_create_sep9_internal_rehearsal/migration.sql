@@ -23,7 +23,7 @@ SELECT
     '2026-09-09 18:00:00'::timestamp,
     'SCHEDULED'::"ScheduledSessionStatus",
     true,
-    false,
+    true,
     false,
     150,
     6,
@@ -55,7 +55,7 @@ BEGIN
       AND "scheduled_at" = '2026-09-09 18:00:00'::timestamp
       AND "status" = 'SCHEDULED'::"ScheduledSessionStatus"
       AND "is_test" = true
-      AND "paid_mode" = false
+      AND "paid_mode" = true
       AND "public_access" = false
       AND "attendee_cap" = 150
       AND "max_publishers" = 6;
