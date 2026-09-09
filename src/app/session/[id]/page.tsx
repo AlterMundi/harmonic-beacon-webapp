@@ -1670,6 +1670,10 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
                     cache: 'no-store',
                     signal: controller.signal,
                 });
+                if (response.status === 401) {
+                    router.replace(`/login?next=${encodeURIComponent(`/session/${sessionId}`)}`);
+                    return;
+                }
                 const data = await response.json().catch(() => ({})) as Partial<EntryResponse> & { error?: string };
                 if (!response.ok || !data.state || !data.session) {
                     throw new Error(data.error || `Entry status unavailable (HTTP ${response.status})`);
@@ -1710,7 +1714,7 @@ function SessionEntryGate({ sessionId }: { sessionId: string }) {
             window.removeEventListener('online', checkWhenVisible);
             document.removeEventListener('visibilitychange', checkWhenVisible);
         };
-    }, [sessionId, retryEntry, seedLocale, copy.session.entryUnavailable]);
+    }, [sessionId, retryEntry, router, seedLocale, copy.session.entryUnavailable]);
 
     if (!entry) {
         return (

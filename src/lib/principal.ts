@@ -30,7 +30,6 @@ import {
     validatedAccountIdentity,
     type AccountIdentity,
 } from '@/lib/account-rp';
-import { isAnonymousPublicCycleAccess } from '@/lib/public-cycle';
 import {
     SESSION_COOKIE_NAME,
     digestSessionToken,
@@ -245,7 +244,7 @@ export async function principalFromToken(
         return null;
     }
 
-    const accountRequired = beaconAccountEnabled() && !isAnonymousPublicCycleAccess(webSession);
+    const accountRequired = beaconAccountEnabled();
     const accountIdentity = accountRequired
         ? await validatedAccountIdentity(webSession, now)
         : null;
