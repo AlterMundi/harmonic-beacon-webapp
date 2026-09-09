@@ -48,6 +48,43 @@ describe('public four-Saturday cycle', () => {
         expect(migration).toMatch(/BEGIN;[\s\S]*UPDATE[\s\S]*RAISE EXCEPTION[\s\S]*COMMIT;/);
     });
 
+    it('moves only the final Umbral session to 10:00 Argentina / 13:00 UTC', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260908130000_move_final_umbral_to_1000_argentina/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain('50000000-0000-4000-8000-202609120001');
+        expect(migration).toContain("'2026-09-12 13:00:00'::timestamp");
+        expect(migration).toContain('corrected_count <> 1');
+        expect(migration).toContain('initialized_count = 0 AND corrected_count <> 0');
+        expect(migration).not.toContain('202609050001');
+        expect(migration).not.toContain("'2026-09-12 17:00:00'::timestamp");
+    });
+
+    it('creates an isolated non-public rehearsal for September 9 at 15:00 Argentina', () => {
+        const migration = readFileSync(
+            new URL(
+                '../../../prisma/migrations/20260908233000_create_sep9_internal_rehearsal/migration.sql',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+
+        expect(migration).toContain('60000000-0000-4000-8000-202609090001');
+        expect(migration).toContain('rehearsal-2026-09-09-1500-art');
+        expect(migration).toContain("'2026-09-09 18:00:00'::timestamp");
+        expect(migration).toContain('true,\n    true,\n    false,');
+        expect(migration).toContain('ON CONFLICT ("id") DO NOTHING');
+        expect(migration).toContain('related_count <> 0');
+        expect(migration).toContain('50000000-0000-4000-8000-202609120001');
+        expect(migration).not.toContain('INSERT INTO "ticket_entitlements"');
+        expect(migration).not.toContain('INSERT INTO "session_participants"');
+    });
+
     it('recognizes only an entirely anonymous COMP entitlement for a reviewed public room', () => {
         const candidate = {
             staffUser: null,
