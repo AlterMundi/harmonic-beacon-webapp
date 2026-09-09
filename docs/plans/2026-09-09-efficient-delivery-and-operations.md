@@ -87,7 +87,7 @@ Un fallo detiene **la promoción**, no la reparación. El responsable arregla, v
 
 No congelar de nuevo todo el workspace por editar un README; no rehacer auditoría de todo el ecosistema por cada botón; no pedir a Nicolás autorización técnica ya otorgada; no exigir resolver mensajería/monitorización global para desplegar un cambio independiente; no usar screenshots, manifests o reportes como sustituto del servicio publicado.
 
-La fase de desarrollo usa hot reload aislado y pruebas enfocadas. El checkpoint integrado usa el artefacto real. No convertir cada guardado o commit en un ensayo general de producción. La skill `fast-forward-mode` orienta esta separación entre iteración rápida y validación del lote.
+La fase de desarrollo usa hot reload aislado y pruebas enfocadas. El checkpoint integrado usa el artefacto real. No convertir cada guardado o commit en un ensayo general de producción. La skill [`fast-forward-mode`](../../.agents/skills/fast-forward-mode/SKILL.md) orienta esta separación entre iteración rápida y validación del lote y queda empaquetada en este repositorio para que Codex, CompAII/Hermes u otro agente compatible puedan compartir el mismo contrato de ejecución.
 
 ## 4. Flujo objetivo y selección de pruebas
 
@@ -239,6 +239,8 @@ Proponer `deploy/platform-services.yml` como inventario pequeño validado, un `d
 ### Lo necesario para que opere desde su host
 
 Un diagnóstico read-only `doctor` debe devolver por servicio: source/deployed revision, accesos concretos (sin valores secretos), workflow, runner permitido, staging, salud, recuperación, alerts y drift. No inspeccionar toda la red ni inferir autoridad a partir de sudo.
+
+Instalar la skill versionada desde `.agents/skills/fast-forward-mode/` en el directorio de skills del perfil activo. En Hermes ese destino es el `skills/` físico del perfil bajo `~/.hermes/profiles/<perfil>/`; hay que usar el perfil que efectivamente ejecuta CompAII, no adivinar su nombre. Reiniciar o recargar la sesión para que vuelva a descubrir skills. La carpeta incluye sólo instrucciones y metadata: no ejecuta código ni concede permisos. Verificar luego que `$fast-forward-mode` aparezca en el catálogo y hacer una invocación de prueba sin mutaciones.
 
 Verificar una sola vez permisos GitHub de PR/merge/Actions/packages/deploy y restricciones de runner; refrescar ante cambio o error. Si hace falta admin para una regla o autorización de paquete, pedir el cambio puntual: no un token omnipotente ni acceso a la cuenta de Nicolás.
 
