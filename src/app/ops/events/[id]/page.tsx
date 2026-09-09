@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import ConductorCockpit from '@/components/ops/ConductorCockpit';
+import { EventHeading } from '@/components/ops/LiveLocaleSurfaces';
 import { prisma } from '@/lib/db';
 import { messages } from '@/lib/i18n';
 import { requestLocale } from '@/lib/i18n-server';
@@ -64,24 +65,8 @@ export default async function EventPage({
     const copy = messages[locale].ops;
     return (
         <section className="mx-auto max-w-4xl py-4">
-            <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <p className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gold)]">
-                        {copy.eventConsole}
-                    </p>
-                    <h1 className="mt-1 font-serif text-3xl text-[var(--paper)]">
-                        {scheduledSession.title}
-                    </h1>
-                </div>
-            </div>
-            <p className="mb-6 text-sm text-[var(--text-secondary)]">
-                {scheduledSession.language === 'SPANISH' ? 'ES' : 'EN'} ·{' '}
-                {scheduledSession.status === 'LIVE' ? copy.live : copy.scheduled} ·{' '}
-                {new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-GB', {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
-                }).format(scheduledSession.scheduledAt)}
-            </p>
+            <EventHeading title={scheduledSession.title} language={scheduledSession.language}
+                status={scheduledSession.status} scheduledAt={scheduledSession.scheduledAt.toISOString()} />
             <ConductorCockpit
                 session={{
                     id: scheduledSession.id,

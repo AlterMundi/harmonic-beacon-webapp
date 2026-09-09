@@ -42,7 +42,7 @@ vi.mock('@/components/brand/LiveIdentityCacheBoundary', () => ({
     LiveIdentityCacheBoundary: () => <div data-testid="identity-cache-boundary" />,
 }));
 vi.mock('@/context/LocaleContext', () => ({
-    LocaleProvider: ({ children }: { children: React.ReactNode }) => children,
+    LocaleProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="locale-boundary">{children}</div>,
 }));
 vi.mock('sonner', () => ({ Toaster: () => null }));
 
@@ -73,6 +73,7 @@ describe('root layout Account navigation hint', () => {
         );
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-signed-in', 'true');
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-account-available', 'true');
+        expect(screen.getByTestId('locale-boundary')).toContainElement(screen.getByTestId('local-account-menu'));
         expect(screen.getByTestId('local-account-menu')).toHaveTextContent('Nicolás');
         expect(screen.getByTestId('local-account-menu')).toHaveAttribute('data-role', 'Administration');
         expect(screen.getByTestId('identity-cache-boundary')).toBeInTheDocument();

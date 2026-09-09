@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const replace = vi.hoisted(() => vi.fn());
@@ -14,11 +14,31 @@ import {
     trustedAccountLogoutURL,
 } from '../LiveNavigationAccountMenu';
 
+import { LocaleProvider } from '@/context/LocaleContext';
+import LanguageControl from '../LanguageControl';
+
+function render(ui: React.ReactElement<{ locale?: 'es' | 'en' }>) {
+    return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale={ui.props.locale ?? 'en'}>{children}</LocaleProvider> });
+}
+
 const ACCOUNT = 'https://account-staging.harmonicbeacon.com/account' as const;
 
 describe('Live navigation Account menu', () => {
+    it('updates the staff role rather than retaining a server-translated label', () => {
+        render(<LocaleProvider initialLocale="en"><LanguageControl /><LiveNavigationAccountMenu displayName={null} staffRole="ADMIN" staffRoleLabel="Administration" accountHref={ACCOUNT} locale="en" /></LocaleProvider>);
+        fireEvent.click(screen.getByRole('button', { name: 'ES' }));
+        expect(screen.getByText('Administración')).toBeVisible();
+    });
+    it('updates account actions in place with the live locale', () => {
+        render(<LocaleProvider initialLocale="en"><LanguageControl /><LiveNavigationAccountMenu displayName={null} staffRoleLabel={null} accountHref={ACCOUNT} locale="en" /></LocaleProvider>);
+        fireEvent.click(screen.getByRole('button', { name: 'ES' }));
+        expect(screen.getByRole('menuitem', { name: 'Cerrar sesión' })).toBeVisible();
+        expect(screen.getByRole('menuitem', { name: 'Cuenta' })).toHaveAttribute('href', `${ACCOUNT}?lang=es`);
+    });
     afterEach(() => {
         cleanup();
+        localStorage.clear();
+        document.cookie = 'hb_locale=; Path=/; Max-Age=0';
         vi.unstubAllGlobals();
         vi.clearAllMocks();
     });

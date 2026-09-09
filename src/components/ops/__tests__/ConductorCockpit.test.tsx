@@ -54,6 +54,9 @@ vi.mock('@/app/ops/health/OpsHealthClient', () => ({
 
 import ConductorCockpit from '../ConductorCockpit';
 import { messages } from '@/lib/i18n';
+import { LocaleProvider } from '@/context/LocaleContext';
+import LanguageControl from '@/components/brand/LanguageControl';
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const props = {
     session: {
@@ -78,6 +81,8 @@ const props = {
 
 afterEach(() => {
     cleanup();
+    window.localStorage.clear();
+    document.cookie = 'hb_locale=; Path=/; Max-Age=0';
     callbacks.lifecycle = null;
     callbacks.summary = null;
     callbacks.health = null;
@@ -85,8 +90,17 @@ afterEach(() => {
 });
 
 describe('ConductorCockpit', () => {
+    it('updates Staff copy and an open drawer in place when language changes', () => {
+        render(<LocaleProvider initialLocale="en"><LanguageControl /><ConductorCockpit {...props} /></LocaleProvider>);
+        const room = screen.getByTestId('persistent-room');
+        fireEvent.click(screen.getByRole('button', { name: /Hands/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'ES' }));
+        expect(screen.getByRole('button', { name: /Volver a la sala en vivo/ })).toBeVisible();
+        expect(screen.getByTestId('persistent-room')).toBe(room);
+        expect(room).toHaveAttribute('src', '/session/event-1?surface=cockpit');
+    });
     it('keeps one room mounted while every tool opens and closes', () => {
-        render(<ConductorCockpit {...props} />);
+        render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         const room = screen.getByTestId('persistent-room');
         expect(room).toHaveAttribute('src', '/session/event-1?surface=cockpit');
         expect(document.querySelectorAll('[data-signal]')).toHaveLength(5);
@@ -116,7 +130,7 @@ describe('ConductorCockpit', () => {
     });
 
     it('turns live queue and health data into glanceable signals', async () => {
-        render(<ConductorCockpit {...props} />);
+        render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         callbacks.summary?.({
             activePublishers: 3,
             maxPublishers: 6,
@@ -139,7 +153,7 @@ describe('ConductorCockpit', () => {
     });
 
     it('prioritizes reconciliation over routine scene work', async () => {
-        render(<ConductorCockpit {...props} />);
+        render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         callbacks.summary?.({
             activePublishers: 2,
             maxPublishers: 6,
@@ -157,7 +171,7 @@ describe('ConductorCockpit', () => {
     });
 
     it('closes a drawer with Escape and restores focus to its trigger', async () => {
-        render(<ConductorCockpit {...props} />);
+        render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         const trigger = screen.getByRole('button', { name: /Hands/i });
         fireEvent.click(trigger);
         expect(within(screen.getByRole('dialog')).getByRole('button', { name: /Return to the live room/ })).toHaveFocus();
@@ -167,7 +181,7 @@ describe('ConductorCockpit', () => {
     });
 
     it('activates the health preview only while its drawer is visible', () => {
-        render(<ConductorCockpit {...props} />);
+        render(<LocaleProvider initialLocale="en"><ConductorCockpit {...props} /></LocaleProvider>);
         expect(callbacks.healthVisualActive).toBe(false);
 
         fireEvent.click(screen.getByRole('button', { name: /Health.*yellow/i }));

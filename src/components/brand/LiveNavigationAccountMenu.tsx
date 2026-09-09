@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { useLocale } from '@/context/LocaleContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import type { UiLocale } from '@/lib/i18n';
+import { liveNavigationCopy } from '@/lib/live-navigation-copy';
+import type { LocalizedStaffRole, UiLocale } from '@/lib/i18n';
 
 type AccountHref =
     | 'https://account.harmonicbeacon.com/account'
@@ -34,18 +36,21 @@ export function trustedAccountLogoutURL(
 export function LiveNavigationAccountMenu({
     displayName,
     staffRoleLabel,
+    staffRole,
     accountHref,
-    locale,
 }: {
     displayName: string | null;
     staffRoleLabel: string | null;
+    staffRole?: LocalizedStaffRole | null;
     accountHref: AccountHref;
     locale: UiLocale;
 }) {
+    const { locale, copy } = useLocale();
+    const roleLabel = staffRole ? copy.staffRoles[staffRole] : staffRoleLabel;
     const [busy, setBusy] = useState(false);
     const [signOutError, setSignOutError] = useState(false);
     const router = useRouter();
-    const es = locale === 'es';
+    const navCopy = liveNavigationCopy[locale];
     const accountURL = new URL(accountHref);
     accountURL.searchParams.set('lang', locale);
 
@@ -77,25 +82,21 @@ export function LiveNavigationAccountMenu({
     return (
         <div className="hb-live-account-menu">
             {displayName && <p className="hb-live-account-menu__identity">{displayName}</p>}
-            {staffRoleLabel && <p className="hb-live-account-menu__role">{staffRoleLabel}</p>}
+            {roleLabel && <p className="hb-live-account-menu__role">{roleLabel}</p>}
             <a role="menuitem" href={accountURL.toString()}>
-                {es ? 'Cuenta' : 'Account'}
+                {navCopy.account}
             </a>
             {staffRoleLabel && (
                 <Link role="menuitem" href="/ops/events">
-                    {es ? 'Operaciones' : 'Operations'}
+                    {navCopy.operations}
                 </Link>
             )}
             <button type="button" role="menuitem" disabled={busy} onClick={signOut}>
-                {busy
-                    ? es ? 'Cerrando…' : 'Signing out…'
-                    : es ? 'Cerrar sesión' : 'Sign out'}
+                {busy ? navCopy.signingOut : navCopy.signOut}
             </button>
             {signOutError && (
                 <small role="alert">
-                    {es
-                        ? 'No pudimos cerrar la sesión. Intentá de nuevo.'
-                        : 'We could not sign you out. Please try again.'}
+                    {navCopy.signOutError}
                 </small>
             )}
         </div>

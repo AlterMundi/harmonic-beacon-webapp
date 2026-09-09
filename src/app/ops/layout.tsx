@@ -1,12 +1,9 @@
-import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-import OpsNavLinks from '@/components/ops/OpsNavLinks';
+import { OpsNavigation } from '@/components/ops/LiveLocaleSurfaces';
 import { resolveStaffByToken } from '@/lib/ops-auth';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
-import { messages } from '@/lib/i18n';
-import { requestLocale } from '@/lib/i18n-server';
 import { effectiveAnalyticsRole } from '@/lib/analytics-access';
 
 export const dynamic = 'force-dynamic';
@@ -24,41 +21,11 @@ export default async function OpsLayout({
         redirect('/staff/login');
     }
 
-    const locale = await requestLocale();
-    const copy = messages[locale];
     const analyticsRole = await effectiveAnalyticsRole(staff).catch(() => null);
-
-    const links = [
-        { href: '/ops/events', label: copy.ops.events },
-        { href: '/ops/health', label: copy.ops.health },
-        { href: '/ops/admission', label: copy.ops.admission },
-        ...(analyticsRole ? [{ href: '/ops/analytics', label: 'Analytics' }] : []),
-    ];
 
     return (
         <div className="live-ops-shell min-h-screen bg-[var(--night)]">
-            <nav
-                aria-label={locale === 'es' ? 'Operaciones de eventos' : 'Event operations'}
-                className="border-b border-[var(--border-subtle)] bg-[var(--forest)]/80 px-4 py-2.5"
-            >
-                <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                    <Link
-                        href="/ops/events"
-                        className="font-semibold text-[var(--paper)]"
-                    >
-                        {copy.ops.brand}
-                    </Link>
-                    <span className="mx-1 hidden text-white/20 sm:inline">|</span>
-                    <OpsNavLinks links={links} />
-                    <span className="mx-1 hidden text-white/20 sm:inline">|</span>
-                    <Link
-                        href="/"
-                        className="inline-flex min-h-11 items-center px-2 text-[var(--text-secondary)] hover:text-[var(--paper)]"
-                    >
-                        {copy.ops.publicSite}
-                    </Link>
-                </div>
-            </nav>
+            <OpsNavigation analytics={Boolean(analyticsRole)} />
             <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
         </div>
     );

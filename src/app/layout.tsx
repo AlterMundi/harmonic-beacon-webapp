@@ -103,6 +103,7 @@ export default async function RootLayout({
           data-surface={analytics.surface}
           data-environment={analytics.environment}
         /> : null}
+        <LocaleProvider initialLocale={locale}>
         <GlobalNavigation
           active={navigationSurface}
           locale={locale}
@@ -112,6 +113,7 @@ export default async function RootLayout({
           accountMenu={navigationIdentity ? (
             <LiveNavigationAccountMenu
               displayName={navigationIdentity.displayName}
+              staffRole={navigationIdentity.staffRole}
               staffRoleLabel={navigationIdentity.staffRole
                 ? messages[locale].staffRoles[navigationIdentity.staffRole]
                 : null}
@@ -121,7 +123,6 @@ export default async function RootLayout({
           ) : undefined}
         />
         {navigationIdentity && <LiveIdentityCacheBoundary />}
-        <LocaleProvider initialLocale={locale}>
           {/* Main content */}
           <div className="relative z-10">{children}</div>
 
