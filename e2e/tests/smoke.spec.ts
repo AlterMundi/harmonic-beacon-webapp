@@ -113,7 +113,12 @@ stackTest.describe('fixture stack', () => {
     }) => {
         await loginStaffWithPassword(page, STAFF.facilitator);
         await page.waitForURL(`**${ROUTES.opsSession(SESSION_ES.id)}`);
-        await expect(page.getByText(SESSION_ES.title)).toBeVisible();
+        await expect(
+            page.getByRole('heading', {
+                name: `Harmonic Projection — ${SESSION_ES.title}`,
+                exact: true,
+            }),
+        ).toBeVisible();
     });
 
     stackTest('operator dashboard login reaches admission without account switching', async ({
