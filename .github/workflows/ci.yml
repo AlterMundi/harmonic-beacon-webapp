@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify generated agent skill distributions
+        run: python3 .agents/skills/fast-forward-mode/scripts/render_distributions.py --check
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22'

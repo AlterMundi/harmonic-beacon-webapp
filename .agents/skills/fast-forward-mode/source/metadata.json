@@ -1,0 +1,13 @@
+{
+  "name": "fast-forward-mode",
+  "description": "Deliver verified project batches with minimal ceremony.",
+  "version": "0.1.1",
+  "author": "Nicolás Echániz, Codex, CompAII",
+  "license": "Apache-2.0",
+  "platforms": ["linux", "macos", "windows"],
+  "hermes": {
+    "tags": ["delivery", "execution", "batching", "verification"],
+    "category": "productivity",
+    "related_skills": []
+  }
+}

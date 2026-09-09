@@ -1,17 +1,3 @@
----
-name: fast-forward-mode
-description: "Deliver verified project batches with minimal ceremony."
-license: Apache-2.0
-metadata:
-  version: "0.1.1"
-  author: "Nicolás Echániz, Codex, CompAII"
-  platforms: ["linux", "macos", "windows"]
-  hermes:
-    tags: ["delivery", "execution", "batching", "verification"]
-    category: "productivity"
-    related_skills: []
----
-
 # Fast Forward Mode Skill
 
 Move substantial project work to a runnable or releasable outcome in coherent
