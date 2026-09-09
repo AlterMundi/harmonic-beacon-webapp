@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
     PUBLIC_CYCLE_SESSION_IDS,
-    isAnonymousPublicCycleAccess,
     isPublicCycleSession,
 } from '@/lib/public-cycle';
 
@@ -66,37 +65,5 @@ describe('public four-Saturday cycle', () => {
         expect(migration).toContain('50000000-0000-4000-8000-202609120001');
         expect(migration).not.toContain('INSERT INTO "ticket_entitlements"');
         expect(migration).not.toContain('INSERT INTO "session_participants"');
-    });
-
-    it('recognizes only an entirely anonymous COMP entitlement for a reviewed public room', () => {
-        const candidate = {
-            staffUser: null,
-            accountIssuer: null,
-            accountSubject: null,
-            accountSessionId: null,
-            accountValidatedAt: null,
-            ticketEntitlement: {
-                scheduledSessionId: PUBLIC_CYCLE_SESSION_IDS[0],
-                tier: 'COMP',
-                codeLastFour: 'FREE',
-                boundEmail: 'public-opaque@anonymous.harmonicbeacon.invalid',
-                accountId: null,
-                accountIssuer: null,
-                scheduledSession: { publicAccess: true, isTest: false },
-            },
-        };
-
-        expect(isAnonymousPublicCycleAccess(candidate)).toBe(true);
-        expect(isAnonymousPublicCycleAccess({
-            ...candidate,
-            accountSubject: 'opaque-account',
-        })).toBe(false);
-        expect(isAnonymousPublicCycleAccess({
-            ...candidate,
-            ticketEntitlement: {
-                ...candidate.ticketEntitlement,
-                scheduledSessionId: '10000000-0000-4000-8000-000000000001',
-            },
-        })).toBe(false);
     });
 });

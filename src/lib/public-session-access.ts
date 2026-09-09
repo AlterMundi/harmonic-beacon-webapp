@@ -18,7 +18,7 @@ function publicEntitlementDigest(sessionId: string, account: AccountIdentity): s
 
 /**
  * Attach a free public event to an already authenticated Beacon Account.
- * This is the registration-free bridge into the existing ticket-shaped room
+ * This is the free-event bridge into the existing ticket-shaped room
  * authorization boundary; it never changes the Account login implementation.
  */
 export async function attachPublicSessionAccess(

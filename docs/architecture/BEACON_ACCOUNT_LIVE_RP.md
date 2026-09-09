@@ -59,6 +59,14 @@ Promo redemption derives a non-PII digest from issuer plus subject. The event
 alias defaults from the Account profile, remains editable, and is captured when
 the participation is first materialized.
 
+Public event listing and price are independent from identity policy: a free,
+publicly listed Live event still requires a current Beacon Account. The public
+entry route creates an Account-bound complimentary entitlement, then requires
+an explicit valid event alias before any participant row or LiveKit credential
+can exist. A participant becomes eligible for the private amplification-credit
+entry feed only after server-observed room presence; display-name text is never
+the durable credit key. Legacy anonymous public-cycle cookies are rejected.
+
 Staff access uses `StaffAccountBinding`: one explicit central issuer/subject per
 existing local `User`. No email matching occurs. Roles, disabled state and event
 policy remain local authority. Seed-time subjects are supplied through the four
@@ -70,6 +78,8 @@ audit entry. There is no MFA claim or MFA policy in this slice.
 - `GET /api/account/login?flow=attendee|staff&next=<local path>`
 - `GET /api/account/callback`
 - `GET /api/account/frontchannel-logout?iss=<exact issuer>&sid=<exact sid>`
+- `GET /api/public-sessions/<id>/enter` requires Account, attaches the free
+  event entitlement and returns through the explicit alias gate.
 - existing `POST /api/auth/logout` revokes locally and returns a 120-second,
   client-secret-signed Account logout initiation bound to the exact central
   `sid`, mode and registered Live origin; `?scope=all` first revokes every

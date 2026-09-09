@@ -212,7 +212,7 @@ describe('landing page', () => {
         expect(screen.getAllByText(/USD \$50 Norte Global.*USD \$20 Sur Global/)).toHaveLength(2);
     });
 
-    it('presents a public event as free direct app access without ticket commerce', async () => {
+    it('presents a free public event with the required Account and name-confirmation step', async () => {
         mountDb(vi.fn().mockResolvedValue([{
             ...SATURDAY,
             id: PUBLIC_ID,
@@ -224,6 +224,7 @@ describe('landing page', () => {
 
         expect(screen.getByText('Del otro lado del umbral — Encuentro 1 de 4')).toBeInTheDocument();
         expect(screen.getByText('Gratis')).toBeInTheDocument();
+        expect(screen.getByText(/iniciá sesión con Beacon Account y confirmá el nombre/)).toBeInTheDocument();
         expect(screen.getByRole('link', { name: 'Ingresar al evento' })).toHaveAttribute(
             'href',
             `/api/public-sessions/${PUBLIC_ID}/enter`,
