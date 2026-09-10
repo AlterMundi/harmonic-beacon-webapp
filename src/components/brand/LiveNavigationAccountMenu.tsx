@@ -1,10 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { useRoomExit } from '@/components/navigation/RoomExitGuard';
+import { useLocale } from '@/context/LocaleContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import type { UiLocale } from '@/lib/i18n';
+import { liveNavigationCopy } from '@/lib/live-navigation-copy';
+import type { LocalizedStaffRole, UiLocale } from '@/lib/i18n';
 
 type AccountHref =
     | 'https://account.harmonicbeacon.com/account'
@@ -12,11 +15,11 @@ type AccountHref =
 
 export function trustedAccountLogoutURL(
     raw: unknown,
-    accountHref: AccountHref,
+    accountIssuer: string,
 ): string | null {
     if (typeof raw !== 'string') return null;
     try {
-        const accountOrigin = new URL(accountHref).origin;
+        const accountOrigin = new URL(accountIssuer).origin;
         const logoutURL = new URL(raw);
         if (
             logoutURL.protocol !== 'https:' ||
@@ -34,18 +37,24 @@ export function trustedAccountLogoutURL(
 export function LiveNavigationAccountMenu({
     displayName,
     staffRoleLabel,
+    staffRole,
     accountHref,
-    locale,
+    accountIssuer,
 }: {
     displayName: string | null;
     staffRoleLabel: string | null;
+    staffRole?: LocalizedStaffRole | null;
     accountHref: AccountHref;
+    accountIssuer: string;
     locale: UiLocale;
 }) {
+    const { locale, copy } = useLocale();
+    const roleLabel = staffRole ? copy.staffRoles[staffRole] : staffRoleLabel;
     const [busy, setBusy] = useState(false);
     const [signOutError, setSignOutError] = useState(false);
     const router = useRouter();
-    const es = locale === 'es';
+    const requestExit = useRoomExit();
+    const navCopy = liveNavigationCopy[locale];
     const accountURL = new URL(accountHref);
     accountURL.searchParams.set('lang', locale);
 
@@ -61,7 +70,7 @@ export function LiveNavigationAccountMenu({
             if (!response.ok) throw new Error('Live sign-out failed');
             const body = await response.json() as { issuerLogoutUrl?: unknown };
             if (body.issuerLogoutUrl !== undefined) {
-                const logoutURL = trustedAccountLogoutURL(body.issuerLogoutUrl, accountHref);
+                const logoutURL = trustedAccountLogoutURL(body.issuerLogoutUrl, accountIssuer);
                 if (!logoutURL) throw new Error('Unexpected Account logout origin');
                 window.location.assign(logoutURL);
                 return;
@@ -71,31 +80,28 @@ export function LiveNavigationAccountMenu({
         } catch {
             setBusy(false);
             setSignOutError(true);
+            return false;
         }
     }
 
     return (
         <div className="hb-live-account-menu">
             {displayName && <p className="hb-live-account-menu__identity">{displayName}</p>}
-            {staffRoleLabel && <p className="hb-live-account-menu__role">{staffRoleLabel}</p>}
+            {roleLabel && <p className="hb-live-account-menu__role">{roleLabel}</p>}
             <a role="menuitem" href={accountURL.toString()}>
-                {es ? 'Cuenta' : 'Account'}
+                {navCopy.account}
             </a>
             {staffRoleLabel && (
                 <Link role="menuitem" href="/ops/events">
-                    {es ? 'Operaciones' : 'Operations'}
+                    {navCopy.operations}
                 </Link>
             )}
-            <button type="button" role="menuitem" disabled={busy} onClick={signOut}>
-                {busy
-                    ? es ? 'Cerrando…' : 'Signing out…'
-                    : es ? 'Cerrar sesión' : 'Sign out'}
+            <button type="button" role="menuitem" disabled={busy} onClick={event => { event.currentTarget.focus(); requestExit(signOut); }}>
+                {busy ? navCopy.signingOut : navCopy.signOut}
             </button>
             {signOutError && (
                 <small role="alert">
-                    {es
-                        ? 'No pudimos cerrar la sesión. Intentá de nuevo.'
-                        : 'We could not sign you out. Please try again.'}
+                    {navCopy.signOutError}
                 </small>
             )}
         </div>

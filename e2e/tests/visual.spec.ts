@@ -3,6 +3,8 @@ import { RoomServiceClient } from 'livekit-server-sdk';
 import { loginViaDashboard } from '../fixtures/auth';
 import { requireDirectDb, withSessionStatus } from '../fixtures/db';
 import { ROUTES, SESSION_ES } from '../fixtures/test-data';
+import { startAudioPublishers } from '../fixtures/audio-publishers';
+import { denyNativePlayback } from '../helpers/native-playback-denial';
 
 const NOMINAL_CHECK = { status: 'green', detail: 'Nominal fixture', latencyMs: 1 } as const;
 const NOMINAL_HEALTH = {
@@ -62,36 +64,51 @@ stackTest.describe('visual baselines', () => {
         await expect(page).toHaveScreenshot('staff-login.png');
     });
 
-    stackTest('attendee audio prompt', async ({ page }, testInfo) => {
+    stackTest('attendee audio prompt', async ({ page, browser }, testInfo) => {
         const db = requireDirectDb(testInfo);
-        await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
-            // Earlier media/load scenarios can leave a LiveKit participant
-            // visible for a short grace period. Start this visual contract
-            // from a genuinely empty room instead of blessing that race.
-            await resetStageRoom();
-            await loginViaDashboard(
-                page,
-                'ATTENDEE',
-                'E2E Attendee',
-                ROUTES.session(SESSION_ES.id),
-            );
-            await expect(page.getByTestId('connection-state')).toHaveAttribute(
-                'data-state',
-                'connected',
-                { timeout: 20_000 },
-            );
-            await expect(page.getByRole('button', { name: /Start audio|Iniciar audio/i })).toBeVisible();
-            // Camera acquisition is asynchronous. Wait for the complete
-            // mobile camera control instead of snapshotting an intermediate
-            // state that races between "share" and "stop/switch" controls.
-            await expect(page.getByRole('button', {
-                name: /Switch to rear camera|Cambiar a cámara trasera/i,
-            })).toBeVisible();
-            await expect(page).toHaveScreenshot('attendee-audio-prompt.png', {
-                mask: [page.getByTestId('connection-state').locator('..')],
-                maskColor: '#16120d',
+        // This baseline is specifically the blocked-autoplay surface. Publish
+        // one real audio-only Beacon source, then deny its native playback;
+        // runner autoplay policy can no longer make the CTA disappear.
+        await page.addInitScript(denyNativePlayback);
+        const stopPublisher = await startAudioPublishers(browser, { beaconOnly: true });
+        try {
+            await withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
+                // Earlier media/load scenarios can leave a LiveKit participant
+                // visible for a short grace period. Start this visual contract
+                // from a genuinely empty stage room instead of blessing that race.
+                await resetStageRoom();
+                await loginViaDashboard(
+                    page,
+                    'ATTENDEE',
+                    'E2E Attendee',
+                    ROUTES.session(SESSION_ES.id),
+                );
+                await expect(page.getByTestId('connection-state')).toHaveAttribute(
+                    'data-state',
+                    'connected',
+                    { timeout: 20_000 },
+                );
+                await expect(page.getByRole('button', { name: /Start audio|Iniciar audio/i })).toBeVisible();
+                await expect.poll(() => page.evaluate(() => window.nativePlaybackDenialAttempts), {
+                    timeout: 30_000,
+                }).toBeGreaterThan(0);
+                await page.addStyleTag({
+                    content: '.event-card[role="group"] > [role="alert"] { display: none !important; }',
+                });
+                // Camera acquisition is asynchronous. Wait for the complete
+                // mobile camera control instead of snapshotting an intermediate
+                // state that races between "share" and "stop/switch" controls.
+                await expect(page.getByRole('button', {
+                    name: /Switch to rear camera|Cambiar a cámara trasera/i,
+                })).toBeVisible();
+                await expect(page).toHaveScreenshot('attendee-audio-prompt.png', {
+                    mask: [page.getByTestId('connection-state').locator('..')],
+                    maskColor: '#16120d',
+                });
             });
-        });
+        } finally {
+            await stopPublisher();
+        }
     });
 
     stackTest('conductor cockpit', async ({ page }) => {

@@ -1,0 +1,103 @@
+{
+  "$schema": "./schemas/platform-services.schema.json",
+  "schemaVersion": 1,
+  "services": [
+    {
+      "id": "home",
+      "name": "Public Home",
+      "repository": "AlterMundi/harmonicbeacon.com",
+      "lanes": ["main"],
+      "localPaths": [],
+      "workflows": [],
+      "health": [
+        {"name": "public-home", "url": "https://harmonicbeacon.com/", "expectStatus": [200]}
+      ],
+      "recoveryDocs": [],
+      "alerts": "Hosting provider and public HTTP health",
+      "runner": "Home repository hosting workflow; verify its current runner in GitHub",
+      "mutation": "Use the Home repository workflow; never couple it to a Live Docker release."
+    },
+    {
+      "id": "live",
+      "name": "Live and Ops",
+      "repository": "AlterMundi/harmonic-beacon-webapp",
+      "lanes": ["main", "release"],
+      "localPaths": ["src", "prisma", "docker-compose.yml", "Dockerfile"],
+      "workflows": [".github/workflows/ci.yml", ".github/workflows/e2e.yml", ".github/workflows/deploy.yml", ".github/workflows/audio-boundary.yml"],
+      "health": [
+        {"name": "live-health", "url": "https://live.harmonicbeacon.com/api/health", "expectStatus": [200], "provenanceField": "gitSha"},
+        {"name": "live-readiness", "url": "https://live.harmonicbeacon.com/api/health/ready", "expectStatus": [200]}
+      ],
+      "staging": ["https://live-staging.harmonicbeacon.com/"],
+      "recoveryDocs": ["deploy/README.md", "docs/ops/WEEKEND_EVENT_RUNBOOK.md"],
+      "alerts": "Harmonic Beacon operational alert channel and service health",
+      "runner": "GitHub Actions self-hosted labels [self-hosted, mona], identity beacon-runner, restricted hb-deploy helper",
+      "runnerVerification": {
+        "organization": "AlterMundi",
+        "groupId": 3,
+        "groupName": "Harmonic Beacon production deploy",
+        "repository": "AlterMundi/harmonic-beacon-webapp",
+        "workflow": "AlterMundi/harmonic-beacon-webapp/.github/workflows/deploy.yml@refs/heads/release",
+        "runnerName": "mona",
+        "labels": ["self-hosted", "Linux", "X64", "mona"]
+      },
+      "mutation": "Production changes only through the release workflow and restricted hb-deploy helper."
+    },
+    {
+      "id": "account-listener",
+      "name": "Beacon Account and Listener",
+      "repository": "AlterMundi/harmonic-beacon-webapp",
+      "lanes": ["early-birds"],
+      "localPaths": ["services/account", "services/listener", "scripts/live-production", "docs/architecture/BEACON_ACCOUNT_LIVE_RP.md"],
+      "workflows": [],
+      "health": [
+        {"name": "account-readiness", "url": "https://account.harmonicbeacon.com/api/account/health/ready", "expectStatus": [200], "provenanceField": "gitSha"},
+        {"name": "listener-public", "url": "https://listen.harmonicbeacon.com/", "expectStatus": [200]}
+      ],
+      "staging": ["https://account-staging.harmonicbeacon.com/", "https://earlybirds-staging.harmonicbeacon.com/"],
+      "recoveryDocs": ["deploy/LIVE_ACCOUNT_PRODUCTION.md", "docs/architecture/BEACON_ACCOUNT_LIVE_RP.md"],
+      "alerts": "Account/Listener readiness and paid-listener queue alerts",
+      "runner": "Account/Listener-specific release path; do not infer the Live runner boundary",
+      "mutation": "Use the Account/Listener release scripts and verify OIDC, cookies, logout, quota, membership and Authority contracts."
+    },
+    {
+      "id": "media-services",
+      "name": "Tapestry, playlist and LiveKit media",
+      "repository": "AlterMundi/harmonic-beacon-webapp",
+      "lanes": ["main", "release"],
+      "localPaths": ["services/tapestry", "services/playlist-bot", "deploy/livekit.yaml"],
+      "workflows": [".github/workflows/e2e.yml", ".github/workflows/livekit-capacity.yml", ".github/workflows/audio-boundary.yml"],
+      "health": [],
+      "recoveryDocs": ["deploy/README.md", "docs/ops/LIVEKIT_LOAD_HARNESS.md"],
+      "alerts": "Container health, LiveKit target monitor and media-specific alerts",
+      "runner": "Live release runner for integrated production images; service-local tooling for focused diagnostics",
+      "mutation": "Build, restart and roll back only the affected media service unless a shared contract requires more."
+    },
+    {
+      "id": "analytics",
+      "name": "First-party Analytics",
+      "repository": "AlterMundi/harmonic-beacon-webapp",
+      "lanes": ["main"],
+      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics"],
+      "workflows": [".github/workflows/ci.yml"],
+      "health": [],
+      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "ops/analytics/restore-verify-analytics.sh"],
+      "alerts": "Analytics source freshness, data quality, storage, backup and restore monitors",
+      "runner": "Analytics systemd/Compose path on Mona as defined by the analytics runbook",
+      "mutation": "Keep analytics migrations, runtime, dashboard and backups independent from Live deployment."
+    },
+    {
+      "id": "commerce-authority",
+      "name": "Payments, membership Authority and PMP",
+      "repository": null,
+      "lanes": [],
+      "localPaths": ["contracts/commerce-entitlement", "scripts/commerce-media-worker.ts"],
+      "workflows": [],
+      "health": [],
+      "recoveryDocs": ["docs/architecture/COMMERCE_ENTITLEMENT_V1.md", "deploy/README.md"],
+      "alerts": "Payment provider, membership authority and durable commerce queue alerts",
+      "runner": "Unresolved until the canonical PMP/Authority owner and workflow are read back",
+      "mutation": "Resolve the canonical owner repository, deployed SHA, database and runbook before mutation; sandbox only for payment tests."
+    }
+  ]
+}

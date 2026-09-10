@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harmonic Beacon Operations"
+  short_description: "Operate Beacon from verified live state"
+  default_prompt: "Use $harmonic-beacon-operations to diagnose or operate Harmonic Beacon from authoritative current state and leave a verified receipt."

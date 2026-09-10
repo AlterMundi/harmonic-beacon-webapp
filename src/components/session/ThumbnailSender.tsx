@@ -21,7 +21,9 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
     // disconnect, promotion to publisher) never opt the attendee out.
     const optedOutRef = useRef(false);
     const [enabled, setEnabled] = useState(false);
-    const [message, setMessage] = useState<string | null>(null);
+    // Store semantic errors so settled and pending failures use current locale
+    // copy without making capture callbacks depend on translated strings.
+    const [message, setMessage] = useState<'permissionDenied' | 'cameraSwitchError' | null>(null);
     const [facingMode, setFacingMode] = useState<CameraFacingMode>('user');
     const [switchingCamera, setSwitchingCamera] = useState(false);
 
@@ -105,9 +107,9 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
         try {
             await acquireCamera(facingMode);
         } catch {
-            setMessage(copy.tapestry.permissionDenied);
+            setMessage('permissionDenied');
         }
-    }, [acquireCamera, copy.tapestry.permissionDenied, facingMode]);
+    }, [acquireCamera, facingMode]);
 
     const switchCamera = useCallback(async () => {
         if (!streamRef.current || switchingCamera) return;
@@ -124,11 +126,11 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
             } catch {
                 setEnabled(false);
             }
-            setMessage(copy.session.cameraSwitchError);
+            setMessage('cameraSwitchError');
         } finally {
             setSwitchingCamera(false);
         }
-    }, [acquireCamera, copy.session.cameraSwitchError, facingMode, releaseStream, switchingCamera]);
+    }, [acquireCamera, facingMode, releaseStream, switchingCamera]);
 
     // Default-on: as soon as the room is connected (and the attendee is not
     // a publisher), start the tapestry camera unless they opted out. A denied
@@ -170,6 +172,6 @@ export default function ThumbnailSender({ sessionId, connected, isPublishing }: 
             <button type="button" className="inline-flex min-h-11 items-center px-2 text-xs text-[var(--text-muted)] underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cyan)]" onClick={optOut}>{copy.tapestry.stopCamera}</button>
         </div> :
             <button type="button" className="inline-flex min-h-11 items-center px-2 text-xs text-[var(--gold)] underline" onClick={optIn} disabled={!connected}>{copy.tapestry.shareSnapshot}</button>}
-        {message ? <p className="mt-1 text-xs text-[var(--text-muted)]">{message}</p> : null}
+        {message ? <p className="mt-1 text-xs text-[var(--text-muted)]">{message === 'permissionDenied' ? copy.tapestry.permissionDenied : copy.session.cameraSwitchError}</p> : null}
     </section>;
 }

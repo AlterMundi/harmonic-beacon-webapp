@@ -27,12 +27,13 @@ vi.mock('@/components/ops/OpsNavLinks', () => ({
     ),
 }));
 import OpsLayout from '../layout';
+import { LocaleProvider } from '@/context/LocaleContext';
 
 describe('staff layout', () => {
     afterEach(cleanup);
 
     it('has one stable event hub entry without a second identity control', async () => {
-        render(await OpsLayout({ children: <p>child</p> }));
+        render(<LocaleProvider initialLocale="es">{await OpsLayout({ children: <p>child</p> })}</LocaleProvider>);
 
         const nav = screen.getByTestId('nav-links');
         expect(nav.querySelectorAll('a')).toHaveLength(3);

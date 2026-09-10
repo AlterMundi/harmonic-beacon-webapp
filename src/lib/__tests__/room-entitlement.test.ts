@@ -87,7 +87,7 @@ describe('resolveRoomPrincipal', () => {
         vi.unstubAllEnvs();
     });
 
-    it('admits the exact anonymous public-cycle ticket while Account is enabled', async () => {
+    it('rejects a legacy anonymous public-cycle ticket while Account is enabled', async () => {
         vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
         findWebSession.mockResolvedValue({
             ...activeTicketSession,
@@ -120,14 +120,13 @@ describe('resolveRoomPrincipal', () => {
             now,
         );
 
-        expect(result).toMatchObject({
-            ok: true,
-            principal: {
-                role: 'ATTENDEE',
-                ticketEntitlementId: 'ticket-1',
-                displayName: 'Participante',
-            },
+        expect(result).toEqual({
+            ok: false,
+            status: 401,
+            error: 'Authentication required',
         });
+        expect(findParticipant).not.toHaveBeenCalled();
+        expect(upsertParticipant).not.toHaveBeenCalled();
     });
 
     it('rejects a missing opaque cookie without touching the database', async () => {

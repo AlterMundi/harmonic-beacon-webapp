@@ -2,6 +2,7 @@ import { expect, stackTest, test } from '../fixtures/stack';
 import { loginViaDashboard } from '../fixtures/auth';
 import { requireDirectDb, withSessionStatus, withSessionTitles } from '../fixtures/db';
 import { ROUTES, SESSION_EN, SESSION_ES } from '../fixtures/test-data';
+import { expectEffectiveAudioReady } from '../helpers/audio-readiness';
 
 const LONG_ES_TITLE = 'Viaje colectivo hacia el bosque interior y las imágenes que todavía nos acompañan';
 const LONG_EN_TITLE = 'A collective journey through the inner forest and the images that still travel with us';
@@ -103,13 +104,35 @@ stackTest.describe('responsive live surfaces', () => {
             ).toBeVisible({ timeout: 30_000 });
             await expectNoHorizontalScroll(page);
 
-            const startAudio = page.getByRole('button', { name: /Start audio|Iniciar audio/i });
-            if (await startAudio.count()) {
-                const box = await startAudio.boundingBox();
-                expect(box).not.toBeNull();
-                expect(box!.height).toBeGreaterThanOrEqual(44);
-                expect(box!.x).toBeGreaterThanOrEqual(0);
-                expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+            const connectionState = page.getByTestId('connection-state');
+            // One synchronous DOM sample avoids Playwright auto-wait when the
+            // readiness transition removes the CTA, and closes the previous
+            // visibility -> geometry TOCTOU window.
+            const audioCta = await page.evaluate(() => {
+                const labels = new Set(['Start audio', 'Iniciar audio']);
+                const buttons = [...document.querySelectorAll<HTMLButtonElement>('button')]
+                    .filter(button => labels.has(button.textContent?.trim() ?? ''));
+                const button = buttons[0];
+                if (!button) return { matches: 0, box: null };
+                const style = getComputedStyle(button);
+                const rect = button.getBoundingClientRect();
+                const visible = style.display !== 'none' && style.visibility !== 'hidden'
+                    && rect.width > 0 && rect.height > 0;
+                return {
+                    matches: buttons.length,
+                    box: visible
+                        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+                        : null,
+                };
+            });
+            expect(audioCta.matches).toBeLessThanOrEqual(1);
+            if (audioCta.box) {
+                expect(audioCta.box.height).toBeGreaterThanOrEqual(44);
+                expect(audioCta.box.x).toBeGreaterThanOrEqual(0);
+                expect(audioCta.box.x + audioCta.box.width)
+                    .toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+            } else if (await connectionState.count() && await connectionState.getAttribute('data-state') === 'connected') {
+                await expectEffectiveAudioReady(page);
             }
 
             const stopTapestry = page.getByRole('button', {

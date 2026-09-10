@@ -16,7 +16,20 @@ describe('LanguageControl', () => {
         document.cookie = 'hb_locale=; Path=/; Max-Age=0';
     });
 
-    afterEach(cleanup);
+    afterEach(() => {
+        cleanup();
+        window.history.replaceState(null, '', '/');
+    });
+
+    it.each(['/session/event-1', '/ops/events/event-1'])('changes language without refreshing the mounted event at %s', async (path) => {
+        window.history.replaceState(null, '', path);
+        const user = userEvent.setup();
+        render(<LocaleProvider initialLocale="es"><LanguageControl /></LocaleProvider>);
+        await user.click(screen.getByRole('button', { name: 'EN' }));
+        expect(document.documentElement.lang).toBe('en');
+        expect(document.cookie).toContain('hb_locale=en');
+        expect(refresh).not.toHaveBeenCalled();
+    });
 
     it('updates visible locale, document metadata, cookie and storage', async () => {
         const user = userEvent.setup();

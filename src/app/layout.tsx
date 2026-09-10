@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { LiveIdentityCacheBoundary } from "@/components/brand/LiveIdentityCacheBoundary";
 import { LiveNavigationAccountMenu } from "@/components/brand/LiveNavigationAccountMenu";
+import { RoomExitProvider } from "@/components/navigation/RoomExitGuard";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { beaconAccountEnabled } from "@/lib/account-rp";
 import {
@@ -103,6 +104,7 @@ export default async function RootLayout({
           data-surface={analytics.surface}
           data-environment={analytics.environment}
         /> : null}
+        <LocaleProvider initialLocale={locale}><RoomExitProvider>
         <GlobalNavigation
           active={navigationSurface}
           locale={locale}
@@ -112,16 +114,17 @@ export default async function RootLayout({
           accountMenu={navigationIdentity ? (
             <LiveNavigationAccountMenu
               displayName={navigationIdentity.displayName}
+              staffRole={navigationIdentity.staffRole}
               staffRoleLabel={navigationIdentity.staffRole
                 ? messages[locale].staffRoles[navigationIdentity.staffRole]
                 : null}
               accountHref={accountHref}
+              accountIssuer={navigationIdentity.issuer}
               locale={locale}
             />
           ) : undefined}
         />
         {navigationIdentity && <LiveIdentityCacheBoundary />}
-        <LocaleProvider initialLocale={locale}>
           {/* Main content */}
           <div className="relative z-10">{children}</div>
 
@@ -139,7 +142,7 @@ export default async function RootLayout({
               },
             }}
           />
-        </LocaleProvider>
+        </RoomExitProvider></LocaleProvider>
       </body>
     </html>
   );
