@@ -41,7 +41,7 @@ they never weaken their assertions to pass.
 
    ```bash
    docker run -d --name hb-e2e-livekit --network host \
-     livekit/livekit-server:latest --dev --node-ip 127.0.0.1
+     livekit/livekit-server:v1.13.4 --dev --node-ip 127.0.0.1
    ```
 
    Dev credentials are LiveKit's public placeholders (`devkey`/`secret`).
@@ -52,8 +52,13 @@ they never weaken their assertions to pass.
    E2E_DATABASE_URL=postgresql://postgres:e2e@localhost:55432/beacon_test npm run test:e2e
    ```
 
-   Playwright builds the app (`npm run build`) and serves the production
-   output itself. First time only, install the pinned browsers used by CI:
+   Local Playwright invocations build the app (`npm run build`) and serve the
+   production output themselves. In the hosted main-browser job, the first
+   Chromium/Android invocation owns that build; the later Firefox and WebKit
+   invocations restart the server against the same candidate `.next` output.
+   The isolated Account job remains a separate environment and performs its
+   own build with its own copied source and configuration. First time only,
+   install the pinned browsers used by CI:
 
    ```bash
    npx playwright install chromium webkit

@@ -22,6 +22,11 @@ const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 // pinned Playwright browser. CI leaves this unset and keeps its normal binary.
 const CHROME_EXECUTABLE = process.env.PLAYWRIGHT_CHROME_EXECUTABLE?.trim() || undefined;
 
+export function managedServerCommand(port: number, reuseNextBuild: boolean): string {
+    const start = `npx next start --port ${port}`;
+    return reuseNextBuild ? start : `npm run build && ${start}`;
+}
+
 // Resolve the fixture database URL once so both the web server and tests
 // that flip fixture state (e.g. opening doors by setting a session LIVE)
 // talk to the same throwaway database.
@@ -158,7 +163,7 @@ export default defineConfig({
         : {
               // Production build, not dev: no HMR sockets, no dev-tools
               // chrome in screenshots, and the gate exercises what ships.
-              command: `npm run build && npx next start --port ${PORT}`,
+              command: managedServerCommand(PORT, process.env.E2E_REUSE_NEXT_BUILD === '1'),
               // The landing renders (degraded) even without a database, so a
               // 200 here means "server up"; stack-dependent suites probe and
               // skip separately with a precise reason.

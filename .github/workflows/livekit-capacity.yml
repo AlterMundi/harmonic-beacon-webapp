@@ -63,7 +63,15 @@ jobs:
         with:
           node-version: '22.22'
 
+      - name: Restore verified LiveKit load tester cache
+        id: livekit-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/livekit-load-cli/lk
+          key: livekit-load-cli-v1-${{ runner.os }}-${{ runner.arch }}-go-1.25.8-${{ hashFiles('scripts/install-livekit-load-cli.sh', 'scripts/patches/livekit-cli-v2.16.3-vp8-depacketizer.patch') }}
+
       - uses: actions/setup-go@v5
+        if: steps.livekit-cli-cache.outputs.cache-hit != 'true'
         with:
           go-version: '1.25.8'
           cache: false
@@ -89,7 +97,14 @@ jobs:
             --shard-count "$LOAD_SHARD_COUNT"
 
       - name: Build verified LiveKit load tester once
+        if: steps.livekit-cli-cache.outputs.cache-hit != 'true'
         run: scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/livekit-load-cli/lk"
+
+      - name: Verify cached or built LiveKit load tester
+        run: |
+          test -x "$RUNNER_TEMP/livekit-load-cli/lk"
+          test "$("$RUNNER_TEMP/livekit-load-cli/lk" --version)" = \
+            'lk version 2.16.3-hb-vp8.1'
 
       - name: Share the verified load tester with every shard
         uses: actions/upload-artifact@v4
