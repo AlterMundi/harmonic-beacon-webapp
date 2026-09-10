@@ -1,33 +1,28 @@
 name: Delivery gate
 
 on:
-  pull_request_target:
-    branches: [main, release]
-    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled, closed]
-  workflow_run:
-    workflows: [CI, E2E quality gates, Audio boundary]
-    types: [requested, in_progress, completed]
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Pull request number to inspect in shadow mode
+        description: Current pull request number
         required: true
         type: number
-      expected_base:
-        description: Expected target branch
+      status_context:
+        description: Aggregate context selected by the unprivileged dispatcher
         required: true
-        default: main
+        default: delivery-gate-shadow
         type: choice
-        options: [main, release]
+        options: [delivery-gate-shadow, delivery-gate]
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
   checks: read
   statuses: write
 
 concurrency:
-  group: delivery-gate-${{ github.event_name == 'workflow_dispatch' && 'shadow' || 'required' }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number }}-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.run_id }}
+  group: delivery-gate-${{ inputs.status_context }}-${{ inputs.pr_number }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -42,57 +37,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_ACTION: ${{ github.event.action }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
-          INPUT_EXPECTED_BASE: ${{ inputs.expected_base }}
+          INPUT_STATUS_CONTEXT: ${{ inputs.status_context }}
         run: |
           set -euo pipefail
           echo 'active=false' >> "$GITHUB_OUTPUT"
 
-          if [ "$EVENT_NAME" = workflow_dispatch ]; then
-            pr_number="$INPUT_PR_NUMBER"
-            expected_base="$INPUT_EXPECTED_BASE"
-            context=delivery-gate-shadow
-            event_head=''
-            event_base=''
-          elif [ "$EVENT_NAME" = workflow_run ]; then
-            context=delivery-gate
-            event_head="$(jq -r '.workflow_run.head_sha' "$GITHUB_EVENT_PATH")"
-            associated_prs="$(gh api --paginate --slurp \
-              -H 'Accept: application/vnd.github+json' \
-              "repos/$REPOSITORY/pulls?state=open&per_page=100")"
-            pr_number="$(jq -r --arg head "$event_head" \
-              '[.[][] | select(.head.sha == $head and .state == "open" and (.base.ref == "main" or .base.ref == "release"))][0].number // empty' \
-              <<<"$associated_prs")"
-            if [ -z "$pr_number" ]; then exit 0; fi
-            expected_base="$(jq -r --argjson pr "$pr_number" \
-              '.workflow_run.pull_requests[]? | select(.number == $pr) | .base.ref' "$GITHUB_EVENT_PATH")"
-            event_base="$(jq -r --argjson pr "$pr_number" \
-              '.workflow_run.pull_requests[]? | select(.number == $pr) | .base.sha' "$GITHUB_EVENT_PATH")"
-          else
-            pr_number="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
-            expected_base="$(jq -r '.pull_request.base.ref' "$GITHUB_EVENT_PATH")"
-            context=delivery-gate
-            event_head="$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
-            event_base="$(jq -r '.pull_request.base.sha' "$GITHUB_EVENT_PATH")"
-            if [ "$EVENT_ACTION" = closed ]; then
-              associated_prs="$(gh api --paginate --slurp \
-                -H 'Accept: application/vnd.github+json' \
-                "repos/$REPOSITORY/pulls?state=open&per_page=100")"
-              pr_number="$(jq -r --arg head "$event_head" \
-                '[.[][] | select(.head.sha == $head and (.base.ref == "main" or .base.ref == "release"))][0].number // empty' \
-                <<<"$associated_prs")"
-              if [ -z "$pr_number" ]; then exit 0; fi
-              expected_base=''
-              event_base=''
-            fi
-          fi
-
+          pr_number="$INPUT_PR_NUMBER"
+          context="$INPUT_STATUS_CONTEXT"
+          case "$context" in
+            delivery-gate|delivery-gate-shadow) ;;
+            *) exit 1 ;;
+          esac
           initial_pr="$(gh api "repos/$REPOSITORY/pulls/$pr_number")"
-          if [ -z "$event_head" ]; then event_head="$(jq -r '.head.sha' <<<"$initial_pr")"; fi
-          if [ -z "$event_base" ]; then event_base="$(jq -r '.base.sha' <<<"$initial_pr")"; fi
-          if [ -z "$expected_base" ]; then expected_base="$(jq -r '.base.ref' <<<"$initial_pr")"; fi
+          [ "$(jq -r '.state' <<<"$initial_pr")" = open ] || exit 0
+          event_head="$(jq -r '.head.sha' <<<"$initial_pr")"
+          event_base="$(jq -r '.base.sha' <<<"$initial_pr")"
+          expected_base="$(jq -r '.base.ref' <<<"$initial_pr")"
           current_head="$(jq -r '.head.sha' <<<"$initial_pr")"
           base_sha="$(jq -r '.base.sha' <<<"$initial_pr")"
           merge_sha="$(jq -r '.merge_commit_sha' <<<"$initial_pr")"
@@ -103,6 +64,8 @@ jobs:
           for value in "$event_head" "$event_base" "$current_head" "$base_sha" "$merge_sha"; do
             [[ "$value" =~ ^[0-9a-f]{40}$ ]] || { echo 'resolved PR identity is incomplete' >&2; exit 1; }
           done
+          test "$GITHUB_REF_NAME" = "$expected_base"
+          test "$GITHUB_SHA" = "$base_sha"
 
           {
             echo 'active=true'
@@ -167,16 +130,89 @@ jobs:
           payload_dir="$(mktemp -d)"
           trap 'rm -rf "$payload_dir"' EXIT
 
-          fetch_check_pages() {
-            gh api --paginate --slurp \
+          fetch_evidence_snapshot() {
+            local check_pages workflow_pages check_suite_ids check_suites workflow_jobs
+            local suite_id suite run_id run_attempt run_attempt_record job_pages
+            check_pages="$(gh api --paginate --slurp \
               -H 'Accept: application/vnd.github+json' \
-              "repos/$REPOSITORY/commits/$event_head/check-runs?per_page=100&filter=all"
+              "repos/$REPOSITORY/commits/$event_head/check-runs?per_page=100&filter=all")"
+            workflow_pages="$(gh api --paginate --slurp \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/$REPOSITORY/actions/runs?head_sha=$event_head&event=pull_request&per_page=100")"
+            check_suite_ids="$(jq '[.[]?.check_runs[]?.check_suite.id | select(type == "number")] | unique' <<<"$check_pages")"
+            check_suites='[]'
+            while IFS= read -r suite_id; do
+              suite="$(gh api -H 'Accept: application/vnd.github+json' \
+                "repos/$REPOSITORY/check-suites/$suite_id")"
+              check_suites="$(jq --argjson suite "$suite" '. + [$suite]' <<<"$check_suites")"
+            done < <(jq -r '.[]' <<<"$check_suite_ids")
+
+            workflow_jobs='[]'
+            while IFS=$'\t' read -r run_id run_attempt; do
+              run_attempt_record="$(gh api \
+                -H 'Accept: application/vnd.github+json' \
+                "repos/$REPOSITORY/actions/runs/$run_id/attempts/$run_attempt")"
+              job_pages="$(gh api --paginate --slurp \
+                -H 'Accept: application/vnd.github+json' \
+                "repos/$REPOSITORY/actions/runs/$run_id/attempts/$run_attempt/jobs?per_page=100")"
+              workflow_jobs="$(jq \
+                --argjson run_id "$run_id" \
+                --argjson run_attempt "$run_attempt" \
+                --argjson run "$run_attempt_record" \
+                --argjson pages "$job_pages" \
+                '. + [{run_id:$run_id,run_attempt:$run_attempt,run:$run,pages:$pages}]' \
+                <<<"$workflow_jobs")"
+            done < <(jq -r \
+              '[.[]?.workflow_runs[]? | select((.id | type) == "number" and (.run_attempt | type) == "number")]
+                | unique_by([.id, .run_attempt])[] | [.id, .run_attempt] | @tsv' \
+              <<<"$workflow_pages")
+
+            jq -n \
+              --argjson checks "$check_pages" \
+              --argjson workflows "$workflow_pages" \
+              --argjson suites "$check_suites" \
+              --argjson jobs "$workflow_jobs" \
+              '{checks:$checks,workflows:$workflows,suites:$suites,jobs:$jobs}'
           }
-          canonical_check_snapshot() {
+          canonical_evidence_snapshot() {
             jq -S -c '{
-              totals: ([.[]?.total_count] | unique),
-              runs: ([.[]?.check_runs[]?] | sort_by(.id))
+              checks: {
+                totals: ([.checks[]?.total_count] | unique),
+                runs: ([.checks[]?.check_runs[]?] | sort_by(.id))
+              },
+              workflows: {
+                totals: ([.workflows[]?.total_count] | unique),
+                runs: ([.workflows[]?.workflow_runs[]?] | sort_by(.id, .run_attempt))
+              },
+              suites: (.suites | sort_by(.id)),
+              jobs: ([.jobs[]? | {
+                run_id,
+                run_attempt,
+                run,
+                totals: ([.pages[]?.total_count] | unique),
+                runs: ([.pages[]?.jobs[]?] | sort_by(.id))
+              }] | sort_by(.run_id, .run_attempt))
             }'
+          }
+          evidence_snapshot_complete() {
+            jq -e '
+              . as $snapshot
+              | (([$snapshot.checks[]?.total_count] | unique) as $totals
+                | (($totals | length) == 1
+                  and $totals[0] == ([$snapshot.checks[]?.check_runs[]?.id] | unique | length)))
+              and (([$snapshot.workflows[]?.total_count] | unique) as $totals
+                | (($totals | length) == 1
+                  and $totals[0] == ([$snapshot.workflows[]?.workflow_runs[]?.id] | unique | length)))
+              and (([$snapshot.checks[]?.check_runs[]?.check_suite.id] | unique | sort)
+                == ([$snapshot.suites[]?.id] | unique | sort))
+              and (([$snapshot.workflows[]?.workflow_runs[]? | [.id, .run_attempt]] | unique | sort)
+                == ([$snapshot.jobs[]? | [.run_id, .run_attempt]] | unique | sort))
+              and ($snapshot.jobs | all(
+                (.run.id == .run_id and .run.run_attempt == .run_attempt)
+                and (([.pages[]?.total_count] | unique) as $totals
+                  | (($totals | length) == 1
+                    and $totals[0] == ([.pages[]?.jobs[]?.id] | unique | length)))
+              ))' >/dev/null
           }
 
           for attempt in $(seq 0 95); do
@@ -203,60 +239,17 @@ jobs:
             listed_changed_file_count="$(jq '[.[][]] | length' <<<"$file_records")"
             changed_files="$(jq '[.[][] | .filename, .previous_filename?] | map(select(type == "string" and length > 0)) | unique' <<<"$file_records")"
 
-            check_pages_a="$(fetch_check_pages)"
-            check_pages_b="$(fetch_check_pages)"
-            if [ "$(canonical_check_snapshot <<<"$check_pages_a")" = "$(canonical_check_snapshot <<<"$check_pages_b")" ]; then
+            evidence_a="$(fetch_evidence_snapshot)"
+            evidence_b="$(fetch_evidence_snapshot)"
+            if evidence_snapshot_complete <<<"$evidence_b" \
+                && [ "$(canonical_evidence_snapshot <<<"$evidence_a")" = "$(canonical_evidence_snapshot <<<"$evidence_b")" ]; then
               check_snapshot_stable=true
             else
               check_snapshot_stable=false
             fi
-            check_pages="$check_pages_b"
+            check_pages="$(jq -c '.checks' <<<"$evidence_b")"
             reported_check_run_count="$(jq '[.[]?.total_count] | unique | if length == 1 then .[0] else 0 end' <<<"$check_pages")"
-            workflow_pages="$(gh api --paginate --slurp \
-              -H 'Accept: application/vnd.github+json' \
-              "repos/$REPOSITORY/actions/runs?head_sha=$event_head&event=pull_request&per_page=100")"
-            check_suite_ids="$(jq '[.[]?.check_runs[]?.check_suite.id] | unique' <<<"$check_pages")"
-            check_suites='[]'
-            while IFS= read -r suite_id; do
-              suite="$(gh api -H 'Accept: application/vnd.github+json' \
-                "repos/$REPOSITORY/check-suites/$suite_id")"
-              check_suites="$(jq --argjson suite "$suite" '. + [$suite]' <<<"$check_suites")"
-            done < <(jq -r '.[]' <<<"$check_suite_ids")
-            check_runs="$(jq -n --argjson checks "$check_pages" --argjson suites "$check_suites" --argjson workflows "$workflow_pages" '
-              [$checks[]?.check_runs[]? as $check
-                | ($suites | map(select(.id == $check.check_suite.id)) | first // null) as $suite
-                | ($workflows[]?.workflow_runs // []
-                    | map(select(.check_suite_id == $check.check_suite.id))
-                    | sort_by(.run_attempt, .id)
-                    | last // null) as $workflow
-                | {
-                    id: $check.id,
-                    name: $check.name,
-                    head_sha: $check.head_sha,
-                    status: $check.status,
-                    conclusion: $check.conclusion,
-                    completed_at: $check.completed_at,
-                    started_at: $check.started_at,
-                    created_at: $check.created_at,
-                    app: {id: $check.app.id, slug: $check.app.slug},
-                    check_suite: (if $suite == null then null else {
-                      id: $suite.id,
-                      head_sha: $suite.head_sha,
-                      app: {id: $suite.app.id, slug: $suite.app.slug}
-                    } end),
-                    workflow_run: (if $workflow == null then null else {
-                      id: $workflow.id,
-                      check_suite_id: $workflow.check_suite_id,
-                      run_attempt: $workflow.run_attempt,
-                      name: $workflow.name,
-                      path: $workflow.path,
-                      event: $workflow.event,
-                      head_sha: $workflow.head_sha,
-                      run_started_at: $workflow.run_started_at,
-                      pull_requests: $workflow.pull_requests
-                    } end)
-                  }
-              ]')"
+            check_runs="$(jq -c -f scripts/ci/check-evidence.jq <<<"$evidence_b")"
             printf '%s\n' "$changed_files" > "$payload_dir/changed-files.json"
             printf '%s\n' "$check_runs" > "$payload_dir/check-runs.json"
 
@@ -309,7 +302,7 @@ jobs:
               final_evidence_not_before="$(jq -r --arg created "$pr_created_at" \
                 '([.[][] | select(.event == "base_ref_changed") | .created_at] | max) // $created' \
                 <<<"$final_timeline")"
-              final_check_pages="$(fetch_check_pages)"
+              final_evidence="$(fetch_evidence_snapshot)"
               if [ "$final_number" != "$current_pr_number" ] \
                   || [ "$final_state" != "$current_pr_state" ] \
                   || [ "$final_head" != "$current_head" ] \
@@ -317,7 +310,8 @@ jobs:
                   || [ "$final_base_ref" != "$current_base_ref" ] \
                   || [ "$final_merge" != "$current_merge" ] \
                   || [ "$final_evidence_not_before" != "$evidence_not_before" ] \
-                  || [ "$(canonical_check_snapshot <<<"$final_check_pages")" != "$(canonical_check_snapshot <<<"$check_pages_b")" ]; then
+                  || ! evidence_snapshot_complete <<<"$final_evidence" \
+                  || [ "$(canonical_evidence_snapshot <<<"$final_evidence")" != "$(canonical_evidence_snapshot <<<"$evidence_b")" ]; then
                 if [[ "$final_merge" =~ ^[0-9a-f]{40}$ ]]; then
                   post_status pending 'PR changed during final delivery evaluation' "$final_merge"
                 fi

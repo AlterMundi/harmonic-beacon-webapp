@@ -62,25 +62,47 @@ must add checks for risks the classifier cannot infer.
 6. Read back exact deployed provenance, health/readiness, private boundaries,
    service-specific behavior, and recovery target.
 
-Live delivery has one stable aggregate context, `delivery-gate`, implemented by
+Live delivery has one stable aggregate context, `delivery-gate`. The
+lifecycle wrapper at
+[`.github/workflows/delivery-gate-dispatch.yml`](../../.github/workflows/delivery-gate-dispatch.yml)
+is intentionally unable to write commit statuses: it has only the permissions
+needed to resolve a protected PR and dispatch
 [`.github/workflows/delivery-gate.yml`](../../.github/workflows/delivery-gate.yml)
-and the fail-closed evaluator at
-[`scripts/ci/required-checks.mjs`](../../scripts/ci/required-checks.mjs). The gate
-first resolves the exact current target commit, checks out the evaluator from
-that commit only, and rejects any event, evaluator, constituent suite, or
-workflow-run identity bound to another PR head, base ref, or base SHA. Required
+at that PR's current `main` or `release` target ref. The dispatched workflow is
+the sole status-writing authority. Before its first status write, it requires
+its own `GITHUB_SHA` and `GITHUB_REF_NAME` to equal the PR's exact live base SHA
+and ref; a branch movement between resolution and dispatch therefore fails
+closed. The lifecycle wrapper may be loaded from the default branch for
+`pull_request_target` or `workflow_run`, but it cannot authorize a candidate.
+Its operator-facing manual mode requests only `delivery-gate-shadow`.
+
+The exact-base authority checks out only that same base SHA and runs the
+fail-closed evaluator at
+[`scripts/ci/required-checks.mjs`](../../scripts/ci/required-checks.mjs). It
+rejects any event, evaluator, constituent suite, workflow run, workflow attempt,
+job, or check identity bound to another PR head, base ref, or base SHA. Required
 checks must come from the exact GitHub Actions App and expected workflow path on
-the pull-request event. Check pages are refetched to a stable complete snapshot,
-deduplicated by ID, ordered by workflow start and rerun attempt, and refetched
-again before success. Changed-file classification includes both sides of
-renames and rejects incomplete GitHub file listings or multiple protected PRs
-sharing one head SHA. The PR, retarget timeline, and check snapshot are reread
-immediately before success, which is published on the current synthetic merge
-commit rather than the reusable head commit. The monitor never checks out or
-executes candidate bytes.
-Constituent CI/E2E/audio workflow lifecycle events re-evaluate newer reruns;
-per-head concurrency keeps obsolete candidates and manual runs isolated.
-Manual mode emits only `delivery-gate-shadow`, never the required context.
+the pull-request event. Check, suite, workflow-run-attempt, and exact-attempt job
+pages are fetched as one complete stable evidence snapshot. The mapping in
+[`scripts/ci/check-evidence.jq`](../../scripts/ci/check-evidence.jq) binds each
+accepted check ID to the one job whose `check_run_url` identifies it, then binds
+that job to the exact run ID and attempt record. Checks or jobs timestamped
+before that attempt started are rejected. The entire evidence snapshot is
+refetched again immediately before success.
+
+Changed-file classification includes both sides of renames and rejects
+incomplete GitHub file listings or multiple protected PRs sharing one head SHA.
+The PR and retarget timeline are also reread immediately before success, which
+is published on the current synthetic merge commit rather than the reusable
+head commit. Neither authority nor dispatcher checks out or executes candidate
+bytes. Constituent CI/E2E/audio lifecycle events can request reevaluation, but
+their default-branch `workflow_run` wrapper has no status-writing permission.
+Per-context, PR, and exact-base concurrency coalesces duplicate evaluators;
+final live-PR and evidence revalidation prevents an obsolete evaluator from
+winning. Manual dispatcher mode emits only `delivery-gate-shadow`, never the
+required context. A direct invocation of the internal exact-base authority is
+not a bypass: the same live PR/base binding and complete check evaluation still
+apply.
 
 `main` and `release` must require pull requests, at least one code-owner
 approval, stale-review dismissal, approval of the current push by someone other

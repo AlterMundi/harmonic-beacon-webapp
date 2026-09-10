@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +36,7 @@ function workflowIdentity(name, id, overrides = {}) {
 function checkRun(name, overrides = {}) {
   const id = overrides.id ?? 1;
   const suiteId = 1000 + id;
+  const workflow = Object.hasOwn(overrides, 'workflow_run') ? overrides.workflow_run : workflowIdentity(name, id);
   return {
     id,
     name,
@@ -50,7 +52,19 @@ function checkRun(name, overrides = {}) {
       head_sha: overrides.head_sha ?? HEAD,
       app: { id: ACTIONS_APP_ID, slug: 'github-actions' },
     },
-    workflow_run: Object.hasOwn(overrides, 'workflow_run') ? overrides.workflow_run : workflowIdentity(name, id),
+    workflow_run: workflow,
+    workflow_job: Object.hasOwn(overrides, 'workflow_job') ? overrides.workflow_job : workflow === null ? null : {
+      id: 3000 + id,
+      run_id: workflow.id,
+      run_attempt: workflow.run_attempt,
+      check_run_id: id,
+      head_sha: overrides.head_sha ?? HEAD,
+      name,
+      status: overrides.status ?? 'completed',
+      conclusion: overrides.conclusion === undefined ? 'success' : overrides.conclusion,
+      started_at: Object.hasOwn(overrides, 'started_at') ? overrides.started_at : '2026-09-10T00:01:00.000Z',
+      completed_at: Object.hasOwn(overrides, 'completed_at') ? overrides.completed_at : null,
+    },
   };
 }
 
@@ -95,6 +109,30 @@ function assertState(actual, state, reason) {
   if (reason) assert.ok(actual.reasons.includes(reason), JSON.stringify(actual));
 }
 
+function mapEvidence(raw) {
+  const result = spawnSync('jq', ['-c', '-f', resolve(ROOT, 'scripts/ci/check-evidence.jq')], {
+    encoding: 'utf8',
+    input: JSON.stringify(raw),
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+function runEvidenceSnapshotFunction(name, raw) {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const start = workflow.indexOf('          canonical_evidence_snapshot()');
+  const end = workflow.indexOf('\n          for attempt', start);
+  assert.ok(start >= 0 && end > start, 'evidence snapshot functions must be present');
+  const functions = workflow.slice(start, end)
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/, ''))
+    .join('\n');
+  return spawnSync('bash', ['-c', `${functions}\n${name} <<<"$FIXTURE"`], {
+    encoding: 'utf8',
+    env: { ...process.env, FIXTURE: JSON.stringify(raw) },
+  });
+}
+
 test('succeeds when every required context passed on the exact current head', () => {
   assert.deepEqual(evaluateRequiredChecks(input()), {
     schemaVersion: 1,
@@ -132,6 +170,21 @@ test('rejects a same-name success from the wrong workflow or pull request identi
     }),
   });
   assertState(evaluateRequiredChecks(input({ checkRuns: [wrongPr] })), 'failure', 'untrusted:diff-check');
+});
+
+test('an accepted check is bound to one exact workflow job, run and attempt identity', () => {
+  const base = checkRun('diff-check', { id: 42 });
+  for (const workflow_job of [
+    { ...base.workflow_job, check_run_id: 99 },
+    { ...base.workflow_job, run_id: 99 },
+    { ...base.workflow_job, run_attempt: 2 },
+    { ...base.workflow_job, name: 'attacker' },
+    { ...base.workflow_job, head_sha: '3333333333333333333333333333333333333333' },
+  ]) {
+    assertState(evaluateRequiredChecks(input({
+      checkRuns: [{ ...base, workflow_job }],
+    })), 'failure', 'untrusted:diff-check');
+  }
 });
 
 test('a missing required context stays pending before the deadline', () => {
@@ -275,6 +328,128 @@ test('foreign checks without Actions workflow metadata are ordered deterministic
   }
 });
 
+test('an attempt-one success cannot authorize after attempt two appears without its checks', () => {
+  const staleSuccessMisattachedToAttemptTwo = checkRun('diff-check', {
+    id: 10,
+    created_at: '2026-09-10T00:01:00.000Z',
+    started_at: '2026-09-10T00:01:00.000Z',
+    completed_at: '2026-09-10T00:01:30.000Z',
+    workflow_run: workflowIdentity('diff-check', 10, {
+      run_attempt: 2,
+      run_started_at: '2026-09-10T00:02:00.000Z',
+    }),
+  });
+  assertState(evaluateRequiredChecks(input({
+    checkRuns: [staleSuccessMisattachedToAttemptTwo],
+  })), 'failure', 'untrusted:diff-check');
+});
+
+test('production evidence mapping does not attach a newly appeared attempt to an old check', () => {
+  const stale = checkRun('diff-check', {
+    id: 10,
+    created_at: '2026-09-10T00:01:00.000Z',
+    started_at: '2026-09-10T00:01:00.000Z',
+    completed_at: '2026-09-10T00:01:30.000Z',
+  });
+  const attemptTwo = workflowIdentity('diff-check', 10, {
+    run_attempt: 2,
+    run_started_at: '2026-09-10T00:02:00.000Z',
+  });
+  const raw = {
+    checks: [{ total_count: 1, check_runs: [{
+      id: stale.id,
+      name: stale.name,
+      head_sha: stale.head_sha,
+      status: stale.status,
+      conclusion: stale.conclusion,
+      completed_at: stale.completed_at,
+      started_at: stale.started_at,
+      created_at: stale.created_at,
+      app: stale.app,
+      check_suite: { id: stale.check_suite.id },
+    }] }],
+    workflows: [{ total_count: 1, workflow_runs: [attemptTwo] }],
+    suites: [stale.check_suite],
+    jobs: [{ run_id: attemptTwo.id, run_attempt: 2, run: attemptTwo, pages: [{ total_count: 0, jobs: [] }] }],
+  };
+  const mapped = mapEvidence(raw);
+  assert.equal(mapped[0].workflow_run, null);
+  assert.equal(mapped[0].workflow_job, null);
+  assertState(evaluateRequiredChecks(input({ checkRuns: mapped })), 'failure', 'untrusted:diff-check');
+});
+
+test('production evidence mapping accepts the one exact attempt job positive control', () => {
+  const current = checkRun('diff-check', {
+    id: 11,
+    created_at: '2026-09-10T00:02:00.000Z',
+    started_at: '2026-09-10T00:02:01.000Z',
+    completed_at: '2026-09-10T00:02:30.000Z',
+    workflow_run: workflowIdentity('diff-check', 11, {
+      run_attempt: 2,
+      run_started_at: '2026-09-10T00:02:00.000Z',
+    }),
+  });
+  const raw = {
+    checks: [{ total_count: 1, check_runs: [{
+      id: current.id,
+      name: current.name,
+      head_sha: current.head_sha,
+      status: current.status,
+      conclusion: current.conclusion,
+      completed_at: current.completed_at,
+      started_at: current.started_at,
+      created_at: current.created_at,
+      app: current.app,
+      check_suite: { id: current.check_suite.id },
+    }] }],
+    workflows: [{ total_count: 1, workflow_runs: [current.workflow_run] }],
+    suites: [current.check_suite],
+    jobs: [{
+      run_id: current.workflow_run.id,
+      run_attempt: 2,
+      run: current.workflow_run,
+      pages: [{ total_count: 1, jobs: [{
+        id: 3011,
+        run_id: current.workflow_run.id,
+        head_sha: HEAD,
+        name: current.name,
+        status: current.status,
+        conclusion: current.conclusion,
+        started_at: current.started_at,
+        completed_at: current.completed_at,
+        check_run_url: `https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp/check-runs/${current.id}`,
+      }] }],
+    }],
+  };
+  const mapped = mapEvidence(raw);
+  assert.equal(mapped[0].workflow_run.run_attempt, 2);
+  assert.equal(mapped[0].workflow_job.check_run_id, current.id);
+  assert.equal(mapped[0].workflow_job.id, 3011);
+  assertState(evaluateRequiredChecks(input({ checkRuns: mapped })), 'success');
+});
+
+test('production evidence completeness accepts an exact full snapshot and rejects attempt drift', () => {
+  const workflow = workflowIdentity('diff-check', 10, { run_attempt: 2 });
+  const complete = {
+    checks: [{ total_count: 1, check_runs: [{ id: 10, check_suite: { id: 1_010 } }] }],
+    workflows: [{ total_count: 1, workflow_runs: [workflow] }],
+    suites: [{ id: 1_010 }],
+    jobs: [{
+      run_id: workflow.id,
+      run_attempt: workflow.run_attempt,
+      run: workflow,
+      pages: [{ total_count: 1, jobs: [{ id: 3_010 }] }],
+    }],
+  };
+  const accepted = runEvidenceSnapshotFunction('evidence_snapshot_complete', complete);
+  assert.equal(accepted.status, 0, accepted.stderr);
+
+  const drifted = structuredClone(complete);
+  drifted.jobs[0].run.run_attempt = 1;
+  const rejected = runEvidenceSnapshotFunction('evidence_snapshot_complete', drifted);
+  assert.notEqual(rejected.status, 0, 'attempt metadata drift must make the snapshot incomplete');
+});
+
 test('a higher rerun attempt wins within one workflow run', () => {
   const suite = { id: 700, head_sha: HEAD, app: { id: ACTIONS_APP_ID, slug: 'github-actions' } };
   const older = checkRun('diff-check', {
@@ -351,12 +526,15 @@ test('constituent workflows rerun their base-sensitive evidence after retargetin
   }
 });
 
-test('delivery workflow executes only trusted base-side code on a hosted runner', () => {
+test('privileged delivery authority is never loaded by workflow_run from the default branch', () => {
   const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
-  assert.match(workflow, /pull_request_target:/);
-  assert.match(workflow, /workflow_run:/);
-  assert.match(workflow, /workflows: \[CI, E2E quality gates, Audio boundary\]/);
+  const dispatcher = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate-dispatch.yml'), 'utf8');
+  const evidenceMapper = readFileSync(resolve(ROOT, 'scripts/ci/check-evidence.jq'), 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /^ {2}workflow_run:/m);
+  assert.doesNotMatch(workflow, /^ {2}pull_request_target:/m);
+  assert.match(dispatcher, /pull_request_target:/);
+  assert.match(dispatcher, /^ {2}workflow_run:/m);
   assert.doesNotMatch(workflow, /^\s+paths(?:-ignore)?:/m);
   assert.doesNotMatch(workflow, /self-hosted|secrets\./);
   assert.equal(workflow.match(/uses: actions\/checkout@/g)?.length, 1);
@@ -375,27 +553,27 @@ test('delivery workflow executes only trusted base-side code on a hosted runner'
   assert.doesNotMatch(workflow, /post_status success "\$description" "\$event_head"/);
   assert.doesNotMatch(workflow, /ref:.*github\.sha/);
   assert.match(workflow, /previous_filename/);
-  assert.match(workflow, /EVENT_ACTION.*github\.event\.action/);
-  assert.match(workflow, /EVENT_ACTION" = closed/);
-  assert.match(workflow, /pulls\?state=open/);
+  assert.match(dispatcher, /EVENT_ACTION.*github\.event\.action/);
+  assert.match(dispatcher, /EVENT_ACTION" = closed/);
+  assert.match(dispatcher, /pulls\?state=open/);
   assert.doesNotMatch(workflow, /commits\/\$event_head\/pulls/);
-  assert.match(workflow, /\.head\.sha == \$head/);
+  assert.match(dispatcher, /\.head\.sha == \$head/);
   assert.match(workflow, /issues\/\$pr_number\/timeline/);
   assert.match(workflow, /evidenceNotBefore.*evidence_not_before/);
   assert.match(workflow, /--slurpfile changedFiles/);
   assert.match(workflow, /check_suite_ids=.*check_suite\.id/);
   assert.match(workflow, /check-suites\/\$suite_id/);
-  assert.match(workflow, /--argjson suites/);
-  assert.match(workflow, /app: \{id: \$check\.app\.id, slug: \$check\.app\.slug\}/);
-  assert.match(workflow, /check_suite: \(if \$suite == null/);
-  assert.match(workflow, /workflow_run: \(if \$workflow == null/);
-  assert.match(workflow, /check_suite_id: \$workflow\.check_suite_id/);
-  assert.match(workflow, /pull_requests: \$workflow\.pull_requests/);
+  assert.match(workflow, /jq -c -f scripts\/ci\/check-evidence\.jq/);
+  assert.match(evidenceMapper, /app: \{id: \$check\.app\.id, slug: \$check\.app\.slug\}/);
+  assert.match(evidenceMapper, /check_suite: \(if \$suite == null/);
+  assert.match(evidenceMapper, /workflow_run: \(if \$binding == null/);
+  assert.match(evidenceMapper, /check_suite_id: \$binding\.workflow\.check_suite_id/);
+  assert.match(evidenceMapper, /pull_requests: \$binding\.workflow\.pull_requests/);
   assert.match(workflow, /--slurpfile checkRuns/);
-  assert.match(workflow, /check_pages_a=.*fetch_check_pages/);
-  assert.match(workflow, /check_pages_b=.*fetch_check_pages/);
-  assert.match(workflow, /final_check_pages=.*fetch_check_pages/);
-  assert.match(workflow, /canonical_check_snapshot.*final_check_pages/);
+  assert.match(workflow, /evidence_a=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /evidence_b=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /final_evidence=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /canonical_evidence_snapshot.*final_evidence/);
   assert.match(workflow, /final_timeline="[\s\S]{0,200}issues\/\$pr_number\/timeline/);
   assert.match(workflow, /final_evidence_not_before/);
   assert.match(workflow, /reportedCheckRunCount.*reported_check_run_count/);
@@ -405,13 +583,52 @@ test('delivery workflow executes only trusted base-side code on a hosted runner'
   assert.match(workflow, /protectedPrCount.*protected_pr_count/);
   assert.match(workflow, /reportedChangedFileCount.*reported_changed_file_count/);
   assert.match(workflow, /listedChangedFileCount.*listed_changed_file_count/);
-  assert.match(workflow, /github\.event_name == 'workflow_dispatch'.*shadow.*required/);
-  assert.match(workflow, /pull_request\.head\.sha.*workflow_run\.head_sha/);
+  assert.match(workflow, /default: delivery-gate-shadow/);
+  assert.match(workflow, /inputs\.status_context.*inputs\.pr_number.*github\.sha/);
   assert.match(workflow, /case "\$expected_base" in\s+main\|release/);
   assert.match(workflow, /contents: read/);
+  assert.match(workflow, /actions: read/);
   assert.match(workflow, /pull-requests: read/);
   assert.match(workflow, /checks: read/);
   assert.match(workflow, /statuses: write/);
   assert.match(workflow, /delivery-gate:\n\s+name: Trusted delivery monitor/);
   assert.match(workflow, /delivery-gate-shadow/);
+});
+
+test('default-branch lifecycle code can dispatch but cannot write the required status', () => {
+  const dispatcherPath = resolve(ROOT, '.github/workflows/delivery-gate-dispatch.yml');
+  assert.ok(existsSync(dispatcherPath), 'unprivileged lifecycle dispatcher must exist');
+  const dispatcher = readFileSync(dispatcherPath, 'utf8');
+  const authority = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  assert.match(dispatcher, /^ {2}workflow_run:/m);
+  assert.match(dispatcher, /workflows: \[CI, E2E quality gates, Audio boundary\]/);
+  assert.match(dispatcher, /actions: write/);
+  assert.doesNotMatch(dispatcher, /statuses: write|repos\/\$REPOSITORY\/statuses|post_status/);
+  assert.match(dispatcher, /actions\/workflows\/delivery-gate\.yml\/dispatches/);
+  assert.match(dispatcher, /-f ref="\$target_base"/);
+  assert.doesNotMatch(authority, /^ {2}(?:workflow_run|pull_request_target):/m);
+  assert.match(authority, /^ {2}workflow_dispatch:/m);
+  assert.match(authority, /statuses: write/);
+  const exactBaseCheck = authority.indexOf('test "$GITHUB_SHA" = "$base_sha"');
+  const firstStatusWrite = authority.indexOf('post_status pending');
+  assert.ok(exactBaseCheck >= 0 && firstStatusWrite > exactBaseCheck,
+    'exact dispatched workflow SHA must be verified before the first status write');
+});
+
+test('delivery evidence binds each check to an exact attempt job and refetches the full snapshot', () => {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const evidenceMapper = readFileSync(resolve(ROOT, 'scripts/ci/check-evidence.jq'), 'utf8');
+  assert.match(workflow, /fetch_evidence_snapshot\(\)/);
+  assert.match(workflow, /actions\/runs\/\$run_id\/attempts\/\$run_attempt\/jobs\?per_page=100/);
+  assert.match(workflow, /run_attempt_record=.*gh api[\s\S]{0,180}actions\/runs\/\$run_id\/attempts\/\$run_attempt"\)/);
+  assert.match(evidenceMapper, /check_run_url/);
+  assert.match(evidenceMapper, /workflow_job: \(if \$binding == null/);
+  assert.match(evidenceMapper, /run_id: \$binding\.job\.run_id/);
+  assert.match(evidenceMapper, /run_attempt: \$binding\.run_attempt/);
+  assert.match(evidenceMapper, /check_run_id: \$check\.id/);
+  assert.doesNotMatch(evidenceMapper, /map\(select\(\.check_suite_id == \$check\.check_suite\.id\)\)[\s\S]{0,100}last/);
+  assert.match(workflow, /evidence_a=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /evidence_b=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /final_evidence=.*fetch_evidence_snapshot/);
+  assert.match(workflow, /canonical_evidence_snapshot.*final_evidence/);
 });

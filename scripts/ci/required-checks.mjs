@@ -87,6 +87,24 @@ function validateInput(input) {
             || !SHA_PATTERN.test(pr?.base?.sha ?? '')) throw new Error('workflow run pull request identity is incomplete');
       }
     }
+    const job = run.workflow_job;
+    if (job !== null) {
+      if (!Number.isSafeInteger(job?.id) || job.id <= 0
+          || !Number.isSafeInteger(job.run_id) || job.run_id <= 0
+          || !Number.isSafeInteger(job.run_attempt) || job.run_attempt <= 0
+          || !Number.isSafeInteger(job.check_run_id) || job.check_run_id <= 0
+          || !SHA_PATTERN.test(job.head_sha ?? '')
+          || typeof job.name !== 'string' || job.name.length === 0 || job.name.length > 255
+          || typeof job.status !== 'string' || job.status.length === 0 || job.status.length > 50
+          || (job.conclusion !== null && (typeof job.conclusion !== 'string' || job.conclusion.length > 50))) {
+        throw new Error('workflow job identity is incomplete');
+      }
+      for (const field of ['started_at', 'completed_at']) {
+        if (job[field] !== null && !Number.isFinite(Date.parse(job[field] ?? ''))) {
+          throw new Error(`workflow job ${field} must be null or an ISO timestamp`);
+        }
+      }
+    }
   }
 }
 
@@ -145,6 +163,7 @@ function isTrustedRun(run, context, input) {
   const expected = EXPECTED_WORKFLOWS[context];
   const suite = run?.check_suite;
   const workflow = run?.workflow_run;
+  const job = run?.workflow_job;
   if (!expected || !isExpectedApp(run?.app) || !isExpectedApp(suite?.app)) return false;
   if (!Number.isSafeInteger(suite?.id) || suite.id <= 0 || suite.head_sha !== input.currentHeadSha) return false;
   if (!Number.isSafeInteger(workflow?.id) || workflow.id <= 0
@@ -152,6 +171,15 @@ function isTrustedRun(run, context, input) {
       || !Number.isSafeInteger(workflow.run_attempt) || workflow.run_attempt <= 0
       || workflow.name !== expected.name || workflow.path !== expected.path
       || workflow.event !== 'pull_request' || workflow.head_sha !== input.currentHeadSha) return false;
+  if (!Number.isSafeInteger(job?.id) || job.id <= 0
+      || job.run_id !== workflow.id || job.run_attempt !== workflow.run_attempt
+      || job.check_run_id !== run.id || job.head_sha !== input.currentHeadSha
+      || job.name !== run.name || job.status !== run.status || job.conclusion !== run.conclusion) return false;
+  const attemptStarted = Date.parse(workflow.run_started_at);
+  for (const value of [run.created_at, run.started_at, run.completed_at, job.started_at, job.completed_at]) {
+    const timestamp = Date.parse(value ?? '');
+    if (Number.isFinite(timestamp) && timestamp < attemptStarted) return false;
+  }
   if (!Array.isArray(workflow.pull_requests) || workflow.pull_requests.length !== 1) return false;
   const [pr] = workflow.pull_requests;
   return pr?.number === input.currentPrNumber
