@@ -43,6 +43,7 @@ on:
       - ops/listener-delivery/**
       - scripts/listener-delivery/**
       - .github/workflows/early-birds-fast-forward.yml
+      - .github/workflows/account-delivery.yml
   push:
     branches: [early-birds, "feat/early-birds-*"]
     paths:
@@ -86,6 +87,7 @@ on:
       - ops/listener-delivery/**
       - scripts/listener-delivery/**
       - .github/workflows/early-birds-fast-forward.yml
+      - .github/workflows/account-delivery.yml
 
 permissions:
   contents: read

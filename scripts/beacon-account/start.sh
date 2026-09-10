@@ -2,10 +2,15 @@
 set -eu
 . "$(dirname -- "$0")/lib.sh"
 
-environment=${1:?usage: start.sh staging|production /secure/deploy.env}
-ACCOUNT_DEPLOY_FILE=${2:?usage: start.sh staging|production /secure/deploy.env}
+environment=${1:?usage: start.sh staging|production /secure/deploy.env [normal|interrupt-after-cutover]}
+ACCOUNT_DEPLOY_FILE=${2:?usage: start.sh staging|production /secure/deploy.env [normal|interrupt-after-cutover]}
+checkpoint=${3:-normal}
 export ACCOUNT_DEPLOY_FILE
 case "$environment" in production|staging) ;; *) account_fail 'environment must be production or staging' ;; esac
+case "$checkpoint" in normal|interrupt-after-cutover) ;; *) account_fail 'unknown deployment checkpoint' ;; esac
+if [ "$checkpoint" = interrupt-after-cutover ] && [ "$environment" != staging ]; then
+  account_fail 'the deterministic interruption checkpoint is staging-only'
+fi
 
 account_load_deploy_env "$ACCOUNT_DEPLOY_FILE"
 exec 9>"/run/lock/beacon-account-$environment.lock"
@@ -49,6 +54,9 @@ if [ "$environment" = production ]; then
 else
   cutover_started=1
   account_compose up -d account-mail-worker-staging account-staging
+  if [ "$checkpoint" = interrupt-after-cutover ]; then
+    account_fail 'deterministic staging interruption checkpoint reached after cutover'
+  fi
 fi
 account_verify_running "$environment"
 "$root/scripts/beacon-account/health-smoke.sh" \

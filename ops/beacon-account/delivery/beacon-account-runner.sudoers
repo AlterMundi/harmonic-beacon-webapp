@@ -1,0 +1,11 @@
+Defaults:beacon-account-runner env_reset
+Defaults:beacon-account-runner !setenv
+
+Cmnd_Alias BEACON_ACCOUNT_DELIVERY = \
+  /usr/local/sbin/hb-account-delivery probe *, \
+  /usr/local/sbin/hb-account-delivery status *, \
+  /usr/local/sbin/hb-account-delivery preflight *, \
+  /usr/local/sbin/hb-account-delivery deploy *, \
+  /usr/local/sbin/hb-account-delivery smoke *, \
+  /usr/local/sbin/hb-account-delivery rollback *
+beacon-account-runner ALL=(root) NOPASSWD: BEACON_ACCOUNT_DELIVERY

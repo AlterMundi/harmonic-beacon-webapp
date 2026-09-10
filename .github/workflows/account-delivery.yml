@@ -1,0 +1,198 @@
+name: Account delivery
+run-name: Account ${{ inputs.target || 'PR' }} ${{ inputs.sha || github.sha }}
+
+on:
+  pull_request:
+    branches: [early-birds]
+    paths:
+      - .github/workflows/account-delivery.yml
+      - ops/beacon-account/**
+      - scripts/beacon-account/**
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Exact protected Account environment
+        required: true
+        type: choice
+        options: [staging, production]
+      sha:
+        description: Current lowercase early-birds sha40
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful early-birds-fast-forward.yml run ID for this SHA
+        required: true
+        type: string
+      ci_run_attempt:
+        description: Exact successful CI attempt
+        required: true
+        type: string
+      operation:
+        description: Delivery or synthetic staging interruption proof
+        required: true
+        type: choice
+        options: [deploy, interruption-checkpoint]
+        default: deploy
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: account-delivery-${{ inputs.target || format('pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: false
+
+env:
+  ACCOUNT_HELPER: /usr/local/sbin/hb-account-delivery
+
+jobs:
+  validate-contract:
+    name: Account adapter validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
+      - name: Validate dispatch binding
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.sha }}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${{ inputs.ci_run_id }}" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "${{ inputs.ci_run_attempt }}" =~ ^[1-9][0-9]{0,9}$ ]]
+          test "${{ github.ref }}" = refs/heads/early-birds
+          if [ "${{ inputs.target }}" = production ]; then
+            test "${{ inputs.operation }}" = deploy
+          fi
+      - name: Test Account delivery and existing Account contracts
+        run: node --test ops/beacon-account/test/*.test.mjs
+      - name: Check scripts and receipt artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ops/beacon-account/delivery/hb-account-delivery-root
+          sh -n scripts/beacon-account/start.sh scripts/beacon-account/rollback-app.sh
+          node ops/beacon-account/delivery/validate-receipt.mjs \
+            ops/beacon-account/delivery/receipt.synthetic.json
+          python3 -m json.tool ops/beacon-account/delivery/receipt.schema.json >/dev/null
+
+  staging-delivery:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'staging'
+    needs: validate-contract
+    environment: account-staging
+    runs-on: [self-hosted, mona, account-staging]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sha }}
+      - name: Require externally activated protected boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ vars.ACCOUNT_STAGING_PROTECTED_V1 }}" = protected-v1
+          test "$(id -un)" = beacon-account-runner
+          test -x "$ACCOUNT_HELPER"
+          cmp --silent ops/beacon-account/delivery/hb-account-delivery-root "$ACCOUNT_HELPER"
+      - name: Probe exact source and Actions binding
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery probe staging
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "${{ inputs.operation }}"
+      - name: Back up and prove isolated restore
+        id: preflight
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery preflight staging
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "${{ inputs.operation }}"
+      - name: Deploy or exercise deterministic interruption
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery deploy staging
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "${{ inputs.operation }}"
+      - name: Verify normal delivery smoke
+        if: inputs.operation == 'deploy'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery smoke staging
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "${{ inputs.operation }}"
+      - name: Roll back through the bounded helper on failure
+        if: failure() && steps.preflight.outcome == 'success'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery rollback staging
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "${{ inputs.operation }}"
+      - name: Export sanitized receipt
+        if: always() && steps.preflight.outcome == 'success'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery status staging
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "${{ inputs.operation }}"
+          > "$RUNNER_TEMP/account-delivery-receipt.json"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.preflight.outcome == 'success'
+        with:
+          name: account-staging-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/account-delivery-receipt.json
+          if-no-files-found: error
+
+  production-delivery:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'production' && inputs.operation == 'deploy'
+    needs: validate-contract
+    environment: account-production
+    runs-on: [self-hosted, mona, account-production]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sha }}
+      - name: Require externally activated protected boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ vars.ACCOUNT_PRODUCTION_PROTECTED_V1 }}" = protected-v1
+          test "$(id -un)" = beacon-account-runner
+          test -x "$ACCOUNT_HELPER"
+          cmp --silent ops/beacon-account/delivery/hb-account-delivery-root "$ACCOUNT_HELPER"
+      - name: Probe exact source and Actions binding
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery probe production
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+      - name: Back up and prove isolated restore
+        id: preflight
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery preflight production
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+      - name: Deploy through the Account lifecycle
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery deploy production
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+      - name: Verify delivery smoke and issue receipt
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery smoke production
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+      - name: Roll back through the bounded helper on failure
+        if: failure() && steps.preflight.outcome == 'success'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery rollback production
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+      - name: Export sanitized receipt
+        if: always() && steps.preflight.outcome == 'success'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery status production
+          "${{ inputs.sha }}" "${{ inputs.ci_run_id }}" "${{ inputs.ci_run_attempt }}"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+          > "$RUNNER_TEMP/account-delivery-receipt.json"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.preflight.outcome == 'success'
+        with:
+          name: account-production-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/account-delivery-receipt.json
+          if-no-files-found: error

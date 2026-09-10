@@ -1,0 +1,52 @@
+{
+  "schema_version": "account-delivery-receipt.v1",
+  "evidence_scope": "synthetic-contract-fixture",
+  "service": "beacon-account",
+  "target": "staging",
+  "operation": "interruption-checkpoint",
+  "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "artifact": {
+    "image_id": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "digest": "unavailable-local-build"
+  },
+  "config_contract_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "revisions": {
+    "previous": "dddddddddddddddddddddddddddddddddddddddd",
+    "current": "dddddddddddddddddddddddddddddddddddddddd"
+  },
+  "backup": {
+    "encrypted_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "isolated_restore": {
+      "status": "verified",
+      "mode": "isolated-ephemeral-postgres",
+      "cleanup": "verified"
+    }
+  },
+  "checks": {
+    "health": "verified",
+    "worker": "verified",
+    "smoke": "verified"
+  },
+  "actions": {
+    "ci": {
+      "run_id": "101",
+      "workflow": ".github/workflows/early-birds-fast-forward.yml",
+      "attempt": 2
+    },
+    "delivery": {
+      "run_id": "202",
+      "workflow": ".github/workflows/account-delivery.yml",
+      "attempt": 3
+    }
+  },
+  "rollback": {
+    "result": "verified",
+    "revision": "dddddddddddddddddddddddddddddddddddddddd"
+  },
+  "interruption": {
+    "checkpoint": "after-cutover",
+    "expected_failure_observed": true,
+    "synthetic_inputs": true,
+    "cleanup": "verified"
+  }
+}

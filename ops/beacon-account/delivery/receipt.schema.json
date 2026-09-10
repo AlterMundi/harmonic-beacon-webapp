@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/account-delivery-receipt.v1.schema.json",
+  "title": "Beacon Account delivery receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "evidence_scope", "service", "target", "operation",
+    "source_sha", "artifact", "config_contract_sha256", "revisions",
+    "backup", "checks", "actions", "rollback", "interruption"
+  ],
+  "properties": {
+    "schema_version": { "const": "account-delivery-receipt.v1" },
+    "evidence_scope": {
+      "enum": ["runtime", "synthetic-interruption", "synthetic-contract-fixture"]
+    },
+    "service": { "const": "beacon-account" },
+    "target": { "enum": ["staging", "production"] },
+    "operation": { "enum": ["deploy", "interruption-checkpoint"] },
+    "source_sha": { "$ref": "#/$defs/sha40" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image_id", "digest"],
+      "properties": {
+        "image_id": { "$ref": "#/$defs/sha256Digest" },
+        "digest": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256Digest" },
+            { "const": "unavailable-local-build" }
+          ]
+        }
+      }
+    },
+    "config_contract_sha256": { "$ref": "#/$defs/sha256" },
+    "revisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previous", "current"],
+      "properties": {
+        "previous": { "oneOf": [{ "$ref": "#/$defs/sha40" }, { "type": "null" }] },
+        "current": { "$ref": "#/$defs/sha40" }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encrypted_sha256", "isolated_restore"],
+      "properties": {
+        "encrypted_sha256": { "$ref": "#/$defs/sha256" },
+        "isolated_restore": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "mode", "cleanup"],
+          "properties": {
+            "status": { "const": "verified" },
+            "mode": { "const": "isolated-ephemeral-postgres" },
+            "cleanup": { "const": "verified" }
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["health", "worker", "smoke"],
+      "properties": {
+        "health": { "const": "verified" },
+        "worker": { "const": "verified" },
+        "smoke": { "const": "verified" }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ci", "delivery"],
+      "properties": {
+        "ci": { "$ref": "#/$defs/run" },
+        "delivery": { "$ref": "#/$defs/run" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "revision"],
+      "properties": {
+        "result": { "enum": ["not-required", "verified"] },
+        "revision": { "oneOf": [{ "$ref": "#/$defs/sha40" }, { "type": "null" }] }
+      }
+    },
+    "interruption": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checkpoint", "expected_failure_observed", "synthetic_inputs", "cleanup"],
+          "properties": {
+            "checkpoint": { "const": "after-cutover" },
+            "expected_failure_observed": { "const": true },
+            "synthetic_inputs": { "const": true },
+            "cleanup": { "const": "verified" }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "sha40": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "sha256Digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "workflow", "attempt"],
+      "properties": {
+        "run_id": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "workflow": { "type": "string", "pattern": "^\\.github/workflows/[a-z0-9-]+\\.yml$" },
+        "attempt": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
