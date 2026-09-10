@@ -123,7 +123,15 @@ test('Docker backend remains real Docker, pins LiveKit v1.13.4 and cleans only C
     try {
         const stack = await backend.startDockerBackend(dir, io, close => closes.push(close));
         assert.equal(new URL(stack.databaseUrl).pathname, '/beacon_test');
-        assert.ok(calls.some(c => c.args.includes('livekit/livekit-server:v1.13.4')));
+        const livekitRun = calls.find(c => c.exe === 'docker' && c.args[0] === 'run' && c.args.includes('livekit/livekit-server:v1.13.4'));
+        assert.ok(livekitRun, 'LiveKit must run in the isolated Docker backend');
+        assert.equal(livekitRun.args[livekitRun.args.indexOf('--network') + 1], 'host');
+        assert.ok(!livekitRun.args.includes('-p'), 'host-networked LiveKit must not retain ignored port publications');
+        assert.ok(calls.some(c => c.exe === 'docker' && c.args[0] === 'run' && c.args.includes('postgres:16-alpine') && c.args.includes('-p')),
+            'Postgres remains published only on host loopback');
+        const config = await readFile(path.join(dir, 'livekit.yaml'), 'utf8');
+        assert.match(config, /bind_addresses: \["127\.0\.0\.1"\]/);
+        assert.doesNotMatch(config, /node_ip/);
         assert.ok(!calls.some(c => c.args.includes('livekit/livekit-server:latest')));
         await stack.restore('ignored by Docker loader');
         assert.ok(calls.some(c => c.args.includes('scripts/load-test-fixture.mjs')));

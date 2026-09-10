@@ -189,8 +189,11 @@ export async function startDockerBackend(dir: string, io: BackendIO, onCleanup: 
     await container('db', ['--tmpfs', '/var/lib/postgresql/data', '-p', '127.0.0.1:35432:5432', '-e', 'POSTGRES_DB=beacon_test', '-e', `POSTGRES_PASSWORD=${password}`, 'postgres:16-alpine']);
     await io.waitPostgres(databaseUrl, '/var/lib/postgresql/data', { alive: () => true });
     const config = path.join(dir, 'livekit.yaml');
-    await writeFile(config, 'port: 34880\nbind_addresses: ["0.0.0.0"]\nrtc:\n  tcp_port: 34881\n  port_range_start: 34900\n  port_range_end: 34920\n  use_external_ip: false\n  node_ip: 127.0.0.1\nkeys:\n  devkey: secret\n', { flag: 'wx', mode: 0o600 });
-    await container('lk', ['-p', '127.0.0.1:34880:34880', '-p', '127.0.0.1:34881:34881', '-p', '127.0.0.1:34900-34920:34900-34920/udp', '-v', `${config}:/etc/livekit.yaml:ro`, 'livekit/livekit-server:v1.13.4', '--config', '/etc/livekit.yaml']);
+    // Firefox rejects the loopback ICE candidate required by Docker's bridge
+    // publication. Host networking makes this topology match the proven native
+    // fixture: signalling stays on loopback while LiveKit discovers the runner NIC.
+    await writeFile(config, 'port: 34880\nbind_addresses: ["127.0.0.1"]\nrtc:\n  tcp_port: 34881\n  port_range_start: 34900\n  port_range_end: 34920\n  use_external_ip: false\nkeys:\n  devkey: secret\n', { flag: 'wx', mode: 0o600 });
+    await container('lk', ['--network', 'host', '-v', `${config}:/etc/livekit.yaml:ro`, 'livekit/livekit-server:v1.13.4', '--config', '/etc/livekit.yaml']);
     const versions = { images: await io.capture('docker', ['image', 'inspect', '--format', '{{.Id}} {{json .RepoDigests}}', 'postgres:16-alpine', 'livekit/livekit-server:v1.13.4']) };
     const livekit: OwnedProcess = { alive: () => true };
     return { databaseUrl, versions, livekit, restore: async (sql: string) => { void sql; await io.run(process.execPath, ['scripts/load-test-fixture.mjs']); } };

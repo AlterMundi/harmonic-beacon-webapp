@@ -69,7 +69,10 @@ Select exactly one backend with `E2E_ACCOUNT_BACKEND=docker|native` (default Doc
 
 - **Docker / CI:** real Docker daemon, `postgres:16-alpine` and
   `livekit/livekit-server:v1.13.4` (never `latest`). Image IDs/repository digests are
-  recorded. No Docker shim, native fallback or shared server attachment.
+  recorded. Postgres alone is published on host loopback. LiveKit uses the ephemeral
+  runner's host network: signalling binds loopback while RTC discovers the runner NIC.
+  The superseded bridge publication with `rtc.node_ip: 127.0.0.1` breaks Firefox ICE.
+  No Docker shim, native fallback or shared server attachment.
 - **Native / parent Incus job:** run the **whole runner as an existing unprivileged
   test user**; root is rejected before any resource is started. The runner creates a
   random 0700 job directory and exclusive `pgdata`, generates a random SCRAM password,
@@ -90,10 +93,11 @@ Select exactly one backend with `E2E_ACCOUNT_BACKEND=docker|native` (default Doc
 Free ports required: TCP 3410–3413 (TLS Live/issuer/LiveKit and private Next),
 35432 (private Postgres), 34880–34881 (private LiveKit), UDP 34900–34920 (private RTC).
 They are checked before setup; bind conflicts fail, never reuse another server.
-App/PG/signalling bind loopback. Native RTC discovers the actual container NIC:
-**no native `rtc.node_ip: 127.0.0.1`**, which breaks Firefox ICE. RTC ports are
-job-owned but reachable on that interface; use an isolated test container/network.
-Only Docker retains its loopback mapped-RTC configuration.
+App/PG/signalling bind loopback. Both backends let LiveKit discover the actual
+runner/container NIC: **no `rtc.node_ip: 127.0.0.1`**, which breaks Firefox ICE.
+Docker therefore uses host networking rather than bridge port publication. RTC ports
+are job-owned but reachable on that interface; use an isolated test runner/container
+network.
 
 ```sh
 # Isolated adapters, filesystem/process/socket regression tests; no real stack.
