@@ -249,6 +249,7 @@ test('public Playwright failure summary exposes only allowlisted diagnostic meta
                             stack: 'at /tmp/navigation-account-secret/app/e2e/tests/continuity-navigation.spec.ts:301:17',
                             location: { file: '/tmp/navigation-account-secret/app/e2e/tests/continuity-navigation.spec.ts', line: 301, column: 17 },
                         }],
+                        errorLocation: { file: '/tmp/navigation-account-secret/app/e2e/tests/continuity-navigation.spec.ts', line: 301, column: 17 },
                         stdout: ['private stdout'],
                         stderr: ['private stderr'],
                         attachments: [{ path: '/tmp/private/trace.zip' }],
@@ -279,8 +280,8 @@ test('public Playwright failure summary exposes only allowlisted diagnostic meta
         failures: [{
             project: 'firefox-account',
             file: 'e2e/tests/continuity-navigation.spec.ts',
-            line: 271,
-            column: 5,
+            line: 301,
+            column: 17,
             classification: 'timeout',
         }, {
             project: '<redacted>',
@@ -294,6 +295,22 @@ test('public Playwright failure summary exposes only allowlisted diagnostic meta
     for (const forbidden of ['secret', 'private.invalid', 'token', '/tmp/', 'stdout', 'stderr', 'trace.zip']) {
         assert.doesNotMatch(serialized, new RegExp(forbidden.replace('.', '\\.')));
     }
+    const mismatchedLocation = structuredClone(report);
+    const firstResult = mismatchedLocation.suites[0].specs[0].tests[0].results[0] as {
+        errorLocation: { file: string; line: number; column: number };
+    };
+    firstResult.errorLocation = {
+        file: '/tmp/navigation-account-secret/app/e2e/account-fixture/rp.spec.ts',
+        line: 999,
+        column: 99,
+    };
+    assert.deepEqual(backend.summarizePlaywrightFailureReport(mismatchedLocation).failures[0], {
+        project: 'firefox-account',
+        file: 'e2e/tests/continuity-navigation.spec.ts',
+        line: 271,
+        column: 5,
+        classification: 'timeout',
+    });
     const runner = await readFile(path.join(process.cwd(), 'e2e/account-fixture/run.ts'), 'utf8');
     assert.match(runner, /summarizePlaywrightFailureReport\(report\)/);
     assert.match(runner, /ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY \$\{JSON\.stringify\(summary\)\}/);

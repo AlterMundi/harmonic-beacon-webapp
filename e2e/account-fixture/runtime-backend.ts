@@ -12,6 +12,7 @@ import path from 'node:path';
 import { assertSafeFixtureDatabaseUrl } from '../fixtures/database-url';
 
 type JsonObject = Record<string, unknown>;
+type ReportLocation = { file: string; line: number; column: number };
 const invalidReport = (): never => { throw new Error('Invalid Playwright JSON report'); };
 const reportObject = (value: unknown): JsonObject =>
     value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : invalidReport();
@@ -22,11 +23,14 @@ const testStatuses = new Set(['expected', 'unexpected', 'flaky', 'skipped']);
 const resultStatuses = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
 const failureStatuses = new Set(['failed', 'timedOut', 'interrupted']);
 
-function reportLocation(value: unknown): void {
+function reportLocation(value: unknown): ReportLocation {
     const location = reportObject(value);
-    if (typeof location.file !== 'string') invalidReport();
-    reportInteger(location.line);
-    reportInteger(location.column);
+    const file = typeof location.file === 'string' ? location.file : invalidReport();
+    return {
+        file,
+        line: reportInteger(location.line),
+        column: reportInteger(location.column),
+    };
 }
 
 function reportErrors(value: unknown): JsonObject[] {
@@ -63,7 +67,9 @@ function publicProject(value: unknown): string {
 function publicSpecFile(value: unknown): string {
     if (typeof value !== 'string') return '<redacted>';
     const normalized = value.replaceAll('\\', '/').replace(/^e2e\//, '');
-    return publicSpecFiles.has(normalized) ? `e2e/${normalized}` : '<redacted>';
+    const match = [...publicSpecFiles].find(spec =>
+        normalized === spec || normalized.endsWith(`/e2e/${spec}`));
+    return match ? `e2e/${match}` : '<redacted>';
 }
 
 /** Public CI diagnostics contain only source-controlled identifiers and result state. */
@@ -89,8 +95,10 @@ export function summarizePlaywrightFailureReport(value: unknown) {
                     const status = typeof result.status === 'string' ? result.status : invalidReport();
                     if (!resultStatuses.has(status)) invalidReport();
                     if (result.error !== undefined) reportTestError(result.error);
-                    if (result.errorLocation !== undefined) reportLocation(result.errorLocation);
-                    return { status, errors: reportErrors(result.errors) };
+                    const errorLocation = result.errorLocation === undefined
+                        ? undefined
+                        : reportLocation(result.errorLocation);
+                    return { status, errors: reportErrors(result.errors), errorLocation };
                 });
                 if (test.status !== 'unexpected') continue;
                 const terminal = results.at(-1) ?? invalidReport();
@@ -102,11 +110,16 @@ export function summarizePlaywrightFailureReport(value: unknown) {
                     : terminal.status === 'interrupted' ? 'interrupted'
                         : browserClosed ? 'browser-closed'
                             : 'failure';
+                const file = publicSpecFile(spec.file);
+                const terminalFile = terminal.errorLocation === undefined
+                    ? '<redacted>'
+                    : publicSpecFile(terminal.errorLocation.file);
+                const useTerminalLocation = file !== '<redacted>' && terminalFile === file;
                 failures.push({
                     project: publicProject(test.projectName),
-                    file: publicSpecFile(spec.file),
-                    line,
-                    column,
+                    file,
+                    line: useTerminalLocation ? terminal.errorLocation!.line : line,
+                    column: useTerminalLocation ? terminal.errorLocation!.column : column,
                     classification,
                 });
             }

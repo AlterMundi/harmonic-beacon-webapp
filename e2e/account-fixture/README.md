@@ -198,7 +198,8 @@ Retained evidence is deliberately distinct:
 
 When the browser command fails, public CI emits one
 `ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY` JSON object containing only allowlisted
-project name, repository-relative spec path, source line/column, result class,
+project name, repository-relative spec path, terminal line/column when Playwright
+binds it to that same allowlisted spec (otherwise the declaration location), result class,
 and aggregate counts. The allowlists are closed to the four configured Account
 projects and two configured Account specs; every other identifier becomes
 `<redacted>`. The summary omits test titles, raw errors, stdout/stderr,
