@@ -12,8 +12,11 @@ const MAX_REASONS = 20;
 const ACTIONS_APP = Object.freeze({ id: 15368, slug: 'github-actions' });
 const EXPECTED_WORKFLOWS = Object.freeze({
   'diff-check': { name: 'CI', path: '.github/workflows/ci.yml' },
+  impact: { name: 'CI', path: '.github/workflows/ci.yml' },
   'lint-and-build': { name: 'CI', path: '.github/workflows/ci.yml' },
   test: { name: 'CI', path: '.github/workflows/ci.yml' },
+  tapestry: { name: 'CI', path: '.github/workflows/ci.yml' },
+  playlist: { name: 'CI', path: '.github/workflows/ci.yml' },
   analytics: { name: 'CI', path: '.github/workflows/ci.yml' },
   e2e: { name: 'E2E quality gates', path: '.github/workflows/e2e.yml' },
   account: { name: 'E2E quality gates', path: '.github/workflows/e2e.yml' },

@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-permissions:
-  contents: read
-
 concurrency:
   group: ci-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -19,68 +16,126 @@ jobs:
   diff-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Reject whitespace errors in the complete candidate diff
         env:
-          BASE_REF: ${{ github.base_ref }}
-        run: git diff --check "origin/$BASE_REF...HEAD"
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+
+  impact:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.classify.outputs.app }}
+      analytics: ${{ steps.classify.outputs.analytics }}
+      tapestry: ${{ steps.classify.outputs.tapestry }}
+      playlist: ${{ steps.classify.outputs.playlist }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Classify the complete pull-request delta
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          base="$BASE_SHA"
+          head="$HEAD_SHA"
+          node scripts/hb.mjs change-impact --base "$base" --head "$head" --json > impact-plan.json
+          jq -e '.schemaVersion=="harmonic-beacon.change-impact.v2"' impact-plan.json >/dev/null
+          printf 'app=%s\n' "$(jq -r 'any(.requiredChecks[]; .check=="lint-and-build")' impact-plan.json)" >> "$GITHUB_OUTPUT"
+          printf 'analytics=%s\n' "$(jq -r 'any(.requiredChecks[]; .check=="analytics")' impact-plan.json)" >> "$GITHUB_OUTPUT"
+          printf 'tapestry=%s\n' "$(jq -r 'any(.requiredChecks[]; .check=="tapestry")' impact-plan.json)" >> "$GITHUB_OUTPUT"
+          printf 'playlist=%s\n' "$(jq -r '.deployment.servicesToReplace | index("playlist-bot") != null' impact-plan.json)" >> "$GITHUB_OUTPUT"
+      - name: Verify generated agent skill distributions
+        run: python3 .agents/skills/scripts/render_distributions.py --check
+      - name: Verify shared operations tooling
+        run: npm run test:ops-tooling
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: change-impact-${{ github.run_id }}
+          path: impact-plan.json
+          if-no-files-found: error
 
   lint-and-build:
+    needs: impact
+    if: needs.impact.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-
-      - name: Verify generated agent skill distributions
-        run: python3 .agents/skills/scripts/render_distributions.py --check
-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
           cache: 'npm'
-
-      - name: Verify shared operations tooling
-        run: npm run test:ops-tooling
-
       - run: npm ci
-      - name: Reject high-severity production dependency regressions
-        run: |
-          npm run audit:production
-          npm audit --omit=dev --prefix services/tapestry --audit-level=high
-          npm audit --omit=dev --prefix services/playlist-bot --audit-level=high
+      - name: Reject high-severity app dependency regressions
+        run: npm run audit:production
       - run: npm run lint
       - run: npm run build
         env:
-          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+          DATABASE_URL: postgresql://dummy:***@localhost:5432/dummy
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
 
   test:
+    needs: impact
+    if: needs.impact.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
           cache: 'npm'
-
       - run: npm ci
-      - run: npm ci --prefix services/tapestry
       - run: npm run test:coverage
         env:
-          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+          DATABASE_URL: postgresql://dummy:***@localhost:5432/dummy
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
-      - run: npm test --prefix services/tapestry
       - run: npm run contract:commerce:verify
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: coverage-report
           path: coverage/
 
+  tapestry:
+    needs: impact
+    if: needs.impact.outputs.tapestry == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+          cache-dependency-path: services/tapestry/package-lock.json
+      - run: npm ci --prefix services/tapestry
+      - run: npm audit --omit=dev --prefix services/tapestry --audit-level=high
+      - run: npm test --prefix services/tapestry
+
+  playlist:
+    needs: impact
+    if: needs.impact.outputs.playlist == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+          cache-dependency-path: services/playlist-bot/package-lock.json
+      - run: npm ci --prefix services/playlist-bot
+      - run: npm audit --omit=dev --prefix services/playlist-bot --audit-level=high
+      - run: npm test --prefix services/playlist-bot
+
   analytics:
+    needs: impact
+    if: needs.impact.outputs.analytics == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -105,8 +160,8 @@ jobs:
         run: npm audit --omit=dev --prefix services/analytics --audit-level=high
       - name: Apply analytics migrations and run PostgreSQL tests
         env:
-          ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:analytics_test_password@127.0.0.1:55433/analytics
-          ANALYTICS_TEST_DATABASE_URL: postgresql://analytics_owner:analytics_test_password@127.0.0.1:55433/analytics
+          ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:***@127.0.0.1:55433/analytics
+          ANALYTICS_TEST_DATABASE_URL: postgresql://analytics_owner:***@127.0.0.1:55433/analytics
         run: |
           npm run migrate --prefix services/analytics
           npm test --prefix services/analytics
@@ -120,3 +175,35 @@ jobs:
         run: |
           bash -n ops/analytics/*.sh
           docker compose --env-file ops/analytics/analytics.env.example -f ops/analytics/compose.yml config --quiet
+
+  required-impact-checks:
+    needs: [impact, lint-and-build, test, tapestry, playlist, analytics]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject missing, failed, cancelled, or skipped selected jobs
+        env:
+          IMPACT_RESULT: ${{ needs.impact.result }}
+          APP_SELECTED: ${{ needs.impact.outputs.app }}
+          LINT_RESULT: ${{ needs.lint-and-build.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          TAPESTRY_SELECTED: ${{ needs.impact.outputs.tapestry }}
+          TAPESTRY_RESULT: ${{ needs.tapestry.result }}
+          PLAYLIST_SELECTED: ${{ needs.impact.outputs.playlist }}
+          PLAYLIST_RESULT: ${{ needs.playlist.result }}
+          ANALYTICS_SELECTED: ${{ needs.impact.outputs.analytics }}
+          ANALYTICS_RESULT: ${{ needs.analytics.result }}
+        run: |
+          set -euo pipefail
+          test "$IMPACT_RESULT" = success
+          require_success() {
+            if [ "$1" = true ] && [ "$2" != success ]; then
+              echo "selected required job did not succeed: $3 ($2)" >&2
+              exit 1
+            fi
+          }
+          require_success "$APP_SELECTED" "$LINT_RESULT" lint-and-build
+          require_success "$APP_SELECTED" "$TEST_RESULT" test
+          require_success "$TAPESTRY_SELECTED" "$TAPESTRY_RESULT" tapestry
+          require_success "$PLAYLIST_SELECTED" "$PLAYLIST_RESULT" playlist
+          require_success "$ANALYTICS_SELECTED" "$ANALYTICS_RESULT" analytics

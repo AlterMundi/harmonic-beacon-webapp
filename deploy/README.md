@@ -90,15 +90,68 @@ pulls and runtime use consume root-owned copies. Root never inspects repository
 Git state. Compose additionally must equal installed reviewed, digest-pinned
 bytes; a candidate manifest alone cannot authorize active configuration.
 
+OPS-E adds conservative impact selection without weakening these immutable
+   candidate or recovery bindings. `artifact-prepare` compares the candidate with
+   the source SHA recorded for each deployed service, including changes skipped by
+   earlier service-specific releases. It writes a root-owned impact plan; the
+   workflow records it through `artifact-impact`. Only selected artifacts are
+   pulled. Each selected Live service records its prior container identity before
+   replacement and checkpoints the resulting exact image afterward. A retry can
+   distinguish an interrupted replacement from a completed one without repeating
+   the interruption, and a stale transaction still fails the existing
+   current-state compare-and-swap.
+
+   The UI, functional and critical matrices are executable output from
+   `scripts/hb.mjs change-impact`. Unknown paths expand coverage. Labels only add
+   risk. Documentation-only candidates are rejected before a production pull.
+   Bounded CSS selects app only and never migration. Runtime public-config changes
+   reuse the exact deployed app image and replace app only, so configuration does
+   not require an application rebuild. Analytics output is retained as a required
+   matrix but remains outside this Live root-helper lane. Postgres or LiveKit
+   digest drift is rejected before pulling or replacing anything and requires its
+   own reviewed dependency transition.
+
+   `artifact-migrate` is now conditional. Only detected schema/data or unknown
+   paths inspect database migration state; no pending migration means no quiesce
+   or migration. Pending migration creates one same-run root-only custom dump under
+   `/mnt/beacon-data/backups/live/postgres`, restores it into a deterministic
+   isolated database, and applies and verifies the candidate's pending migrations
+   there before quiescing app and worker. Destructive pending SQL is rejected by
+   the forward-only policy. The fixed helper uses PostgreSQL
+   utilities only; it accepts neither SQL nor an operator command. Code-only
+   recovery checks the exact prior service images and canonical config. Migration
+   recovery preflights the exact prior app and commerce-worker compatibility
+   contracts before production migration and keeps the resulting schema forward.
+   It does not automatically overwrite Live Postgres from the dump.
+
+   Before any selected Live replacement, the candidate preflight also requires
+   zero database sessions in `LIVE` state and zero real LiveKit participants or
+   published user audio. The passive `playlist-bot` alone in the `beacon` bed room
+   is permitted; an unreachable DB or LiveKit API fails closed.
+
+### OPS-E recovery ownership and targets
+
+| Change/risk | Decision owner | Verified recovery target |
+|---|---|---|
+| Code or canonical public config | Incident Commander | Exact per-service prior image references plus prior canonical profile stored in the root-owned transaction. Unselected services are not restarted. |
+| Pending additive migration | Incident Commander; root helper executes | Forward schema plus the exact prior compatible app and commerce worker. The same-run dump is an emergency source only; restore first targets `hb_restore_<run-id>`, never Live Postgres automatically. |
+| Active session, room participant, or user audio | Incident Commander | No mutation: keep the current containers and defer promotion until the continuity guard is clean. |
+| Synthetic schedule rehearsal | Incident Commander authorizes; enabled Admin identity is audited | A non-public `isTest` session in `SCHEDULED` state whose room starts `ops-e-rehearsal-`; compare-and-set failure leaves it unchanged. |
+
+No production restore-time objective was measured by this change. Establishing
+an RTO, an off-host/encrypted-copy receipt, and a real interrupted-run drill remain
+separate owner-approved exercises; repository tests are not evidence that they ran.
+
 Owner prerequisites before any real run:
 
 - provision exact immutable first-party/external references and protect both
   environments;
 - install reviewed copies of `deploy/hb-deploy-root`,
   `deploy/hb-artifact-verify.mjs` (as `hb-artifact-verify`), and
-  `scripts/ci/release-manifest.mjs` at their encoded root-owned paths;
+  `scripts/ci/release-manifest.mjs`, `scripts/ci/change-impact.mjs`, and
+  `scripts/ci/impact-recovery.mjs` at their encoded root-owned paths;
 - create `ops-d-implementation.sha256` as `0600 root:root`, containing exactly
-  the SHA-256 and absolute installed path of those three files plus
+  the SHA-256 and absolute installed path of those five files plus
   `/usr/local/libexec/harmonic-beacon/docker-compose.yml` and
   `/usr/local/libexec/harmonic-beacon/oci-images.compose.yml` (reviewed copies,
   `0644 root:root`). All installed and transaction ancestors must be root-owned,
@@ -184,7 +237,9 @@ code and test coverage rather than proof of a successful real deployment.
   `deploy/commerce.env.example`. Only `beacon-app` loads this file.
 - `/etc/harmonic-beacon/livekit.yaml` and `/etc/harmonic-beacon/keys.yaml`.
 - Persistent directories below `/mnt/beacon-data` for PostgreSQL, records and
-  verified backups.
+  verified backups. The OPS-E helper requires `/mnt/beacon-data` itself to be a
+  mounted filesystem and writes same-run dumps only below
+  `/mnt/beacon-data/backups/live/postgres`.
 - The private cross-project network created once with:
 
   ```bash
@@ -300,14 +355,11 @@ during an incident because they contain command ledgers and unfinished effects.
 
 ## Useful diagnostics
 
-```bash
-sudo -n docker compose --project-name app \
-  --env-file /etc/harmonic-beacon/production.env ps
-sudo -n docker logs --tail 200 beacon-app
-sudo -n docker logs --tail 200 beacon-commerce-reconciler
-curl --fail http://127.0.0.1:3000/api/health
-curl --fail http://127.0.0.1:3000/api/health/ready
-```
+Use `/api/health`, `/api/health/ready`, `/ops/health`, and the current
+workflow's root-helper status/recovery receipt. Direct Docker, Compose, and raw
+container-log commands printed in older copies of this section are superseded;
+if an approved closed diagnostic is absent, contain and escalate rather than
+broadening sudo.
 
 Never print production env files, authorization headers, ticket codes, email
 addresses or raw request bodies while troubleshooting.

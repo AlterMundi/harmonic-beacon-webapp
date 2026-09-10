@@ -27,6 +27,13 @@ const EXTERNAL_IMAGES = new Map([
   ['livekit', 'docker.io/livekit/livekit-server'],
 ]);
 const APP_ROLES = ['app', 'commerce-reconciler', 'migrate'];
+const SERVICE_RELEASE_REPOSITORIES = Object.freeze({
+  app: ARTIFACTS.get('app'),
+  'commerce-reconciler': ARTIFACTS.get('app'),
+  tapestry: ARTIFACTS.get('tapestry'),
+  'playlist-bot': ARTIFACTS.get('playlist-bot'),
+  analytics: ARTIFACTS.get('analytics'),
+});
 
 function fail(message) {
   throw new Error(`release manifest: ${message}`);
@@ -327,16 +334,30 @@ function samePublication(a, b) {
   return a.generation === b.generation && a.id === b.id && a.manifestSha256 === b.manifestSha256;
 }
 
+function validateServiceReleases(value) {
+  exactKeys(value, 'service releases', Object.keys(SERVICE_RELEASE_REPOSITORIES));
+  for (const [service, repository] of Object.entries(SERVICE_RELEASE_REPOSITORIES)) {
+    const release = value[service];
+    exactKeys(release, `${service} service release`, ['sourceSha', 'imageRef']);
+    string(release.sourceSha, `${service} source SHA`, GIT_ID);
+    const escapedRepository = repository.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    string(release.imageRef, `${service} image reference`, new RegExp(`^${escapedRepository}@sha256:[0-9a-f]{64}$`, 'u'));
+  }
+}
+
 // Historical live state must remain valid after qualification expires. Admission
 // freshness is checked separately; the full qualified manifest is still closed.
 export function validateCurrentState(state) {
-  exactKeys(state, 'current state', ['schemaVersion', 'laneState', 'manifestSha256',
-    'manifestBase64', 'composeBase64', 'overlayBase64', 'publicConfigBase64', 'publication']);
+  const fields = ['schemaVersion', 'laneState', 'manifestSha256',
+    'manifestBase64', 'composeBase64', 'overlayBase64', 'publicConfigBase64', 'publication'];
+  if (state && Object.prototype.hasOwnProperty.call(state, 'serviceReleases')) fields.push('serviceReleases');
+  exactKeys(state, 'current state', fields);
   if (state.schemaVersion !== 'harmonic-beacon.current-state.v4') fail('unsupported current release state');
   if (state.laneState !== 'oci-production') fail('invalid live high-water lane');
   sha256(state.manifestSha256, 'current manifest');
   validatePublication(state.publication);
   if (state.publication.manifestSha256 !== state.manifestSha256) fail('publication manifest mismatch');
+  if (state.serviceReleases) validateServiceReleases(state.serviceReleases);
   const decoded = {};
   for (const field of ['manifestBase64', 'composeBase64', 'overlayBase64', 'publicConfigBase64']) {
     const encoded = state[field];

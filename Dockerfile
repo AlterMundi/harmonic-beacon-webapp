@@ -46,6 +46,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/weekend-stabilize.ts ./sc
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/commerce-media-worker.ts ./scripts/commerce-media-worker.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/stage-grant-rollback-preflight.ts ./scripts/stage-grant-rollback-preflight.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/release-quiesce-preflight.ts ./scripts/release-quiesce-preflight.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/release-migration-state.ts ./scripts/release-migration-state.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/release-restore-verify.ts ./scripts/release-restore-verify.ts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/authorized-session-schedule.ts ./scripts/authorized-session-schedule.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/stage-grant-forward-drain.ts ./scripts/stage-grant-forward-drain.ts
 # Root-invoked, staging-only Account preparation commands. They are not
 # reachable from the application process and accept no caller-supplied paths.

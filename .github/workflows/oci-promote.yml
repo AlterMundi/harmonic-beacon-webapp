@@ -346,6 +346,8 @@ jobs:
           cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy
           cmp --silent deploy/hb-artifact-verify.mjs /usr/local/libexec/harmonic-beacon/hb-artifact-verify
           cmp --silent scripts/ci/release-manifest.mjs /usr/local/libexec/harmonic-beacon/release-manifest.mjs
+          cmp --silent scripts/ci/change-impact.mjs /usr/local/libexec/harmonic-beacon/change-impact.mjs
+          cmp --silent scripts/ci/impact-recovery.mjs /usr/local/libexec/harmonic-beacon/impact-recovery.mjs
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: authorized-promotion-${{ github.run_id }}-${{ github.run_attempt }}
@@ -366,6 +368,8 @@ jobs:
           sudo /usr/local/sbin/hb-deploy artifact-prepare "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_ROOT" \
             "$SOURCE_SHA" "$SOURCE_TREE" "$CANDIDATE_RUN_ID" "$MANIFEST_SHA256" \
             "$PROMOTION_TARGET" "$CONFIG_SHA256" "$CANDIDATE_RUN_ATTEMPT"
+          sudo /usr/local/sbin/hb-deploy artifact-impact "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" \
+            "$CANDIDATE_RUN_ID" "$PROMOTION_TARGET"
           sudo /usr/local/sbin/hb-deploy artifact-preflight "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" \
             "$CANDIDATE_RUN_ID" "$PROMOTION_TARGET"
       - name: Record shadow status without replacing production

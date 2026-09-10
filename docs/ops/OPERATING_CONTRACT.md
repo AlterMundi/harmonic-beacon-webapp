@@ -36,12 +36,58 @@ Run from a clean checkout:
 
 ```bash
 scripts/hb.mjs doctor
-scripts/hb.mjs change-impact --base upstream/main
+scripts/hb.mjs change-impact --deployed-state current-state.json --head HEAD --json
 ```
 
 `doctor` is read-only. A skipped or unreachable check means unknown, not
-healthy. `change-impact` returns a conservative minimum profile; the operator
-must add checks for risks the classifier cannot infer.
+healthy. `change-impact` compares every service from its recorded deployed
+source, not only the latest merge base. It emits explicit UI, functional and
+critical matrices plus exact Live pull/replace actions. Unknown paths expand
+coverage. Labels can only add risk. Missing, failed, cancelled or skipped
+selected checks reject the candidate.
+
+### Impact-scoped release and recovery (OPS-E)
+
+- Documentation-only changes have no Live deployment action. A bounded CSS
+  change selects the UI matrix and app only; it never inspects/migrates the
+  database or restarts the worker, tapestry or playlist bot.
+- Audio, authentication, grants, payments and data always retain their named
+  critical matrices. Shared dependencies expand to every affected Live role;
+  Analytics remains on its separate owning lane.
+- The root-owned transaction computes the plan from per-service deployed source
+  SHAs, pulls only selected candidate artifacts, replaces only selected services
+  and advances only those service release records. A retry checkpoints each
+  replacement; current-state CAS prevents an older candidate from overwriting a
+  newer release.
+- Migration paths trigger a read-only comparison of candidate migration
+  directories with verified `_prisma_migrations` state. No pending migration
+  means no quiesce and no migration. Pending migration requires a fresh
+  same-run dump, successful isolated restore, and successful candidate migration
+  on that restored copy before app/worker quiescence. Destructive pending SQL
+  fails the forward-only gate. Schema/data rollback preflights the exact prior
+  compatible app and worker before risk and keeps the migrated schema forward.
+  Code-only rollback verifies prior exact images and canonical config instead.
+- Runtime public-config changes reuse the deployed app image and replace app
+  only to apply the canonical profile; they do not rebuild an application.
+  The bounded OPS-E schedule rehearsal uses one root-owned closed JSON request
+  through `hb-deploy schedule-apply`; the in-image tool requires
+  `scope=synthetic-rehearsal`, an enabled Admin, a non-public `isTest` session,
+  an `ops-e-rehearsal-*` room, compare-and-set time, bounded reason and one audit
+  row. A concurrent or repeated request cannot duplicate effects. This does not
+  authorize a real-user schedule mutation. Free-form SQL, arbitrary script paths
+  and ad-hoc container commands are not alternatives.
+- Before replacement, the helper fails closed on a database session in `LIVE`
+  state, any real LiveKit participant, or published user audio. The passive bed
+  bot alone is the only exception. Incident Commander owns defer/abort; the
+  recovery target is the untouched current release, not a forced restart.
+
+Recovery ownership is explicit: the Incident Commander owns go/no-go and target
+selection; the root helper only executes its closed transaction. Code/config
+targets are exact prior per-service images and profile bytes. Migration recovery
+targets the forward schema with the exact prior compatible app/worker; the fresh
+dump is first restored only to `hb_restore_<run-id>` and is never automatically
+written over Live Postgres. No measured production RTO or real restore drill is
+claimed by this repository change.
 
 ## Change and release flow
 

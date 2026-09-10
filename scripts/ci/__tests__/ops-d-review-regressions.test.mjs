@@ -38,7 +38,7 @@ test('finding 2: rollback is derived from one atomic current state and preserves
   assert.match(helper, /atomic_write_active_transaction/u);
   assert.match(section(helper, 'artifact_status() {', '\nartifact_rollback() {'), /committed/u);
   assert.match(rollback, /rolled-back/u);
-  assert.match(rollback, /prior-manifest\.json/u);
+  assert.match(rollback, /prior\/service-releases\.json/u);
   assert.match(helper, /verify_prior_state_inputs/u);
   assert.match(helper, /stage-grant-rollback-preflight/u);
   assert.match(rollback, /durable grant contract/u);
