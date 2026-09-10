@@ -17,18 +17,20 @@ async function main(): Promise<void> {
     .sort();
   const migrationSql = new Map(await Promise.all(candidateMigrations.map(async (name) => [
     name,
-    await readFile(`prisma/migrations/${name}/migration.sql`, 'utf8'),
+    await readFile(`prisma/migrations/${name}/migration.sql`),
   ] as const)));
   const pool = new Pool({ connectionString: databaseUrl, max: 1 });
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
     const rows = await prisma.$queryRaw<Array<{
       migration_name: string;
+      checksum: string | null;
       finished_at: Date | null;
       rolled_back_at: Date | null;
-    }>>`SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY migration_name, started_at`;
+    }>>`SELECT migration_name, checksum, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY migration_name, started_at`;
     const records: MigrationRecord[] = rows.map((row) => ({
       migrationName: row.migration_name,
+      checksum: row.checksum,
       finishedAt: row.finished_at,
       rolledBackAt: row.rolled_back_at,
     }));

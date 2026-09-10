@@ -52,21 +52,43 @@ selected checks reject the candidate.
   change selects the UI matrix and app only; it never inspects/migrates the
   database or restarts the worker, tapestry or playlist bot.
 - Audio, authentication, grants, payments and data always retain their named
-  critical matrices. Shared dependencies expand to every affected Live role;
-  Analytics remains on its separate owning lane.
+  critical matrices. Shared application-runtime dependencies expand to every
+  actual consumer, including the commerce reconciler. CI derives required job
+  conclusions from the selected services and matrices; the always-run aggregator
+  fails if a required surface is missing, failed, cancelled, or skipped.
+  Analytics remains on its separate owning deployment lane.
 - The root-owned transaction computes the plan from per-service deployed source
   SHAs, pulls only selected candidate artifacts, replaces only selected services
   and advances only those service release records. A retry checkpoints each
   replacement; current-state CAS prevents an older candidate from overwriting a
-  newer release.
+  newer release. Before replacement, the helper establishes a host entry fence,
+  stops both request/data writers, repeats DB-session and LiveKit participant/audio
+  continuity checks, and retains the fence through every selected replacement.
+  Failure cleanup restores the request and worker containers and removes the
+  fence; an operation-order receipt is validated before the phase advances.
 - Migration paths trigger a read-only comparison of candidate migration
-  directories with verified `_prisma_migrations` state. No pending migration
-  means no quiesce and no migration. Pending migration requires a fresh
-  same-run dump, successful isolated restore, and successful candidate migration
-  on that restored copy before app/worker quiescence. Destructive pending SQL
-  fails the forward-only gate. Schema/data rollback preflights the exact prior
-  compatible app and worker before risk and keeps the migrated schema forward.
-  Code-only rollback verifies prior exact images and canonical config instead.
+  directories with `_prisma_migrations`. Each database record must carry the
+  lowercase SHA-256 Prisma stores for the exact raw `migration.sql` bytes;
+  missing, mismatched, duplicate, conflicting, failed, or unexpected records
+  fail closed. No pending migration means no quiesce and no migration. Pending
+  migration first establishes the entry/writer fence and repeats continuity,
+  then creates a new attempt-specific dump. SQL comments, dynamic execution,
+  destructive DDL/DML, and statements outside the explicit additive allowlist
+  fail the forward-only gate; generated additive migrations must therefore have
+  comments removed before qualification.
+- The fresh post-fence dump is restored into an isolated database and migrated
+  by the candidate. The exact prior app image must boot and pass bounded health
+  and schema checks against that candidate-migrated restore, and the exact prior
+  commerce worker image must boot and heartbeat against it. Root-owned typed
+  evidence binds the run/attempt, dump digest, candidate/prior refs and image
+  IDs, migration-state/checksum digests, and quiescence receipt before production
+  migration. Retry after any interrupted migration creates a new fence, dump,
+  and proof rather than reusing pre-fence evidence. Code-only rollback verifies
+  prior exact images and canonical config instead. Local hosts without Docker
+  can verify only the deterministic command-boundary/order state machine; a
+  hosted run with Docker, PostgreSQL, LiveKit, and the loopback entry-fence
+  facility remains mandatory and must emit `hostedRuntimeDrill=passed` before
+  production migration.
 - Runtime public-config changes reuse the deployed app image and replace app
   only to apply the canonical profile; they do not rebuild an application.
   The bounded OPS-E schedule rehearsal uses one root-owned closed JSON request

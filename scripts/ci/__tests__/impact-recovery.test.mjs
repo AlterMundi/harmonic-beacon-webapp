@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -9,6 +10,8 @@ import {
   planDatabaseAction,
   updateServiceReleases,
   validateImpactPlan,
+  validateMigrationState,
+  verifyOperationEvidence,
 } from '../impact-recovery.mjs';
 
 test('legacy OPS-D current state upgrades every service release from its exact manifest', () => {
@@ -40,6 +43,7 @@ function impact(overrides = {}) {
     labels: [],
     matrices: { ui: ['component'], functional: ['tapestry-integration'], critical: [], crossDomain: [] },
     requiredChecks: [{ check: 'diff-check', command: 'git diff --check' }],
+    requiredJobChecks: ['impact', 'lint-and-build', 'test', 'tapestry'],
     deployment: {
       deploy: true,
       artifactsToPull: ['tapestry'],
@@ -73,18 +77,27 @@ test('impact plan rejects undeclared services and inconsistent artifact selectio
     reusePriorImages: ['tapestry'],
     servicesToReplace: ['tapestry'],
   } })));
+  assert.throws(() => validateImpactPlan(impact({ requiredJobChecks: ['impact'] })), /required job/u);
 });
 
 test('verified database state skips migration without quiescing when none are pending', () => {
-  const result = planDatabaseAction(impact(), {
+  const state = {
     schemaVersion: 'harmonic-beacon.migration-state.v1',
     databaseStateVerified: true,
+    applied: [],
     failed: [],
     unexpected: [],
-    unsafe: [],
     pending: [],
-  });
+    unsafe: [],
+    checksumErrors: [],
+    duplicateRecords: [],
+    conflictingRecords: [],
+    migrationChecksums: [],
+  };
+  assert.equal(validateMigrationState(state), state);
+  const result = planDatabaseAction(impact(), state);
   assert.deepEqual(result, { action: 'skip', requiresQuiesce: false, requiresBackupRestore: false });
+  assert.throws(() => planDatabaseAction(impact(), state, { result: 'success' }, '42'), /backup\/restore proof/u);
 });
 
 test('pending migrations require fresh same-run backup and isolated restore proof', () => {
@@ -102,24 +115,56 @@ test('pending migrations require fresh same-run backup and isolated restore proo
   const state = {
     schemaVersion: 'harmonic-beacon.migration-state.v1',
     databaseStateVerified: true,
+    applied: [],
     failed: [],
     unexpected: [],
     unsafe: [],
+    checksumErrors: [],
+    duplicateRecords: [],
+    conflictingRecords: [],
+    migrationChecksums: [{ migrationName: '20260910120000_example', checksum: 'a'.repeat(64) }],
     pending: ['20260910120000_example'],
   };
   assert.throws(() => planDatabaseAction(dataImpact, state), /backup.*restore/u);
-  assert.deepEqual(planDatabaseAction(dataImpact, state, {
-    schemaVersion: 'harmonic-beacon.backup-restore.v1',
+  const proof = {
+    schemaVersion: 'harmonic-beacon.backup-restore.v2',
     runId: '42',
+    attemptId: '42-1700000001-124',
     result: 'success',
-    fresh: true,
-    isolatedRestore: true,
-    candidateMigrationVerified: true,
-  }, '42'), { action: 'migrate', requiresQuiesce: true, requiresBackupRestore: true });
+    isolatedRestore: 'passed',
+    hostedRuntimeDrill: 'passed',
+    backupSha256: '1'.repeat(64),
+    candidateImageRef: REF('app', '2'),
+    priorAppImageRef: REF('app', '1'),
+    priorWorkerImageRef: REF('app', '1'),
+    candidateImageId: `sha256:${'2'.repeat(64)}`,
+    priorAppImageId: `sha256:${'1'.repeat(64)}`,
+    priorWorkerImageId: `sha256:${'1'.repeat(64)}`,
+    preMigrationStateSha256: '3'.repeat(64),
+    postMigrationStateSha256: '4'.repeat(64),
+    migrationChecksumsSha256: createHash('sha256').update(JSON.stringify(state.migrationChecksums)).digest('hex'),
+    quiescenceEvidenceSha256: '5'.repeat(64),
+    priorAppHealth: 'passed',
+    priorWorkerHeartbeat: 'passed',
+    priorSchemaCheck: 'passed',
+    createdAt: '2026-09-10T23:00:00Z',
+  };
+  assert.deepEqual(planDatabaseAction(dataImpact, state, proof, '42'), {
+    action: 'migrate', requiresQuiesce: true, requiresBackupRestore: true,
+  });
+  assert.throws(() => planDatabaseAction(dataImpact, state, { ...proof, runId: '41' }, '42'), /same run/u);
   assert.throws(() => planDatabaseAction(dataImpact, state, {
-    schemaVersion: 'harmonic-beacon.backup-restore.v1', runId: '41', result: 'success', fresh: true,
+    ...proof, migrationChecksumsSha256: '0'.repeat(64),
+  }, '42'), /migration checksum/u);
+  for (const omitted of ['priorAppHealth', 'priorWorkerHeartbeat', 'priorSchemaCheck']) {
+    const incomplete = { ...proof };
+    delete incomplete[omitted];
+    assert.throws(() => planDatabaseAction(dataImpact, state, incomplete, '42'), /backup.*proof/u);
+  }
+  assert.throws(() => planDatabaseAction(dataImpact, state, {
+    schemaVersion: 'harmonic-beacon.backup-restore.v1', runId: '42', result: 'success', fresh: true,
     isolatedRestore: true, candidateMigrationVerified: true,
-  }, '42'), /same run/u);
+  }, '42'), /backup.*proof/u);
 });
 
 test('failed or unverified migration state always fails closed', () => {
@@ -138,6 +183,17 @@ test('failed or unverified migration state always fails closed', () => {
     schemaVersion: 'harmonic-beacon.migration-state.v1', databaseStateVerified: true,
     failed: [], unexpected: [], unsafe: ['next:DROP TABLE'], pending: ['next'],
   }), /forward-only/u);
+  for (const mutation of [
+    { checksumErrors: ['next:CHECKSUM MISMATCH'] },
+    { duplicateRecords: ['next'] },
+    { conflictingRecords: ['next'] },
+  ]) {
+    assert.throws(() => planDatabaseAction(impact(), {
+      schemaVersion: 'harmonic-beacon.migration-state.v1', databaseStateVerified: true,
+      applied: [], failed: [], unexpected: [], unsafe: [], checksumErrors: [], duplicateRecords: [],
+      conflictingRecords: [], migrationChecksums: [], pending: [], ...mutation,
+    }), /checksum|duplicate|conflicting/u);
+  }
 });
 
 test('retries resume checkpoints without duplicating backup migration or replacement', () => {
@@ -148,6 +204,54 @@ test('retries resume checkpoints without duplicating backup migration or replace
   assert.equal(nextRecoveryAction('migration-skipped', {}), 'replace');
   assert.equal(nextRecoveryAction('replaced', {}), 'status');
   assert.equal(nextRecoveryAction('committed', {}), 'complete');
+});
+
+test('ordered replacement evidence holds the entry fence through every selected replacement', () => {
+  const evidence = {
+    schemaVersion: 'harmonic-beacon.release-operation.v1', purpose: 'replace', runId: '42',
+    attemptId: '42-1700000000-123', selectedServices: ['app', 'commerce-reconciler'],
+    events: [
+      'initial-continuity-verified', 'entry-fence-acquired', 'writers-quiesced',
+      'final-continuity-verified', 'replacement-complete:app',
+      'replacement-complete:commerce-reconciler', 'writers-restored', 'entry-fence-released',
+    ].map((type, index) => ({ sequence: index + 1, type })),
+  };
+  assert.equal(verifyOperationEvidence(evidence, '42'), true);
+  assert.equal(verifyOperationEvidence({ ...evidence, purpose: 'rollback' }, '42'), true);
+  for (const mutation of [
+    evidence.events.filter((event) => event.type !== 'replacement-complete:commerce-reconciler'),
+    [...evidence.events.slice(0, 3), evidence.events[4], evidence.events[3], ...evidence.events.slice(5)]
+      .map((event, index) => ({ ...event, sequence: index + 1 })),
+  ]) {
+    assert.throws(() => verifyOperationEvidence({ ...evidence, events: mutation }, '42'), /operation evidence/u);
+  }
+});
+
+test('ordered migration evidence requires post-fence backup and both exact prior runtimes', () => {
+  const evidence = {
+    schemaVersion: 'harmonic-beacon.release-operation.v1', purpose: 'migrate', runId: '42',
+    attemptId: '42-1700000001-124', selectedServices: ['app', 'commerce-reconciler'],
+    events: [
+      'initial-continuity-verified', 'entry-fence-acquired', 'writers-quiesced',
+      'final-continuity-verified', 'backup-created', 'isolated-restore-ready',
+      'candidate-migration-applied-isolated', 'prior-app-health-verified',
+      'prior-worker-heartbeat-verified', 'prior-schema-verified',
+      'production-migration-applied', 'writers-restored', 'entry-fence-released',
+    ].map((type, index) => ({ sequence: index + 1, type })),
+  };
+  assert.equal(verifyOperationEvidence(evidence, '42'), true);
+  for (const omitted of ['backup-created', 'prior-app-health-verified', 'prior-worker-heartbeat-verified', 'prior-schema-verified']) {
+    assert.throws(() => verifyOperationEvidence({
+      ...evidence,
+      events: evidence.events.filter((event) => event.type !== omitted),
+    }, '42'), /operation evidence/u);
+  }
+  const backupBeforeFence = [...evidence.events];
+  [backupBeforeFence[1], backupBeforeFence[4]] = [backupBeforeFence[4], backupBeforeFence[1]];
+  assert.throws(() => verifyOperationEvidence({
+    ...evidence,
+    events: backupBeforeFence.map((event, index) => ({ ...event, sequence: index + 1 })),
+  }, '42'), /operation evidence/u);
 });
 
 test('older candidates cannot overwrite a newer current high-water', () => {

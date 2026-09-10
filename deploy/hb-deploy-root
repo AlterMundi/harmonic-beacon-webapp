@@ -285,8 +285,7 @@ state_unpack() {
       --arg app "$(manifest_ref "$destination/prior-manifest.json" artifacts app)" \
       --arg tapestry "$(manifest_ref "$destination/prior-manifest.json" artifacts tapestry)" \
       --arg playlist "$(manifest_ref "$destination/prior-manifest.json" artifacts playlist-bot)" \
-      --arg analytics "$(manifest_ref "$destination/prior-manifest.json" artifacts analytics)" \
-      '{app:{sourceSha:$sourceSha,imageRef:$app},"commerce-reconciler":{sourceSha:$sourceSha,imageRef:$app},tapestry:{sourceSha:$sourceSha,imageRef:$tapestry},"playlist-bot":{sourceSha:$sourceSha,imageRef:$playlist},analytics:{sourceSha:$sourceSha,imageRef:$analytics}}' \
+      '{app:{sourceSha:$sourceSha,imageRef:$app},"commerce-reconciler":{sourceSha:$sourceSha,imageRef:$app},tapestry:{sourceSha:$sourceSha,imageRef:$tapestry},"playlist-bot":{sourceSha:$sourceSha,imageRef:$playlist}}' \
       > "$destination/service-releases.json"
   fi
   chown root:root "$destination/service-releases.json"
@@ -470,6 +469,24 @@ admit_transition_evidence() {
   sync -f "$destination"
 }
 
+service_releases_json_from_manifest() {
+  local manifest="$1" source_sha
+  source_sha="$(jq -er '.source.gitSha' "$manifest")"
+  jq -cn --arg sourceSha "$source_sha" \
+    --arg app "$(manifest_ref "$manifest" artifacts app)" \
+    --arg tapestry "$(manifest_ref "$manifest" artifacts tapestry)" \
+    --arg playlist "$(manifest_ref "$manifest" artifacts playlist-bot)" \
+    '{app:{sourceSha:$sourceSha,imageRef:$app},"commerce-reconciler":{sourceSha:$sourceSha,imageRef:$app},tapestry:{sourceSha:$sourceSha,imageRef:$tapestry},"playlist-bot":{sourceSha:$sourceSha,imageRef:$playlist}}'
+}
+
+ensure_prior_service_releases() {
+  local transaction="$1" path="$transaction/prior/service-releases.json"
+  [ -f "$path" ] && return 0
+  service_releases_json_from_manifest "$transaction/prior/prior-manifest.json" > "$path"
+  if [ "${EUID}" -eq 0 ]; then chown root:root "$path"; fi
+  chmod 0600 "$path"
+}
+
 require_oci_transition_evidence() {
   local manifest="$1" evidence="$2" stage file
   for file in authorization.json authorization.signature.bundle.json qualification.json \
@@ -491,7 +508,7 @@ require_oci_transition_evidence() {
 }
 
 atomic_install_release_state() {
-  local transaction="$1" source="$2" root manifest manifest_sha expected temporary publication releases kind=candidate
+  local transaction="$1" source="$2" root manifest manifest_sha expected temporary publication releases service_releases_json kind=candidate
   require_release_lane oci-production
   root="$transaction/$source"
   case "$source" in
@@ -512,15 +529,16 @@ atomic_install_release_state() {
   validate_sha256 "$expected"
   manifest_sha="$(sha256sum "$manifest" | cut -d' ' -f1)"
   [ "$manifest_sha" = "$expected" ] || die 'release state manifest digest mismatch'
+  if [ -f "$releases" ]; then service_releases_json="$(<"$releases")"; else service_releases_json=null; fi
   publication="$(node "$RELEASE_MANIFEST" publication-for-write --state "$CURRENT_STATE" --receipt "$transaction/receipt.json" --kind "$kind")" || die 'invalid publication high-water'
   temporary="$(mktemp --tmpdir="$ARTIFACT_STATE" '.current-state.XXXXXX')"
-  jq -n --argjson publication "$publication" --argjson serviceReleases "$(<"$releases")" \
+  jq -n --argjson publication "$publication" --argjson serviceReleases "$service_releases_json" \
     --arg manifestSha256 "$manifest_sha" \
     --arg manifestBase64 "$(base64 -w0 "$manifest")" \
     --arg composeBase64 "$(base64 -w0 "$root/docker-compose.yml")" \
     --arg overlayBase64 "$(base64 -w0 "$root/oci-images.compose.yml")" \
     --arg publicConfigBase64 "$(base64 -w0 "$root/target-public-config.json")" \
-    '{schemaVersion:"harmonic-beacon.current-state.v4",publication:$publication,laneState:"oci-production",manifestSha256:$manifestSha256,manifestBase64:$manifestBase64,composeBase64:$composeBase64,overlayBase64:$overlayBase64,publicConfigBase64:$publicConfigBase64,serviceReleases:$serviceReleases}' \
+    '{schemaVersion:"harmonic-beacon.current-state.v4",publication:$publication,laneState:"oci-production",manifestSha256:$manifestSha256,manifestBase64:$manifestBase64,composeBase64:$composeBase64,overlayBase64:$overlayBase64,publicConfigBase64:$publicConfigBase64} + (if $serviceReleases == null then {} else {serviceReleases:$serviceReleases} end)' \
     > "$temporary"
   node "$RELEASE_MANIFEST" validate-current-state --state "$temporary" || {
     rm -f -- "$temporary"
@@ -808,13 +826,7 @@ verify_migration_recovery_targets() {
   transaction="$(artifact_transaction "$run_id")"
   prior_app="$(jq -er '.app.imageRef' "$transaction/prior/service-releases.json")"
   prior_worker="$(jq -er '."commerce-reconciler".imageRef' "$transaction/prior/service-releases.json")"
-  for ref in "$prior_app" "$prior_worker"; do
-    verify_pulled_image "$ref"
-    docker run --rm --entrypoint test "$ref" -f /app/src/lib/stage-grant-effects.ts ||
-      die 'migration preflight refused: prior app/worker lacks durable grant compatibility'
-    docker run --rm --entrypoint test "$ref" -f /app/scripts/stage-grant-rollback-preflight.ts ||
-      die 'migration preflight refused: prior app/worker lacks rollback compatibility'
-  done
+  for ref in "$prior_app" "$prior_worker"; do verify_pulled_image "$ref"; done
 }
 
 build_next_service_releases() {
@@ -874,7 +886,12 @@ artifact_compose() {
 artifact_compose_service_from() {
   local run_id="$1" source="$2" service="$3"
   shift 3
-  local root manifest releases app tapestry playlist analytics postgres livekit config_sha
+  local root manifest releases app tapestry playlist analytics postgres livekit config_sha command_mode=false
+  local -a compose_args=() service_command=()
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = --service-command ]; then command_mode=true; shift; service_command=("$@"); break; fi
+    compose_args+=("$1"); shift
+  done
   root="$(artifact_transaction "$run_id")/$source"
   if [ "$source" = candidate ]; then
     manifest="$root/candidate-manifest.json"
@@ -905,8 +922,21 @@ artifact_compose_service_from() {
     cd "$root"
     HB_APP_IMAGE_REF="$app" HB_TAPESTRY_IMAGE_REF="$tapestry" HB_PLAYLIST_IMAGE_REF="$playlist" \
       HB_ANALYTICS_IMAGE_REF="$analytics" HB_POSTGRES_IMAGE_REF="$postgres" HB_LIVEKIT_IMAGE_REF="$livekit" \
-      HB_CONFIG_PROFILE_SHA256="$config_sha" docker compose --file "$root/docker-compose.yml" \
-      --file "$root/oci-images.compose.yml" --project-name app --env-file "$PRODUCTION_ENV" "$@" "$service"
+      HB_CONFIG_PROFILE_SHA256="$config_sha" bash -c '
+        set -euo pipefail
+        args=(docker compose --file "$1" --file "$2" --project-name app --env-file "$3")
+        shift 3
+        command_mode="$1"; shift
+        count="$1"; shift
+        compose_args=("${@:1:count}"); shift "$count"
+        service="$1"; shift
+        if [ "$command_mode" = true ]; then
+          "${args[@]}" "${compose_args[@]}" "$service" "$@"
+        else
+          "${args[@]}" "${compose_args[@]}" "$service"
+        fi
+      ' bash "$root/docker-compose.yml" "$root/oci-images.compose.yml" "$PRODUCTION_ENV" \
+        "$command_mode" "${#compose_args[@]}" "${compose_args[@]}" "$service" "${service_command[@]}"
   )
 }
 
@@ -1030,10 +1060,19 @@ EOF
   require_unchanged_runtime_inputs "$temp"
   # Root never inspects mutable repository Git state. Until a protected,
   # authorization-bound per-service plan is admitted, expand conservatively.
-  "$CHANGE_IMPACT" --file .github/workflows/oci-promote.yml --json > "$temp/impact-plan.json"
-  chown root:root "$temp/impact-plan.json"
+  if [ -x "$CHANGE_IMPACT" ]; then
+    "$CHANGE_IMPACT" --file .github/workflows/oci-promote.yml --json > "$temp/impact-plan.json"
+  else
+    [ "${EUID}" -ne 0 ] || die 'installed change-impact classifier is unavailable'
+    jq -n '{schemaVersion:"harmonic-beacon.change-impact.v2",risk:"critical",matrices:{ui:[],functional:[]},requiredJobChecks:["impact","lint-and-build","test","tapestry","playlist"],deployment:{deploy:true,artifactsToPull:["app","playlist-bot","tapestry"],servicesToReplace:["app","commerce-reconciler","playlist-bot","tapestry"],reusePriorImages:[],migration:"never",recovery:"image-config"}}' > "$temp/impact-plan.json"
+  fi
+  if [ "${EUID}" -eq 0 ]; then chown root:root "$temp/impact-plan.json"; fi
   chmod 0600 "$temp/impact-plan.json"
-  "$IMPACT_RECOVERY" validate-impact --input "$temp/impact-plan.json"
+  if [ -x "$IMPACT_RECOVERY" ]; then
+    "$IMPACT_RECOVERY" validate-impact --input "$temp/impact-plan.json"
+  else
+    [ "${EUID}" -ne 0 ] || die 'installed impact/recovery validator is unavailable'
+  fi
 
   export DOCKER_CONFIG="$temp/docker"
   local verifier_args=(
@@ -1147,109 +1186,364 @@ artifact_preflight() {
   fi
 }
 
+operation_evidence_path() {
+  printf '%s/%s-operation.json\n' "$(artifact_transaction "$1")" "$2"
+}
+
+release_operation_start() {
+  local run_id="$1" purpose="$2" selected_json="$3" attempt path
+  attempt="${run_id}-$(date -u +%s%N)-$$"
+  path="$(operation_evidence_path "$run_id" "$purpose")"
+  jq -n --arg runId "$run_id" --arg purpose "$purpose" --arg attemptId "$attempt" \
+    --argjson selectedServices "$selected_json" \
+    '{schemaVersion:"harmonic-beacon.release-operation.v1",purpose:$purpose,runId:$runId,attemptId:$attemptId,selectedServices:$selectedServices,events:[]}' > "$path"
+  chown root:root "$path"; chmod 0600 "$path"; sync -f "$path"
+  printf '%s\n' "$attempt"
+}
+
+release_operation_event() {
+  local run_id="$1" purpose="$2" event="$3" path temporary
+  case "$event" in
+    initial-continuity-verified | entry-fence-acquired | writers-quiesced | final-continuity-verified | \
+    backup-created | isolated-restore-ready | candidate-migration-applied-isolated | prior-app-health-verified | \
+    prior-worker-heartbeat-verified | prior-schema-verified | production-migration-applied | writers-restored | \
+    entry-fence-released | replacement-complete:app | replacement-complete:commerce-reconciler | \
+    replacement-complete:tapestry | replacement-complete:playlist-bot) ;;
+    *) die 'invalid release operation event' ;;
+  esac
+  path="$(operation_evidence_path "$run_id" "$purpose")"
+  require_secure_root_file "$path" 600
+  temporary="${path}.new"
+  jq --arg type "$event" '.events += [{sequence:((.events|length)+1),type:$type}]' "$path" > "$temporary"
+  chown root:root "$temporary"; chmod 0600 "$temporary"; sync -f "$temporary"
+  mv -f -- "$temporary" "$path"
+}
+
+entry_fence_rule() {
+  local action="$1" attempt="$2" port="$3"
+  iptables "$action" OUTPUT -o lo -p tcp -d 127.0.0.1 --dport "$port" \
+    -m conntrack --ctstate NEW -m comment --comment "hb-release-$attempt" -j REJECT --reject-with tcp-reset
+}
+
+entry_fence_acquire() {
+  local attempt="$1"
+  [ "${EUID}" -eq 0 ] || return 0
+  command -v iptables >/dev/null || die 'iptables is required for the release entry fence'
+  entry_fence_rule -I "$attempt" 3000
+  if ! entry_fence_rule -I "$attempt" 7880; then
+    entry_fence_rule -D "$attempt" 3000 || true
+    die 'could not establish the complete release entry fence'
+  fi
+}
+
+entry_fence_release() {
+  local attempt="$1"
+  [ "${EUID}" -eq 0 ] || return 0
+  command -v iptables >/dev/null || return 0
+  entry_fence_rule -D "$attempt" 7880 >/dev/null 2>&1 || true
+  entry_fence_rule -D "$attempt" 3000 >/dev/null 2>&1 || true
+}
+
+restore_release_writers() {
+  local container
+  for container in beacon-app beacon-commerce-reconciler; do
+    if docker inspect "$container" >/dev/null 2>&1 && \
+       [ "$(docker inspect "$container" --format '{{.State.Running}}')" != true ]; then
+      docker start "$container" >/dev/null
+    fi
+  done
+  [ "$(docker inspect beacon-app --format '{{.State.Running}}' 2>/dev/null || true)" = true ] || die 'application writer was not restored'
+  [ "$(docker inspect beacon-commerce-reconciler --format '{{.State.Running}}' 2>/dev/null || true)" = true ] || die 'worker writer was not restored'
+}
+
+release_operation_cleanup() {
+  local run_id="$1" attempt="$2" restore_db app_probe worker_probe
+  [ "${EUID}" -eq 0 ] || return 0
+  restore_db="hb_restore_${attempt//-/_}"
+  app_probe="hb-restore-app-$attempt"
+  worker_probe="hb-restore-worker-$attempt"
+  docker rm -f "$app_probe" "$worker_probe" >/dev/null 2>&1 || true
+  docker exec beacon-postgres sh -eu -c 'dropdb --if-exists --username="$POSTGRES_USER" "$1"; rm -f -- "/tmp/$1.dump"' sh "$restore_db" >/dev/null 2>&1 || true
+  restore_release_writers || true
+  entry_fence_release "$attempt"
+}
+
+release_recover_stale_attempt() {
+  local run_id="$1" purpose="$2" path attempt last
+  path="$(operation_evidence_path "$run_id" "$purpose")"
+  [ ! -f "$path" ] && return 0
+  require_secure_root_file "$path" 600
+  attempt="$(jq -er '.attemptId' "$path")"
+  last="$(jq -r '.events[-1].type // empty' "$path")"
+  if [ "$last" != entry-fence-released ]; then release_operation_cleanup "$run_id" "$attempt"; fi
+}
+
+run_release_continuity_preflight() {
+  artifact_compose "$1" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/release-quiesce-preflight.ts
+}
+
+verify_release_operation() {
+  local run_id="$1" purpose="$2"
+  "$IMPACT_RECOVERY" verify-operation --input "$(operation_evidence_path "$run_id" "$purpose")" --run-id "$run_id"
+}
+
 database_backup_restore() {
-  local run_id="$1" transaction dump partial container_dump restore_db proof digest restore_result
+  local run_id="$1" attempt="$2" quiescence_digest="$3" transaction dump partial container_dump restore_db proof
+  local digest restore_result post_state app_probe worker_probe candidate_ref prior_app_ref prior_worker_ref
+  local candidate_id prior_app_id prior_worker_id pre_state_digest post_state_digest migration_digest
   transaction="$(artifact_transaction "$run_id")"
   proof="$transaction/backup-restore.json"
-  if [ -f "$proof" ]; then
-    jq -e --arg run "$run_id" '.schemaVersion=="harmonic-beacon.backup-restore.v1" and .runId==$run and .result=="success" and .fresh==true and .isolatedRestore==true and .candidateMigrationVerified==true' "$proof" >/dev/null ||
-      die 'existing backup/restore proof is invalid'
-    return 0
-  fi
   mountpoint -q /mnt/beacon-data || die 'database backup filesystem is not mounted'
   install -d -o root -g root -m 0700 "$DATABASE_BACKUP_ROOT"
-  dump="$DATABASE_BACKUP_ROOT/release-${run_id}.dump"
+  dump="$DATABASE_BACKUP_ROOT/release-${attempt}.dump"
   partial="${dump}.partial"
-  container_dump="/tmp/hb-release-${run_id}.dump"
-  restore_db="hb_restore_${run_id}"
+  restore_db="hb_restore_${attempt//-/_}"
+  container_dump="/tmp/${restore_db}.dump"
   restore_result="$transaction/restore-verification.json"
-  if [ ! -f "$dump" ]; then
-    rm -f -- "$partial"
-    docker exec beacon-postgres sh -eu -c 'pg_dump --format=custom --no-owner --no-acl --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' > "$partial"
-    [ -s "$partial" ] || die 'database backup is empty'
-    chown root:root "$partial"
-    chmod 0600 "$partial"
-    mv -f -- "$partial" "$dump"
-    sync -f "$dump"
-  fi
+  post_state="$transaction/isolated-post-migration-state.json"
+  app_probe="hb-restore-app-$attempt"
+  worker_probe="hb-restore-worker-$attempt"
+  rm -f -- "$proof" "$restore_result" "$post_state" "$partial" "$dump"
+  docker rm -f "$app_probe" "$worker_probe" >/dev/null 2>&1 || true
+
+  docker exec beacon-postgres sh -eu -c 'pg_dump --format=custom --no-owner --no-acl --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' > "$partial"
+  [ -s "$partial" ] || die 'database backup is empty'
+  chown root:root "$partial"; chmod 0600 "$partial"
+  mv -f -- "$partial" "$dump"; sync -f "$dump"
+  digest="$(sha256sum "$dump" | cut -d' ' -f1)"
+  release_operation_event "$run_id" migrate backup-created
+
   docker cp "$dump" "beacon-postgres:$container_dump" >/dev/null
   docker exec beacon-postgres sh -eu -c 'dropdb --if-exists --username="$POSTGRES_USER" "$1"; createdb --username="$POSTGRES_USER" "$1"; pg_restore --exit-on-error --no-owner --no-acl --username="$POSTGRES_USER" --dbname="$1" "$2"' sh "$restore_db" "$container_dump"
-  if ! artifact_compose "$run_id" run --rm --no-deps --no-build --pull never \
-    -e "HB_RESTORE_DATABASE_NAME=$restore_db" migrate npx tsx scripts/release-restore-verify.ts > "$restore_result"; then
-    docker exec beacon-postgres sh -eu -c 'dropdb --if-exists --username="$POSTGRES_USER" "$1"; rm -f -- "$2"' sh "$restore_db" "$container_dump" || true
-    die 'candidate migration failed against isolated restored backup'
-  fi
-  jq -e '.candidateMigrationVerified==true and (keys|sort)==(["candidateMigrationVerified"]|sort)' \
-    "$restore_result" >/dev/null || die 'isolated restore verifier emitted an invalid result'
+  release_operation_event "$run_id" migrate isolated-restore-ready
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never \
+    -e "HB_RESTORE_DATABASE_NAME=$restore_db" migrate npx tsx scripts/release-restore-verify.ts > "$restore_result"
+  jq -e '.schemaVersion=="harmonic-beacon.restore-verification.v2" and
+    (.migrationState.schemaVersion=="harmonic-beacon.migration-state.v1") and
+    .migrationState.databaseStateVerified==true and (.migrationState.pending|length)==0 and
+    (.migrationState.failed|length)==0 and (.migrationState.unexpected|length)==0 and
+    (.migrationState.unsafe|length)==0 and (.migrationState.checksumErrors|length)==0 and
+    (.migrationState.duplicateRecords|length)==0 and (.migrationState.conflictingRecords|length)==0' \
+    "$restore_result" >/dev/null || die 'isolated restore verifier emitted an invalid migration state'
+  jq '.migrationState' "$restore_result" > "$post_state"
+  chown root:root "$restore_result" "$post_state"; chmod 0600 "$restore_result" "$post_state"
+  "$IMPACT_RECOVERY" validate-migration-state --state "$post_state"
+  release_operation_event "$run_id" migrate candidate-migration-applied-isolated
+
+  candidate_ref="$(candidate_service_ref "$run_id" app)"
+  prior_app_ref="$(jq -er '.app.imageRef' "$transaction/prior/service-releases.json")"
+  prior_worker_ref="$(jq -er '."commerce-reconciler".imageRef' "$transaction/prior/service-releases.json")"
+  candidate_id="$(docker image inspect "$candidate_ref" --format '{{.Id}}')"
+  prior_app_id="$(docker image inspect "$prior_app_ref" --format '{{.Id}}')"
+  prior_worker_id="$(docker image inspect "$prior_worker_ref" --format '{{.Id}}')"
+  validate_digest "$candidate_id"; validate_digest "$prior_app_id"; validate_digest "$prior_worker_id"
+
+  artifact_compose_service_from "$run_id" prior app run -d --name "$app_probe" --no-deps --no-build --pull never \
+    -e "HB_RESTORE_DATABASE_NAME=$restore_db" --service-command node -e \
+    'const{spawn}=require("node:child_process");const u=new URL(process.env.DATABASE_URL);u.pathname="/"+process.env.HB_RESTORE_DATABASE_NAME;process.env.DATABASE_URL=u.toString();const c=spawn("node",["server.js"],{env:process.env,stdio:"inherit"});for(const s of ["SIGTERM","SIGINT"])process.on(s,()=>c.kill(s));c.on("exit",x=>process.exit(x??1));'
+  [ "$(docker inspect "$app_probe" --format '{{.Image}}')" = "$prior_app_id" ] || die 'prior app probe did not use the exact prior image'
+  local app_ready=false
+  for _attempt in $(seq 1 60); do
+    if docker exec "$app_probe" curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3000/api/health/ready >/dev/null; then app_ready=true; break; fi
+    sleep 2
+  done
+  [ "$app_ready" = true ] || die 'exact prior app did not become healthy against the candidate-migrated restore'
+  release_operation_event "$run_id" migrate prior-app-health-verified
+
+  artifact_compose_service_from "$run_id" prior commerce-reconciler run -d --name "$worker_probe" --no-deps --no-build --pull never \
+    -e "HB_RESTORE_DATABASE_NAME=$restore_db" --service-command node -e \
+    'const{spawn}=require("node:child_process");const u=new URL(process.env.DATABASE_URL);u.pathname="/"+process.env.HB_RESTORE_DATABASE_NAME;process.env.DATABASE_URL=u.toString();process.env.LIVEKIT_INTERNAL_URL="http://127.0.0.1:9";const c=spawn("npx",["tsx","scripts/commerce-media-worker.ts"],{env:process.env,stdio:"inherit"});for(const s of ["SIGTERM","SIGINT"])process.on(s,()=>c.kill(s));c.on("exit",x=>process.exit(x??1));'
+  [ "$(docker inspect "$worker_probe" --format '{{.Image}}')" = "$prior_worker_id" ] || die 'prior worker probe did not use the exact prior image'
+  local worker_ready=false
+  for _attempt in $(seq 1 60); do
+    if docker exec "$worker_probe" node -e 'const fs=require("fs");const t=Number(fs.readFileSync("/tmp/commerce-reconciler-heartbeat","utf8"));if(!Number.isFinite(t)||Date.now()-t>30000)process.exit(1)' >/dev/null 2>&1; then worker_ready=true; break; fi
+    sleep 2
+  done
+  [ "$worker_ready" = true ] || die 'exact prior worker did not heartbeat against the candidate-migrated restore'
+  release_operation_event "$run_id" migrate prior-worker-heartbeat-verified
+
+  artifact_compose_service_from "$run_id" prior app run --rm --no-deps --no-build --pull never \
+    -e "HB_RESTORE_DATABASE_NAME=$restore_db" --service-command node -e \
+    'const{spawnSync}=require("node:child_process");const u=new URL(process.env.DATABASE_URL);u.pathname="/"+process.env.HB_RESTORE_DATABASE_NAME;const env={...process.env,DATABASE_URL:u.toString()};const r=spawnSync("npx",["tsx","scripts/stage-grant-rollback-preflight.ts"],{env,stdio:"inherit"});process.exit(r.status??1);'
+  release_operation_event "$run_id" migrate prior-schema-verified
+
+  pre_state_digest="$(sha256sum "$transaction/migration-state.json" | cut -d' ' -f1)"
+  post_state_digest="$(sha256sum "$post_state" | cut -d' ' -f1)"
+  migration_digest="$(jq -cj '.migrationChecksums' "$transaction/migration-state.json" | sha256sum | cut -d' ' -f1)"
+  jq -n --arg runId "$run_id" --arg attemptId "$attempt" --arg backupSha256 "$digest" \
+    --arg candidateImageRef "$candidate_ref" --arg priorAppImageRef "$prior_app_ref" --arg priorWorkerImageRef "$prior_worker_ref" \
+    --arg candidateImageId "$candidate_id" --arg priorAppImageId "$prior_app_id" --arg priorWorkerImageId "$prior_worker_id" \
+    --arg preMigrationStateSha256 "$pre_state_digest" --arg postMigrationStateSha256 "$post_state_digest" \
+    --arg migrationChecksumsSha256 "$migration_digest" --arg quiescenceEvidenceSha256 "$quiescence_digest" \
+    --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{schemaVersion:"harmonic-beacon.backup-restore.v2",runId:$runId,attemptId:$attemptId,result:"success",
+      isolatedRestore:"passed",hostedRuntimeDrill:"passed",backupSha256:$backupSha256,candidateImageRef:$candidateImageRef,
+      priorAppImageRef:$priorAppImageRef,priorWorkerImageRef:$priorWorkerImageRef,candidateImageId:$candidateImageId,
+      priorAppImageId:$priorAppImageId,priorWorkerImageId:$priorWorkerImageId,preMigrationStateSha256:$preMigrationStateSha256,
+      postMigrationStateSha256:$postMigrationStateSha256,migrationChecksumsSha256:$migrationChecksumsSha256,
+      quiescenceEvidenceSha256:$quiescenceEvidenceSha256,priorAppHealth:"passed",priorWorkerHeartbeat:"passed",
+      priorSchemaCheck:"passed",createdAt:$createdAt}' > "$proof"
+  chown root:root "$proof"; chmod 0600 "$proof"; sync -f "$proof"
+  docker rm -f "$app_probe" "$worker_probe" >/dev/null
   docker exec beacon-postgres sh -eu -c 'dropdb --username="$POSTGRES_USER" "$1"; rm -f -- "$2"' sh "$restore_db" "$container_dump"
-  digest="$(sha256sum "$dump" | cut -d' ' -f1)"
-  jq -n --arg runId "$run_id" --arg dumpSha256 "$digest" --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{schemaVersion:"harmonic-beacon.backup-restore.v1",runId:$runId,result:"success",fresh:true,isolatedRestore:true,candidateMigrationVerified:true,dumpSha256:$dumpSha256,createdAt:$createdAt}' > "$proof"
-  chown root:root "$proof"
-  chmod 0600 "$proof"
-  sync -f "$proof"
 }
 
 artifact_migrate() {
-  local run_id="$1" transaction phase migration_policy pending
+  local run_id="$1" transaction phase migration_policy pending attempt_id operation_path quiescence_path quiescence_digest
+  local proof_sha operation_sha candidate_ref prior_app_ref prior_worker_ref pre_state_sha
   if transaction_finish_committed "$run_id"; then return 0; fi
   transaction_require "$run_id" production prepared migration-attempted migration-skipped migrated
   transaction="$(artifact_transaction "$run_id")"
+  ensure_prior_service_releases "$transaction"
   phase="$(transaction_phase "$run_id")"
   verify_release_runtime_state "$run_id" prior
   if [ "$phase" = migration-skipped ] || [ "$phase" = migrated ]; then return 0; fi
-  migration_policy="$(jq -er '.deployment.migration' "$transaction/impact-plan.json")"
-  if [ "$phase" = prepared ]; then
-    if [ "$migration_policy" = never ]; then
-      jq -n '{schemaVersion:"harmonic-beacon.migration-state.v1",databaseStateVerified:true,applied:[],pending:[],failed:[],unexpected:[],unsafe:[]}' > "$transaction/migration-state.json"
-      transaction_set_phase "$run_id" migration-skipped
-      return 0
-    fi
-    artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
-      npx tsx scripts/release-migration-state.ts > "$transaction/migration-state.json"
-    chown root:root "$transaction/migration-state.json"
-    chmod 0600 "$transaction/migration-state.json"
-    jq -e '.schemaVersion=="harmonic-beacon.migration-state.v1" and .databaseStateVerified==true and (.failed|length)==0 and (.unexpected|length)==0 and (.unsafe|length)==0' \
-      "$transaction/migration-state.json" >/dev/null || die 'database migration state is not verified'
-    pending="$(jq '.pending|length' "$transaction/migration-state.json")"
-    if [ "$pending" -eq 0 ]; then
-      transaction_set_phase "$run_id" migration-skipped
-      return 0
-    fi
-    verify_migration_recovery_targets "$run_id"
-    database_backup_restore "$run_id"
-    "$IMPACT_RECOVERY" plan-database --impact "$transaction/impact-plan.json" \
-      --state "$transaction/migration-state.json" --backup-proof "$transaction/backup-restore.json" \
-      --run-id "$run_id" > "$transaction/database-action.json"
-    transaction_set_phase "$run_id" migration-attempted
+  if [ -f "$transaction/impact-plan.json" ]; then
+    migration_policy="$(jq -er '.deployment.migration' "$transaction/impact-plan.json")"
+  else
+    [ "${EUID}" -ne 0 ] || die 'prepared impact plan is unavailable'
+    migration_policy=verify-pending
   fi
+  if [ "$migration_policy" = never ]; then
+    jq -n '{schemaVersion:"harmonic-beacon.migration-state.v1",databaseStateVerified:true,applied:[],pending:[],failed:[],unexpected:[],unsafe:[],checksumErrors:[],duplicateRecords:[],conflictingRecords:[],migrationChecksums:[]}' > "$transaction/migration-state.json"
+    transaction_set_phase "$run_id" migration-skipped
+    return 0
+  fi
+
+  release_recover_stale_attempt "$run_id" migrate
   artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
-    npx tsx scripts/release-quiesce-preflight.ts
+    npx tsx scripts/release-migration-state.ts > "$transaction/migration-state.json"
+  chown root:root "$transaction/migration-state.json"; chmod 0600 "$transaction/migration-state.json"
+  if [ -x "$IMPACT_RECOVERY" ]; then
+    "$IMPACT_RECOVERY" validate-migration-state --state "$transaction/migration-state.json"
+  else
+    [ "${EUID}" -ne 0 ] || die 'installed impact/recovery validator is unavailable'
+  fi
+  pending="$(jq '.pending|length' "$transaction/migration-state.json")"
+  [ -n "$pending" ] || pending=0
+  if [ "$pending" -eq 0 ] && [ "$phase" = prepared ]; then
+    if [ -x "$IMPACT_RECOVERY" ]; then
+      "$IMPACT_RECOVERY" plan-database --impact "$transaction/impact-plan.json" \
+        --state "$transaction/migration-state.json" --run-id "$run_id" > "$transaction/database-action.json"
+    else
+      jq -n '{action:"skip",requiresQuiesce:false,requiresBackupRestore:false}' > "$transaction/database-action.json"
+    fi
+    transaction_set_phase "$run_id" migration-skipped
+    return 0
+  fi
+
+  verify_migration_recovery_targets "$run_id"
+  run_release_continuity_preflight "$run_id"
+  attempt_id="$(release_operation_start "$run_id" migrate '["app","commerce-reconciler"]')"
+  release_operation_event "$run_id" migrate initial-continuity-verified
+  trap "release_operation_cleanup '$run_id' '$attempt_id'" EXIT
+  entry_fence_acquire "$attempt_id"
+  release_operation_event "$run_id" migrate entry-fence-acquired
   artifact_compose "$run_id" stop app commerce-reconciler
+  release_operation_event "$run_id" migrate writers-quiesced
+  run_release_continuity_preflight "$run_id"
+  release_operation_event "$run_id" migrate final-continuity-verified
+  operation_path="$(operation_evidence_path "$run_id" migrate)"
+  quiescence_path="$transaction/migration-quiescence-evidence.json"
+  cp -- "$operation_path" "$quiescence_path"
+  chown root:root "$quiescence_path"; chmod 0600 "$quiescence_path"; sync -f "$quiescence_path"
+  quiescence_digest="$(sha256sum "$quiescence_path" | cut -d' ' -f1)"
+
+  # Re-read the migration table after the writer/entry fence; stale pre-fence state is never reused.
   artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
-    npx tsx scripts/release-quiesce-preflight.ts
+    npx tsx scripts/release-migration-state.ts > "$transaction/migration-state.json"
+  chown root:root "$transaction/migration-state.json"; chmod 0600 "$transaction/migration-state.json"
+  if [ -x "$IMPACT_RECOVERY" ]; then
+    "$IMPACT_RECOVERY" validate-migration-state --state "$transaction/migration-state.json"
+  else
+    [ "${EUID}" -ne 0 ] || die 'installed impact/recovery validator is unavailable'
+  fi
+  pending="$(jq '.pending|length' "$transaction/migration-state.json")"
+  [ -n "$pending" ] || pending=0
+  if [ "$pending" -eq 0 ] && [ "$phase" != migration-attempted ]; then
+    die 'migration state changed between preflight and the quiesced boundary'
+  fi
+
+  database_backup_restore "$run_id" "$attempt_id" "$quiescence_digest"
+  candidate_ref="$(candidate_service_ref "$run_id" app)"
+  prior_app_ref="$(jq -er '.app.imageRef' "$transaction/prior/service-releases.json")"
+  prior_worker_ref="$(jq -er '."commerce-reconciler".imageRef' "$transaction/prior/service-releases.json")"
+  pre_state_sha="$(sha256sum "$transaction/migration-state.json" | cut -d' ' -f1)"
+  jq -e --arg run "$run_id" --arg attempt "$attempt_id" --arg candidate "$candidate_ref" \
+    --arg priorApp "$prior_app_ref" --arg priorWorker "$prior_worker_ref" --arg preState "$pre_state_sha" \
+    --arg quiescence "$quiescence_digest" '
+      .schemaVersion=="harmonic-beacon.backup-restore.v2" and .runId==$run and .attemptId==$attempt and
+      .candidateImageRef==$candidate and .priorAppImageRef==$priorApp and .priorWorkerImageRef==$priorWorker and
+      .preMigrationStateSha256==$preState and .quiescenceEvidenceSha256==$quiescence and
+      .isolatedRestore=="passed" and .hostedRuntimeDrill=="passed" and .priorAppHealth=="passed" and
+      .priorWorkerHeartbeat=="passed" and .priorSchemaCheck=="passed"
+    ' "$transaction/backup-restore.json" >/dev/null || die 'root backup/restore evidence binding is invalid'
+  "$IMPACT_RECOVERY" plan-database --impact "$transaction/impact-plan.json" \
+    --state "$transaction/migration-state.json" --backup-proof "$transaction/backup-restore.json" \
+    --run-id "$run_id" > "$transaction/database-action.json"
+  transaction_set_phase "$run_id" migration-attempted
+
   artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate npx prisma migrate deploy
   artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
     npx tsx scripts/stage-grant-forward-drain.ts
   artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate npx prisma migrate status
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/release-migration-state.ts > "$transaction/production-post-migration-state.json"
+  chown root:root "$transaction/production-post-migration-state.json"; chmod 0600 "$transaction/production-post-migration-state.json"
+  "$IMPACT_RECOVERY" validate-migration-state --state "$transaction/production-post-migration-state.json"
+  [ "$(jq '.pending|length' "$transaction/production-post-migration-state.json")" -eq 0 ] ||
+    die 'production migration checksum/schema verification failed'
+  release_operation_event "$run_id" migrate production-migration-applied
+  restore_release_writers
+  release_operation_event "$run_id" migrate writers-restored
+  entry_fence_release "$attempt_id"
+  release_operation_event "$run_id" migrate entry-fence-released
+  verify_release_operation "$run_id" migrate
+  proof_sha="$(sha256sum "$transaction/backup-restore.json" | cut -d' ' -f1)"
+  operation_sha="$(sha256sum "$operation_path" | cut -d' ' -f1)"
+  jq --arg attemptId "$attempt_id" --arg backupRestoreSha256 "$proof_sha" --arg migrationOperationSha256 "$operation_sha" \
+    '.migrationEvidence={attemptId:$attemptId,backupRestoreSha256:$backupRestoreSha256,migrationOperationSha256:$migrationOperationSha256}' \
+    "$transaction/receipt.json" > "$transaction/receipt.json.new"
+  chown root:root "$transaction/receipt.json.new"; chmod 0600 "$transaction/receipt.json.new"; sync -f "$transaction/receipt.json.new"
+  mv -f -- "$transaction/receipt.json.new" "$transaction/receipt.json"
   transaction_set_phase "$run_id" migrated
+  trap - EXIT
 }
 
 artifact_replace() {
   local run_id="$1" transaction phase service temporary container expected prior_id current_id attempt_service
+  local attempt_id selected_json operation_sha operation_path
   if transaction_finish_committed "$run_id"; then return 0; fi
   transaction_require "$run_id" production migrated migration-skipped replaced
   transaction="$(artifact_transaction "$run_id")"
   phase="$(transaction_phase "$run_id")"
   [ "$phase" != replaced ] || return 0
   verify_runtime_profile "$run_id"
-  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
-    npx tsx scripts/release-quiesce-preflight.ts
+  selected_json="$(jq -c '.deployment.servicesToReplace' "$transaction/impact-plan.json")"
+  if [ "$(jq 'length' <<<"$selected_json")" -eq 0 ]; then transaction_set_phase "$run_id" replaced; return 0; fi
+
+  release_recover_stale_attempt "$run_id" replace
+  run_release_continuity_preflight "$run_id"
+  attempt_id="$(release_operation_start "$run_id" replace "$selected_json")"
+  release_operation_event "$run_id" replace initial-continuity-verified
+  trap "release_operation_cleanup '$run_id' '$attempt_id'" EXIT
+  entry_fence_acquire "$attempt_id"
+  release_operation_event "$run_id" replace entry-fence-acquired
+  artifact_compose "$run_id" stop app commerce-reconciler
+  release_operation_event "$run_id" replace writers-quiesced
+  run_release_continuity_preflight "$run_id"
+  release_operation_event "$run_id" replace final-continuity-verified
+
   while IFS= read -r service; do
-    jq -e --arg service "$service" '.replacedServices | index($service)' "$transaction/receipt.json" >/dev/null && continue
     [ "$service" != analytics ] || die 'analytics uses its dedicated deployment lane'
     container="$(container_for_service "$service")"
     expected="$(jq -er --arg service "$service" '.[$service].imageRef' "$transaction/next-service-releases.json")"
+    if jq -e --arg service "$service" '.replacedServices | index($service)' "$transaction/receipt.json" >/dev/null; then
+      verify_container_image_identity "$container" "$expected"
+      release_operation_event "$run_id" replace "replacement-complete:$service"
+      continue
+    fi
     attempt_service="$(jq -r '.replacementAttempt.service // empty' "$transaction/receipt.json")"
     if [ -n "$attempt_service" ] && [ "$attempt_service" != "$service" ]; then
       die 'replacement checkpoint names a different service'
@@ -1273,23 +1567,41 @@ artifact_replace() {
     fi
     temporary="$transaction/receipt.json.new"
     jq --arg service "$service" '.replacedServices += [$service] | del(.replacementAttempt)' "$transaction/receipt.json" > "$temporary"
-    chown root:root "$temporary"
-    chmod 0600 "$temporary"
-    sync -f "$temporary"
+    chown root:root "$temporary"; chmod 0600 "$temporary"; sync -f "$temporary"
     mv -f -- "$temporary" "$transaction/receipt.json"
+    release_operation_event "$run_id" replace "replacement-complete:$service"
   done < <(jq -r '.deployment.servicesToReplace[]' "$transaction/impact-plan.json")
+
+  restore_release_writers
+  release_operation_event "$run_id" replace writers-restored
+  entry_fence_release "$attempt_id"
+  release_operation_event "$run_id" replace entry-fence-released
+  verify_release_operation "$run_id" replace
+  operation_path="$(operation_evidence_path "$run_id" replace)"
+  operation_sha="$(sha256sum "$operation_path" | cut -d' ' -f1)"
+  jq --arg attemptId "$attempt_id" --arg replacementOperationSha256 "$operation_sha" \
+    '.replacementEvidence={attemptId:$attemptId,replacementOperationSha256:$replacementOperationSha256}' \
+    "$transaction/receipt.json" > "$transaction/receipt.json.new"
+  chown root:root "$transaction/receipt.json.new"; chmod 0600 "$transaction/receipt.json.new"; sync -f "$transaction/receipt.json.new"
+  mv -f -- "$transaction/receipt.json.new" "$transaction/receipt.json"
   transaction_set_phase "$run_id" replaced
+  trap - EXIT
 }
 
-verify_container_image() {
+verify_container_image_identity() {
   local container="$1" expected="$2" configured actual expected_id
   validate_image_ref "$expected"
-  [ "$(docker inspect "$container" --format '{{.State.Running}}')" = true ] || die "$container is not running"
   configured="$(docker inspect "$container" --format '{{.Config.Image}}')"
   [ "$configured" = "$expected" ] || die "$container configured image does not match the manifest"
   actual="$(docker inspect "$container" --format '{{.Image}}')"
   expected_id="$(docker image inspect "$expected" --format '{{.Id}}')"
   [ -n "$actual" ] && [ "$actual" = "$expected_id" ] || die "$container actual image ID does not match the exact digest"
+}
+
+verify_container_image() {
+  local container="$1" expected="$2"
+  [ "$(docker inspect "$container" --format '{{.State.Running}}')" = true ] || die "$container is not running"
+  verify_container_image_identity "$container" "$expected"
 }
 
 verify_pulled_image() {
@@ -1413,6 +1725,7 @@ artifact_status() {
 
 artifact_rollback() {
   local run_id="$1" phase transaction prior_app prior_worker preflight_ready=false migration_performed=false service temporary
+  local selected_json attempt_id expected operation_path operation_sha
   require_release_lane oci-production
   if transaction_finish_rolled_back "$run_id"; then return 0; fi
   transaction_require_rollback "$run_id"
@@ -1420,12 +1733,37 @@ artifact_rollback() {
   bind_rollback_publication "$run_id"
   if [ ! -e "$ACTIVE_TRANSACTION" ]; then atomic_write_active_transaction "$run_id"; fi
   transaction="$(artifact_transaction "$run_id")"
+  ensure_prior_service_releases "$transaction"
   phase="$(transaction_phase "$run_id")"
-  if [ -f "$transaction/migration-state.json" ] && [ "$(jq '.pending|length' "$transaction/migration-state.json")" -gt 0 ]; then
+  if [ "$phase" = migration-attempted ] || [ "$phase" = migrated ] || \
+     { [ -f "$transaction/migration-state.json" ] && [ "$(jq '.pending|length' "$transaction/migration-state.json")" -gt 0 ]; }; then
     migration_performed=true
   fi
+  selected_json="$(jq -c --argjson migration "$migration_performed" '
+    (.replacedServices + (if .replacementAttempt.service then [.replacementAttempt.service] else [] end) +
+      (if $migration then ["app","commerce-reconciler"] else [] end)) | unique
+  ' "$transaction/receipt.json")"
+  if [ "$(jq 'length' <<<"$selected_json")" -eq 0 ]; then
+    verify_release_runtime_state "$run_id" prior
+    atomic_install_release_state "$(artifact_transaction "$run_id")" prior
+    transaction_set_phase "$run_id" rolled-back
+    transaction_clear_active "$run_id"
+    return 0
+  fi
+
+  release_recover_stale_attempt "$run_id" rollback
+  run_release_continuity_preflight "$run_id"
+  attempt_id="$(release_operation_start "$run_id" rollback "$selected_json")"
+  release_operation_event "$run_id" rollback initial-continuity-verified
+  trap "release_operation_cleanup '$run_id' '$attempt_id'" EXIT
+  entry_fence_acquire "$attempt_id"
+  release_operation_event "$run_id" rollback entry-fence-acquired
+  artifact_compose "$run_id" stop app commerce-reconciler
+  release_operation_event "$run_id" rollback writers-quiesced
+  run_release_continuity_preflight "$run_id"
+  release_operation_event "$run_id" rollback final-continuity-verified
+
   if [ "$migration_performed" = true ]; then
-    artifact_compose "$run_id" stop app commerce-reconciler
     for _attempt in $(seq 1 30); do
       if artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
         npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null; then
@@ -1440,45 +1778,63 @@ artifact_rollback() {
       die 'automatic rollback refused: stable grant preflight failed'
     prior_app="$(jq -er '.app.imageRef' "$transaction/prior/service-releases.json")"
     prior_worker="$(jq -er '."commerce-reconciler".imageRef' "$transaction/prior/service-releases.json")"
-    for ref in "$prior_app" "$prior_worker"; do
-      docker run --rm --entrypoint test "$ref" -f /app/src/lib/stage-grant-effects.ts ||
-        die 'automatic rollback refused: previous app/worker lacks durable grant contract'
-      docker run --rm --entrypoint test "$ref" -f /app/scripts/stage-grant-rollback-preflight.ts ||
-        die 'automatic rollback refused: previous app/worker lacks rollback preflight'
-    done
+    jq -e --arg run "$run_id" --arg priorApp "$prior_app" --arg priorWorker "$prior_worker" '
+      .schemaVersion=="harmonic-beacon.backup-restore.v2" and .runId==$run and .result=="success" and
+      .priorAppImageRef==$priorApp and .priorWorkerImageRef==$priorWorker and .priorAppHealth=="passed" and
+      .priorWorkerHeartbeat=="passed" and .priorSchemaCheck=="passed" and .hostedRuntimeDrill=="passed"
+    ' "$transaction/backup-restore.json" >/dev/null || die 'automatic rollback refused: exact prior runtime durable grant contract proof is absent'
+    verify_pulled_image "$prior_app"
+    verify_pulled_image "$prior_worker"
   fi
   verify_runtime_profile "$run_id" prior
   while IFS= read -r service; do
-    jq -e --arg service "$service" '.rolledBackServices | index($service)' "$transaction/receipt.json" >/dev/null && continue
     [ "$service" != analytics ] || die 'analytics uses its dedicated deployment lane'
+    expected="$(jq -er --arg service "$service" '.[$service].imageRef' "$transaction/prior/service-releases.json")"
+    if jq -e --arg service "$service" '.rolledBackServices | index($service)' "$transaction/receipt.json" >/dev/null; then
+      verify_container_image_identity "$(container_for_service "$service")" "$expected"
+      release_operation_event "$run_id" rollback "replacement-complete:$service"
+      continue
+    fi
     artifact_compose_service_from "$run_id" prior "$service" up -d --no-deps --force-recreate --no-build --pull never
+    verify_container_image "$(container_for_service "$service")" "$expected"
     temporary="$transaction/receipt.json.new"
-    jq --arg service "$service" '.rolledBackServices += [$service]' "$transaction/receipt.json" > "$temporary"
+    jq --arg service "$service" '.rolledBackServices += [$service] | del(.replacementAttempt)' "$transaction/receipt.json" > "$temporary"
     chown root:root "$temporary"
     chmod 0600 "$temporary"
     sync -f "$temporary"
     mv -f -- "$temporary" "$transaction/receipt.json"
-  done < <(jq -r --argjson migration "$migration_performed" '(.replacedServices + (if $migration then ["app","commerce-reconciler"] else [] end)) | unique[]' "$transaction/receipt.json")
+    release_operation_event "$run_id" rollback "replacement-complete:$service"
+  done < <(jq -r '.[]' <<<"$selected_json")
+
+  restore_release_writers
+  release_operation_event "$run_id" rollback writers-restored
   for _attempt in $(seq 1 60); do
     if [ "$(health beacon-app 2>/dev/null || true)" = healthy ] && \
        [ "$(health beacon-commerce-reconciler 2>/dev/null || true)" = healthy ] && \
        [ "$(health beacon-tapestry 2>/dev/null || true)" = healthy ] && \
        [ "$(docker inspect beacon-playlist-bot --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ] && \
-       curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
-      restored_ready=true
-      break
+       docker exec beacon-app curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/api/health/ready >/dev/null; then
+      verify_release_runtime_state "$run_id" prior
+      # Publish the verified prior v4 high-water while writers remain fenced.
+      atomic_install_release_state "$(artifact_transaction "$run_id")" prior
+      entry_fence_release "$attempt_id"
+      release_operation_event "$run_id" rollback entry-fence-released
+      verify_release_operation "$run_id" rollback
+      operation_path="$(operation_evidence_path "$run_id" rollback)"
+      operation_sha="$(sha256sum "$operation_path" | cut -d' ' -f1)"
+      jq --arg attemptId "$attempt_id" --arg rollbackOperationSha256 "$operation_sha" \
+        '.rollbackEvidence={attemptId:$attemptId,rollbackOperationSha256:$rollbackOperationSha256}' \
+        "$transaction/receipt.json" > "$transaction/receipt.json.new"
+      chown root:root "$transaction/receipt.json.new"; chmod 0600 "$transaction/receipt.json.new"; sync -f "$transaction/receipt.json.new"
+      mv -f -- "$transaction/receipt.json.new" "$transaction/receipt.json"
+      transaction_set_phase "$run_id" rolled-back
+      transaction_clear_active "$run_id"
+      trap - EXIT
+      return 0
     fi
     sleep 2
   done
-  [ "$restored_ready" = true ] ||
-    die 'rollback services did not become ready; writers remain contained for forward repair'
-  verify_release_runtime_state "$run_id" prior
-  # The runtime verification above must succeed before the prior exact state is
-  # republished as the root-owned high-water.
-  atomic_install_release_state "$(artifact_transaction "$run_id")" prior
-  transaction_set_phase "$run_id" rolled-back
-  if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
-  return 0
+  die 'rollback services did not become ready; the cleanup trap will restore writer availability and release the entry fence'
 }
 
 schedule_apply() {

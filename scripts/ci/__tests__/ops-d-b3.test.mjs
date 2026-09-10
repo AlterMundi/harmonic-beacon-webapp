@@ -453,7 +453,7 @@ test('B3 migration verifies prior live state before phase and Compose', () => {
   const success = transactionHarness('artifact_migrate 123');
   assert.equal(success.status, 0, success.stderr);
   assert.match(success.events, /^verify prior\ncompose /);
-  assert.equal(success.phase, 'migrated');
+  assert.equal(success.phase, 'migration-skipped');
 });
 
 for (const source of ['candidate', 'prior']) {
@@ -585,15 +585,12 @@ for (const mutate of [p => { p.id = 'g'.repeat(64); }, p => { p.extra = 1; }, p 
   assert.notEqual(unpack(state).status, 0);
 });
 
-test('B3 uncommitted rollback advances base generation and retries exactly', () => {
-  const result = transactionHarness(`artifact_rollback 123
-cp "$CURRENT_STATE" '@ROOT@/expected-state'
-artifact_rollback 123
-cmp "$CURRENT_STATE" '@ROOT@/expected-state'`, { phase: 'migrated' });
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.current.publication.generation, 2);
-  assert.notEqual(result.current.publication.id, stateFixture().publication.id);
-  assert.equal(result.phase, 'rolled-back');
+test('B3 migrated rollback refuses mutation without bound restore proof', () => {
+  const result = transactionHarness('artifact_rollback 123', { phase: 'migrated' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /rollback refused|proof is absent/);
+  assert.equal(result.current.publication.generation, 1);
+  assert.equal(result.phase, 'migrated');
 });
 test('B3 exact commit retry retains the publication', () => {
   const result = transactionHarness(`artifact_status 123 production

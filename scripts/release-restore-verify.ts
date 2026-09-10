@@ -27,17 +27,27 @@ function main(): void {
 
   run('npx', ['prisma', 'migrate', 'deploy'], env);
   const state = JSON.parse(run('npx', ['tsx', 'scripts/release-migration-state.ts'], env, true)) as {
+    schemaVersion?: string;
     databaseStateVerified?: boolean;
     pending?: unknown[];
     failed?: unknown[];
     unexpected?: unknown[];
     unsafe?: unknown[];
+    checksumErrors?: unknown[];
+    duplicateRecords?: unknown[];
+    conflictingRecords?: unknown[];
+    migrationChecksums?: unknown[];
   };
-  if (state.databaseStateVerified !== true || state.pending?.length !== 0 || state.failed?.length !== 0 ||
-      state.unexpected?.length !== 0 || state.unsafe?.length !== 0) {
+  if (state.schemaVersion !== 'harmonic-beacon.migration-state.v1' || state.databaseStateVerified !== true ||
+      state.pending?.length !== 0 || state.failed?.length !== 0 || state.unexpected?.length !== 0 ||
+      state.unsafe?.length !== 0 || state.checksumErrors?.length !== 0 || state.duplicateRecords?.length !== 0 ||
+      state.conflictingRecords?.length !== 0 || !Array.isArray(state.migrationChecksums)) {
     throw new Error('candidate migration did not verify on the isolated restored database');
   }
-  console.log(JSON.stringify({ candidateMigrationVerified: true }));
+  console.log(JSON.stringify({
+    schemaVersion: 'harmonic-beacon.restore-verification.v2',
+    migrationState: state,
+  }));
 }
 
 try {

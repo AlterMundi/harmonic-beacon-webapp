@@ -32,7 +32,6 @@ const SERVICE_RELEASE_REPOSITORIES = Object.freeze({
   'commerce-reconciler': ARTIFACTS.get('app'),
   tapestry: ARTIFACTS.get('tapestry'),
   'playlist-bot': ARTIFACTS.get('playlist-bot'),
-  analytics: ARTIFACTS.get('analytics'),
 });
 
 function fail(message) {

@@ -48,10 +48,10 @@ jobs:
           head="$HEAD_SHA"
           node scripts/hb.mjs change-impact --base "$base" --head "$head" --json > impact-plan.json
           jq -e '.schemaVersion=="harmonic-beacon.change-impact.v2"' impact-plan.json >/dev/null
-          printf 'app=%s\n' "$(jq -r 'any(.requiredChecks[]; .check=="lint-and-build")' impact-plan.json)" >> "$GITHUB_OUTPUT"
-          printf 'analytics=%s\n' "$(jq -r 'any(.requiredChecks[]; .check=="analytics")' impact-plan.json)" >> "$GITHUB_OUTPUT"
-          printf 'tapestry=%s\n' "$(jq -r 'any(.requiredChecks[]; .check=="tapestry")' impact-plan.json)" >> "$GITHUB_OUTPUT"
-          printf 'playlist=%s\n' "$(jq -r '.deployment.servicesToReplace | index("playlist-bot") != null' impact-plan.json)" >> "$GITHUB_OUTPUT"
+          printf 'app=%s\n' "$(jq -r '.requiredJobChecks | index("lint-and-build") != null' impact-plan.json)" >> "$GITHUB_OUTPUT"
+          printf 'analytics=%s\n' "$(jq -r '.requiredJobChecks | index("analytics") != null' impact-plan.json)" >> "$GITHUB_OUTPUT"
+          printf 'tapestry=%s\n' "$(jq -r '.requiredJobChecks | index("tapestry") != null' impact-plan.json)" >> "$GITHUB_OUTPUT"
+          printf 'playlist=%s\n' "$(jq -r '.requiredJobChecks | index("playlist") != null' impact-plan.json)" >> "$GITHUB_OUTPUT"
       - name: Verify generated agent skill distributions
         run: python3 .agents/skills/scripts/render_distributions.py --check
       - name: Verify shared operations tooling
@@ -181,29 +181,25 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: change-impact-${{ github.run_id }}
       - name: Reject missing, failed, cancelled, or skipped selected jobs
         env:
           IMPACT_RESULT: ${{ needs.impact.result }}
-          APP_SELECTED: ${{ needs.impact.outputs.app }}
           LINT_RESULT: ${{ needs.lint-and-build.result }}
           TEST_RESULT: ${{ needs.test.result }}
-          TAPESTRY_SELECTED: ${{ needs.impact.outputs.tapestry }}
           TAPESTRY_RESULT: ${{ needs.tapestry.result }}
-          PLAYLIST_SELECTED: ${{ needs.impact.outputs.playlist }}
           PLAYLIST_RESULT: ${{ needs.playlist.result }}
-          ANALYTICS_SELECTED: ${{ needs.impact.outputs.analytics }}
           ANALYTICS_RESULT: ${{ needs.analytics.result }}
         run: |
           set -euo pipefail
-          test "$IMPACT_RESULT" = success
-          require_success() {
-            if [ "$1" = true ] && [ "$2" != success ]; then
-              echo "selected required job did not succeed: $3 ($2)" >&2
-              exit 1
-            fi
-          }
-          require_success "$APP_SELECTED" "$LINT_RESULT" lint-and-build
-          require_success "$APP_SELECTED" "$TEST_RESULT" test
-          require_success "$TAPESTRY_SELECTED" "$TAPESTRY_RESULT" tapestry
-          require_success "$PLAYLIST_SELECTED" "$PLAYLIST_RESULT" playlist
-          require_success "$ANALYTICS_SELECTED" "$ANALYTICS_RESULT" analytics
+          jq -n \
+            --arg impact "$IMPACT_RESULT" --arg lint "$LINT_RESULT" --arg test "$TEST_RESULT" \
+            --arg tapestry "$TAPESTRY_RESULT" --arg playlist "$PLAYLIST_RESULT" --arg analytics "$ANALYTICS_RESULT" \
+            '[{check:"impact",conclusion:$impact},{check:"lint-and-build",conclusion:$lint},
+              {check:"test",conclusion:$test},{check:"tapestry",conclusion:$tapestry},
+              {check:"playlist",conclusion:$playlist},{check:"analytics",conclusion:$analytics}]' > impact-results.json
+          node scripts/ci/impact-recovery.mjs validate-impact --impact impact-plan.json
+          node scripts/ci/change-impact.mjs verify-results --impact impact-plan.json --results impact-results.json

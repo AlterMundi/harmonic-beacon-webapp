@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
@@ -34,6 +34,72 @@ test('committed diff binds the complete ancestor-to-candidate commit set', () =>
     const second = git('rev-parse', 'HEAD');
     assert.deepEqual(committedDiff(repo, first, second), ['second.ts']);
     assert.throws(() => committedDiff(repo, second, first), /ancestor/u);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('committed diff preserves both paths of a critical-to-docs rename and every deletion', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'hb-impact-rename-'));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  try {
+    git('init', '--quiet');
+    git('config', 'user.name', 'OPS-E Test');
+    git('config', 'user.email', 'ops-e@example.invalid');
+    mkdirSync(join(repo, 'src/context'), { recursive: true });
+    mkdirSync(join(repo, 'src/lib'), { recursive: true });
+    writeFileSync(join(repo, 'src/context/AudioContext.tsx'), 'export const audio = true;\n');
+    writeFileSync(join(repo, 'src/lib/removed.ts'), 'export const removed = true;\n');
+    git('add', '.');
+    git('commit', '--quiet', '-m', 'base');
+    const base = git('rev-parse', 'HEAD');
+
+    mkdirSync(join(repo, 'docs/ops'), { recursive: true });
+    git('mv', 'src/context/AudioContext.tsx', 'docs/ops/retired-component.md');
+    git('rm', '--quiet', 'src/lib/removed.ts');
+    git('commit', '--quiet', '-m', 'retire executable paths');
+
+    assert.deepEqual(committedDiff(repo, base, 'HEAD'), [
+      'docs/ops/retired-component.md',
+      'src/context/AudioContext.tsx',
+      'src/lib/removed.ts',
+    ]);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('working-tree discovery preserves old and new rename paths plus unstaged deletes', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'hb-impact-working-'));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  try {
+    git('init', '--quiet');
+    git('config', 'user.name', 'OPS-E Test');
+    git('config', 'user.email', 'ops-e@example.invalid');
+    mkdirSync(join(repo, 'src/context'), { recursive: true });
+    mkdirSync(join(repo, 'src/lib'), { recursive: true });
+    writeFileSync(join(repo, 'src/context/AudioContext.tsx'), 'export const audio = true;\n');
+    writeFileSync(join(repo, 'src/lib/removed.ts'), 'export const removed = true;\n');
+    git('add', '.');
+    git('commit', '--quiet', '-m', 'base');
+
+    mkdirSync(join(repo, 'docs/ops'), { recursive: true });
+    renameSync(join(repo, 'src/context/AudioContext.tsx'), join(repo, 'docs/ops/retired-component.md'));
+    rmSync(join(repo, 'src/lib/removed.ts'));
+    git('add', '--all');
+    const output = execFileSync(process.execPath, [
+      new URL('../../ci/change-impact.mjs', import.meta.url).pathname,
+      '--repo', repo, '--base', 'HEAD', '--working-tree', '--json',
+    ], { encoding: 'utf8' });
+    const report = JSON.parse(output);
+
+    assert.deepEqual(report.files, [
+      'docs/ops/retired-component.md',
+      'src/context/AudioContext.tsx',
+      'src/lib/removed.ts',
+    ]);
+    assert.equal(report.risk, 'critical');
+    assert.ok(report.deployment.servicesToReplace.includes('app'));
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -111,6 +177,29 @@ test('shared dependencies affect every first-party artifact and service role', (
   assert.deepEqual(report.deployment.servicesToReplace, [
     'app', 'commerce-reconciler', 'playlist-bot', 'tapestry',
   ]);
+  assert.deepEqual(report.requiredJobChecks, [
+    'impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
+  ]);
+});
+
+test('shared app runtime modules replace both actual consumers of the app artifact', () => {
+  const report = classifyChanges(['src/lib/db.ts']);
+  assert.deepEqual(report.deployment.artifactsToPull, ['app']);
+  assert.deepEqual(report.deployment.servicesToReplace, ['app', 'commerce-reconciler']);
+  assert.ok(report.requiredJobChecks.includes('lint-and-build'));
+  assert.ok(report.requiredJobChecks.includes('test'));
+});
+
+test('every selected service or functional matrix contributes its CI job check', () => {
+  const fixtures = [
+    ['services/tapestry/src/server.mjs', 'tapestry'],
+    ['services/playlist-bot/src/index.mjs', 'playlist'],
+    ['services/analytics/src/worker.mjs', 'analytics'],
+  ];
+  for (const [path, job] of fixtures) {
+    const report = classifyChanges([path]);
+    assert.ok(report.requiredJobChecks.includes(job), `${path} must require ${job}`);
+  }
 });
 
 test('unknown paths expand to every matrix and service without guessing a migration', () => {
@@ -230,20 +319,21 @@ test('required check verification rejects missing failed cancelled and skipped r
 });
 
 test('protected delivery contexts stay bound to the selected impact matrix', () => {
-  assert.deepEqual(classifyChanges(['README.md']).requiredContexts, ['diff-check', 'impact']);
+  assert.deepEqual(classifyChanges(['README.md']).requiredContexts, ['diff-check']);
   assert.deepEqual(
     classifyChanges(['src/app/page.tsx']).requiredContexts,
-    ['diff-check', 'impact', 'lint-and-build', 'test', 'e2e', 'account'],
+    ['diff-check', 'lint-and-build', 'test', 'e2e', 'account'],
   );
   assert.deepEqual(
     classifyChanges(['src/app/api/playback/route.ts']).requiredContexts,
-    ['diff-check', 'impact', 'lint-and-build', 'test', 'e2e', 'account', 'frozen-audio-paths'],
+    ['diff-check', 'lint-and-build', 'test', 'e2e', 'account', 'frozen-audio-paths'],
   );
 });
 
 test('delivery-control changes conservatively require every protected context', () => {
   assert.deepEqual(classifyChanges(['.github/workflows/oci-promote.yml']).requiredContexts, [
-    'diff-check', 'impact', 'lint-and-build', 'test', 'analytics', 'e2e', 'account', 'frozen-audio-paths',
+    'diff-check', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
+    'e2e', 'account', 'frozen-audio-paths',
   ]);
 });
 
@@ -251,13 +341,13 @@ test('hashed commerce contract markdown keeps contract validation without app ex
   const report = classifyChanges(['contracts/commerce-entitlement/CONTRACT.md']);
   assert.equal(report.risk, 'documentation');
   assert.deepEqual(checkNames(report), ['diff-check', 'commerce-contract']);
-  assert.deepEqual(report.requiredContexts, ['diff-check', 'impact', 'test']);
+  assert.deepEqual(report.requiredContexts, ['diff-check', 'test']);
 });
 
-test('agent skill distributions execute inside the always-required impact context', () => {
+test('agent skill distributions execute inside the always-run impact job while delivery keeps stable contexts', () => {
   const report = classifyChanges(['.agents/skills/github-workflows/SKILL.md']);
   assert.deepEqual(checkNames(report), ['diff-check', 'agent-skill-distributions']);
-  assert.deepEqual(report.requiredContexts, ['diff-check', 'impact']);
+  assert.deepEqual(report.requiredContexts, ['diff-check']);
 });
 
 test('rename detection remains disabled so both paths are classified', () => {
@@ -268,4 +358,27 @@ test('explicit human-review labels fail closed', () => {
   const report = classifyChanges(['src/app/page.tsx'], { labels: ['requires-human-review'] });
   assert.equal(report.humanReviewRequired, true);
   assert.match(report.humanReviewReason, /requires-human-review/u);
+});
+
+test('the executable CI verifier rejects a selected matrix job that was skipped', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hb-impact-results-'));
+  try {
+    const impactPath = join(root, 'impact.json');
+    const resultsPath = join(root, 'results.json');
+    const report = classifyChanges(['package-lock.json']);
+    writeFileSync(impactPath, JSON.stringify(report));
+    const results = report.requiredJobChecks.map((check) => ({ check, conclusion: 'success' }));
+    writeFileSync(resultsPath, JSON.stringify(results));
+    const verifier = new URL('../../ci/change-impact.mjs', import.meta.url).pathname;
+    assert.doesNotThrow(() => execFileSync(process.execPath, [
+      verifier, 'verify-results', '--impact', impactPath, '--results', resultsPath,
+    ], { encoding: 'utf8' }));
+    writeFileSync(resultsPath, JSON.stringify(results.map((entry) =>
+      entry.check === 'analytics' ? { ...entry, conclusion: 'skipped' } : entry)));
+    assert.throws(() => execFileSync(process.execPath, [
+      verifier, 'verify-results', '--impact', impactPath, '--results', resultsPath,
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), /Command failed/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

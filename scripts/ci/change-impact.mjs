@@ -18,14 +18,16 @@ const ARTIFACT_FOR_SERVICE = {
 const RISK_ORDER = { documentation: 0, ui: 1, functional: 2, critical: 3 };
 const CONTEXT_ORDER = [
   'diff-check',
-  'impact',
   'lint-and-build',
   'test',
+  'tapestry',
+  'playlist',
   'analytics',
   'e2e',
   'account',
   'frozen-audio-paths',
 ];
+const JOB_CHECK_ORDER = ['impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics'];
 
 export const COVERAGE_MATRICES = Object.freeze({
   ui: ['component', 'chromium-android-responsive', 'affected-visual'],
@@ -108,7 +110,8 @@ function pathFacts(path) {
 
   if (/^src\/.*\.css$/u.test(path)) set('ui', ['ui'], ['app']);
   if (/^(src\/components\/|src\/app\/)/u.test(path) && !path.endsWith('.css')) set('functional', ['app'], ['app']);
-  if (/^(src\/lib\/|src\/middleware|middleware\.|next\.config\.)/u.test(path)) set('functional', ['app'], ['app']);
+  if (/^src\/lib\//u.test(path)) set('functional', ['app'], ['app', 'commerce-reconciler']);
+  if (/^(src\/middleware|middleware\.|next\.config\.)/u.test(path)) set('functional', ['app'], ['app']);
   if (/^services\/tapestry\//u.test(path)) set('functional', ['tapestry'], ['tapestry'], ['tapestry']);
   if (/^services\/playlist-bot\//u.test(path)) set('functional', ['playlist-bot'], ['playlist-bot']);
   if (/^(services\/analytics|ops\/analytics|contracts\/analytics)\//u.test(path)) set('functional', ['analytics'], ['analytics'], ['analytics']);
@@ -197,20 +200,33 @@ function checksFor(risk, domains, pathChecks, services) {
   return Object.keys(CHECKS).filter((name) => names.has(name)).map((name) => CHECKS[name]);
 }
 
-function requiredContextsFor(risk, domains, requiredChecks) {
+function requiredContextsFor(risk, domains, requiredChecks, requiredJobChecks) {
   if (risk === 'critical' && domains.includes('infrastructure')) return [...CONTEXT_ORDER];
   const checks = new Set(requiredChecks.map(({ check }) => check));
-  const contexts = new Set(['diff-check', 'impact']);
-  for (const name of ['lint-and-build', 'test', 'analytics']) {
-    if (checks.has(name)) contexts.add(name);
+  const contexts = new Set(['diff-check']);
+  for (const name of requiredJobChecks) {
+    contexts.add(name);
   }
-  if (checks.has('tapestry') || checks.has('commerce-contract')) contexts.add('test');
+  if (checks.has('commerce-contract')) contexts.add('test');
   if (checks.has('e2e')) {
     contexts.add('e2e');
     contexts.add('account');
   }
   if (checks.has('frozen-audio-paths')) contexts.add('frozen-audio-paths');
   return CONTEXT_ORDER.filter((name) => contexts.has(name));
+}
+
+function requiredJobChecksFor(services, matrices) {
+  const names = new Set(['impact']);
+  const functional = new Set(matrices.functional);
+  if (services.includes('app') || services.includes('commerce-reconciler') || matrices.ui.length > 0 ||
+      functional.has('app-integration') || functional.has('chromium-android-journey')) {
+    addAll(names, ['lint-and-build', 'test']);
+  }
+  if (services.includes('tapestry') || functional.has('tapestry-integration')) names.add('tapestry');
+  if (services.includes('playlist-bot') || functional.has('playlist-media-integration')) names.add('playlist');
+  if (services.includes('analytics') || functional.has('analytics-contract')) names.add('analytics');
+  return JOB_CHECK_ORDER.filter((name) => names.has(name));
 }
 
 export function classifyChanges(inputFiles, options = {}) {
@@ -255,11 +271,14 @@ export function classifyChanges(inputFiles, options = {}) {
   if (files.length === 0 && domains.size === 0) domains.add('documentation');
   if (risk === 'documentation' && !domains.size) domains.add('documentation');
   const sortedDomains = [...domains].sort();
-  const sortedServices = [...services].filter((service) => LIVE_SERVICES.has(service)).sort();
+  const classifiedServices = [...services].sort();
+  const sortedServices = classifiedServices.filter((service) => LIVE_SERVICES.has(service));
   const reusePriorImages = sortedServices.filter((service) => reusePriorCandidates.has(service) && !imageChangedServices.has(service));
   const deploy = sortedServices.length > 0;
   const inspectMigrations = dataPathDetected || unknown.length > 0;
+  const matrices = selectedMatrices(risk, sortedDomains);
   const requiredChecks = checksFor(risk, sortedDomains, pathChecks, sortedServices);
+  const requiredJobChecks = requiredJobChecksFor(classifiedServices, matrices);
   const humanReviewRequired = (options.labels ?? []).includes('requires-human-review');
   const report = {
     schemaVersion: 'harmonic-beacon.change-impact.v2',
@@ -268,9 +287,10 @@ export function classifyChanges(inputFiles, options = {}) {
     domains: sortedDomains,
     categories: sortedDomains,
     labels: [...new Set(options.labels ?? [])].sort(),
-    matrices: selectedMatrices(risk, sortedDomains),
+    matrices,
     requiredChecks,
-    requiredContexts: requiredContextsFor(risk, sortedDomains, requiredChecks),
+    requiredJobChecks,
+    requiredContexts: requiredContextsFor(risk, sortedDomains, requiredChecks, requiredJobChecks),
     humanReviewRequired,
     humanReviewReason: humanReviewRequired ? 'requires-human-review label is present' : null,
     deployment: {
@@ -334,7 +354,14 @@ export function classifyDeployedServiceChanges({ diffByService, serviceReleases,
 }
 
 export function verifyRequiredCheckResults(requiredChecks, results) {
-  const byName = new Map(results.map((entry) => [entry.check, entry.conclusion]));
+  if (!Array.isArray(requiredChecks) || !Array.isArray(results)) throw new Error('required check results must be arrays');
+  const byName = new Map();
+  for (const entry of results) {
+    if (!entry || typeof entry.check !== 'string' || typeof entry.conclusion !== 'string' || byName.has(entry.check)) {
+      throw new Error('required check results are malformed or duplicated');
+    }
+    byName.set(entry.check, entry.conclusion);
+  }
   for (const check of requiredChecks) {
     if (byName.get(check) !== 'success') {
       throw new Error(`required check ${check} is missing or did not succeed`);
@@ -404,7 +431,11 @@ function changedFiles(options) {
   const base = options.base || defaultBase(options.repo);
   const files = committedDiff(options.repo, base, options.head);
   if (options.workingTree) {
-    for (const args of [['diff', '--name-only'], ['diff', '--cached', '--name-only'], ['ls-files', '--others', '--exclude-standard']]) {
+    for (const args of [
+      ['diff', '--no-renames', '--name-only'],
+      ['diff', '--cached', '--no-renames', '--name-only'],
+      ['ls-files', '--others', '--exclude-standard'],
+    ]) {
       const output = git(options.repo, args);
       if (output) files.push(...output.split(/\r?\n/u).filter(Boolean));
     }
@@ -423,6 +454,18 @@ function printText(report) {
 }
 
 export function main(argv = process.argv.slice(2)) {
+  if (argv[0] === 'verify-results') {
+    const impactIndex = argv.indexOf('--impact');
+    const resultsIndex = argv.indexOf('--results');
+    if (impactIndex < 0 || !argv[impactIndex + 1] || resultsIndex < 0 || !argv[resultsIndex + 1]) {
+      throw new Error('verify-results requires --impact and --results');
+    }
+    const impact = JSON.parse(readFileSync(resolve(argv[impactIndex + 1]), 'utf8'));
+    const results = JSON.parse(readFileSync(resolve(argv[resultsIndex + 1]), 'utf8'));
+    verifyRequiredCheckResults(impact.requiredJobChecks, results);
+    console.log(JSON.stringify({ verified: impact.requiredJobChecks }));
+    return 0;
+  }
   const options = parseArgs(argv);
   if (options.help) { console.log(usage()); return 0; }
   const report = changedFiles(options);

@@ -10,6 +10,7 @@ const ciWorkflow = read('.github/workflows/ci.yml');
 const e2eWorkflow = read('.github/workflows/e2e.yml');
 const audioWorkflow = read('.github/workflows/audio-boundary.yml');
 const deployWorkflow = read('.github/workflows/deploy.yml');
+const candidateWorkflow = read('.github/workflows/oci-candidate.yml');
 
 test('pre-commit runs only staged lint and never the full test suite', () => {
   const commands = hook
@@ -44,8 +45,10 @@ test('candidate-executing pull request workflows grant read-only contents explic
   }
 });
 
-test('release qualification retains the full Vitest gate', () => {
-  assert.match(deployWorkflow, /^\s+npm test$/mu);
+test('release qualification retains the protected full Vitest gate and immutable OCI qualification', () => {
+  assert.match(ciWorkflow, /^\s*- run: npm run test:coverage$/mu);
+  assert.match(candidateWorkflow, /node scripts\/ci\/qualify-oci\.mjs[\s\S]*--no-build/u);
+  assert.match(deployWorkflow, /safety-hold/u);
 });
 
 test('legacy release fails closed during the security hold', () => {
