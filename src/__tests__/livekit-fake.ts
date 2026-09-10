@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import type { RoomOptions } from 'livekit-client';
 
 /**
  * A hand-built stand-in for the parts of `livekit-client` the session room
@@ -114,6 +115,11 @@ export function createFakeParticipant(options: FakeParticipantOptions): FakePart
 export class FakeRoom {
     private listeners: Record<string, Array<(...args: unknown[]) => void>> = {};
 
+    options: RoomOptions;
+    constructor(options: RoomOptions = {}) {
+        this.options = { ...options, webAudioMix: options.webAudioMix ?? false };
+    }
+
     state = 'connecting';
     activeSpeakers: FakeParticipant[] = [];
     remoteParticipants = new Map<string, FakeParticipant>();
@@ -172,8 +178,8 @@ function fakePreset(width: number, height: number, maxBitrate: number) {
  */
 export function livekitClientMock() {
     return {
-        Room: vi.fn().mockImplementation(function RoomCtor() {
-            return new FakeRoom();
+        Room: vi.fn().mockImplementation(function RoomCtor(options?: RoomOptions) {
+            return new FakeRoom(options);
         }),
         RoomEvent: {
             Reconnecting: 'reconnecting',

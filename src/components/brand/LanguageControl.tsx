@@ -24,8 +24,12 @@ export default function LanguageControl({ className = "" }: LanguageControlProps
   function handleChange(next: "es" | "en") {
     if (next === locale) return;
     setLocale(next);
-    // Refresh server components so cookie-backed copy changes in the same turn.
-    router.refresh();
+    // Live surfaces consume client locale. Refreshing their server boundary can
+    // replace the persistent Staff iframe and restart media. Other pages still
+    // need a refresh for cookie-backed server copy.
+    if (!/^\/(?:session|ops\/events)\/[^/]+\/?$/.test(window.location.pathname)) {
+      router.refresh();
+    }
   }
 
   return (

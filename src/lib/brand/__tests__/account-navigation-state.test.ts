@@ -59,6 +59,7 @@ describe('local Account navigation state', () => {
         } = await import('../account-navigation-state');
 
         await expect(locallyKnownLiveNavigationIdentity(requestHeaders(), NOW)).resolves.toEqual({
+            issuer: ISSUER,
             displayName: 'Nicolás',
             staffRole: null,
         });
@@ -109,6 +110,7 @@ describe('local Account navigation state', () => {
         const { locallyKnownLiveNavigationIdentity } = await import('../account-navigation-state');
 
         await expect(locallyKnownLiveNavigationIdentity(requestHeaders(), NOW)).resolves.toEqual({
+            issuer: ISSUER,
             displayName: 'Nicolás',
             staffRole: 'ADMIN',
         });
@@ -123,6 +125,7 @@ describe('local Account navigation state', () => {
         const { locallyKnownLiveNavigationIdentity } = await import('../account-navigation-state');
 
         await expect(locallyKnownLiveNavigationIdentity(requestHeaders(), NOW)).resolves.toEqual({
+            issuer: ISSUER,
             displayName: 'Nicolás',
             staffRole: null,
         });

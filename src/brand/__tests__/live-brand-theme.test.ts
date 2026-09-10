@@ -81,7 +81,11 @@ describe("Live canonical brand boundary", () => {
     expect(css).toMatch(
       /body:has\(\.live-ops-shell \[role="dialog"\]:not\(\.hidden\)\) > hb-global-nav \{[\s\S]*?visibility: hidden;[\s\S]*?pointer-events: none;/,
     );
-    expect(opsLayout).toContain("'Operaciones de eventos'");
-    expect(opsLayout).toContain("'Event operations'");
+    expect(opsLayout).toContain("<OpsNavigation");
+    const navigation = source("src/components/ops/LiveLocaleSurfaces.tsx");
+    expect(navigation).toContain("aria-label={liveNavigationCopy[locale].eventOperations}");
+    const copy = source("src/lib/live-navigation-copy.ts");
+    expect(copy).toContain("'Operaciones de eventos'");
+    expect(copy).toContain("'Event operations'");
   });
 });

@@ -11,11 +11,15 @@ import {
     Track,
     VideoPresets,
     type Participant,
+    type RemoteParticipant,
     type RemoteTrack,
     type RemoteTrackPublication,
     type RoomOptions,
 } from "livekit-client";
 import { AudioProvider, useAudio } from "@/context/AudioContext";
+import { observeRoomAudioPlayback } from "@/lib/room-audio-playback";
+import { committedRoomLifecycle, disconnectRoomOnce } from "@/components/navigation/committed-room-lifecycle";
+import { RoomExitProvider, useRoomExit } from "@/components/navigation/RoomExitGuard";
 import { useLocale } from "@/context/LocaleContext";
 import HandRaiseButton from "@/components/session/HandRaiseButton";
 import FacilitatorAudioQuality from "@/components/session/FacilitatorAudioQuality";
@@ -274,8 +278,10 @@ function SessionRoom() {
     const [mix, setMix] = useState(0.5);
     const [duration, setDuration] = useState(0);
     const [disconnectState, setDisconnectState] = useState<DisconnectKind | null>(null);
+    const requestExit = useRoomExit(isConnected && !disconnectState);
     const [retryToken, setRetryToken] = useState(0);
     const [audioActivationError, setAudioActivationError] = useState<string | null>(null);
+    const [isStageAudioPlaying, setIsStageAudioPlaying] = useState(false);
     const [viewerInfo, setViewerInfo] = useState<ViewerInfo | null>(null);
     const [activeRoom, setActiveRoom] = useState<Room | null>(null);
     const [stageInvitationAccepted, setStageInvitationAccepted] = useState(false);
@@ -284,7 +290,6 @@ function SessionRoom() {
     const [stageExitConfirming, setStageExitConfirming] = useState(false);
     const [stageExitBusy, setStageExitBusy] = useState(false);
     const [stageExitError, setStageExitError] = useState<string | null>(null);
-    const [sessionExitConfirming, setSessionExitConfirming] = useState(false);
 
     const roomRef = useRef<Room | null>(null);
     // Keep ownership by track so an unsubscribe can remove the exact DOM node
@@ -312,8 +317,6 @@ function SessionRoom() {
     const stageInvitationRef = useRef<HTMLDivElement>(null);
     const stageExitCancelRef = useRef<HTMLButtonElement>(null);
     const stageExitTriggerRef = useRef<HTMLButtonElement>(null);
-    const sessionExitCancelRef = useRef<HTMLButtonElement>(null);
-    const sessionExitTriggerRef = useRef<HTMLButtonElement>(null);
     const participantFallbackRef = useRef(copy.session.participantFallback);
     participantFallbackRef.current = copy.session.participantFallback;
     stageInvitationAcceptedRef.current = stageInvitationAccepted;
@@ -410,7 +413,7 @@ function SessionRoom() {
     const leaveSession = useCallback(() => {
         if (roomRef.current) {
             intentionalDisconnectRef.current = true;
-            roomRef.current.disconnect();
+            disconnectRoomOnce(roomRef.current);
         }
         router.push("/");
     }, [router]);
@@ -438,7 +441,7 @@ function SessionRoom() {
         if (room) {
             intentionalDisconnectRef.current = true;
             try {
-                await room.disconnect();
+                await disconnectRoomOnce(room);
             } catch (failure) {
                 console.error("Failed to close the room before opening the console:", redactErrorDetail(failure));
             }
@@ -478,32 +481,47 @@ function SessionRoom() {
         }, AUTO_RECONNECT_DELAYS_MS[attempt]);
     }, []);
 
-    const startListening = useCallback(async () => {
+    const activationRef = useRef<{ room: Room; promise: Promise<void> } | null>(null);
+    const stagePlaybackRef = useRef<ReturnType<typeof observeRoomAudioPlayback> | null>(null);
+    const startListening = useCallback(() => {
+        const room = roomRef.current;
+        const playback = stagePlaybackRef.current;
+        if (!room) return Promise.resolve();
+        if (activationRef.current?.room === room) return activationRef.current.promise;
         setAudioActivationError(null);
-        try {
-            // Fire every native media play while the browser gesture is still
-            // active, before either LiveKit room resumes an AudioContext.
+        const promise = (async () => {
+            const muted = new Map([...audioElementsRef.current.values()].map(
+                (element) => [element, element.muted],
+            ));
+            // Fire every native media play in the gesture before either room
+            // resumes an AudioContext. Isolate synchronous throws as rejections.
             const stageElementStarts = [...audioElementsRef.current.values()].map(
-                (element) => element.play(),
+                async (element) => element.play(),
             );
-            const beaconStart = startBeaconAudio();
-            const stageStart = roomRef.current?.startAudio() ?? Promise.resolve();
-            const [, beaconStarted] = await Promise.all([
-                Promise.all(stageElementStarts),
-                beaconStart,
-                stageStart,
+            const beaconStart = (async () => startBeaconAudio())();
+            const stageStart = (async () => room.startAudio())();
+            // startAudio unmutes attached tracks synchronously; activation is
+            // permission recovery, not permission to override intentional mute.
+            muted.forEach((value, element) => { element.muted = value; });
+            const [beaconResult, ...stageResults] = await Promise.allSettled([
+                beaconStart, stageStart, ...stageElementStarts,
             ]);
-            if (!beaconStarted) {
-                setAudioActivationError(
-                    copy.session.beaconAudioError,
-                );
+            if (roomRef.current !== room) return;
+            const failure = stageResults.find((result) => result.status === 'rejected');
+            if (!playback?.sync()) {
+                console.error("Failed to start session audio:", redactErrorDetail(
+                    failure?.status === 'rejected' ? failure.reason : new Error('Playback is still blocked'),
+                ));
+                setAudioActivationError(copy.session.audioError);
+            } else if (beaconResult.status === 'rejected' || !beaconResult.value) {
+                setAudioActivationError(copy.session.beaconAudioError);
             }
-        } catch (e) {
-            console.error("Failed to start session audio:", redactErrorDetail(e));
-            setAudioActivationError(
-                copy.session.audioError,
-            );
-        }
+        })();
+        activationRef.current = { room, promise };
+        void promise.finally(() => {
+            if (activationRef.current?.promise === promise) activationRef.current = null;
+        });
+        return promise;
     }, [startBeaconAudio, copy.session.beaconAudioError, copy.session.audioError]);
 
     const acceptStageInvitation = useCallback(async () => {
@@ -651,6 +669,7 @@ function SessionRoom() {
     useEffect(() => {
         let cancelled = false;
         let ownedRoom: Room | null = null;
+        let playback: ReturnType<typeof observeRoomAudioPlayback> | null = null;
         let presenceTimer: ReturnType<typeof setInterval> | null = null;
         const audioElements = audioElementsRef.current;
         intentionalDisconnectRef.current = false;
@@ -715,12 +734,19 @@ function SessionRoom() {
                     setDuration(Math.max(0, elapsed));
                 }
 
-                const room = new Room(stageRoomOptions(data.isAssignedFacilitator === true));
+                const room = new Room({ ...stageRoomOptions(data.isAssignedFacilitator === true), disconnectOnPageLeave: false });
                 ownedRoom = room;
                 roomRef.current = room;
                 setActiveRoom(room);
 
-                room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication) => {
+                playback = observeRoomAudioPlayback(room, (enabled) => {
+                    setIsStageAudioPlaying(enabled);
+                    if (enabled) setAudioActivationError(null);
+                });
+                stagePlaybackRef.current = playback;
+                playback.sync();
+
+                room.on(RoomEvent.TrackSubscribed, async (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
                     if (track.kind === Track.Kind.Audio) {
                         if (cancelled) {
                             track.detach().forEach((element) => element.remove());
@@ -728,6 +754,7 @@ function SessionRoom() {
                         }
                         const previous = audioElementsRef.current.get(track);
                         if (previous) {
+                            playback?.remove(previous);
                             previous.pause();
                             previous.remove();
                         }
@@ -736,7 +763,16 @@ function SessionRoom() {
                         audioElement.style.display = "none";
                         document.body.appendChild(audioElement);
                         audioElementsRef.current.set(track, audioElement);
+                        playback?.add(audioElement);
+                        if (process.env.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER === '1') {
+                            try {
+                                (window as typeof window & {
+                                    continuityTrackSubscribed?: (nativeTrack: MediaStreamTrack, participantSid: string, trackSid: string) => void;
+                                }).continuityTrackSubscribed?.(track.mediaStreamTrack, participant.sid, publication.trackSid);
+                            } catch { /* Test instrumentation must never affect playback. */ }
+                        }
                         try { await audioElement.play(); } catch { /* Autoplay blocked */ }
+                        playback?.sync();
                     } else if (audioOnlyRef.current) {
                         publication.setSubscribed(false);
                     }
@@ -748,6 +784,7 @@ function SessionRoom() {
                         const tracked = audioElementsRef.current.get(track);
                         track.detach().forEach((el) => el.remove());
                         if (tracked) {
+                            playback?.remove(tracked);
                             tracked.pause();
                             tracked.remove();
                             audioElementsRef.current.delete(track);
@@ -808,7 +845,7 @@ function SessionRoom() {
 
                 await room.connect(LIVEKIT_URL, data.token);
                 if (cancelled) {
-                    room.disconnect();
+                    disconnectRoomOnce(room);
                     return;
                 }
 
@@ -824,6 +861,7 @@ function SessionRoom() {
                 }
 
                 const wasReconnect = autoReconnectAttemptRef.current > 0;
+                playback.sync();
                 setIsConnected(true);
                 setIsConnecting(false);
                 setDisconnectState(null);
@@ -862,7 +900,7 @@ function SessionRoom() {
                 if (!cancelled) {
                     if (ownedRoom) {
                         intentionalDisconnectRef.current = true;
-                        ownedRoom.disconnect();
+                        disconnectRoomOnce(ownedRoom);
                         if (roomRef.current === ownedRoom) {
                             roomRef.current = null;
                             setActiveRoom(null);
@@ -881,8 +919,14 @@ function SessionRoom() {
 
         connect();
 
-        return () => {
+        return committedRoomLifecycle(() => {
+            if (cancelled) return;
             cancelled = true;
+            playback?.dispose();
+            if (stagePlaybackRef.current === playback) stagePlaybackRef.current = null;
+            setIsStageAudioPlaying(false);
+            setIsConnected(false);
+            setConnectionState("disconnected");
             if (presenceTimer) clearInterval(presenceTimer);
             reportPresence('left');
             if (stageRefreshRef.current) {
@@ -891,7 +935,7 @@ function SessionRoom() {
             }
             if (ownedRoom) {
                 intentionalDisconnectRef.current = true;
-                ownedRoom.disconnect();
+                disconnectRoomOnce(ownedRoom);
                 if (roomRef.current === ownedRoom) {
                     roomRef.current = null;
                     setActiveRoom(null);
@@ -902,7 +946,7 @@ function SessionRoom() {
                 el.remove();
             });
             audioElements.clear();
-        };
+        }, () => setRetryToken(value => value + 1));
     }, [id, inviteCode, embeddedInCockpit, retryToken, readStage, scheduleStageRefresh, applyVideoSubscriptions, scheduleAutoReconnect]);
 
     useEffect(() => () => {
@@ -948,14 +992,6 @@ function SessionRoom() {
             stageExitTriggerRef.current?.focus();
         }
     }, [stageExitConfirming]);
-
-    useEffect(() => {
-        if (sessionExitConfirming) {
-            sessionExitCancelRef.current?.focus();
-        } else {
-            sessionExitTriggerRef.current?.focus();
-        }
-    }, [sessionExitConfirming]);
 
     useEffect(() => {
         const sessionVol = volume * mix;
@@ -1189,6 +1225,8 @@ function SessionRoom() {
                                 className="ml-2 inline-flex items-center gap-1"
                                 data-testid="connection-state"
                                 data-state={connectionState}
+                                data-beacon-audio={isBeaconPlaying ? 'ready' : 'blocked'}
+                                data-stage-audio={isStageAudioPlaying ? 'ready' : 'blocked'}
                             >
                                 <span className={`inline-block h-1.5 w-1.5 rounded-full ${CONNECTION_DOT[connectionState] ?? "bg-white/30"}`} />
                                 {connectionLabel}
@@ -1214,7 +1252,7 @@ function SessionRoom() {
                         {principalKind === "staff" && !embeddedInCockpit && (
                             <button
                                 type="button"
-                                onClick={() => void openStaffConsole()}
+                                onClick={event => { event.currentTarget.focus(); requestExit(openStaffConsole); }}
                                 className="inline-flex min-h-11 items-center rounded border border-[var(--gold)]/40 px-3 py-2 text-xs text-[var(--gold)] hover:bg-[var(--gold)]/10"
                             >
                                 {copy.session.staffConsole}
@@ -1244,7 +1282,7 @@ function SessionRoom() {
                         audioOnly={audioOnly}
                     />
 
-                    {!isBeaconPlaying && (
+                    {(!isBeaconPlaying || !isStageAudioPlaying) && (
                         <div className="event-card w-full max-w-md text-center" role="group" aria-label={copy.session.audioActivationLabel}>
                             <p className="mb-3 text-sm text-[var(--text-secondary)]">
                                 {copy.session.audioPrompt}
@@ -1565,46 +1603,13 @@ function SessionRoom() {
                         </p>
                     )}
                     <div className="mx-auto mt-5 max-w-md border-t border-[var(--border-subtle)] pt-4 text-center">
-                        {!sessionExitConfirming ? (
-                            <button
-                                type="button"
-                                ref={sessionExitTriggerRef}
-                                onClick={() => setSessionExitConfirming(true)}
-                                className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
-                            >
-                                {copy.session.leaveSession}
-                            </button>
-                        ) : (
-                            <div
-                                role="alertdialog"
-                                aria-modal="true"
-                                aria-label={copy.session.leaveSession}
-                                onKeyDown={(event) => keepFocusInsideDialog(
-                                    event,
-                                    () => setSessionExitConfirming(false),
-                                )}
-                                className="rounded border border-[var(--danger)]/40 bg-[var(--surface-alt)] p-3"
-                            >
-                                <p className="text-sm leading-6 text-[var(--text-secondary)]">{copy.session.leaveSessionBody}</p>
-                                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-center">
-                                    <button
-                                        type="button"
-                                        onClick={leaveSession}
-                                        className="event-button event-button--secondary"
-                                    >
-                                        {copy.session.leaveSessionConfirm}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        ref={sessionExitCancelRef}
-                                        onClick={() => setSessionExitConfirming(false)}
-                                        className="event-button event-button--secondary"
-                                    >
-                                        {copy.session.leaveSessionCancel}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
+                        <button
+                            type="button"
+                            onClick={event => { event.currentTarget.focus(); requestExit(leaveSession); }}
+                            className="min-h-11 px-3 text-sm text-[var(--text-muted)] underline decoration-white/20 underline-offset-4 hover:text-[var(--cream)]"
+                        >
+                            {copy.session.leaveSession}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1615,7 +1620,7 @@ function SessionRoom() {
 export default function SessionRoomPage() {
     const { id } = useParams<{ id: string }>();
 
-    return <SessionEntryGate sessionId={id} />;
+    return <RoomExitProvider><SessionEntryGate sessionId={id} /></RoomExitProvider>;
 }
 
 type EntryState = 'WAITING' | 'READY' | 'ENDED' | 'CANCELLED';

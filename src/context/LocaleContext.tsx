@@ -108,6 +108,14 @@ export function LocaleProvider({
     return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
 
+// Static standalone previews can retain their supplied locale; the live root
+// always supplies context so even the no-JavaScript-enhancement fallback updates.
+export function useOptionalLocale() { return useContext(LocaleContext); }
+
+export function useLocaleOrInitial(initial: UiLocale): UiLocale {
+    return useContext(LocaleContext)?.locale ?? initial;
+}
+
 export function useLocale(): LocaleValue {
     const value = useContext(LocaleContext);
     if (!value) {

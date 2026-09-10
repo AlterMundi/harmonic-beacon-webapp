@@ -83,7 +83,10 @@ audit entry. There is no MFA claim or MFA policy in this slice.
 - existing `POST /api/auth/logout` revokes locally and returns a 120-second,
   client-secret-signed Account logout initiation bound to the exact central
   `sid`, mode and registered Live origin; `?scope=all` first revokes every
-  local SID for the subject. Live never persists an ID token merely to log out.
+  local SID for the subject. The browser accepts only HTTPS `/account/logout`
+  destinations on the exact issuer already validated for that local session;
+  the navigation link is not an identity-authority input. Live never persists
+  an ID token merely to log out.
 
 Apply the forward-only migration with the feature disabled, seed and review the
 four staff bindings, register exact clients/callbacks, verify discovery and

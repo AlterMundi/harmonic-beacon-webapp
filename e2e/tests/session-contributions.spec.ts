@@ -7,6 +7,7 @@ import {
     installMediaProbe,
     mediaProbeSnapshot,
 } from '../helpers/media-probe';
+import { activateAudioAtMostOnce } from '../helpers/audio-readiness';
 
 /**
  * CHAT-01 UI (#141, PR B): the questions-and-emotions chat end to end, in
@@ -168,7 +169,7 @@ stackTest.describe('session contributions chat (#141)', () => {
                     'connected',
                     { timeout: 30_000 },
                 );
-                await page.getByRole('button', { name: /Start audio|Iniciar audio/i }).click();
+                await activateAudioAtMostOnce(page);
 
                 // Baseline: let the media pipeline settle before touching the
                 // chat (same stable-read discipline as the canonical

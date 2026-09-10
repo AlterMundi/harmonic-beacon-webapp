@@ -13,6 +13,7 @@ const mockReplace = vi.fn();
 const mockRouter = { push: mockPush, replace: mockReplace };
 const navigationMocks = vi.hoisted(() => ({ surface: null as string | null }));
 const audioMocks = vi.hoisted(() => ({
+    isPlaying: false,
     setBeaconVolume: vi.fn(),
     startBeaconAudio: vi.fn().mockResolvedValue(true),
 }));
@@ -29,7 +30,7 @@ vi.mock('@/context/AudioContext', () => ({
     AudioProvider: ({ children }: { children: React.ReactNode }) => children,
     useAudio: () => ({
         audioError: null,
-        isPlaying: false,
+        isPlaying: audioMocks.isPlaying,
         setVolume: audioMocks.setBeaconVolume,
         startAudio: audioMocks.startBeaconAudio,
     }),
@@ -53,6 +54,11 @@ vi.mock('livekit-client', () => {
         remoteParticipants = new Map<string, unknown>();
         activeSpeakers: unknown[] = [];
         state = 'connected';
+        canPlaybackAudio = false;
+        options: RoomOptions;
+        constructor(options: RoomOptions = {}) {
+            this.options = { ...options, webAudioMix: options.webAudioMix ?? false };
+        }
         cameraTrack = {
             restartTrack: vi.fn().mockImplementation(async (options?: { facingMode?: 'user' | 'environment' }) => {
                 if (options?.facingMode) this.cameraFacingMode = options.facingMode;
@@ -93,7 +99,10 @@ vi.mock('livekit-client', () => {
             }
         });
         disconnect = vi.fn();
-        startAudio = vi.fn().mockResolvedValue(undefined);
+        startAudio = vi.fn().mockImplementation(async () => {
+            this.canPlaybackAudio = true;
+            this.emit('audioPlaybackStatusChanged', true);
+        });
         on(event: string, cb: (...args: unknown[]) => void) {
             (this.listeners[event] ||= []).push(cb);
             return this;
@@ -108,8 +117,9 @@ vi.mock('livekit-client', () => {
     }
 
     return {
-        Room: vi.fn().mockImplementation(function RoomCtor() { return new FakeRoom(); }),
+        Room: vi.fn().mockImplementation(function RoomCtor(options?: RoomOptions) { return new FakeRoom(options); }),
         RoomEvent: {
+            AudioPlaybackStatusChanged: 'audioPlaybackStatusChanged',
             TrackSubscribed: 'trackSubscribed',
             TrackUnsubscribed: 'trackUnsubscribed',
             ParticipantConnected: 'participantConnected',
@@ -164,6 +174,7 @@ import SessionRoomPage from '../page';
 import { Room, DisconnectReason, type RoomOptions } from 'livekit-client';
 
 interface EmittableRoom {
+    canPlaybackAudio: boolean;
     emit: (event: string, ...args: unknown[]) => void;
     disconnect: ReturnType<typeof vi.fn>;
     startAudio: ReturnType<typeof vi.fn>;
@@ -217,7 +228,9 @@ const ENTRY_RESPONSE = {
 };
 
 beforeEach(() => {
+    vi.mocked(Room).mockClear();
     navigationMocks.surface = null;
+    audioMocks.isPlaying = false;
     liveKitBehavior.connectFailuresRemaining = 0;
     window.sessionStorage.clear();
     window.localStorage.clear();
@@ -252,15 +265,40 @@ async function renderConnected() {
         level: 1,
         name: 'Test Session',
     })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected'));
 }
+
+import { RoomExitProvider } from '@/components/navigation/RoomExitGuard';
 
 function renderPage(locale: UiLocale = 'en') {
     return render(
         <LocaleProvider initialLocale={locale}>
-            <SessionRoomPage />
+            <RoomExitProvider><a href="/away" onClick={() => mockPush("/away")}>Global exit</a><SessionRoomPage /></RoomExitProvider>
         </LocaleProvider>,
     );
 }
+
+it('keeps stage connected on cancellable unload and retires it once on committed pagehide', async () => {
+    const view = renderPage();
+    await screen.findByTestId('connection-state');
+    await waitFor(() => expect(currentRoom()).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+    await waitFor(() => expect(screen.getByTestId('connection-state')).toHaveAttribute('data-stage-audio', 'ready'));
+    expect(vi.mocked(Room).mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ disconnectOnPageLeave: false }));
+    const room = currentRoom();
+    fireEvent(window, new Event('beforeunload', { cancelable: true }));
+    expect(room.disconnect).not.toHaveBeenCalled();
+    fireEvent(window, new PageTransitionEvent('pagehide', { persisted: true }));
+    expect(room.disconnect).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('connection-state')).not.toHaveAttribute('data-state', 'connected');
+    expect(screen.getByTestId('connection-state')).toHaveAttribute('data-stage-audio', 'blocked');
+    fireEvent(window, new PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(() => expect(currentRoom()).not.toBe(room));
+    await waitFor(() => expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected'));
+    view.unmount();
+    expect(room.disconnect).toHaveBeenCalledOnce();
+});
 
 describe('SessionRoomPage - event entry', () => {
     it('sends an invalid or expired room session back through login before mounting LiveKit', async () => {
@@ -650,6 +688,18 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         expect(options.publishDefaults?.audioPreset).toBeUndefined();
     });
 
+    it('restores the Staff console trigger after pointer activation without implicit focus', async () => {
+        installStaffToken();
+        await renderConnected();
+        const trigger = screen.getByRole('button', { name: 'Stage and hands' });
+        screen.getByRole('link', { name: 'Global exit' }).focus();
+        fireEvent.click(trigger);
+        fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+        expect(trigger).toHaveFocus();
+        expect(currentRoom().disconnect).not.toHaveBeenCalled();
+        expect(mockPush).not.toHaveBeenCalled();
+    });
+
     it('disconnects the standalone room and preserves device intent before opening the cockpit', async () => {
         installStaffToken();
         await renderConnected();
@@ -672,7 +722,13 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
 
         expect(room.disconnect).not.toHaveBeenCalled();
         expect(mockPush).not.toHaveBeenCalled();
+        expect(await screen.findByRole('alertdialog', { name: 'Leave the room?' })).toBeVisible();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
         await waitFor(() => expect(releaseCamera).toBeTypeOf('function'));
+        // Approval must still wait for the original in-flight device operation.
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(mockPush).not.toHaveBeenCalled();
         releaseCamera?.();
 
         await waitFor(() => expect(room.disconnect).toHaveBeenCalledOnce());
@@ -1071,22 +1127,34 @@ describe('SessionRoomPage - stage invitation consent', () => {
 });
 
 describe('SessionRoomPage - deliberate session exit', () => {
+    it('guards global navigation without disconnecting or reactivating the active room', async () => {
+        await renderConnected();
+        const room = currentRoom();
+        const link = screen.getByRole('link', { name: 'Global exit' });
+        link.focus(); fireEvent.click(link);
+        expect(mockPush).not.toHaveBeenCalled();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        fireEvent.keyDown(await screen.findByRole('alertdialog'), { key: 'Escape' });
+        expect(link).toHaveFocus();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(audioMocks.startBeaconAudio).not.toHaveBeenCalled();
+    });
     it('separates session exit from everyday controls and disconnects only after confirmation', async () => {
         await renderConnected();
         const room = currentRoom();
 
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
-        const confirmation = screen.getByRole('alertdialog', { name: 'Leave session' });
+        const confirmation = screen.getByRole('alertdialog', { name: 'Leave the room?' });
         expect(confirmation).toHaveAttribute('aria-modal', 'true');
         expect(confirmation).toHaveTextContent(/disconnects this page from the session and Beacon/i);
         expect(room.disconnect).not.toHaveBeenCalled();
-        expect(screen.getByRole('button', { name: 'Stay in the session' })).toHaveFocus();
+        expect(screen.getByRole('button', { name: 'Stay in the room' })).toHaveFocus();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Stay in the session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Stay in the room' }));
         expect(room.disconnect).not.toHaveBeenCalled();
         expect(screen.getByRole('button', { name: 'Leave session' })).toHaveFocus();
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
 
         expect(room.disconnect).toHaveBeenCalledOnce();
         expect(mockPush).toHaveBeenCalledWith('/');
@@ -1303,7 +1371,7 @@ describe('SessionRoomPage - intentional disconnects are not terminal states', ()
         await renderConnected();
 
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
         await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'));
 
         // The real SDK would still fire Disconnected(CLIENT_INITIATED) after
@@ -1399,6 +1467,129 @@ describe('SessionRoomPage - two-room crossfader', () => {
 });
 
 describe('SessionRoomPage - audio activation', () => {
+    it('preserves intentional native stage mute and zero gain during activation', async () => {
+        audioMocks.isPlaying = true;
+        await renderConnected();
+        const audio = document.createElement('audio');
+        // A genuinely blocked source requires activation; an already-playing
+        // source must no longer show a CTA merely because the SDK flag is stale.
+        let paused = true;
+        vi.spyOn(audio, 'paused', 'get').mockImplementation(() => paused);
+        vi.spyOn(audio, 'play')
+            .mockRejectedValueOnce(new DOMException('autoplay denied', 'NotAllowedError'))
+            .mockImplementation(async () => { paused = false; });
+        const track = { kind: 'audio', attach: () => audio, detach: () => [audio] };
+        await act(async () => { currentRoom().emit('trackSubscribed', track, {}); });
+        audio.muted = true;
+        audio.volume = 0;
+        currentRoom().startAudio.mockImplementationOnce(async () => {
+            audio.muted = false;
+            currentRoom().canPlaybackAudio = true;
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        expect(audio.muted).toBe(true);
+        await waitFor(() => expect(screen.queryByRole('group', { name: 'Audio activation' })).toBeNull());
+        expect(audio.volume).toBe(0);
+        expect(currentRoom().disconnect).not.toHaveBeenCalled();
+    });
+
+    it('hides a stale Beacon failure when both rooms recover without another activation', async () => {
+        const view = renderPage();
+        await screen.findByRole('heading', { name: 'Test Session', level: 1 });
+        audioMocks.startBeaconAudio.mockResolvedValueOnce(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        await within(screen.getByRole('group', { name: 'Audio activation' })).findByRole('alert');
+        audioMocks.isPlaying = true;
+        view.rerender(<LocaleProvider initialLocale="en"><RoomExitProvider><a href="/away" onClick={() => mockPush("/away")}>Global exit</a><SessionRoomPage /></RoomExitProvider></LocaleProvider>);
+        expect(screen.queryByRole('group', { name: 'Audio activation' })).toBeNull();
+        expect(screen.getByTestId('connection-state')).toHaveAttribute('data-beacon-audio', 'ready');
+        expect(screen.getByTestId('connection-state')).toHaveAttribute('data-stage-audio', 'ready');
+        expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
+    });
+
+    it('reports native stage blockage even after resolved SDK activation, then observes automatic recovery', async () => {
+        audioMocks.isPlaying = true;
+        await renderConnected();
+        const audio = document.createElement('audio');
+        let paused = true;
+        vi.spyOn(audio, 'paused', 'get').mockImplementation(() => paused);
+        vi.spyOn(audio, 'play').mockResolvedValue(undefined);
+        const track = { kind: 'audio', attach: () => audio, detach: () => [audio] };
+        await act(async () => { currentRoom().emit('trackSubscribed', track, {}); });
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        expect(await within(screen.getByRole('group', { name: 'Audio activation' })).findByRole('alert')).toHaveTextContent('try again');
+        expect(screen.getByTestId('connection-state')).toHaveAttribute('data-stage-audio', 'blocked');
+        act(() => { paused = false; audio.dispatchEvent(new Event('playing')); });
+        expect(screen.queryByRole('group', { name: 'Audio activation' })).toBeNull();
+        expect(screen.getByTestId('connection-state')).toHaveAttribute('data-stage-audio', 'ready');
+        expect(screen.getByTestId('connection-state')).toHaveAttribute('data-beacon-audio', 'ready');
+        expect(currentRoom().disconnect).not.toHaveBeenCalled();
+    });
+
+    it('coalesces repeated activation while one room is still pending', async () => {
+        await renderConnected();
+        let resolve!: () => void;
+        currentRoom().startAudio.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+        audioMocks.startBeaconAudio.mockResolvedValueOnce(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        await act(async () => {});
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        expect(currentRoom().startAudio).toHaveBeenCalledOnce();
+        expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
+        await act(async () => { resolve(); });
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        await waitFor(() => expect(currentRoom().startAudio).toHaveBeenCalledTimes(2));
+    });
+
+    it('ignores pending activation from an obsolete stage room after reconnect', async () => {
+        audioMocks.isPlaying = true;
+        await renderConnected();
+        const oldRoom = currentRoom();
+        let reject!: (reason: Error) => void;
+        oldRoom.startAudio.mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        act(() => { oldRoom.emit('disconnected', DisconnectReason.SIGNAL_CLOSE); });
+        await waitFor(() => expect(currentRoom()).not.toBe(oldRoom), { timeout: 2000 });
+        act(() => {
+            currentRoom().canPlaybackAudio = true;
+            currentRoom().emit('audioPlaybackStatusChanged', true);
+        });
+        await waitFor(() => expect(screen.queryByRole('group', { name: 'Audio activation' })).toBeNull());
+        await act(async () => { reject(new Error('obsolete stage')); });
+        expect(screen.queryByRole('group', { name: 'Audio activation' })).toBeNull();
+        expect(currentRoom().disconnect).not.toHaveBeenCalled();
+    });
+
+    it('keeps stage failure retryable when Beacon is already playing', async () => {
+        audioMocks.isPlaying = true;
+        await renderConnected();
+        const room = currentRoom();
+        room.startAudio.mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'));
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        const activation = screen.getByRole('group', { name: 'Audio activation' });
+        expect(await within(activation).findByRole('alert')).toHaveTextContent('try again');
+        expect(screen.getByRole('button', { name: 'Start audio' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Start audio' })).toBeNull());
+        expect(screen.queryByRole('group', { name: 'Audio activation' })).toBeNull();
+        expect(room.startAudio).toHaveBeenCalledTimes(2);
+        expect(room.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('attempts every source in the gesture even if a native play throws synchronously', async () => {
+        await renderConnected();
+        const audio = document.createElement('audio');
+        const play = vi.spyOn(audio, 'play').mockImplementation(() => { throw new DOMException('blocked', 'NotAllowedError'); });
+        const track = { kind: 'audio', attach: () => audio, detach: () => [audio] };
+        await act(async () => { currentRoom().emit('trackSubscribed', track, {}); });
+        play.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+        expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
+        expect(currentRoom().startAudio).toHaveBeenCalledOnce();
+        expect(play).toHaveBeenCalledOnce();
+        expect(await within(screen.getByRole('group', { name: 'Audio activation' })).findByRole('alert')).toBeVisible();
+    });
+
     it('starts both LiveKit rooms before awaiting either one', async () => {
         await renderConnected();
         const stageAudio = document.createElement('audio');
