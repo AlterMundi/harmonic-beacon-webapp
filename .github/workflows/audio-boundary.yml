@@ -8,7 +8,7 @@ name: Audio boundary
 on:
   pull_request:
     branches: [main, release]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
 
 permissions:
   pull-requests: read

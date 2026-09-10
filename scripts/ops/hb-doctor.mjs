@@ -13,13 +13,55 @@ function result(level, check, detail, extra = {}) {
   return { level, check, detail, ...extra };
 }
 
+export function inspectLocalRoutes(service, pathExists = (path) => existsSync(resolve(REPO_ROOT, path))) {
+  return [...service.localPaths, ...service.workflows, ...service.recoveryDocs].map((path) =>
+    result(pathExists(path) ? 'ok' : 'error', `${service.id}.file`, path));
+}
+
+export async function inspectBranchSource(service, source, pathExists) {
+  const paths = [...source.paths, ...source.workflows, ...source.recoveryDocs];
+  const results = [];
+  for (const path of paths) {
+    const exists = await pathExists(path, source.ref);
+    results.push(result(exists ? 'ok' : 'error', `${service.id}.branch-file`, `${source.ref}:${path}`));
+  }
+  return results;
+}
+
+export function evaluateDeliveryProtection(policy, branch, protection) {
+  if (!protection) return { ok: false, detail: `${branch}: branch protection unavailable` };
+  const contexts = new Set([
+    ...(protection.required_status_checks?.contexts ?? []),
+    ...(protection.required_status_checks?.checks ?? []).map(({ context }) => context),
+  ]);
+  if (!contexts.has(policy.requiredContext)) {
+    return { ok: false, detail: `${branch}: missing required context ${policy.requiredContext}` };
+  }
+  if (policy.requirePullRequest && !protection.required_pull_request_reviews) {
+    return { ok: false, detail: `${branch}: pull requests are not required` };
+  }
+  if (policy.allowForcePushes === false && protection.allow_force_pushes?.enabled !== false) {
+    return { ok: false, detail: `${branch}: force pushes are enabled` };
+  }
+  if (policy.requireCodeOwnerReviews && protection.required_pull_request_reviews?.require_code_owner_reviews !== true) {
+    return { ok: false, detail: `${branch}: code-owner review is not required` };
+  }
+  if (policy.allowDeletions === false && protection.allow_deletions?.enabled !== false) {
+    return { ok: false, detail: `${branch}: branch deletion is enabled` };
+  }
+  if (policy.requireUpToDate && protection.required_status_checks?.strict !== true) {
+    return { ok: false, detail: `${branch}: base updates do not require an up-to-date head` };
+  }
+  return { ok: true, detail: `${branch}: protected with PR/code-owner review, strict base, no force pushes/deletion and ${policy.requiredContext}` };
+}
+
 export function validateCatalog(catalog) {
   if (catalog?.schemaVersion !== 1 || !Array.isArray(catalog.services) || catalog.services.length === 0) {
     throw new Error('platform service catalog must use schemaVersion 1 and contain services');
   }
   const seen = new Set();
   for (const service of catalog.services) {
-    const required = ['id', 'name', 'repository', 'lanes', 'localPaths', 'workflows', 'health', 'recoveryDocs', 'alerts', 'runner', 'mutation'];
+    const required = ['id', 'name', 'repository', 'authority', 'lanes', 'localPaths', 'workflows', 'branchSources', 'health', 'recoveryDocs', 'alerts', 'runner', 'mutation'];
     for (const key of required) {
       if (!(key in service)) throw new Error(`${service.id ?? 'service'} is missing ${key}`);
     }
@@ -27,8 +69,36 @@ export function validateCatalog(catalog) {
       throw new Error(`invalid or duplicate service id: ${service.id}`);
     }
     seen.add(service.id);
-    for (const key of ['lanes', 'localPaths', 'workflows', 'health', 'recoveryDocs']) {
+    for (const key of ['lanes', 'localPaths', 'workflows', 'branchSources', 'health', 'recoveryDocs']) {
       if (!Array.isArray(service[key])) throw new Error(`${service.id}.${key} must be an array`);
+    }
+    if (!['confirmed', 'unresolved'].includes(service.authority?.status) || typeof service.authority?.detail !== 'string' || !service.authority.detail) {
+      throw new Error(`${service.id} has an invalid authority contract`);
+    }
+    for (const source of service.branchSources) {
+      if (typeof source?.ref !== 'string' || !source.ref || source.ref.startsWith('refs/pull/')) {
+        throw new Error(`${service.id} has an invalid branch source ref`);
+      }
+      for (const key of ['paths', 'workflows', 'recoveryDocs']) {
+        if (!Array.isArray(source[key])) throw new Error(`${service.id} branch source ${source.ref}.${key} must be an array`);
+      }
+    }
+    const hasRoute = service.workflows.length > 0
+      || service.recoveryDocs.length > 0
+      || service.branchSources.some((source) => source.workflows.length > 0 || source.recoveryDocs.length > 0);
+    if (!hasRoute) throw new Error(`${service.id} has no mechanically verifiable delivery or recovery route`);
+    if (service.deliveryPolicy) {
+      if (!Array.isArray(service.deliveryPolicy.protectedBranches)
+          || service.deliveryPolicy.protectedBranches.length === 0
+          || typeof service.deliveryPolicy.requiredContext !== 'string'
+          || !service.deliveryPolicy.requiredContext
+          || service.deliveryPolicy.requirePullRequest !== true
+          || service.deliveryPolicy.requireCodeOwnerReviews !== true
+          || service.deliveryPolicy.requireUpToDate !== true
+          || service.deliveryPolicy.allowForcePushes !== false
+          || service.deliveryPolicy.allowDeletions !== false) {
+        throw new Error(`${service.id} has an invalid delivery policy`);
+      }
     }
     for (const endpoint of service.health) {
       if (!endpoint.name || !endpoint.url?.startsWith('https://') || !Array.isArray(endpoint.expectStatus)) {
@@ -134,6 +204,21 @@ function githubPermission(repository, user) {
   return { login, permission: permissionRank(payload) };
 }
 
+export function githubContentsExist(payload) {
+  return Array.isArray(payload) || (payload !== null && typeof payload === 'object' && typeof payload.sha === 'string');
+}
+
+function githubPathExists(repository, path, ref) {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const payload = run('gh', ['api', `repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`], { optional: true });
+  return payload !== null && githubContentsExist(JSON.parse(payload));
+}
+
+function githubBranchProtection(repository, branch) {
+  const payload = run('gh', ['api', `repos/${repository}/branches/${encodeURIComponent(branch)}/protection`], { optional: true });
+  return payload === null ? null : JSON.parse(payload);
+}
+
 function githubRunnerEvidence(expected) {
   const group = JSON.parse(run('gh', ['api', `orgs/${expected.organization}/actions/runner-groups/${expected.groupId}`]));
   const repositories = JSON.parse(run('gh', ['api', `orgs/${expected.organization}/actions/runner-groups/${expected.groupId}/repositories`])).repositories ?? [];
@@ -230,8 +315,13 @@ export async function inspect({ catalog, options }) {
     results.push(result('ok', `${service.id}.staging`, service.staging?.join(', ') || 'none documented'));
     results.push(result('ok', `${service.id}.alerts`, service.alerts));
     results.push(result('ok', `${service.id}.mutation-policy`, service.mutation));
+    if (service.authority.status === 'unresolved') {
+      results.push(result('warning', `${service.id}.authority`, service.authority.detail));
+    } else {
+      results.push(result('ok', `${service.id}.authority`, service.authority.detail));
+    }
     if (!service.repository) {
-      results.push(result('warning', `${service.id}.authority`, 'canonical owner repository is unresolved'));
+      // The explicit authority result above is the fail-closed route.
     } else if (options.noGithub) {
       results.push(result('skipped', `${service.id}.github`, 'network checks disabled'));
     } else {
@@ -243,6 +333,36 @@ export async function inspect({ catalog, options }) {
         results.push(result('warning', `${service.id}.github`, `unavailable: ${error.message}`));
       }
     }
+
+    if (isLocalRepo(service.repository)) results.push(...inspectLocalRoutes(service));
+
+    for (const source of service.branchSources) {
+      if (options.noGithub || !service.repository) {
+        results.push(result('skipped', `${service.id}.branch-source`, `${source.ref}: network checks disabled or repository unresolved`));
+      } else {
+        results.push(...await inspectBranchSource(
+          service,
+          source,
+          (path, ref) => githubPathExists(service.repository, path, ref),
+        ));
+      }
+    }
+
+    if (service.deliveryPolicy) {
+      for (const branch of service.deliveryPolicy.protectedBranches) {
+        if (options.noGithub || !service.repository) {
+          results.push(result('skipped', `${service.id}.delivery-protection`, `${branch}: network checks disabled or repository unresolved`));
+        } else {
+          const evidence = evaluateDeliveryProtection(
+            service.deliveryPolicy,
+            branch,
+            githubBranchProtection(service.repository, branch),
+          );
+          results.push(result(evidence.ok ? 'ok' : 'error', `${service.id}.delivery-protection`, evidence.detail));
+        }
+      }
+    }
+
     if (service.runnerVerification) {
       if (options.noGithub) {
         results.push(result('skipped', `${service.id}.runner-live`, 'network checks disabled'));
@@ -253,12 +373,6 @@ export async function inspect({ catalog, options }) {
         } catch (error) {
           results.push(result('warning', `${service.id}.runner-live`, `not visible to current GitHub credential: ${error.message}`));
         }
-      }
-    }
-
-    if (isLocalRepo(service.repository)) {
-      for (const path of [...service.workflows, ...service.recoveryDocs]) {
-        results.push(result(existsSync(resolve(REPO_ROOT, path)) ? 'ok' : 'error', `${service.id}.file`, path));
       }
     }
 

@@ -11,3 +11,13 @@
 /src/context/AudioContext.tsx @nicoechaniz
 /src/app/session/ @nicoechaniz
 /services/playlist-bot/ @nicoechaniz
+
+# Delivery authority and production mutation surfaces (OPS-C #534).
+/.github/CODEOWNERS @nicoechaniz
+/.github/workflows/ @nicoechaniz
+/scripts/ci/ @nicoechaniz
+/deploy/hb-deploy-root @nicoechaniz
+/deploy/beacon-runner.sudoers @nicoechaniz
+/docker-compose.yml @nicoechaniz
+/Dockerfile @nicoechaniz
+/scripts/live-production/ @nicoechaniz

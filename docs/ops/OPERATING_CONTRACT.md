@@ -62,11 +62,28 @@ must add checks for risks the classifier cannot infer.
 6. Read back exact deployed provenance, health/readiness, private boundaries,
    service-specific behavior, and recovery target.
 
-During the main/release transition, the production Live path remains the
-`release` workflow described by `.github/workflows/deploy.yml` and
-`deploy/README.md`. The restricted `/usr/local/sbin/hb-deploy` path is the
-production mutation boundary. The manual Compose section in older runbooks is
-emergency historical guidance, not ordinary authorization.
+Live delivery has one stable aggregate context, `delivery-gate`, implemented by
+[`.github/workflows/delivery-gate.yml`](../../.github/workflows/delivery-gate.yml)
+and the fail-closed evaluator at
+[`scripts/ci/required-checks.mjs`](../../scripts/ci/required-checks.mjs). The gate
+runs trusted base-side code on a GitHub-hosted runner, evaluates only check runs
+attached to the exact current PR head, includes both sides of renamed paths,
+rejects incomplete GitHub file listings and fails when multiple protected PRs
+share one head SHA. It never checks out or executes candidate bytes.
+Constituent CI/E2E/audio workflow lifecycle events re-evaluate newer reruns;
+per-head concurrency keeps obsolete candidates and manual runs isolated.
+Manual mode emits only `delivery-gate-shadow`, never the required context.
+
+`main` and `release` must require pull requests, code-owner review, an up-to-date
+head and `delivery-gate`, with force pushes and deletion disabled. `release`
+remains the promotion branch and [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)
+plus [`deploy/hb-deploy-root`](../../deploy/hb-deploy-root) remain the reviewed
+production mutation path. `early-birds` is a separate Account/Listener lane: it
+must be independently protected and must never be merged, reset or folded into
+Live reconciliation. Branch-qualified source routes and unresolved Home/PMP
+authority are recorded without guessing in
+[`deploy/platform-services.json`](../../deploy/platform-services.json); `hb doctor`
+fails or warns when those mechanical contracts are absent.
 
 Account/Listener, Home, Analytics, and payment authority have separate release
 ownership. Do not assume a Live deployment updates them. Shared-contract

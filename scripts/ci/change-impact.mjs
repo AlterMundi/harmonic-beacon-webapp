@@ -22,6 +22,31 @@ const checks = {
   release: { check: 'release-qualification', command: 'qualify the exact integrated release candidate before production' },
 };
 
+const contextOrder = [
+  'diff-check',
+  'lint-and-build',
+  'test',
+  'analytics',
+  'e2e',
+  'account',
+  'frozen-audio-paths',
+];
+
+const emittedContexts = {
+  'diff-check': ['diff-check'],
+  skills: ['lint-and-build'],
+  ops: ['lint-and-build'],
+  lintBuild: ['lint-and-build'],
+  unit: ['test'],
+  analytics: ['analytics'],
+  tapestry: ['test'],
+  commerce: ['test'],
+  e2e: ['e2e', 'account'],
+  audio: ['frozen-audio-paths'],
+  workflow: [],
+  release: [],
+};
+
 function normalize(path) {
   return path.replaceAll('\\', '/').replace(/^\.\//, '');
 }
@@ -36,19 +61,32 @@ export function classifyChanges(inputFiles) {
   const required = new Set(['diff-check']);
   const notes = [];
 
+  const documentationFiles = files.filter((file) => file.endsWith('.md') || file.startsWith('docs/'));
+  // Markdown-only changes are excluded by the browser workflow. Do not select a
+  // browser context that GitHub will never emit for those paths.
+  const executableFiles = files.filter((file) => !documentationFiles.includes(file));
   const skillFiles = files.filter((file) => file.startsWith('.agents/skills/'));
   const opsFiles = files.filter((file) => /^(AGENTS\.md|docs\/ops\/OPERATING_CONTRACT\.md|deploy\/(platform-services\.json|schemas\/platform-services\.schema\.json)|scripts\/(hb\.mjs|ops\/|ci\/))/.test(file));
-  const workflowFiles = files.filter((file) => file.startsWith('.github/workflows/') || file === '.github/CODEOWNERS');
-  const analyticsFiles = files.filter((file) => /^(services\/analytics|ops\/analytics|contracts\/analytics)\//.test(file));
-  const tapestryFiles = files.filter((file) => file.startsWith('services/tapestry/'));
-  const playlistFiles = files.filter((file) => file.startsWith('services/playlist-bot/'));
+  const workflowFiles = executableFiles.filter((file) => file.startsWith('.github/workflows/') || file === '.github/CODEOWNERS');
+  const analyticsFiles = executableFiles.filter((file) => /^(services\/analytics|ops\/analytics|contracts\/analytics)\//.test(file));
+  const tapestryFiles = executableFiles.filter((file) => file.startsWith('services/tapestry/'));
+  const playlistFiles = executableFiles.filter((file) => file.startsWith('services/playlist-bot/'));
   const commerceFiles = files.filter((file) => /^(contracts\/commerce-entitlement\/|scripts\/commerce-media-worker\.ts$|src\/app\/api\/internal\/v1\/commerce-entitlements\/)/.test(file));
-  const databaseFiles = files.filter((file) => file.startsWith('prisma/') || file === 'prisma.config.ts');
-  const audioFiles = files.filter((file) => file === 'src/context/AudioContext.tsx' || file.startsWith('src/app/session/') || file.startsWith('services/playlist-bot/'));
-  const e2eFiles = files.filter((file) => file.startsWith('e2e/') || file === 'playwright.config.ts');
-  const appFiles = files.filter((file) => /^(src\/|middleware\.test\.ts$|next\.config\.ts$|package(-lock)?\.json$|Dockerfile$|docker-compose\.yml$|public\/)/.test(file));
-  const deployFiles = files.filter((file) => /^(deploy\/|Dockerfile$|docker-compose\.yml$)/.test(file) && !/^deploy\/(platform-services\.json|schemas\/)/.test(file));
-  const documentationFiles = files.filter((file) => file.endsWith('.md') || file.startsWith('docs/'));
+  const commerceRuntimeFiles = executableFiles.filter((file) => commerceFiles.includes(file));
+  const databaseFiles = executableFiles.filter((file) => file.startsWith('prisma/') || file === 'prisma.config.ts');
+  const audioFiles = executableFiles.filter((file) => file === 'src/context/AudioContext.tsx' || file.startsWith('src/app/session/') || file.startsWith('services/playlist-bot/'));
+  const e2eFiles = executableFiles.filter((file) => file.startsWith('e2e/') || file === 'playwright.config.ts');
+  const appFiles = executableFiles.filter((file) => /^(src\/|middleware\.test\.ts$|next\.config\.ts$|package(-lock)?\.json$|Dockerfile$|docker-compose\.yml$|public\/)/.test(file));
+  const deployFiles = executableFiles.filter((file) => /^(deploy\/|Dockerfile$|docker-compose\.yml$)/.test(file) && !/^deploy\/(platform-services\.json|schemas\/)/.test(file));
+  const deliveryControlFiles = executableFiles.filter((file) =>
+    file === '.github/CODEOWNERS'
+      || file.startsWith('.github/workflows/')
+      || file.startsWith('scripts/ci/')
+      || file === 'deploy/hb-deploy-root'
+      || file === 'deploy/beacon-runner.sudoers'
+      || file === 'docker-compose.yml'
+      || file === 'Dockerfile'
+      || file.startsWith('scripts/live-production/'));
 
   if (skillFiles.length) { categories.add('agent-skills'); required.add('skills'); }
   if (opsFiles.length) { categories.add('operations-tooling'); required.add('ops'); }
@@ -56,12 +94,14 @@ export function classifyChanges(inputFiles) {
   if (analyticsFiles.length) { categories.add('analytics'); required.add('analytics'); }
   if (tapestryFiles.length) { categories.add('tapestry'); add(required, 'tapestry', 'lintBuild', 'unit', 'e2e'); }
   if (playlistFiles.length) { categories.add('playlist-media'); add(required, 'lintBuild', 'unit', 'e2e'); }
-  if (commerceFiles.length) { categories.add('commerce'); add(required, 'commerce', 'lintBuild', 'unit', 'e2e'); }
+  if (commerceFiles.length) { categories.add('commerce'); add(required, 'commerce'); }
+  if (commerceRuntimeFiles.length) { add(required, 'lintBuild', 'unit', 'e2e'); }
   if (databaseFiles.length) { categories.add('database-migrations'); add(required, 'lintBuild', 'unit', 'e2e', 'release'); }
   if (audioFiles.length) { categories.add('frozen-audio'); add(required, 'audio', 'lintBuild', 'unit', 'e2e'); }
   if (e2eFiles.length) { categories.add('browser-tests'); required.add('e2e'); }
   if (appFiles.length) { categories.add('live-app'); add(required, 'lintBuild', 'unit', 'e2e'); }
   if (deployFiles.length) { categories.add('deployment'); add(required, 'workflow', 'lintBuild', 'unit', 'e2e', 'release'); }
+  if (deliveryControlFiles.length) add(required, 'lintBuild', 'unit', 'analytics', 'e2e', 'audio');
   if (documentationFiles.length) categories.add('documentation');
 
   const recognized = new Set([
@@ -80,11 +120,13 @@ export function classifyChanges(inputFiles) {
   if (deployFiles.length || databaseFiles.length) notes.push('Production promotion still requires exact-candidate qualification, live preflight and recovery evidence.');
 
   const orderedKeys = Object.keys(checks).filter((key) => required.has(key));
+  const selectedContexts = new Set(orderedKeys.flatMap((key) => emittedContexts[key]));
   return {
     schemaVersion: 1,
     files,
     categories: [...categories].sort(),
     requiredChecks: orderedKeys.map((key) => checks[key]),
+    requiredContexts: contextOrder.filter((context) => selectedContexts.has(context)),
     notes,
     details: {
       frozenAudioPaths: audioFiles,

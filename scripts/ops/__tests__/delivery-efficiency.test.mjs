@@ -26,6 +26,10 @@ test('full Vitest remains explicit locally and required in hosted CI', () => {
   assert.doesNotMatch(ciWorkflow, /continue-on-error:\s*true[\s\S]{0,200}npm run test:coverage/u);
 });
 
+test('commerce verifier runs inside the mapped test context', () => {
+  assert.match(ciWorkflow, /^\s*- run: npm run contract:commerce:verify$/mu);
+});
+
 test('release qualification retains the full Vitest gate', () => {
   assert.match(deployWorkflow, /^\s+npm test$/mu);
 });

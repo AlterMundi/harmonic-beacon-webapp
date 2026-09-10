@@ -6,24 +6,50 @@
       "id": "home",
       "name": "Public Home",
       "repository": "AlterMundi/harmonicbeacon.com",
+      "authority": {
+        "status": "unresolved",
+        "detail": "Source and CI are known, but the hosting mutation and recovery owner have not been verified."
+      },
       "lanes": ["main"],
       "localPaths": [],
       "workflows": [],
+      "branchSources": [
+        {
+          "ref": "main",
+          "paths": ["package.json"],
+          "workflows": [".github/workflows/ci.yml"],
+          "recoveryDocs": []
+        }
+      ],
       "health": [
         {"name": "public-home", "url": "https://harmonicbeacon.com/", "expectStatus": [200]}
       ],
       "recoveryDocs": [],
       "alerts": "Hosting provider and public HTTP health",
-      "runner": "Home repository hosting workflow; verify its current runner in GitHub",
-      "mutation": "Use the Home repository workflow; never couple it to a Live Docker release."
+      "runner": "Home repository CI is known; verify the current hosting mutation runner and owner before use",
+      "mutation": "Fail closed until the Home hosting mutation and recovery owner are read back; never couple it to a Live Docker release."
     },
     {
       "id": "live",
       "name": "Live and Ops",
       "repository": "AlterMundi/harmonic-beacon-webapp",
+      "authority": {
+        "status": "confirmed",
+        "detail": "The webapp repository owns Live integration; release remains the promotion branch."
+      },
       "lanes": ["main", "release"],
       "localPaths": ["src", "prisma", "docker-compose.yml", "Dockerfile"],
-      "workflows": [".github/workflows/ci.yml", ".github/workflows/e2e.yml", ".github/workflows/deploy.yml", ".github/workflows/audio-boundary.yml"],
+      "workflows": [".github/workflows/ci.yml", ".github/workflows/e2e.yml", ".github/workflows/deploy.yml", ".github/workflows/audio-boundary.yml", ".github/workflows/delivery-gate.yml"],
+      "branchSources": [],
+      "deliveryPolicy": {
+        "protectedBranches": ["main", "release"],
+        "requiredContext": "delivery-gate",
+        "requirePullRequest": true,
+        "requireCodeOwnerReviews": true,
+        "requireUpToDate": true,
+        "allowForcePushes": false,
+        "allowDeletions": false
+      },
       "health": [
         {"name": "live-health", "url": "https://live.harmonicbeacon.com/api/health", "expectStatus": [200], "provenanceField": "gitSha"},
         {"name": "live-readiness", "url": "https://live.harmonicbeacon.com/api/health/ready", "expectStatus": [200]}
@@ -47,26 +73,52 @@
       "id": "account-listener",
       "name": "Beacon Account and Listener",
       "repository": "AlterMundi/harmonic-beacon-webapp",
+      "authority": {
+        "status": "confirmed",
+        "detail": "Account and Listener remain owned by the independent early-birds lane."
+      },
       "lanes": ["early-birds"],
-      "localPaths": ["services/account", "services/listener", "scripts/live-production", "docs/architecture/BEACON_ACCOUNT_LIVE_RP.md"],
+      "localPaths": [],
       "workflows": [],
+      "branchSources": [
+        {
+          "ref": "early-birds",
+          "paths": [
+            "src/app/account",
+            "ops/beacon-account",
+            "ops/listener-account-production",
+            "scripts/beacon-account",
+            "scripts/listener-account-production"
+          ],
+          "workflows": [".github/workflows/early-birds-fast-forward.yml"],
+          "recoveryDocs": [
+            "docs/operations/FOUNDING_LISTENER_RELEASE_CANDIDATE.md",
+            "ops/listener-account-production/README.md"
+          ]
+        }
+      ],
       "health": [
         {"name": "account-readiness", "url": "https://account.harmonicbeacon.com/api/account/health/ready", "expectStatus": [200], "provenanceField": "gitSha"},
         {"name": "listener-public", "url": "https://listen.harmonicbeacon.com/", "expectStatus": [200]}
       ],
       "staging": ["https://account-staging.harmonicbeacon.com/", "https://earlybirds-staging.harmonicbeacon.com/"],
-      "recoveryDocs": ["deploy/LIVE_ACCOUNT_PRODUCTION.md", "docs/architecture/BEACON_ACCOUNT_LIVE_RP.md"],
+      "recoveryDocs": [],
       "alerts": "Account/Listener readiness and paid-listener queue alerts",
-      "runner": "Account/Listener-specific release path; do not infer the Live runner boundary",
-      "mutation": "Use the Account/Listener release scripts and verify OIDC, cookies, logout, quota, membership and Authority contracts."
+      "runner": "Account/Listener early-birds workflow; do not infer the Live runner boundary",
+      "mutation": "Use only the branch-qualified early-birds workflow and runbooks; never fold this lane into Live reconciliation."
     },
     {
       "id": "media-services",
       "name": "Tapestry, playlist and LiveKit media",
       "repository": "AlterMundi/harmonic-beacon-webapp",
+      "authority": {
+        "status": "confirmed",
+        "detail": "Media services are integrated through the Live webapp repository."
+      },
       "lanes": ["main", "release"],
       "localPaths": ["services/tapestry", "services/playlist-bot", "deploy/livekit.yaml"],
       "workflows": [".github/workflows/e2e.yml", ".github/workflows/livekit-capacity.yml", ".github/workflows/audio-boundary.yml"],
+      "branchSources": [],
       "health": [],
       "recoveryDocs": ["deploy/README.md", "docs/ops/LIVEKIT_LOAD_HARNESS.md"],
       "alerts": "Container health, LiveKit target monitor and media-specific alerts",
@@ -77,9 +129,14 @@
       "id": "analytics",
       "name": "First-party Analytics",
       "repository": "AlterMundi/harmonic-beacon-webapp",
+      "authority": {
+        "status": "confirmed",
+        "detail": "Analytics source and operational runbook are owned in the webapp repository."
+      },
       "lanes": ["main"],
       "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics"],
       "workflows": [".github/workflows/ci.yml"],
+      "branchSources": [],
       "health": [],
       "recoveryDocs": ["docs/analytics/RUNBOOK.md", "ops/analytics/restore-verify-analytics.sh"],
       "alerts": "Analytics source freshness, data quality, storage, backup and restore monitors",
@@ -90,9 +147,14 @@
       "id": "commerce-authority",
       "name": "Payments, membership Authority and PMP",
       "repository": null,
+      "authority": {
+        "status": "unresolved",
+        "detail": "The canonical PMP/Authority repository, deployed revision, database and mutation owner remain unresolved."
+      },
       "lanes": [],
       "localPaths": ["contracts/commerce-entitlement", "scripts/commerce-media-worker.ts"],
       "workflows": [],
+      "branchSources": [],
       "health": [],
       "recoveryDocs": ["docs/architecture/COMMERCE_ENTITLEMENT_V1.md", "deploy/README.md"],
       "alerts": "Payment provider, membership authority and durable commerce queue alerts",
