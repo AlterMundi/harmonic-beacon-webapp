@@ -7,9 +7,9 @@ import type { APIRequestContext } from '@playwright/test';
  * - `test` — public surfaces that render without the database (landing in
  *   its documented degraded state, staff login). Always runnable.
  * - `stackTest` — suites that need the full local stack: the app plus the
- *   fixture database restored from `db/test-fixture.sql`. When the stack is
- *   missing, every test skips with a precise reason instead of failing or
- *   silently weakening its assertions. See e2e/README.md for setup.
+ *   fixture database restored from `db/test-fixture.sql`. CI fails closed
+ *   when this required stack is missing. Locally, tests skip with a precise
+ *   reason so public-only development remains possible. See e2e/README.md.
  */
 
 export type StackStatus = 'ok' | 'unreachable';
@@ -41,6 +41,11 @@ export const stackTest = base.extend<{ stack: void }>({
     stack: [
         async ({ request }, use, testInfo) => {
             const status = await probeStack(request);
+            if (process.env.CI && status !== 'ok') {
+                throw new Error(
+                    `CI requires a healthy E2E fixture stack (${status}): ${SKIP_HINTS[status]}`,
+                );
+            }
             testInfo.skip(
                 status !== 'ok',
                 `local e2e stack ${status}: ${status === 'ok' ? '' : SKIP_HINTS[status]}`,

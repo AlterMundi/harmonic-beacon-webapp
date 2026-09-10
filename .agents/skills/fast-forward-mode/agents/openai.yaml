@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fast Forward Mode"
+  short_description: "Deliver verified batches with minimal ceremony"
+  default_prompt: "Use $fast-forward-mode to complete the requested project outcome through successive coherent, verified milestones; continue until the outcome is complete or genuinely blocked."

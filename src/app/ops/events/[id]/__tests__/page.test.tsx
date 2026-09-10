@@ -24,6 +24,7 @@ vi.mock('@/components/ops/ConductorCockpit', () => ({
 }));
 
 import EventPage from '../page';
+import { LocaleProvider } from '@/context/LocaleContext';
 
 describe('canonical staff event page', () => {
     beforeEach(() => {
@@ -44,7 +45,7 @@ describe('canonical staff event page', () => {
             scheduledAt: new Date('2026-08-01T18:00:00.000Z'),
             facilitatorId: 'fac-1',
         });
-        render(await EventPage({ params: Promise.resolve({ id: 'event-1' }) }));
+        render(<LocaleProvider initialLocale="en">{await EventPage({ params: Promise.resolve({ id: 'event-1' }) })}</LocaleProvider>);
 
         expect(screen.getByRole('heading', { name: 'The living scene' })).toBeInTheDocument();
         expect(screen.queryByRole('link', { name: /Enter the room/ })).toBeNull();

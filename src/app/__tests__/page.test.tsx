@@ -214,7 +214,7 @@ describe('landing page', () => {
         expect(screen.getAllByText(/USD \$50 Norte Global.*USD \$20 Sur Global/)).toHaveLength(2);
     });
 
-    it('presents a public event as free direct app access without ticket commerce', async () => {
+    it('presents a free public event with the required Account and name-confirmation step', async () => {
         mountDb(vi.fn().mockResolvedValue([{
             ...SATURDAY,
             id: PUBLIC_ID,
@@ -226,6 +226,7 @@ describe('landing page', () => {
 
         expect(screen.getByText('Del otro lado del umbral — Encuentro 1 de 4')).toBeInTheDocument();
         expect(screen.getByText('Gratis')).toBeInTheDocument();
+        expect(screen.getByText(/iniciá sesión con Beacon Account y confirmá el nombre/)).toBeInTheDocument();
         expect(screen.getByRole('link', { name: 'Ingresar al evento' })).toHaveAttribute(
             'href',
             `/api/public-sessions/${PUBLIC_ID}/enter`,
@@ -235,9 +236,9 @@ describe('landing page', () => {
     });
 
     it.each([
-        ['third', REMAINING_PUBLIC_ID, '2026-09-05T17:00:00.000Z'],
-        ['fourth', FINAL_PUBLIC_ID, '2026-09-12T17:00:00.000Z'],
-    ])('shows the canonical %s public-cycle schedule at 14:00 Argentina', async (_state, id, storedAt) => {
+        ['third', REMAINING_PUBLIC_ID, '2026-09-05T17:00:00.000Z', '5', '14:00', '17:00'],
+        ['fourth', FINAL_PUBLIC_ID, '2026-09-12T13:00:00.000Z', '12', '10:00', '13:00'],
+    ])('shows the canonical %s public-cycle schedule', async (_state, id, storedAt, day, localTime, utcTime) => {
         const scheduledAt = new Date(storedAt);
         mountDb(vi.fn().mockResolvedValue([{
             ...SATURDAY,
@@ -249,9 +250,9 @@ describe('landing page', () => {
         await renderPage();
 
         expect(document.querySelector('.event-local-time__primary')).toHaveTextContent(
-            /Argentina: sábado, (5|12) de septiembre, 14:00 (ART|GMT-3)/,
+            new RegExp(`Argentina: sábado, ${day} de septiembre, ${localTime} (ART|GMT-3)`),
         );
-        expect(screen.getByText(/Referencia universal:/)).toHaveTextContent('17:00 UTC');
+        expect(screen.getByText(/Referencia universal:/)).toHaveTextContent(`${utcTime} UTC`);
         expect(scheduledAt.toISOString()).toBe(storedAt);
     });
 

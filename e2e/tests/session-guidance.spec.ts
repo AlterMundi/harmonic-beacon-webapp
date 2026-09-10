@@ -7,6 +7,7 @@ import {
     installMediaProbe,
     mediaProbeSnapshot,
 } from '../helpers/media-probe';
+import { activateAudioAtMostOnce } from '../helpers/audio-readiness';
 
 /**
  * UX-COPY-01 (#142): the listening guidance end to end, in real browsers
@@ -111,7 +112,7 @@ stackTest.describe('session listening guidance (#142)', () => {
                     'connected',
                     { timeout: 30_000 },
                 );
-                await page.getByRole('button', { name: /Start audio|Iniciar audio/i }).click();
+                await activateAudioAtMostOnce(page);
 
                 // Baseline: let the media pipeline settle before touching the
                 // guidance (same stable-read discipline as the canonical

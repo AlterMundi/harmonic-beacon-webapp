@@ -1,6 +1,10 @@
-import { createElement, type ReactNode } from 'react';
+'use client';
+
+import { createElement, useEffect, useRef, type ReactNode } from 'react';
+import { useLocaleOrInitial, useOptionalLocale } from '@/context/LocaleContext';
 import Script from 'next/script';
 
+import { liveNavigationCopy } from '@/lib/live-navigation-copy';
 import type { UiLocale } from '@/lib/i18n';
 
 // Byte-pinned local snapshot of harmonicbeacon.com@7e27303. Protected product
@@ -31,7 +35,7 @@ function withLanguage(href: string, locale: UiLocale): string {
 
 export function GlobalNavigation({
     active,
-    locale,
+    locale: initialLocale,
     allowRemoteEnhancement = true,
     accountHref,
     accountAvailable = false,
@@ -46,14 +50,54 @@ export function GlobalNavigation({
     accountSignedIn?: boolean;
     accountMenu?: ReactNode;
 }) {
-    const navLabel = locale === 'es' ? 'Navegación principal' : 'Primary navigation';
-    const userMenuLabel = locale === 'es' ? 'Menú de usuario' : 'User menu';
-    const accountLabel = locale === 'es' ? 'Cuenta' : 'Account';
+    const locale = useLocaleOrInitial(initialLocale);
+    const context = useOptionalLocale();
+    const host = useRef<HTMLElement>(null);
+    const pendingRedraw = useRef<MutationObserver | null>(null);
+    useEffect(() => () => pendingRedraw.current?.disconnect(), []);
+    useEffect(() => {
+        if (!context) return;
+        const change = (event: MouseEvent) => {
+            if (!/^\/(?:session|ops\/events)\/[^/]+\/?$/.test(location.pathname)) return;
+            const button = event.composedPath().find(node => node instanceof HTMLButtonElement && node.matches('button.language'));
+            if (!(button instanceof HTMLButtonElement) || (button.getRootNode() as ShadowRoot).host !== host.current) return;
+            // The byte-pinned cross-site asset reloads other product hosts.
+            // Live owns this action at capture phase: update shared client copy
+            // and storage without executing that destructive target handler.
+            event.preventDefault(); event.stopImmediatePropagation();
+            const root = button.getRootNode() as ShadowRoot;
+            const hadFocus = root.activeElement === button;
+            const mobileOpen = root.querySelector('.mobile')?.classList.contains('open') ?? false;
+            // The pinned asset observes document language and replaces its shadow
+            // tree asynchronously. Restore interaction state after that redraw,
+            // not on React's render/effect timing or on the detached old button.
+            pendingRedraw.current?.disconnect();
+            const redraw = new MutationObserver(() => {
+                const current = root.querySelector<HTMLButtonElement>('button.language');
+                if (!current || current === button) return;
+                redraw.disconnect();
+                pendingRedraw.current = null;
+                if (!root.host.isConnected) return;
+                root.querySelector('.mobile')?.classList.toggle('open', mobileOpen);
+                root.querySelector('.toggle')?.setAttribute('aria-expanded', String(mobileOpen));
+                if (hadFocus) current.focus({ preventScroll: true });
+            });
+            pendingRedraw.current = redraw;
+            redraw.observe(root, { childList: true });
+            context.setLocale(locale === 'en' ? 'es' : 'en');
+        };
+        window.addEventListener('click', change, true);
+        return () => window.removeEventListener('click', change, true);
+    }, [context, locale]);
+    const copy = liveNavigationCopy[locale];
+    const navLabel = copy.primary;
+    const userMenuLabel = copy.userMenu;
+    const accountLabel = copy.account;
     const resolvedAccountHref = accountHref ?? 'https://account.harmonicbeacon.com/account';
     const showAccount = accountAvailable || resolvedAccountHref === 'https://account-staging.harmonicbeacon.com/account';
     const showSignedIn = showAccount && accountSignedIn;
     const accountControlLabel = showSignedIn
-        ? (locale === 'es' ? 'Menú de usuario, sesión iniciada' : 'User menu, signed in')
+        ? copy.signedInMenu
         : userMenuLabel;
     const fallback = (
         <nav className="hb-global-navigation-fallback" aria-label={navLabel}>
@@ -68,7 +112,7 @@ export function GlobalNavigation({
                                 href={withLanguage(link.href, locale)}
                                 aria-current={link.key === active ? 'page' : undefined}
                             >
-                                {locale === 'es' ? link.es : link.en}
+                                {copy[link.key]}
                             </a>
                         </li>
                     ))}
@@ -106,6 +150,7 @@ export function GlobalNavigation({
                 dangerouslySetInnerHTML={{ __html: GLOBAL_NAVIGATION_EMBED_GUARD }}
             />
             {createElement('hb-global-nav', {
+                ref: host,
                 'data-surface': active,
                 'data-account-available': showAccount ? '' : undefined,
                 'data-account-signed-in': showSignedIn ? '' : undefined,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const replace = vi.hoisted(() => vi.fn());
@@ -14,11 +14,60 @@ import {
     trustedAccountLogoutURL,
 } from '../LiveNavigationAccountMenu';
 
+import { LocaleProvider } from '@/context/LocaleContext';
+import LanguageControl from '../LanguageControl';
+import { RoomExitProvider, useRoomExit } from '@/components/navigation/RoomExitGuard';
+function ActiveRoom() { useRoomExit(true); return null; }
+
+function render(ui: React.ReactElement<{ locale?: 'es' | 'en' }>) {
+    return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale={ui.props.locale ?? 'en'}>{children}</LocaleProvider> });
+}
+
 const ACCOUNT = 'https://account-staging.harmonicbeacon.com/account' as const;
+const ISSUER = 'https://account-staging.harmonicbeacon.com';
 
 describe('Live navigation Account menu', () => {
+    it('immediately protects the surviving room again when confirmed sign-out fails', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+        render(<LocaleProvider initialLocale="en"><RoomExitProvider><ActiveRoom /><LiveNavigationAccountMenu displayName={null} staffRoleLabel={null} accountHref={ACCOUNT} accountIssuer={ISSUER} locale="en" /></RoomExitProvider></LocaleProvider>);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
+        await screen.findByRole('alert');
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(true);
+        expect(replace).not.toHaveBeenCalled();
+    });
+    it('does not revoke or navigate until confirmed once; Escape returns to sign-out', async () => {
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+        vi.stubGlobal('fetch', fetchMock);
+        render(<LocaleProvider initialLocale="en"><RoomExitProvider><ActiveRoom /><LiveNavigationAccountMenu displayName={null} staffRoleLabel={null} accountHref={ACCOUNT} accountIssuer={ISSUER} locale="en" /></RoomExitProvider></LocaleProvider>);
+        const trigger = screen.getByRole('menuitem', { name: 'Sign out' });
+        trigger.focus(); fireEvent.click(trigger);
+        expect(fetchMock).not.toHaveBeenCalled();
+        fireEvent.keyDown(await screen.findByRole('alertdialog'), { key: 'Escape' });
+        expect(trigger).toHaveFocus();
+        expect(fetchMock).not.toHaveBeenCalled();
+        fireEvent.click(trigger);
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
+        await waitFor(() => expect(replace).toHaveBeenCalledOnce());
+        expect(fetchMock).toHaveBeenCalledOnce();
+    });
+    it('updates the staff role rather than retaining a server-translated label', () => {
+        render(<LocaleProvider initialLocale="en"><LanguageControl /><LiveNavigationAccountMenu displayName={null} staffRole="ADMIN" staffRoleLabel="Administration" accountHref={ACCOUNT} accountIssuer={ISSUER} locale="en" /></LocaleProvider>);
+        fireEvent.click(screen.getByRole('button', { name: 'ES' }));
+        expect(screen.getByText('Administración')).toBeVisible();
+    });
+    it('updates account actions in place with the live locale', () => {
+        render(<LocaleProvider initialLocale="en"><LanguageControl /><LiveNavigationAccountMenu displayName={null} staffRoleLabel={null} accountHref={ACCOUNT} accountIssuer={ISSUER} locale="en" /></LocaleProvider>);
+        fireEvent.click(screen.getByRole('button', { name: 'ES' }));
+        expect(screen.getByRole('menuitem', { name: 'Cerrar sesión' })).toBeVisible();
+        expect(screen.getByRole('menuitem', { name: 'Cuenta' })).toHaveAttribute('href', `${ACCOUNT}?lang=es`);
+    });
     afterEach(() => {
         cleanup();
+        localStorage.clear();
+        document.cookie = 'hb_locale=; Path=/; Max-Age=0';
         vi.unstubAllGlobals();
         vi.clearAllMocks();
     });
@@ -27,7 +76,7 @@ describe('Live navigation Account menu', () => {
         const { rerender } = render(<LiveNavigationAccountMenu
             displayName="Nicolás Echániz"
             staffRoleLabel="Administración"
-            accountHref={ACCOUNT}
+            accountHref={ACCOUNT} accountIssuer={ISSUER}
             locale="es"
         />);
 
@@ -44,7 +93,7 @@ describe('Live navigation Account menu', () => {
         rerender(<LiveNavigationAccountMenu
             displayName="Founder Test"
             staffRoleLabel={null}
-            accountHref={ACCOUNT}
+            accountHref={ACCOUNT} accountIssuer={ISSUER}
             locale="en"
         />);
         expect(screen.queryByRole('menuitem', { name: 'Operations' })).toBeNull();
@@ -59,7 +108,7 @@ describe('Live navigation Account menu', () => {
         render(<LiveNavigationAccountMenu
             displayName="Nicolás"
             staffRoleLabel="Administrator"
-            accountHref={ACCOUNT}
+            accountHref={ACCOUNT} accountIssuer={ISSUER}
             locale="en"
         />);
 
@@ -78,7 +127,7 @@ describe('Live navigation Account menu', () => {
         render(<LiveNavigationAccountMenu
             displayName={null}
             staffRoleLabel={null}
-            accountHref={ACCOUNT}
+            accountHref={ACCOUNT} accountIssuer={ISSUER}
             locale="en"
         />);
 
@@ -89,14 +138,17 @@ describe('Live navigation Account menu', () => {
     });
 
     it.each([
-        ['https://account-staging.harmonicbeacon.com/account/logout?initiation=opaque', true],
-        ['https://account-staging.harmonicbeacon.com/api/account/auth/oauth2/end-session?state=opaque', false],
-        ['https://account.harmonicbeacon.com/account/logout', false],
-        ['https://account-staging.harmonicbeacon.com/account', false],
-        ['https://account-staging.harmonicbeacon.com.evil.example/logout', false],
-        ['javascript:alert(1)', false],
-        ['not a URL', false],
-    ])('validates the Account logout destination %s', (raw, accepted) => {
-        expect(Boolean(trustedAccountLogoutURL(raw, ACCOUNT))).toBe(accepted);
+        ['https://account-staging.harmonicbeacon.com/account/logout?initiation=opaque', ISSUER, true],
+        ['https://127.0.0.1:3410/account/logout?initiation=opaque', 'https://127.0.0.1:3410', true],
+        ['https://account-staging.harmonicbeacon.com/api/account/auth/oauth2/end-session?state=opaque', ISSUER, false],
+        ['https://account.harmonicbeacon.com/account/logout', ISSUER, false],
+        ['https://account-staging.harmonicbeacon.com/account/logout', 'https://account.harmonicbeacon.com', false],
+        ['https://account-staging.harmonicbeacon.com/account', ISSUER, false],
+        ['https://account-staging.harmonicbeacon.com.evil.example/logout', ISSUER, false],
+        ['javascript:alert(1)', ISSUER, false],
+        ['not a URL', ISSUER, false],
+        ['https://account-staging.harmonicbeacon.com/account/logout', 'not an issuer', false],
+    ])('validates the Account logout destination %s against issuer %s', (raw, issuer, accepted) => {
+        expect(Boolean(trustedAccountLogoutURL(raw, issuer))).toBe(accepted);
     });
 });

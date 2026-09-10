@@ -29,7 +29,9 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium",
     "test:e2e:update-snapshots": "playwright test --update-snapshots",
-    "load:livekit": "node scripts/livekit-load-harness.mjs"
+    "load:livekit": "node scripts/livekit-load-harness.mjs",
+    "hb": "node scripts/hb.mjs",
+    "test:ops-tooling": "node --test scripts/ops/__tests__/*.test.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",

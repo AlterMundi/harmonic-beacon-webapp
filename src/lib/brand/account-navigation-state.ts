@@ -34,6 +34,7 @@ export async function locallyKnownLiveAccountSession(
 }
 
 export type LocalLiveNavigationIdentity = {
+    issuer: string;
     displayName: string | null;
     staffRole: LocalizedStaffRole | null;
 };
@@ -95,6 +96,7 @@ export async function locallyKnownLiveNavigationIdentity(
         );
 
         return {
+            issuer: identity.issuer,
             displayName: identity.displayName?.trim() || null,
             staffRole: isStaff ? row.staffUser!.role : null,
         };

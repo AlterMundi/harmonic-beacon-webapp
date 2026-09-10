@@ -36,6 +36,7 @@ export type Messages = {
         heroAccent: string;
         lead: string;
         sessionsHeading: string;
+        accountEntryHint: string;
         loginHeading: string;
         terms: string;
         staff: string;
@@ -578,6 +579,7 @@ export const messages: Record<UiLocale, Messages> = {
             heroAccent: 'encuentros.',
             lead: 'Cuatro sábados para participar desde cualquier lugar. Encuentros gratuitos, virtuales y sincrónicos en castellano.',
             sessionsHeading: 'DEL OTRO LADO DEL UMBRAL · CICLO DE 4 ENCUENTROS',
+            accountEntryHint: 'Para entrar, iniciá sesión con Beacon Account y confirmá el nombre que vas a usar en la sala.',
             loginHeading: '¿YA TENÉS TU ENTRADA?',
             terms: 'Términos y privacidad',
             staff: 'Ingreso del equipo',
@@ -1191,6 +1193,7 @@ export const messages: Record<UiLocale, Messages> = {
             heroAccent: 'gatherings.',
             lead: 'Four Saturdays to join from anywhere. Free, live online gatherings held in Spanish.',
             sessionsHeading: 'BEYOND THE THRESHOLD · A 4-GATHERING CYCLE',
+            accountEntryHint: 'To enter, sign in with Beacon Account and confirm the name you will use in the room.',
             loginHeading: 'ALREADY HAVE A TICKET?',
             terms: 'Terms & privacy',
             staff: 'Staff sign-in',

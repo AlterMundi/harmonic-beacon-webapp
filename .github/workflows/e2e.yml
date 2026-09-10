@@ -61,7 +61,23 @@ jobs:
       E2E_LIVEKIT_URL: ws://localhost:7880
       E2E_LIVEKIT_API_KEY: devkey
       E2E_LIVEKIT_API_SECRET: secret
+      NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1'
     steps:
+      - name: Prepare private short socket root
+        # Never nest socket-bearing TMPDIR under RUNNER_TEMP (unbounded UTF-8).
+        # run.ts nests navigation-account-XXXXXX and makes that child TMPDIR.
+        # Keep the canonical root short even after browser profile nesting.
+        run: &prepare-private-socket-root |
+          set -euo pipefail
+          test "$(id -u)" != 0
+          umask 077
+          root=$(mktemp -d /tmp/bci.XXXXXX)
+          test "$root" = "$(realpath "$root")"
+          test "$(stat -c %u "$root")" = "$(id -u)"
+          test "$(stat -c %a "$root")" = 700
+          mkdir -m 700 "$root/xdg" "$root/logs"
+          printf 'BEACON_CI_ROOT=%s\nTMPDIR=%s\nXDG_RUNTIME_DIR=%s/xdg\n' "$root" "$root" "$root" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -81,6 +97,15 @@ jobs:
       # page with different font metrics and invalidate otherwise-correct
       # visual baselines after the PR has already passed.
       - run: npx playwright install --with-deps chromium
+        name: Install Chromium browser
+
+      - name: Verify executable browser CI selection contracts
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/live-batch-browser-contract.test.ts src/lib/__tests__/live-batch-ci-contract.test.ts
+
+      - name: Run isolated Chromium room-exit helper regressions
+        run: |
+          node --import tsx --test --test-name-pattern='^chromium two identified native RTC sources:' e2e/helpers/continuity-stack.test.ts
+          npx playwright test --config e2e/helpers/playwright.config.ts --retries=0 --workers=1
 
       - name: Start LiveKit dev server
         run: |
@@ -171,7 +196,7 @@ jobs:
       - name: Run Chromium and Android gates
         if: ${{ !inputs.release_gate }}
         run: >-
-          npx playwright test
+          npx playwright test --retries=0 --workers=1
           --project=chromium
           --project=w1440
           --project=w1024
@@ -183,14 +208,14 @@ jobs:
       - name: Run release Chromium and Android functional gates
         if: ${{ inputs.release_gate }}
         run: >-
-          npx playwright test
+          npx playwright test --retries=0 --workers=1
           --project=chromium
           --project=android-chrome
 
       - name: Run release public responsive and visual gates
         if: ${{ inputs.release_gate }}
         run: >-
-          npx playwright test
+          npx playwright test --retries=0 --workers=1
           e2e/tests/responsive.spec.ts
           e2e/tests/visual.spec.ts
           --project=w1440
@@ -198,23 +223,52 @@ jobs:
           --project=w768
           --project=w390
           --project=w320
-          --grep 'responsive public surfaces|visual baselines.*landing'
+          -g 'responsive public surfaces|visual baselines.*landing'
 
       - name: Install Firefox after Chromium screenshot gates
-        if: ${{ !inputs.release_gate }}
+        "if": ${{ !inputs.release_gate }}
         run: npx playwright install --with-deps firefox
 
+      - name: Run isolated Firefox room-exit helper regression
+        run: |
+          if [ '${{ inputs.release_gate }}' != 'true' ]; then
+            node --import tsx --test --test-name-pattern='^Firefox automation reload' e2e/helpers/continuity-stack.test.ts
+          fi
+
+      - name: Start isolated browser audio backend
+        "if": ${{ !inputs.release_gate }}
+        # Firefox needs a real audio backend even for synthesized RTP. Without
+        # one, AudioContext.resume() can remain pending after a genuine click.
+        # Use a job-private socket and null sink, not a browser-policy override.
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils
+          umask 077
+          socket="$BEACON_CI_ROOT/native"
+          pulseaudio --daemonize=yes --use-pid-file=no --exit-idle-time=-1 -n \
+            --log-target="file:$BEACON_CI_ROOT/logs/pulse.log" \
+            --load="module-native-protocol-unix socket=$socket auth-anonymous=0" \
+            --load="module-null-sink sink_name=beacon_ci rate=48000"
+          PULSE_SERVER="unix:$socket" pactl info
+          printf 'PULSE_SERVER=unix:%s\n' "$socket" >> "$GITHUB_ENV"
+
       - name: Run Firefox functional and accessibility gates
-        if: ${{ !inputs.release_gate }}
-        run: npx playwright test --project=firefox
+        "if": ${{ !inputs.release_gate }}
+        run: npx playwright test --retries=0 --workers=1 --project=firefox
 
       - name: Install WebKit after Chromium screenshot gates
-        if: ${{ !inputs.release_gate }}
+        "if": ${{ !inputs.release_gate }}
         run: npx playwright install --with-deps webkit
 
       - name: Run iPhone/WebKit media gate
-        if: ${{ !inputs.release_gate }}
-        run: npx playwright test e2e/tests/media-continuity.spec.ts --project=iphone-webkit
+        "if": ${{ !inputs.release_gate }}
+        run: >-
+          npx playwright test --retries=0 --workers=1
+          e2e/tests/media-continuity.spec.ts
+          e2e/tests/audio-activation.spec.ts
+          e2e/tests/continuity-navigation.spec.ts
+          --project=iphone-webkit
 
       - name: Verify grant, migration, commerce, and invitation durable outbox contracts
         # Real-PostgreSQL proof that grant revisions are serialized across two
@@ -249,7 +303,104 @@ jobs:
         run: docker logs --tail 300 e2e-livekit
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && github.event.repository.private == true
         with:
           name: playwright-report
-          path: playwright-report/
+          retention-days: 3
+          path: |
+            playwright-report/
+            test-results/helpers/
+
+  account:
+    # Separate runner: no attachment to the legacy Account-disabled database/app.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      CI: '1'
+      NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1'
+    steps:
+      - name: Prepare private Account socket and evidence root
+        run: *prepare-private-socket-root
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Verify Account protocol and isolated runtime contracts
+        run: node --import tsx --test e2e/account-fixture/protocol.test.ts e2e/account-fixture/runtime-backend.test.ts
+
+      - name: Install Account browser engines and private audio dependencies
+        run: |
+          if [ '${{ inputs.release_gate }}' = 'true' ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install --with-deps chromium firefox webkit
+          fi
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils
+
+      - name: Run isolated real Account four-project matrix
+        # run.ts owns Docker PG16 + LiveKit v1.13.4, migrations, HTTPS issuer,
+        # isolated build, runtime/source/results receipts and bounded cleanup.
+        # No RP-only filter, list-only qualification or shared-stack fallback.
+        run: |
+          set -euo pipefail
+          test "$(id -u)" != 0
+          umask 077
+          audio=$(mktemp -d "$BEACON_CI_ROOT/pulse-XXXXXX")
+          chmod 700 "$audio"
+          pulseaudio --daemonize=no --use-pid-file=no --exit-idle-time=-1 -n \
+            --log-target="file:$audio/pulse.log" \
+            --load="module-native-protocol-unix socket=$audio/native auth-anonymous=0" \
+            --load="module-null-sink sink_name=account_ci rate=48000" &
+          pulse_pid=$!
+          cleanup_audio() {
+            if kill -0 "$pulse_pid" 2>/dev/null; then
+              kill -TERM "$pulse_pid"
+              for i in $(seq 1 50); do
+                if ! kill -0 "$pulse_pid" 2>/dev/null; then break; fi
+                sleep 0.1
+              done
+              if kill -0 "$pulse_pid" 2>/dev/null; then kill -KILL "$pulse_pid"; fi
+            fi
+          }
+          trap cleanup_audio EXIT
+          for i in $(seq 1 100); do
+            test -S "$audio/native" && break
+            kill -0 "$pulse_pid"
+            sleep 0.05
+          done
+          test -S "$audio/native"
+          export PULSE_SERVER="unix:$audio/native" E2E_ACCOUNT_PULSE_DIR="$audio"
+          pactl info
+          projects=(--project=chromium-account --project=android-chrome-account)
+          if [ '${{ inputs.release_gate }}' != 'true' ]; then
+            projects+=(--project=firefox-account --project=iphone-webkit-account)
+          fi
+          E2E_ACCOUNT_BACKEND=docker node --import tsx e2e/account-fixture/run.ts \
+            "${projects[@]}" --retries=0 --workers=1
+
+      - name: Retain private Account runtime and failure receipts
+        uses: actions/upload-artifact@v4
+        # Test credentials, session-bearing traces and logs must not become
+        # public artifacts. Never upload the copied app, keys or PG data.
+        # Public forks still run the gate, but do not publish these receipts.
+        if: always() && github.event.repository.private == true
+        with:
+          name: account-private-runtime
+          retention-days: 3
+          if-no-files-found: warn
+          path: |
+            ${{ env.BEACON_CI_ROOT }}/**/runtime.json
+            ${{ env.BEACON_CI_ROOT }}/**/source-sha256.json
+            ${{ env.BEACON_CI_ROOT }}/**/logs/**
+            ${{ env.BEACON_CI_ROOT }}/**/results/**
+            ${{ env.BEACON_CI_ROOT }}/pulse-*/pulse.log
