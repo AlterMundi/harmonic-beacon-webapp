@@ -99,5 +99,22 @@ jobs:
           ANALYTICS_DASHBOARD_DATABASE_PASSWORD: dashboard_test_password_0123456789
           ANALYTICS_ENV_FILE: analytics.env.example
         run: |
-          bash -n ops/analytics/*.sh
+          bash -n ops/analytics/*.sh ops/analytics/hb-analytics-delivery-root
+          node --check ops/analytics/notify-analytics-monitor.mjs
+          node --check ops/analytics/synthetic-delivery-drill.mjs
+          node --check services/analytics/src/runtime-provenance.mjs
+          node --check services/analytics/src/delivery-receipt.mjs
+          node -e "JSON.parse(require('node:fs').readFileSync('contracts/analytics-delivery/v1/receipt.schema.json'))"
+          sudo visudo -cf ops/analytics/analytics-runner.sudoers
           docker compose --env-file ops/analytics/analytics.env.example -f ops/analytics/compose.yml config --quiet
+          ANALYTICS_IMAGE_REF="harmonic-beacon/analytics@sha256:$(printf 'a%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_DATABASE_PASSWORD=synthetic \
+          ANALYTICS_SYNTHETIC_HANDOFF_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_SERVER_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_NONPRODUCTION_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_NETWORK_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_SOURCE_SHA="$(printf 'a%.0s' {1..40})" \
+          ANALYTICS_SYNTHETIC_IMAGE_ID="sha256:$(printf 'b%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_IMAGE_DIGEST="sha256:$(printf 'a%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_CONFIG_SHA256="sha256:$(printf 'c%.0s' {1..64})" \
+            docker compose --profile synthetic-staging -f ops/analytics/compose.synthetic.yml config --quiet
