@@ -46,6 +46,16 @@ critical matrices plus exact Live pull/replace actions. Unknown paths expand
 coverage. Labels can only add risk. Missing, failed, cancelled or skipped
 selected checks reject the candidate.
 
+### Catalog evidence semantics
+
+Schema version 2 supersedes every schema version 1 catalog interpretation and any older prose that treated a named runner, staging URL, alert sentence, or runbook as proof by itself.
+
+This slice is catalog truth only; it is not delivery, alert-recipient, staging-drill, or recovery proof. It adds no workflow, helper, deploy adapter, recovery execution, production mutation, or product behavior. A `verified` artifact fingerprint requires a kind-compatible immutable digest or revision. Every kind-bearing evidence object uses the same verified-kind rule: `unknown` is never verified/OK, and verification requires concrete kind-compatible value or evidence. Verified recipient delivery, recovery exercise, and staging drill proof each require a bounded typed successful outcome: enclosing service identifier, globally unique receipt/run identifier, UTC observation time, an exact member of that proof's references, and SHA-256 binding for that referenced content. References or prose alone cannot establish verified proof. A `verified` field means that specific catalog fact has current evidence; it does not promote the whole service to delivered. `documented` produces a doctor warning, `unresolved`, `external`, and `unavailable` produce errors, and `not-applicable` is skipped. Network-disabled endpoint checks are also skipped rather than inferred healthy.
+
+Catalog qualification is intentionally bounded before online checks or report output: UTF-8 input is at most 1,048,576 bytes; at most 64 services; at most 32 health endpoints, 32 staging environments, and 32 unresolved requirements per service; at most 1,024 aggregate endpoint/environment/requirement checks; and at most 2,048 doctor report entries. These conservative ceilings are above the current catalog and are mirrored by the schema's `x-runtimeLimits` contract plus enforceable `maxItems` keywords. Draft 2020-12 cannot express serialized byte size, nested aggregate sums, cross-object outcome identity, or equality between an outcome service/reference and its enclosing object; runtime validation enforces those limits and bindings before inspection.
+
+Account and Listen remain separate services even though they share the webapp repository: both integrate through `main`, both currently deliver through `early-birds`, and each retains its own scripts and operational gaps. Analytics integrates through `main`, but its last documented deployment lane is `release`; its current deployed revision and artifact fingerprint remain unresolved. Authority/PMP owner-repository access remains external and unresolved. Home retains its repository-owned `main:/` Pages contract while its absent staging, recipient proof, and recovery exercise remain explicit gaps.
+
 ### Impact-scoped release and recovery (OPS-E)
 
 - Documentation-only changes have no Live deployment action. A bounded CSS

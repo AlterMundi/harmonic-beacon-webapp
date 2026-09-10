@@ -73,8 +73,11 @@ jobs:
           node-version: '22.22'
           cache: 'npm'
       - run: npm ci
-      - name: Reject high-severity app dependency regressions
-        run: npm run audit:production
+      - name: Reject high-severity production dependency regressions
+        run: |
+          npm run audit:production
+          npm --prefix services/home audit --omit=dev --audit-level=high
+          npm --prefix services/commerce-worker audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm run build
         env:
