@@ -9,6 +9,7 @@ export async function leaveConnectedRoom(
 ): Promise<void> {
     const state = surface.getByTestId('connection-state');
     let dialogs: Locator[] = [];
+    let ownerIndex = -1;
     const leave = surface.getByRole('button', { name: /^(?:Leave session|Salir de la sesión)$/i });
     if (await leave.isVisible()) {
         await leave.click();
@@ -27,7 +28,7 @@ export async function leaveConnectedRoom(
         if (counts.reduce((sum, count) => sum + count, 0) !== 1) {
             throw new Error('Ambiguous room exit: multiple confirmation dialogs');
         }
-        const ownerIndex = counts.findIndex((count) => count === 1);
+        ownerIndex = counts.findIndex((count) => count === 1);
         const confirmation = dialogs[ownerIndex];
         await confirmation.getByRole('button', {
             name: /^(?:Leave the room|Salir de la sala|Yes, leave the session|Sí, salir de la sesión)$/i,
@@ -44,9 +45,18 @@ export async function leaveConnectedRoom(
     }
     // Also fail closed if the exit control was missing while still connected.
     await expect(state).toHaveCount(0);
-    // A pending prompt is not successful teardown, including a same-document
-    // successor that cannot be distinguished by its role/label alone.
-    for (const dialog of dialogs) await expect(dialog).toHaveCount(0);
+    // A pending prompt is not successful teardown, including one that appears
+    // between the last ownership sample and the asynchronous state check above.
+    for (const [index, dialog] of dialogs.entries()) {
+        try {
+            await expect(dialog).toHaveCount(0);
+        } catch (error) {
+            if (index !== ownerIndex && await dialog.count() > 0) {
+                throw new Error('Ambiguous room exit: confirmation ownership changed during teardown');
+            }
+            throw error;
+        }
+    }
 }
 
 export const START_AUDIO = /Start audio|Iniciar audio/i;

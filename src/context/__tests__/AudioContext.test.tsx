@@ -53,6 +53,7 @@ vi.mock('@/lib/redact', () => ({
 }));
 
 import { AudioProvider, useAudio } from '../AudioContext';
+import { Room } from 'livekit-client';
 
 function AudioControl() {
     const { audioError, isConnected, isPlaying, startAudio } = useAudio();
@@ -87,8 +88,45 @@ describe('AudioProvider', () => {
 
     afterEach(() => {
         cleanup();
+        vi.unstubAllEnvs();
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('keeps Beacon on cancellable unload, retires once on pagehide and rebuilds after bfcache', async () => {
+        const view = render(<AudioProvider sessionId="session-1"><AudioControl /></AudioProvider>);
+        await screen.findByText('connected');
+        expect(vi.mocked(Room).mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ disconnectOnPageLeave: false }));
+        fireEvent(window, new Event('beforeunload', { cancelable: true }));
+        expect(roomMocks.disconnect).not.toHaveBeenCalled();
+        fireEvent(window, new PageTransitionEvent('pagehide', { persisted: true }));
+        expect(roomMocks.disconnect).toHaveBeenCalledOnce();
+        expect(screen.queryByText('connected')).toBeNull();
+        fireEvent(window, new PageTransitionEvent('pageshow', { persisted: true }));
+        await waitFor(() => expect(roomMocks.connect).toHaveBeenCalledTimes(2));
+        expect(roomMocks.disconnect).toHaveBeenCalledOnce();
+        view.unmount();
+        expect(roomMocks.disconnect).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears native readiness at committed retirement and ignores pending activation after bfcache restore', async () => {
+        roomMocks.canPlaybackAudio = true;
+        render(<AudioProvider sessionId="session-1"><AudioControl /></AudioProvider>);
+        await screen.findByText('connected');
+        expect(screen.getByText('playing')).toBeInTheDocument();
+        let reject!: (reason: Error) => void;
+        roomMocks.startAudio.mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+        fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+        fireEvent(window, new PageTransitionEvent('pagehide', { persisted: true }));
+        expect(screen.getByText('stopped')).toBeInTheDocument();
+        expect(roomMocks.disconnect).toHaveBeenCalledOnce();
+        fireEvent(window, new PageTransitionEvent('pageshow', { persisted: true }));
+        await waitFor(() => expect(roomMocks.connect).toHaveBeenCalledTimes(2));
+        await screen.findByText('playing');
+        await act(async () => { reject(new Error('retired activation')); });
+        expect(screen.queryByRole('alert')).toBeNull();
+        expect(screen.getByText('playing')).toBeInTheDocument();
+        expect(fetch).toHaveBeenCalledTimes(2);
     });
 
     it('reflects playback enabled by entry or device gestures without requiring another click', async () => {
@@ -286,6 +324,9 @@ describe('AudioProvider', () => {
     });
 
     it('keeps a track that arrived before the click attached exactly once', async () => {
+        vi.stubEnv('NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER', '1');
+        const continuityTrackSubscribed = vi.fn(() => { throw new Error('observer failure'); });
+        Object.assign(window, { continuityTrackSubscribed });
         const audio = document.createElement('audio');
         // This case needs activation: native success now correctly overrides a
         // stale SDK false flag, so model actual paused output before the click.
@@ -295,6 +336,7 @@ describe('AudioProvider', () => {
         const attachedElements: HTMLMediaElement[] = [];
         const track = {
             kind: 'audio',
+            mediaStreamTrack: {} as MediaStreamTrack,
             attachedElements,
             attach: vi.fn(() => {
                 if (!attachedElements.includes(audio)) attachedElements.push(audio);
@@ -307,9 +349,10 @@ describe('AudioProvider', () => {
                 return [];
             }),
         };
-        const publication = { track, isSubscribed: true };
+        const publication = { track, isSubscribed: true, trackSid: 'TR_playlist' };
         const participant = {
             identity: 'playlist-bot',
+            sid: 'PA_playlist',
             trackPublications: new Map([['playlist', publication]]),
         };
         roomMocks.remoteParticipants.set(participant.identity, participant);
@@ -322,6 +365,7 @@ describe('AudioProvider', () => {
         await screen.findByText('connected');
 
         roomMocks.handlers.get('trackSubscribed')?.(track, publication, participant);
+        expect(continuityTrackSubscribed).toHaveBeenCalledWith(track.mediaStreamTrack, participant.sid, publication.trackSid);
         expect(track.attach).toHaveBeenCalledOnce();
         expect(document.body.querySelectorAll('audio')).toHaveLength(1);
 

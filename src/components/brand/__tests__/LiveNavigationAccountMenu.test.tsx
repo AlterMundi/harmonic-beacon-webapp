@@ -16,6 +16,8 @@ import {
 
 import { LocaleProvider } from '@/context/LocaleContext';
 import LanguageControl from '../LanguageControl';
+import { RoomExitProvider, useRoomExit } from '@/components/navigation/RoomExitGuard';
+function ActiveRoom() { useRoomExit(true); return null; }
 
 function render(ui: React.ReactElement<{ locale?: 'es' | 'en' }>) {
     return rtlRender(ui, { wrapper: ({ children }) => <LocaleProvider initialLocale={ui.props.locale ?? 'en'}>{children}</LocaleProvider> });
@@ -24,6 +26,32 @@ function render(ui: React.ReactElement<{ locale?: 'es' | 'en' }>) {
 const ACCOUNT = 'https://account-staging.harmonicbeacon.com/account' as const;
 
 describe('Live navigation Account menu', () => {
+    it('immediately protects the surviving room again when confirmed sign-out fails', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+        render(<LocaleProvider initialLocale="en"><RoomExitProvider><ActiveRoom /><LiveNavigationAccountMenu displayName={null} staffRoleLabel={null} accountHref={ACCOUNT} locale="en" /></RoomExitProvider></LocaleProvider>);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
+        await screen.findByRole('alert');
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(true);
+        expect(replace).not.toHaveBeenCalled();
+    });
+    it('does not revoke or navigate until confirmed once; Escape returns to sign-out', async () => {
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+        vi.stubGlobal('fetch', fetchMock);
+        render(<LocaleProvider initialLocale="en"><RoomExitProvider><ActiveRoom /><LiveNavigationAccountMenu displayName={null} staffRoleLabel={null} accountHref={ACCOUNT} locale="en" /></RoomExitProvider></LocaleProvider>);
+        const trigger = screen.getByRole('menuitem', { name: 'Sign out' });
+        trigger.focus(); fireEvent.click(trigger);
+        expect(fetchMock).not.toHaveBeenCalled();
+        fireEvent.keyDown(await screen.findByRole('alertdialog'), { key: 'Escape' });
+        expect(trigger).toHaveFocus();
+        expect(fetchMock).not.toHaveBeenCalled();
+        fireEvent.click(trigger);
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
+        await waitFor(() => expect(replace).toHaveBeenCalledOnce());
+        expect(fetchMock).toHaveBeenCalledOnce();
+    });
     it('updates the staff role rather than retaining a server-translated label', () => {
         render(<LocaleProvider initialLocale="en"><LanguageControl /><LiveNavigationAccountMenu displayName={null} staffRole="ADMIN" staffRoleLabel="Administration" accountHref={ACCOUNT} locale="en" /></LocaleProvider>);
         fireEvent.click(screen.getByRole('button', { name: 'ES' }));

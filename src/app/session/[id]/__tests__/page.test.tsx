@@ -228,6 +228,7 @@ const ENTRY_RESPONSE = {
 };
 
 beforeEach(() => {
+    vi.mocked(Room).mockClear();
     navigationMocks.surface = null;
     audioMocks.isPlaying = false;
     liveKitBehavior.connectFailuresRemaining = 0;
@@ -264,15 +265,40 @@ async function renderConnected() {
         level: 1,
         name: 'Test Session',
     })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected'));
 }
+
+import { RoomExitProvider } from '@/components/navigation/RoomExitGuard';
 
 function renderPage(locale: UiLocale = 'en') {
     return render(
         <LocaleProvider initialLocale={locale}>
-            <SessionRoomPage />
+            <RoomExitProvider><a href="/away" onClick={() => mockPush("/away")}>Global exit</a><SessionRoomPage /></RoomExitProvider>
         </LocaleProvider>,
     );
 }
+
+it('keeps stage connected on cancellable unload and retires it once on committed pagehide', async () => {
+    const view = renderPage();
+    await screen.findByTestId('connection-state');
+    await waitFor(() => expect(currentRoom()).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
+    await waitFor(() => expect(screen.getByTestId('connection-state')).toHaveAttribute('data-stage-audio', 'ready'));
+    expect(vi.mocked(Room).mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ disconnectOnPageLeave: false }));
+    const room = currentRoom();
+    fireEvent(window, new Event('beforeunload', { cancelable: true }));
+    expect(room.disconnect).not.toHaveBeenCalled();
+    fireEvent(window, new PageTransitionEvent('pagehide', { persisted: true }));
+    expect(room.disconnect).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('connection-state')).not.toHaveAttribute('data-state', 'connected');
+    expect(screen.getByTestId('connection-state')).toHaveAttribute('data-stage-audio', 'blocked');
+    fireEvent(window, new PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(() => expect(currentRoom()).not.toBe(room));
+    await waitFor(() => expect(screen.getByTestId('connection-state')).toHaveAttribute('data-state', 'connected'));
+    view.unmount();
+    expect(room.disconnect).toHaveBeenCalledOnce();
+});
 
 describe('SessionRoomPage - event entry', () => {
     it('sends an invalid or expired room session back through login before mounting LiveKit', async () => {
@@ -662,6 +688,18 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
         expect(options.publishDefaults?.audioPreset).toBeUndefined();
     });
 
+    it('restores the Staff console trigger after pointer activation without implicit focus', async () => {
+        installStaffToken();
+        await renderConnected();
+        const trigger = screen.getByRole('button', { name: 'Stage and hands' });
+        screen.getByRole('link', { name: 'Global exit' }).focus();
+        fireEvent.click(trigger);
+        fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+        expect(trigger).toHaveFocus();
+        expect(currentRoom().disconnect).not.toHaveBeenCalled();
+        expect(mockPush).not.toHaveBeenCalled();
+    });
+
     it('disconnects the standalone room and preserves device intent before opening the cockpit', async () => {
         installStaffToken();
         await renderConnected();
@@ -684,7 +722,13 @@ describe('SessionRoomPage - staff cockpit handoff', () => {
 
         expect(room.disconnect).not.toHaveBeenCalled();
         expect(mockPush).not.toHaveBeenCalled();
+        expect(await screen.findByRole('alertdialog', { name: 'Leave the room?' })).toBeVisible();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
         await waitFor(() => expect(releaseCamera).toBeTypeOf('function'));
+        // Approval must still wait for the original in-flight device operation.
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(mockPush).not.toHaveBeenCalled();
         releaseCamera?.();
 
         await waitFor(() => expect(room.disconnect).toHaveBeenCalledOnce());
@@ -1083,22 +1127,34 @@ describe('SessionRoomPage - stage invitation consent', () => {
 });
 
 describe('SessionRoomPage - deliberate session exit', () => {
+    it('guards global navigation without disconnecting or reactivating the active room', async () => {
+        await renderConnected();
+        const room = currentRoom();
+        const link = screen.getByRole('link', { name: 'Global exit' });
+        link.focus(); fireEvent.click(link);
+        expect(mockPush).not.toHaveBeenCalled();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        fireEvent.keyDown(await screen.findByRole('alertdialog'), { key: 'Escape' });
+        expect(link).toHaveFocus();
+        expect(room.disconnect).not.toHaveBeenCalled();
+        expect(audioMocks.startBeaconAudio).not.toHaveBeenCalled();
+    });
     it('separates session exit from everyday controls and disconnects only after confirmation', async () => {
         await renderConnected();
         const room = currentRoom();
 
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
-        const confirmation = screen.getByRole('alertdialog', { name: 'Leave session' });
+        const confirmation = screen.getByRole('alertdialog', { name: 'Leave the room?' });
         expect(confirmation).toHaveAttribute('aria-modal', 'true');
         expect(confirmation).toHaveTextContent(/disconnects this page from the session and Beacon/i);
         expect(room.disconnect).not.toHaveBeenCalled();
-        expect(screen.getByRole('button', { name: 'Stay in the session' })).toHaveFocus();
+        expect(screen.getByRole('button', { name: 'Stay in the room' })).toHaveFocus();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Stay in the session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Stay in the room' }));
         expect(room.disconnect).not.toHaveBeenCalled();
         expect(screen.getByRole('button', { name: 'Leave session' })).toHaveFocus();
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
 
         expect(room.disconnect).toHaveBeenCalledOnce();
         expect(mockPush).toHaveBeenCalledWith('/');
@@ -1315,7 +1371,7 @@ describe('SessionRoomPage - intentional disconnects are not terminal states', ()
         await renderConnected();
 
         fireEvent.click(screen.getByRole('button', { name: 'Leave session' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Yes, leave the session' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Leave the room' }));
         await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'));
 
         // The real SDK would still fire Disconnected(CLIENT_INITIATED) after
@@ -1444,7 +1500,7 @@ describe('SessionRoomPage - audio activation', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Start audio' }));
         await within(screen.getByRole('group', { name: 'Audio activation' })).findByRole('alert');
         audioMocks.isPlaying = true;
-        view.rerender(<LocaleProvider initialLocale="en"><SessionRoomPage /></LocaleProvider>);
+        view.rerender(<LocaleProvider initialLocale="en"><RoomExitProvider><a href="/away" onClick={() => mockPush("/away")}>Global exit</a><SessionRoomPage /></RoomExitProvider></LocaleProvider>);
         expect(screen.queryByRole('group', { name: 'Audio activation' })).toBeNull();
         expect(screen.getByTestId('connection-state')).toHaveAttribute('data-beacon-audio', 'ready');
         expect(screen.getByTestId('connection-state')).toHaveAttribute('data-stage-audio', 'ready');

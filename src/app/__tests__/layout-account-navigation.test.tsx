@@ -44,6 +44,9 @@ vi.mock('@/components/brand/LiveIdentityCacheBoundary', () => ({
 vi.mock('@/context/LocaleContext', () => ({
     LocaleProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="locale-boundary">{children}</div>,
 }));
+vi.mock('@/components/navigation/RoomExitGuard', () => ({
+    RoomExitProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="exit-boundary">{children}</div>,
+}));
 vi.mock('sonner', () => ({ Toaster: () => null }));
 
 import RootLayout from '../layout';
@@ -74,6 +77,8 @@ describe('root layout Account navigation hint', () => {
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-signed-in', 'true');
         expect(screen.getByTestId('global-navigation')).toHaveAttribute('data-account-available', 'true');
         expect(screen.getByTestId('locale-boundary')).toContainElement(screen.getByTestId('local-account-menu'));
+        expect(screen.getByTestId('exit-boundary')).toContainElement(screen.getByTestId('global-navigation'));
+        expect(screen.getByTestId('exit-boundary')).toContainElement(screen.getByRole('main'));
         expect(screen.getByTestId('local-account-menu')).toHaveTextContent('Nicolás');
         expect(screen.getByTestId('local-account-menu')).toHaveAttribute('data-role', 'Administration');
         expect(screen.getByTestId('identity-cache-boundary')).toBeInTheDocument();

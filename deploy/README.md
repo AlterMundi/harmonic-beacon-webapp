@@ -108,37 +108,26 @@ sudo -u beacon-runner sudo -n /usr/local/sbin/hb-deploy preflight \
 ! sudo -u beacon-runner sudo -n /usr/bin/docker ps
 ```
 
-If the dedicated runner is unavailable, use the manual deploy below over the
-separately controlled SSH path; a generic runner is never an acceptable
-fallback.
+If the dedicated runner or root-owned helper is unavailable or differs from the
+tracked `deploy/hb-deploy-root`, stop. There is no authorized direct-Compose or
+generic-runner production fallback.
 
-## Manual deploy on mona
+## Production deployment path
 
-From `/opt/beacon/app`, preserve the untracked production compose override and
-use the canonical project name and environment file:
+The versioned [Deploy workflow](../.github/workflows/deploy.yml) is the sole
+mechanical deployment source of truth. It runs when an exact candidate is
+merged or fast-forwarded to `release`, qualifies that same commit through the
+reusable E2E workflow, verifies the dedicated `beacon-runner` and installed
+helper bytes, preserves immutable rollback images, builds commit-tagged images,
+quiesces writers, applies migrations, replaces the approved services, waits for
+bounded readiness, verifies the public revision and private boundary, and rolls
+back automatically after a failed post-preservation step.
 
-```bash
-export BEACON_IMAGE_TAG=<exact-commit-sha>
-sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
-  --project-name app --env-file /etc/harmonic-beacon/production.env \
-  build app tapestry
-sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
-  --project-name app --env-file /etc/harmonic-beacon/production.env \
-  run --rm --no-deps app npx prisma migrate deploy
-sudo -n env BEACON_IMAGE_TAG="$BEACON_IMAGE_TAG" docker compose \
-  --project-name app --env-file /etc/harmonic-beacon/production.env \
-  up -d --no-deps --force-recreate app commerce-reconciler tapestry
-```
-
-Wait for all three health checks; do not use a fixed sleep as proof:
-
-```bash
-sudo -n docker inspect beacon-app --format '{{.State.Health.Status}}'
-sudo -n docker inspect beacon-commerce-reconciler --format '{{.State.Health.Status}}'
-sudo -n docker inspect beacon-tapestry --format '{{.State.Health.Status}}'
-curl --fail http://127.0.0.1:3000/api/health/ready
-curl --fail https://live.harmonicbeacon.com/api/health/ready
-```
+Do not reproduce those mutable commands in this runbook. Follow the workflow
+steps and their logs for the current candidate. A deployment is successful only
+when the exact `release` SHA has a completed successful Deploy run and the
+public `/api/health` response reports that same `gitSha`; a green PR head or
+local health response is not a deployment receipt.
 
 For commerce rollout, also execute the synthetic ACTIVE/replay/stale/rotation/
 revoke fixtures from the PMP worker and prove public GET and PUT under

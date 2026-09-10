@@ -25,7 +25,7 @@ type SelectionFilters = Pick<PlaywrightTestConfig, 'testMatch' | 'testIgnore' | 
 const acceptanceTitle = 'live continuity without capture: preserves the active event';
 
 // Shared by the real config contract and its in-memory negative controls.
-function assertSelected(topLevel: SelectionFilters, project: SelectionFilters, file: string): void {
+function assertSelected(topLevel: SelectionFilters, project: SelectionFilters, file: string, title = acceptanceTitle): void {
     // Model the default test-file suffix for these repository-relative paths;
     // this is not a matcher for arbitrary configured globs.
     const testMatch = project.testMatch ?? topLevel.testMatch ?? /\.(spec|test)\.[cm]?[jt]sx?$/;
@@ -34,8 +34,8 @@ function assertSelected(topLevel: SelectionFilters, project: SelectionFilters, f
     const grepInvert = project.grepInvert ?? topLevel.grepInvert ?? [];
     expect(matches(testMatch, file), 'testMatch excludes acceptance').toBe(true);
     expect(matches(testIgnore, file), 'testIgnore excludes acceptance').toBe(false);
-    expect(matches(grep, acceptanceTitle), 'grep excludes acceptance').toBe(true);
-    expect(matches(grepInvert, acceptanceTitle), 'grepInvert excludes acceptance').toBe(false);
+    expect(matches(grep, title), 'grep excludes acceptance').toBe(true);
+    expect(matches(grepInvert, title), 'grepInvert excludes acceptance').toBe(false);
 }
 
 const inheritedExclusions: { field: keyof SelectionFilters; pattern: RegExp }[] = [
@@ -99,6 +99,29 @@ describe('Browser selection contract negative controls', () => {
 });
 
 describe('Live continuity batch browser qualification', () => {
+    const desktopCases = [
+        { file: 'e2e/tests/continuity-navigation-lifecycle.spec.ts', title: 'lifecycle: attendee native reload cancellation with real pointer activation retains its document' },
+        { file: 'e2e/tests/navigation-media-probe.spec.ts', title: 'navigation capture probe retains interception after browser garbage collection' },
+    ];
+    for (const { file, title } of desktopCases) {
+        for (const name of ['chromium', 'firefox']) {
+            it(`selects the actual desktop lifecycle/probe title in ${file} on ${name}`, () => {
+                const project = config.projects?.find((entry) => entry.name === name);
+                expect(project).toBeDefined();
+                assertSelected(config, project!, file, title);
+                // The old generic no-capture title would incorrectly pass this exclusion.
+                expect(() => assertSelected(config, { ...project, grep: /live continuity without capture/ }, file, title)).toThrow('grep');
+            });
+        }
+        for (const name of ['android-chrome', 'iphone-webkit']) {
+            it(`does not broaden ${name} into desktop-only ${file}`, () => {
+                const project = config.projects?.find((entry) => entry.name === name);
+                expect(project).toBeDefined();
+                expect(() => assertSelected(config, project!, file, title)).toThrow('testMatch');
+            });
+        }
+    }
+
     for (const name of ['chromium', 'android-chrome', 'firefox', 'iphone-webkit']) {
         for (const file of regressionFiles) {
             it(`selects ${file} on ${name}`, () => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRoomExit } from '@/components/navigation/RoomExitGuard';
 import { useLocale } from '@/context/LocaleContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -50,6 +51,7 @@ export function LiveNavigationAccountMenu({
     const [busy, setBusy] = useState(false);
     const [signOutError, setSignOutError] = useState(false);
     const router = useRouter();
+    const requestExit = useRoomExit();
     const navCopy = liveNavigationCopy[locale];
     const accountURL = new URL(accountHref);
     accountURL.searchParams.set('lang', locale);
@@ -76,6 +78,7 @@ export function LiveNavigationAccountMenu({
         } catch {
             setBusy(false);
             setSignOutError(true);
+            return false;
         }
     }
 
@@ -91,7 +94,7 @@ export function LiveNavigationAccountMenu({
                     {navCopy.operations}
                 </Link>
             )}
-            <button type="button" role="menuitem" disabled={busy} onClick={signOut}>
+            <button type="button" role="menuitem" disabled={busy} onClick={event => { event.currentTarget.focus(); requestExit(signOut); }}>
                 {busy ? navCopy.signingOut : navCopy.signOut}
             </button>
             {signOutError && (

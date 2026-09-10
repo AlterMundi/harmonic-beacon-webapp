@@ -11,6 +11,7 @@ import {
     type Participant,
     type TrackPublication,
 } from 'livekit-client';
+import { committedRoomLifecycle, disconnectRoomOnce } from '@/components/navigation/committed-room-lifecycle';
 import { redactErrorDetail } from '@/lib/redact';
 import { observeRoomAudioPlayback } from '@/lib/room-audio-playback';
 
@@ -102,6 +103,7 @@ export function AudioProvider({
     const [meditationDuration, setMeditationDuration] = useState(0);
     const [currentMeditationFile, setCurrentMeditationFile] = useState<string | null>(null);
 
+    const [pageGeneration, setPageGeneration] = useState(0);
     const roomRef = useRef<Room | null>(null);
     const activationRef = useRef<{ room: Room; promise: Promise<boolean> } | null>(null);
     const connectRef = useRef<(() => Promise<boolean>) | null>(null);
@@ -131,7 +133,7 @@ export function AudioProvider({
     // Initialize LiveKit connection - runs once on mount
     useEffect(() => {
         let cancelled = false;
-        const room = new Room();
+        const room = new Room({ disconnectOnPageLeave: false });
         let connected = false;
         let connecting: Promise<boolean> | null = null;
         setIsConnected(false);
@@ -214,6 +216,13 @@ export function AudioProvider({
                 audioElementsRef.current.set(track, { element: audioElement, identity, publication });
                 syncSourceAvailability();
                 playback.add(audioElement);
+                if (process.env.NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER === '1') {
+                    try {
+                        (window as typeof window & {
+                            continuityTrackSubscribed?: (nativeTrack: MediaStreamTrack, participantSid: string, trackSid: string) => void;
+                        }).continuityTrackSubscribed?.(track.mediaStreamTrack, participant.sid, publication.trackSid);
+                    } catch { /* Test instrumentation must never affect playback. */ }
+                }
 
                 // Tracks can arrive after the user has already unlocked audio.
                 // Start them immediately without rebuilding the SDK attachment.
@@ -270,7 +279,7 @@ export function AudioProvider({
 
                 await room.connect(LIVEKIT_URL, token);
                 if (cancelled) {
-                    room.disconnect();
+                    disconnectRoomOnce(room);
                     return false;
                 }
 
@@ -302,20 +311,27 @@ export function AudioProvider({
         connectRef.current = ensureConnected;
         void ensureConnected();
 
-        return () => {
+        return committedRoomLifecycle(() => {
+            if (cancelled) return;
             cancelled = true;
             if (connectRef.current === ensureConnected) connectRef.current = null;
             playback.dispose();
             if (playbackRef.current === playback) playbackRef.current = null;
-            room.disconnect();
+            setIsConnected(false);
+            setIsPlaying(false);
+            isPlayingRef.current = false;
+            setHasLiveStream(false);
+            hasLiveStreamRef.current = false;
+            setHasPlaylistStream(false);
+            disconnectRoomOnce(room);
             if (roomRef.current === room) roomRef.current = null;
             audioElements.forEach(({ element }) => {
                 element.pause();
                 element.remove();
             });
             audioElements.clear();
-        };
-    }, [LIVEKIT_URL, sessionId]);
+        }, () => setPageGeneration(value => value + 1));
+    }, [LIVEKIT_URL, sessionId, pageGeneration]);
 
     // When beacon goes live, mute playlist audio; unmute when beacon goes offline
     useEffect(() => {

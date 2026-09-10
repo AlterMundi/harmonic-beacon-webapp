@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/context/LocaleContext';
+import { useStaffRoomExitBridge } from '@/components/navigation/RoomExitGuard';
 import type { StaffRole } from '@prisma/client';
 
 import OpsHealthClient from '@/app/ops/health/OpsHealthClient';
@@ -78,6 +79,8 @@ export default function ConductorCockpit({
     const staffRoleLabels = messages.staffRoles;
     const [drawer, setDrawer] = useState<Drawer | null>(null);
     const [status, setStatus] = useState<EventStatus>(session.status);
+    const roomFrameRef = useRef<HTMLIFrameElement>(null);
+    useStaffRoomExitBridge(roomFrameRef, session.id, status === 'LIVE');
     const [stage, setStage] = useState<SpotlightSummary>(EMPTY_STAGE);
     const [stageLoaded, setStageLoaded] = useState(false);
     const [health, setHealth] = useState<HealthLevel>('yellow');
@@ -277,6 +280,7 @@ export default function ConductorCockpit({
                     title={`${copy.roomTitle}: ${session.title}`}
                     allow="camera; microphone; autoplay; fullscreen"
                     className="block h-[min(68vh,760px)] min-h-[520px] w-full bg-[var(--night)] max-[420px]:min-h-[440px]"
+                    ref={roomFrameRef}
                     data-testid="persistent-room"
                 />
             </div>

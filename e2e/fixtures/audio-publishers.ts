@@ -7,7 +7,7 @@ import { SESSION_ES } from './test-data';
  * The same installed LiveKit SDK talks to the genuine local server. This is a
  * test-side publisher, never an app mock or a production endpoint.
  */
-export async function startAudioPublishers(browser: Browser) {
+export async function startAudioPublishers(browser: Browser, options: { beaconOnly?: boolean; ignoreHTTPSErrors?: boolean } = {}) {
     const url = process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880';
     const target = new URL(url);
     if (!['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)) {
@@ -21,14 +21,14 @@ export async function startAudioPublishers(browser: Browser) {
         { room: process.env.E2E_LIVEKIT_ROOM_NAME ?? 'beacon', identity: 'beacon01', frequency: 220 },
         { room: SESSION_ES.roomName, identity: 'e2e-audio-495-stage', frequency: 440 },
     ];
-    const tokens = await Promise.all(sources.map(async (source) => {
+    const tokens = await Promise.all((options.beaconOnly ? sources.slice(0, 1) : sources).map(async (source) => {
         const token = new AccessToken(credentials.key, credentials.secret, {
             identity: source.identity, ttl: '10m',
         });
         token.addGrant({ room: source.room, roomJoin: true, canPublish: true, canSubscribe: false, canPublishData: false });
         return { ...source, token: await token.toJwt() };
     }));
-    const context = await browser.newContext();
+    const context = await browser.newContext({ ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? false });
     const page = await context.newPage();
     try {
         await page.setContent('<button id="publish">Publish fixture audio</button>');
@@ -64,6 +64,10 @@ export async function startAudioPublishers(browser: Browser) {
             };
             Object.assign(window, {
                 fixtureAudioReady: () => ready,
+                fixtureAudioSources: () => rooms.map((room, index) => ({
+                    identity: tokens[index].identity, participantSid: room.localParticipant.sid,
+                    trackSid: [...room.localParticipant.audioTrackPublications.values()][0].trackSid,
+                })),
                 closeFixtureAudio: async () => {
                     await Promise.all(rooms.map((room) => room.disconnect()));
                     oscillators.forEach((oscillator) => oscillator.stop());
@@ -74,13 +78,14 @@ export async function startAudioPublishers(browser: Browser) {
         await page.getByRole('button', { name: 'Publish fixture audio' }).click();
         await page.evaluate(() => (window as unknown as { fixtureAudioReady: () => Promise<void> }).fixtureAudioReady());
         expect(await page.evaluate(() => !!(window as unknown as { closeFixtureAudio?: unknown }).closeFixtureAudio)).toBe(true);
-        return async () => {
+        const sources = await page.evaluate(() => (window as unknown as { fixtureAudioSources: () => { identity: string; participantSid: string; trackSid: string }[] }).fixtureAudioSources());
+        return Object.assign(async () => {
             try {
                 await page.evaluate(() => (window as unknown as { closeFixtureAudio: () => Promise<void> }).closeFixtureAudio());
             } finally {
                 await context.close();
             }
-        };
+        }, { sources });
     } catch (error) {
         await context.close();
         throw error;

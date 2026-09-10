@@ -32,6 +32,10 @@ export interface MediaProbeSnapshot {
     maxConcurrentMediaElements: number;
     /** Track `src` values attached to more than one live element at once. */
     duplicateMediaSources: string[];
+    /** Attempts, including rejected permission requests; not acquired tracks. */
+    captureAttempts: number;
+    audioCaptureAttempts: number;
+    videoCaptureAttempts: number;
     /** User-gesture audio unlock evidence. */
     playCalls: number;
     audioContextsCreated: number;
@@ -47,19 +51,22 @@ export interface MediaProbeSnapshot {
 
 declare global {
     interface Window {
-        __hbMediaProbe?: { snapshot: () => MediaProbeSnapshot };
+        __hbMediaProbe?: { readonly mediaDevices: MediaDevices | undefined; snapshot: () => MediaProbeSnapshot };
     }
 }
 
 /** Install before navigation so every app script is observed. */
-export async function installMediaProbe(page: Page): Promise<void> {
-    await page.addInitScript(() => {
+export async function installMediaProbe(page: Page, options: { denyCapture?: boolean } = {}): Promise<void> {
+    await page.addInitScript(({ denyCapture }: { denyCapture?: boolean }) => {
         const state = {
             audioElements: 0,
             videoElements: 0,
             mediaElementsAttached: 0,
             mediaElementsRemoved: 0,
             maxConcurrentMediaElements: 0,
+            captureAttempts: 0,
+            audioCaptureAttempts: 0,
+            videoCaptureAttempts: 0,
             playCalls: 0,
             audioContextsCreated: 0,
             audioContextResumes: 0,
@@ -120,6 +127,20 @@ export async function installMediaProbe(page: Page): Promise<void> {
             }
         };
         attachObserver();
+
+        const devices = navigator.mediaDevices;
+        if (devices?.getUserMedia) {
+            const originalCapture = devices.getUserMedia;
+            devices.getUserMedia = function (constraints) {
+                state.captureAttempts++;
+                if (constraints?.audio) state.audioCaptureAttempts++;
+                if (constraints?.video) state.videoCaptureAttempts++;
+                // Opt-in device-permission simulation only. App authorization,
+                // RTP and playback are untouched; count before rejecting.
+                if (denyCapture) return Promise.reject(new DOMException('Fixture device permission denied', 'NotAllowedError'));
+                return originalCapture.call(this, constraints);
+            };
+        }
 
         const originalPlay = HTMLMediaElement.prototype.play;
         HTMLMediaElement.prototype.play = function play(...args) {
@@ -190,6 +211,10 @@ export async function installMediaProbe(page: Page): Promise<void> {
         window.WebSocket = ProbeWebSocket;
 
         window.__hbMediaProbe = {
+            // Retain the exact instrumented platform wrapper. WebKit can collect
+            // an unreferenced MediaDevices wrapper and lose its own overrides;
+            // retaining only getUserMedia (or a later wrapper) is insufficient.
+            mediaDevices: devices,
             snapshot: () => ({
                 ...state,
                 audioElements: document.querySelectorAll('audio').length,
@@ -199,7 +224,7 @@ export async function installMediaProbe(page: Page): Promise<void> {
                     .map(([src]) => src),
             }),
         };
-    });
+    }, options);
 }
 
 export async function mediaProbeSnapshot(surface: Page | Frame): Promise<MediaProbeSnapshot> {
@@ -223,6 +248,9 @@ export function expectMediaContinuity(
     options: { ignoreAmbientAudioContextResumes?: boolean } = {},
 ): void {
     const problems: string[] = [];
+    if (after.captureAttempts > before.captureAttempts) {
+        problems.push(`${after.captureAttempts - before.captureAttempts} extra capture attempt(s), including denials`);
+    }
     if (after.livekitSocketsClosed > before.livekitSocketsClosed) {
         problems.push(
             `signaling socket closed ${after.livekitSocketsClosed - before.livekitSocketsClosed} time(s) — equivalent to Room.disconnect()`,

@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { GlobalNavigation } from "@/components/brand/GlobalNavigation";
 import { LiveIdentityCacheBoundary } from "@/components/brand/LiveIdentityCacheBoundary";
 import { LiveNavigationAccountMenu } from "@/components/brand/LiveNavigationAccountMenu";
+import { RoomExitProvider } from "@/components/navigation/RoomExitGuard";
 import { LocaleProvider } from "@/context/LocaleContext";
 import { beaconAccountEnabled } from "@/lib/account-rp";
 import {
@@ -103,7 +104,7 @@ export default async function RootLayout({
           data-surface={analytics.surface}
           data-environment={analytics.environment}
         /> : null}
-        <LocaleProvider initialLocale={locale}>
+        <LocaleProvider initialLocale={locale}><RoomExitProvider>
         <GlobalNavigation
           active={navigationSurface}
           locale={locale}
@@ -140,7 +141,7 @@ export default async function RootLayout({
               },
             }}
           />
-        </LocaleProvider>
+        </RoomExitProvider></LocaleProvider>
       </body>
     </html>
   );
