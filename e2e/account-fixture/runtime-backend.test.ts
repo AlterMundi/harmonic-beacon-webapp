@@ -335,21 +335,20 @@ test('public Playwright failure summary rejects structurally malformed reporter 
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: {} }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [null] }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [{ message: 7 }] }] }] }] }] },
-        { ...validReport, errors: [{}] },
-        { ...validReport, errors: [{ location: { file: 'root.ts', line: 1, column: 1 } }] },
         { ...validReport, errors: [{ message: 'root', location: 'not-a-location' }] },
         { ...validReport, errors: [{ message: 'root', location: { file: 7, line: '1', column: -1 } }] },
+        { ...validReport, errors: [{ message: 'root', stack: 7 }] },
+        { ...validReport, errors: [{ message: 'root', snippet: 7 }] },
+        { ...validReport, errors: [{ message: 'root', value: 7 }] },
+        { ...validReport, errors: [{ message: 'root', cause: 'not-an-error' }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [{ message: 'failed', location: 'not-a-location' }] }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [{ location: { file: 'test.ts', line: 1, column: 1 } }] }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: 'not-an-error' }] }] }] }] },
-        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: {} }] }] }] }] },
-        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { location: { file: 'test.ts', line: 1, column: 1 } } }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { message: 7 } }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { stack: 7 } }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { snippet: 7 } }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { value: 7 } }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { message: 'outer', cause: 'not-an-error' } }] }] }] }] },
-        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { message: 'outer', cause: { location: { file: 'cause.ts', line: 1, column: 1 } } } }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errorLocation: 'not-a-location' }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errorLocation: { file: 'test.ts', line: '1', column: 1 } }] }] }] }] },
     ];
@@ -362,6 +361,20 @@ test('public Playwright failure summary rejects structurally malformed reporter 
     for (const report of malformed) {
         assert.throws(() => backend.summarizePlaywrightFailureReport(report), /Invalid Playwright JSON report/);
     }
+
+    const validRootErrors = [
+        {},
+        { location: { file: 'root.ts', line: 1, column: 1 } },
+        { message: 'private message' },
+        { snippet: 'private snippet' },
+        { stack: 'private stack' },
+        { value: 'private thrown value' },
+        { cause: { location: { file: 'cause.ts', line: 2, column: 3 } } },
+    ];
+    assert.equal(backend.summarizePlaywrightFailureReport({
+        ...validReport,
+        errors: validRootErrors,
+    }).rootErrors, validRootErrors.length);
 
     const validFailure = {
         suites: [{ specs: [{

@@ -38,21 +38,20 @@ function reportErrors(value: unknown): JsonObject[] {
     });
 }
 
-function reportTestError(value: unknown, depth = 0): void {
+function reportTestError(value: unknown, depth = 0): JsonObject {
     if (depth > 16) invalidReport();
     const error = reportObject(value);
-    let hasDiagnostic = false;
     for (const field of ['message', 'snippet', 'stack', 'value']) {
         if (error[field] === undefined) continue;
         if (typeof error[field] !== 'string') invalidReport();
-        hasDiagnostic = true;
     }
     if (error.location !== undefined) reportLocation(error.location);
-    if (error.cause !== undefined) {
-        reportTestError(error.cause, depth + 1);
-        hasDiagnostic = true;
-    }
-    if (!hasDiagnostic) invalidReport();
+    if (error.cause !== undefined) reportTestError(error.cause, depth + 1);
+    return error;
+}
+
+function reportTestErrors(value: unknown): JsonObject[] {
+    return reportArray(value).map(error => reportTestError(error));
 }
 
 const publicProjects = new Set(['chromium-account', 'android-chrome-account', 'firefox-account', 'iphone-webkit-account']);
@@ -70,7 +69,7 @@ function publicSpecFile(value: unknown): string {
 /** Public CI diagnostics contain only source-controlled identifiers and result state. */
 export function summarizePlaywrightFailureReport(value: unknown) {
     const report = reportObject(value);
-    const rootErrors = reportErrors(report.errors);
+    const rootErrors = reportTestErrors(report.errors);
     const stats = reportObject(report.stats);
     const unexpected = reportInteger(stats.unexpected);
     const failures: Array<{ project: string; file: string; line: number; column: number; classification: string }> = [];
