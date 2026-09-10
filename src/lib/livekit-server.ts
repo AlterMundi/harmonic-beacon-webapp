@@ -7,6 +7,7 @@ import {
 } from 'livekit-server-sdk';
 
 import type { StaffRole } from '@prisma/client';
+import { resolveLiveKitPublicUrl } from '@/lib/livekit-public-url';
 
 export type SessionParticipantRole = 'ATTENDEE' | StaffRole;
 
@@ -22,7 +23,7 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 // does not rename already connected participants; production then pins the
 // separate value for subsequent rotations.
 const LIVEKIT_IDENTITY_SECRET = process.env.LIVEKIT_IDENTITY_SECRET || LIVEKIT_API_SECRET;
-const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://live.altermundi.net';
+
 // Server-to-server API endpoint inside the deploy network (compose sets this to
 // http://livekit:7880). When present it wins over the public signaling URL:
 // the app's API calls should not hairpin through nginx and the public TLS
@@ -34,7 +35,7 @@ function getLivekitHttpUrl(): string {
         return LIVEKIT_INTERNAL_URL;
     }
     // Convert wss:// to https:// for API calls
-    return LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
+    return resolveLiveKitPublicUrl().replace('wss://', 'https://').replace('ws://', 'http://');
 }
 
 export function getRoomService(requestTimeoutSeconds?: number): RoomServiceClient {

@@ -134,7 +134,8 @@ describe('production deploy contract', () => {
       rootHelper.match(
         /docker compose --file "\$workspace\/docker-compose\.yml"/g,
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
+    expect(rootHelper).toContain('--file "$workspace/$OCI_OVERLAY"');
     expect(rootHelper).not.toMatch(/\beval\b|\bbash -c\b|\bsh -c\b/);
     expect(
       statSync(join(process.cwd(), 'deploy/hb-deploy-root')).mode & 0o111,

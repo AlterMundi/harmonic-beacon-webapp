@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "harmonic-beacon.runtime-public-config.v1",
+  "publicOrigin": "https://live.harmonicbeacon.com",
+  "livekitPublicUrl": "wss://live.harmonicbeacon.com",
+  "featureFlags": {
+    "tapestryPublic": false,
+    "promoInvitations": true
+  }
+}

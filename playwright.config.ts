@@ -182,7 +182,8 @@ export default defineConfig({
                   // its E2E dashboard gate is disabled.
                   E2E_CLOCK_NOW: '2026-08-21T12:00:00.000Z',
                   SESSION_COOKIE_TTL_SECONDS: '604800',
-                  NEXT_PUBLIC_LIVEKIT_URL: process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+                  LIVEKIT_PUBLIC_URL: process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+                  LIVEKIT_PUBLIC_URL_ALLOWLIST: process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
                   LIVEKIT_API_KEY: process.env.E2E_LIVEKIT_API_KEY ?? 'devkey',
                   LIVEKIT_API_SECRET: process.env.E2E_LIVEKIT_API_SECRET ?? 'secret',
                   LIVEKIT_ROOM_NAME: 'beacon',

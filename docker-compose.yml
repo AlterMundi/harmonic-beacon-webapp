@@ -107,7 +107,6 @@ services:
     build:
       context: .
       args:
-        - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL:-wss://live.harmonicbeacon.com}
         - BEACON_GIT_SHA=${BEACON_GIT_SHA:-unknown}
         - BEACON_BUILD_TIME=${BEACON_BUILD_TIME:-unknown}
         - BEACON_DATABASE_SCHEMA_VERSION=${BEACON_DATABASE_SCHEMA_VERSION:-unknown}
@@ -129,6 +128,8 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
       - LIVEKIT_INTERNAL_URL=http://beacon-livekit:7880
+      - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:?required}
+      - LIVEKIT_PUBLIC_URL_ALLOWLIST=${LIVEKIT_PUBLIC_URL_ALLOWLIST:?required}
       - BEACON_REFERENCE_AUDIO_PATH=/data/beacon-records/luz_de_manana.ogg
     volumes:
       - /mnt/beacon-data/beacon-records:/data/beacon-records:ro

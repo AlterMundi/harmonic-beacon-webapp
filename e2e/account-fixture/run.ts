@@ -144,7 +144,7 @@ async function main() {
         Object.assign(env, { BEACON_ACCOUNT_ENABLED: 'true', BEACON_ACCOUNT_ISSUER_URL: account.issuer, BEACON_ACCOUNT_CLIENT_ID: FIXTURE_CLIENT_ID, BEACON_ACCOUNT_CLIENT_SECRET: FIXTURE_CLIENT_SECRET,
             NODE_EXTRA_CA_CERTS: cert, TICKET_LOGIN_URL_PREFIX: `${liveOrigin}/`, E2E_ACCOUNT_FIXTURE: '1', E2E_ACCOUNT_INSTANCE: suffix, E2E_ACCOUNT_ISSUER: account.issuer, E2E_BASE_URL: liveOrigin, E2E_ACCOUNT_RESULTS: results,
             E2E_DASHBOARD_ENABLED: '1', E2E_CLOCK_NOW: '2026-08-21T12:00:00.000Z', PROMO_INVITATIONS_ENABLED: 'true', SESSION_COOKIE_TTL_SECONDS: '604800',
-            NEXT_PUBLIC_LIVEKIT_URL: 'wss://127.0.0.1:3412', LIVEKIT_INTERNAL_URL: 'http://127.0.0.1:34880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret', LIVEKIT_ROOM_NAME: 'beacon',
+            LIVEKIT_PUBLIC_URL: 'wss://127.0.0.1:3412', LIVEKIT_PUBLIC_URL_ALLOWLIST: 'wss://127.0.0.1:3412', LIVEKIT_INTERNAL_URL: 'http://127.0.0.1:34880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret', LIVEKIT_ROOM_NAME: 'beacon',
             E2E_LIVEKIT_URL: 'wss://127.0.0.1:3412', E2E_LIVEKIT_API_KEY: 'devkey', E2E_LIVEKIT_API_SECRET: 'secret' });
         evidence.state = 'building'; await save();
         await command(process.execPath, ['node_modules/next/dist/bin/next', 'build', '--webpack']);

@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy (legacy shadow fallback)
 
 on:
   push:
@@ -12,6 +12,7 @@ jobs:
   # The reusable workflow checks the exact release commit in a throwaway
   # Postgres + LiveKit + browser stack before mona can run any release step.
   release-e2e:
+    if: vars.HB_LEGACY_MONA_FALLBACK_ENABLED == 'true'
     uses: ./.github/workflows/e2e.yml
 
   deploy:

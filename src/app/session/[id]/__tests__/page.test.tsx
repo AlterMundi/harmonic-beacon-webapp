@@ -209,6 +209,7 @@ const TOKEN_RESPONSE = {
     },
     canPublish: false,
     token: 'test-token',
+    livekitUrl: 'wss://live.example.com',
     identity: 'opaque-attendee-12345678',
     displayName: 'Nico',
     role: 'ATTENDEE',

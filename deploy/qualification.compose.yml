@@ -1,0 +1,99 @@
+name: ${HB_QUALIFICATION_PROJECT:-hb-qualification}
+
+services:
+  postgres:
+    image: ${HB_POSTGRES_IMAGE_REF:?exact postgres digest required}
+    environment:
+      POSTGRES_USER: beacon_qualification
+      POSTGRES_PASSWORD: qualification-only
+      POSTGRES_DB: beacon_qualification
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U beacon_qualification -d beacon_qualification]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  livekit:
+    image: ${HB_LIVEKIT_IMAGE_REF:?exact livekit digest required}
+    command: [--dev, --bind, 0.0.0.0]
+    ports:
+      - 127.0.0.1:${HB_QUALIFICATION_LIVEKIT_PORT:-32880}:7880
+    networks: [media]
+
+  migrate:
+    image: ${HB_APP_IMAGE_REF:?exact app digest required}
+    command: [npx, prisma, migrate, deploy]
+    restart: "no"
+    environment: &app-environment
+      NODE_ENV: production
+      DATABASE_URL: postgresql://beacon_qualification:qualification-only@postgres:5432/beacon_qualification
+      LIVEKIT_INTERNAL_URL: http://livekit:7880
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://127.0.0.1:32880}
+      LIVEKIT_PUBLIC_URL_ALLOWLIST: ${LIVEKIT_PUBLIC_URL_ALLOWLIST:-ws://127.0.0.1:32880}
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+      LIVEKIT_ROOM_NAME: qualification
+      TICKET_CODE_PEPPER: qualification-only-pepper-at-least-32-characters
+      E2E_DASHBOARD_ENABLED: "1"
+    networks: [database, media]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    image: ${HB_APP_IMAGE_REF:?exact app digest required}
+    environment:
+      <<: *app-environment
+      BEACON_ARTIFACT_DIGEST: ${HB_APP_IMAGE_REF:?exact app digest required}
+      BEACON_CONFIG_PROFILE_SHA256: ${HB_CONFIG_PROFILE_SHA256:-qualification}
+    ports:
+      - 127.0.0.1:${HB_QUALIFICATION_APP_PORT:-3210}:3000
+    networks: [database, media]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      livekit:
+        condition: service_started
+
+  commerce-reconciler:
+    image: ${HB_APP_IMAGE_REF:?exact app digest required}
+    command: [npx, tsx, scripts/commerce-media-worker.ts]
+    environment: *app-environment
+    networks: [database, media]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  tapestry:
+    image: ${HB_TAPESTRY_IMAGE_REF:?exact tapestry digest required}
+    environment:
+      TAPESTRY_PORT: "3100"
+      TAPESTRY_HOST: 0.0.0.0
+      TAPESTRY_INTERNAL_SECRET: qualification-only
+      TAPESTRY_SESSION_IDS: 10000000-0000-4000-8000-000000000001
+    networks: [media]
+
+  playlist-bot:
+    image: ${HB_PLAYLIST_IMAGE_REF:?exact playlist digest required}
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+      LIVEKIT_ROOM_NAME: qualification
+      BOT_IDENTITY: playlist-bot
+    networks: [media]
+    depends_on:
+      livekit:
+        condition: service_started
+
+  analytics:
+    image: ${HB_ANALYTICS_IMAGE_REF:?exact analytics digest required}
+    profiles: [analytics]
+    networks: [database]
+
+networks:
+  database:
+    internal: true
+  media:
+    internal: true

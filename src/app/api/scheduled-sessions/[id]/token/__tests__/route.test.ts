@@ -36,6 +36,8 @@ const principal = {
 describe('GET /api/scheduled-sessions/[id]/token', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        process.env.LIVEKIT_PUBLIC_URL = 'wss://live.example.com';
+        process.env.LIVEKIT_PUBLIC_URL_ALLOWLIST = 'wss://live.example.com';
         createSessionJoinToken.mockResolvedValue('stage-jwt');
         finalizeRoomTokenIssue.mockResolvedValue(true);
     });
@@ -88,6 +90,7 @@ describe('GET /api/scheduled-sessions/[id]/token', () => {
         );
         expect(body).toMatchObject({
             token: 'stage-jwt',
+            livekitUrl: 'wss://live.example.com/',
             identity: 'event-stable-opaque',
             room: 'weekend-stage',
             canPublish: false,

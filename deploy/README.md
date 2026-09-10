@@ -5,6 +5,56 @@ PostgreSQL, LiveKit, playlist fallback, tapestry and the durable commerce media
 reconciler. Host Nginx terminates TLS for `live.harmonicbeacon.com` and proxies
 only the public application and LiveKit signaling ports.
 
+## Immutable OCI candidate and promotion lane
+
+OPS-D adds an opt-in, fail-closed lane alongside the existing release path:
+
+1. `.github/workflows/oci-candidate.yml` runs only for integrated `main` source
+   and only when `HB_OCI_CANDIDATES_ENABLED=true`. Hosted CI builds each
+   first-party image once for `linux/amd64`, pushes it, emits BuildKit SBOM and
+   SLSA provenance, signs the exact `repository@sha256:...` reference with
+   GitHub OIDC, and qualifies those same references with `--no-build`.
+2. `scripts/ci/release-manifest.mjs` seals canonical JSON that binds source SHA
+   and tree, dependency lock, build definitions, runtime policy/config hashes,
+   migrations, exact first-party and external image digests, evidence hashes,
+   qualification expiry, the current base manifest, and a complete rollback
+   digest set. Any unknown field or mismatch fails closed.
+3. `.github/workflows/oci-promote.yml` accepts only a successful candidate run
+   from this repository's `main`, an operator-supplied manifest SHA-256, and a
+   typed `shadow` or `production` target. The Mona job is disabled until
+   `HB_OCI_PROMOTION_ENABLED=true`; production additionally uses the protected
+   `production` environment. Candidate files are parsed as data and are never
+   executed with Mona/production credentials.
+4. The root-owned `hb-deploy` route remains mandatory. Its typed
+   `artifact-*` commands verify the installed verifier, manifest, evidence,
+   source/tree, current-base CAS, target config, signatures, SBOMs and
+   provenance before pulling or replacing. Compose invocations always use the
+   OCI overlay, exact digest references, `--no-build`, and `--pull never`.
+
+The existing `.github/workflows/deploy.yml` build-on-Mona lane is a **shadow fallback**
+only during rollout and now requires `HB_LEGACY_MONA_FALLBACK_ENABLED=true`.
+It is not a second promotion mechanism and must be disabled after the OCI lane's
+staging recovery drill. Direct Docker or Compose access by the Actions user is
+never an authorized direct-Compose fallback; `/usr/local/sbin/hb-deploy` is the
+sole privileged route.
+
+Before either OCI workflow can leave its disabled state, an owner/operator must:
+
+- grant the candidate workflow narrowly scoped GHCR package write/attestation
+  capability and provision the named repository variables with exact digest
+  values (never tags);
+- protect the `shadow` and `production` environments and initialize
+  `/var/lib/harmonic-beacon/releases/current-manifest.sha256` from audited live
+  state;
+- install reviewed copies of `deploy/hb-deploy-root`,
+  `deploy/hb-artifact-verify.mjs` (as `hb-artifact-verify`), and
+  `scripts/ci/release-manifest.mjs` root-owned under the paths encoded in the
+  helper; provision `/etc/harmonic-beacon/registry.env` as `0600 root:root`;
+- install and independently pin `cosign`, then complete a shadow qualification
+  and rollback drill before enabling production promotion.
+
+This repository change does not perform any of those owner or host mutations.
+
 ## Host prerequisites
 
 - Docker Engine and Compose v2.
@@ -112,16 +162,18 @@ If the dedicated runner or root-owned helper is unavailable or differs from the
 tracked `deploy/hb-deploy-root`, stop. There is no authorized direct-Compose or
 generic-runner production fallback.
 
-## Production deployment path
+## Legacy shadow fallback path
 
-The versioned [Deploy workflow](../.github/workflows/deploy.yml) is the sole
-mechanical deployment source of truth. It runs when an exact candidate is
-merged or fast-forwarded to `release`, qualifies that same commit through the
-reusable E2E workflow, verifies the dedicated `beacon-runner` and installed
-helper bytes, preserves immutable rollback images, builds commit-tagged images,
-quiesces writers, applies migrations, replaces the approved services, waits for
-bounded readiness, verifies the public revision and private boundary, and rolls
-back automatically after a failed post-preservation step.
+While `HB_LEGACY_MONA_FALLBACK_ENABLED=true`, the versioned
+[Deploy workflow](../.github/workflows/deploy.yml) remains the temporary
+build-on-Mona fallback for the `release` branch. It qualifies that same commit
+through the reusable E2E workflow, verifies the dedicated `beacon-runner` and
+installed helper bytes, preserves immutable rollback images, builds
+commit-tagged images, quiesces writers, applies migrations, replaces the
+approved services, waits for bounded readiness, verifies the public revision
+and private boundary, and rolls back automatically after a failed
+post-preservation step. It must not be invoked as an alternative after the OCI
+promotion lane is enabled for production.
 
 Do not reproduce those mutable commands in this runbook. Follow the workflow
 steps and their logs for the current candidate. A deployment is successful only
