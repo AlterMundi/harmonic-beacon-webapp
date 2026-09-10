@@ -16,7 +16,13 @@ readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-be
 readonly PRIVATE_NETWORK='pmp_beacon_internal'
 readonly EXPECTED_NETWORK_MEMBERS=$'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
 readonly ARTIFACT_VERIFY='/usr/local/libexec/harmonic-beacon/hb-artifact-verify'
+readonly RELEASE_MANIFEST='/usr/local/libexec/harmonic-beacon/release-manifest.mjs'
+readonly TRUSTED_IMPLEMENTATION='/usr/local/libexec/harmonic-beacon/ops-d-implementation.sha256'
 readonly ARTIFACT_STATE='/var/lib/harmonic-beacon/releases'
+readonly CURRENT_STATE="$ARTIFACT_STATE/current-state.json"
+readonly TRANSACTION_ROOT="$ARTIFACT_STATE/transactions"
+readonly ACTIVE_TRANSACTION="$ARTIFACT_STATE/active-transaction"
+readonly TRANSITION_EVIDENCE="$ARTIFACT_STATE/transition-evidence"
 readonly OCI_OVERLAY='deploy/oci-images.compose.yml'
 readonly REGISTRY_ENV='/etc/harmonic-beacon/registry.env'
 
@@ -394,200 +400,548 @@ rollback() {
   die 'rollback services did not become ready'
 }
 
-artifact_receipt() {
-  printf '%s/candidate-%s.json\n' "$ARTIFACT_STATE" "$1"
+artifact_transaction() {
+  printf '%s/transactions/%s\n' "$ARTIFACT_STATE" "$1"
 }
 
-artifact_ref() {
+artifact_receipt() {
+  printf '%s/receipt.json\n' "$(artifact_transaction "$1")"
+}
+
+require_secure_root_file() {
+  local path="$1" mode="$2"
+  [ -f "$path" ] && [ ! -L "$path" ] || die "root-owned file is missing or unsafe: $path"
+  [ "$(stat -c '%U:%G:%a' "$path")" = "root:root:$mode" ] ||
+    die "root-owned file ownership or mode is invalid: $path"
+}
+
+verify_installed_implementation() {
+  local digest path expected_mode helper_seen=false verifier_seen=false module_seen=false
+  require_secure_root_file "$TRUSTED_IMPLEMENTATION" 600
+  while read -r digest path; do
+    validate_sha256 "$digest"
+    case "$path" in
+      /usr/local/sbin/hb-deploy)
+        [ "$helper_seen" = false ] || die 'duplicate helper trust entry'
+        helper_seen=true; expected_mode=755
+        ;;
+      "$ARTIFACT_VERIFY")
+        [ "$verifier_seen" = false ] || die 'duplicate verifier trust entry'
+        verifier_seen=true; expected_mode=755
+        ;;
+      "$RELEASE_MANIFEST")
+        [ "$module_seen" = false ] || die 'duplicate manifest-module trust entry'
+        module_seen=true; expected_mode=644
+        ;;
+      *) die 'trusted implementation manifest contains an unexpected path' ;;
+    esac
+    require_secure_root_file "$path" "$expected_mode"
+  done < "$TRUSTED_IMPLEMENTATION"
+  [ "$helper_seen:$verifier_seen:$module_seen" = true:true:true ] ||
+    die 'trusted implementation manifest must bind each required file exactly once'
+  sha256sum --check --strict "$TRUSTED_IMPLEMENTATION" >/dev/null ||
+    die 'installed privileged implementation digest mismatch'
+}
+
+state_unpack() {
+  local state="$1" destination="$2" encoded expected actual
+  require_secure_root_file "$state" 600
+  [ "$(jq -r '.schemaVersion' "$state")" = 'harmonic-beacon.current-state.v1' ] ||
+    die 'unsupported current release state'
+  install -d -o root -g root -m 0700 "$destination"
+  while read -r field output; do
+    encoded="$(jq -er --arg field "$field" '.[$field]' "$state")" || die "current state is missing $field"
+    printf '%s' "$encoded" | base64 --decode > "$destination/$output" || die "invalid current state $field"
+    chown root:root "$destination/$output"
+    chmod 0600 "$destination/$output"
+  done <<'EOF'
+manifestBase64 prior-manifest.json
+composeBase64 docker-compose.yml
+overlayBase64 oci-images.compose.yml
+publicConfigBase64 target-public-config.json
+EOF
+  expected="$(jq -er '.manifestSha256' "$state")"
+  validate_sha256 "$expected"
+  actual="$(sha256sum "$destination/prior-manifest.json" | cut -d' ' -f1)"
+  [ "$actual" = "$expected" ] || die 'current manifest and high-water are contradictory'
+}
+
+verify_prior_state_inputs() {
+  local destination="$1" expected actual
+  while read -r field file; do
+    expected="$(jq -er ".$field" "$destination/prior-manifest.json")"
+    validate_digest "$expected"
+    actual="sha256:$(sha256sum "$destination/$file" | cut -d' ' -f1)"
+    [ "$actual" = "$expected" ] || die "root-owned prior state input mismatch: $file"
+  done <<'EOF'
+deploymentInputs.composeSha256 docker-compose.yml
+deploymentInputs.overlaySha256 oci-images.compose.yml
+configProfiles.production.sha256 target-public-config.json
+EOF
+}
+
+require_oci_transition_evidence() {
+  local candidate_sha="$1" base_sha="$2" authorization shadow rollback forward expected actual
+  authorization="$TRANSITION_EVIDENCE/authorization.json"
+  shadow="$TRANSITION_EVIDENCE/shadow.json"
+  rollback="$TRANSITION_EVIDENCE/rollback.json"
+  forward="$TRANSITION_EVIDENCE/forward-repair.json"
+  for file in "$authorization" "$shadow" "$rollback" "$forward"; do
+    require_secure_root_file "$file" 600
+  done
+  jq -e --arg candidate "$candidate_sha" --arg base "$base_sha" '
+    type=="object" and (keys|sort)==(["baseManifestSha256","candidateManifestSha256","forwardRepairReceiptSha256","laneState","rollbackReceiptSha256","schemaVersion","shadowReceiptSha256"]|sort) and
+    .schemaVersion=="harmonic-beacon.oci-transition.v1" and .laneState=="oci-production" and
+    .candidateManifestSha256==$candidate and .baseManifestSha256==$base
+  ' "$authorization" >/dev/null || die 'OCI transition authorization is absent or bound to another release'
+  while read -r field file; do
+    expected="$(jq -er --arg field "$field" '.[$field]' "$authorization")"
+    validate_digest "$expected"
+    actual="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
+    [ "$actual" = "$expected" ] || die "OCI transition receipt digest mismatch: $file"
+  done <<EOF
+shadowReceiptSha256 $shadow
+rollbackReceiptSha256 $rollback
+forwardRepairReceiptSha256 $forward
+EOF
+  jq -e --arg candidate "$candidate_sha" '
+    type=="object" and (keys|sort)==(["manifestSha256","result","schemaVersion","target"]|sort) and
+    .schemaVersion=="harmonic-beacon.shadow-receipt.v1" and .manifestSha256==$candidate and
+    .target=="shadow" and .result=="success"
+  ' "$shadow" >/dev/null || die 'shadow transition receipt is invalid'
+  jq -e --arg candidate "$candidate_sha" --arg base "$base_sha" '
+    type=="object" and (keys|sort)==(["baseManifestSha256","candidateManifestSha256","compatibility","quiescence","result","schemaVersion"]|sort) and
+    .schemaVersion=="harmonic-beacon.rollback-drill-receipt.v1" and .baseManifestSha256==$base and
+    .candidateManifestSha256==$candidate and .result=="success" and .quiescence=="verified" and .compatibility=="verified"
+  ' "$rollback" >/dev/null || die 'rollback transition receipt is invalid'
+  jq -e --arg candidate "$candidate_sha" --arg base "$base_sha" '
+    type=="object" and (keys|sort)==(["baseManifestSha256","candidateManifestSha256","result","schemaVersion","statusProvenance"]|sort) and
+    .schemaVersion=="harmonic-beacon.forward-repair-receipt.v1" and .baseManifestSha256==$base and
+    .candidateManifestSha256==$candidate and .result=="success" and .statusProvenance=="verified"
+  ' "$forward" >/dev/null || die 'forward-repair transition receipt is invalid'
+}
+
+atomic_install_current_state() {
+  local transaction="$1" manifest_sha temporary
+  manifest_sha="$(jq -er '.manifestSha256' "$transaction/receipt.json")"
+  validate_sha256 "$manifest_sha"
+  temporary="$(mktemp --tmpdir="$ARTIFACT_STATE" '.current-state.XXXXXX')"
+  jq -n --arg manifestSha256 "$manifest_sha" \
+    --arg manifestBase64 "$(base64 -w0 "$transaction/candidate/candidate-manifest.json")" \
+    --arg composeBase64 "$(base64 -w0 "$transaction/candidate/docker-compose.yml")" \
+    --arg overlayBase64 "$(base64 -w0 "$transaction/candidate/oci-images.compose.yml")" \
+    --arg publicConfigBase64 "$(base64 -w0 "$transaction/candidate/target-public-config.json")" \
+    '{schemaVersion:"harmonic-beacon.current-state.v1",manifestSha256:$manifestSha256,manifestBase64:$manifestBase64,composeBase64:$composeBase64,overlayBase64:$overlayBase64,publicConfigBase64:$publicConfigBase64}' \
+    > "$temporary"
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  sync -f "$temporary"
+  mv -f -- "$temporary" "$CURRENT_STATE"
+  sync -f "$ARTIFACT_STATE"
+}
+
+atomic_write_active_transaction() {
+  local run_id="$1" temporary
+  validate_run_id "$run_id"
+  temporary="$(mktemp --tmpdir="$ARTIFACT_STATE" '.active-transaction.XXXXXX')"
+  printf '%s\n' "$run_id" > "$temporary"
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  sync -f "$temporary"
+  mv -f -- "$temporary" "$ACTIVE_TRANSACTION"
+  sync -f "$ARTIFACT_STATE"
+}
+
+transaction_phase() {
+  jq -er '.phase' "$(artifact_receipt "$1")"
+}
+
+transaction_set_phase() {
+  local run_id="$1" phase="$2" receipt temporary
+  receipt="$(artifact_receipt "$run_id")"
+  temporary="${receipt}.new"
+  jq --arg phase "$phase" '.phase=$phase' "$receipt" > "$temporary"
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  sync -f "$temporary"
+  mv -f -- "$temporary" "$receipt"
+  sync -f "$(artifact_transaction "$run_id")"
+}
+
+transaction_require() {
+  local run_id="$1" target="$2"
+  shift 2
+  local receipt phase allowed=false base current
+  validate_run_id "$run_id"
+  validate_target "$target"
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  [ "$(jq -er '.target' "$receipt")" = "$target" ] || die 'prepared transaction target mismatch'
+  phase="$(transaction_phase "$run_id")"
+  for expected in "$@"; do [ "$phase" = "$expected" ] && allowed=true; done
+  [ "$allowed" = true ] || die "transaction phase $phase does not authorize this command"
+  if [ "$target" = production ]; then
+    require_secure_root_file "$CURRENT_STATE" 600
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
+    base="$(jq -er '.baseManifestSha256' "$receipt")"
+    current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
+    [ "$base" = "$current" ] || die 'prepared transaction no longer matches current high-water'
+  fi
+}
+
+transaction_clear_active() {
   local run_id="$1"
-  local section="$2"
-  local key="$3"
-  local value
-  value="$(jq -er --arg key "$key" ".${section}[\$key]" "$(artifact_receipt "$run_id")")" ||
-    die "prepared artifact receipt is missing ${section}.${key}"
+  require_secure_root_file "$ACTIVE_TRANSACTION" 600
+  [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'active transaction mismatch'
+  rm -f -- "$ACTIVE_TRANSACTION"
+  sync -f "$ARTIFACT_STATE"
+}
+
+transaction_resume_prepared() {
+  local run_id="$1" sha="$2" tree="$3" manifest_sha="$4" config_sha="$5" workflow_attempt="$6"
+  local receipt base current
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  jq -e --arg run "$run_id" --arg sha "$sha" --arg tree "$tree" --arg manifest "$manifest_sha" \
+    --arg config "$config_sha" --argjson attempt "$workflow_attempt" '
+      .target=="production" and .phase=="prepared" and .workflowRunId==$run and
+      .workflowRunAttempt==$attempt and .sourceSha==$sha and .sourceTree==$tree and
+      .manifestSha256==$manifest and .targetConfigSha256==$config
+    ' "$receipt" >/dev/null || die 'existing transaction does not match prepare retry'
+  base="$(jq -er '.baseManifestSha256' "$receipt")"
+  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
+  [ "$base" = "$current" ] || die 'prepared transaction no longer matches current high-water'
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
+  else
+    atomic_write_active_transaction "$run_id"
+  fi
+}
+
+transaction_finish_committed() {
+  local run_id="$1" receipt phase expected current
+  validate_run_id "$run_id"
+  require_secure_root_file "$CURRENT_STATE" 600
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  [ "$(jq -er '.target' "$receipt")" = production ] || return 1
+  phase="$(transaction_phase "$run_id")"
+  [ "$phase" = replaced ] || [ "$phase" = committed ] || return 1
+  expected="$(jq -er '.manifestSha256' "$receipt")"
+  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
+  [ "$current" = "$expected" ] || return 1
+  if [ "$phase" = replaced ]; then transaction_set_phase "$run_id" committed; fi
+  if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
+}
+
+transaction_finish_rolled_back() {
+  local run_id="$1" receipt base current
+  validate_run_id "$run_id"
+  require_secure_root_file "$CURRENT_STATE" 600
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  [ "$(jq -er '.target' "$receipt")" = production ] || return 1
+  [ "$(transaction_phase "$run_id")" = rolled-back ] || return 1
+  base="$(jq -er '.baseManifestSha256' "$receipt")"
+  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
+  [ "$current" = "$base" ] || die 'rolled-back transaction contradicts current high-water'
+  if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
+}
+
+manifest_ref() {
+  local manifest="$1" section="$2" key="$3" value
+  value="$(jq -er --arg key "$key" ".${section}[] | select((.artifactId // .serviceId)==\$key) | \"\(.repository)@\(.digest)\"" "$manifest")" ||
+    die "manifest is missing ${section}.${key}"
   validate_image_ref "$value"
   printf '%s\n' "$value"
 }
 
-artifact_compose() {
-  local workspace="$1"
-  local run_id="$2"
+artifact_ref() {
+  manifest_ref "$(artifact_transaction "$1")/candidate/candidate-manifest.json" "$2" "$3"
+}
+
+artifact_compose_from() {
+  local run_id="$1" source="$2"
   shift 2
-  local app tapestry playlist analytics postgres livekit config_sha
-  app="$(artifact_ref "$run_id" imageRefs app)"
-  tapestry="$(artifact_ref "$run_id" imageRefs tapestry)"
-  playlist="$(artifact_ref "$run_id" imageRefs playlist-bot)"
-  analytics="$(artifact_ref "$run_id" imageRefs analytics)"
-  postgres="$(artifact_ref "$run_id" externalRefs postgres)"
-  livekit="$(artifact_ref "$run_id" externalRefs livekit)"
-  config_sha="$(jq -er '.targetConfigSha256' "$(artifact_receipt "$run_id")")"
-  validate_digest "$config_sha"
+  local root manifest app tapestry playlist analytics postgres livekit config_sha
+  root="$(artifact_transaction "$run_id")/$source"
+  if [ "$source" = candidate ]; then manifest="$root/candidate-manifest.json"; else manifest="$root/prior-manifest.json"; fi
+  app="$(manifest_ref "$manifest" artifacts app)"
+  tapestry="$(manifest_ref "$manifest" artifacts tapestry)"
+  playlist="$(manifest_ref "$manifest" artifacts playlist-bot)"
+  analytics="$(manifest_ref "$manifest" artifacts analytics)"
+  postgres="$(manifest_ref "$manifest" externalImages postgres)"
+  livekit="$(manifest_ref "$manifest" externalImages livekit)"
+  config_sha="sha256:$(sha256sum "$root/target-public-config.json" | cut -d' ' -f1)"
   (
-    cd "$workspace"
+    cd "$root"
     HB_APP_IMAGE_REF="$app" HB_TAPESTRY_IMAGE_REF="$tapestry" \
       HB_PLAYLIST_IMAGE_REF="$playlist" HB_ANALYTICS_IMAGE_REF="$analytics" \
       HB_POSTGRES_IMAGE_REF="$postgres" HB_LIVEKIT_IMAGE_REF="$livekit" \
       HB_CONFIG_PROFILE_SHA256="$config_sha" \
-      docker compose --file "$workspace/docker-compose.yml" \
-      --file "$workspace/$OCI_OVERLAY" --project-name app \
+      docker compose --file "$root/docker-compose.yml" \
+      --file "$root/oci-images.compose.yml" --project-name app \
       --env-file "$PRODUCTION_ENV" "$@"
   )
 }
 
+artifact_compose() {
+  artifact_compose_from "$1" candidate "${@:2}"
+}
+
+verify_runtime_profile() {
+  local run_id="$1" source="${2:-candidate}" root expected
+  root="$(artifact_transaction "$run_id")/$source"
+  expected="sha256:$(sha256sum "$root/target-public-config.json" | cut -d' ' -f1)"
+  "$RELEASE_MANIFEST" verify-runtime-public-config \
+    --profile "$root/target-public-config.json" --env "$PRODUCTION_ENV" \
+    --expected-sha256 "$expected" >/dev/null
+}
+
 artifact_prepare() {
-  local workspace="$1" sha="$2" tree="$3" run_id="$4"
-  local manifest_sha="$5" target="$6" config_sha="$7"
-  local input_root manifest evidence verified verified_dir docker_config
+  local workspace="$1" sha="$2" tree="$3" run_id="$4" manifest_sha="$5"
+  local target="$6" config_sha="$7" workflow_attempt="$8"
+  local input_root temp transaction profile docker_config
   validate_workspace "$workspace"
   validate_checkout "$sha"
   validate_sha "$tree"
-  [ "$(git -c safe.directory="$workspace" -C "$workspace" rev-parse 'HEAD^{tree}')" = "$tree" ] ||
-    die 'workspace tree does not match candidate source tree'
+  [ "$(git -c safe.directory="$workspace" -C "$workspace" rev-parse 'HEAD^{tree}')" = "$tree" ] || die 'workspace tree does not match candidate source tree'
   validate_run_id "$run_id"
   validate_sha256 "$manifest_sha"
   validate_target "$target"
   validate_digest "$config_sha"
-  [ -x "$ARTIFACT_VERIFY" ] || die 'root-owned artifact verifier is not installed'
-  [ "$(stat -c '%U:%G:%a' "$ARTIFACT_VERIFY")" = 'root:root:755' ] ||
-    die 'artifact verifier ownership or mode is invalid'
-  [ -r "$REGISTRY_ENV" ] || die 'root-owned registry credentials are unavailable'
-  [ "$(stat -c '%U:%G:%a' "$REGISTRY_ENV")" = 'root:root:600' ] ||
-    die 'registry credential ownership or mode is invalid'
-  [ -r "$ARTIFACT_STATE/current-manifest.sha256" ] ||
-    die 'current manifest digest is not initialized'
-  install -d -o root -g root -m 0700 "$ARTIFACT_STATE"
+  [[ "$workflow_attempt" =~ ^[1-9][0-9]{0,9}$ ]] || die 'invalid workflow run attempt'
+  require_secure_root_file "$CURRENT_STATE" 600
+  require_secure_root_file "$REGISTRY_ENV" 600
+  if [ "$target" = production ]; then require_secure_root_file "$PRODUCTION_ENV" 600; fi
+  transaction="$(artifact_transaction "$run_id")"
+  if [ -e "$transaction" ]; then
+    if [ "$target" = production ]; then
+      transaction_resume_prepared "$run_id" "$sha" "$tree" "$manifest_sha" "$config_sha" "$workflow_attempt"
+      return 0
+    fi
+    die 'transaction run id was already prepared'
+  fi
+  if [ "$target" = production ] && [ -e "$ACTIVE_TRANSACTION" ]; then die 'another production transaction is active'; fi
+
   input_root="$workspace/.hb-artifacts/$run_id/candidate"
-  manifest="$input_root/release-manifest.json"
-  evidence="$input_root/evidence"
-  [ -f "$manifest" ] && [ ! -L "$manifest" ] || die 'candidate manifest is missing or unsafe'
-  [ -d "$evidence" ] && [ ! -L "$evidence" ] || die 'candidate evidence is missing or unsafe'
-  verified_dir="$(mktemp -d --tmpdir="$ARTIFACT_STATE" '.verified.XXXXXX')"
-  verified="$verified_dir/receipt.json"
-  docker_config="$verified_dir/docker"
-  install -d -o root -g root -m 0700 "$docker_config"
-  export DOCKER_CONFIG="$docker_config"
-  trap 'unset DOCKER_CONFIG; rm -rf -- "$verified_dir"' RETURN
-  "$ARTIFACT_VERIFY" --manifest "$manifest" --evidence "$evidence" \
-    --manifest-sha256 "$manifest_sha" --source-sha "$sha" --source-tree "$tree" \
-    --target "$target" --config-sha256 "$config_sha" \
-    --current-base-file "$ARTIFACT_STATE/current-manifest.sha256" --output "$verified"
-  jq -e . "$verified" >/dev/null || die 'artifact verifier emitted invalid receipt'
-  jq --arg target "$target" --arg config "$config_sha" \
-    '. + {target:$target,targetConfigSha256:$config}' "$verified" > "${verified}.bound"
-  mv -- "${verified}.bound" "$verified"
-  chmod 0600 "$verified"
+  profile=production
+  [ "$target" = production ] || profile=live-staging
+  temp="$(mktemp -d --tmpdir="$TRANSACTION_ROOT" '.prepare.XXXXXX')"
+  trap 'unset DOCKER_CONFIG HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME; rm -rf -- "$temp"' RETURN
+  install -d -o root -g root -m 0700 "$temp/candidate" "$temp/candidate/evidence" "$temp/prior" "$temp/docker"
+  install -o root -g root -m 0600 "$input_root/release-manifest.json" "$temp/candidate/candidate-manifest.json"
+  install -o root -g root -m 0600 "$input_root/qualification-receipt.json" "$temp/candidate/qualification-receipt.json"
+  install -o root -g root -m 0600 "$workspace/docker-compose.yml" "$temp/candidate/docker-compose.yml"
+  install -o root -g root -m 0600 "$workspace/$OCI_OVERLAY" "$temp/candidate/oci-images.compose.yml"
+  install -o root -g root -m 0600 "$workspace/deploy/runtime-public-config/${profile}.json" "$temp/candidate/target-public-config.json"
+  [ -d "$input_root/evidence" ] && [ ! -L "$input_root/evidence" ] || die 'candidate evidence root is unsafe'
+  cp -a -- "$input_root/evidence/." "$temp/candidate/evidence/"
+  chown -R root:root "$temp/candidate/evidence"
+  find "$temp/candidate/evidence" -type d -exec chmod 0700 {} +
+  find "$temp/candidate/evidence" -type f -exec chmod 0600 {} +
+  install -o root -g root -m 0600 "$CURRENT_STATE" "$temp/prior-state.json"
+  state_unpack "$temp/prior-state.json" "$temp/prior"
+  verify_prior_state_inputs "$temp/prior"
+
+  export DOCKER_CONFIG="$temp/docker"
+  local verifier_args=(
+    --manifest "$temp/candidate/candidate-manifest.json" --evidence "$temp/candidate/evidence"
+    --manifest-sha256 "$manifest_sha" --source-sha "$sha" --source-tree "$tree"
+    --workflow-run-id "$run_id" --workflow-run-attempt "$workflow_attempt"
+    --target "$target" --config-sha256 "$config_sha"
+    --current-manifest "$temp/prior/prior-manifest.json"
+    --compose "$temp/candidate/docker-compose.yml" --overlay "$temp/candidate/oci-images.compose.yml"
+    --config-profile "$temp/candidate/target-public-config.json" --output "$temp/verified.json"
+  )
+  if [ "$target" = production ]; then verifier_args+=(--runtime-env "$PRODUCTION_ENV"); fi
+  "$ARTIFACT_VERIFY" "${verifier_args[@]}"
+  jq -e . "$temp/verified.json" >/dev/null || die 'artifact verifier emitted invalid receipt'
+  if [ "$target" = production ]; then
+    require_oci_transition_evidence "$manifest_sha" \
+      "$(jq -er '.promotion.baseManifestSha256' "$temp/candidate/candidate-manifest.json")"
+  fi
+  jq --arg target "$target" --arg phase prepared \
+    '. + {target:$target,phase:$phase}' "$temp/verified.json" > "$temp/receipt.json"
+  chmod 0600 "$temp/receipt.json"
 
   # The credential file is root-only and is never exposed to candidate code.
   # shellcheck disable=SC1090
   source "$REGISTRY_ENV"
-  [ -n "${HB_REGISTRY_USERNAME:-}" ] && [ -n "${HB_REGISTRY_TOKEN:-}" ] ||
-    die 'registry credentials are incomplete'
+  [ -n "${HB_REGISTRY_USERNAME:-}" ] && [ -n "${HB_REGISTRY_TOKEN:-}" ] || die 'registry credentials are incomplete'
   printf '%s' "$HB_REGISTRY_TOKEN" | docker login ghcr.io --username "$HB_REGISTRY_USERNAME" --password-stdin >/dev/null
-  while IFS= read -r ref; do
-    validate_image_ref "$ref"
-    docker pull "$ref" >/dev/null
-  done < <(jq -r '.imageRefs[],.rollbackRefs[],.externalRefs[]' "$verified")
-  while IFS= read -r ref; do
-    cosign verify --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-      --certificate-identity='https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main' \
-      "$ref" >/dev/null
-    docker buildx imagetools inspect --format '{{ json .SBOM }}' "$ref" | jq -e . >/dev/null
-    docker buildx imagetools inspect --format '{{ json .Provenance }}' "$ref" | jq -e . >/dev/null
-  done < <(jq -r '.imageRefs[],.rollbackRefs[]' "$verified")
+  while IFS= read -r ref; do validate_image_ref "$ref"; docker pull "$ref" >/dev/null; done < <(
+    jq -r '.artifacts[],.externalImages[] | "\(.repository)@\(.digest)"' "$temp/candidate/candidate-manifest.json"
+  )
   unset HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME
-  install -o root -g root -m 0600 "$verified" "$(artifact_receipt "$run_id")"
-  install -o root -g root -m 0600 "$manifest" "$ARTIFACT_STATE/candidate-${run_id}.manifest.json"
+  rm -rf -- "$temp/docker" "$temp/prior-state.json" "$temp/verified.json"
+  chmod 0700 "$temp"
+  sync -f "$temp/receipt.json"
+  mv -- "$temp" "$transaction"
+  sync -f "$TRANSACTION_ROOT"
+  if [ "$target" = production ]; then atomic_write_active_transaction "$run_id"; fi
+  trap - RETURN
 }
 
 artifact_preflight() {
-  local workspace="$1" sha="$2" run_id="$3" target="$4"
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  validate_run_id "$run_id"
-  validate_target "$target"
-  [ -r "$(artifact_receipt "$run_id")" ] || die 'artifact set was not prepared'
+  local run_id="$1" target="$2"
+  transaction_require "$run_id" "$target" prepared
   if [ "$target" = production ]; then
     [ -r "$PRODUCTION_ENV" ] || die 'production environment is not readable by root'
     [ -r "$COMMERCE_ENV" ] || die 'commerce environment is not readable by root'
+    verify_runtime_profile "$run_id"
     require_exact_private_network
-    artifact_compose "$workspace" "$run_id" config --quiet
+    artifact_compose "$run_id" config --quiet
+    verify_container_image beacon-postgres "$(artifact_ref "$run_id" externalImages postgres)"
+    verify_container_image beacon-livekit "$(artifact_ref "$run_id" externalImages livekit)"
   fi
 }
 
 artifact_migrate() {
-  local workspace="$1" run_id="$2"
-  validate_workspace "$workspace"
-  validate_run_id "$run_id"
-  artifact_compose "$workspace" "$run_id" run --rm --no-deps --no-build --pull never \
-    migrate npx prisma migrate deploy
-  artifact_compose "$workspace" "$run_id" run --rm --no-deps --no-build --pull never \
-    migrate npx tsx scripts/stage-grant-forward-drain.ts
-  artifact_compose "$workspace" "$run_id" run --rm --no-deps --no-build --pull never \
-    migrate npx prisma migrate status
+  local run_id="$1"
+  transaction_require "$run_id" production prepared
+  transaction_set_phase "$run_id" migration-attempted
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/release-quiesce-preflight.ts
+  artifact_compose "$run_id" stop app
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/release-quiesce-preflight.ts
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate npx prisma migrate deploy
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/stage-grant-forward-drain.ts
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate npx prisma migrate status
+  transaction_set_phase "$run_id" migrated
 }
 
 artifact_replace() {
-  local workspace="$1" run_id="$2"
-  validate_workspace "$workspace"
-  validate_run_id "$run_id"
-  artifact_compose "$workspace" "$run_id" up -d --no-deps --force-recreate \
-    --no-build --pull never app commerce-reconciler tapestry playlist-bot
+  local run_id="$1"
+  transaction_require "$run_id" production migrated
+  verify_runtime_profile "$run_id"
+  artifact_compose "$run_id" up -d --no-deps --force-recreate --no-build --pull never \
+    app commerce-reconciler tapestry playlist-bot
+  transaction_set_phase "$run_id" replaced
+}
+
+verify_container_image() {
+  local container="$1" expected="$2" configured actual expected_id
+  validate_image_ref "$expected"
+  [ "$(docker inspect "$container" --format '{{.State.Running}}')" = true ] || die "$container is not running"
+  configured="$(docker inspect "$container" --format '{{.Config.Image}}')"
+  [ "$configured" = "$expected" ] || die "$container configured image does not match the manifest"
+  actual="$(docker inspect "$container" --format '{{.Image}}')"
+  expected_id="$(docker image inspect "$expected" --format '{{.Id}}')"
+  [ -n "$actual" ] && [ "$actual" = "$expected_id" ] || die "$container actual image ID does not match the exact digest"
+}
+
+verify_pulled_image() {
+  local expected="$1"
+  validate_image_ref "$expected"
+  docker image inspect "$expected" --format '{{.Id}}' | grep -Eq '^sha256:[0-9a-f]{64}$' ||
+    die 'declared exact image digest is not present locally'
+}
+
+require_container_health() {
+  local container="$1" health_value
+  health_value="$(docker inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
+  [ "$health_value" = healthy ] || die "$container is not healthy"
+}
+
+verify_public_provenance() {
+  local run_id="$1" body source_sha app_ref config_sha origin
+  source_sha="$(jq -er '.sourceSha' "$(artifact_receipt "$run_id")")"
+  app_ref="$(artifact_ref "$run_id" artifacts app)"
+  config_sha="$(jq -er '.targetConfigSha256' "$(artifact_receipt "$run_id")")"
+  origin="$(jq -er '.publicOrigin' "$(artifact_transaction "$run_id")/candidate/target-public-config.json")"
+  for url in 'http://127.0.0.1:3000/api/health' "$origin/api/health"; do
+    body="$(curl --fail --silent --show-error --max-time 10 "$url")"
+    jq -e --arg sha "$source_sha" --arg artifact "$app_ref" --arg config "$config_sha" --arg origin "$origin" \
+      '.status=="ok" and .gitSha==$sha and .artifactDigest==$artifact and .configProfileSha256==$config and .publicOrigin==$origin' \
+      <<<"$body" >/dev/null || die "public health provenance mismatch at $url"
+  done
 }
 
 artifact_status() {
-  local workspace="$1" run_id="$2" target="$3"
-  validate_workspace "$workspace"
-  validate_run_id "$run_id"
-  validate_target "$target"
+  local run_id="$1" target="$2"
+  if [ "$target" = production ] && transaction_finish_committed "$run_id"; then return 0; fi
+  transaction_require "$run_id" "$target" prepared replaced
   if [ "$target" = shadow ]; then
     jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$(artifact_receipt "$run_id")"
     return 0
   fi
-  artifact_compose "$workspace" "$run_id" ps
-  local container key expected actual
-  while read -r container key; do
-    expected="$(artifact_ref "$run_id" imageRefs "$key")"
-    actual="$(docker inspect "$container" --format '{{.Config.Image}}')"
-    [ "$actual" = "$expected" ] || die "$container is not running the qualified digest"
+  [ "$(transaction_phase "$run_id")" = replaced ] || die 'production status requires a completed replacement'
+  verify_runtime_profile "$run_id"
+  local container key section
+  while read -r container section key; do
+    verify_container_image "$container" "$(artifact_ref "$run_id" "$section" "$key")"
   done <<'EOF'
-beacon-app app
-beacon-commerce-reconciler app
-beacon-tapestry tapestry
-beacon-playlist-bot playlist-bot
+beacon-app artifacts app
+beacon-commerce-reconciler artifacts app
+beacon-tapestry artifacts tapestry
+beacon-playlist-bot artifacts playlist-bot
+beacon-postgres externalImages postgres
+beacon-livekit externalImages livekit
 EOF
-  install -o root -g root -m 0600 "$ARTIFACT_STATE/candidate-${run_id}.manifest.json" \
-    "$ARTIFACT_STATE/current-manifest.json"
-  jq -er '.manifestSha256' "$(artifact_receipt "$run_id")" > "$ARTIFACT_STATE/current-manifest.sha256"
-  chmod 0600 "$ARTIFACT_STATE/current-manifest.sha256"
+  verify_pulled_image "$(artifact_ref "$run_id" artifacts analytics)"
+  for container in beacon-app beacon-commerce-reconciler beacon-tapestry beacon-playlist-bot beacon-postgres; do
+    require_container_health "$container"
+  done
+  curl --fail --silent --show-error --max-time 5 --output /dev/null http://127.0.0.1:7880 ||
+    die 'beacon-livekit health endpoint failed'
+  curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/api/health/ready >/dev/null ||
+    die 'application readiness endpoint failed'
+  verify_public_provenance "$run_id"
+  boundary
+  atomic_install_current_state "$(artifact_transaction "$run_id")"
+  transaction_set_phase "$run_id" committed
+  transaction_clear_active "$run_id"
 }
 
 artifact_rollback() {
-  local workspace="$1" run_id="$2"
-  local app tapestry playlist analytics postgres livekit config_sha rollback_sha
-  validate_workspace "$workspace"
-  validate_run_id "$run_id"
-  app="$(artifact_ref "$run_id" rollbackRefs app)"
-  tapestry="$(artifact_ref "$run_id" rollbackRefs tapestry)"
-  playlist="$(artifact_ref "$run_id" rollbackRefs playlist-bot)"
-  analytics="$(artifact_ref "$run_id" rollbackRefs analytics)"
-  postgres="$(artifact_ref "$run_id" externalRefs postgres)"
-  livekit="$(artifact_ref "$run_id" externalRefs livekit)"
-  config_sha="$(jq -er '.targetConfigSha256' "$(artifact_receipt "$run_id")")"
-  rollback_sha="$(jq -er '.rollbackManifestSha256' "$(artifact_receipt "$run_id")")"
-  validate_digest "$config_sha"
-  validate_sha256 "$rollback_sha"
-  (
-    cd "$workspace"
-    HB_APP_IMAGE_REF="$app" HB_TAPESTRY_IMAGE_REF="$tapestry" \
-      HB_PLAYLIST_IMAGE_REF="$playlist" HB_ANALYTICS_IMAGE_REF="$analytics" \
-      HB_POSTGRES_IMAGE_REF="$postgres" HB_LIVEKIT_IMAGE_REF="$livekit" \
-      HB_CONFIG_PROFILE_SHA256="$config_sha" \
-      docker compose --file "$workspace/docker-compose.yml" --file "$workspace/$OCI_OVERLAY" \
-      --project-name app --env-file "$PRODUCTION_ENV" up -d --no-deps --force-recreate \
-      --no-build --pull never app commerce-reconciler tapestry playlist-bot
-  )
-  printf '%s\n' "$rollback_sha" > "$ARTIFACT_STATE/current-manifest.sha256"
-  chmod 0600 "$ARTIFACT_STATE/current-manifest.sha256"
+  local run_id="$1" phase prior_app preflight_ready=false
+  if transaction_finish_rolled_back "$run_id"; then return 0; fi
+  transaction_require "$run_id" production migration-attempted migrated replaced
+  phase="$(transaction_phase "$run_id")"
+  artifact_compose "$run_id" stop app
+  for _attempt in $(seq 1 30); do
+    if artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+      npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null; then
+      preflight_ready=true
+      break
+    fi
+    sleep 2
+  done
+  [ "$preflight_ready" = true ] || {
+    docker stop beacon-commerce-reconciler 2>/dev/null || true
+    die 'automatic rollback refused: durable grant state did not quiesce'
+  }
+  docker stop beacon-commerce-reconciler 2>/dev/null || true
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null ||
+    die 'automatic rollback refused: stable grant preflight failed'
+
+  prior_app="$(manifest_ref "$(artifact_transaction "$run_id")/prior/prior-manifest.json" artifacts app)"
+  docker run --rm --entrypoint test "$prior_app" -f /app/src/lib/stage-grant-effects.ts ||
+    die 'automatic rollback refused: previous app lacks durable grant contract'
+  docker run --rm --entrypoint test "$prior_app" -f /app/scripts/stage-grant-rollback-preflight.ts ||
+    die 'automatic rollback refused: previous worker lacks rollback preflight'
+  verify_runtime_profile "$run_id" prior
+  artifact_compose_from "$run_id" prior up -d --no-deps --force-recreate --no-build --pull never \
+    app commerce-reconciler tapestry playlist-bot
+  for _attempt in $(seq 1 60); do
+    if [ "$(health beacon-app 2>/dev/null || true)" = healthy ] && \
+       [ "$(health beacon-commerce-reconciler 2>/dev/null || true)" = healthy ] && \
+       [ "$(health beacon-tapestry 2>/dev/null || true)" = healthy ] && \
+       [ "$(docker inspect beacon-playlist-bot --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ] && \
+       curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
+      transaction_set_phase "$run_id" rolled-back
+      transaction_clear_active "$run_id"
+      return 0
+    fi
+    sleep 2
+  done
+  die 'rollback services did not become ready; writers remain contained for forward repair'
 }
 
 usage() {
@@ -601,6 +955,19 @@ command="$1"
 shift
 
 case "$command" in
+  artifact-*)
+    unset NODE_OPTIONS NODE_PATH GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE \
+      DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME \
+      SSL_CERT_FILE SSL_CERT_DIR GITHUB_TOKEN GH_TOKEN
+    export HOME=/root
+    install -d -o root -g root -m 0700 "$ARTIFACT_STATE" "$TRANSACTION_ROOT"
+    verify_installed_implementation
+    exec 9>"$ARTIFACT_STATE/.transaction.lock"
+    flock -x 9
+    ;;
+esac
+
+case "$command" in
   preflight) [ "$#" -eq 2 ] || usage; preflight "$@" ;;
   preserve) [ "$#" -eq 1 ] || usage; preserve "$@" ;;
   build) [ "$#" -eq 4 ] || usage; build "$@" ;;
@@ -611,11 +978,11 @@ case "$command" in
   status) [ "$#" -eq 2 ] || usage; status "$@" ;;
   boundary) [ "$#" -eq 0 ] || usage; boundary ;;
   rollback) [ "$#" -eq 5 ] || usage; rollback "$@" ;;
-  artifact-prepare) [ "$#" -eq 7 ] || usage; artifact_prepare "$@" ;;
-  artifact-preflight) [ "$#" -eq 4 ] || usage; artifact_preflight "$@" ;;
-  artifact-migrate) [ "$#" -eq 2 ] || usage; artifact_migrate "$@" ;;
-  artifact-replace) [ "$#" -eq 2 ] || usage; artifact_replace "$@" ;;
-  artifact-status) [ "$#" -eq 3 ] || usage; artifact_status "$@" ;;
-  artifact-rollback) [ "$#" -eq 2 ] || usage; artifact_rollback "$@" ;;
+  artifact-prepare) [ "$#" -eq 8 ] || usage; artifact_prepare "$@" ;;
+  artifact-preflight) [ "$#" -eq 2 ] || usage; artifact_preflight "$@" ;;
+  artifact-migrate) [ "$#" -eq 1 ] || usage; artifact_migrate "$@" ;;
+  artifact-replace) [ "$#" -eq 1 ] || usage; artifact_replace "$@" ;;
+  artifact-status) [ "$#" -eq 2 ] || usage; artifact_status "$@" ;;
+  artifact-rollback) [ "$#" -eq 1 ] || usage; artifact_rollback "$@" ;;
   *) usage ;;
 esac

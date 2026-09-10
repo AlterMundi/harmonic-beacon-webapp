@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
   assembleReleaseManifest,
   candidateIdentitySha256,
   canonicalSha256,
+  publicConfigSha256,
+  validateReleaseManifest,
   verifyReleaseManifest,
+  verifyRuntimePublicConfig,
 } from '../release-manifest.mjs';
 
 const H = (character) => `sha256:${character.repeat(64)}`;
@@ -24,10 +28,11 @@ function artifact(artifactId, repository, digest, roles) {
     context: '.',
     dockerfile: artifactId === 'app' ? 'Dockerfile' : `services/${artifactId}/Dockerfile`,
     roles,
-    sbom: { format: 'spdx-json', digest: H('1') },
+    sbom: { format: 'spdx-json', digest: H('1'), signatureBundleDigest: H('4') },
     provenance: {
       predicateType: 'https://slsa.dev/provenance/v1',
       digest: H('2'),
+      signatureBundleDigest: H('5'),
     },
     signature: {
       issuer: 'https://token.actions.githubusercontent.com',
@@ -48,6 +53,8 @@ function validManifest() {
     build: {
       workflowRunId: '34310000000',
       workflowRunAttempt: 1,
+      workflowPath: '.github/workflows/oci-candidate.yml',
+      workflowRef: 'refs/heads/main',
       createdAt: '2026-09-10T17:30:00.000Z',
       dependencyLockSha256: H('4'),
       buildDefinitionSha256: H('5'),
@@ -72,18 +79,12 @@ function validManifest() {
       'live-staging': { sha256: H('9') },
       production: { sha256: H('0') },
     },
+    deploymentInputs: { composeSha256: H('6'), overlaySha256: H('7') },
     promotion: { baseManifestSha256: BASE },
-    rollback: {
-      manifestSha256: HEX('d'),
-      artifacts: [
-        { artifactId: 'app', repository: 'ghcr.io/altermundi/harmonic-beacon-app', digest: H('8') },
-        { artifactId: 'tapestry', repository: 'ghcr.io/altermundi/harmonic-beacon-tapestry', digest: H('9') },
-        { artifactId: 'playlist-bot', repository: 'ghcr.io/altermundi/harmonic-beacon-playlist-bot', digest: H('a') },
-        { artifactId: 'analytics', repository: 'ghcr.io/altermundi/harmonic-beacon-analytics', digest: H('b') },
-      ],
-    },
+    rollback: { manifestSha256: BASE },
     qualification: {
-      runId: '34310000001',
+      runId: '34310000000',
+      runAttempt: 1,
       result: 'success',
       qualifiedAt: '2026-09-10T17:50:00.000Z',
       expiresAt: '2026-09-11T17:50:00.000Z',
@@ -100,7 +101,9 @@ function evidenceFor(manifest) {
     repository: entry.repository,
     imageDigest: entry.digest,
     sbomDigest: entry.sbom.digest,
+    sbomSignatureBundleDigest: entry.sbom.signatureBundleDigest,
     provenanceDigest: entry.provenance.digest,
+    provenanceSignatureBundleDigest: entry.provenance.signatureBundleDigest,
     signatureBundleDigest: entry.signature.bundleDigest,
   }]));
 }
@@ -110,6 +113,8 @@ function expectations(manifest) {
     sourceRepository: manifest.source.repository,
     sourceSha: manifest.source.gitSha,
     sourceTree: manifest.source.gitTree,
+    workflowRunId: manifest.build.workflowRunId,
+    workflowRunAttempt: manifest.build.workflowRunAttempt,
     target: 'production',
     targetConfigSha256: manifest.configProfiles.production.sha256,
     currentBaseManifestSha256: manifest.promotion.baseManifestSha256,
@@ -133,7 +138,6 @@ test('accepts a canonical, qualified manifest bound to exact registry evidence',
   const result = verifyReleaseManifest(manifest, expectations(manifest));
   assert.equal(result.manifestSha256, canonicalSha256(manifest));
   assert.equal(result.imageRefs.app, `${manifest.artifacts[0].repository}@${manifest.artifacts[0].digest}`);
-  assert.equal(result.rollbackRefs.app, `${manifest.rollback.artifacts[0].repository}@${manifest.rollback.artifacts[0].digest}`);
 });
 
 rejectMutation('rejects unknown manifest fields', (manifest) => { manifest.untrusted = true; }, /unknown field/);
@@ -148,12 +152,37 @@ rejectMutation('rejects missing registry evidence', (_manifest, expected) => { d
 rejectMutation('rejects a target environment config mismatch', (_manifest, expected) => { expected.targetConfigSha256 = H('f'); }, /config profile/);
 rejectMutation('rejects a stale base candidate', (_manifest, expected) => { expected.currentBaseManifestSha256 = HEX('f'); }, /stale candidate/);
 rejectMutation('rejects an expired qualification', (_manifest, expected) => { expected.now = new Date('2026-09-12T00:00:00.000Z'); }, /expired/);
+rejectMutation('rejects a qualification run attempt mismatch', (manifest) => { manifest.qualification.runAttempt = 2; }, /qualification run identity or attempt/u);
 rejectMutation('rejects an unqualified candidate', (manifest) => { manifest.qualification.result = 'failure'; }, /qualification/);
 rejectMutation('rejects a changed manifest hash', (_manifest, expected) => { expected.manifestSha256 = HEX('f'); }, /manifest SHA-256/);
-rejectMutation('rejects a missing rollback digest', (manifest) => { manifest.rollback.artifacts[0].digest = ''; }, /rollback.*digest/);
-rejectMutation('rejects an incomplete rollback digest set', (manifest) => { manifest.rollback.artifacts.pop(); }, /complete rollback/);
+rejectMutation('rejects a rollback manifest not equal to the current base', (manifest) => { manifest.rollback.manifestSha256 = HEX('f'); }, /rollback manifest must equal/);
 rejectMutation('rejects a duplicate app artifact', (manifest) => { manifest.artifacts.push(structuredClone(manifest.artifacts[0])); }, /duplicate artifact/);
 rejectMutation('rejects app role digest divergence', (manifest) => { manifest.artifacts[0].roles = ['app', 'migrate']; }, /app roles/);
+
+test('validator rejects qualification identity drift without external expectations', () => {
+  const manifest = validManifest();
+  manifest.qualification.runAttempt = 2;
+  manifest.qualification.candidateIdentitySha256 = candidateIdentitySha256(manifest);
+  assert.throws(() => validateReleaseManifest(manifest), /qualification run identity or attempt/u);
+});
+
+test('public config digest is SHA-256 of the exact file bytes', () => {
+  const bytes = Buffer.from('{"z":1,"a":2}\n');
+  assert.equal(publicConfigSha256(bytes), `sha256:${createHash('sha256').update(bytes).digest('hex')}`);
+  assert.notEqual(publicConfigSha256(bytes), publicConfigSha256(Buffer.from('{"a":2,"z":1}\n')));
+});
+
+test('runtime public config rejects semantic drift in inert operator env bytes', () => {
+  const profile = {
+    schemaVersion: 'harmonic-beacon.runtime-public-config.v1',
+    publicOrigin: 'https://live.harmonicbeacon.com',
+    livekitPublicUrl: 'wss://live.harmonicbeacon.com',
+    featureFlags: { tapestryPublic: false, promoInvitations: false },
+  };
+  const valid = Buffer.from('PUBLIC_ORIGIN=https://live.harmonicbeacon.com\nLIVEKIT_PUBLIC_URL=wss://live.harmonicbeacon.com\nLIVEKIT_PUBLIC_URL_ALLOWLIST=wss://live.harmonicbeacon.com\nPROMO_INVITATIONS_ENABLED=false\nTAPESTRY_PUBLIC_ENABLED=false\n');
+  assert.equal(verifyRuntimePublicConfig(profile, valid), true);
+  assert.throws(() => verifyRuntimePublicConfig(profile, Buffer.from(valid.toString().replace('PROMO_INVITATIONS_ENABLED=false', 'PROMO_INVITATIONS_ENABLED=true'))), /does not match/u);
+});
 
 test('assembles qualification evidence into a self-bound final manifest', () => {
   const desired = validManifest();

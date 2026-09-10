@@ -39,7 +39,7 @@
       },
       "lanes": ["main", "release"],
       "localPaths": ["src", "prisma", "docker-compose.yml", "Dockerfile"],
-      "workflows": [".github/workflows/ci.yml", ".github/workflows/e2e.yml", ".github/workflows/deploy.yml", ".github/workflows/audio-boundary.yml", ".github/workflows/delivery-gate.yml"],
+      "workflows": [".github/workflows/ci.yml", ".github/workflows/e2e.yml", ".github/workflows/deploy.yml", ".github/workflows/oci-candidate.yml", ".github/workflows/oci-promote.yml", ".github/workflows/audio-boundary.yml", ".github/workflows/delivery-gate.yml"],
       "branchSources": [],
       "deliveryPolicy": {
         "protectedBranches": ["main", "release"],
@@ -71,7 +71,7 @@
         "runnerName": "mona",
         "labels": ["self-hosted", "Linux", "X64", "mona"]
       },
-      "mutation": "Production changes only through the release workflow and restricted hb-deploy helper."
+      "mutation": "Production changes use exactly one release lane state: legacy-shadow preserves the dedicated release/Mona helper path while OCI may only shadow; oci-production authorizes only the exact qualified OCI promotion path after recovery evidence is accepted."
     },
     {
       "id": "account-listener",

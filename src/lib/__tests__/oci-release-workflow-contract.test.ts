@@ -42,7 +42,8 @@ describe('immutable OCI candidate and promotion contract', () => {
         expect(workflow).toContain('runs-on: [self-hosted, mona]');
         expect(workflow).toContain('test "$(hostname -s)" = mona');
         expect(workflow).toContain('test "$(id -un)" = beacon-runner');
-        expect(workflow).toContain("vars.HB_OCI_PROMOTION_ENABLED == 'true'");
+        expect(workflow).toContain("vars.HB_RELEASE_LANE_STATE == 'oci-production'");
+        expect(workflow).toContain("vars.HB_RELEASE_LANE_STATE == 'legacy-shadow'");
         expect(workflow).toContain('hb-deploy artifact-prepare');
         expect(workflow).toContain('hb-deploy artifact-preflight');
         expect(workflow).toContain('hb-deploy artifact-status');
@@ -87,7 +88,7 @@ describe('immutable OCI candidate and promotion contract', () => {
         expect(promotion).toContain('--pull never');
         expect(promotion).not.toMatch(/docker compose[^\n]*\bbuild\b|\bbuild\(\)/);
         expect(legacy).toContain('build() {');
-        expect(legacyWorkflow).toContain("vars.HB_LEGACY_MONA_FALLBACK_ENABLED == 'true'");
+        expect(legacyWorkflow).toContain("vars.HB_RELEASE_LANE_STATE != 'oci-production'");
         expect(packageJson.scripts['test:ops-tooling']).toContain('scripts/ci/__tests__');
         expect(deployReadme).toContain('shadow fallback');
         expect(deployReadme).toContain('never an authorized direct-Compose fallback');

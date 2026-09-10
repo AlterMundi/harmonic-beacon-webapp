@@ -5,14 +5,14 @@ on:
     branches: [release]
 
 concurrency:
-  group: deploy-production
+  group: harmonic-beacon-production-release
   cancel-in-progress: false
 
 jobs:
   # The reusable workflow checks the exact release commit in a throwaway
   # Postgres + LiveKit + browser stack before mona can run any release step.
   release-e2e:
-    if: vars.HB_LEGACY_MONA_FALLBACK_ENABLED == 'true'
+    if: vars.HB_RELEASE_LANE_STATE != 'oci-production'
     uses: ./.github/workflows/e2e.yml
 
   deploy:

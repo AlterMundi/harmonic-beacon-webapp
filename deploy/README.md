@@ -7,53 +7,80 @@ only the public application and LiveKit signaling ports.
 
 ## Immutable OCI candidate and promotion lane
 
-OPS-D adds an opt-in, fail-closed lane alongside the existing release path:
+OPS-D adds a fail-closed artifact lane without replacing the existing release path during shadow:
 
 1. `.github/workflows/oci-candidate.yml` runs only for integrated `main` source
    and only when `HB_OCI_CANDIDATES_ENABLED=true`. Hosted CI builds each
-   first-party image once for `linux/amd64`, pushes it, emits BuildKit SBOM and
-   SLSA provenance, signs the exact `repository@sha256:...` reference with
-   GitHub OIDC, and qualifies those same references with `--no-build`.
+   first-party image once for `linux/amd64`, pushes exact digests, wraps the
+   BuildKit SPDX/SLSA outputs in image-subject statements, signs the image and
+   both evidence blobs with GitHub OIDC, and verifies those signatures. It then
+   pulls every exact first-party/external digest, starts and health-checks
+   isolated Postgres/LiveKit dependencies, migrates app and analytics schemas,
+   starts the analytics profile and all qualified services with `--no-build`
+   and `--pull never`, verifies actual container image IDs and behavior, and
+   only then writes a bounded qualification receipt.
 2. `scripts/ci/release-manifest.mjs` seals canonical JSON that binds source SHA
-   and tree, dependency lock, build definitions, runtime policy/config hashes,
-   migrations, exact first-party and external image digests, evidence hashes,
-   qualification expiry, the current base manifest, and a complete rollback
-   digest set. Any unknown field or mismatch fails closed.
-3. `.github/workflows/oci-promote.yml` accepts only a successful candidate run
-   from this repository's `main`, an operator-supplied manifest SHA-256, and a
-   typed `shadow` or `production` target. The Mona job is disabled until
-   `HB_OCI_PROMOTION_ENABLED=true`; production additionally uses the protected
-   `production` environment. Candidate files are parsed as data and are never
-   executed with Mona/production credentials.
-4. The root-owned `hb-deploy` route remains mandatory. Its typed
-   `artifact-*` commands verify the installed verifier, manifest, evidence,
-   source/tree, current-base CAS, target config, signatures, SBOMs and
-   provenance before pulling or replacing. Compose invocations always use the
-   OCI overlay, exact digest references, `--no-build`, and `--pull never`.
+   and tree, exact candidate workflow path/ref/run/attempt, dependency/build,
+   migration, Compose/overlay/public-profile bytes, image digests, signed
+   evidence bytes, qualification receipt and expiry, and the current prior
+   manifest hash. Rollback references are never accepted from candidate data;
+   they are derived from the root-owned prior current state.
+3. `.github/workflows/oci-promote.yml` pins the exact candidate workflow path
+   and repository workflow ID, exact current-main checkout/SHA/tree, candidate
+   run and attempt, manifest byte hash, and target profile digest. Candidate
+   files are parsed only as data and never executed with Mona credentials.
+4. The root-owned `hb-deploy` route remains mandatory. Every `artifact-*`
+   command first verifies a root-owned implementation digest list covering the
+   helper, verifier and imported manifest module. `artifact-prepare` copies
+   once into a root-owned transaction, verifies those copied bytes and the
+   root-owned prior state, and later commands consume only that transaction.
+   Production transactions are single-active, phase checked and CAS-bound to
+   the unchanged prior manifest. Compose always uses exact refs, `--no-build`
+   and `--pull never`.
+5. Production status verifies configured references, actual image IDs,
+   running/health state for every Live service, local and public source/image/
+   profile provenance, readiness, and the private network boundary before one
+   atomic `current-state.json` replaces the prior state. A failed migration or
+   replacement rolls back from the untouched prior state only, after the same
+   grant quiescence and compatibility gates.
 
-The existing `.github/workflows/deploy.yml` build-on-Mona lane is a **shadow fallback**
-only during rollout and now requires `HB_LEGACY_MONA_FALLBACK_ENABLED=true`.
-It is not a second promotion mechanism and must be disabled after the OCI lane's
-staging recovery drill. Direct Docker or Compose access by the Actions user is
-never an authorized direct-Compose fallback; `/usr/local/sbin/hb-deploy` is the
-sole privileged route.
+`HB_RELEASE_LANE_STATE` is the sole lane selector. `legacy-shadow` keeps the
+existing `.github/workflows/deploy.yml` Mona/helper release path enabled while
+OCI can only shadow. `oci-production` is a guarded transition state: it may be
+set only after the named shadow, rollback and forward-repair evidence has been
+reviewed and the host's root-owned current state has been initialized. There
+are no independent enable/disable booleans that can silently select both or
+neither production mutation path. Direct Docker or Compose access by the Actions user is never an authorized direct-Compose fallback.
 
-Before either OCI workflow can leave its disabled state, an owner/operator must:
+Owner prerequisites before any real run:
 
-- grant the candidate workflow narrowly scoped GHCR package write/attestation
-  capability and provision the named repository variables with exact digest
-  values (never tags);
-- protect the `shadow` and `production` environments and initialize
-  `/var/lib/harmonic-beacon/releases/current-manifest.sha256` from audited live
-  state;
+- provision exact immutable first-party/external references and protect both
+  environments;
 - install reviewed copies of `deploy/hb-deploy-root`,
   `deploy/hb-artifact-verify.mjs` (as `hb-artifact-verify`), and
-  `scripts/ci/release-manifest.mjs` root-owned under the paths encoded in the
-  helper; provision `/etc/harmonic-beacon/registry.env` as `0600 root:root`;
-- install and independently pin `cosign`, then complete a shadow qualification
-  and rollback drill before enabling production promotion.
+  `scripts/ci/release-manifest.mjs` at their encoded root-owned paths;
+- create `ops-d-implementation.sha256` as `0600 root:root`, containing exactly
+  the SHA-256 and absolute installed path of those three files, and provision
+  `/etc/harmonic-beacon/registry.env` as `0600 root:root`;
+- initialize `/var/lib/harmonic-beacon/releases/current-state.json` as one
+  `0600 root:root` object containing the audited current manifest plus its
+  bound Compose, overlay and selected public profile bytes. A legacy hash-only
+  marker is insufficient because it cannot safely reconstruct rollback;
+- independently pin `cosign`, verify production public settings against
+  `deploy/runtime-public-config/production.json`, and complete a real shadow,
+  rollback and forward-repair exercise before selecting `oci-production`.
+  Production prepare also requires four `0600 root:root` files under
+  `/var/lib/harmonic-beacon/releases/transition-evidence`: `shadow.json`,
+  `rollback.json`, `forward-repair.json`, and `authorization.json`. The latter
+  binds the exact current/candidate manifest hashes and SHA-256 of the three
+  closed-schema receipts; absent, stale, malformed or mismatched evidence fails
+  before any pull or runtime mutation. Root ownership and hashes make the
+  accepted evidence immutable to the runner; they do not prove the drills by
+  themselves, so the receipts still require the documented human review.
 
-This repository change does not perform any of those owner or host mutations.
+This repository change performs none of those GitHub, registry, host, drill or
+production mutations. Until they are separately evidenced, the OCI lane is
+code and test coverage rather than proof of a successful real deployment.
 
 ## Host prerequisites
 
@@ -162,18 +189,21 @@ If the dedicated runner or root-owned helper is unavailable or differs from the
 tracked `deploy/hb-deploy-root`, stop. There is no authorized direct-Compose or
 generic-runner production fallback.
 
-## Legacy shadow fallback path
+## Existing dedicated release path during shadow
 
-While `HB_LEGACY_MONA_FALLBACK_ENABLED=true`, the versioned
-[Deploy workflow](../.github/workflows/deploy.yml) remains the temporary
-build-on-Mona fallback for the `release` branch. It qualifies that same commit
-through the reusable E2E workflow, verifies the dedicated `beacon-runner` and
-installed helper bytes, preserves immutable rollback images, builds
-commit-tagged images, quiesces writers, applies migrations, replaces the
-approved services, waits for bounded readiness, verifies the public revision
-and private boundary, and rolls back automatically after a failed
-post-preservation step. It must not be invoked as an alternative after the OCI
-promotion lane is enabled for production.
+While `HB_RELEASE_LANE_STATE=legacy-shadow` (and also if the state is absent),
+the versioned [Deploy workflow](../.github/workflows/deploy.yml) remains the
+production release path for the `release` branch; it is the shadow fallback if
+the OCI experiment is abandoned, not a generic alternate command path. It
+qualifies the same commit through the reusable E2E workflow, verifies the
+dedicated `beacon-runner` and installed helper bytes, preserves immutable
+rollback images, builds commit-tagged images, quiesces writers, applies
+migrations, replaces the approved services, waits for bounded readiness,
+verifies the public revision and private boundary, and rolls back automatically
+after a failed post-preservation step. OCI may only observe/prepare shadow in
+this state. The dedicated path can be suppressed only by the single
+`oci-production` state after its separate recovery evidence gate; it is never
+controlled by an independent boolean.
 
 Do not reproduce those mutable commands in this runbook. Follow the workflow
 steps and their logs for the current candidate. A deployment is successful only

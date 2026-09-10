@@ -4,132 +4,430 @@
   "title": "Harmonic Beacon immutable release manifest v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "source", "build", "artifacts", "externalImages", "migrationSet", "publicConfig", "configProfiles", "promotion", "rollback", "qualification"],
+  "required": [
+    "schemaVersion",
+    "source",
+    "build",
+    "artifacts",
+    "externalImages",
+    "migrationSet",
+    "publicConfig",
+    "configProfiles",
+    "deploymentInputs",
+    "promotion",
+    "rollback",
+    "qualification"
+  ],
   "properties": {
-    "schemaVersion": {"const": "harmonic-beacon.release.v1"},
-    "source": {"$ref": "#/$defs/source"},
-    "build": {"$ref": "#/$defs/build"},
-    "artifacts": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/artifact"}},
-    "externalImages": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/externalImage"}},
-    "migrationSet": {"$ref": "#/$defs/migrationSet"},
-    "publicConfig": {"$ref": "#/$defs/publicConfig"},
-    "configProfiles": {"$ref": "#/$defs/configProfiles"},
-    "promotion": {"$ref": "#/$defs/promotion"},
-    "rollback": {"$ref": "#/$defs/rollback"},
-    "qualification": {"$ref": "#/$defs/qualification"}
-  },
-  "$defs": {
-    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "schemaVersion": {
+      "const": "harmonic-beacon.release.v1"
+    },
     "source": {
-      "type": "object", "additionalProperties": false,
-      "required": ["repository", "gitSha", "gitTree"],
-      "properties": {
-        "repository": {"const": "AlterMundi/harmonic-beacon-webapp"},
-        "gitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "gitTree": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
-      }
+      "$ref": "#/$defs/source"
     },
     "build": {
-      "type": "object", "additionalProperties": false,
-      "required": ["workflowRunId", "workflowRunAttempt", "createdAt", "dependencyLockSha256", "buildDefinitionSha256", "runtimePolicySha256"],
-      "properties": {
-        "workflowRunId": {"type": "string", "pattern": "^[1-9][0-9]{0,19}$"},
-        "workflowRunAttempt": {"type": "integer", "minimum": 1},
-        "createdAt": {"type": "string", "format": "date-time"},
-        "dependencyLockSha256": {"$ref": "#/$defs/digest"},
-        "buildDefinitionSha256": {"$ref": "#/$defs/digest"},
-        "runtimePolicySha256": {"$ref": "#/$defs/digest"}
+      "$ref": "#/$defs/build"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/artifact"
       }
     },
-    "sbom": {
-      "type": "object", "additionalProperties": false,
-      "required": ["format", "digest"],
-      "properties": {"format": {"const": "spdx-json"}, "digest": {"$ref": "#/$defs/digest"}}
-    },
-    "provenance": {
-      "type": "object", "additionalProperties": false,
-      "required": ["predicateType", "digest"],
-      "properties": {"predicateType": {"const": "https://slsa.dev/provenance/v1"}, "digest": {"$ref": "#/$defs/digest"}}
-    },
-    "signature": {
-      "type": "object", "additionalProperties": false,
-      "required": ["issuer", "identity", "bundleDigest"],
-      "properties": {
-        "issuer": {"const": "https://token.actions.githubusercontent.com"},
-        "identity": {"const": "https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main"},
-        "bundleDigest": {"$ref": "#/$defs/digest"}
-      }
-    },
-    "artifact": {
-      "type": "object", "additionalProperties": false,
-      "required": ["artifactId", "repository", "digest", "platform", "context", "dockerfile", "roles", "sbom", "provenance", "signature"],
-      "properties": {
-        "artifactId": {"enum": ["app", "tapestry", "playlist-bot", "analytics"]},
-        "repository": {"type": "string", "pattern": "^ghcr\\.io/altermundi/harmonic-beacon-(app|tapestry|playlist-bot|analytics)$"},
-        "digest": {"$ref": "#/$defs/digest"},
-        "platform": {"const": "linux/amd64"},
-        "context": {"type": "string"},
-        "dockerfile": {"type": "string"},
-        "roles": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
-        "sbom": {"$ref": "#/$defs/sbom"},
-        "provenance": {"$ref": "#/$defs/provenance"},
-        "signature": {"$ref": "#/$defs/signature"}
-      }
-    },
-    "externalImage": {
-      "type": "object", "additionalProperties": false,
-      "required": ["serviceId", "repository", "digest", "platform"],
-      "properties": {
-        "serviceId": {"enum": ["postgres", "livekit"]},
-        "repository": {"enum": ["docker.io/library/postgres", "docker.io/livekit/livekit-server"]},
-        "digest": {"$ref": "#/$defs/digest"},
-        "platform": {"const": "linux/amd64"}
+    "externalImages": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/externalImage"
       }
     },
     "migrationSet": {
-      "type": "object", "additionalProperties": false,
-      "required": ["head", "sha256"],
-      "properties": {"head": {"type": "string", "pattern": "^[0-9]{14}_[a-z0-9_]+$"}, "sha256": {"$ref": "#/$defs/digest"}}
+      "$ref": "#/$defs/migrationSet"
     },
     "publicConfig": {
-      "type": "object", "additionalProperties": false,
-      "required": ["strategy", "schemaSha256"],
-      "properties": {"strategy": {"const": "server-token-response"}, "schemaSha256": {"$ref": "#/$defs/digest"}}
-    },
-    "profile": {
-      "type": "object", "additionalProperties": false,
-      "required": ["sha256"], "properties": {"sha256": {"$ref": "#/$defs/digest"}}
+      "$ref": "#/$defs/publicConfig"
     },
     "configProfiles": {
-      "type": "object", "additionalProperties": false,
-      "required": ["live-staging", "production"],
-      "properties": {"live-staging": {"$ref": "#/$defs/profile"}, "production": {"$ref": "#/$defs/profile"}}
+      "$ref": "#/$defs/configProfiles"
     },
     "promotion": {
-      "type": "object", "additionalProperties": false,
-      "required": ["baseManifestSha256"], "properties": {"baseManifestSha256": {"$ref": "#/$defs/sha256"}}
-    },
-    "rollbackArtifact": {
-      "type": "object", "additionalProperties": false,
-      "required": ["artifactId", "repository", "digest"],
-      "properties": {"artifactId": {"enum": ["app", "tapestry", "playlist-bot", "analytics"]}, "repository": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}
+      "$ref": "#/$defs/promotion"
     },
     "rollback": {
-      "type": "object", "additionalProperties": false,
-      "required": ["manifestSha256", "artifacts"],
-      "properties": {"manifestSha256": {"$ref": "#/$defs/sha256"}, "artifacts": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/rollbackArtifact"}}}
+      "$ref": "#/$defs/rollback"
     },
     "qualification": {
-      "type": "object", "additionalProperties": false,
-      "required": ["runId", "result", "qualifiedAt", "expiresAt", "candidateIdentitySha256", "receiptSha256"],
+      "$ref": "#/$defs/qualification"
+    },
+    "deploymentInputs": {
+      "$ref": "#/$defs/deploymentInputs"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "gitSha",
+        "gitTree"
+      ],
       "properties": {
-        "runId": {"type": "string", "pattern": "^[1-9][0-9]{0,19}$"},
-        "result": {"const": "success"},
-        "qualifiedAt": {"type": "string", "format": "date-time"},
-        "expiresAt": {"type": "string", "format": "date-time"},
-        "candidateIdentitySha256": {"$ref": "#/$defs/sha256"},
-        "receiptSha256": {"$ref": "#/$defs/digest"}
+        "repository": {
+          "const": "AlterMundi/harmonic-beacon-webapp"
+        },
+        "gitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "gitTree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workflowRunId",
+        "workflowRunAttempt",
+        "workflowPath",
+        "workflowRef",
+        "createdAt",
+        "dependencyLockSha256",
+        "buildDefinitionSha256",
+        "runtimePolicySha256"
+      ],
+      "properties": {
+        "workflowRunId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        },
+        "workflowRunAttempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dependencyLockSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "buildDefinitionSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runtimePolicySha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "workflowPath": {
+          "const": ".github/workflows/oci-candidate.yml"
+        },
+        "workflowRef": {
+          "const": "refs/heads/main"
+        }
+      }
+    },
+    "sbom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "digest",
+        "signatureBundleDigest"
+      ],
+      "properties": {
+        "format": {
+          "const": "spdx-json"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "signatureBundleDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "predicateType",
+        "digest",
+        "signatureBundleDigest"
+      ],
+      "properties": {
+        "predicateType": {
+          "const": "https://slsa.dev/provenance/v1"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "signatureBundleDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issuer",
+        "identity",
+        "bundleDigest"
+      ],
+      "properties": {
+        "issuer": {
+          "const": "https://token.actions.githubusercontent.com"
+        },
+        "identity": {
+          "const": "https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main"
+        },
+        "bundleDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "repository",
+        "digest",
+        "platform",
+        "context",
+        "dockerfile",
+        "roles",
+        "sbom",
+        "provenance",
+        "signature"
+      ],
+      "properties": {
+        "artifactId": {
+          "enum": [
+            "app",
+            "tapestry",
+            "playlist-bot",
+            "analytics"
+          ]
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/altermundi/harmonic-beacon-(app|tapestry|playlist-bot|analytics)$"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "platform": {
+          "const": "linux/amd64"
+        },
+        "context": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "sbom": {
+          "$ref": "#/$defs/sbom"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "signature": {
+          "$ref": "#/$defs/signature"
+        }
+      }
+    },
+    "externalImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serviceId",
+        "repository",
+        "digest",
+        "platform"
+      ],
+      "properties": {
+        "serviceId": {
+          "enum": [
+            "postgres",
+            "livekit"
+          ]
+        },
+        "repository": {
+          "enum": [
+            "docker.io/library/postgres",
+            "docker.io/livekit/livekit-server"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "platform": {
+          "const": "linux/amd64"
+        }
+      }
+    },
+    "migrationSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "head",
+        "sha256"
+      ],
+      "properties": {
+        "head": {
+          "type": "string",
+          "pattern": "^[0-9]{14}_[a-z0-9_]+$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "publicConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "schemaSha256"
+      ],
+      "properties": {
+        "strategy": {
+          "const": "server-token-response"
+        },
+        "schemaSha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "configProfiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "live-staging",
+        "production"
+      ],
+      "properties": {
+        "live-staging": {
+          "$ref": "#/$defs/profile"
+        },
+        "production": {
+          "$ref": "#/$defs/profile"
+        }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseManifestSha256"
+      ],
+      "properties": {
+        "baseManifestSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestSha256"
+      ],
+      "properties": {
+        "manifestSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "runAttempt",
+        "result",
+        "qualifiedAt",
+        "expiresAt",
+        "candidateIdentitySha256",
+        "receiptSha256"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        },
+        "result": {
+          "const": "success"
+        },
+        "qualifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "candidateIdentitySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "receiptSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runAttempt": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "deploymentInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "composeSha256",
+        "overlaySha256"
+      ],
+      "properties": {
+        "composeSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "overlaySha256": {
+          "$ref": "#/$defs/digest"
+        }
       }
     }
   }

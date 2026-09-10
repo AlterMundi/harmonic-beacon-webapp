@@ -130,6 +130,8 @@ services:
       - LIVEKIT_INTERNAL_URL=http://beacon-livekit:7880
       - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:?required}
       - LIVEKIT_PUBLIC_URL_ALLOWLIST=${LIVEKIT_PUBLIC_URL_ALLOWLIST:?required}
+      - BEACON_PUBLIC_ORIGIN=${PUBLIC_ORIGIN:?required}
+      - BEACON_CONFIG_PROFILE_SHA256=${HB_CONFIG_PROFILE_SHA256:-unverified}
       - BEACON_REFERENCE_AUDIO_PATH=/data/beacon-records/luz_de_manana.ogg
     volumes:
       - /mnt/beacon-data/beacon-records:/data/beacon-records:ro

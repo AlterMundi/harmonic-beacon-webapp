@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { canonicalize } from './release-manifest.mjs';
+import { canonicalize, publicConfigSha256 } from './release-manifest.mjs';
 
 const EXACT_REF = /^([a-z0-9./-]+)@(sha256:[0-9a-f]{64})$/u;
 const IDS = ['app', 'tapestry', 'playlist-bot', 'analytics'];
@@ -33,8 +33,16 @@ export function createCandidate(options) {
       context,
       dockerfile: entry.artifactId === 'app' ? 'Dockerfile' : `services/${entry.artifactId}/Dockerfile`,
       roles: entry.artifactId === 'app' ? ['app', 'migrate', 'commerce-reconciler'] : [entry.artifactId],
-      sbom: { format: 'spdx-json', digest: entry.sbomDigest },
-      provenance: { predicateType: 'https://slsa.dev/provenance/v1', digest: entry.provenanceDigest },
+      sbom: {
+        format: 'spdx-json',
+        digest: entry.sbomDigest,
+        signatureBundleDigest: entry.sbomSignatureBundleDigest,
+      },
+      provenance: {
+        predicateType: 'https://slsa.dev/provenance/v1',
+        digest: entry.provenanceDigest,
+        signatureBundleDigest: entry.provenanceSignatureBundleDigest,
+      },
       signature: {
         issuer: 'https://token.actions.githubusercontent.com',
         identity: 'https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main',
@@ -53,6 +61,8 @@ export function createCandidate(options) {
     build: {
       workflowRunId: options.runId,
       workflowRunAttempt: options.runAttempt,
+      workflowPath: '.github/workflows/oci-candidate.yml',
+      workflowRef: 'refs/heads/main',
       createdAt: options.createdAt,
       dependencyLockSha256: options.hashes.dependencyLock,
       buildDefinitionSha256: options.hashes.buildDefinition,
@@ -69,8 +79,12 @@ export function createCandidate(options) {
       'live-staging': { sha256: options.hashes.liveStagingConfig },
       production: { sha256: options.hashes.productionConfig },
     },
+    deploymentInputs: {
+      composeSha256: options.hashes.compose,
+      overlaySha256: options.hashes.overlay,
+    },
     promotion: { baseManifestSha256: options.baseManifestSha256 },
-    rollback: options.rollback,
+    rollback: { manifestSha256: options.baseManifestSha256 },
   };
 }
 
@@ -80,6 +94,10 @@ function hashFiles(paths) {
     hash.update(path); hash.update('\0'); hash.update(readFileSync(path)); hash.update('\0');
   }
   return `sha256:${hash.digest('hex')}`;
+}
+
+function fileDigest(path) {
+  return publicConfigSha256(readFileSync(path));
 }
 
 function filesUnder(path) {
@@ -110,11 +128,15 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     evidence,
     externalRefs: { postgres: env.HB_POSTGRES_IMAGE_REF, livekit: env.HB_LIVEKIT_IMAGE_REF },
     baseManifestSha256: env.HB_RELEASE_BASE_MANIFEST_SHA256,
-    rollback: JSON.parse(env.HB_RELEASE_ROLLBACK_JSON ?? 'null'),
     migrationHead,
     hashes: {
       dependencyLock: hashFiles(['package-lock.json']),
-      buildDefinition: hashFiles(['.github/workflows/oci-candidate.yml', 'Dockerfile', 'docker-bake.hcl', ...filesUnder('services').filter((path) => path.endsWith('Dockerfile'))]),
+      buildDefinition: hashFiles([
+        '.github/workflows/oci-candidate.yml', 'Dockerfile', 'docker-bake.hcl',
+        'deploy/hb-deploy-root', 'deploy/hb-artifact-verify.mjs',
+        'scripts/ci/release-manifest.mjs',
+        ...filesUnder('services').filter((path) => path.endsWith('Dockerfile')),
+      ]),
       runtimePolicy: hashFiles([
         'deploy/oci-images.compose.yml', 'deploy/qualification.compose.yml',
         'deploy/schemas/runtime-public-config.schema.json',
@@ -124,8 +146,10 @@ export function main(argv = process.argv.slice(2), env = process.env) {
       ]),
       migrationSet: hashFiles(filesUnder('prisma/migrations')),
       configSchema: hashFiles(['deploy/schemas/runtime-public-config.schema.json']),
-      liveStagingConfig: hashFiles(['deploy/runtime-public-config/live-staging.json']),
-      productionConfig: hashFiles(['deploy/runtime-public-config/production.json']),
+      liveStagingConfig: fileDigest('deploy/runtime-public-config/live-staging.json'),
+      productionConfig: fileDigest('deploy/runtime-public-config/production.json'),
+      compose: fileDigest('docker-compose.yml'),
+      overlay: fileDigest('deploy/oci-images.compose.yml'),
     },
   });
   writeFileSync(output, canonicalize(candidate), { flag: 'wx', mode: 0o600 });

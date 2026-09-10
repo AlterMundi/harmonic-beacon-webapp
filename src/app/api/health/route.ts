@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import packageJson from '../../../../package.json';
 import { buildProvenance, HEALTH_SCHEMA_VERSION } from '@/lib/build-provenance';
+import { runtimePublicConfig } from '@/lib/runtime-public-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,7 @@ export async function GET() {
             uptime: process.uptime(),
             version: packageJson.version,
             ...buildProvenance(process.env),
+            ...runtimePublicConfig(process.env),
         },
         { headers: { 'Cache-Control': 'no-store' } },
     );

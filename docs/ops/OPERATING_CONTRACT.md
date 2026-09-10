@@ -117,6 +117,18 @@ authority are recorded without guessing in
 [`deploy/platform-services.json`](../../deploy/platform-services.json); `hb doctor`
 fails or warns when those mechanical contracts are absent.
 
+During the main/release transition, `HB_RELEASE_LANE_STATE=legacy-shadow`
+keeps the production Live path on the dedicated `release` workflow described
+by `.github/workflows/deploy.yml` and `deploy/README.md`; OCI promotion is
+shadow-only. Only the single `oci-production` state, set after accepted
+shadow/rollback/forward-repair evidence and root-state initialization, changes
+that routing. The restricted `/usr/local/sbin/hb-deploy` path remains the
+production mutation boundary. OCI artifact operations are rooted in one
+verified transaction and publish one atomic current-state object only after
+actual digest, health, public provenance and private-boundary readback. The
+manual Compose section in older runbooks is emergency historical guidance, not
+ordinary authorization.
+
 Account/Listener, Home, Analytics, and payment authority have separate release
 ownership. Do not assume a Live deployment updates them. Shared-contract
 changes require explicit ordered compatibility, not an all-services rebuild.

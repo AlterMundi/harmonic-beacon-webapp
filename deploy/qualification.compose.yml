@@ -29,8 +29,8 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://beacon_qualification:qualification-only@postgres:5432/beacon_qualification
       LIVEKIT_INTERNAL_URL: http://livekit:7880
-      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://127.0.0.1:32880}
-      LIVEKIT_PUBLIC_URL_ALLOWLIST: ${LIVEKIT_PUBLIC_URL_ALLOWLIST:-ws://127.0.0.1:32880}
+      LIVEKIT_PUBLIC_URL: wss://live-staging.harmonicbeacon.com/rtc
+      LIVEKIT_PUBLIC_URL_ALLOWLIST: wss://live-staging.harmonicbeacon.com/rtc
       LIVEKIT_API_KEY: devkey
       LIVEKIT_API_SECRET: secret
       LIVEKIT_ROOM_NAME: qualification
@@ -46,7 +46,10 @@ services:
     environment:
       <<: *app-environment
       BEACON_ARTIFACT_DIGEST: ${HB_APP_IMAGE_REF:?exact app digest required}
-      BEACON_CONFIG_PROFILE_SHA256: ${HB_CONFIG_PROFILE_SHA256:-qualification}
+      BEACON_CONFIG_PROFILE_SHA256: ${HB_CONFIG_PROFILE_SHA256:?verified profile digest required}
+      BEACON_PUBLIC_ORIGIN: https://live-staging.harmonicbeacon.com
+      PROMO_INVITATIONS_ENABLED: "false"
+      TAPESTRY_PUBLIC_ENABLED: "false"
     ports:
       - 127.0.0.1:${HB_QUALIFICATION_APP_PORT:-3210}:3000
     networks: [database, media]
@@ -73,6 +76,8 @@ services:
       TAPESTRY_INTERNAL_SECRET: qualification-only
       TAPESTRY_SESSION_IDS: 10000000-0000-4000-8000-000000000001
     networks: [media]
+    ports:
+      - 127.0.0.1:3211:3100
 
   playlist-bot:
     image: ${HB_PLAYLIST_IMAGE_REF:?exact playlist digest required}
@@ -90,7 +95,25 @@ services:
   analytics:
     image: ${HB_ANALYTICS_IMAGE_REF:?exact analytics digest required}
     profiles: [analytics]
+    environment:
+      ANALYTICS_DATABASE_URL: postgresql://beacon_qualification:***@postgres:5432/beacon_qualification
+      ANALYTICS_DATABASE_ADMIN_URL: postgresql://beacon_qualification:***@postgres:5432/beacon_qualification
+      ANALYTICS_DASHBOARD_DATABASE_URL: postgresql://beacon_qualification:***@postgres:5432/beacon_qualification
+      ANALYTICS_HANDOFF_SECRET: qualification-handoff-secret-at-least-32-characters
+      ANALYTICS_SERVER_EVENT_SECRET: qualification-server-secret-at-least-32-characters
+      ANALYTICS_NONPRODUCTION_SERVER_EVENT_SECRET: qualification-nonproduction-secret-32-chars
+      ANALYTICS_NETWORK_DIGEST_SECRET: qualification-network-secret-at-least-32-characters
+    ports:
+      - 127.0.0.1:3212:3300
     networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3300/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
 networks:
   database:

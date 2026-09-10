@@ -7,6 +7,10 @@ on:
         description: Successful OCI candidate workflow run id
         required: true
         type: string
+      source_sha:
+        description: Exact trusted current-main source SHA
+        required: true
+        type: string
       manifest_sha256:
         description: Exact canonical release-manifest.json SHA-256
         required: true
@@ -18,7 +22,7 @@ on:
         options: [shadow, production]
 
 concurrency:
-  group: oci-promote-${{ inputs.target }}
+  group: harmonic-beacon-production-release
   cancel-in-progress: false
 
 permissions:
@@ -33,10 +37,11 @@ jobs:
       source_sha: ${{ steps.bind.outputs.source_sha }}
       source_tree: ${{ steps.bind.outputs.source_tree }}
       config_sha256: ${{ steps.bind.outputs.config_sha256 }}
+      run_attempt: ${{ steps.bind.outputs.run_attempt }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: refs/heads/main
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Bind a trusted successful candidate run
@@ -44,39 +49,67 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.candidate_run_id }}
+          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+          TRUSTED_MAIN_SHA: ${{ github.sha }}
           TARGET: ${{ inputs.target }}
+          RELEASE_LANE_STATE: ${{ vars.HB_RELEASE_LANE_STATE }}
         run: |
           set -euo pipefail
           [[ "$RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "$REQUESTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_REF" = refs/heads/main
+          test "$REQUESTED_SOURCE_SHA" = "$TRUSTED_MAIN_SHA"
+          test "$(git rev-parse HEAD)" = "$TRUSTED_MAIN_SHA"
+          case "$RELEASE_LANE_STATE:$TARGET" in
+            legacy-shadow:shadow|oci-production:production) ;;
+            *) echo 'target is not authorized by the single release lane state' >&2; exit 1 ;;
+          esac
           run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
-          test "$(jq -r .name <<<"$run")" = 'OCI release candidate'
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/oci-candidate.yml")"
+          test "$(jq -r .path <<<"$workflow")" = '.github/workflows/oci-candidate.yml'
+          workflow_id="$(jq -r .id <<<"$workflow")"
+          [[ "$workflow_id" =~ ^[1-9][0-9]*$ ]]
+          test "$(jq -r .workflow_id <<<"$run")" = "$workflow_id"
+          test "$(jq -r .path <<<"$run")" = '.github/workflows/oci-candidate.yml'
           test "$(jq -r .head_repository.full_name <<<"$run")" = "$GITHUB_REPOSITORY"
           test "$(jq -r .head_branch <<<"$run")" = main
           test "$(jq -r .conclusion <<<"$run")" = success
           event="$(jq -r .event <<<"$run")"
           test "$event" = push -o "$event" = workflow_dispatch
           source_sha="$(jq -r .head_sha <<<"$run")"
-          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$source_sha" = "$TRUSTED_MAIN_SHA"
           source_tree="$(git rev-parse "${source_sha}^{tree}")"
+          run_attempt="$(jq -r .run_attempt <<<"$run")"
+          [[ "$run_attempt" =~ ^[1-9][0-9]{0,9}$ ]]
           profile=production
           [ "$TARGET" = production ] || profile=live-staging
-          config_sha256="sha256:$(sha256sum "deploy/runtime-public-config/${profile}.json" | cut -d' ' -f1)"
-          printf 'source_sha=%s\nsource_tree=%s\nconfig_sha256=%s\n' \
-            "$source_sha" "$source_tree" "$config_sha256" >> "$GITHUB_OUTPUT"
+          config_sha256="$(node scripts/ci/release-manifest.mjs public-config-digest \
+            --profile "deploy/runtime-public-config/${profile}.json")"
+          printf 'source_sha=%s\nsource_tree=%s\nconfig_sha256=%s\nrun_attempt=%s\n' \
+            "$source_sha" "$source_tree" "$config_sha256" "$run_attempt" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: qualified-release-${{ inputs.candidate_run_id }}
           path: candidate
           run-id: ${{ inputs.candidate_run_id }}
           github-token: ${{ github.token }}
-      - name: Verify exact downloaded manifest bytes
+      - name: Verify exact downloaded manifest bytes and run provenance
         env:
           EXPECTED: ${{ inputs.manifest_sha256 }}
+          RUN_ID: ${{ inputs.candidate_run_id }}
+          RUN_ATTEMPT: ${{ steps.bind.outputs.run_attempt }}
+          SOURCE_SHA: ${{ steps.bind.outputs.source_sha }}
         run: |
           set -euo pipefail
           [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]
           test "$(sha256sum candidate/release-manifest.json | cut -d' ' -f1)" = "$EXPECTED"
           test "$(cut -d' ' -f1 candidate/release-manifest.sha256)" = "$EXPECTED"
+          jq -e --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" --arg sha "$SOURCE_SHA" \
+            '.source.gitSha==$sha and .build.workflowRunId==$run and .build.workflowRunAttempt==$attempt and .qualification.runId==$run and .qualification.runAttempt==$attempt' \
+            candidate/release-manifest.json >/dev/null
+          jq -e --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" \
+            '.workflowRunId==$run and .workflowRunAttempt==$attempt and .result=="success"' \
+            candidate/qualification-receipt.json >/dev/null
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: promotion-input-${{ github.run_id }}
@@ -86,7 +119,9 @@ jobs:
 
   promote:
     needs: resolve
-    if: vars.HB_OCI_PROMOTION_ENABLED == 'true'
+    if: >-
+      (inputs.target == 'shadow' && vars.HB_RELEASE_LANE_STATE == 'legacy-shadow') ||
+      (inputs.target == 'production' && vars.HB_RELEASE_LANE_STATE == 'oci-production')
     environment: ${{ inputs.target }}
     runs-on: [self-hosted, mona]
     steps:
@@ -115,19 +150,20 @@ jobs:
           sudo /usr/local/sbin/hb-deploy artifact-prepare "$GITHUB_WORKSPACE" \
             '${{ needs.resolve.outputs.source_sha }}' '${{ needs.resolve.outputs.source_tree }}' \
             '${{ inputs.candidate_run_id }}' '${{ inputs.manifest_sha256 }}' \
-            '${{ inputs.target }}' '${{ needs.resolve.outputs.config_sha256 }}'
-          sudo /usr/local/sbin/hb-deploy artifact-preflight "$GITHUB_WORKSPACE" \
-            '${{ needs.resolve.outputs.source_sha }}' '${{ inputs.candidate_run_id }}' '${{ inputs.target }}'
+            '${{ inputs.target }}' '${{ needs.resolve.outputs.config_sha256 }}' \
+            '${{ needs.resolve.outputs.run_attempt }}'
+          sudo /usr/local/sbin/hb-deploy artifact-preflight \
+            '${{ inputs.candidate_run_id }}' '${{ inputs.target }}'
       - name: Record shadow status without replacing production
         if: inputs.target == 'shadow'
-        run: sudo /usr/local/sbin/hb-deploy artifact-status "$GITHUB_WORKSPACE" '${{ inputs.candidate_run_id }}' shadow
+        run: sudo /usr/local/sbin/hb-deploy artifact-status '${{ inputs.candidate_run_id }}' shadow
       - name: Apply migration and replace from the prepared digest set
         if: inputs.target == 'production'
         run: |
           set -euo pipefail
-          sudo /usr/local/sbin/hb-deploy artifact-migrate "$GITHUB_WORKSPACE" '${{ inputs.candidate_run_id }}'
-          sudo /usr/local/sbin/hb-deploy artifact-replace "$GITHUB_WORKSPACE" '${{ inputs.candidate_run_id }}'
-          sudo /usr/local/sbin/hb-deploy artifact-status "$GITHUB_WORKSPACE" '${{ inputs.candidate_run_id }}' production
+          sudo /usr/local/sbin/hb-deploy artifact-migrate '${{ inputs.candidate_run_id }}'
+          sudo /usr/local/sbin/hb-deploy artifact-replace '${{ inputs.candidate_run_id }}'
+          sudo /usr/local/sbin/hb-deploy artifact-status '${{ inputs.candidate_run_id }}' production
       - name: Restore the manifest-bound rollback digest set
         if: failure() && inputs.target == 'production'
-        run: sudo /usr/local/sbin/hb-deploy artifact-rollback "$GITHUB_WORKSPACE" '${{ inputs.candidate_run_id }}'
+        run: sudo /usr/local/sbin/hb-deploy artifact-rollback '${{ inputs.candidate_run_id }}'

@@ -4,6 +4,6 @@
   "livekitPublicUrl": "wss://live.harmonicbeacon.com",
   "featureFlags": {
     "tapestryPublic": false,
-    "promoInvitations": true
+    "promoInvitations": false
   }
 }

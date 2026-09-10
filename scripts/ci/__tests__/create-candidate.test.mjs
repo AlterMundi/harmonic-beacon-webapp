@@ -9,7 +9,9 @@ const evidence = ['app', 'tapestry', 'playlist-bot', 'analytics'].map((artifactI
   repository: `ghcr.io/altermundi/harmonic-beacon-${artifactId}`,
   digest: digest(String.fromCharCode(97 + index)),
   sbomDigest: digest('1'),
+  sbomSignatureBundleDigest: digest('4'),
   provenanceDigest: digest('2'),
+  provenanceSignatureBundleDigest: digest('5'),
   signatureBundleDigest: digest('3'),
 }));
 evidence[0].repository = 'ghcr.io/altermundi/harmonic-beacon-app';
@@ -23,8 +25,12 @@ function input() {
       livekit: `docker.io/livekit/livekit-server@${digest('f')}`,
     },
     baseManifestSha256: 'c'.repeat(64),
-    rollback: { manifestSha256: 'd'.repeat(64), artifacts: evidence.map((entry) => ({ artifactId: entry.artifactId, repository: entry.repository, digest: entry.digest })) },
-    hashes: { dependencyLock: digest('4'), buildDefinition: digest('5'), runtimePolicy: digest('6'), migrationSet: digest('7'), configSchema: digest('8'), liveStagingConfig: digest('9'), productionConfig: digest('0') },
+    rollback: { manifestSha256: 'd'.repeat(64), artifacts: [{ artifactId: 'app' }] },
+    hashes: {
+      dependencyLock: digest('4'), buildDefinition: digest('5'), runtimePolicy: digest('6'),
+      migrationSet: digest('7'), configSchema: digest('8'), liveStagingConfig: digest('9'),
+      productionConfig: digest('0'), compose: digest('a'), overlay: digest('b'),
+    },
     migrationHead: '20260910170000_example',
   };
 }
@@ -33,6 +39,7 @@ test('creates a complete exact-digest candidate with one app digest for all app 
   const candidate = createCandidate(input());
   assert.equal(candidate.artifacts.length, 4);
   assert.ok(candidate.artifacts.every((entry) => entry.context === '.'));
+  assert.deepEqual(candidate.rollback, { manifestSha256: 'c'.repeat(64) });
   assert.deepEqual(candidate.artifacts[0].roles, ['app', 'migrate', 'commerce-reconciler']);
   assert.equal(candidate.externalImages[0].digest, digest('e'));
   assert.equal(candidate.qualification, undefined);
