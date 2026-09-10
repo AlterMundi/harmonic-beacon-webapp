@@ -133,12 +133,15 @@ the native-denial and initial-Beacon retry cases. Live-room tests must call
 the CTA can disappear after locator resolution when native output becomes ready.
 The helper clicks at most once when the control is visible and accepts an absent
 or hidden control only after `expectEffectiveAudioReady()` proves both owned
-rooms ready (and advancing native tracks when received audio exists). Responsive
-geometry checks likewise measure the CTA only while visible; a connected room
-with no visible CTA must satisfy the same effective-readiness contract. DOM
-presence or a hidden locator is never activation evidence. The camera product
-policy is unchanged. Capture evidence is attached to the sanitized media
-receipts.
+rooms ready and confirms non-blocked native playback state when received audio
+exists; clock advancement remains a separate `expectNativeAudioAdvancing()`
+contract. Responsive geometry checks take one synchronous document-side sample
+of exact-label CTA multiplicity and its nullable visible rectangle. A duplicate
+fails; a non-null rectangle is measured; a connected room with a null rectangle
+must satisfy the same effective-readiness contract. The sample never auto-waits
+for an already removed CTA and never opens a visibility-to-geometry TOCTOU window.
+DOM presence or a hidden locator is never activation evidence. The camera product
+policy is unchanged. Capture evidence is attached to the sanitized media receipts.
 The publisher uses `E2E_LIVEKIT_URL`, `E2E_LIVEKIT_API_KEY`/`_SECRET` and
 `E2E_LIVEKIT_ROOM_NAME` (defaults: localhost:7880, devkey/secret, beacon). Keep
 the latter identical to the application's `LIVEKIT_ROOM_NAME`.
