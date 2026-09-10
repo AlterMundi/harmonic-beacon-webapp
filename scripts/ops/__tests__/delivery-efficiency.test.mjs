@@ -7,6 +7,8 @@ const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url)
 const hook = read('.husky/pre-commit');
 const packageJson = JSON.parse(read('package.json'));
 const ciWorkflow = read('.github/workflows/ci.yml');
+const e2eWorkflow = read('.github/workflows/e2e.yml');
+const audioWorkflow = read('.github/workflows/audio-boundary.yml');
 const deployWorkflow = read('.github/workflows/deploy.yml');
 
 test('pre-commit runs only staged lint and never the full test suite', () => {
@@ -28,6 +30,18 @@ test('full Vitest remains explicit locally and required in hosted CI', () => {
 
 test('commerce verifier runs inside the mapped test context', () => {
   assert.match(ciWorkflow, /^\s*- run: npm run contract:commerce:verify$/mu);
+});
+
+test('candidate-executing pull request workflows grant read-only contents explicitly', () => {
+  for (const [path, workflow] of [
+    ['ci.yml', ciWorkflow],
+    ['e2e.yml', e2eWorkflow],
+    ['audio-boundary.yml', audioWorkflow],
+  ]) {
+    assert.match(workflow, /^permissions:\n(?:  [a-z-]+: read\n)+/m, path);
+    assert.match(workflow, /^  contents: read$/m, path);
+    assert.doesNotMatch(workflow, /^\s+[a-z-]+: write$/m, path);
+  }
 });
 
 test('release qualification retains the full Vitest gate', () => {

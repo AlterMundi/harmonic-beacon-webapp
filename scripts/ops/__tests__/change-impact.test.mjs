@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { classifyChanges } from '../../ci/change-impact.mjs';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 const checkNames = (report) => report.requiredChecks.map(({ check }) => check);
 const contexts = (report) => report.requiredContexts;
@@ -48,6 +53,17 @@ test('audio changes retain the full frozen boundary and both E2E jobs', () => {
   assert.deepEqual(checkNames(report), ['diff-check', 'lint-and-build', 'test', 'e2e', 'frozen-audio-paths']);
   assert.deepEqual(contexts(report), ['diff-check', 'lint-and-build', 'test', 'e2e', 'account', 'frozen-audio-paths']);
   assert.deepEqual(report.details.frozenAudioPaths, ['src/context/AudioContext.tsx']);
+});
+
+test('rename-out detection preserves both the old frozen path and new path', () => {
+  const report = classifyChanges(['src/context/AudioContext.tsx', 'docs/AudioContext.tsx']);
+  assert.deepEqual(report.details.frozenAudioPaths, ['src/context/AudioContext.tsx']);
+  assert.ok(report.requiredContexts.includes('frozen-audio-paths'));
+
+  const audioWorkflow = readFileSync(resolve(ROOT, '.github/workflows/audio-boundary.yml'), 'utf8');
+  const classifier = readFileSync(resolve(ROOT, 'scripts/ci/change-impact.mjs'), 'utf8');
+  assert.match(audioWorkflow, /git diff --name-only --no-renames/);
+  assert.match(classifier, /\['diff', '--name-only', '--no-renames'/);
 });
 
 test('analytics-only changes do not request Live browser gates', () => {

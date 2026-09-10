@@ -187,10 +187,10 @@ function changedFiles(options) {
   if (options.files.length) return options.files;
   const base = options.base || defaultBase();
   const mergeBase = git(['merge-base', options.head, base]);
-  const files = git(['diff', '--name-only', `${mergeBase}..${options.head}`]).split(/\r?\n/).filter(Boolean);
+  const files = git(['diff', '--name-only', '--no-renames', `${mergeBase}..${options.head}`]).split(/\r?\n/).filter(Boolean);
   if (options.workingTree) {
-    files.push(...git(['diff', '--name-only']).split(/\r?\n/).filter(Boolean));
-    files.push(...git(['diff', '--cached', '--name-only']).split(/\r?\n/).filter(Boolean));
+    files.push(...git(['diff', '--name-only', '--no-renames']).split(/\r?\n/).filter(Boolean));
+    files.push(...git(['diff', '--cached', '--name-only', '--no-renames']).split(/\r?\n/).filter(Boolean));
     files.push(...git(['ls-files', '--others', '--exclude-standard']).split(/\r?\n/).filter(Boolean));
   }
   return files;

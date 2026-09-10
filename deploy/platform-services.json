@@ -44,8 +44,12 @@
       "deliveryPolicy": {
         "protectedBranches": ["main", "release"],
         "requiredContext": "delivery-gate",
+        "requiredAppId": 15368,
         "requirePullRequest": true,
         "requireCodeOwnerReviews": true,
+        "requiredApprovingReviewCount": 1,
+        "dismissStaleReviews": true,
+        "requireLastPushApproval": true,
         "requireUpToDate": true,
         "allowForcePushes": false,
         "allowDeletions": false

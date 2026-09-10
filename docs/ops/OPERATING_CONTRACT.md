@@ -66,16 +66,26 @@ Live delivery has one stable aggregate context, `delivery-gate`, implemented by
 [`.github/workflows/delivery-gate.yml`](../../.github/workflows/delivery-gate.yml)
 and the fail-closed evaluator at
 [`scripts/ci/required-checks.mjs`](../../scripts/ci/required-checks.mjs). The gate
-runs trusted base-side code on a GitHub-hosted runner, evaluates only check runs
-attached to the exact current PR head, includes both sides of renamed paths,
-rejects incomplete GitHub file listings and fails when multiple protected PRs
-share one head SHA. It never checks out or executes candidate bytes.
+first resolves the exact current target commit, checks out the evaluator from
+that commit only, and rejects any event, evaluator, constituent suite, or
+workflow-run identity bound to another PR head, base ref, or base SHA. Required
+checks must come from the exact GitHub Actions App and expected workflow path on
+the pull-request event. Check pages are refetched to a stable complete snapshot,
+deduplicated by ID, ordered by workflow start and rerun attempt, and refetched
+again before success. Changed-file classification includes both sides of
+renames and rejects incomplete GitHub file listings or multiple protected PRs
+sharing one head SHA. The PR, retarget timeline, and check snapshot are reread
+immediately before success, which is published on the current synthetic merge
+commit rather than the reusable head commit. The monitor never checks out or
+executes candidate bytes.
 Constituent CI/E2E/audio workflow lifecycle events re-evaluate newer reruns;
 per-head concurrency keeps obsolete candidates and manual runs isolated.
 Manual mode emits only `delivery-gate-shadow`, never the required context.
 
-`main` and `release` must require pull requests, code-owner review, an up-to-date
-head and `delivery-gate`, with force pushes and deletion disabled. `release`
+`main` and `release` must require pull requests, at least one code-owner
+approval, stale-review dismissal, approval of the current push by someone other
+than its pusher, an up-to-date head, and `delivery-gate` bound to GitHub Actions
+App ID `15368`, with force pushes and deletion disabled. `release`
 remains the promotion branch and [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)
 plus [`deploy/hb-deploy-root`](../../deploy/hb-deploy-root) remain the reviewed
 production mutation path. `early-birds` is a separate Account/Listener lane: it

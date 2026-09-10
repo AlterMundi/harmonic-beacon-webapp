@@ -85,83 +85,91 @@ test('reports a missing branch-qualified path as an error', async () => {
   });
 });
 
-test('requires protected branches, PR review, no force pushes and the exact aggregate context', () => {
+test('requires meaningful current-push review and exact Actions App delivery context', () => {
   const policy = {
     protectedBranches: ['main', 'release'],
     requiredContext: 'delivery-gate',
+    requiredAppId: 15368,
     requirePullRequest: true,
     requireCodeOwnerReviews: true,
+    requiredApprovingReviewCount: 1,
+    dismissStaleReviews: true,
+    requireLastPushApproval: true,
     requireUpToDate: true,
     allowForcePushes: false,
     allowDeletions: false,
   };
-  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', null), {
-    ok: false,
-    detail: 'main: branch protection unavailable',
+  const protection = (overrides = {}) => ({
+    required_status_checks: {
+      strict: true,
+      contexts: [],
+      checks: [{ context: 'delivery-gate', app_id: 15368 }],
+      ...overrides.required_status_checks,
+    },
+    required_pull_request_reviews: {
+      require_code_owner_reviews: true,
+      required_approving_review_count: 1,
+      dismiss_stale_reviews: true,
+      require_last_push_approval: true,
+      ...overrides.required_pull_request_reviews,
+    },
+    allow_force_pushes: overrides.allow_force_pushes ?? { enabled: false },
+    allow_deletions: overrides.allow_deletions ?? { enabled: false },
   });
-  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', {
-    required_status_checks: { strict: true, contexts: ['test'], checks: [] },
-    required_pull_request_reviews: { require_code_owner_reviews: true },
-    allow_force_pushes: { enabled: false },
-    allow_deletions: { enabled: false },
-  }), {
-    ok: false,
-    detail: 'main: missing required context delivery-gate',
-  });
-  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', {
-    required_status_checks: { strict: true, contexts: ['delivery-gate'], checks: [] },
-    required_pull_request_reviews: null,
-    allow_force_pushes: { enabled: false },
-    allow_deletions: { enabled: false },
-  }), {
-    ok: false,
-    detail: 'main: pull requests are not required',
-  });
-  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', {
-    required_status_checks: { strict: true, contexts: ['delivery-gate'], checks: [] },
-    required_pull_request_reviews: { require_code_owner_reviews: true },
-    allow_force_pushes: { enabled: true },
-    allow_deletions: { enabled: false },
-  }), {
-    ok: false,
-    detail: 'main: force pushes are enabled',
-  });
-  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', {
-    required_status_checks: { strict: true, contexts: ['delivery-gate'], checks: [] },
+
+  assert.equal(evaluateDeliveryProtection(policy, 'main', null).ok, false);
+  assert.match(evaluateDeliveryProtection(policy, 'main', protection({
+    required_status_checks: { checks: [{ context: 'delivery-gate', app_id: -1 }] },
+  })).detail, /exact Actions App 15368/);
+  assert.match(evaluateDeliveryProtection(policy, 'main', protection({
+    required_pull_request_reviews: { required_approving_review_count: 0 },
+  })).detail, /at least 1 approving review/);
+  assert.match(evaluateDeliveryProtection(policy, 'main', protection({
+    required_pull_request_reviews: { dismiss_stale_reviews: false },
+  })).detail, /stale reviews are not dismissed/);
+  assert.match(evaluateDeliveryProtection(policy, 'main', protection({
+    required_pull_request_reviews: { require_last_push_approval: false },
+  })).detail, /last push approval is not required/);
+  assert.match(evaluateDeliveryProtection(policy, 'main', protection({
     required_pull_request_reviews: { require_code_owner_reviews: false },
-    allow_force_pushes: { enabled: false },
-    allow_deletions: { enabled: false },
-  }), {
-    ok: false,
-    detail: 'main: code-owner review is not required',
-  });
-  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', {
-    required_status_checks: { strict: true, contexts: ['delivery-gate'], checks: [] },
-    required_pull_request_reviews: { require_code_owner_reviews: true },
-    allow_force_pushes: { enabled: false },
+  })).detail, /code-owner review is not required/);
+  assert.match(evaluateDeliveryProtection(policy, 'main', protection({
+    required_status_checks: { strict: false },
+  })).detail, /up-to-date head/);
+  assert.match(evaluateDeliveryProtection(policy, 'main', protection({
+    allow_force_pushes: { enabled: true },
+  })).detail, /force pushes are enabled/);
+  assert.match(evaluateDeliveryProtection(policy, 'main', protection({
     allow_deletions: { enabled: true },
-  }), {
-    ok: false,
-    detail: 'main: branch deletion is enabled',
-  });
-  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', {
-    required_status_checks: { strict: false, contexts: ['delivery-gate'], checks: [] },
-    required_pull_request_reviews: { require_code_owner_reviews: true },
-    allow_force_pushes: { enabled: false },
-    allow_deletions: { enabled: false },
-  }), {
-    ok: false,
-    detail: 'main: base updates do not require an up-to-date head',
-  });
-  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', {
-    required_status_checks: { strict: true, contexts: ['delivery-gate'], checks: [] },
-    required_pull_request_reviews: { require_code_owner_reviews: true },
-    allow_force_pushes: { enabled: false },
-    allow_deletions: { enabled: false },
-  }), {
+  })).detail, /branch deletion is enabled/);
+
+  assert.deepEqual(evaluateDeliveryProtection(policy, 'main', protection()), {
     ok: true,
-    detail: 'main: protected with PR/code-owner review, strict base, no force pushes/deletion and delivery-gate',
+    detail: 'main: protected with 1 current-push/code-owner approval, stale dismissal, strict base, no force pushes/deletion and delivery-gate from Actions App 15368',
   });
+});
+
+test('catalog delivery policy requires review freshness and exact check App binding', () => {
+  const catalog = structuredClone(valid);
+  catalog.services[0].deliveryPolicy = {
+    protectedBranches: ['main'],
+    requiredContext: 'delivery-gate',
+    requiredAppId: 15368,
+    requirePullRequest: true,
+    requireCodeOwnerReviews: true,
+    requiredApprovingReviewCount: 1,
+    dismissStaleReviews: true,
+    requireLastPushApproval: true,
+    requireUpToDate: true,
+    allowForcePushes: false,
+    allowDeletions: false,
+  };
+  assert.equal(validateCatalog(catalog), catalog);
+  for (const field of ['requiredAppId', 'requiredApprovingReviewCount', 'dismissStaleReviews', 'requireLastPushApproval']) {
+    const invalid = structuredClone(catalog);
+    delete invalid.services[0].deliveryPolicy[field];
+    assert.throws(() => validateCatalog(invalid), /invalid delivery policy/, field);
+  }
 });
 
 test('preserves unresolved owner authority as an explicit warning contract', () => {

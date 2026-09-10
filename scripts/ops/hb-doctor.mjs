@@ -30,21 +30,30 @@ export async function inspectBranchSource(service, source, pathExists) {
 
 export function evaluateDeliveryProtection(policy, branch, protection) {
   if (!protection) return { ok: false, detail: `${branch}: branch protection unavailable` };
-  const contexts = new Set([
-    ...(protection.required_status_checks?.contexts ?? []),
-    ...(protection.required_status_checks?.checks ?? []).map(({ context }) => context),
-  ]);
-  if (!contexts.has(policy.requiredContext)) {
-    return { ok: false, detail: `${branch}: missing required context ${policy.requiredContext}` };
+  const exactCheck = (protection.required_status_checks?.checks ?? []).find(
+    ({ context, app_id: appId }) => context === policy.requiredContext && appId === policy.requiredAppId,
+  );
+  if (!exactCheck) {
+    return { ok: false, detail: `${branch}: ${policy.requiredContext} is not bound to exact Actions App ${policy.requiredAppId}` };
   }
-  if (policy.requirePullRequest && !protection.required_pull_request_reviews) {
+  const reviews = protection.required_pull_request_reviews;
+  if (policy.requirePullRequest && !reviews) {
     return { ok: false, detail: `${branch}: pull requests are not required` };
   }
   if (policy.allowForcePushes === false && protection.allow_force_pushes?.enabled !== false) {
     return { ok: false, detail: `${branch}: force pushes are enabled` };
   }
-  if (policy.requireCodeOwnerReviews && protection.required_pull_request_reviews?.require_code_owner_reviews !== true) {
+  if (policy.requireCodeOwnerReviews && reviews?.require_code_owner_reviews !== true) {
     return { ok: false, detail: `${branch}: code-owner review is not required` };
+  }
+  if ((reviews?.required_approving_review_count ?? 0) < policy.requiredApprovingReviewCount) {
+    return { ok: false, detail: `${branch}: branch does not require at least ${policy.requiredApprovingReviewCount} approving review(s)` };
+  }
+  if (policy.dismissStaleReviews && reviews?.dismiss_stale_reviews !== true) {
+    return { ok: false, detail: `${branch}: stale reviews are not dismissed` };
+  }
+  if (policy.requireLastPushApproval && reviews?.require_last_push_approval !== true) {
+    return { ok: false, detail: `${branch}: last push approval is not required` };
   }
   if (policy.allowDeletions === false && protection.allow_deletions?.enabled !== false) {
     return { ok: false, detail: `${branch}: branch deletion is enabled` };
@@ -52,7 +61,10 @@ export function evaluateDeliveryProtection(policy, branch, protection) {
   if (policy.requireUpToDate && protection.required_status_checks?.strict !== true) {
     return { ok: false, detail: `${branch}: base updates do not require an up-to-date head` };
   }
-  return { ok: true, detail: `${branch}: protected with PR/code-owner review, strict base, no force pushes/deletion and ${policy.requiredContext}` };
+  return {
+    ok: true,
+    detail: `${branch}: protected with ${policy.requiredApprovingReviewCount} current-push/code-owner approval, stale dismissal, strict base, no force pushes/deletion and ${policy.requiredContext} from Actions App ${policy.requiredAppId}`,
+  };
 }
 
 export function validateCatalog(catalog) {
@@ -92,8 +104,14 @@ export function validateCatalog(catalog) {
           || service.deliveryPolicy.protectedBranches.length === 0
           || typeof service.deliveryPolicy.requiredContext !== 'string'
           || !service.deliveryPolicy.requiredContext
+          || !Number.isSafeInteger(service.deliveryPolicy.requiredAppId)
+          || service.deliveryPolicy.requiredAppId <= 0
           || service.deliveryPolicy.requirePullRequest !== true
           || service.deliveryPolicy.requireCodeOwnerReviews !== true
+          || !Number.isSafeInteger(service.deliveryPolicy.requiredApprovingReviewCount)
+          || service.deliveryPolicy.requiredApprovingReviewCount <= 0
+          || service.deliveryPolicy.dismissStaleReviews !== true
+          || service.deliveryPolicy.requireLastPushApproval !== true
           || service.deliveryPolicy.requireUpToDate !== true
           || service.deliveryPolicy.allowForcePushes !== false
           || service.deliveryPolicy.allowDeletions !== false) {

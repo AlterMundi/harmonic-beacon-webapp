@@ -67,12 +67,16 @@
           "deliveryPolicy": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["protectedBranches", "requiredContext", "requirePullRequest", "requireCodeOwnerReviews", "requireUpToDate", "allowForcePushes", "allowDeletions"],
+            "required": ["protectedBranches", "requiredContext", "requiredAppId", "requirePullRequest", "requireCodeOwnerReviews", "requiredApprovingReviewCount", "dismissStaleReviews", "requireLastPushApproval", "requireUpToDate", "allowForcePushes", "allowDeletions"],
             "properties": {
               "protectedBranches": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
               "requiredContext": {"type": "string", "minLength": 1},
+              "requiredAppId": {"type": "integer", "minimum": 1},
               "requirePullRequest": {"const": true},
               "requireCodeOwnerReviews": {"const": true},
+              "requiredApprovingReviewCount": {"type": "integer", "minimum": 1},
+              "dismissStaleReviews": {"const": true},
+              "requireLastPushApproval": {"const": true},
               "requireUpToDate": {"const": true},
               "allowForcePushes": {"const": false},
               "allowDeletions": {"const": false}
