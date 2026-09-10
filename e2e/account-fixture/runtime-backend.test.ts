@@ -313,7 +313,7 @@ test('public Playwright failure summary rejects structurally malformed reporter 
     };
     const validSuite = { specs: [validSpec] };
     const validReport = { suites: [validSuite], errors: [], stats: { unexpected: 0 } };
-    const malformed = [
+    const malformed: unknown[] = [
         null,
         { ...validReport, suites: 'secret' },
         { ...validReport, errors: { message: 'private' } },
@@ -335,10 +335,57 @@ test('public Playwright failure summary rejects structurally malformed reporter 
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: {} }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [null] }] }] }] }] },
         { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [{ message: 7 }] }] }] }] }] },
+        { ...validReport, errors: [{}] },
+        { ...validReport, errors: [{ location: { file: 'root.ts', line: 1, column: 1 } }] },
+        { ...validReport, errors: [{ message: 'root', location: 'not-a-location' }] },
+        { ...validReport, errors: [{ message: 'root', location: { file: 7, line: '1', column: -1 } }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [{ message: 'failed', location: 'not-a-location' }] }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [{ location: { file: 'test.ts', line: 1, column: 1 } }] }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: 'not-an-error' }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: {} }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { location: { file: 'test.ts', line: 1, column: 1 } } }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { message: 7 } }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { stack: 7 } }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { snippet: 7 } }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { value: 7 } }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { message: 'outer', cause: 'not-an-error' } }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: { message: 'outer', cause: { location: { file: 'cause.ts', line: 1, column: 1 } } } }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errorLocation: 'not-a-location' }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errorLocation: { file: 'test.ts', line: '1', column: 1 } }] }] }] }] },
     ];
+    let deepError: Record<string, unknown> = { message: 'leaf' };
+    for (let depth = 0; depth < 18; depth += 1) deepError = { message: 'outer', cause: deepError };
+    malformed.push({
+        ...validReport,
+        suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, error: deepError }] }] }] }],
+    });
     for (const report of malformed) {
         assert.throws(() => backend.summarizePlaywrightFailureReport(report), /Invalid Playwright JSON report/);
     }
+
+    const validFailure = {
+        suites: [{ specs: [{
+            ...validSpec,
+            tests: [{
+                projectName: 'firefox-account',
+                status: 'unexpected',
+                results: [{
+                    status: 'failed',
+                    errors: [{ message: 'failed', location: { file: 'test.ts', line: 2, column: 3 } }],
+                    error: {
+                        message: 'failed',
+                        stack: 'private stack',
+                        location: { file: 'test.ts', line: 2, column: 3 },
+                        cause: { value: 'private thrown value' },
+                    },
+                    errorLocation: { file: 'test.ts', line: 2, column: 3 },
+                }],
+            }],
+        }] }],
+        errors: [],
+        stats: { unexpected: 1 },
+    };
+    assert.equal(backend.summarizePlaywrightFailureReport(validFailure).failures.length, 1);
 });
 
 test('public Playwright failure summary follows overall status and the terminal retry', async () => {

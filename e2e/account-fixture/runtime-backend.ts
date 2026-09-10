@@ -22,12 +22,37 @@ const testStatuses = new Set(['expected', 'unexpected', 'flaky', 'skipped']);
 const resultStatuses = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
 const failureStatuses = new Set(['failed', 'timedOut', 'interrupted']);
 
+function reportLocation(value: unknown): void {
+    const location = reportObject(value);
+    if (typeof location.file !== 'string') invalidReport();
+    reportInteger(location.line);
+    reportInteger(location.column);
+}
+
 function reportErrors(value: unknown): JsonObject[] {
     return reportArray(value).map(errorValue => {
         const error = reportObject(errorValue);
-        if (error.message !== undefined && typeof error.message !== 'string') invalidReport();
+        if (typeof error.message !== 'string') invalidReport();
+        if (error.location !== undefined) reportLocation(error.location);
         return error;
     });
+}
+
+function reportTestError(value: unknown, depth = 0): void {
+    if (depth > 16) invalidReport();
+    const error = reportObject(value);
+    let hasDiagnostic = false;
+    for (const field of ['message', 'snippet', 'stack', 'value']) {
+        if (error[field] === undefined) continue;
+        if (typeof error[field] !== 'string') invalidReport();
+        hasDiagnostic = true;
+    }
+    if (error.location !== undefined) reportLocation(error.location);
+    if (error.cause !== undefined) {
+        reportTestError(error.cause, depth + 1);
+        hasDiagnostic = true;
+    }
+    if (!hasDiagnostic) invalidReport();
 }
 
 const publicProjects = new Set(['chromium-account', 'android-chrome-account', 'firefox-account', 'iphone-webkit-account']);
@@ -64,6 +89,8 @@ export function summarizePlaywrightFailureReport(value: unknown) {
                     const result = reportObject(resultValue);
                     const status = typeof result.status === 'string' ? result.status : invalidReport();
                     if (!resultStatuses.has(status)) invalidReport();
+                    if (result.error !== undefined) reportTestError(result.error);
+                    if (result.errorLocation !== undefined) reportLocation(result.errorLocation);
                     return { status, errors: reportErrors(result.errors) };
                 });
                 if (test.status !== 'unexpected') continue;
