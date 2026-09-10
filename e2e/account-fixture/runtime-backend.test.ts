@@ -189,7 +189,7 @@ test('Account collection has exactly 70 applicable memberships; only two desktop
             'locale preserves real LiveKit playback',
             'cancelled exits preserve real media, state and focus',
             'sign-out waits for confirmation and revokes once',
-            'server removal dismisses a pending guard without trapping',
+            'server removal dismisses a pending guard and restores a guarded room',
             'Back cancellation and native unload retain real playback',
         ].map(suffix => `live continuity without capture: full-stack ${role} ${suffix}`)),
         'live continuity without capture: full-stack ended Staff event releases parent and room guards',

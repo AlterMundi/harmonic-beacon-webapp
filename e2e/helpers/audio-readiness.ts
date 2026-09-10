@@ -88,10 +88,25 @@ export async function activateAudioAtMostOnce(surface: Page | Frame): Promise<0 
     const state = surface.getByTestId('connection-state');
     await expect(state).toHaveAttribute('data-state', 'connected', { timeout: 20_000 });
     const button = surface.getByRole('button', { name: START_AUDIO });
-    const clicks = await button.isVisible() ? 1 : 0;
-    if (clicks) await button.click();
+    if (!await button.isVisible()) {
+        await expectEffectiveAudioReady(surface);
+        return 0;
+    }
+    try {
+        await button.click({ timeout: 5_000 });
+    } catch (clickError) {
+        // Autoplay can become effective between isVisible() and click(). That
+        // race is success only when native and app readiness both prove it;
+        // an intercepted/stuck visible CTA still fails with the click error.
+        try {
+            await expectEffectiveAudioReady(surface);
+            return 0;
+        } catch {
+            throw clickError;
+        }
+    }
     await expectEffectiveAudioReady(surface);
-    return clicks;
+    return 1;
 }
 
 /** Require actual received media, so a no-publisher/vacuous every() cannot

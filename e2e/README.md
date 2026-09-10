@@ -162,6 +162,14 @@ activation and still demands positive readiness. `native-autoplay` annotations
 record which branch actually ran; a policy-blocked run is not automatic-playback
 qualification. No test skips because autoplay was denied or the stack was absent.
 
+The `attendee audio prompt` visual baseline makes the opposite branch deterministic:
+it publishes one real audio-only source to the isolated Beacon room and applies the
+same native-playback denial before entry. The source is stopped in `finally`; no
+runner autoplay policy, synthetic readiness attribute, or stage video can decide
+whether that snapshot contains the activation CTA. The test hides only the prompt
+card's consumer-specific transient error so the baseline remains scoped to prompt
+layout, while its denial counter still proves a real native `play()` rejection.
+
 ### Native-only readiness contract and corrected graph assumption
 
 Both app rooms retain the SDK default `webAudioMix: false`. With owned outputs,

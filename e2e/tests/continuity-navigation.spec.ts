@@ -79,9 +79,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
             try {
                 await installMediaProbe(page);
                 await loginForContinuity(page, role, `Continuity ${role}`, role === 'ATTENDEE' ? ROUTES.session(SESSION_ES.id) : ROUTES.opsSession(SESSION_ES.id));
-                const surface = role === 'ATTENDEE' ? page : await (await page.getByTestId('persistent-room').elementHandle())!.contentFrame();
-                expect(surface).not.toBeNull();
-                if (!surface) throw new Error('Staff room frame absent');
+                const surface = await liveRoomSurface(page, role);
                 await rememberPlayingMedia(surface, stopPublisher.sources);
                 const before = await settledContinuity(surface);
                 expect(before.livekitSocketsOpened).toBeGreaterThan(0);
@@ -127,13 +125,19 @@ async function globalListenLink(page: Page) {
 
 async function liveRoomSurface(page: Page, role: 'ATTENDEE' | 'OPERATOR'): Promise<Page | Frame> {
     if (role === 'ATTENDEE') return page;
-    const frame = await (await page.getByTestId('persistent-room').elementHandle())?.contentFrame();
-    if (!frame) throw new Error('Staff room frame absent');
+    const iframe = page.getByTestId('persistent-room');
+    await expect(iframe).toBeVisible({ timeout: 20_000 });
+    await expect.poll(async () => {
+        const handle = await iframe.elementHandle();
+        return Boolean(await handle?.contentFrame());
+    }, { timeout: 20_000 }).toBe(true);
+    const frame = await (await iframe.elementHandle())?.contentFrame();
+    if (!frame) throw new Error('Staff room frame absent after readiness');
     return frame;
 }
 
 for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
-    test(`live continuity without capture: full-stack ${role} cancelled exits preserve real media, state and focus`, async ({ page, browser, baseURL }, testInfo) => {
+    test(`live continuity without capture: full-stack ${role} cancelled exits preserve real media, state and focus`, async ({ page, browser, baseURL, isMobile }, testInfo) => {
         test.slow();
         await withSessionStatus(continuityDatabase(), SESSION_ES.id, 'LIVE', async () => {
             const stopPublisher = await syntheticPublisher(browser, baseURL!);
@@ -166,13 +170,20 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 await page.keyboard.press('Escape');
                 await expect(globalExit).toBeFocused();
                 await expectSamePlayingMedia(surface);
+                if (isMobile) {
+                    const menuToggle = page.locator('hb-global-nav .toggle');
+                    await expect(menuToggle).toHaveAttribute('aria-expanded', 'true');
+                    await menuToggle.click();
+                    await expect(menuToggle).toHaveAttribute('aria-expanded', 'false');
+                }
                 if (role === 'OPERATOR') {
                     const hands = page.getByRole('button', { name: /Hands/ }).first();
                     await hands.click();
                     // The real drawer backdrop covers outer navigation. Close
                     // through its reachable control before testing that exit.
                     await page.getByRole('button', { name: /Return to the live room/ }).click();
-                    const staffExit = page.locator('.live-ops-shell nav a[href="/ops/events"]').first();
+                    const staffExit = page.getByRole('navigation', { name: 'Event operations' })
+                        .getByRole('link', { name: 'Events', exact: true });
                     await staffExit.click();
                     await expect(page.getByRole('alertdialog')).toBeVisible();
                     await page.keyboard.press('Escape');
@@ -257,7 +268,7 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
         });
     });
 
-    test(`live continuity without capture: full-stack ${role} server removal dismisses a pending guard without trapping`, async ({ page, browser, baseURL }) => {
+    test(`live continuity without capture: full-stack ${role} server removal dismisses a pending guard and restores a guarded room`, async ({ page, browser, baseURL }) => {
         test.slow();
         await withSessionStatus(continuityDatabase(), SESSION_ES.id, 'LIVE', async () => {
             const stopPublisher = await syntheticPublisher(browser, baseURL!);
@@ -279,12 +290,24 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 const service = new RoomServiceClient((process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880').replace(/^ws/, 'http'), process.env.E2E_LIVEKIT_API_KEY ?? 'devkey', process.env.E2E_LIVEKIT_API_SECRET ?? 'secret');
                 await service.removeParticipant(room, identity);
                 await expect(page.getByRole('alertdialog')).toHaveCount(0);
-                await expect(surface.getByTestId('connection-state')).toHaveCount(0);
+                // PARTICIPANT_REMOVED is a recoverable fencing event: the app
+                // must fetch fresh authority and reconnect rather than treating
+                // it as an ended room. The stale prompt disappears, then the
+                // new connected room owns a fresh exit guard.
+                await expect(surface.getByTestId('connection-state')).toHaveAttribute(
+                    'data-state',
+                    'connected',
+                    { timeout: 20_000 },
+                );
+                await rememberPlayingMedia(surface, stopPublisher.sources);
+                await expectSamePlayingMedia(surface);
                 let native = 0;
                 page.on('dialog', async dialog => { native++; await dialog.dismiss(); });
-                await page.route('https://listen.harmonicbeacon.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Unguarded terminal exit</h1>' }));
+                await page.route('https://listen.harmonicbeacon.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Confirmed guarded exit</h1>' }));
                 await (await globalListenLink(page)).click();
-                await expect(page.getByRole('heading', { name: 'Unguarded terminal exit' })).toBeVisible();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
+                await expect(page.getByRole('heading', { name: 'Confirmed guarded exit' })).toBeVisible();
                 expect(native).toBe(0);
             } finally { await stopPublisher(); }
         });

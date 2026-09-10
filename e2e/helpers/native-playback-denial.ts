@@ -1,10 +1,14 @@
 declare global {
-    interface Window { allowFixturePlayback: () => void; }
+    interface Window {
+        allowFixturePlayback: () => void;
+        nativePlaybackDenialAttempts: number;
+    }
 }
 
 /** Browser init-script controlling only native media playback policy. */
 export function denyNativePlayback(): void {
     let blocked = true;
+    window.nativePlaybackDenialAttempts = 0;
     const play = HTMLMediaElement.prototype.play;
     const pause = HTMLMediaElement.prototype.pause;
     const autoplay = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'autoplay');
@@ -28,6 +32,7 @@ export function denyNativePlayback(): void {
     });
     HTMLMediaElement.prototype.play = function () {
         if (this instanceof HTMLAudioElement && blocked) {
+            window.nativePlaybackDenialAttempts += 1;
             pause.call(this);
             return Promise.reject(new DOMException('E2E autoplay policy denial', 'NotAllowedError'));
         }
