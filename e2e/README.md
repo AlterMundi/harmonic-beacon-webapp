@@ -83,6 +83,16 @@ invariant. The probe is panel-agnostic. For the #70 cockpit it snapshots the
 persistent same-origin room frame before and after every conductor drawer,
 proving that operational UI changes do not replace or reactivate media.
 
+Server-removal coverage installs a test-only state observer before the isolated
+admin call, clears its history immediately before removal, and requires an
+observed `disconnected`/`reconnecting` state followed by `connected`. Only after
+that boundary does it revalidate the exact stage and Beacon publisher
+associations and sample both native clocks again before exercising the restored
+exit guard. LiveKit retains native track objects while recovering transport, so
+this contract intentionally proves post-cycle identity and advancing playback
+rather than requiring object replacement or a second `TrackSubscribed` event the
+SDK does not promise.
+
 ## Effective audio activation (#495)
 
 `tests/audio-activation.spec.ts` selects as **live continuity without capture**.

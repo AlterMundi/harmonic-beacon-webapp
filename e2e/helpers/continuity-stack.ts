@@ -124,6 +124,10 @@ declare global {
     interface Window {
         continuityReceived?: WeakMap<MediaStreamTrack, ContinuityObservation>;
         continuityTrackSubscribed?: (track: MediaStreamTrack, participantSid: string, trackSid: string) => void;
+        continuityReconnectObservation?: {
+            states: string[];
+            observer: MutationObserver;
+        };
         continuityOriginal?: {
             document: Document; media: HTMLMediaElement[]; streams: (MediaProvider | null)[];
             tracks: MediaStreamTrack[][]; sources: ContinuitySource[];
@@ -175,6 +179,55 @@ export async function installContinuitySourceProbe(page: Page) {
             },
         });
     });
+}
+
+/** Observe the rendered LiveKit state without changing room behavior. Attribute
+ * old values are retained so a reconnecting state cannot be lost when React
+ * commits reconnecting -> connected before MutationObserver delivery. */
+export async function installReconnectObservation(surface: Page | Frame) {
+    await surface.evaluate(() => {
+        const state = document.querySelector<HTMLElement>('[data-testid="connection-state"]');
+        if (!state) throw new Error('Connection-state boundary absent');
+        window.continuityReconnectObservation?.observer.disconnect();
+        const states: string[] = [];
+        const append = (value: string | null | undefined) => {
+            if (value && states.at(-1) !== value) states.push(value);
+        };
+        const observer = new MutationObserver(records => {
+            records.forEach(record => append(record.oldValue));
+            append(state.dataset.state);
+        });
+        observer.observe(state, { attributes: true, attributeFilter: ['data-state'], attributeOldValue: true });
+        window.continuityReconnectObservation = { states, observer };
+    });
+}
+
+/** Clear stale state immediately before the destructive test-admin call and
+ * require the two identified native sources to exist at the boundary. */
+export async function resetReconnectObservation(surface: Page | Frame) {
+    await surface.evaluate(selector => {
+        const observation = window.continuityReconnectObservation;
+        if (!observation) throw new Error('Reconnect observation boundary absent');
+        observation.states.length = 0;
+        const tracks = [...document.querySelectorAll<HTMLAudioElement>(selector)]
+            .flatMap(element => element.srcObject instanceof MediaStream ? element.srcObject.getAudioTracks() : []);
+        if (tracks.length !== 2) throw new Error(`Expected two pre-removal native tracks, got ${tracks.length}`);
+    }, RECEIVED_AUDIO);
+}
+
+/** Require an observed transport interruption followed by connection and two
+ * newly delivered, publisher-identified native tracks that really advance. */
+export async function expectReconnectAndRememberPlayingMedia(surface: Page | Frame, sources: ContinuitySource[]) {
+    await expect.poll(() => surface.evaluate(() => {
+        const states = window.continuityReconnectObservation?.states ?? [];
+        const interrupted = states.findIndex(state => state === 'disconnected' || state === 'reconnecting');
+        return interrupted >= 0 && states.slice(interrupted + 1).includes('connected');
+    }), { message: 'observed disconnected/reconnecting -> connected cycle', timeout: 20_000 }).toBe(true);
+    await surface.evaluate(() => window.continuityReconnectObservation?.observer.disconnect());
+    // LiveKit retains native track objects while recovering transport. After
+    // the observed cycle, revalidate both publisher associations and sample
+    // both native clocks again instead of requiring an SDK event it does not emit.
+    await rememberPlayingMedia(surface, sources);
 }
 
 async function expectIdentifiedSources(surface: Page | Frame, sources: ContinuitySource[]) {

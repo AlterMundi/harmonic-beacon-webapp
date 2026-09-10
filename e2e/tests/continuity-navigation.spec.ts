@@ -5,7 +5,7 @@ import { accountFixtureEnabled, accountSessionRow, expectAccountSessionRevoked, 
 import { ROUTES, SESSION_ES } from '../fixtures/test-data';
 import { withSessionStatus, withResetSessionLifecycle } from '../fixtures/db';
 import { installMediaProbe, expectMediaContinuity } from '../helpers/media-probe';
-import { continuityDatabase, syntheticPublisher, rememberPlayingMedia, expectSamePlayingMedia, settledContinuity, setLiveLocale } from '../helpers/continuity-stack';
+import { continuityDatabase, syntheticPublisher, rememberPlayingMedia, expectSamePlayingMedia, settledContinuity, setLiveLocale, installReconnectObservation, resetReconnectObservation, expectReconnectAndRememberPlayingMedia } from '../helpers/continuity-stack';
 
 test('live continuity without capture: Staff open drawer survives a cancelled browser reload @desktop-native-staff', async ({ page, browser, baseURL }) => {
     test.slow();
@@ -284,22 +284,19 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 const { identity, room } = await tokenResponse.json();
                 await surface.getByRole('button', { name: 'Leave session', exact: true }).click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
+                await installReconnectObservation(surface);
                 const { RoomServiceClient } = await import('livekit-server-sdk');
                 // The local fixture DB check above is mandatory before any
                 // test-admin call. Use the same isolated credentials as CI.
                 const service = new RoomServiceClient((process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880').replace(/^ws/, 'http'), process.env.E2E_LIVEKIT_API_KEY ?? 'devkey', process.env.E2E_LIVEKIT_API_SECRET ?? 'secret');
+                await resetReconnectObservation(surface);
                 await service.removeParticipant(room, identity);
                 await expect(page.getByRole('alertdialog')).toHaveCount(0);
                 // PARTICIPANT_REMOVED is a recoverable fencing event: the app
                 // must fetch fresh authority and reconnect rather than treating
                 // it as an ended room. The stale prompt disappears, then the
                 // new connected room owns a fresh exit guard.
-                await expect(surface.getByTestId('connection-state')).toHaveAttribute(
-                    'data-state',
-                    'connected',
-                    { timeout: 20_000 },
-                );
-                await rememberPlayingMedia(surface, stopPublisher.sources);
+                await expectReconnectAndRememberPlayingMedia(surface, stopPublisher.sources);
                 await expectSamePlayingMedia(surface);
                 let native = 0;
                 page.on('dialog', async dialog => { native++; await dialog.dismiss(); });
