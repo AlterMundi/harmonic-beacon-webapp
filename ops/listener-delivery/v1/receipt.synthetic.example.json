@@ -1,0 +1,47 @@
+{
+  "schema_version": "listen-delivery-receipt.v1",
+  "service": "listen",
+  "target": "staging",
+  "operation": "deploy",
+  "outcome": "succeeded",
+  "observed_at": "2026-09-10T21:00:00Z",
+  "source": { "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  "artifact": {
+    "image": "harmonic-beacon/earlybirds-preview-listener:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "image_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "digest": null,
+    "digest_status": "unavailable_local_build"
+  },
+  "configuration": { "contract_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+  "runtime": {
+    "previous": {
+      "image": "harmonic-beacon/earlybirds-preview-listener:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "mode": "account-off"
+    },
+    "current": {
+      "image": "harmonic-beacon/earlybirds-preview-listener:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mode": "account-on"
+    }
+  },
+  "probes": { "health": "passed", "readiness": "passed" },
+  "authority": {
+    "membership_contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "status": "matched"
+  },
+  "alert_recipient": {
+    "status": "verified",
+    "proof_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "github": {
+    "repository": "AlterMundi/harmonic-beacon-webapp",
+    "lane": "early-birds",
+    "workflow": ".github/workflows/listener-delivery.yml",
+    "run_id": "123456",
+    "run_attempt": 1,
+    "ci_workflow": ".github/workflows/early-birds-fast-forward.yml",
+    "ci_run_id": "123400",
+    "ci_run_attempt": 2
+  },
+  "rollback": { "result": "not_requested", "restored_image": null, "restored_mode": null },
+  "recovery": { "evidence_status": "captured", "cleanup_status": "not_applicable" }
+}

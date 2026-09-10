@@ -1,0 +1,338 @@
+#!/bin/sh
+set -eu
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+HOME=/root
+LC_ALL=C
+TZ=UTC
+export PATH HOME LC_ALL TZ
+unset ENV BASH_ENV CDPATH NODE_OPTIONS NODE_PATH GIT_DIR GIT_WORK_TREE GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_EXEC_PATH DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG DOCKER_AUTH_CONFIG COMPOSE_FILE COMPOSE_ENV_FILES COMPOSE_PATH_SEPARATOR COMPOSE_PROFILES COMPOSE_PROJECT_NAME LISTENER_WITHDRAWAL_CONTAINER HTTPS_PROXY HTTP_PROXY ALL_PROXY NO_PROXY https_proxy http_proxy all_proxy no_proxy CURL_HOME CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR GIT_SSL_CAINFO XDG_CONFIG_HOME
+umask 077
+
+fail() { echo "Listen delivery adapter: $*" >&2; exit 2; }
+test "$#" -eq 8 || fail 'usage: OPERATION TARGET SOURCE_SHA RUN_ID RUN_ATTEMPT CI_RUN_ID CI_RUN_ATTEMPT deliver|interrupt'
+operation=$1
+target=$2
+source_sha=$3
+run_id=$4
+run_attempt=$5
+ci_run_id=$6
+ci_run_attempt=$7
+delivery_mode=$8
+case "$operation" in probe|status|preflight|deploy|smoke|rollback) ;; *) fail 'unsupported Listen delivery operation' ;; esac
+case "$target" in staging|production) ;; *) fail 'unsupported Listen delivery target' ;; esac
+printf '%s\n' "$source_sha" | grep -Eq '^[0-9a-f]{40}$' || fail 'source SHA must be an exact lowercase sha40'
+
+installed_repository=/srv/harmonic-beacon/early-birds
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if test -f "$script_directory/../../../scripts/listener-delivery/validate-request.mjs"; then
+  repository=$(CDPATH= cd -- "$script_directory/../../.." && pwd)
+else
+  repository=$installed_repository
+fi
+validator="$repository/scripts/listener-delivery/validate-request.mjs"
+receipt_tool="$repository/scripts/listener-delivery/receipt.mjs"
+for numeric in "$run_id" "$run_attempt" "$ci_run_id" "$ci_run_attempt"; do
+  printf '%s\n' "$numeric" | grep -Eq '^[1-9][0-9]*$' || fail 'run and attempt bindings must be positive decimal integers'
+done
+case "$delivery_mode" in deliver|interrupt) ;; *) fail 'unsupported delivery checkpoint mode' ;; esac
+test "$target" = staging || test "$delivery_mode" = deliver || fail 'production interruption mode is forbidden'
+test "$operation" = deploy || test "$delivery_mode" = deliver || fail 'interruption mode is valid only for staging deploy'
+
+fixture_root=${LISTENER_DELIVERY_SYNTHETIC_FIXTURE_ROOT:-}
+if test -n "$fixture_root"; then
+  test "$(id -u)" -ne 0 || fail 'synthetic fixture mode is forbidden for root'
+  case "$(realpath "$fixture_root")" in /tmp/*) ;; *) fail 'synthetic fixture must be below /tmp' ;; esac
+  test -f "$fixture_root/synthetic-listener-preview.fixture.v1" || fail 'synthetic fixture marker is missing'
+  lock_file="$fixture_root/listener-delivery.lock"
+else
+  test "$(id -u)" -eq 0 || fail 'run as root'
+  test "$repository" = "$installed_repository" || fail 'privileged adapter requires the fixed root-owned checkout'
+  test -d "$repository" && test ! -L "$repository" || fail 'root-owned delivery checkout is absent'
+  test "$(stat -c '%U:%G:%a' "$repository")" = root:root:755 || fail 'delivery checkout must be root:root mode 0755'
+  for ancestor in /srv /srv/harmonic-beacon; do
+    test -d "$ancestor" && test ! -L "$ancestor" || fail 'delivery checkout ancestor is unsafe'
+    test -z "$(find "$ancestor" -maxdepth 0 \( ! -user root -o -perm /022 \) -print -quit)" || fail 'delivery checkout ancestor is writable or not root-owned'
+  done
+  test -d "$repository/.git" && test ! -L "$repository/.git" || fail 'delivery checkout must be a full root-owned clone'
+  assistant_metadata="$repository/.claude"
+  test -d "$assistant_metadata" && test ! -L "$assistant_metadata" || fail 'assistant metadata boundary is unsafe'
+  test -z "$(find "$assistant_metadata" -maxdepth 0 \( ! -user root -o -perm /022 \) -print -quit)" || fail 'assistant metadata boundary is writable or not root-owned'
+  unsafe_checkout_entry=$(find "$repository" -xdev -path "$repository/.claude" -prune -o \( ! -user root -o -perm /022 \) -print -quit)
+  test -z "$unsafe_checkout_entry" || fail 'delivery checkout contains a writable or non-root-owned entry'
+  untrusted_checkout_symlink=$(find "$repository" -xdev -path "$repository/.claude" -prune -o -type l -print -quit)
+  test -z "$untrusted_checkout_symlink" || fail 'delivery checkout contains a symlink outside ignored assistant metadata'
+  test "$(git -C "$repository" rev-parse HEAD)" = "$source_sha" || fail 'root-owned delivery checkout SHA mismatch'
+  test -z "$(git -C "$repository" status --porcelain)" || fail 'root-owned delivery checkout is dirty'
+  cmp -s "$0" "$repository/ops/listener-delivery/v1/listener-delivery-root" || fail 'installed helper provenance mismatch'
+  lock_file=/run/lock/hb-listener-delivery.lock
+fi
+node "$validator" "$repository" "$operation" "$target" "$source_sha" >/dev/null
+exec 9>"$lock_file"
+flock -n 9 || fail 'another Listen delivery operation is active'
+
+if test -n "$fixture_root"; then
+  test "$operation" = probe || fail 'synthetic privileged-wrapper fixture permits probe only'
+  if test -f "$fixture_root/hold-seconds"; then
+    hold_seconds=$(sed -n '1p' "$fixture_root/hold-seconds")
+    case "$hold_seconds" in 1|2|3|4|5) sleep "$hold_seconds" ;; *) fail 'synthetic hold must be between one and five seconds' ;; esac
+  fi
+  echo 'synthetic Listen delivery probe passed'
+  exit 0
+fi
+
+state_root=/var/lib/harmonic-beacon/listener-delivery
+receipt_root="$state_root/receipts"
+test -d "$state_root" && test ! -L "$state_root" || fail 'root-owned delivery evidence directory is absent'
+test "$(stat -c '%U:%G:%a' "$state_root")" = root:root:700 || fail 'delivery evidence directory must be root:root mode 0700'
+authority_proof="$state_root/authority-contract-proof.v1.json"
+recipient_proof="$state_root/alert-recipient-proof.v1.json"
+listener_env=/etc/harmonic-beacon/earlybirds-preview.env
+staging_env=/etc/harmonic-beacon/earlybirds-preview-staging.env
+staging_candidate_env=/etc/harmonic-beacon/listener-delivery-staging-candidate.env
+container=earlybirds-preview-listener-1
+image="harmonic-beacon/earlybirds-preview-listener:$source_sha"
+
+private_evidence_file() {
+  evidence_file=$1
+  evidence_name=$2
+  test -f "$evidence_file" && test ! -L "$evidence_file" || fail "$evidence_name is absent"
+  test "$(stat -c '%U:%G:%a:%h' "$evidence_file")" = root:root:600:1 || fail "$evidence_name must be a single-link root:root mode 0600 file"
+  evidence_size=$(stat -c '%s' "$evidence_file")
+  test "$evidence_size" -gt 0 && test "$evidence_size" -le 65536 || fail "$evidence_name has an unsafe size"
+}
+
+verify_contracts_and_proofs() {
+  (cd "$repository/contracts/early-bird-authority/v3" && sha256sum -c SHA256SUMS >/dev/null) ||
+    fail 'tracked Authority contract inventory is invalid'
+  (cd "$repository/contracts/early-bird-membership/v2" && sha256sum -c SHA256SUMS >/dev/null) ||
+    fail 'tracked Authority membership-contract inventory is invalid'
+  authority_hash=$(sha256sum "$repository/contracts/early-bird-membership/v2/SHA256SUMS" | cut -d ' ' -f 1)
+  private_evidence_file "$authority_proof" 'current Authority membership-contract proof'
+  private_evidence_file "$recipient_proof" 'current alert-recipient proof'
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  jq -e --arg hash "$authority_hash" --arg now "$now" '
+    keys == ["expires_at","membership_contract_sha256","schema_version","status"] and
+    .schema_version == "authority-contract-proof.v1" and .status == "matched" and
+    .membership_contract_sha256 == $hash and .expires_at > $now
+  ' "$authority_proof" >/dev/null || fail 'Authority membership-contract proof is mismatched, expired, or unresolved'
+  jq -e --arg now "$now" '
+    keys == ["expires_at","proof_sha256","schema_version","status"] and
+    .schema_version == "alert-recipient-proof.v1" and .status == "verified" and
+    (.proof_sha256 | test("^[0-9a-f]{64}$")) and .expires_at > $now
+  ' "$recipient_proof" >/dev/null || fail 'alert-recipient proof is absent, expired, or unresolved'
+  recipient_hash=$(sha256sum "$recipient_proof" | cut -d ' ' -f 1)
+  tracked_contract_hash=$(
+    cd "$repository"
+    sha256sum \
+      .github/workflows/listener-delivery.yml \
+      ops/early-birds-preview/compose.yml \
+      ops/listener-delivery/v1/listener-delivery-root \
+      ops/listener-delivery/v1/receipt.schema.json \
+      scripts/early-birds-preview/health-smoke.sh \
+      scripts/early-birds-preview/lib.sh \
+      scripts/early-birds-preview/rollback.sh \
+      scripts/early-birds-preview/start.sh \
+      scripts/listener-account-production/activate.sh \
+      scripts/listener-account-production/health-smoke.sh \
+      scripts/listener-account-production/preflight.sh \
+      scripts/listener-account-production/prepare.sh \
+      scripts/listener-account-production/rollback.sh \
+      scripts/listener-delivery/receipt.mjs \
+      scripts/listener-delivery/staging-preview.sh \
+      scripts/listener-delivery/validate-request.mjs \
+      contracts/early-bird-authority/v3/SHA256SUMS \
+      contracts/early-bird-membership/v2/SHA256SUMS | sha256sum | cut -d ' ' -f 1
+  )
+}
+
+verify_github_run_bindings() {
+  delivery_run=$(curl --fail --silent --show-error --proto '=https' --connect-timeout 3 --max-time 10 \
+    "https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp/actions/runs/$run_id") ||
+    fail 'delivery workflow run binding is unreadable'
+  printf '%s' "$delivery_run" | jq -e \
+    --arg sha "$source_sha" --argjson id "$run_id" --argjson attempt "$run_attempt" '
+      .id == $id and .run_attempt == $attempt and .head_sha == $sha and
+      .head_branch == "early-birds" and .event == "workflow_dispatch" and
+      .path == ".github/workflows/listener-delivery.yml" and
+      (.status == "queued" or .status == "in_progress" or .status == "completed")
+    ' >/dev/null || fail 'delivery workflow/source/run-attempt binding is invalid'
+  ci_run=$(curl --fail --silent --show-error --proto '=https' --connect-timeout 3 --max-time 10 \
+    "https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp/actions/runs/$ci_run_id") ||
+    fail 'CI workflow run binding is unreadable'
+  printf '%s' "$ci_run" | jq -e \
+    --arg sha "$source_sha" --argjson id "$ci_run_id" --argjson attempt "$ci_run_attempt" '
+      .id == $id and .run_attempt == $attempt and .head_sha == $sha and
+      .head_branch == "early-birds" and .event == "push" and
+      .path == ".github/workflows/early-birds-fast-forward.yml" and
+      .status == "completed" and .conclusion == "success"
+    ' >/dev/null || fail 'CI workflow/source/run-attempt binding is invalid'
+}
+
+runtime_mode() {
+  runtime_env=$1
+  value=$(sed -n 's/^BEACON_LISTENER_ACCOUNT_ENABLED=//p' "$runtime_env" | tail -n 1 | tr -d '\r')
+  case "$value" in 1) printf account-on ;; ''|0) printf account-off ;; *) printf unknown ;; esac
+}
+
+inspect_runtime() {
+  observed_image=$(docker inspect "$container" --format '{{.Config.Image}}' 2>/dev/null || true)
+  if test -z "$observed_image"; then
+    observed_image=null
+    observed_mode=stopped
+    return
+  fi
+  case "$observed_image" in harmonic-beacon/earlybirds-preview-listener:[0-9a-f][0-9a-f]*) ;; *) fail 'running Listener image is outside the bounded image namespace' ;; esac
+  runtime_account=$(docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}' |
+    sed -n 's/^BEACON_LISTENER_ACCOUNT_ENABLED=//p' | tail -n 1)
+  case "$runtime_account" in 1) observed_mode=account-on ;; ''|0) observed_mode=account-off ;; *) observed_mode=unknown ;; esac
+}
+
+write_receipt() {
+  receipt_operation=$1
+  receipt_outcome=$2
+  previous_image=$3
+  previous_mode=$4
+  current_image=$5
+  current_mode=$6
+  rollback_result=$7
+  cleanup_status=$8
+  if test "$target" = production; then runtime_config=$listener_env; else runtime_config=$staging_candidate_env; fi
+  private_evidence_file "$runtime_config" 'runtime configuration evidence'
+  runtime_config_hash=$(sha256sum "$runtime_config" | cut -d ' ' -f 1)
+  config_hash=$(printf '%s\n%s\n' "$tracked_contract_hash" "$runtime_config_hash" | sha256sum | cut -d ' ' -f 1)
+  docker image inspect "$image" >/dev/null 2>&1 || fail 'artifact evidence is unavailable'
+  image_id=$(docker image inspect "$image" --format '{{.Id}}')
+  printf '%s\n' "$image_id" | grep -Eq '^sha256:[0-9a-f]{64}$' || fail 'artifact image ID is invalid'
+  digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null || true)
+  if test -n "$digest" && test "$digest" != '<no value>'; then
+    digest=${digest##*@}
+    digest_json=$(printf '%s' "$digest" | jq -R .)
+    digest_status=available
+  else
+    digest_json=null
+    digest_status=unavailable_local_build
+  fi
+  previous_json=null
+  current_json=null
+  restored_json=null
+  test "$previous_image" = null || previous_json=$(printf '%s' "$previous_image" | jq -R .)
+  test "$current_image" = null || current_json=$(printf '%s' "$current_image" | jq -R .)
+  test "$rollback_result" != succeeded || restored_json=$current_json
+  install -d -o root -g root -m 0700 "$receipt_root"
+  observed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  receipt="$receipt_root/$target-$receipt_operation-$source_sha-$run_id-$run_attempt.json"
+  jq -n \
+    --arg target "$target" --arg operation "$receipt_operation" --arg outcome "$receipt_outcome" \
+    --arg observed_at "$observed_at" --arg sha "$source_sha" --arg image "$image" --arg image_id "$image_id" \
+    --argjson digest "$digest_json" --arg digest_status "$digest_status" --arg config "$config_hash" \
+    --argjson previous_image "$previous_json" --arg previous_mode "$previous_mode" \
+    --argjson current_image "$current_json" --arg current_mode "$current_mode" \
+    --arg authority "$authority_hash" --arg recipient "$recipient_hash" \
+    --arg run_id "$run_id" --argjson run_attempt "$run_attempt" \
+    --arg ci_run_id "$ci_run_id" --argjson ci_run_attempt "$ci_run_attempt" \
+    --arg rollback_result "$rollback_result" --argjson restored_image "$restored_json" \
+    --arg cleanup_status "$cleanup_status" '
+    {
+      schema_version:"listen-delivery-receipt.v1", service:"listen", target:$target,
+      operation:$operation, outcome:$outcome, observed_at:$observed_at,
+      source:{sha:$sha}, artifact:{image:$image,image_id:$image_id,digest:$digest,digest_status:$digest_status},
+      configuration:{contract_sha256:$config},
+      runtime:{previous:{image:$previous_image,mode:$previous_mode},current:{image:$current_image,mode:$current_mode}},
+      probes:{health:"passed",readiness:"passed"},
+      authority:{membership_contract_sha256:$authority,status:"matched"},
+      alert_recipient:{status:"verified",proof_sha256:$recipient},
+      github:{repository:"AlterMundi/harmonic-beacon-webapp",lane:"early-birds",workflow:".github/workflows/listener-delivery.yml",run_id:$run_id,run_attempt:$run_attempt,ci_workflow:".github/workflows/early-birds-fast-forward.yml",ci_run_id:$ci_run_id,ci_run_attempt:$ci_run_attempt},
+      rollback:{result:$rollback_result,restored_image:$restored_image,restored_mode:(if $rollback_result == "succeeded" then $current_mode else null end)},
+      recovery:{evidence_status:(if $rollback_result == "succeeded" then "used" else "captured" end),cleanup_status:$cleanup_status}
+    }' | node "$receipt_tool" write "$receipt" "$authority_hash" >/dev/null
+  cat "$receipt"
+}
+
+verify_github_run_bindings
+
+case "$operation" in
+  status)
+    inspect_runtime
+    printf '{"service":"listen","target":"%s","image":%s,"mode":"%s"}\n' \
+      "$target" "$(test "$observed_image" = null && printf null || printf '%s' "$observed_image" | jq -R .)" "$observed_mode"
+    ;;
+  probe)
+    verify_contracts_and_proofs
+    docker image inspect "$image" >/dev/null 2>&1 || fail 'exact source-bound Listener artifact is missing'
+    echo 'Listen delivery prerequisites are current and source-bound.'
+    ;;
+  preflight)
+    verify_contracts_and_proofs
+    if test "$target" = production; then
+      "$repository/scripts/listener-account-production/preflight.sh" "$source_sha" >&2
+    else
+      . "$repository/scripts/early-birds-preview/lib.sh"
+      require_synthetic_env "$staging_candidate_env"
+      test "$(preview_env_value EARLYBIRDS_PREVIEW_GIT_SHA "$staging_candidate_env")" = "$source_sha" || fail 'staging candidate env SHA mismatch'
+    fi
+    ;;
+  deploy)
+    verify_contracts_and_proofs
+    if test "$target" = production; then
+      docker image inspect "$image" >/dev/null 2>&1 || fail 'artifact evidence is unavailable before production prepare'
+    fi
+    inspect_runtime
+    previous_image=$observed_image
+    previous_mode=$observed_mode
+    if test "$target" = production; then
+      "$repository/scripts/listener-account-production/prepare.sh" "$source_sha" >&2
+      "$repository/scripts/listener-account-production/preflight.sh" "$source_sha" >&2
+      "$repository/scripts/listener-account-production/activate.sh" "$source_sha" >&2
+      account_mode=$(runtime_mode "$listener_env")
+      account_mode_number=$(test "$account_mode" = account-on && printf 1 || printf 0)
+      schema=$(sed -n 's/^EARLYBIRDS_PREVIEW_SCHEMA_VERSION=//p' "$listener_env" | tail -n 1)
+      "$repository/scripts/listener-account-production/health-smoke.sh" "$source_sha" "$account_mode_number" "$schema" >&2
+      cleanup_status=not_applicable
+    else
+      if "$repository/scripts/listener-delivery/staging-preview.sh" "$source_sha" "$delivery_mode" >&2; then
+        cleanup_status=not_applicable
+      else
+        staging_status=$?
+        if test "$delivery_mode" = interrupt && test "$staging_status" -eq 130; then
+          inspect_runtime
+          test "$observed_image" = "$previous_image" || fail 'interruption cleanup did not restore the prior staging image'
+          test "$observed_mode" = "$previous_mode" || fail 'interruption cleanup did not restore the prior staging mode'
+          write_receipt deploy interrupted "$previous_image" "$previous_mode" "$observed_image" "$observed_mode" succeeded proved
+          exit 0
+        fi
+        exit "$staging_status"
+      fi
+    fi
+    inspect_runtime
+    test "$observed_image" = "$image" || fail 'current Listener artifact does not match source SHA'
+    write_receipt deploy succeeded "$previous_image" "$previous_mode" "$observed_image" "$observed_mode" not_requested "$cleanup_status"
+    ;;
+  smoke)
+    verify_contracts_and_proofs
+    if test "$target" = production; then
+      account_mode=$(runtime_mode "$listener_env")
+      account_mode_number=$(test "$account_mode" = account-on && printf 1 || printf 0)
+      schema=$(sed -n 's/^EARLYBIRDS_PREVIEW_SCHEMA_VERSION=//p' "$listener_env" | tail -n 1)
+      "$repository/scripts/listener-account-production/health-smoke.sh" "$source_sha" "$account_mode_number" "$schema" >&2
+    else
+      "$repository/scripts/early-birds-preview/health-smoke.sh" "$staging_env" >&2
+    fi
+    ;;
+  rollback)
+    verify_contracts_and_proofs
+    inspect_runtime
+    candidate_image=$observed_image
+    candidate_mode=$observed_mode
+    if test "$target" = production; then
+      pointer=/var/lib/harmonic-beacon/listener-account-production/last-activation
+      private_evidence_file "$pointer" 'production recovery pointer'
+      state=$(sed -n '1p' "$pointer")
+      case "$state" in /var/lib/harmonic-beacon/listener-account-production/activation-"$source_sha"-*) ;; *) fail 'production recovery evidence does not match source SHA' ;; esac
+      "$repository/scripts/listener-account-production/rollback.sh" "$state" >&2
+    else
+      "$repository/scripts/listener-delivery/staging-preview.sh" "$source_sha" rollback >&2
+    fi
+    inspect_runtime
+    write_receipt rollback succeeded "$candidate_image" "$candidate_mode" "$observed_image" "$observed_mode" succeeded proved
+    ;;
+esac

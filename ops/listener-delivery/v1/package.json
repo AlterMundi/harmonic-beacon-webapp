@@ -1,0 +1,9 @@
+{
+  "name": "@harmonic-beacon/listener-delivery-contract-v1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check ../../../scripts/listener-delivery/validate-request.mjs && node --check ../../../scripts/listener-delivery/receipt.mjs && sh -n listener-delivery-root ../../../scripts/listener-delivery/staging-preview.sh && node ../../../scripts/listener-delivery/receipt.mjs validate receipt.synthetic.example.json bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "test": "node --test test/delivery.test.mjs"
+  }
+}

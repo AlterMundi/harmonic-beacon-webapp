@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/listen-delivery/v1/receipt.schema.json",
+  "title": "Listen delivery and recovery receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "service", "target", "operation", "outcome", "observed_at", "source", "artifact", "configuration", "runtime", "probes", "authority", "alert_recipient", "github", "rollback", "recovery"],
+  "properties": {
+    "schema_version": { "const": "listen-delivery-receipt.v1" },
+    "service": { "const": "listen" },
+    "target": { "enum": ["staging", "production"] },
+    "operation": { "enum": ["deploy", "rollback"] },
+    "outcome": { "enum": ["succeeded", "failed", "interrupted"] },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["sha"],
+      "properties": { "sha": { "$ref": "#/$defs/sha40" } }
+    },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["image", "image_id", "digest", "digest_status"],
+      "properties": {
+        "image": { "type": "string", "pattern": "^harmonic-beacon/earlybirds-preview-listener:[0-9a-f]{40}$" },
+        "image_id": { "oneOf": [{ "$ref": "#/$defs/imageDigest" }, { "type": "null" }] },
+        "digest": { "oneOf": [{ "$ref": "#/$defs/imageDigest" }, { "type": "null" }] },
+        "digest_status": { "enum": ["available", "unavailable_local_build", "unavailable_after_rollback"] }
+      }
+    },
+    "configuration": {
+      "type": "object", "additionalProperties": false, "required": ["contract_sha256"],
+      "properties": { "contract_sha256": { "$ref": "#/$defs/sha256" } }
+    },
+    "runtime": {
+      "type": "object", "additionalProperties": false, "required": ["previous", "current"],
+      "properties": { "previous": { "$ref": "#/$defs/runtime" }, "current": { "$ref": "#/$defs/runtime" } }
+    },
+    "probes": {
+      "type": "object", "additionalProperties": false, "required": ["health", "readiness"],
+      "properties": {
+        "health": { "enum": ["passed", "failed", "not_observed"] },
+        "readiness": { "enum": ["passed", "failed", "not_observed"] }
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false, "required": ["membership_contract_sha256", "status"],
+      "properties": {
+        "membership_contract_sha256": { "$ref": "#/$defs/sha256" },
+        "status": { "enum": ["matched", "mismatched", "unresolved"] }
+      }
+    },
+    "alert_recipient": {
+      "type": "object", "additionalProperties": false, "required": ["status", "proof_sha256"],
+      "properties": { "status": { "enum": ["verified", "unresolved"] }, "proof_sha256": { "$ref": "#/$defs/sha256" } }
+    },
+    "github": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "lane", "workflow", "run_id", "run_attempt", "ci_workflow", "ci_run_id", "ci_run_attempt"],
+      "properties": {
+        "repository": { "const": "AlterMundi/harmonic-beacon-webapp" },
+        "lane": { "const": "early-birds" },
+        "workflow": { "const": ".github/workflows/listener-delivery.yml" },
+        "run_id": { "$ref": "#/$defs/id" },
+        "run_attempt": { "type": "integer", "minimum": 1 },
+        "ci_workflow": { "const": ".github/workflows/early-birds-fast-forward.yml" },
+        "ci_run_id": { "$ref": "#/$defs/id" },
+        "ci_run_attempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "rollback": {
+      "type": "object", "additionalProperties": false, "required": ["result", "restored_image", "restored_mode"],
+      "properties": {
+        "result": { "enum": ["not_requested", "succeeded", "failed", "not_available"] },
+        "restored_image": { "type": ["string", "null"], "pattern": "^harmonic-beacon/earlybirds-preview-listener:[0-9a-f]{40}$" },
+        "restored_mode": { "oneOf": [{ "$ref": "#/$defs/mode" }, { "type": "null" }] }
+      }
+    },
+    "recovery": {
+      "type": "object", "additionalProperties": false, "required": ["evidence_status", "cleanup_status"],
+      "properties": {
+        "evidence_status": { "enum": ["captured", "used", "unavailable"] },
+        "cleanup_status": { "enum": ["proved", "not_applicable", "failed"] }
+      }
+    }
+  },
+  "$defs": {
+    "sha40": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "imageDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "id": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "mode": { "enum": ["account-off", "account-on", "stopped", "unknown"] },
+    "runtime": {
+      "type": "object", "additionalProperties": false, "required": ["image", "mode"],
+      "properties": {
+        "image": { "type": ["string", "null"], "pattern": "^harmonic-beacon/earlybirds-preview-listener:[0-9a-f]{40}$" },
+        "mode": { "$ref": "#/$defs/mode" }
+      }
+    }
+  }
+}

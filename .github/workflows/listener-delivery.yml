@@ -1,0 +1,197 @@
+name: Listen delivery
+
+on:
+  pull_request:
+    branches: [early-birds]
+    paths:
+      - .github/workflows/listener-delivery.yml
+      - ops/listener-delivery/**
+      - scripts/listener-delivery/**
+      - scripts/listener-account-production/**
+      - scripts/early-birds-preview/**
+      - ops/listener-account-production/**
+      - ops/early-birds-preview/**
+      - contracts/early-bird-authority/v3/**
+      - contracts/early-bird-membership/v2/**
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Exact isolated Listen target
+        required: true
+        type: choice
+        options: [staging, production]
+      operation:
+        description: Bounded root-helper operation
+        required: true
+        default: probe
+        type: choice
+        options: [probe, status, preflight, deploy, smoke, rollback]
+      source_sha:
+        description: Exact lowercase early-birds SHA40; must equal the current lane head
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful EarlyBirds fast-forward run ID for source_sha
+        required: true
+        type: string
+      ci_run_attempt:
+        description: Exact successful CI run attempt
+        required: true
+        type: string
+      interruption_drill:
+        description: Restore the prior synthetic staging preview at the armed checkpoint
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: listen-delivery-${{ github.event_name == 'workflow_dispatch' && inputs.target || 'pr' }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22'
+      - name: Validate the Listen adapter only
+        run: |
+          npm --prefix ops/listener-delivery/v1 run check
+          npm --prefix ops/listener-delivery/v1 test
+          npm --prefix ops/listener-account-production run check
+          npm --prefix ops/listener-account-production test
+          npm --prefix ops/early-birds-preview run check
+          npm --prefix ops/early-birds-preview test
+
+  bind-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
+      CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Bind exact early-birds source and successful CI attempt
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          git fetch --no-tags origin +refs/heads/early-birds:refs/remotes/origin/early-birds
+          git cat-file -e "${SOURCE_SHA}^{commit}"
+          git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/early-birds
+          test "$SOURCE_SHA" = "$(git rev-parse refs/remotes/origin/early-birds)"
+          test "$SOURCE_SHA" = "$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)"
+          ci="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID")"
+          jq -e --arg sha "$SOURCE_SHA" --argjson attempt "$CI_RUN_ATTEMPT" '
+            .head_sha == $sha and .head_branch == "early-birds" and
+            .event == "push" and .status == "completed" and .conclusion == "success" and
+            .path == ".github/workflows/early-birds-fast-forward.yml" and
+            .run_attempt == $attempt
+          ' <<<"$ci" >/dev/null
+
+  staging:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'staging'
+    needs: bind-dispatch
+    environment: listener-staging
+    runs-on: [self-hosted, mona, listener-staging]
+    timeout-minutes: 30
+    env:
+      OPERATION: ${{ inputs.operation }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
+      CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+      CHECKPOINT_MODE: ${{ inputs.interruption_drill && 'interrupt' || 'deliver' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Require the externally provisioned root-owned helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x /usr/local/sbin/hb-listener-delivery
+          test "$(stat -c '%U:%G:%a' /usr/local/sbin/hb-listener-delivery)" = root:root:755
+          cmp --silent ops/listener-delivery/v1/listener-delivery-root /usr/local/sbin/hb-listener-delivery
+      - name: Run only the bounded Listen staging adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "$CHECKPOINT_MODE" = interrupt; then
+            test "$OPERATION" = deploy
+          fi
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            "$OPERATION" staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" "$CHECKPOINT_MODE" \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Upload non-secret delivery or recovery receipt
+        if: inputs.operation == 'deploy' || inputs.operation == 'rollback'
+        uses: actions/upload-artifact@v4
+        with:
+          name: listen-staging-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/listen-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+  production:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'production'
+    needs: bind-dispatch
+    environment: listener-production
+    runs-on: [self-hosted, mona, listener-production]
+    timeout-minutes: 30
+    env:
+      OPERATION: ${{ inputs.operation }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
+      CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+    steps:
+      - name: Require external protected-environment provisioning
+        shell: bash
+        env:
+          PROTECTED_ENVIRONMENT_MARKER: ${{ vars.LISTENER_DELIVERY_PROTECTED_ENVIRONMENT }}
+        run: test "$PROTECTED_ENVIRONMENT_MARKER" = listener-production-v1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Require the externally provisioned root-owned helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x /usr/local/sbin/hb-listener-delivery
+          test "$(stat -c '%U:%G:%a' /usr/local/sbin/hb-listener-delivery)" = root:root:755
+          cmp --silent ops/listener-delivery/v1/listener-delivery-root /usr/local/sbin/hb-listener-delivery
+      - name: Run only the bounded Listen production adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.interruption_drill }}" = false
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            "$OPERATION" production "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Upload non-secret delivery or recovery receipt
+        if: inputs.operation == 'deploy' || inputs.operation == 'rollback'
+        uses: actions/upload-artifact@v4
+        with:
+          name: listen-production-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/listen-receipt.json
+          if-no-files-found: error
+          retention-days: 30
