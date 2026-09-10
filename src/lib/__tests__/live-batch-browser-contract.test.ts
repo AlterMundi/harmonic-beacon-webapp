@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { describe, expect, it } from 'vitest';
-import config from '../../../playwright.config';
+import config, { managedServerCommand } from '../../../playwright.config';
 
 const regressionFiles = [
     'e2e/tests/audio-activation.spec.ts',
@@ -99,6 +99,11 @@ describe('Browser selection contract negative controls', () => {
 });
 
 describe('Live continuity batch browser qualification', () => {
+    it('builds by default and skips only the build when an earlier CI invocation owns it', () => {
+        expect(managedServerCommand(3100, false)).toBe('npm run build && npx next start --port 3100');
+        expect(managedServerCommand(3100, true)).toBe('npx next start --port 3100');
+    });
+
     const desktopCases = [
         { file: 'e2e/tests/continuity-navigation-lifecycle.spec.ts', title: 'lifecycle: attendee native reload cancellation with real pointer activation retains its document' },
         { file: 'e2e/tests/navigation-media-probe.spec.ts', title: 'navigation capture probe retains interception after browser garbage collection' },
