@@ -67,6 +67,11 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, -e, "const fs=require('fs');try{const n=Number(fs.readFileSync('/tmp/commerce-reconciler-heartbeat','utf8'));process.exit(Date.now()-n<10000?0:1)}catch{process.exit(1)}"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
 
   tapestry:
     image: ${HB_TAPESTRY_IMAGE_REF:?exact tapestry digest required}

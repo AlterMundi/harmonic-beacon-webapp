@@ -130,12 +130,11 @@ describe('production deploy contract', () => {
     expect(rootHelper).toContain("[[ \"$1\" =~ ^[0-9a-f]{40}$ ]]");
     expect(rootHelper).toContain("die 'workspace has tracked changes'");
     expect(rootHelper).toContain("die 'workspace index has tracked changes'");
-    expect(
-      rootHelper.match(
-        /docker compose --file "\$workspace\/docker-compose\.yml"/g,
-      ),
-    ).toHaveLength(4);
-    expect(rootHelper).toContain('--file "$workspace/$OCI_OVERLAY"');
+    expect(rootHelper).toMatch(
+      /docker compose --file "\$workspace\/docker-compose\.yml"/,
+    );
+    expect(rootHelper).toContain('compose "$workspace"');
+    expect(rootHelper).toContain('--file "$root/oci-images.compose.yml"');
     expect(rootHelper).not.toMatch(/\beval\b|\bbash -c\b|\bsh -c\b/);
     expect(
       statSync(join(process.cwd(), 'deploy/hb-deploy-root')).mode & 0o111,
@@ -147,7 +146,7 @@ describe('production deploy contract', () => {
       'Cmnd_Alias HARMONIC_BEACON_DEPLOY = /usr/local/sbin/hb-deploy *',
     );
     expect(runnerSudoers).toContain(
-      'beacon-runner ALL=(root) NOPASSWD: HARMONIC_BEACON_DEPLOY',
+      'beacon-runner ALL=(root) NOPASSWD:NOSETENV: HARMONIC_BEACON_DEPLOY',
     );
     expect(runnerSudoers).not.toContain('NOPASSWD: ALL');
     expect(runnerSudoers).not.toMatch(/\/(?:usr\/bin\/)?docker\b/);

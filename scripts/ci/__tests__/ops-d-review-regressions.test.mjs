@@ -46,6 +46,25 @@ test('finding 2: rollback is derived from one atomic current state and preserves
   assert.doesNotMatch(helper, /current-manifest\.sha256["']?\s*$/mu);
 });
 
+test('repair: rollback fails closed on public config drift and republishes only a fully verified prior state', () => {
+  const helper = read('deploy/hb-deploy-root');
+  const prepare = section(helper, 'artifact_prepare() {', '\nartifact_preflight() {');
+  const rollback = section(helper, 'artifact_rollback() {', '\nusage() {');
+  assert.match(prepare, /require_rollback_safe_public_config/u);
+  assert.match(helper, /public runtime config change requires a separately reviewed transactional overlay/u);
+  assert.match(rollback, /transaction_require_rollback/u);
+  assert.match(rollback, /verify_release_runtime_state[^\n]+prior/u);
+  const verification = section(helper, 'verify_release_runtime_state() {', '\nartifact_status() {');
+  for (const service of ['beacon-app', 'beacon-commerce-reconciler', 'beacon-tapestry', 'beacon-playlist-bot', 'beacon-postgres', 'beacon-livekit']) {
+    assert.match(verification, new RegExp(service));
+  }
+  assert.match(verification, /verify_public_provenance_from/u);
+  assert.match(verification, /boundary/u);
+  assert.match(rollback, /atomic_install_release_state[^\n]+prior/u);
+  assert.ok(rollback.indexOf('atomic_install_release_state') > rollback.indexOf('verify_release_runtime_state'));
+  assert.ok(rollback.indexOf('rolled-back') > rollback.indexOf('atomic_install_release_state'));
+});
+
 test('finding 3: producer operator validator and helper share the raw-byte public config digest', () => {
   const producer = read('scripts/ci/create-candidate.mjs');
   const manifest = read('scripts/ci/release-manifest.mjs');
@@ -72,9 +91,80 @@ test('finding 4: qualification pulls exact refs starts dependencies migrates ana
   assert.match(script, /configProfileSha256/u);
   assert.match(script, /verifyRunningImages/u);
   assert.match(script, /verifyBehavior/u);
-  assert.ok(receiptWrite > script.indexOf('verifyBehavior'));
+  assert.match(script, /verifyAcceptanceMatrix/u);
+  for (const check of ['browser', 'syntheticSession', 'commerce', 'schema', 'isolation', 'restore']) {
+    assert.match(script, new RegExp(check));
+  }
+  assert.match(script, /e2e\/tests\/oci-qualification\.spec\.ts/u);
+  assert.match(script, /db\/test-fixture\.sql/u);
+  assert.match(script, /pg_dump/u);
+  assert.ok(receiptWrite > script.indexOf('verifyAcceptanceMatrix'));
   assert.match(compose, /analytics:[\s\S]+healthcheck:/u);
+  assert.match(compose, /commerce-reconciler:[\s\S]+healthcheck:/u);
   assert.doesNotMatch(script, /docker\s+(?:compose\s+)?build\b/u);
+});
+
+test('repair: transition authorization requires measured rollback and forward-repair evidence', () => {
+  const helper = read('deploy/hb-deploy-root');
+  const evidence = section(helper, 'require_oci_transition_evidence() {', '\natomic_install_release_state() {');
+  for (const field of [
+    'acceptanceReceiptSha256', 'browserPassed', 'syntheticSessions', 'schemaHeadVerified',
+    'networkIsolationVerified', 'secretIsolationVerified', 'backupRestoreVerified',
+    'observedRecoverySeconds', 'maxRecoverySeconds', 'exactStateVerified',
+    'publicProvenanceVerified', 'privateBoundaryVerified',
+  ]) assert.match(evidence, new RegExp(field));
+  assert.match(evidence, /observedRecoverySeconds[^\n]+maxRecoverySeconds/u);
+  assert.match(evidence, /fromdateiso8601/u);
+});
+
+test('repair: root lane and one live high-water gate legacy and OCI mutation boundaries', () => {
+  const helper = read('deploy/hb-deploy-root');
+  const legacy = read('.github/workflows/deploy.yml');
+  assert.match(helper, /readonly RELEASE_LANE_STATE=/u);
+  assert.match(helper, /require_release_lane\(\)/u);
+  assert.match(helper, /laneState/u);
+  for (const name of ['preserve', 'build', 'migrate', 'quiesce', 'replace', 'rollback', 'legacy_admit']) {
+    const end = name === 'legacy_admit' ? '\nartifact_transaction() {' : `\n${({ preserve: 'build', build: 'migrate', migrate: 'quiesce', quiesce: 'replace', replace: 'health', rollback: 'atomic_install_legacy_state' })[name]}() {`;
+    const body = section(helper, `${name}() {`, end);
+    assert.match(body, /require_release_lane legacy-shadow/u);
+  }
+  const transaction = section(helper, 'transaction_require() {', '\ntransaction_require_rollback() {');
+  assert.match(transaction, /require_release_lane oci-production/u);
+  const legacyAtomic = section(helper, 'atomic_install_legacy_state() {', '\nverify_legacy_container() {');
+  const ociAtomic = section(helper, 'atomic_install_release_state() {', '\natomic_install_current_state() {');
+  assert.match(legacyAtomic, /require_release_lane legacy-shadow/u);
+  assert.match(ociAtomic, /require_release_lane oci-production/u);
+  assert.ok(legacyAtomic.indexOf('require_release_lane legacy-shadow') < legacyAtomic.indexOf('mv -f'));
+  assert.ok(ociAtomic.indexOf('require_release_lane oci-production') < ociAtomic.indexOf('mv -f'));
+  const admit = section(helper, 'legacy_admit() {', '\nartifact_receipt() {');
+  assert.ok(admit.indexOf('require_release_lane') < admit.indexOf('atomic_install_legacy_state'));
+  assert.match(legacy, /legacy-admit[\s\\]+"\$GITHUB_WORKSPACE" "\$GITHUB_SHA"/u);
+});
+
+test('repair: every checkout and setup-node action is immutable with explicit minimal workflow permissions', () => {
+  for (const file of [
+    '.github/workflows/audio-boundary.yml', '.github/workflows/ci.yml', '.github/workflows/deploy.yml',
+    '.github/workflows/e2e.yml', '.github/workflows/livekit-capacity.yml', '.github/workflows/oci-candidate.yml',
+    '.github/workflows/oci-promote.yml',
+  ]) {
+    const workflow = read(file);
+    assert.match(workflow, /^\s{0,4}permissions:\n/mu);
+    assert.match(workflow, /^\s{2,6}contents: read$/mu);
+    if (!file.endsWith('oci-candidate.yml')) assert.doesNotMatch(workflow, /^\s{2,6}[a-z-]+: write$/mu);
+    for (const match of workflow.matchAll(/actions\/(?:checkout|setup-node)@([^\s]+)/gu)) {
+      assert.match(match[1], /^[0-9a-f]{40}$/u, `${file}: ${match[0]}`);
+    }
+  }
+});
+
+test('repair: prepare cleanup is EXIT-safe across registry login and pull failure', () => {
+  const helper = read('deploy/hb-deploy-root');
+  const prepare = section(helper, 'artifact_prepare() {', '\nartifact_preflight() {');
+  assert.match(prepare, /trap '[^']*unset DOCKER_CONFIG HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME; rm -rf -- "\$temp"' EXIT/u);
+  assert.doesNotMatch(prepare, /trap [^\n]+ RETURN/u);
+  assert.ok(prepare.indexOf("trap '") < prepare.indexOf('docker login'));
+  assert.ok(prepare.indexOf("trap '") < prepare.indexOf('docker pull'));
+  assert.match(prepare, /trap - EXIT/u);
 });
 
 test('finding 5: promotion pins workflow path current main SHA and run attempts end to end', () => {
@@ -91,16 +181,17 @@ test('finding 5: promotion pins workflow path current main SHA and run attempts 
 test('finding 6: status checks running health actual image IDs public provenance and boundaries before current state', () => {
   const helper = read('deploy/hb-deploy-root');
   const status = section(helper, 'artifact_status() {', '\nartifact_rollback() {');
-  assert.match(status + helper, /\.State\.Running/u);
-  assert.match(status + helper, /docker image inspect/u);
+  const runtime = section(helper, 'verify_release_runtime_state() {', '\nartifact_status() {');
+  assert.match(runtime + helper, /\.State\.Running/u);
+  assert.match(runtime + helper, /docker image inspect/u);
   for (const service of ['beacon-app', 'beacon-commerce-reconciler', 'beacon-tapestry', 'beacon-playlist-bot', 'beacon-postgres', 'beacon-livekit', 'analytics']) {
-    assert.match(status, new RegExp(service));
+    assert.match(runtime, new RegExp(service));
   }
-  assert.match(status, /api\/health/u);
-  assert.match(status + helper, /artifactDigest/u);
-  assert.match(status + helper, /configProfileSha256/u);
-  assert.match(status, /require_exact_private_network|boundary/u);
-  assert.ok(status.indexOf('atomic_install_current_state') > status.indexOf('boundary'));
+  assert.match(runtime, /api\/health/u);
+  assert.match(runtime + helper, /artifactDigest/u);
+  assert.match(runtime + helper, /configProfileSha256/u);
+  assert.match(runtime, /require_exact_private_network|boundary/u);
+  assert.ok(status.indexOf('atomic_install_current_state') > status.indexOf('verify_release_runtime_state'));
 });
 
 test('finding 7: verified public profile is consumed by runtime and promo semantics agree', () => {
@@ -136,8 +227,8 @@ test('finding 8: verifier cryptographically and structurally verifies every mani
 });
 
 test('finding 8: verifier module can be imported for structural adversarial tests without executing its CLI', async () => {
-  const module = await import('../../../deploy/hb-artifact-verify.mjs');
-  assert.equal(typeof module.validateEvidenceStatement, 'function');
+  const verifierModule = await import('../../../deploy/hb-artifact-verify.mjs');
+  assert.equal(typeof verifierModule.validateEvidenceStatement, 'function');
   const record = {
     repository: 'ghcr.io/altermundi/harmonic-beacon-app',
     digest: `sha256:${'a'.repeat(64)}`,
@@ -156,9 +247,9 @@ test('finding 8: verifier module can be imported for structural adversarial test
       runDetails: { builder: { id: 'https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main' }, metadata: { workflowRunId: '42', workflowRunAttempt: 1, buildkitProvenance: {} } },
     },
   };
-  assert.doesNotThrow(() => module.validateEvidenceStatement(statement, record, 'provenance'));
+  assert.doesNotThrow(() => verifierModule.validateEvidenceStatement(statement, record, 'provenance'));
   statement.predicate.buildDefinition.externalParameters.source.gitTree = 'd'.repeat(40);
-  assert.throws(() => module.validateEvidenceStatement(statement, record, 'provenance'), /source, workflow, build inputs, and platform/u);
+  assert.throws(() => verifierModule.validateEvidenceStatement(statement, record, 'provenance'), /source, workflow, build inputs, and platform/u);
 });
 
 test('finding 9: one release lane state keeps Mona unconditional through shadow and prevents boolean drift', () => {

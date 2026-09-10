@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ import { candidateIdentitySha256, validateCandidateManifest } from './release-ma
 const REF = /^[a-z0-9./-]+@sha256:[0-9a-f]{64}$/u;
 const PROJECT = /^[a-z0-9][a-z0-9_-]{0,40}$/u;
 const SERVICES = ['postgres', 'livekit', 'app', 'commerce-reconciler', 'tapestry', 'playlist-bot', 'analytics'];
+const ACCEPTANCE_FIELDS = ['browser', 'syntheticSession', 'commerce', 'schema', 'isolation', 'restore'];
 
 function fail(message) {
   throw new Error(`OCI qualification: ${message}`);
@@ -32,6 +34,34 @@ export function parseQualificationArgs(argv) {
   return options;
 }
 
+export function validateQualificationEvidence(evidence) {
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence) ||
+      JSON.stringify(Object.keys(evidence).sort()) !== JSON.stringify([...ACCEPTANCE_FIELDS].sort())) {
+    fail('acceptance evidence fields are not closed');
+  }
+  if (evidence.browser?.engine !== 'chromium' || !Number.isInteger(evidence.browser.passed) || evidence.browser.passed < 1 ||
+      !Number.isInteger(evidence.browser.failed) || evidence.browser.failed !== 0 ||
+      !Number.isInteger(evidence.browser.skipped) || evidence.browser.skipped !== 0) fail('browser acceptance did not pass without skips');
+  if (!Number.isInteger(evidence.syntheticSession?.created) || evidence.syntheticSession.created < 1 ||
+      evidence.syntheticSession.authenticatedRole !== 'ADMIN') {
+    fail('synthetic session acceptance is incomplete');
+  }
+  if (!Number.isInteger(evidence.commerce?.workerHeartbeatAgeMs) || evidence.commerce.workerHeartbeatAgeMs < 0 ||
+      evidence.commerce.workerHeartbeatAgeMs > 10_000 || !Number.isInteger(evidence.commerce.pending) ||
+      evidence.commerce.pending < 0 || !Number.isInteger(evidence.commerce.processing) || evidence.commerce.processing < 0) {
+    fail('commerce worker/backlog evidence is invalid');
+  }
+  if (!evidence.schema?.expectedHead || evidence.schema.observedHead !== evidence.schema.expectedHead) fail('schema head mismatch');
+  if (JSON.stringify(evidence.isolation?.internalNetworks) !== JSON.stringify(['database', 'media']) ||
+      evidence.isolation?.forbiddenSecretNamesFound?.length !== 0) fail('network or secret isolation failed');
+  if (!/^sha256:[0-9a-f]{64}$/u.test(evidence.restore?.backupSha256 ?? '') ||
+      !Number.isInteger(evidence.restore.backupBytes) || evidence.restore.backupBytes < 1 ||
+      !Number.isInteger(evidence.restore.restoredSessionCount) || evidence.restore.restoredSessionCount < 1) {
+    fail('isolated backup restore evidence is invalid');
+  }
+  return evidence;
+}
+
 function validateRefs(refs) {
   for (const id of ['app', 'tapestry', 'playlist-bot', 'analytics', 'postgres', 'livekit']) {
     if (!REF.test(refs[id] ?? '')) fail(`missing exact ${id} registry reference`);
@@ -46,6 +76,7 @@ export function qualificationCommands({ compose, project, refs }) {
   return [
     ...Object.values(refs).map((ref) => ({ file: 'docker', args: ['pull', ref] })),
     { file: 'docker', args: [...prefix, 'up', '--detach', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '120', 'postgres', 'livekit'] },
+    { file: 'docker', args: [...prefix, 'exec', '-T', 'postgres', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'beacon_qualification', '-d', 'beacon_qualification'], inputFile: 'db/test-fixture.sql' },
     { file: 'docker', args: [...prefix, 'run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'migrate', 'npx', 'prisma', 'migrate', 'deploy'] },
     { file: 'docker', args: [...prefix, 'run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'analytics', 'node', 'src/migrate.mjs'] },
     { file: 'docker', args: [...prefix, 'up', '--detach', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '180', ...SERVICES.filter((service) => service !== 'migrate')] },
@@ -118,6 +149,100 @@ export function verifyBehavior({ manifest }) {
   if (curlJson('http://127.0.0.1:3212/ready').status !== 'ready') fail('analytics behavior check failed');
 }
 
+function composePrefix(compose, project) {
+  return ['compose', '--file', compose, '--project-name', project, '--profile', 'analytics'];
+}
+
+function composeExec({ compose, project, env }, service, args, { input, binary = false } = {}) {
+  return execFileSync('docker', [...composePrefix(compose, project), 'exec', '-T', service, ...args], {
+    ...(binary ? {} : { encoding: 'utf8' }), env, input,
+  });
+}
+
+export function verifyAcceptanceMatrix({ compose, project, refs, env, manifest }) {
+  const context = { compose, project, env };
+  const expectedHead = manifest.migrationSet.head;
+  const observedHead = composeExec(context, 'postgres', [
+    'psql', '-At', '-U', 'beacon_qualification', '-d', 'beacon_qualification', '-c',
+    'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name DESC LIMIT 1',
+  ]).trim();
+  if (observedHead !== expectedHead) fail('schema head mismatch');
+
+  const browserReport = JSON.parse(execFileSync('npx', [
+    'playwright', 'test', 'e2e/tests/oci-qualification.spec.ts', '--project=chromium',
+    '--retries=0', '--workers=1', '--reporter=json',
+  ], {
+    encoding: 'utf8',
+    env: {
+      ...env, CI: '1', E2E_BASE_URL: 'http://127.0.0.1:3210',
+      HB_QUALIFICATION_SOURCE_SHA: manifest.source.gitSha,
+      HB_QUALIFICATION_APP_REF: refs.app,
+      HB_QUALIFICATION_CONFIG_SHA256: manifest.configProfiles['live-staging'].sha256,
+    },
+  }));
+  const browser = {
+    engine: 'chromium',
+    passed: browserReport.stats?.expected ?? 0,
+    failed: browserReport.stats?.unexpected ?? 0,
+    skipped: browserReport.stats?.skipped ?? 0,
+  };
+
+  const sessionCount = Number(composeExec(context, 'postgres', [
+    'psql', '-At', '-U', 'beacon_qualification', '-d', 'beacon_qualification', '-c',
+    "SELECT count(*) FROM web_sessions WHERE display_name='OCI Qualification Admin'",
+  ]).trim());
+  const heartbeatAge = Number(composeExec(context, 'commerce-reconciler', [
+    'node', '-e', "const fs=require('fs');const n=Number(fs.readFileSync('/tmp/commerce-reconciler-heartbeat','utf8'));process.stdout.write(String(Date.now()-n))",
+  ]).trim());
+  const [pending, processing] = composeExec(context, 'postgres', [
+    'psql', '-At', '-F', ',', '-U', 'beacon_qualification', '-d', 'beacon_qualification', '-c',
+    "SELECT count(*) FILTER (WHERE status='PENDING'), count(*) FILTER (WHERE status='PROCESSING') FROM (SELECT status::text FROM commerce_media_outbox UNION ALL SELECT status::text FROM stage_grant_effect_outbox) backlog",
+  ]).trim().split(',').map(Number);
+
+  const internalNetworks = ['database', 'media'];
+  for (const network of internalNetworks) {
+    if (composeOutput(['network', 'inspect', `${project}_${network}`, '--format', '{{.Internal}}'], env).trim() !== 'true') {
+      fail(`${network} qualification network is not internal`);
+    }
+  }
+  const forbidden = ['HB_REGISTRY_TOKEN', 'HB_REGISTRY_USERNAME', 'GITHUB_TOKEN', 'GH_TOKEN', 'BEACON_ACCOUNT_CLIENT_SECRET', 'BEACON_COMMERCE_SERVICE_KEY_CURRENT'];
+  const forbiddenSecretNamesFound = [];
+  for (const row of parseComposePs(composeOutput([...composePrefix(compose, project), 'ps', '--format', 'json'], env))) {
+    const names = composeOutput(['inspect', row.Name, '--format', '{{range .Config.Env}}{{println .}}{{end}}'], env)
+      .split('\n').map((line) => line.split('=')[0]);
+    for (const name of forbidden) if (names.includes(name)) forbiddenSecretNamesFound.push(`${row.Service}:${name}`);
+  }
+
+  const dump = composeExec(context, 'postgres', [
+    'pg_dump', '--no-owner', '--no-privileges', '-U', 'beacon_qualification', 'beacon_qualification',
+  ], { binary: true });
+  const restoreDb = 'beacon_qualification_restore';
+  composeExec(context, 'postgres', ['dropdb', '--if-exists', '--force', '-U', 'beacon_qualification', restoreDb]);
+  composeExec(context, 'postgres', ['createdb', '-U', 'beacon_qualification', restoreDb]);
+  try {
+    composeExec(context, 'postgres', [
+      'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'beacon_qualification', '-d', restoreDb,
+    ], { input: dump });
+    const restoredSessionCount = Number(composeExec(context, 'postgres', [
+      'psql', '-At', '-U', 'beacon_qualification', '-d', restoreDb, '-c', 'SELECT count(*) FROM web_sessions',
+    ]).trim());
+    return validateQualificationEvidence({
+      browser,
+      syntheticSession: { created: sessionCount, authenticatedRole: 'ADMIN' },
+      commerce: { workerHeartbeatAgeMs: heartbeatAge, pending, processing },
+      schema: { expectedHead, observedHead },
+      isolation: { internalNetworks, forbiddenSecretNamesFound },
+      restore: {
+        backupSha256: `sha256:${createHash('sha256').update(dump).digest('hex')}`,
+        backupBytes: dump.length,
+        restoredSessionCount,
+      },
+    });
+  } finally {
+    composeExec(context, 'postgres', ['dropdb', '--if-exists', '--force', '-U', 'beacon_qualification', restoreDb]);
+  }
+}
+
 export function main(argv = process.argv.slice(2)) {
   const options = parseQualificationArgs(argv);
   const manifest = JSON.parse(readFileSync(resolve(options.manifest), 'utf8'));
@@ -136,18 +261,26 @@ export function main(argv = process.argv.slice(2)) {
     HB_CONFIG_PROFILE_SHA256: manifest.configProfiles['live-staging'].sha256,
   };
   try {
-    for (const command of commands) execFileSync(command.file, command.args, { stdio: 'inherit', env });
+    for (const command of commands) {
+      execFileSync(command.file, command.args, {
+        stdio: command.inputFile ? ['pipe', 'inherit', 'inherit'] : 'inherit',
+        env,
+        input: command.inputFile ? readFileSync(resolve(command.inputFile)) : undefined,
+      });
+    }
     verifyRunningImages({ compose: options.compose, project, refs, env });
     verifyBehavior({ manifest });
+    const acceptance = verifyAcceptanceMatrix({ compose: options.compose, project, refs, env, manifest });
     if (options.receipt) {
       const receipt = {
-        schemaVersion: 'oci-qualification.v2',
+        schemaVersion: 'oci-qualification.v3',
         result: 'success',
         workflowRunId: manifest.build.workflowRunId,
         workflowRunAttempt: manifest.build.workflowRunAttempt,
         candidateIdentitySha256: candidateIdentitySha256(manifest),
         imageRefs: refs,
         checkedServices: SERVICES,
+        acceptance,
       };
       writeFileSync(resolve(options.receipt), `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
     }
