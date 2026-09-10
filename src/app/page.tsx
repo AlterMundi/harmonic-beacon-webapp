@@ -176,12 +176,17 @@ export default async function LandingPage({
 
                                     <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
                                         {publicCycle ? (
-                                            <a
-                                                href={`/api/public-sessions/${event.id}/enter`}
-                                                className="event-button event-button--primary mt-3 inline-flex w-full text-center sm:w-auto"
-                                            >
-                                                {locale === 'en' ? 'Enter event' : 'Ingresar al evento'}
-                                            </a>
+                                            <>
+                                                <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
+                                                    {copy.accountEntryHint}
+                                                </p>
+                                                <a
+                                                    href={`/api/public-sessions/${event.id}/enter`}
+                                                    className="event-button event-button--primary mt-3 inline-flex w-full text-center sm:w-auto"
+                                                >
+                                                    {locale === 'en' ? 'Enter event' : 'Ingresar al evento'}
+                                                </a>
+                                            </>
                                         ) : purchaseUrlFor(event.language) ? (
                                             <a
                                                 href={purchaseUrlFor(event.language)}

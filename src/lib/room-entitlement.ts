@@ -9,7 +9,6 @@ import {
     beaconAccountEnabled,
     validatedAccountIdentity,
 } from '@/lib/account-rp';
-import { isAnonymousPublicCycleAccess } from '@/lib/public-cycle';
 import {
     SESSION_COOKIE_NAME,
     digestSessionToken,
@@ -187,7 +186,7 @@ async function resolveRoomAccess(
     ) {
         return { ok: false, status: 401, error: 'Authentication required' };
     }
-    const accountRequired = beaconAccountEnabled() && !isAnonymousPublicCycleAccess(webSession);
+    const accountRequired = beaconAccountEnabled();
     const account = accountRequired
         ? await validatedAccountIdentity(webSession, now)
         : null;

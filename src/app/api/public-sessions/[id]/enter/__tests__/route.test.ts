@@ -5,16 +5,10 @@ import { createRequest, mockParams } from '@/__tests__/helpers';
 const PUBLIC_ID = '50000000-0000-4000-8000-202608220001';
 const {
     findUnique,
-    ticketCreate,
-    webSessionCreate,
-    principalFromToken,
     accountIdentityFromToken,
     attachPublicSessionAccess,
 } = vi.hoisted(() => ({
     findUnique: vi.fn(),
-    ticketCreate: vi.fn(),
-    webSessionCreate: vi.fn(),
-    principalFromToken: vi.fn(),
     accountIdentityFromToken: vi.fn(),
     attachPublicSessionAccess: vi.fn(),
 }));
@@ -22,28 +16,10 @@ const {
 vi.mock('@/lib/db', () => ({
     prisma: {
         scheduledSession: { findUnique },
-        $transaction: vi.fn(async (callback) => callback({
-            ticketEntitlement: { create: ticketCreate },
-            webSession: { create: webSessionCreate },
-        })),
     },
 }));
 vi.mock('@/lib/principal', () => ({
-    principalFromToken,
     accountIdentityFromToken,
-    newSessionToken: () => ({
-        cookieValue: 'opaque-public-cookie',
-        database: { tokenDigest: 'a'.repeat(64) },
-    }),
-    webSessionExpiry: () => new Date('2026-08-25T12:00:00.000Z'),
-    sessionCookie: (value: string) => ({
-        name: 'hb_session',
-        value,
-        httpOnly: true,
-        secure: true,
-        sameSite: 'lax',
-        path: '/',
-    }),
 }));
 vi.mock('@/lib/public-session-access', () => ({ attachPublicSessionAccess }));
 
@@ -60,7 +36,7 @@ describe('GET /api/public-sessions/[id]/enter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.unstubAllEnvs();
-        principalFromToken.mockResolvedValue(null);
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
         accountIdentityFromToken.mockResolvedValue(null);
         attachPublicSessionAccess.mockResolvedValue(true);
         findUnique.mockResolvedValue({
@@ -70,25 +46,18 @@ describe('GET /api/public-sessions/[id]/enter', () => {
             isTest: false,
             publicAccess: true,
         });
-        ticketCreate.mockResolvedValue({ id: 'ticket-free' });
-        webSessionCreate.mockResolvedValue({ id: 'web-free' });
     });
 
-    it('creates opaque free access without requiring an Account session', async () => {
+    it('requires Beacon Account before creating any public-event access', async () => {
         const response = await enter();
 
         expect(response.status).toBe(303);
-        expect(response.headers.get('location')).toBe(`http://localhost:3000/session/${PUBLIC_ID}`);
-        expect(response.headers.get('set-cookie')).toContain('hb_session=opaque-public-cookie');
-        expect(ticketCreate).toHaveBeenCalledWith(expect.objectContaining({
-            data: expect.objectContaining({
-                scheduledSessionId: PUBLIC_ID,
-                tier: 'COMP',
-                state: 'BOUND',
-                codeLastFour: 'FREE',
-            }),
-        }));
-        expect(webSessionCreate).toHaveBeenCalledTimes(1);
+        expect(response.headers.get('location')).toBe(
+            `http://localhost:3000/api/account/login?flow=attendee&next=%2Fsession%2F${PUBLIC_ID}`,
+        );
+        expect(response.headers.get('set-cookie')).toBeNull();
+        expect(findUnique).not.toHaveBeenCalled();
+        expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });
 
     it('uses the operator-pinned staging origin instead of the internal upstream URL', async () => {
@@ -101,32 +70,17 @@ describe('GET /api/public-sessions/[id]/enter', () => {
 
         expect(response.status).toBe(303);
         expect(response.headers.get('location')).toBe(
-            `https://live-staging.harmonicbeacon.com/session/${PUBLIC_ID}`,
+            `https://live-staging.harmonicbeacon.com/api/account/login?flow=attendee&next=%2Fsession%2F${PUBLIC_ID}`,
         );
     });
 
-    it('redirects an existing room-bound attendee without creating another entitlement', async () => {
-        principalFromToken.mockResolvedValue({
-            kind: 'attendee',
-            scheduledSessionId: PUBLIC_ID,
-        });
-
+    it('fails closed when the Account boundary is disabled', async () => {
+        vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'false');
         const response = await enter();
 
-        expect(response.status).toBe(303);
-        expect(ticketCreate).not.toHaveBeenCalled();
-        expect(webSessionCreate).not.toHaveBeenCalled();
-    });
-
-    it('preserves an existing staff session instead of replacing its cookie', async () => {
-        principalFromToken.mockResolvedValue({ kind: 'staff', userId: 'staff-1' });
-
-        const response = await enter();
-
-        expect(response.status).toBe(303);
-        expect(response.headers.get('set-cookie')).toBeNull();
+        expect(response.status).toBe(503);
         expect(findUnique).not.toHaveBeenCalled();
-        expect(ticketCreate).not.toHaveBeenCalled();
+        expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });
 
     it('attaches public access to an Account session without replacing its identity cookie', async () => {
@@ -151,15 +105,9 @@ describe('GET /api/public-sessions/[id]/enter', () => {
             expect.objectContaining({ subject: 'opaque-subject' }),
             expect.any(Date),
         );
-        expect(ticketCreate).not.toHaveBeenCalled();
     });
 
-    it('preserves an Account identity when moving from another public room', async () => {
-        principalFromToken.mockResolvedValue({
-            kind: 'attendee',
-            scheduledSessionId: '50000000-0000-4000-8000-202608220002',
-            accountId: 'opaque-subject',
-        });
+    it('rebinds the current Account identity when moving from another public room', async () => {
         accountIdentityFromToken.mockResolvedValue({
             issuer: 'https://account-staging.harmonicbeacon.com',
             subject: 'opaque-subject',
@@ -181,17 +129,22 @@ describe('GET /api/public-sessions/[id]/enter', () => {
             expect.objectContaining({ subject: 'opaque-subject' }),
             expect.any(Date),
         );
-        expect(ticketCreate).not.toHaveBeenCalled();
     });
 
     it('rejects every session outside the four published rooms before database access', async () => {
         const response = await enter('10000000-0000-4000-8000-000000000001');
         expect(response.status).toBe(404);
         expect(findUnique).not.toHaveBeenCalled();
-        expect(ticketCreate).not.toHaveBeenCalled();
     });
 
     it('does not issue access after a room is ended', async () => {
+        accountIdentityFromToken.mockResolvedValue({
+            issuer: 'https://account-staging.harmonicbeacon.com',
+            subject: 'opaque-subject',
+            sessionId: 'opaque-session',
+            displayName: 'Nicolás',
+            validatedAt: new Date('2026-08-19T12:00:00.000Z'),
+        });
         findUnique.mockResolvedValue({
             id: PUBLIC_ID,
             scheduledAt: new Date('2026-08-22T14:00:00.000Z'),
@@ -199,7 +152,10 @@ describe('GET /api/public-sessions/[id]/enter', () => {
             isTest: false,
             publicAccess: true,
         });
-        expect((await enter()).status).toBe(404);
-        expect(ticketCreate).not.toHaveBeenCalled();
+        expect((await enter(PUBLIC_ID, `/api/public-sessions/${PUBLIC_ID}/enter`, {
+            host: 'localhost:3000',
+            cookie: 'hb_session=account-cookie',
+        })).status).toBe(404);
+        expect(attachPublicSessionAccess).not.toHaveBeenCalled();
     });
 });

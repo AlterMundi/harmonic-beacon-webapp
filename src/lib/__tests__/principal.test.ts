@@ -270,7 +270,7 @@ describe('principalFromToken', () => {
         vi.unstubAllEnvs();
     });
 
-    it('preserves only the exact registration-free public-cycle principal when Account is enabled', async () => {
+    it('rejects a legacy anonymous public-cycle principal when Account is enabled', async () => {
         vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
         withWebSession({
             ...attendeeSession({
@@ -289,12 +289,7 @@ describe('principalFromToken', () => {
             accountValidatedAt: null,
         });
 
-        await expect((await importPrincipal()).principalFromToken(TOKEN, NOW)).resolves.toMatchObject({
-            kind: 'attendee',
-            scheduledSessionId: PUBLIC_CYCLE_SESSION_ID,
-            tier: 'COMP',
-            codeLastFour: 'FREE',
-        });
+        await expect((await importPrincipal()).principalFromToken(TOKEN, NOW)).resolves.toBeNull();
     });
 
     it.each([
@@ -303,7 +298,7 @@ describe('principalFromToken', () => {
         ['non-public row', { scheduledSession: { publicAccess: false, isTest: false } }],
         ['test row', { scheduledSession: { publicAccess: true, isTest: true } }],
         ['Account-bound ticket', { accountId: 'opaque-account' }],
-    ])('does not widen the anonymous Account exception to a %s', async (_label, override) => {
+    ])('rejects a legacy anonymous Account artifact for a %s', async (_label, override) => {
         vi.stubEnv('BEACON_ACCOUNT_ENABLED', 'true');
         withWebSession({
             ...attendeeSession({

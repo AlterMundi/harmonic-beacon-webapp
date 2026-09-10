@@ -9,6 +9,8 @@ import type { UiLocale } from '@/lib/i18n';
 // in src/app/session/[id]/page.tsx and the three copy variants it renders.
 
 const mockPush = vi.fn();
+const mockReplace = vi.fn();
+const mockRouter = { push: mockPush, replace: mockReplace };
 const navigationMocks = vi.hoisted(() => ({ surface: null as string | null }));
 const audioMocks = vi.hoisted(() => ({
     setBeaconVolume: vi.fn(),
@@ -20,7 +22,7 @@ vi.mock('next/navigation', () => ({
     useSearchParams: () => ({
         get: (key: string) => key === 'surface' ? navigationMocks.surface : null,
     }),
-    useRouter: () => ({ push: mockPush }),
+    useRouter: () => mockRouter,
 }));
 
 vi.mock('@/context/AudioContext', () => ({
@@ -240,6 +242,7 @@ afterEach(() => {
     vi.useRealTimers();
     cleanup();
     mockPush.mockClear();
+    mockReplace.mockClear();
     vi.restoreAllMocks();
 });
 
@@ -260,6 +263,21 @@ function renderPage(locale: UiLocale = 'en') {
 }
 
 describe('SessionRoomPage - event entry', () => {
+    it('sends an invalid or expired room session back through login before mounting LiveKit', async () => {
+        vi.mocked(global.fetch).mockResolvedValue({
+            ok: false,
+            status: 401,
+            json: async () => ({ error: 'Authentication required' }),
+        } as Response);
+
+        renderPage('es');
+
+        await waitFor(() => expect(mockReplace).toHaveBeenCalledWith(
+            '/login?next=%2Fsession%2Fsession-1',
+        ));
+        expect(Room).not.toHaveBeenCalled();
+    });
+
     it('keeps backend details private and explains an entry check failure in the selected language', async () => {
         vi.mocked(global.fetch).mockResolvedValue({
             ok: false,
