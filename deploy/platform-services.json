@@ -407,27 +407,27 @@
       "deployAdapter": {
         "status": "documented",
         "kind": "compose-systemd",
-        "references": ["docs/analytics/RUNBOOK.md", "ops/analytics"]
+        "references": [".github/workflows/analytics-delivery.yml", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V1.md", "docs/analytics/RUNBOOK.md", "ops/analytics/hb-analytics-delivery-root"]
       },
-      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics"],
-      "workflows": [".github/workflows/ci.yml"],
+      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics", "contracts/analytics-delivery"],
+      "workflows": [".github/workflows/ci.yml", ".github/workflows/analytics-delivery.yml"],
       "branchSources": [],
-      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "ops/analytics/restore-verify-analytics.sh"],
+      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V1.md", "ops/analytics/restore-verify-analytics.sh"],
       "deployedRevision": {"status": "unresolved", "value": null},
       "artifactFingerprint": {"status": "unresolved", "kind": "image-id-or-digest", "value": null, "references": []},
       "health": {
         "status": "verified",
         "endpoints": [
-          {"name": "analytics-health", "url": "https://live.harmonicbeacon.com/_a/health", "expectStatus": [200]},
-          {"name": "analytics-readiness", "url": "https://live.harmonicbeacon.com/_a/ready", "expectStatus": [200]}
+          {"name": "collector health", "url": "https://live.harmonicbeacon.com/_a/health", "expectStatus": [200], "provenanceField": "provenance.sourceRevision"},
+          {"name": "collector readiness", "url": "https://live.harmonicbeacon.com/_a/ready", "expectStatus": [200, 503], "provenanceField": "provenance.sourceRevision"}
         ]
       },
       "alerts": {
-        "route": {"status": "unavailable", "kind": "unknown", "references": ["docs/analytics/RUNBOOK.md"]},
+        "route": {"status": "documented", "kind": "alertmanager", "references": ["docs/analytics/RUNBOOK.md", "ops/analytics/hb-analytics-monitor.service", "ops/analytics/notify-analytics-monitor.mjs"]},
         "recipientProof": {"status": "unresolved", "references": [], "outcome": null}
       },
       "recovery": {
-        "target": {"status": "documented", "kind": "restore-and-roll-forward", "references": ["docs/analytics/RUNBOOK.md", "ops/analytics/restore-verify-analytics.sh"]},
+        "target": {"status": "documented", "kind": "restore-and-roll-forward", "references": ["docs/analytics/RUNBOOK.md", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V1.md", "ops/analytics/restore-verify-analytics.sh"]},
         "proof": {"status": "documented", "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/482"], "outcome": null}
       },
       "staging": {
@@ -453,8 +453,8 @@
           "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
         },
         {
-          "id": "analytics-alert-route",
-          "kind": "alert-route",
+          "id": "analytics-alert-recipient",
+          "kind": "recipient-proof",
           "status": "unresolved",
           "owner": "AlterMundi",
           "blocks": ["alert-proof"],
@@ -469,7 +469,7 @@
           "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
         }
       ],
-      "mutationPolicy": "Keep analytics integration, release deployment history, migrations, runtime, dashboard, and backups independent from Live deployment."
+      "mutationPolicy": "Keep analytics Compose/systemd lifecycle independent from Live; permit only exact-digest bounded helper operations and preserve product fail-open behavior."
     },
     {
       "id": "commerce-authority",

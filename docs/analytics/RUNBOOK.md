@@ -1,5 +1,19 @@
 # Analytics operations runbook
 
+## Canonical delivery contract
+
+[DELIVERY_RECOVERY_CONTRACT_V1.md](./DELIVERY_RECOVERY_CONTRACT_V1.md) is the
+versioned authority for source/artifact provenance, bounded delivery, receipts,
+alerts, synthetic isolation, and rollback. It supersedes prior mutable/manual
+analytics image-delivery instructions. Preserve older issue comments and
+receipts as history; never reuse them as current evidence.
+
+This repository does not activate the new path. Until the external Actions
+environment, dedicated runner label, exact package access, root-owned helper,
+sudoers, state directory, and a real alert recipient drill exist, continue to
+treat production delivery through the adapter as unavailable. There is no
+direct-Compose or generic-root fallback.
+
 ## Service and ownership
 
 The Live repository owns collector, worker, mart and `/ops/analytics`. Account owns canonical
@@ -7,7 +21,10 @@ identity and Listener intervals; Live owns attendance; the commerce Authority ow
 payment truth. The worker has one allowlisted read-only role per source. Collector and dashboard
 use separate PostgreSQL login roles; only the worker/migrator uses `analytics_owner`.
 
-Health endpoints are `/health`, `/ready` and loopback-only `/metrics` on the collector. Worker,
+Health endpoints are `/health`, `/ready` and loopback-only `/metrics` on the collector. Health and
+readiness retain their original status fields and add privacy-safe provenance. Existing images that
+lack verified runtime inputs report literal `unknown` fingerprints rather than claiming a revision.
+Worker,
 source and Meta freshness appear in `mart.source_health`. Its `display_state` distinguishes
 `disabled`, `unknown`, `stale`, `error`, and `ok`; unresolved source retries are counted in
 `open_dead_letters` without storing query text, credentials, or source rows. Browser calls are fail-open and have
@@ -42,6 +59,17 @@ schemas, validate the catalog and drop the temporary database. It never overwrit
 RPO is six hours plus timer jitter; target RTO is two hours. A source loss is recovered by restoring
 analytics and replaying the one-day-overlap idempotent backfills. An analytics DB loss does not
 affect product availability; rebuild from source plus retained browser backups.
+
+## Monitoring and alert routing
+
+`hb-analytics-monitor.timer` continues to run the existing monitor every five
+minutes. The monitor service now sends generic failure and first-success
+resolution events to the loopback Alertmanager API through
+`notify-analytics-monitor.mjs`. Alertmanager owns the existing receiver route;
+no receiver or secret is stored here. Rendering both payloads in tests proves
+the route contract, not recipient delivery. Recipient delivery remains unproven
+until an external drill records current failure and recovery proof IDs.
+Analytics alert failure must never block or change product traffic.
 
 ## Incidents and rollback
 

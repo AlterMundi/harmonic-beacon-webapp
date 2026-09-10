@@ -1,0 +1,108 @@
+name: Analytics Delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Bounded analytics operation
+        required: true
+        type: choice
+        options: [probe, status, preflight, deploy, smoke, rollback]
+      source_sha:
+        description: Exact release commit (40 lowercase hexadecimal characters)
+        required: true
+        type: string
+      image_digest:
+        description: Exact qualified analytics OCI sha256 digest
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful CI run bound to source_sha
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+concurrency:
+  group: analytics-production-delivery
+  cancel-in-progress: false
+
+jobs:
+  analytics-delivery:
+    # This environment and runner label are intentionally not provisioned by this
+    # repository. Their external creation and the reviewed root helper are gates.
+    environment: analytics-production
+    runs-on: [self-hosted, mona, analytics-delivery]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Bind release source and successful CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${{ inputs.image_digest }}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$CI_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          test "$GITHUB_REF" = refs/heads/release
+          test "$GITHUB_SHA" = "$SOURCE_SHA"
+          run_json="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}")"
+          RUN_JSON="$run_json" node - <<'NODE'
+          const run = JSON.parse(process.env.RUN_JSON);
+          if (run.name !== 'CI' || run.path !== '.github/workflows/ci.yml') throw new Error('foreign CI workflow');
+          if (run.head_branch !== 'release') throw new Error('CI run is outside the release lane');
+          if (run.head_sha !== process.env.SOURCE_SHA) throw new Error('CI head_sha differs from source_sha');
+          if (run.conclusion !== 'success') throw new Error('CI conclusion is not success');
+          NODE
+
+      - name: Verify installed analytics helper provenance
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -x /usr/local/sbin/hb-analytics-delivery
+          cmp --silent ops/analytics/hb-analytics-delivery-root /usr/local/sbin/hb-analytics-delivery
+
+      - name: Run bounded analytics operation
+        env:
+          OPERATION: ${{ inputs.operation }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          helper=(sudo -n /usr/local/sbin/hb-analytics-delivery)
+          context=("$GITHUB_WORKSPACE" "$SOURCE_SHA" "$IMAGE_DIGEST" "$CI_RUN_ID" "$GITHUB_WORKFLOW_REF" "$GITHUB_REF" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT")
+          case "$OPERATION" in
+            probe|status|preflight|smoke|rollback)
+              "${helper[@]}" "$OPERATION" "${context[@]}"
+              ;;
+            deploy)
+              "${helper[@]}" preflight "${context[@]}"
+              "${helper[@]}" deploy "${context[@]}"
+              "${helper[@]}" smoke "${context[@]}"
+              ;;
+            *) exit 2 ;;
+          esac
+
+      - name: Roll back interrupted analytics deployment
+        if: ${{ failure() && inputs.operation == 'deploy' }}
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -n /usr/local/sbin/hb-analytics-delivery rollback \
+            "$GITHUB_WORKSPACE" "$SOURCE_SHA" "$IMAGE_DIGEST" "$CI_RUN_ID" \
+            "$GITHUB_WORKFLOW_REF" "$GITHUB_REF" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"

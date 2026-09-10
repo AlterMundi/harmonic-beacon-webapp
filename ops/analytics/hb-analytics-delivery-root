@@ -1,0 +1,237 @@
+#!/usr/bin/env bash
+# Install as /usr/local/sbin/hb-analytics-delivery, root:root 0755. The
+# repository copy is inert until an operator separately provisions the helper,
+# sudoers, runner label, environment, evidence store, and package access.
+set -Eeuo pipefail
+
+readonly PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH
+readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'
+readonly ENV_FILE='/etc/harmonic-beacon/analytics.env'
+readonly STATE_DIR='/var/lib/harmonic-beacon/analytics-delivery'
+readonly LOCK_FILE="$STATE_DIR/delivery.lock"
+readonly COMPOSE_FILE="$WORKSPACE/ops/analytics/compose.yml"
+readonly PROJECT='harmonic-beacon-analytics'
+readonly IMAGE_REPOSITORY='ghcr.io/altermundi/harmonic-beacon-analytics'
+readonly WORKFLOW_REF='AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-delivery.yml@refs/heads/release'
+
+usage() {
+  printf '%s\n' 'usage: hb-analytics-delivery {probe|status|preflight|deploy|smoke|rollback} WORKSPACE SOURCE_SHA IMAGE_DIGEST CI_RUN_ID WORKFLOW_REF GITHUB_REF RUN_ID RUN_ATTEMPT' >&2
+  exit 2
+}
+
+die() {
+  printf 'hb-analytics-delivery: %s\n' "$*" >&2
+  exit 1
+}
+
+valid_sha() { [[ "$1" =~ ^[0-9a-f]{40}$ ]]; }
+valid_digest() { [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]]; }
+valid_id() { [[ "$1" =~ ^[1-9][0-9]{0,19}$ ]]; }
+
+[ "$#" -gt 0 ] || usage
+command="$1"
+shift
+case "$command" in
+  probe|status|preflight|deploy|smoke|rollback) ;;
+  *) usage ;;
+esac
+[ "$#" -eq 8 ] || usage
+workspace="$1"
+source_sha="$2"
+image_digest="$3"
+ci_run_id="$4"
+workflow_ref="$5"
+github_ref="$6"
+run_id="$7"
+run_attempt="$8"
+
+[ "${EUID}" -eq 0 ] || die 'must run as root through the restricted sudo rule'
+valid_sha "$source_sha" || die 'invalid source SHA'
+valid_digest "$image_digest" || die 'invalid image digest'
+valid_id "$ci_run_id" || die 'invalid CI run id'
+valid_id "$run_id" || die 'invalid workflow run id'
+valid_id "$run_attempt" || die 'invalid workflow run attempt'
+[ "$workspace" = "$WORKSPACE" ] || die 'unexpected Actions workspace'
+[ "$(realpath -e -- "$workspace")" = "$WORKSPACE" ] || die 'workspace redirects elsewhere'
+[ "$workflow_ref" = "$WORKFLOW_REF" ] || die 'foreign workflow ref'
+[ "$github_ref" = 'refs/heads/release' ] || die 'analytics delivery is release-only'
+
+checkout_sha="$(git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" rev-parse HEAD)"
+release_sha="$(git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" rev-parse refs/remotes/origin/release)"
+[ "$checkout_sha" = "$source_sha" ] || die 'checkout differs from requested source SHA'
+[ "$release_sha" = "$source_sha" ] || die 'stale or foreign release SHA'
+git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" diff --quiet -- || die 'tracked checkout changes are forbidden'
+git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" diff --cached --quiet -- || die 'staged checkout changes are forbidden'
+
+image_ref="${IMAGE_REPOSITORY}@${image_digest}"
+
+config_hash() {
+  (
+    cd "$WORKSPACE"
+    while IFS= read -r -d '' path; do
+      printf '%s\0' "$path"
+      sha256sum -- "$path"
+    done < <(git -c safe.directory="$WORKSPACE" ls-files -z -- ops/analytics)
+  ) | sha256sum | sed 's/ .*//; s/^/sha256:/'
+}
+
+inspect_candidate() {
+  local image_id revision repo_digests
+  image_id="$(docker image inspect "$image_ref" --format '{{.Id}}' 2>/dev/null)" || die 'exact OCI image is not locally provisioned'
+  valid_digest "$image_id" || die 'candidate image ID is invalid'
+  revision="$(docker image inspect "$image_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+  [ "$revision" = "$source_sha" ] || die 'OCI revision differs from source SHA'
+  repo_digests="$(docker image inspect "$image_ref" --format '{{range .RepoDigests}}{{println .}}{{end}}')"
+  printf '%s\n' "$repo_digests" | grep -Fxq "$image_ref" || die 'OCI RepoDigest differs from requested digest'
+  printf '%s' "$image_id"
+}
+
+require_external_prerequisites() {
+  [ -f "$ENV_FILE" ] && [ ! -L "$ENV_FILE" ] || die 'root-owned analytics environment is absent'
+  [ "$(stat -c '%a:%U:%G' "$ENV_FILE")" = '600:root:root' ] || die 'analytics environment must be 600:root:root'
+  [ -d "$STATE_DIR" ] && [ ! -L "$STATE_DIR" ] || die 'root-owned analytics state directory is absent'
+  [ "$(stat -c '%a:%U:%G' "$STATE_DIR")" = '700:root:root' ] || die 'analytics state directory must be 700:root:root'
+  mountpoint -q /mnt/beacon-data || die 'analytics data mount is absent'
+  [ "$(stat -c %d /mnt/beacon-data)" != "$(stat -c %d /)" ] || die 'analytics data mount aliases root filesystem'
+}
+
+acquire_lock() {
+  exec 9>"$LOCK_FILE"
+  flock --exclusive --nonblock 9 || die 'another analytics delivery is active'
+}
+
+compose_config() {
+  ANALYTICS_IMAGE_TAG="$source_sha" \
+  ANALYTICS_EXPECTED_SOURCE_REVISION="$source_sha" \
+  ANALYTICS_ARTIFACT_IMAGE_ID="$candidate_image_id" \
+  ANALYTICS_ARTIFACT_DIGEST="$image_digest" \
+  ANALYTICS_CONFIG_SHA256="$candidate_config_hash" \
+    docker compose --file "$COMPOSE_FILE" --project-name "$PROJECT" --env-file "$ENV_FILE" config --quiet
+}
+
+compose_migrate() {
+  ANALYTICS_IMAGE_TAG="$source_sha" \
+  ANALYTICS_EXPECTED_SOURCE_REVISION="$source_sha" \
+  ANALYTICS_ARTIFACT_IMAGE_ID="$candidate_image_id" \
+  ANALYTICS_ARTIFACT_DIGEST="$image_digest" \
+  ANALYTICS_CONFIG_SHA256="$candidate_config_hash" \
+    docker compose --file "$COMPOSE_FILE" --project-name "$PROJECT" --env-file "$ENV_FILE" run --rm migrate
+}
+
+compose_replace() {
+  ANALYTICS_IMAGE_TAG="$source_sha" \
+  ANALYTICS_EXPECTED_SOURCE_REVISION="$source_sha" \
+  ANALYTICS_ARTIFACT_IMAGE_ID="$candidate_image_id" \
+  ANALYTICS_ARTIFACT_DIGEST="$image_digest" \
+  ANALYTICS_CONFIG_SHA256="$candidate_config_hash" \
+    docker compose --file "$COMPOSE_FILE" --project-name "$PROJECT" --env-file "$ENV_FILE" up -d --no-deps --force-recreate collector worker
+}
+
+smoke_expected() {
+  local expected_source="$1" expected_id="$2" expected_digest="$3" health ready
+  health="$(curl --fail --silent --show-error http://127.0.0.1:3300/health)"
+  ready="$(curl --fail --silent --show-error http://127.0.0.1:3300/ready)"
+  HEALTH_JSON="$health" READY_JSON="$ready" EXPECTED_SOURCE="$expected_source" EXPECTED_ID="$expected_id" EXPECTED_DIGEST="$expected_digest" EXPECTED_CONFIG="$candidate_config_hash" node - <<'NODE'
+  const health = JSON.parse(process.env.HEALTH_JSON);
+  const ready = JSON.parse(process.env.READY_JSON);
+  for (const value of [health, ready]) {
+    if (value?.provenance?.schemaVersion !== 'hb.analytics.provenance.v1') process.exit(1);
+    if (value.provenance.verified !== true) process.exit(1);
+    if (value.provenance.sourceRevision !== process.env.EXPECTED_SOURCE) process.exit(1);
+    if (value.provenance.artifact.imageId !== process.env.EXPECTED_ID) process.exit(1);
+    if (value.provenance.artifact.digest !== process.env.EXPECTED_DIGEST) process.exit(1);
+    if (value.provenance.configSha256 !== process.env.EXPECTED_CONFIG) process.exit(1);
+  }
+  if (health.status !== 'ok' || ready.status !== 'ready') process.exit(1);
+NODE
+}
+
+candidate_config_hash="$(config_hash)"
+candidate_image_id=''
+
+case "$command" in
+  probe)
+    candidate_image_id="$(inspect_candidate)"
+    printf '{"service":"analytics","sourceSha":"%s","imageId":"%s","digest":"%s","configSha256":"%s"}\n' \
+      "$source_sha" "$candidate_image_id" "$image_digest" "$candidate_config_hash"
+    ;;
+  status)
+    docker inspect hb-analytics-postgres hb-analytics-collector hb-analytics-worker \
+      --format 'name={{.Name}} image={{.Image}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}}'
+    ;;
+  preflight)
+    require_external_prerequisites
+    acquire_lock
+    candidate_image_id="$(inspect_candidate)"
+    compose_config
+    ;;
+  deploy)
+    require_external_prerequisites
+    acquire_lock
+    candidate_image_id="$(inspect_candidate)"
+    compose_config
+    previous_image_id="$(docker inspect hb-analytics-collector --format '{{.Image}}')"
+    valid_digest "$previous_image_id" || die 'current collector image ID is unknown'
+    previous_worker_image_id="$(docker inspect hb-analytics-worker --format '{{.Image}}')"
+    [ "$previous_worker_image_id" = "$previous_image_id" ] || die 'current worker image differs from collector'
+    previous_source="$(docker image inspect "$previous_image_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+    valid_sha "$previous_source" || die 'current collector revision is unknown'
+    previous_ref="$(docker image inspect "$previous_image_id" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -E '^ghcr\.io/altermundi/harmonic-beacon-analytics@sha256:[0-9a-f]{64}$' | sed -n '1p')"
+    [ -n "$previous_ref" ] || die 'current collector digest is unknown'
+    previous_digest="${previous_ref#*@}"
+    valid_digest "$previous_digest" || die 'current collector digest is invalid'
+    umask 077
+    state_tmp="$(mktemp "$STATE_DIR/.attempt.XXXXXX")"
+    printf 'SOURCE_SHA=%s\nIMAGE_DIGEST=%s\nCI_RUN_ID=%s\nWORKFLOW_REF=%s\nGITHUB_REF=%s\nRUN_ID=%s\nRUN_ATTEMPT=%s\nPREVIOUS_SOURCE=%s\nPREVIOUS_IMAGE_ID=%s\nPREVIOUS_DIGEST=%s\n' \
+      "$source_sha" "$image_digest" "$ci_run_id" "$workflow_ref" "$github_ref" "$run_id" "$run_attempt" "$previous_source" "$previous_image_id" "$previous_digest" >"$state_tmp"
+    mv -f -- "$state_tmp" "$STATE_DIR/current-attempt"
+    docker tag "$image_ref" "harmonic-beacon/analytics:${source_sha}"
+    compose_migrate
+    compose_replace
+    ;;
+  smoke)
+    candidate_image_id="$(inspect_candidate)"
+    smoke_expected "$source_sha" "$candidate_image_id" "$image_digest"
+    ;;
+  rollback)
+    require_external_prerequisites
+    acquire_lock
+    state="$STATE_DIR/current-attempt"
+    [ -f "$state" ] && [ ! -L "$state" ] && [ "$(stat -c '%a:%U:%G' "$state")" = '600:root:root' ] || die 'bound rollback state is absent'
+    SOURCE_SHA=''; IMAGE_DIGEST=''; CI_RUN_ID=''; WORKFLOW_REF=''; GITHUB_REF=''
+    RUN_ID=''; RUN_ATTEMPT=''; PREVIOUS_SOURCE=''; PREVIOUS_IMAGE_ID=''; PREVIOUS_DIGEST=''
+    while IFS= read -r line; do
+      key="${line%%=*}"
+      value="${line#*=}"
+      [ "$key" != "$line" ] || die 'rollback state is malformed'
+      case "$key" in
+        SOURCE_SHA) [ -z "$SOURCE_SHA" ] || die 'duplicate rollback state key'; SOURCE_SHA="$value" ;;
+        IMAGE_DIGEST) [ -z "$IMAGE_DIGEST" ] || die 'duplicate rollback state key'; IMAGE_DIGEST="$value" ;;
+        CI_RUN_ID) [ -z "$CI_RUN_ID" ] || die 'duplicate rollback state key'; CI_RUN_ID="$value" ;;
+        WORKFLOW_REF) [ -z "$WORKFLOW_REF" ] || die 'duplicate rollback state key'; WORKFLOW_REF="$value" ;;
+        GITHUB_REF) [ -z "$GITHUB_REF" ] || die 'duplicate rollback state key'; GITHUB_REF="$value" ;;
+        RUN_ID) [ -z "$RUN_ID" ] || die 'duplicate rollback state key'; RUN_ID="$value" ;;
+        RUN_ATTEMPT) [ -z "$RUN_ATTEMPT" ] || die 'duplicate rollback state key'; RUN_ATTEMPT="$value" ;;
+        PREVIOUS_SOURCE) [ -z "$PREVIOUS_SOURCE" ] || die 'duplicate rollback state key'; PREVIOUS_SOURCE="$value" ;;
+        PREVIOUS_IMAGE_ID) [ -z "$PREVIOUS_IMAGE_ID" ] || die 'duplicate rollback state key'; PREVIOUS_IMAGE_ID="$value" ;;
+        PREVIOUS_DIGEST) [ -z "$PREVIOUS_DIGEST" ] || die 'duplicate rollback state key'; PREVIOUS_DIGEST="$value" ;;
+        *) die 'unknown rollback state key' ;;
+      esac
+    done <"$state"
+    [ "$SOURCE_SHA" = "$source_sha" ] && [ "$IMAGE_DIGEST" = "$image_digest" ] || die 'rollback state belongs to another candidate'
+    [ "$CI_RUN_ID" = "$ci_run_id" ] && [ "$WORKFLOW_REF" = "$workflow_ref" ] && [ "$GITHUB_REF" = "$github_ref" ] || die 'rollback state belongs to another CI or workflow'
+    # Rollback is its own current workflow run. The stored run/attempt remain
+    # immutable provenance for the deployment being reversed.
+    valid_id "$RUN_ID" && valid_id "$RUN_ATTEMPT" || die 'rollback state has invalid deployment run provenance'
+    valid_sha "$PREVIOUS_SOURCE" && valid_digest "$PREVIOUS_IMAGE_ID" && valid_digest "$PREVIOUS_DIGEST" || die 'rollback state is malformed'
+    docker tag "$PREVIOUS_IMAGE_ID" "harmonic-beacon/analytics:${PREVIOUS_SOURCE}"
+    source_sha="$PREVIOUS_SOURCE"
+    image_digest="$PREVIOUS_DIGEST"
+    candidate_image_id="$PREVIOUS_IMAGE_ID"
+    candidate_config_hash="$(config_hash)"
+    compose_replace
+    smoke_expected "$PREVIOUS_SOURCE" "$PREVIOUS_IMAGE_ID" "$PREVIOUS_DIGEST"
+    rm -f -- "$state"
+    ;;
+esac

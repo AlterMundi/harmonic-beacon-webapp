@@ -9,6 +9,7 @@ import { digest, signHandoff, verifyEnvironmentServerSignature, verifyHandoff, v
 import { createStore } from './store.mjs';
 import { queryDashboard } from './dashboard.mjs';
 import { analyticsAllowedWithoutConsent, lookupGeo, normalizedClientIp, openGeoDatabase } from './geoip.mjs';
+import { runtimeProvenance } from './runtime-provenance.mjs';
 
 const port = Number(process.env.ANALYTICS_PORT ?? 3300);
 const handoffSecret = process.env.ANALYTICS_HANDOFF_SECRET;
@@ -29,6 +30,7 @@ const tracker = await readFile(fileURLToPath(new URL('./tracker.js', import.meta
 const geoDatabase = await openGeoDatabase(process.env.ANALYTICS_GEOIP_DATABASE);
 const metrics = { accepted: 0, duplicate: 0, rejected: 0, databaseErrors: 0, handoffs: 0, geoipLookups: 0, geoipMisses: 0 };
 const buckets = new Map();
+const provenance = runtimeProvenance();
 
 function originAllowed(value) {
     return !value || allowedOrigins.has(value);
@@ -102,11 +104,11 @@ const server = http.createServer(async (req, res) => {
         return respond(res, 204, '', origin, { 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type,x-hb-event-timestamp,x-hb-event-signature' });
     }
     if (req.method === 'GET' && url.pathname === '/health') {
-        return respond(res, 200, { status: 'ok', components: { geoip: geoDatabase ? 'ready' : 'unavailable' } });
+        return respond(res, 200, { status: 'ok', components: { geoip: geoDatabase ? 'ready' : 'unavailable' }, provenance });
     }
     if (req.method === 'GET' && url.pathname === '/ready') {
-        try { return respond(res, await store.ready() ? 200 : 503, { status: 'ready' }); }
-        catch { return respond(res, 503, { status: 'not_ready' }); }
+        try { return respond(res, await store.ready() ? 200 : 503, { status: 'ready', provenance }); }
+        catch { return respond(res, 503, { status: 'not_ready', provenance }); }
     }
     if (req.method === 'GET' && url.pathname === '/metrics') {
         const lines = Object.entries(metrics).map(([key, value]) => `hb_analytics_${key}_total ${value}`).join('\n');

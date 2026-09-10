@@ -1,0 +1,8 @@
+[Unit]
+Description=Route Harmonic Beacon analytics monitor failure to local Alertmanager
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/node /opt/beacon/analytics/ops/analytics/notify-analytics-monitor.mjs failure
