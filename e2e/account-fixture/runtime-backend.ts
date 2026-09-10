@@ -12,11 +12,23 @@ import path from 'node:path';
 import { assertSafeFixtureDatabaseUrl } from '../fixtures/database-url';
 
 type JsonObject = Record<string, unknown>;
-const objectValue = (value: unknown): JsonObject | undefined =>
-    value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : undefined;
-const arrayValue = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
-const boundedInteger = (value: unknown): number =>
-    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+const invalidReport = (): never => { throw new Error('Invalid Playwright JSON report'); };
+const reportObject = (value: unknown): JsonObject =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : invalidReport();
+const reportArray = (value: unknown): unknown[] => Array.isArray(value) ? value : invalidReport();
+const reportInteger = (value: unknown): number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : invalidReport();
+const testStatuses = new Set(['expected', 'unexpected', 'flaky', 'skipped']);
+const resultStatuses = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
+const failureStatuses = new Set(['failed', 'timedOut', 'interrupted']);
+
+function reportErrors(value: unknown): JsonObject[] {
+    return reportArray(value).map(errorValue => {
+        const error = reportObject(errorValue);
+        if (error.message !== undefined && typeof error.message !== 'string') invalidReport();
+        return error;
+    });
+}
 
 const publicProjects = new Set(['chromium-account', 'android-chrome-account', 'firefox-account', 'iphone-webkit-account']);
 const publicSpecFiles = new Set(['tests/continuity-navigation.spec.ts', 'account-fixture/rp.spec.ts']);
@@ -32,41 +44,55 @@ function publicSpecFile(value: unknown): string {
 
 /** Public CI diagnostics contain only source-controlled identifiers and result state. */
 export function summarizePlaywrightFailureReport(value: unknown) {
-    const report = objectValue(value) ?? {};
+    const report = reportObject(value);
+    const rootErrors = reportErrors(report.errors);
+    const stats = reportObject(report.stats);
+    const unexpected = reportInteger(stats.unexpected);
     const failures: Array<{ project: string; file: string; line: number; column: number; classification: string }> = [];
-    const visit = (suiteValue: unknown) => {
-        const suite = objectValue(suiteValue) ?? {};
-        for (const specValue of arrayValue(suite.specs)) {
-            const spec = objectValue(specValue) ?? {};
-            for (const testValue of arrayValue(spec.tests)) {
-                const test = objectValue(testValue) ?? {};
-                const results = arrayValue(test.results).map(result => objectValue(result) ?? {});
-                const statuses = results.map(result => result.status).filter((status): status is string => typeof status === 'string');
-                if (test.status !== 'unexpected' && !statuses.some(status => ['failed', 'timedOut', 'interrupted'].includes(status))) continue;
-                const browserClosed = results.some(result => arrayValue(result.errors).some(errorValue => {
-                    const message = objectValue(errorValue)?.message;
-                    return typeof message === 'string' && /(?:Target page, context or browser has been closed|Target page has been closed|Target context has been closed|browser has been closed)/i.test(message);
-                }));
-                const classification = statuses.includes('timedOut') ? 'timeout'
-                    : browserClosed ? 'browser-closed'
-                        : statuses.includes('interrupted') ? 'interrupted'
+    const visit = (suiteValue: unknown, depth = 0) => {
+        if (depth > 32) invalidReport();
+        const suite = reportObject(suiteValue);
+        for (const specValue of reportArray(suite.specs)) {
+            const spec = reportObject(specValue);
+            if (typeof spec.file !== 'string') invalidReport();
+            const line = reportInteger(spec.line);
+            const column = reportInteger(spec.column);
+            for (const testValue of reportArray(spec.tests)) {
+                const test = reportObject(testValue);
+                if (typeof test.projectName !== 'string' || typeof test.status !== 'string' || !testStatuses.has(test.status)) invalidReport();
+                const results = reportArray(test.results).map(resultValue => {
+                    const result = reportObject(resultValue);
+                    const status = typeof result.status === 'string' ? result.status : invalidReport();
+                    if (!resultStatuses.has(status)) invalidReport();
+                    return { status, errors: reportErrors(result.errors) };
+                });
+                if (test.status !== 'unexpected') continue;
+                const terminal = results.at(-1) ?? invalidReport();
+                if (!failureStatuses.has(terminal.status)) invalidReport();
+                const browserClosed = terminal.errors.some(error =>
+                    typeof error.message === 'string'
+                    && /(?:Target page, context or browser has been closed|Target page has been closed|Target context has been closed|browser has been closed)/i.test(error.message));
+                const classification = terminal.status === 'timedOut' ? 'timeout'
+                    : terminal.status === 'interrupted' ? 'interrupted'
+                        : browserClosed ? 'browser-closed'
                             : 'failure';
                 failures.push({
                     project: publicProject(test.projectName),
                     file: publicSpecFile(spec.file),
-                    line: boundedInteger(spec.line),
-                    column: boundedInteger(spec.column),
+                    line,
+                    column,
                     classification,
                 });
             }
         }
-        for (const nested of arrayValue(suite.suites)) visit(nested);
+        const nestedSuites = suite.suites === undefined ? [] : reportArray(suite.suites);
+        for (const nested of nestedSuites) visit(nested, depth + 1);
     };
-    for (const suite of arrayValue(report.suites)) visit(suite);
-    const stats = objectValue(report.stats) ?? {};
+    for (const suite of reportArray(report.suites)) visit(suite);
+    if (failures.length !== unexpected) invalidReport();
     return {
-        unexpected: boundedInteger(stats.unexpected) || failures.length,
-        rootErrors: arrayValue(report.errors).length,
+        unexpected,
+        rootErrors: rootErrors.length,
         failures,
     };
 }

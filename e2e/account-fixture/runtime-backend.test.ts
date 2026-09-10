@@ -297,4 +297,103 @@ test('public Playwright failure summary exposes only allowlisted diagnostic meta
     const runner = await readFile(path.join(process.cwd(), 'e2e/account-fixture/run.ts'), 'utf8');
     assert.match(runner, /summarizePlaywrightFailureReport\(report\)/);
     assert.match(runner, /ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY \$\{JSON\.stringify\(summary\)\}/);
+    assert.match(runner, /catch \{\s*console\.error\('ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY unavailable'\);\s*\}/);
+    assert.match(runner, /\}\s*catch \(error\) \{[\s\S]*throw error;\s*\}/);
+});
+
+test('public Playwright failure summary rejects structurally malformed reporter JSON', async () => {
+    const backend = await load();
+    const validResult = { status: 'passed', errors: [] };
+    const validTest = { projectName: 'firefox-account', status: 'expected', results: [validResult] };
+    const validSpec = {
+        file: 'tests/continuity-navigation.spec.ts',
+        line: 1,
+        column: 1,
+        tests: [validTest],
+    };
+    const validSuite = { specs: [validSpec] };
+    const validReport = { suites: [validSuite], errors: [], stats: { unexpected: 0 } };
+    const malformed = [
+        null,
+        { ...validReport, suites: 'secret' },
+        { ...validReport, errors: { message: 'private' } },
+        { ...validReport, stats: null },
+        { ...validReport, stats: { unexpected: '9' } },
+        { ...validReport, suites: [null] },
+        { ...validReport, suites: [{ specs: 'private' }] },
+        { ...validReport, suites: [{ specs: [], suites: {} }] },
+        { ...validReport, suites: [{ specs: [null] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, file: 7 }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, line: '1' }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, column: -1 }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [null] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, projectName: 7 }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, status: 'private' }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: {} }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [null] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, status: 'private' }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: {} }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [null] }] }] }] }] },
+        { ...validReport, suites: [{ specs: [{ ...validSpec, tests: [{ ...validTest, results: [{ ...validResult, errors: [{ message: 7 }] }] }] }] }] },
+    ];
+    for (const report of malformed) {
+        assert.throws(() => backend.summarizePlaywrightFailureReport(report), /Invalid Playwright JSON report/);
+    }
+});
+
+test('public Playwright failure summary follows overall status and the terminal retry', async () => {
+    const backend = await load();
+    const spec = (title: string, status: string, results: Array<Record<string, unknown>>, line: number) => ({
+        title,
+        file: 'tests/continuity-navigation.spec.ts',
+        line,
+        column: 5,
+        tests: [{ projectName: 'firefox-account', status, results }],
+    });
+    const report = {
+        suites: [{
+            specs: [
+                spec('expected failure', 'expected', [{ status: 'failed', errors: [] }], 10),
+                spec('recovered retry', 'flaky', [
+                    { status: 'failed', errors: [{ message: 'Target page, context or browser has been closed' }] },
+                    { status: 'passed', errors: [] },
+                ], 20),
+                spec('terminal timeout', 'unexpected', [
+                    { status: 'failed', errors: [{ message: 'Target page, context or browser has been closed' }] },
+                    { status: 'timedOut', errors: [] },
+                ], 30),
+                spec('terminal interruption', 'unexpected', [{ status: 'interrupted', errors: [] }], 40),
+                spec('skipped', 'skipped', [{ status: 'skipped', errors: [] }], 50),
+            ],
+        }],
+        errors: [{ message: 'root secret must not leak' }],
+        stats: { unexpected: 2 },
+    };
+    assert.deepEqual(backend.summarizePlaywrightFailureReport(report), {
+        unexpected: 2,
+        rootErrors: 1,
+        failures: [{
+            project: 'firefox-account',
+            file: 'e2e/tests/continuity-navigation.spec.ts',
+            line: 30,
+            column: 5,
+            classification: 'timeout',
+        }, {
+            project: 'firefox-account',
+            file: 'e2e/tests/continuity-navigation.spec.ts',
+            line: 40,
+            column: 5,
+            classification: 'interrupted',
+        }],
+    });
+    const zeroReport = {
+        suites: [{ specs: report.suites[0].specs.slice(0, 2) }],
+        errors: [],
+        stats: { unexpected: 0 },
+    };
+    assert.deepEqual(backend.summarizePlaywrightFailureReport(zeroReport), {
+        unexpected: 0,
+        rootErrors: 0,
+        failures: [],
+    });
 });

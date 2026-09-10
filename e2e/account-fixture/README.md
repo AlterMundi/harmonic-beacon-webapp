@@ -206,8 +206,12 @@ attachments, URLs, credentials, absolute paths, and private report contents;
 those remain in the retained private evidence. Separately, the launcher's
 existing lifecycle output identifies the ephemeral retained directory and the
 failing command's logfile path so the runner owner can inspect or clean it; it
-does not print that logfile's contents. If the report cannot be parsed, the
-public summary is exactly `unavailable` rather than the parse error.
+does not print that logfile's contents. Only tests whose reporter-level outcome is
+`unexpected` are included, and their class comes from the terminal retry rather
+than an earlier failed attempt; an explicit aggregate zero remains zero. If the
+report cannot be parsed, has an invalid required structure, or is internally
+inconsistent, the public summary is exactly `unavailable` rather than the parse
+or validation error.
 
 Never point the standalone config at a shared database or export Account variables
 into the main stack; use the runner. Missing fixture opt-in/config/instance marker
