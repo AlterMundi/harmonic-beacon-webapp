@@ -128,8 +128,17 @@ counted as another permitted capture. SDK resume leaves ThumbnailSender's separa
 thumbnail attempt throughout recovery. It rejects any microphone or
 other capture request, unexpected extra attempt, or acquired video track.
 Before/after audio activation and control snapshots must be identical, including
-the native-denial and initial-Beacon retry cases. The camera product policy is
-unchanged. Capture evidence is attached to the sanitized media receipts.
+the native-denial and initial-Beacon retry cases. Live-room tests must call
+`activateAudioAtMostOnce()` instead of clicking the Start audio CTA directly:
+the CTA can disappear after locator resolution when native output becomes ready.
+The helper clicks at most once when the control is visible and accepts an absent
+or hidden control only after `expectEffectiveAudioReady()` proves both owned
+rooms ready (and advancing native tracks when received audio exists). Responsive
+geometry checks likewise measure the CTA only while visible; a connected room
+with no visible CTA must satisfy the same effective-readiness contract. DOM
+presence or a hidden locator is never activation evidence. The camera product
+policy is unchanged. Capture evidence is attached to the sanitized media
+receipts.
 The publisher uses `E2E_LIVEKIT_URL`, `E2E_LIVEKIT_API_KEY`/`_SECRET` and
 `E2E_LIVEKIT_ROOM_NAME` (defaults: localhost:7880, devkey/secret, beacon). Keep
 the latter identical to the application's `LIVEKIT_ROOM_NAME`.

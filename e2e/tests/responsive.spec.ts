@@ -2,6 +2,7 @@ import { expect, stackTest, test } from '../fixtures/stack';
 import { loginViaDashboard } from '../fixtures/auth';
 import { requireDirectDb, withSessionStatus, withSessionTitles } from '../fixtures/db';
 import { ROUTES, SESSION_EN, SESSION_ES } from '../fixtures/test-data';
+import { expectEffectiveAudioReady, START_AUDIO } from '../helpers/audio-readiness';
 
 const LONG_ES_TITLE = 'Viaje colectivo hacia el bosque interior y las imágenes que todavía nos acompañan';
 const LONG_EN_TITLE = 'A collective journey through the inner forest and the images that still travel with us';
@@ -103,13 +104,16 @@ stackTest.describe('responsive live surfaces', () => {
             ).toBeVisible({ timeout: 30_000 });
             await expectNoHorizontalScroll(page);
 
-            const startAudio = page.getByRole('button', { name: /Start audio|Iniciar audio/i });
-            if (await startAudio.count()) {
+            const startAudio = page.getByRole('button', { name: START_AUDIO });
+            const connectionState = page.getByTestId('connection-state');
+            if (await startAudio.isVisible()) {
                 const box = await startAudio.boundingBox();
                 expect(box).not.toBeNull();
                 expect(box!.height).toBeGreaterThanOrEqual(44);
                 expect(box!.x).toBeGreaterThanOrEqual(0);
                 expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+            } else if (await connectionState.count() && await connectionState.getAttribute('data-state') === 'connected') {
+                await expectEffectiveAudioReady(page);
             }
 
             const stopTapestry = page.getByRole('button', {
