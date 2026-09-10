@@ -11,6 +11,66 @@ import pg from 'pg';
 import path from 'node:path';
 import { assertSafeFixtureDatabaseUrl } from '../fixtures/database-url';
 
+type JsonObject = Record<string, unknown>;
+const objectValue = (value: unknown): JsonObject | undefined =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : undefined;
+const arrayValue = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
+const boundedInteger = (value: unknown): number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+
+const publicProjects = new Set(['chromium-account', 'android-chrome-account', 'firefox-account', 'iphone-webkit-account']);
+const publicSpecFiles = new Set(['tests/continuity-navigation.spec.ts', 'account-fixture/rp.spec.ts']);
+function publicProject(value: unknown): string {
+    return typeof value === 'string' && publicProjects.has(value) ? value : '<redacted>';
+}
+
+function publicSpecFile(value: unknown): string {
+    if (typeof value !== 'string') return '<redacted>';
+    const normalized = value.replaceAll('\\', '/').replace(/^e2e\//, '');
+    return publicSpecFiles.has(normalized) ? `e2e/${normalized}` : '<redacted>';
+}
+
+/** Public CI diagnostics contain only source-controlled identifiers and result state. */
+export function summarizePlaywrightFailureReport(value: unknown) {
+    const report = objectValue(value) ?? {};
+    const failures: Array<{ project: string; file: string; line: number; column: number; classification: string }> = [];
+    const visit = (suiteValue: unknown) => {
+        const suite = objectValue(suiteValue) ?? {};
+        for (const specValue of arrayValue(suite.specs)) {
+            const spec = objectValue(specValue) ?? {};
+            for (const testValue of arrayValue(spec.tests)) {
+                const test = objectValue(testValue) ?? {};
+                const results = arrayValue(test.results).map(result => objectValue(result) ?? {});
+                const statuses = results.map(result => result.status).filter((status): status is string => typeof status === 'string');
+                if (test.status !== 'unexpected' && !statuses.some(status => ['failed', 'timedOut', 'interrupted'].includes(status))) continue;
+                const browserClosed = results.some(result => arrayValue(result.errors).some(errorValue => {
+                    const message = objectValue(errorValue)?.message;
+                    return typeof message === 'string' && /(?:Target page, context or browser has been closed|Target page has been closed|Target context has been closed|browser has been closed)/i.test(message);
+                }));
+                const classification = statuses.includes('timedOut') ? 'timeout'
+                    : browserClosed ? 'browser-closed'
+                        : statuses.includes('interrupted') ? 'interrupted'
+                            : 'failure';
+                failures.push({
+                    project: publicProject(test.projectName),
+                    file: publicSpecFile(spec.file),
+                    line: boundedInteger(spec.line),
+                    column: boundedInteger(spec.column),
+                    classification,
+                });
+            }
+        }
+        for (const nested of arrayValue(suite.suites)) visit(nested);
+    };
+    for (const suite of arrayValue(report.suites)) visit(suite);
+    const stats = objectValue(report.stats) ?? {};
+    return {
+        unexpected: boundedInteger(stats.unexpected) || failures.length,
+        rootErrors: arrayValue(report.errors).length,
+        failures,
+    };
+}
+
 export async function assertPortsFree(tcp = [3410, 3411, 3412, 3413, 35432, 34880, 34881], udp = Array.from({ length: 21 }, (_, i) => 34900 + i)) {
     const closes: Array<() => Promise<void>> = [];
     try {

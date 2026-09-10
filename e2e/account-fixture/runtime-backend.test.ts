@@ -226,3 +226,75 @@ test('copies nested build inputs recursively, excluding dotenv, outputs and depe
         await assert.rejects(readFile(path.join(dest, '.next', 'build')), { code: 'ENOENT' });
     } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('public Playwright failure summary exposes only allowlisted diagnostic metadata', async () => {
+    const backend = await load();
+    assert.equal(typeof backend.summarizePlaywrightFailureReport, 'function');
+    const report = {
+        suites: [{
+            title: 'fixture',
+            suites: [],
+            specs: [{
+                title: 'server removal restores the guarded room',
+                file: 'tests/continuity-navigation.spec.ts',
+                line: 271,
+                column: 5,
+                tests: [{
+                    projectName: 'firefox-account',
+                    status: 'unexpected',
+                    results: [{
+                        status: 'timedOut',
+                        errors: [{
+                            message: 'secret=https://private.invalid?token=do-not-leak',
+                            stack: 'at /tmp/navigation-account-secret/app/e2e/tests/continuity-navigation.spec.ts:301:17',
+                            location: { file: '/tmp/navigation-account-secret/app/e2e/tests/continuity-navigation.spec.ts', line: 301, column: 17 },
+                        }],
+                        stdout: ['private stdout'],
+                        stderr: ['private stderr'],
+                        attachments: [{ path: '/tmp/private/trace.zip' }],
+                    }],
+                }],
+            }, {
+                title: 'operator@example.com',
+                file: 'tests/customer-secret.spec.ts',
+                line: 1,
+                column: 1,
+                tests: [{
+                    projectName: 'customer-123',
+                    status: 'unexpected',
+                    results: [{
+                        status: 'failed',
+                        errors: [{ message: 'Target page, context or browser has been closed token=do-not-leak' }],
+                    }],
+                }],
+            }],
+        }],
+        errors: [{ message: 'root secret must not leak' }],
+        stats: { unexpected: 2 },
+    };
+    const summary = backend.summarizePlaywrightFailureReport(report);
+    assert.deepEqual(summary, {
+        unexpected: 2,
+        rootErrors: 1,
+        failures: [{
+            project: 'firefox-account',
+            file: 'e2e/tests/continuity-navigation.spec.ts',
+            line: 271,
+            column: 5,
+            classification: 'timeout',
+        }, {
+            project: '<redacted>',
+            file: '<redacted>',
+            line: 1,
+            column: 1,
+            classification: 'browser-closed',
+        }],
+    });
+    const serialized = JSON.stringify(summary);
+    for (const forbidden of ['secret', 'private.invalid', 'token', '/tmp/', 'stdout', 'stderr', 'trace.zip']) {
+        assert.doesNotMatch(serialized, new RegExp(forbidden.replace('.', '\\.')));
+    }
+    const runner = await readFile(path.join(process.cwd(), 'e2e/account-fixture/run.ts'), 'utf8');
+    assert.match(runner, /summarizePlaywrightFailureReport\(report\)/);
+    assert.match(runner, /ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY \$\{JSON\.stringify\(summary\)\}/);
+});

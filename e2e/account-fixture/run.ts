@@ -9,7 +9,7 @@ import { request } from 'node:http';
 import { connect } from 'node:net';
 import pg from 'pg';
 import { startAccountFixture, FIXTURE_CLIENT_ID, FIXTURE_CLIENT_SECRET } from './protocol';
-import { runtimeEnv, copySource, commandAdapter, assertPortsFree, waitForPostgres, startNativeBackend, startDockerBackend, trackConnections } from './runtime-backend';
+import { runtimeEnv, copySource, commandAdapter, assertPortsFree, waitForPostgres, startNativeBackend, startDockerBackend, trackConnections, summarizePlaywrightFailureReport } from './runtime-backend';
 
 async function main() {
     const root = process.cwd();
@@ -164,7 +164,20 @@ async function main() {
         }
         evidence.state = 'browser-tests'; await save();
         console.log(`Isolated external identity simulation ready. Logs and engine-labelled results: ${dir}`);
-        await command(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', '--config', 'e2e/account-fixture/playwright.config.ts', ...process.argv.slice(2)], undefined, 60 * 60_000);
+        try {
+            await command(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', '--config', 'e2e/account-fixture/playwright.config.ts', ...process.argv.slice(2)], undefined, 60 * 60_000);
+        } catch (error) {
+            try {
+                const report = JSON.parse(await readFile(path.join(results, 'report.json'), 'utf8'));
+                const summary = summarizePlaywrightFailureReport(report);
+                evidence.publicFailureSummary = summary;
+                await save();
+                console.error(`ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY ${JSON.stringify(summary)}`);
+            } catch {
+                console.error('ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY unavailable');
+            }
+            throw error;
+        }
         evidence.state = process.argv.includes('--list') ? 'listed-only-not-qualified' : 'selected-browser-command-passed';
     } catch (error) {
         if (!interruptedJob) { evidence.state = 'failed'; evidence.error = String(error); }

@@ -196,6 +196,19 @@ Retained evidence is deliberately distinct:
   are retained, **not a portable DB snapshot**. Docker tmpfs DB is discarded; no DB
   snapshot is claimed. Keep this sensitive test evidence private and expire it.
 
+When the browser command fails, public CI emits one
+`ACCOUNT_PLAYWRIGHT_FAILURE_SUMMARY` JSON object containing only allowlisted
+project name, repository-relative spec path, source line/column, result class,
+and aggregate counts. The allowlists are closed to the four configured Account
+projects and two configured Account specs; every other identifier becomes
+`<redacted>`. The summary omits test titles, raw errors, stdout/stderr,
+attachments, URLs, credentials, absolute paths, and private report contents;
+those remain in the retained private evidence. Separately, the launcher's
+existing lifecycle output identifies the ephemeral retained directory and the
+failing command's logfile path so the runner owner can inspect or clean it; it
+does not print that logfile's contents. If the report cannot be parsed, the
+public summary is exactly `unavailable` rather than the parse error.
+
 Never point the standalone config at a shared database or export Account variables
 into the main stack; use the runner. Missing fixture opt-in/config/instance marker
 is a hard gate failure, not a degraded-stack pass. A selected `--grep`, `--project`
