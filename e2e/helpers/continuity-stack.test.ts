@@ -9,7 +9,7 @@ import { installContinuitySourceProbe, rememberPlayingMedia, expectSamePlayingMe
 for (const engine of [chromium]) {
     test(`${engine.name()} two identified native RTC sources: positive and missing/paused/stalled/duplicate/replacement controls`, async () => {
         const fixture = await navigationBrowser();
-        const browser = await engine.launch();
+        const browser = await engine.launch().catch(async error => { await fixture.close(); throw error; });
         try {
             const page = await browser.newPage();
             await installContinuitySourceProbe(page);
@@ -124,7 +124,7 @@ for (const engine of [chromium]) {
 
 test('Firefox automation reload is a causal negative; scheduled native reload retains the actual Staff drawer', async () => {
     const fixture = await navigationBrowser();
-    const browser = await firefox.launch();
+    const browser = await firefox.launch().catch(async error => { await fixture.close(); throw error; });
     try {
         const page = await browser.newPage();
         await page.goto(fixture.origin + '/ops/events/event-1');

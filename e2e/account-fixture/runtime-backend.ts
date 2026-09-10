@@ -220,7 +220,7 @@ export async function runtimeEnv(source: Record<string, string | undefined>, dir
 }
 
 export async function copySource(root: string, checkout: string) {
-    const sourceRoots = new Set(['src', 'public', 'prisma', 'scripts', 'db', 'e2e', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'next-env.d.ts', 'postcss.config.mjs', 'prisma.config.ts', 'middleware.ts', 'eslint.config.mjs']);
+    const sourceRoots = new Set(['src', 'public', 'prisma', 'scripts', 'db', 'e2e', 'package.json', 'package-lock.json', 'next.config.ts', 'playwright.config.ts', 'tsconfig.json', 'next-env.d.ts', 'postcss.config.mjs', 'prisma.config.ts', 'middleware.ts', 'eslint.config.mjs']);
     await cp(root, checkout, { recursive: true, filter: async source => {
         const parts = path.relative(root, source).split(path.sep);
         return (!parts[0] || sourceRoots.has(parts[0])) && !parts.some(part => part.startsWith('.env') || ['node_modules', '.git', '.next', 'test-results', 'playwright-report'].includes(part)) && !(await lstat(source)).isSymbolicLink();

@@ -9,6 +9,26 @@ type Job = { steps: Step[]; env?: Record<string, string>; services?: unknown; if
 const workflow = () => parse(readFileSync('.github/workflows/e2e.yml', 'utf8')) as { jobs: Record<string, Job> };
 const helperConfig = 'e2e/helpers/playwright.config.ts';
 
+function assertHelperBrowserInstallOrder(steps: Step[]) {
+    const chromiumInstall = steps.find((entry) => entry.name === 'Install Chromium browser');
+    const chromium = steps.find((entry) => entry.name === 'Run isolated Chromium room-exit helper regressions');
+    const firefoxInstall = steps.find((entry) => entry.name === 'Install Firefox after Chromium screenshot gates');
+    const firefoxHelper = steps.find((entry) => entry.name === 'Run isolated Firefox room-exit helper regression');
+    expect(chromiumInstall?.run).toBe('npx playwright install --with-deps chromium');
+    expect(chromium?.run).toContain("--test-name-pattern='^chromium two identified native RTC sources:'");
+    expect(chromium?.run).toContain('playwright test');
+    expect(chromium?.run).toContain('--retries=0 --workers=1');
+    expect(chromium?.run).not.toMatch(/--list|--grep/);
+    expect(chromium?.if).toBeUndefined();
+    expect(firefoxInstall?.run).toBe('npx playwright install --with-deps firefox');
+    expect(firefoxHelper?.run).toContain("--test-name-pattern='^Firefox automation reload'");
+    expect(firefoxHelper?.run).not.toMatch(/--list|--grep/);
+    expect(firefoxHelper?.if).toBeUndefined();
+    expect(steps.indexOf(chromiumInstall!)).toBeLessThan(steps.indexOf(chromium!));
+    expect(steps.indexOf(chromium!)).toBeLessThan(steps.indexOf(firefoxInstall!));
+    expect(steps.indexOf(firefoxInstall!)).toBeLessThan(steps.indexOf(firefoxHelper!));
+}
+
 // Execute the workflow shell, then simulate GitHub's next-step environment.
 // Python AF_UNIX rejects overlong byte paths instead of Node silently truncating them.
 const socketProbe = `
@@ -253,11 +273,15 @@ describe('Live batch executable CI discovery', () => {
     });
 
     it('executes helper regressions in CI, not just discovery', () => {
-        const step = workflow().jobs.e2e.steps.find((entry) => entry.run?.includes(`--config ${helperConfig}`));
-        expect(step?.run).toContain('node --import tsx --test e2e/helpers/continuity-stack.test.ts');
-        expect(step?.run).toContain('playwright test');
-        expect(step?.run).toContain('--retries=0 --workers=1');
-        expect(step?.run).not.toMatch(/--list|--grep/);
-        expect(step?.if).toBeUndefined();
+        const steps = workflow().jobs.e2e.steps;
+        assertHelperBrowserInstallOrder(steps);
+
+        const withoutChromiumInstall = steps.filter((entry) => entry.name !== 'Install Chromium browser');
+        expect(() => assertHelperBrowserInstallOrder(withoutChromiumInstall)).toThrow();
+
+        const noOpFirefoxInstall = steps.map((entry) => entry.name === 'Install Firefox after Chromium screenshot gates'
+            ? { ...entry, run: 'true' }
+            : entry);
+        expect(() => assertHelperBrowserInstallOrder(noOpFirefoxInstall)).toThrow();
     });
 });

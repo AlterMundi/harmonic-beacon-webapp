@@ -86,14 +86,15 @@ jobs:
 
       - run: npm ci
 
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium browser
+        run: npx playwright install --with-deps chromium
 
       - name: Verify executable browser CI selection contracts
         run: npx vitest run --no-file-parallelism src/lib/__tests__/live-batch-browser-contract.test.ts src/lib/__tests__/live-batch-ci-contract.test.ts
 
-      - name: Run isolated room-exit helper browser regressions
+      - name: Run isolated Chromium room-exit helper regressions
         run: |
-          node --import tsx --test e2e/helpers/continuity-stack.test.ts
+          node --import tsx --test --test-name-pattern='^chromium two identified native RTC sources:' e2e/helpers/continuity-stack.test.ts
           npx playwright test --config e2e/helpers/playwright.config.ts --retries=0 --workers=1
 
       - name: Start LiveKit dev server
@@ -186,6 +187,9 @@ jobs:
 
       - name: Install Firefox after Chromium screenshot gates
         run: npx playwright install --with-deps firefox
+
+      - name: Run isolated Firefox room-exit helper regression
+        run: node --import tsx --test --test-name-pattern='^Firefox automation reload' e2e/helpers/continuity-stack.test.ts
 
       - name: Start isolated browser audio backend
         # Firefox needs a real audio backend even for synthesized RTP. Without

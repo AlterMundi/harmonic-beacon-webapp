@@ -162,7 +162,9 @@ migrations**, and seeds only its private bindings/public test event. An instance
 marker is verified read-only by `preflight.ts` before browser tests mutate state.
 It recursively copies allowlisted source/build inputs into a new temporary checkout,
 excluding dotenv, symlinks, Git/index, outputs and dependencies; it links the already
-installed dependency tree. It builds/starts that copy, not this worktree's `.next`.
+installed dependency tree. The allowlist includes the root `playwright.config.ts`
+because build-time contract tests import its exported project definition. It
+builds/starts that copy, not this worktree's `.next`.
 
 HTTPS is required for real `__Host-` state and Secure session cookies. The runner
 creates an ephemeral loopback certificate, passes it via `NODE_EXTRA_CA_CERTS` to

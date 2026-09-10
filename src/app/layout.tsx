@@ -119,6 +119,7 @@ export default async function RootLayout({
                 ? messages[locale].staffRoles[navigationIdentity.staffRole]
                 : null}
               accountHref={accountHref}
+              accountIssuer={navigationIdentity.issuer}
               locale={locale}
             />
           ) : undefined}

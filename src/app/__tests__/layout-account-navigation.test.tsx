@@ -34,8 +34,8 @@ vi.mock('@/components/brand/GlobalNavigation', () => ({
     >{accountMenu}</div>,
 }));
 vi.mock('@/components/brand/LiveNavigationAccountMenu', () => ({
-    LiveNavigationAccountMenu: ({ displayName, staffRoleLabel }: { displayName: string; staffRoleLabel: string | null }) => (
-        <div data-testid="local-account-menu" data-role={staffRoleLabel}>{displayName}</div>
+    LiveNavigationAccountMenu: ({ displayName, staffRoleLabel, accountIssuer }: { displayName: string; staffRoleLabel: string | null; accountIssuer: string }) => (
+        <div data-testid="local-account-menu" data-role={staffRoleLabel} data-account-issuer={accountIssuer}>{displayName}</div>
     ),
 }));
 vi.mock('@/components/brand/LiveIdentityCacheBoundary', () => ({
@@ -65,7 +65,7 @@ describe('root layout Account navigation hint', () => {
             cookie: `hb_session=${'a'.repeat(43)}`,
         });
         mocks.headers.mockResolvedValue(requestHeaders);
-        mocks.localNavigationIdentity.mockResolvedValue({ displayName: 'Nicolás', staffRole: 'ADMIN' });
+        mocks.localNavigationIdentity.mockResolvedValue({ issuer: 'https://account-staging.harmonicbeacon.com', displayName: 'Nicolás', staffRole: 'ADMIN' });
 
         render(await RootLayout({ children: <main>Live</main> }), { container: document });
 
@@ -81,6 +81,7 @@ describe('root layout Account navigation hint', () => {
         expect(screen.getByTestId('exit-boundary')).toContainElement(screen.getByRole('main'));
         expect(screen.getByTestId('local-account-menu')).toHaveTextContent('Nicolás');
         expect(screen.getByTestId('local-account-menu')).toHaveAttribute('data-role', 'Administration');
+        expect(screen.getByTestId('local-account-menu')).toHaveAttribute('data-account-issuer', 'https://account-staging.harmonicbeacon.com');
         expect(screen.getByTestId('identity-cache-boundary')).toBeInTheDocument();
     });
 
@@ -122,7 +123,7 @@ describe('root layout Account navigation hint', () => {
             cookie: `hb_session=${'b'.repeat(43)}`,
         });
         mocks.headers.mockResolvedValue(requestHeaders);
-        mocks.localNavigationIdentity.mockResolvedValue({ displayName: 'Production Tester', staffRole: null });
+        mocks.localNavigationIdentity.mockResolvedValue({ issuer: 'https://account.harmonicbeacon.com', displayName: 'Production Tester', staffRole: null });
 
         render(await RootLayout({ children: <main>Live</main> }), { container: document });
 

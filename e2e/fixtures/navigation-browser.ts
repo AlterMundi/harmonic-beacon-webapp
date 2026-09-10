@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
  */
 export async function navigationBrowser(): Promise<{ origin: string; close: () => Promise<void> }> {
     const result = await build({
-        entryPoints: [resolve('e2e/fixtures/navigation-browser.tsx')], bundle: true,
+        entryPoints: [resolve('e2e/fixtures/navigation-browser-app.tsx')], bundle: true,
         write: false, format: 'iife', platform: 'browser', jsx: 'automatic',
         define: { 'process.env.NODE_ENV': '"test"' },
         plugins: [{ name: 'browser-boundaries', setup(builder) {

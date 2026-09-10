@@ -214,11 +214,15 @@ test('copies nested build inputs recursively, excluding dotenv, outputs and depe
         await mkdir(path.join(root, 'src', 'nested'), { recursive: true });
         await writeFile(path.join(root, 'src', 'nested', 'page.ts'), 'fixture');
         await writeFile(path.join(root, 'src', '.env.local'), 'SECRET');
+        await writeFile(path.join(root, 'playwright.config.ts'), 'fixture-config');
+        await writeFile(path.join(root, 'unrelated-root-file.ts'), 'excluded');
         await mkdir(path.join(root, '.next'));
         await writeFile(path.join(root, '.next', 'build'), 'stale');
         await backend.copySource(root, dest);
         assert.equal(await readFile(path.join(dest, 'src', 'nested', 'page.ts'), 'utf8'), 'fixture');
+        assert.equal(await readFile(path.join(dest, 'playwright.config.ts'), 'utf8'), 'fixture-config');
         await assert.rejects(readFile(path.join(dest, 'src', '.env.local')), { code: 'ENOENT' });
+        await assert.rejects(readFile(path.join(dest, 'unrelated-root-file.ts')), { code: 'ENOENT' });
         await assert.rejects(readFile(path.join(dest, '.next', 'build')), { code: 'ENOENT' });
     } finally { await rm(dir, { recursive: true, force: true }); }
 });

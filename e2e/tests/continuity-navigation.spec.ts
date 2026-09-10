@@ -244,9 +244,8 @@ for (const role of ['ATTENDEE', 'OPERATOR'] as const) {
                 await page.getByRole('button', { name: 'Leave the room', exact: true }).click();
                 const logoutResponse = await logout;
                 expect(logoutResponse.ok()).toBe(true);
-                const { issuerLogoutUrl } = await logoutResponse.json();
-                expect(new URL(issuerLogoutUrl).origin).toBe(process.env.E2E_ACCOUNT_ISSUER);
                 await expect(page.getByRole('heading', { name: 'External identity simulation' })).toBeVisible();
+                expect(new URL(page.url()).origin).toBe(process.env.E2E_ACCOUNT_ISSUER);
                 await expectAccountSessionRevoked(accountRow.id);
                 await page.getByRole('button', { name: 'Confirm simulated Account sign-out', exact: true }).click();
                 await expect(page).toHaveURL(new URL('/', baseURL!).href);

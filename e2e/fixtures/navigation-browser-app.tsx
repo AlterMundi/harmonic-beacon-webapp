@@ -47,7 +47,7 @@ function PinnedNavigation() {
         document.body.append(script);
         return () => script.remove();
     }, []);
-    return <GlobalNavigation active="events" locale="en" allowRemoteEnhancement={false} accountAvailable accountSignedIn accountMenu={<LiveNavigationAccountMenu displayName="Test staff" staffRoleLabel="Operator" accountHref="https://account.harmonicbeacon.com/account" locale="en" />} />;
+    return <GlobalNavigation active="events" locale="en" allowRemoteEnhancement={false} accountAvailable accountSignedIn accountMenu={<LiveNavigationAccountMenu displayName="Test staff" staffRoleLabel="Operator" accountHref="https://account.harmonicbeacon.com/account" accountIssuer="https://account.harmonicbeacon.com" locale="en" />} />;
 }
 function Fixture() {
     const child = location.pathname.startsWith('/session/');

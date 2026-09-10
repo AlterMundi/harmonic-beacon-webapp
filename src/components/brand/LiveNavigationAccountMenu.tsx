@@ -15,11 +15,11 @@ type AccountHref =
 
 export function trustedAccountLogoutURL(
     raw: unknown,
-    accountHref: AccountHref,
+    accountIssuer: string,
 ): string | null {
     if (typeof raw !== 'string') return null;
     try {
-        const accountOrigin = new URL(accountHref).origin;
+        const accountOrigin = new URL(accountIssuer).origin;
         const logoutURL = new URL(raw);
         if (
             logoutURL.protocol !== 'https:' ||
@@ -39,11 +39,13 @@ export function LiveNavigationAccountMenu({
     staffRoleLabel,
     staffRole,
     accountHref,
+    accountIssuer,
 }: {
     displayName: string | null;
     staffRoleLabel: string | null;
     staffRole?: LocalizedStaffRole | null;
     accountHref: AccountHref;
+    accountIssuer: string;
     locale: UiLocale;
 }) {
     const { locale, copy } = useLocale();
@@ -68,7 +70,7 @@ export function LiveNavigationAccountMenu({
             if (!response.ok) throw new Error('Live sign-out failed');
             const body = await response.json() as { issuerLogoutUrl?: unknown };
             if (body.issuerLogoutUrl !== undefined) {
-                const logoutURL = trustedAccountLogoutURL(body.issuerLogoutUrl, accountHref);
+                const logoutURL = trustedAccountLogoutURL(body.issuerLogoutUrl, accountIssuer);
                 if (!logoutURL) throw new Error('Unexpected Account logout origin');
                 window.location.assign(logoutURL);
                 return;
