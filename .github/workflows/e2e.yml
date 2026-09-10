@@ -36,7 +36,7 @@ jobs:
     # ready_for_review event above runs this complete matrix before review;
     # workflow_call (release/deploy) remains unconditional.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -79,7 +79,15 @@ jobs:
           node-version: '22.22'
           cache: 'npm'
 
+      - name: Restore verified LiveKit load tester cache
+        id: livekit-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/livekit-load-cli/lk
+          key: livekit-load-cli-v1-${{ runner.os }}-${{ runner.arch }}-go-1.25.8-${{ hashFiles('scripts/install-livekit-load-cli.sh', 'scripts/patches/livekit-cli-v2.16.3-vp8-depacketizer.patch') }}
+
       - uses: actions/setup-go@v5
+        if: steps.livekit-cli-cache.outputs.cache-hit != 'true'
         with:
           go-version: '1.25.8'
           cache: false
@@ -109,9 +117,15 @@ jobs:
           exit 1
 
       - name: Build verified LiveKit load tester
+        if: steps.livekit-cli-cache.outputs.cache-hit != 'true'
+        run: scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/livekit-load-cli/lk"
+
+      - name: Verify cached or built LiveKit load tester
         run: |
-          scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/lk"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          test -x "$RUNNER_TEMP/livekit-load-cli/lk"
+          test "$("$RUNNER_TEMP/livekit-load-cli/lk" --version)" = \
+            'lk version 2.16.3-hb-vp8.1'
+          echo "$RUNNER_TEMP/livekit-load-cli" >> "$GITHUB_PATH"
 
       - name: Run small dual-LiveKit load profile
         run: npm run load:livekit -- --profile ci --run-id "ci-${GITHUB_RUN_ID}"
@@ -210,6 +224,8 @@ jobs:
 
       - name: Run Firefox functional and accessibility gates
         run: npx playwright test --retries=0 --workers=1 --project=firefox
+        env:
+          E2E_REUSE_NEXT_BUILD: '1'
 
       - name: Install WebKit after Chromium screenshot gates
         run: npx playwright install --with-deps webkit
@@ -221,6 +237,8 @@ jobs:
           e2e/tests/audio-activation.spec.ts
           e2e/tests/continuity-navigation.spec.ts
           --project=iphone-webkit
+        env:
+          E2E_REUSE_NEXT_BUILD: '1'
 
       - name: Verify grant, migration, commerce, and invitation durable outbox contracts
         # Real-PostgreSQL proof that grant revisions are serialized across two
@@ -266,7 +284,7 @@ jobs:
   account:
     # Separate runner: no attachment to the legacy Account-disabled database/app.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read

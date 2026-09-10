@@ -133,6 +133,15 @@ It runs each shard on a different ephemeral GitHub-hosted runner, builds one
 codec-aware `lk 2.16.3-hb-vp8.1` artifact from the exact source and committed
 patch, schedules all shards against the same future UTC boundary, and
 uploads the redacted source manifests before aggregating them fail-closed.
+
+The prepare job and the reusable E2E job restore the verified load tester from
+an exact GitHub Actions cache key bound to runner OS and architecture, Go
+`1.25.8`, and hashes of both the repository installer and VP8 patch. There are
+no prefix restore keys. A miss builds from the pinned source; every hit and miss
+still verifies executable mode and the exact version
+`lk version 2.16.3-hb-vp8.1`. Cache reuse removes recompilation only: the load
+profile, shard artifact distribution, source manifests, and fail-closed
+aggregation remain unconditional evidence gates.
 Each generator also probes the fixed public production readiness endpoint. Two
 consecutive failures abort its current Stage and Beacon processes, preserve an
 `ABORTED` source manifest and prevent a global PASS. The probe never reads a
@@ -293,6 +302,10 @@ with the correct VP8 depacketizer and also requested a PLI for every count. The
 previous VP8 manifests therefore remain useful topology/cleanup evidence but
 their packet-loss magnitudes are not admissible capacity evidence. H264 controls
 remain runnable and cannot certify the production VP8 browser path.
+
+The exact-input cache is an optimization, not artifact promotion or a weaker
+provenance claim. A key change forces a rebuild, while an unchanged key still
+passes the same executable/version check before any workload can use the binary.
 
 Do not bypass this fail-closed guard. Re-enable VP8 runs only after a pinned CLI
 source selects the depacketizer from the negotiated codec and a focused

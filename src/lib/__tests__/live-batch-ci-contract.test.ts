@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-type Step = { name?: string; run?: string; if?: string; uses?: string; with?: Record<string, unknown> };
+type Step = { name?: string; run?: string; if?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown> };
 type Job = { steps: Step[]; env?: Record<string, string>; services?: unknown; if?: string; 'runs-on'?: string };
 const workflow = () => parse(readFileSync('.github/workflows/e2e.yml', 'utf8')) as { jobs: Record<string, Job> };
 const helperConfig = 'e2e/helpers/playwright.config.ts';
@@ -185,7 +185,7 @@ describe('Isolated Account CI gate', () => {
     it('runs the Node protocol/runtime contracts explicitly before the real isolated four-project runner', () => {
         const job = workflow().jobs.account;
         expect(job, 'Account must have its own Docker-capable job').toBeDefined();
-        expect(job['runs-on']).toBe('ubuntu-latest');
+        expect(job['runs-on']).toBe('ubuntu-24.04');
         expect(job.services).toBeUndefined(); // runner creates and verifies its own PG/LiveKit
         const commands = job.steps.map((step) => step.run ?? '').join('\n');
         expect(commands).toContain('node --import tsx --test e2e/account-fixture/protocol.test.ts e2e/account-fixture/runtime-backend.test.ts');
@@ -229,6 +229,25 @@ describe('Isolated Account CI gate', () => {
 });
 
 describe('Main browser CI execution policy', () => {
+    it('builds the main browser candidate once and reuses it only for later engines on a pinned runner', () => {
+        const parsed = workflow();
+        const job = parsed.jobs.e2e;
+        const account = parsed.jobs.account;
+        const chromium = job.steps.find((step) => step.name === 'Run Chromium and Android gates');
+        const firefox = job.steps.find((step) => step.name === 'Run Firefox functional and accessibility gates');
+        const webkit = job.steps.find((step) => step.name === 'Run iPhone/WebKit media gate');
+
+        expect(job['runs-on']).toBe('ubuntu-24.04');
+        expect(account['runs-on']).toBe('ubuntu-24.04');
+        expect(chromium?.env?.E2E_REUSE_NEXT_BUILD).toBeUndefined();
+        expect(firefox?.env?.E2E_REUSE_NEXT_BUILD).toBe('1');
+        expect(webkit?.env?.E2E_REUSE_NEXT_BUILD).toBe('1');
+        expect(chromium?.run).toContain('--project=chromium');
+        expect(chromium?.run).toContain('--project=android-chrome');
+        expect(firefox?.run).toContain('--project=firefox');
+        expect(webkit?.run).toContain('--project=iphone-webkit');
+    });
+
     it('executes discovery contracts and prevents retry masking in every acceptance command', () => {
         const job = workflow().jobs.e2e;
         const steps = job.steps;
