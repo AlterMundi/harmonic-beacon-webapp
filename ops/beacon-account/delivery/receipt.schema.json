@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/account-delivery-receipt.v1.schema.json",
+  "title": "Beacon Account delivery receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_scope",
+    "service",
+    "target",
+    "operation",
+    "outcome",
+    "source_sha",
+    "artifact",
+    "config_contract_sha256",
+    "revisions",
+    "backup",
+    "checks",
+    "actions",
+    "rollback",
+    "interruption"
+  ],
+  "properties": {
+    "schema_version": { "const": "account-delivery-receipt.v1" },
+    "evidence_scope": {
+      "enum": [
+        "runtime",
+        "synthetic-interruption",
+        "synthetic-contract-fixture"
+      ]
+    },
+    "service": { "const": "beacon-account" },
+    "target": { "enum": ["staging", "production"] },
+    "operation": { "enum": ["deploy", "interruption-checkpoint"] },
+    "outcome": {
+      "enum": ["deployed", "rolled-back", "synthetic-interruption"]
+    },
+    "source_sha": { "$ref": "#/$defs/sha40" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_sha", "image_id", "digest"],
+      "properties": {
+        "source_sha": { "$ref": "#/$defs/sha40" },
+        "image_id": { "$ref": "#/$defs/sha256Digest" },
+        "digest": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256Digest" },
+            { "const": "unavailable-local-build" }
+          ]
+        }
+      }
+    },
+    "config_contract_sha256": { "$ref": "#/$defs/sha256" },
+    "revisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previous", "current"],
+      "properties": {
+        "previous": {
+          "oneOf": [{ "$ref": "#/$defs/sha40" }, { "type": "null" }]
+        },
+        "current": {
+          "oneOf": [
+            { "$ref": "#/$defs/currentCandidate" },
+            { "$ref": "#/$defs/currentRestored" }
+          ]
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encrypted_sha256", "isolated_restore"],
+      "properties": {
+        "encrypted_sha256": { "$ref": "#/$defs/sha256" },
+        "isolated_restore": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "mode", "cleanup"],
+          "properties": {
+            "status": { "const": "verified" },
+            "mode": { "const": "isolated-ephemeral-postgres" },
+            "cleanup": { "const": "verified" }
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["health", "worker", "smoke"],
+      "properties": {
+        "health": { "const": "verified" },
+        "worker": { "const": "verified" },
+        "smoke": { "const": "verified" }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ci", "delivery"],
+      "properties": {
+        "ci": { "$ref": "#/$defs/run" },
+        "delivery": { "$ref": "#/$defs/deliveryRun" }
+      }
+    },
+    "rollback": {
+      "oneOf": [
+        { "$ref": "#/$defs/rollbackNotRequired" },
+        { "$ref": "#/$defs/rollbackVerified" }
+      ]
+    },
+    "interruption": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/interruption" }]
+    }
+  },
+  "oneOf": [
+    {
+      "title": "successful deployment",
+      "properties": {
+        "evidence_scope": { "const": "runtime" },
+        "operation": { "const": "deploy" },
+        "outcome": { "const": "deployed" },
+        "revisions": {
+          "properties": { "current": { "$ref": "#/$defs/currentCandidate" } }
+        },
+        "rollback": { "$ref": "#/$defs/rollbackNotRequired" },
+        "interruption": { "type": "null" }
+      }
+    },
+    {
+      "title": "verified rollback",
+      "properties": {
+        "evidence_scope": { "const": "runtime" },
+        "operation": { "const": "deploy" },
+        "outcome": { "const": "rolled-back" },
+        "revisions": {
+          "properties": { "current": { "$ref": "#/$defs/currentRestored" } }
+        },
+        "rollback": { "$ref": "#/$defs/rollbackVerified" },
+        "interruption": { "type": "null" }
+      }
+    },
+    {
+      "title": "synthetic interruption with verified restoration",
+      "properties": {
+        "evidence_scope": {
+          "enum": ["synthetic-interruption", "synthetic-contract-fixture"]
+        },
+        "target": { "const": "staging" },
+        "operation": { "const": "interruption-checkpoint" },
+        "outcome": { "const": "synthetic-interruption" },
+        "revisions": {
+          "properties": { "current": { "$ref": "#/$defs/currentRestored" } }
+        },
+        "rollback": { "$ref": "#/$defs/rollbackVerified" },
+        "interruption": { "$ref": "#/$defs/interruption" }
+      }
+    }
+  ],
+  "$defs": {
+    "sha40": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "sha256Digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "currentCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": { "kind": { "const": "candidate" } }
+    },
+    "currentRestored": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "restored" }
+      }
+    },
+    "rollbackNotRequired": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "revision"],
+      "properties": {
+        "result": { "const": "not-required" },
+        "revision": { "type": "null" }
+      }
+    },
+    "rollbackVerified": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "revision"],
+      "properties": {
+        "result": { "const": "verified" },
+        "revision": { "const": "previous" }
+      }
+    },
+    "interruption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkpoint",
+        "expected_failure_observed",
+        "synthetic_inputs",
+        "cleanup"
+      ],
+      "properties": {
+        "checkpoint": { "const": "after-cutover" },
+        "expected_failure_observed": { "const": true },
+        "synthetic_inputs": { "const": true },
+        "cleanup": { "const": "verified" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "workflow", "attempt", "head_sha"],
+      "properties": {
+        "run_id": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "workflow": {
+          "type": "string",
+          "pattern": "^\\.github/workflows/[a-z0-9-]+\\.yml$"
+        },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "head_sha": { "$ref": "#/$defs/sha40" }
+      }
+    },
+    "deliveryRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "workflow",
+        "attempt",
+        "head_sha",
+        "target",
+        "operation",
+        "ci_run_id",
+        "ci_attempt",
+        "config_contract_sha256"
+      ],
+      "properties": {
+        "run_id": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "workflow": { "const": ".github/workflows/account-delivery.yml" },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "head_sha": { "$ref": "#/$defs/sha40" },
+        "target": { "enum": ["staging", "production"] },
+        "operation": { "enum": ["deploy", "interruption-checkpoint"] },
+        "ci_run_id": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "ci_attempt": { "type": "integer", "minimum": 1 },
+        "config_contract_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

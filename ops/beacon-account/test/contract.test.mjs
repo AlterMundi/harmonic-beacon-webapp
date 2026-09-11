@@ -309,7 +309,8 @@ test('lifecycle verifies immutable provenance and does not downgrade schemas', (
   const lib = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/lib.sh'), 'utf8');
   const rollback = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/rollback-app.sh'), 'utf8');
   const smoke = fs.readFileSync(path.resolve(ROOT, '../../scripts/beacon-account/health-smoke.sh'), 'utf8');
-  assert.match(start, /git -C "\$root" rev-parse HEAD/);
+  assert.match(start, /HB_ACCOUNT_TRUSTED_SOURCE_SHA.*BEACON_ACCOUNT_GIT_SHA/s);
+  assert.doesNotMatch(start, /(?:^|[;&|()]|\s)git(?:\s|$)/m);
   assert.match(start, /docker image inspect "harmonic-beacon\/account:\$BEACON_ACCOUNT_IMAGE_TAG"/);
   assert.match(start, /account_compose build account-production[\s\S]*account_validate/);
   assert.match(start, /account_compose up -d --no-deps[\s\\]+account-mail-worker-production account-production/);

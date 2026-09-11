@@ -10,8 +10,10 @@ case "$environment" in production|staging) ;; *) account_fail 'environment must 
 echo "$previous_sha" | grep -Eq '^[0-9a-f]{40}$' || account_fail 'previous SHA must be exact sha40'
 
 account_load_deploy_env "$ACCOUNT_DEPLOY_FILE"
-exec 9>"/run/lock/beacon-account-$environment.lock"
-flock -n 9 || account_fail "another $environment deployment is active"
+if [ "${HB_ACCOUNT_DELIVERY_LOCK_HELD:-0}" != 1 ]; then
+  exec 9>"/run/lock/beacon-account-$environment.lock"
+  flock -n 9 || account_fail "another $environment deployment is active"
+fi
 docker image inspect "harmonic-beacon/account:$previous_sha" >/dev/null || account_fail 'previous image is unavailable'
 previous_worker_present=0
 if account_image_supports_mail_worker "$previous_sha"; then

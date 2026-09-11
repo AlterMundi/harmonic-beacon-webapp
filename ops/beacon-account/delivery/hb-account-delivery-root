@@ -1,0 +1,1029 @@
+#!/bin/bash
+
+# Re-exec before any non-reserved command so sudo callers cannot influence Bash
+# functions, PATH resolution, language runtimes, Docker, curl, or Git through
+# the runner environment. The internal marker cannot occupy argv[1] through any
+# allowlisted sudo command, whose first argument is one of the six fixed verbs.
+case "${1-}" in
+  --hb-account-clean-environment)
+    shift
+    ;;
+  *)
+    exec /usr/bin/env -i \
+      PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+      HOME='/' LC_ALL='C' \
+      HB_ACCOUNT_DELIVERY_TEST_MODE="${HB_ACCOUNT_DELIVERY_TEST_MODE:-0}" \
+      HB_ACCOUNT_DELIVERY_API_FIXTURES="${HB_ACCOUNT_DELIVERY_API_FIXTURES:-}" \
+      HB_ACCOUNT_DELIVERY_STATE_DIR="${HB_ACCOUNT_DELIVERY_STATE_DIR:-}" \
+      HB_ACCOUNT_DELIVERY_RECEIPT_DIR="${HB_ACCOUNT_DELIVERY_RECEIPT_DIR:-}" \
+      HB_ACCOUNT_DELIVERY_DEPLOY_ENV="${HB_ACCOUNT_DELIVERY_DEPLOY_ENV:-}" \
+      HB_ACCOUNT_DELIVERY_BUNDLE="${HB_ACCOUNT_DELIVERY_BUNDLE:-}" \
+      HB_ACCOUNT_DELIVERY_TRUST_ROOT="${HB_ACCOUNT_DELIVERY_TRUST_ROOT:-}" \
+      HB_ACCOUNT_DELIVERY_STATE_TRUST_ROOT="${HB_ACCOUNT_DELIVERY_STATE_TRUST_ROOT:-}" \
+      HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_RECEIPT="${HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_RECEIPT:-0}" \
+      HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_ROLLBACK="${HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_ROLLBACK:-0}" \
+      HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_ROLLBACK_CLAIM="${HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_ROLLBACK_CLAIM:-0}" \
+      HB_TEST_SHA="${HB_TEST_SHA:-}" HB_TEST_ROLLBACK_LOG="${HB_TEST_ROLLBACK_LOG:-}" \
+      HB_TEST_HEALTH_LOG="${HB_TEST_HEALTH_LOG:-}" HB_TEST_RUNTIME_RESTORED="${HB_TEST_RUNTIME_RESTORED:-}" \
+      /bin/bash "$0" --hb-account-clean-environment "$@"
+    ;;
+esac
+
+# Install root:root 0755 as /usr/local/sbin/hb-account-delivery. The dedicated
+# runner receives only the six verbs in beacon-account-runner.sudoers.
+set -euo pipefail
+
+readonly SYSTEM_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+PATH="$SYSTEM_PATH"
+HOME='/'
+PYTHONNOUSERSITE=1
+PYTHONSAFEPATH=1
+export PATH HOME PYTHONNOUSERSITE PYTHONSAFEPATH
+unset BASH_ENV ENV CDPATH GIT_DIR GIT_WORK_TREE GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM \
+  GIT_CONFIG_COUNT GIT_SSH GIT_SSH_COMMAND DOCKER_CONFIG COMPOSE_FILE COMPOSE_PATH_SEPARATOR \
+  PYTHONPATH PYTHONHOME PYTHONUSERBASE NODE_OPTIONS NODE_PATH CURL_HOME SSL_CERT_FILE SSL_CERT_DIR \
+  CURL_CA_BUNDLE HTTPS_PROXY HTTP_PROXY ALL_PROXY NO_PROXY
+
+fail() {
+  printf 'hb-account-delivery: %s\n' "$*" >&2
+  exit 1
+}
+
+usage() {
+  printf '%s\n' \
+    'usage: hb-account-delivery {probe|status|preflight|deploy|smoke|rollback} target sha ci-run ci-attempt delivery-run delivery-attempt operation config-sha256' >&2
+  exit 2
+}
+
+readonly TEST_MODE="${HB_ACCOUNT_DELIVERY_TEST_MODE:-0}"
+if [ "$TEST_MODE" = 1 ]; then
+  [ "$EUID" -ne 0 ] || fail 'test mode is forbidden for root'
+  readonly API_FIXTURES="${HB_ACCOUNT_DELIVERY_API_FIXTURES:?missing API fixtures}"
+  readonly STATE_DIR="${HB_ACCOUNT_DELIVERY_STATE_DIR:?missing test state directory}"
+  readonly RECEIPT_DIR="${HB_ACCOUNT_DELIVERY_RECEIPT_DIR:?missing test receipt directory}"
+  readonly DEPLOY_ENV="${HB_ACCOUNT_DELIVERY_DEPLOY_ENV:?missing test deploy environment}"
+  readonly BUNDLE_ROOT="${HB_ACCOUNT_DELIVERY_BUNDLE:?missing test lifecycle bundle}"
+  readonly TRUST_ROOT="${HB_ACCOUNT_DELIVERY_TRUST_ROOT:?missing test trust root}"
+  readonly STATE_TRUST_ROOT="${HB_ACCOUNT_DELIVERY_STATE_TRUST_ROOT:?missing test state trust root}"
+  readonly REQUIRED_OWNER="$(id -un)"
+  readonly REQUIRED_GROUP="$(id -gn)"
+  readonly PRODUCTION_ACTIVATION="$STATE_DIR/production-activation"
+  readonly STAGING_SYNTHETIC_FIXTURE="$STATE_DIR/staging-synthetic-fixture"
+else
+  [ "$EUID" -eq 0 ] || fail 'must run as root through the restricted sudo rule'
+  readonly API_FIXTURES=''
+  readonly STATE_DIR='/var/lib/harmonic-beacon/account-delivery'
+  readonly RECEIPT_DIR='/var/lib/harmonic-beacon/account-delivery/receipts'
+  readonly DEPLOY_ENV='/etc/harmonic-beacon/account.deploy.env'
+  readonly BUNDLE_ROOT='/usr/local/libexec/hb-account-delivery/current'
+  readonly TRUST_ROOT='/'
+  readonly STATE_TRUST_ROOT='/'
+  readonly REQUIRED_OWNER='root'
+  readonly REQUIRED_GROUP='root'
+  readonly PRODUCTION_ACTIVATION='/etc/harmonic-beacon/account-production-activation'
+  readonly STAGING_SYNTHETIC_FIXTURE='/etc/harmonic-beacon/account-staging-synthetic-fixture'
+fi
+
+readonly CI_WORKFLOW='.github/workflows/early-birds-fast-forward.yml'
+readonly DELIVERY_WORKFLOW='.github/workflows/account-delivery.yml'
+readonly POSTGRES_IMAGE='postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777'
+readonly SELF="$(realpath -e -- "$0")"
+readonly SOURCE_ROOT="$BUNDLE_ROOT/source"
+
+validate_sha() {
+  [[ "$1" =~ ^[0-9a-f]{40}$ ]] || fail 'SHA must be exact lowercase sha40'
+}
+
+validate_sha256() {
+  [[ "$1" =~ ^[0-9a-f]{64}$ ]] || fail 'configuration contract must be exact lowercase sha256'
+}
+
+validate_run_id() {
+  [[ "$1" =~ ^[1-9][0-9]{0,19}$ ]] || fail 'invalid Actions run id'
+}
+
+validate_attempt() {
+  [[ "$1" =~ ^[1-9][0-9]{0,9}$ ]] || fail 'invalid Actions run attempt'
+}
+
+validate_target() {
+  case "$1" in staging|production) ;; *) fail 'target must be staging or production' ;; esac
+}
+
+validate_operation() {
+  case "$1" in deploy|interruption-checkpoint) ;; *) fail 'operation is not allowlisted' ;; esac
+  if [ "$1" = interruption-checkpoint ] && [ "$target" != staging ]; then
+    fail 'interruption-checkpoint is staging-only'
+  fi
+}
+
+require_secure_directory() {
+  local directory="$1"
+  [ -d "$directory" ] || fail "missing required directory: $directory"
+  [ ! -L "$directory" ] || fail "directory must not be a symlink: $directory"
+  [ "$(stat -c '%a:%U:%G' "$directory")" = "700:$REQUIRED_OWNER:$REQUIRED_GROUP" ] ||
+    fail "directory must be 0700 and owned by $REQUIRED_OWNER:$REQUIRED_GROUP: $directory"
+}
+
+require_trusted_directory_ancestors() {
+  python3 -I - "$1" "$STATE_TRUST_ROOT" "$(id -u "$REQUIRED_OWNER")" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
+
+destination = Path(sys.argv[1])
+trust = Path(sys.argv[2])
+expected_uid = int(sys.argv[3])
+try:
+    trust = Path(os.path.realpath(trust))
+    if not destination.is_absolute() or os.path.realpath(destination) != os.fspath(destination):
+        raise ValueError
+    parts = destination.relative_to(trust).parts
+except (OSError, ValueError):
+    raise SystemExit("trusted state ancestor containment failed")
+cursor = trust
+for part in (None, *parts):
+    if part is not None:
+        cursor /= part
+    value = os.lstat(cursor)
+    if not stat.S_ISDIR(value.st_mode) or value.st_uid != expected_uid or value.st_mode & 0o022:
+        raise SystemExit(f"trusted state ancestor owner or mode failed: {cursor}")
+PY
+}
+
+require_private_file() {
+  local file="$1"
+  [ -f "$file" ] && [ ! -L "$file" ] || fail "missing regular private file: $file"
+  [ "$(stat -c '%a:%U:%G' "$file")" = "600:$REQUIRED_OWNER:$REQUIRED_GROUP" ] ||
+    fail "file must be 0600 and owned by $REQUIRED_OWNER:$REQUIRED_GROUP: $file"
+}
+
+open_delivery_lock() {
+  local lock_file="$STATE_DIR/.delivery-$target.lock"
+  python3 -I - "$lock_file" "$(id -u "$REQUIRED_OWNER")" <<'PY'
+import os
+import stat
+import sys
+path, expected_uid = sys.argv[1], int(sys.argv[2])
+flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+try:
+    fd = os.open(path, flags, 0o600)
+except OSError as error:
+    raise SystemExit(f"unsafe delivery lock: {error}")
+try:
+    value = os.fstat(fd)
+    named = os.lstat(path)
+    if not stat.S_ISREG(value.st_mode) or value.st_uid != expected_uid or value.st_mode & 0o177 or value.st_nlink != 1:
+        raise SystemExit("unsafe delivery lock metadata")
+    if (value.st_dev, value.st_ino) != (named.st_dev, named.st_ino):
+        raise SystemExit("delivery lock changed during open")
+finally:
+    os.close(fd)
+PY
+  require_private_file "$lock_file"
+  exec 9<>"$lock_file"
+  flock -n 9 || fail "another $target delivery is active"
+  export HB_ACCOUNT_DELIVERY_LOCK_HELD=1
+}
+
+require_marker() {
+  local file="$1"
+  local expected="$2"
+  require_private_file "$file"
+  [ "$(wc -l < "$file")" -eq 1 ] || fail 'activation marker must contain exactly one line'
+  [ "$(<"$file")" = "$expected" ] || fail 'activation marker does not match the reviewed contract'
+}
+
+validate_bundle() {
+  python3 -I - "$BUNDLE_ROOT" "$TRUST_ROOT" "$SOURCE_ROOT" "$sha" "$(id -u "$REQUIRED_OWNER")" <<'PY'
+import hashlib
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+
+bundle, trust, source = map(Path, sys.argv[1:4])
+expected_sha, expected_uid = sys.argv[4], int(sys.argv[5])
+
+def die(message):
+    raise SystemExit(f"untrusted installed lifecycle bundle: {message}")
+
+def checked(path, *, directory=False):
+    try:
+        before = os.lstat(path)
+    except OSError as error:
+        die(f"cannot stat {path}: {error}")
+    wanted = stat.S_ISDIR if directory else stat.S_ISREG
+    if not wanted(before.st_mode):
+        die(f"wrong file type: {path}")
+    if before.st_uid != expected_uid or before.st_mode & 0o022:
+        die(f"owner or mode permits replacement: {path}")
+    if not directory and before.st_nlink != 1:
+        die(f"file must have one link: {path}")
+    return before
+
+try:
+    trust = Path(os.path.realpath(trust))
+    bundle_text = os.fspath(bundle)
+    if not os.path.isabs(bundle_text) or os.path.realpath(bundle) != bundle_text:
+        die("bundle path is not canonical")
+    bundle.relative_to(trust)
+except (OSError, ValueError):
+    die("bundle escapes its trusted ancestor")
+
+cursor = trust
+checked(cursor, directory=True)
+for part in bundle.relative_to(trust).parts:
+    cursor = cursor / part
+    checked(cursor, directory=True)
+checked(source, directory=True)
+
+def read_regular(path, limit):
+    checked(path)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        before = os.lstat(path)
+        if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            die(f"file changed during open: {path}")
+        if not stat.S_ISREG(opened.st_mode) or opened.st_uid != expected_uid or opened.st_mode & 0o022 or opened.st_nlink != 1:
+            die(f"unsafe opened file: {path}")
+        if opened.st_size > limit:
+            die(f"file exceeds size limit: {path}")
+        value = b""
+        while len(value) <= limit:
+            chunk = os.read(fd, min(65536, limit + 1 - len(value)))
+            if not chunk:
+                return value
+            value += chunk
+        die(f"file exceeds size limit: {path}")
+    finally:
+        os.close(fd)
+
+source_sha = read_regular(bundle / "source.sha", 41)
+if source_sha != (expected_sha + "\n").encode():
+    die("source identity differs from requested SHA")
+manifest_bytes = read_regular(bundle / "manifest.sha256", 16 * 1024 * 1024)
+try:
+    manifest_text = manifest_bytes.decode("utf-8")
+except UnicodeDecodeError:
+    die("manifest is not UTF-8")
+
+expected = {}
+previous = None
+for line in manifest_text.splitlines():
+    match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_./@+\[\]-]+)", line)
+    if not match:
+        die("manifest line is malformed")
+    digest, relative = match.groups()
+    if relative.startswith("/") or ".." in Path(relative).parts or relative in expected:
+        die("manifest path is unsafe or duplicated")
+    if previous is not None and relative <= previous:
+        die("manifest is not strictly sorted")
+    previous = relative
+    expected[relative] = digest
+if not expected:
+    die("manifest is empty")
+
+actual = {}
+for directory, names, files in os.walk(source, topdown=True, followlinks=False):
+    names.sort()
+    files.sort()
+    checked(Path(directory), directory=True)
+    for name in names:
+        checked(Path(directory) / name, directory=True)
+    for name in files:
+        path = Path(directory) / name
+        relative = path.relative_to(source).as_posix()
+        value = read_regular(path, 64 * 1024 * 1024)
+        actual[relative] = hashlib.sha256(value).hexdigest()
+if set(actual) != set(expected):
+    die("closed source inventory differs from manifest")
+for relative, digest in expected.items():
+    if actual[relative] != digest:
+        die(f"source bytes differ from manifest: {relative}")
+PY
+  cmp --silent "$SOURCE_ROOT/ops/beacon-account/delivery/hb-account-delivery-root" "$SELF" ||
+    fail 'installed helper differs from the trusted lifecycle source'
+  export HB_ACCOUNT_TRUSTED_SOURCE_SHA="$sha"
+}
+
+api_get() {
+  local run_id="$1"
+  local attempt="$2"
+  if [ "$TEST_MODE" = 1 ]; then
+    local fixture="$API_FIXTURES/$run_id-$attempt.json"
+    [ -f "$fixture" ] || fail 'missing Actions API fixture'
+    command cat -- "$fixture"
+  else
+    curl --disable --fail --silent --show-error --proto '=https' --tlsv1.2 --noproxy '*' \
+      --connect-timeout 5 --max-time 20 \
+      "https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp/actions/runs/$run_id/attempts/$attempt"
+  fi
+}
+
+api_get_branch() {
+  if [ "$TEST_MODE" = 1 ]; then
+    command cat -- "$API_FIXTURES/branch.json"
+  else
+    curl --disable --fail --silent --show-error --proto '=https' --tlsv1.2 --noproxy '*' \
+      --connect-timeout 5 --max-time 20 \
+      'https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp/git/ref/heads/early-birds'
+  fi
+}
+
+validate_actions_run() {
+  local run_id="$1"
+  local attempt="$2"
+  local sha="$3"
+  local expected_workflow="$4"
+  local expected_event="$5"
+  local evidence
+  evidence="$(mktemp "$STATE_DIR/actions-run.XXXXXX")"
+  chmod 0600 "$evidence"
+  trap 'rm -f "$evidence"' RETURN
+  api_get "$run_id" "$attempt" > "$evidence"
+  python3 -I - "$evidence" "$run_id" "$attempt" "$sha" "$expected_workflow" "$expected_event" \
+    "$target" "$operation" "$ci_run" "$ci_attempt" "$config_sha256" <<'PY'
+import json
+import sys
+
+(file, run_id, attempt, sha, workflow, event, target, operation,
+ ci_run, ci_attempt, config_sha256) = sys.argv[1:]
+try:
+    with open(file, encoding="utf-8") as stream:
+        data = json.load(stream)
+except (OSError, ValueError) as error:
+    raise SystemExit(f"invalid Actions run evidence: {error}")
+if type(data.get("id")) is not int or str(data["id"]) != run_id:
+    raise SystemExit("Actions run id mismatch")
+if type(data.get("run_attempt")) is not int or str(data["run_attempt"]) != attempt:
+    raise SystemExit("Actions run attempt mismatch")
+if not isinstance(data.get("head_sha"), str) or data["head_sha"] != sha:
+    raise SystemExit("Actions run SHA mismatch")
+if data.get("head_branch") != "early-birds":
+    raise SystemExit("Actions run lane is not early-birds")
+if data.get("path") != workflow:
+    raise SystemExit("Actions workflow path mismatch")
+if data.get("event") != event:
+    raise SystemExit("Actions event mismatch")
+if event == "push":
+    if data.get("status") != "completed" or data.get("conclusion") != "success":
+        raise SystemExit("CI run is not completed successfully")
+else:
+    if data.get("status") != "in_progress" or data.get("conclusion") is not None:
+        raise SystemExit("delivery run is not the current in-progress attempt")
+    expected_inputs = {
+        "target": target,
+        "sha": sha,
+        "ci_run_id": ci_run,
+        "ci_run_attempt": ci_attempt,
+        "config_contract_sha256": config_sha256,
+        "operation": operation,
+    }
+    inputs = data.get("inputs")
+    if not isinstance(inputs, dict) or any(not isinstance(key, str) or not isinstance(value, str) for key, value in inputs.items()):
+        raise SystemExit("delivery dispatch inputs are not a typed string map")
+    if inputs != expected_inputs:
+        raise SystemExit("delivery dispatch input binding mismatch")
+PY
+  rm -f "$evidence"
+  trap - RETURN
+}
+
+validate_checkout_and_runs() {
+  validate_bundle
+  local branch_evidence
+  branch_evidence="$(mktemp "$STATE_DIR/actions-branch.XXXXXX")"
+  chmod 0600 "$branch_evidence"
+  api_get_branch > "$branch_evidence"
+  python3 -I - "$branch_evidence" "$sha" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    data = json.load(stream)
+value = data.get("object")
+if (data.get("ref") != "refs/heads/early-birds" or not isinstance(value, dict)
+        or value.get("type") != "commit" or value.get("sha") != sys.argv[2]):
+    raise SystemExit("stale or foreign SHA: source is not the exact remote early-birds tip")
+PY
+  rm -f "$branch_evidence"
+  validate_actions_run "$ci_run" "$ci_attempt" "$sha" "$CI_WORKFLOW" push
+  validate_actions_run "$delivery_run" "$delivery_attempt" "$sha" "$DELIVERY_WORKFLOW" workflow_dispatch
+}
+
+validate_activation() {
+  if [ "$target" = production ]; then
+    require_marker "$PRODUCTION_ACTIVATION" account-production-protected-environment-v1
+  fi
+  if [ "$operation" = interruption-checkpoint ]; then
+    require_marker "$STAGING_SYNTHETIC_FIXTURE" synthetic-non-product-v1
+  fi
+}
+
+validate_context() {
+  validate_target "$target"
+  validate_sha "$sha"
+  validate_run_id "$ci_run"
+  validate_attempt "$ci_attempt"
+  validate_run_id "$delivery_run"
+  validate_attempt "$delivery_attempt"
+  validate_operation "$operation"
+  validate_sha256 "$config_sha256"
+  require_trusted_directory_ancestors "$STATE_DIR"
+  require_trusted_directory_ancestors "$RECEIPT_DIR"
+  require_secure_directory "$STATE_DIR"
+  require_secure_directory "$RECEIPT_DIR"
+  require_private_file "$DEPLOY_ENV"
+  validate_checkout_and_runs
+  [ "$(config_contract_hash)" = "$config_sha256" ] ||
+    fail 'installed configuration contract differs from dispatch binding'
+  validate_activation
+}
+
+config_contract_hash() {
+  python3 -I - "$SOURCE_ROOT" <<'PY'
+import hashlib
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+paths = sorted([
+    "ops/beacon-account/compose.yml",
+    "ops/beacon-account/validate.mjs",
+    "ops/beacon-account/deploy.env.synthetic.example",
+    "ops/beacon-account/account.production.env.example",
+    "ops/beacon-account/account.staging.env.example",
+    "ops/beacon-account/account-mail-worker.production.env.example",
+    "ops/beacon-account/account-mail-worker.staging.env.example",
+    "ops/beacon-account/database.staging.env.example",
+])
+value = hashlib.sha256()
+for relative in paths:
+    payload = (root / relative).read_bytes()
+    value.update(relative.encode() + b"\0" + hashlib.sha256(payload).digest())
+print(value.hexdigest())
+PY
+}
+
+state_file() {
+  printf '%s/%s-%s-%s.json\n' "$STATE_DIR" "$target" "$delivery_run" "$delivery_attempt"
+}
+
+receipt_file() {
+  printf '%s/%s-%s-%s.json\n' "$RECEIPT_DIR" "$target" "$delivery_run" "$delivery_attempt"
+}
+
+fsync_directory() {
+  python3 -I - "$1" <<'PY'
+import os
+import sys
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0))
+try:
+    os.fsync(fd)
+finally:
+    os.close(fd)
+PY
+}
+
+json_value() {
+  python3 -I - "$1" "$2" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    value = json.load(stream)
+for part in sys.argv[2].split("."):
+    value = value[part]
+if value is None:
+    print("")
+elif isinstance(value, bool):
+    print("1" if value else "0")
+else:
+    print(value)
+PY
+}
+
+create_state() {
+  local phase="$1"
+  local previous_sha="$2"
+  local previous_worker="$3"
+  local backup_path="$4"
+  local backup_hash="$5"
+  local temporary
+  temporary="$(mktemp "$STATE_DIR/state.XXXXXX")"
+  chmod 0600 "$temporary"
+  python3 -I - "$temporary" "$phase" "$target" "$operation" "$sha" \
+    "$ci_run" "$ci_attempt" "$delivery_run" "$delivery_attempt" \
+    "$previous_sha" "$previous_worker" "$backup_path" "$backup_hash" \
+    "$(config_contract_hash)" <<'PY'
+import json
+import os
+import sys
+(
+    file, phase, target, operation, sha, ci_run, ci_attempt, delivery_run,
+    delivery_attempt, previous_sha, previous_worker, backup_path, backup_hash,
+    config_hash,
+) = sys.argv[1:]
+value = {
+    "phase": phase,
+    "target": target,
+    "operation": operation,
+    "sha": sha,
+    "ci_run": ci_run,
+    "ci_attempt": int(ci_attempt),
+    "delivery_run": delivery_run,
+    "delivery_attempt": int(delivery_attempt),
+    "previous_sha": previous_sha or None,
+    "previous_worker": previous_worker == "1",
+    "backup_path": backup_path,
+    "backup_hash": backup_hash,
+    "config_hash": config_hash,
+    "restore": {"status": "verified", "mode": "isolated-ephemeral-postgres", "cleanup": "verified"},
+}
+with open(file, "w", encoding="utf-8") as stream:
+    json.dump(value, stream, sort_keys=True, separators=(",", ":"))
+    stream.write("\n")
+    stream.flush()
+    os.fsync(stream.fileno())
+PY
+  python3 -I - "$temporary" "$(state_file)" <<'PY'
+import os
+import sys
+temporary, destination = sys.argv[1:]
+try:
+    os.link(temporary, destination, follow_symlinks=False)
+except FileExistsError:
+    os.unlink(temporary)
+    raise SystemExit("durable delivery state already exists")
+os.unlink(temporary)
+PY
+  fsync_directory "$STATE_DIR"
+}
+
+require_state() {
+  local expected_phase="$1"
+  local file
+  file="$(state_file)"
+  require_private_file "$file"
+  python3 -I - "$file" "$expected_phase" "$target" "$operation" "$sha" \
+    "$ci_run" "$ci_attempt" "$delivery_run" "$delivery_attempt" "$config_sha256" <<'PY'
+import json
+import re
+import sys
+file, phase, target, operation, sha, ci_run, ci_attempt, delivery_run, delivery_attempt, config_hash = sys.argv[1:]
+with open(file, encoding="utf-8") as stream:
+    data = json.load(stream)
+required_keys = {
+    "phase", "target", "operation", "sha", "ci_run", "ci_attempt",
+    "delivery_run", "delivery_attempt", "previous_sha", "previous_worker",
+    "backup_path", "backup_hash", "config_hash", "restore",
+}
+if set(data) != required_keys:
+    raise SystemExit("delivery state keys differ from the v1 contract")
+expected = {
+    "phase": phase,
+    "target": target,
+    "operation": operation,
+    "sha": sha,
+    "ci_run": ci_run,
+    "ci_attempt": int(ci_attempt),
+    "delivery_run": delivery_run,
+    "delivery_attempt": int(delivery_attempt),
+    "config_hash": config_hash,
+}
+for key, value in expected.items():
+    if data.get(key) != value:
+        raise SystemExit(f"preflight state mismatch: {key}")
+if data.get("restore") != {
+    "status": "verified", "mode": "isolated-ephemeral-postgres", "cleanup": "verified"
+}:
+    raise SystemExit("missing isolated restore proof")
+if not isinstance(data.get("backup_hash"), str) or not re.fullmatch(r"[0-9a-f]{64}", data["backup_hash"]):
+    raise SystemExit("missing backup hash")
+if data.get("previous_sha") is not None and not (
+    isinstance(data["previous_sha"], str) and re.fullmatch(r"[0-9a-f]{40}", data["previous_sha"])
+):
+    raise SystemExit("invalid previous revision")
+if not isinstance(data.get("previous_worker"), bool):
+    raise SystemExit("invalid previous worker state")
+if not isinstance(data.get("backup_path"), str) or not data["backup_path"].startswith("/"):
+    raise SystemExit("invalid backup path")
+PY
+}
+
+transition_state() {
+  local expected_phase="$1"
+  local next_phase="$2"
+  local file
+  file="$(state_file)"
+  require_state "$expected_phase"
+  python3 -I - "$file" "$expected_phase" "$next_phase" <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+file = Path(sys.argv[1])
+expected, following = sys.argv[2:]
+with file.open(encoding="utf-8") as stream:
+    state = json.load(stream)
+if state.get("phase") != expected:
+    raise SystemExit("state phase compare-and-swap failed")
+state["phase"] = following
+temporary = file.with_name(f".{file.name}.{os.getpid()}.tmp")
+fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0), 0o600)
+try:
+    payload = (json.dumps(state, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    view = memoryview(payload)
+    while view:
+        view = view[os.write(fd, view):]
+    os.fsync(fd)
+finally:
+    os.close(fd)
+os.replace(temporary, file)
+directory = os.open(file.parent, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0))
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+}
+
+load_account_library() {
+  # Exact source and both Actions runs have already been checked before this
+  # trusted root execution boundary.
+  # shellcheck disable=SC1091
+  source "$SOURCE_ROOT/scripts/beacon-account/lib.sh"
+  account_repo_root() { printf '%s\n' "$SOURCE_ROOT"; }
+  ACCOUNT_DEPLOY_FILE="$DEPLOY_ENV"
+  export ACCOUNT_DEPLOY_FILE
+  account_load_deploy_env "$DEPLOY_ENV"
+  [ "$BEACON_ACCOUNT_GIT_SHA" = "$sha" ] || fail 'deploy environment SHA differs from requested source'
+  [ "$BEACON_ACCOUNT_IMAGE_TAG" = "$sha" ] || fail 'deploy environment image tag differs from source'
+}
+
+isolated_restore() (
+  local backup_path="$1"
+  local container="hb-account-restore-${delivery_run}-${delivery_attempt}"
+  local volume="hb-account-restore-${delivery_run}-${delivery_attempt}"
+  local ready=0 object_count
+  docker inspect "$container" >/dev/null 2>&1 && fail 'stale isolated restore container exists'
+  docker volume inspect "$volume" >/dev/null 2>&1 && fail 'stale isolated restore volume exists'
+  cleanup_restore() {
+    docker rm -f "$container" >/dev/null 2>&1 || true
+    docker volume rm -f "$volume" >/dev/null 2>&1 || true
+  }
+  trap cleanup_restore EXIT HUP INT TERM
+  docker volume create --label harmonic-beacon.account.restore=ephemeral "$volume" >/dev/null
+  docker run -d --name "$container" --network none \
+    --mount "type=volume,src=$volume,dst=/var/lib/postgresql/data" \
+    -e POSTGRES_PASSWORD=synthetic-isolated-restore-only "$POSTGRES_IMAGE" >/dev/null
+  for _attempt in $(seq 1 60); do
+    if docker exec "$container" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  [ "$ready" -eq 1 ] || fail 'isolated restore PostgreSQL did not become ready'
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+    -pass "file:$BEACON_ACCOUNT_BACKUP_KEY_FILE" -in "$backup_path" |
+    docker exec -i "$container" pg_restore --exit-on-error --no-owner --no-acl \
+      --dbname postgres --username postgres
+  object_count="$(docker exec "$container" psql -U postgres -d postgres -Atqc \
+    "SELECT count(*) FROM pg_catalog.pg_class WHERE relkind IN ('r','p');")"
+  [[ "$object_count" =~ ^[1-9][0-9]*$ ]] || fail 'isolated restore contains no relations'
+  cleanup_restore
+  trap - EXIT HUP INT TERM
+  ! docker inspect "$container" >/dev/null 2>&1 || fail 'isolated restore container cleanup failed'
+  ! docker volume inspect "$volume" >/dev/null 2>&1 || fail 'isolated restore volume cleanup failed'
+  printf '%s\n' isolated-ephemeral-postgres
+)
+
+write_receipt() {
+  local current_sha="$1"
+  local rollback_result="$2"
+  local evidence_scope="$3"
+  local previous_sha backup_hash config_hash image_id image_digest rollback_sha interruption_json outcome current_json
+  local state temporary
+  state="$(state_file)"
+  previous_sha="$(json_value "$state" previous_sha)"
+  backup_hash="$(json_value "$state" backup_hash)"
+  config_hash="$(json_value "$state" config_hash)"
+  image_id="$(docker image inspect "harmonic-beacon/account:$current_sha" --format '{{.Id}}')"
+  [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'current image ID is unavailable or invalid'
+  image_digest="$(docker image inspect "harmonic-beacon/account:$current_sha" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
+    sed -n 's/^.*@\(sha256:[0-9a-f]\{64\}\)$/\1/p' | sed -n '1p')"
+  [ -n "$image_digest" ] || image_digest=unavailable-local-build
+  rollback_sha=''
+  interruption_json=null
+  outcome=deployed
+  current_json='{"kind":"candidate"}'
+  if [ "$rollback_result" = verified ]; then
+    rollback_sha=previous
+    outcome=rolled-back
+    current_json='{"kind":"restored"}'
+  fi
+  if [ "$operation" = interruption-checkpoint ]; then
+    outcome=synthetic-interruption
+    interruption_json='{"checkpoint":"after-cutover","expected_failure_observed":true,"synthetic_inputs":true,"cleanup":"verified"}'
+  fi
+  temporary="$(mktemp "$RECEIPT_DIR/receipt.XXXXXX")"
+  chmod 0600 "$temporary"
+  python3 -I - "$temporary" "$evidence_scope" "$target" "$operation" "$sha" \
+    "$image_id" "$image_digest" "$config_hash" "$previous_sha" "$current_sha" \
+    "$backup_hash" "$ci_run" "$ci_attempt" "$delivery_run" "$delivery_attempt" \
+    "$rollback_result" "$rollback_sha" "$interruption_json" "$outcome" "$current_json" <<'PY'
+import json
+import os
+import sys
+(
+    file, scope, target, operation, sha, image_id, image_digest, config_hash,
+    previous_sha, current_sha, backup_hash, ci_run, ci_attempt, delivery_run,
+    delivery_attempt, rollback_result, rollback_sha, interruption_json, outcome,
+    current_json,
+) = sys.argv[1:]
+receipt = {
+    "schema_version": "account-delivery-receipt.v1",
+    "evidence_scope": scope,
+    "service": "beacon-account",
+    "target": target,
+    "operation": operation,
+    "outcome": outcome,
+    "source_sha": sha,
+    "artifact": {"source_sha": current_sha, "image_id": image_id, "digest": image_digest},
+    "config_contract_sha256": config_hash,
+    "revisions": {"previous": previous_sha or None, "current": json.loads(current_json)},
+    "backup": {
+        "encrypted_sha256": backup_hash,
+        "isolated_restore": {
+            "status": "verified",
+            "mode": "isolated-ephemeral-postgres",
+            "cleanup": "verified",
+        },
+    },
+    "checks": {"health": "verified", "worker": "verified", "smoke": "verified"},
+    "actions": {
+        "ci": {
+            "run_id": ci_run,
+            "workflow": ".github/workflows/early-birds-fast-forward.yml",
+            "attempt": int(ci_attempt),
+            "head_sha": sha,
+        },
+        "delivery": {
+            "run_id": delivery_run,
+            "workflow": ".github/workflows/account-delivery.yml",
+            "attempt": int(delivery_attempt),
+            "head_sha": sha,
+            "target": target,
+            "operation": operation,
+            "ci_run_id": ci_run,
+            "ci_attempt": int(ci_attempt),
+            "config_contract_sha256": config_hash,
+        },
+    },
+    "rollback": {"result": rollback_result, "revision": rollback_sha or None},
+    "interruption": json.loads(interruption_json),
+}
+with open(file, "w", encoding="utf-8") as stream:
+    json.dump(receipt, stream, sort_keys=True, separators=(",", ":"))
+    stream.write("\n")
+    stream.flush()
+    os.fsync(stream.fileno())
+PY
+  node "$SOURCE_ROOT/ops/beacon-account/delivery/validate-receipt.mjs" "$temporary"
+  if [ -e "$(receipt_file)" ] || [ -L "$(receipt_file)" ]; then
+    require_private_file "$(receipt_file)"
+    if cmp -s -- "$temporary" "$(receipt_file)"; then
+      rm -f -- "$temporary"
+      return 0
+    fi
+    rm -f -- "$temporary"
+    fail 'conflicting receipt already exists for this delivery attempt'
+  fi
+  python3 -I - "$temporary" "$(receipt_file)" <<'PY'
+import os
+import sys
+temporary, destination = sys.argv[1:]
+try:
+    os.link(temporary, destination, follow_symlinks=False)
+except FileExistsError:
+    os.unlink(temporary)
+    raise SystemExit("receipt compare-and-swap failed")
+os.unlink(temporary)
+PY
+  fsync_directory "$RECEIPT_DIR"
+  if [ "$TEST_MODE" = 1 ] && [ "${HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_RECEIPT:-0}" = 1 ]; then
+    fail 'synthetic crash after durable receipt publication'
+  fi
+}
+
+require_bound_receipt() {
+  local expected_outcome="$1"
+  local file
+  file="$(receipt_file)"
+  require_private_file "$file"
+  node "$SOURCE_ROOT/ops/beacon-account/delivery/validate-receipt.mjs" "$file"
+  python3 -I - "$file" "$expected_outcome" "$target" "$operation" "$sha" \
+    "$ci_run" "$ci_attempt" "$delivery_run" "$delivery_attempt" "$config_sha256" <<'PY'
+import json
+import sys
+(
+    file, outcome, target, operation, sha, ci_run, ci_attempt,
+    delivery_run, delivery_attempt, config_hash,
+) = sys.argv[1:]
+with open(file, encoding="utf-8") as stream:
+    receipt = json.load(stream)
+expected = {
+    "outcome": outcome,
+    "target": target,
+    "operation": operation,
+    "source_sha": sha,
+    "config_contract_sha256": config_hash,
+}
+for key, value in expected.items():
+    if receipt.get(key) != value:
+        raise SystemExit(f"terminal receipt mismatch: {key}")
+ci = receipt["actions"]["ci"]
+delivery = receipt["actions"]["delivery"]
+if ci["run_id"] != ci_run or ci["attempt"] != int(ci_attempt):
+    raise SystemExit("terminal receipt mismatch: CI run attempt")
+if delivery["run_id"] != delivery_run or delivery["attempt"] != int(delivery_attempt):
+    raise SystemExit("terminal receipt mismatch: delivery run attempt")
+PY
+}
+
+probe() {
+  printf '{"service":"beacon-account","target":"%s","source_sha":"%s","binding":"verified"}\n' \
+    "$target" "$sha"
+}
+
+preflight() {
+  local previous_sha previous_worker backup_path backup_hash restore_mode
+  if [ -e "$(state_file)" ] || [ -L "$(state_file)" ]; then
+    require_state preflight
+    return 0
+  fi
+  load_account_library
+  account_require_internal_mail_network "$target"
+  previous_sha="$(account_capture_previous_runtime "$target")"
+  previous_worker="$(account_capture_previous_worker "$target" "$previous_sha")"
+  if [ "$target" = production ]; then
+    account_check_production_migrations before
+    backup_path="$(account_backup_production)"
+  else
+    backup_path="$(account_backup_staging)"
+  fi
+  require_private_file "$backup_path"
+  backup_hash="$(sha256sum "$backup_path" | cut -d' ' -f1)"
+  restore_mode="$(isolated_restore "$backup_path")"
+  [ "$restore_mode" = isolated-ephemeral-postgres ] || fail 'missing full isolated restore proof'
+  create_state preflight "$previous_sha" "$previous_worker" "$backup_path" "$backup_hash"
+}
+
+deploy() {
+  local phase previous_sha previous_worker nav_present=0
+  phase="$(json_value "$(state_file)" phase)"
+  case "$phase:$operation" in
+    preflight:*) require_state preflight ;;
+    deployed:deploy) require_state deployed; return 0 ;;
+    delivered:deploy) require_state delivered; require_bound_receipt deployed; return 0 ;;
+    interruption-verified:interruption-checkpoint)
+      require_state interruption-verified
+      require_bound_receipt synthetic-interruption
+      return 0
+      ;;
+    *) fail 'deploy state is absent, conflicting, or already consumed' ;;
+  esac
+  if [ "$operation" = interruption-checkpoint ] &&
+    { [ -e "$(receipt_file)" ] || [ -L "$(receipt_file)" ]; }; then
+    require_bound_receipt synthetic-interruption
+    transition_state preflight interruption-verified
+    return 0
+  fi
+  load_account_library
+  if [ "$operation" = interruption-checkpoint ]; then
+    previous_sha="$(json_value "$(state_file)" previous_sha)"
+    previous_worker="$(json_value "$(state_file)" previous_worker)"
+    [ -n "$previous_sha" ] || fail 'interruption drill requires a previous staging revision'
+    if "$SOURCE_ROOT/scripts/beacon-account/start.sh" staging "$DEPLOY_ENV" interrupt-after-cutover; then
+      fail 'deterministic interruption unexpectedly succeeded'
+    fi
+    account_verify_running staging "$previous_sha" "$previous_sha" "$previous_worker"
+    if account_image_supports_navigation_asset "$previous_sha"; then nav_present=1; fi
+    "$SOURCE_ROOT/scripts/beacon-account/health-smoke.sh" \
+      staging "$DEPLOY_ENV" "$previous_sha" "$previous_worker" "$nav_present"
+    ! docker inspect "hb-account-restore-${delivery_run}-${delivery_attempt}" >/dev/null 2>&1 ||
+      fail 'isolated restore container remains after interruption'
+    ! docker volume inspect "hb-account-restore-${delivery_run}-${delivery_attempt}" >/dev/null 2>&1 ||
+      fail 'isolated restore volume remains after interruption'
+    write_receipt "$previous_sha" verified synthetic-interruption
+    transition_state preflight interruption-verified
+  else
+    "$SOURCE_ROOT/scripts/beacon-account/start.sh" "$target" "$DEPLOY_ENV" normal
+    transition_state preflight deployed
+  fi
+}
+
+smoke() {
+  [ "$operation" = deploy ] || fail 'smoke is only valid for normal delivery'
+  local phase
+  phase="$(json_value "$(state_file)" phase)"
+  case "$phase" in
+    deployed) require_state deployed ;;
+    delivered)
+      require_state delivered
+      require_bound_receipt deployed
+      return 0
+      ;;
+    *) fail 'smoke state is absent, conflicting, or already consumed' ;;
+  esac
+  load_account_library
+  account_verify_running "$target" "$sha" "$sha" 1
+  "$SOURCE_ROOT/scripts/beacon-account/health-smoke.sh" "$target" "$DEPLOY_ENV" "$sha" 1 1
+  write_receipt "$sha" not-required runtime
+  transition_state deployed delivered
+}
+
+rollback() {
+  local phase previous_sha previous_worker nav_present=0 perform_side_effect=0
+  phase="$(json_value "$(state_file)" phase)"
+  case "$phase" in
+    preflight|deployed)
+      require_state "$phase"
+      transition_state "$phase" rollback-pending
+      perform_side_effect=1
+      ;;
+    rollback-pending)
+      require_state rollback-pending
+      ;;
+    rolled-back)
+      require_state rolled-back
+      require_bound_receipt rolled-back
+      return 0
+      ;;
+    *) fail 'rollback claim is absent, terminal, or already consumed' ;;
+  esac
+  if [ "$perform_side_effect" -eq 1 ] && [ "$TEST_MODE" = 1 ] &&
+      [ "${HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_ROLLBACK_CLAIM:-0}" = 1 ]; then
+    fail 'injected crash after durable rollback claim'
+  fi
+  previous_sha="$(json_value "$(state_file)" previous_sha)"
+  previous_worker="$(json_value "$(state_file)" previous_worker)"
+  [ -n "$previous_sha" ] || fail 'no previous Account revision is available for rollback'
+  if [ "$perform_side_effect" -eq 1 ]; then
+    "$SOURCE_ROOT/scripts/beacon-account/rollback-app.sh" "$target" "$DEPLOY_ENV" "$previous_sha"
+    if [ "$TEST_MODE" = 1 ] && [ "${HB_ACCOUNT_DELIVERY_TEST_CRASH_AFTER_ROLLBACK:-0}" = 1 ]; then
+      fail 'injected crash after rollback side effect'
+    fi
+  fi
+  load_account_library
+  account_verify_running "$target" "$previous_sha" "$previous_sha" "$previous_worker"
+  if account_image_supports_navigation_asset "$previous_sha"; then nav_present=1; fi
+  "$SOURCE_ROOT/scripts/beacon-account/health-smoke.sh" \
+    "$target" "$DEPLOY_ENV" "$previous_sha" "$previous_worker" "$nav_present"
+  write_receipt "$previous_sha" verified runtime
+  transition_state rollback-pending rolled-back
+}
+
+status() {
+  local phase expected_outcome
+  phase="$(json_value "$(state_file)" phase)"
+  case "$phase" in
+    delivered) expected_outcome=deployed ;;
+    rolled-back) expected_outcome=rolled-back ;;
+    interruption-verified) expected_outcome=synthetic-interruption ;;
+    *) fail 'receipt is not backed by a terminal durable state' ;;
+  esac
+  require_state "$phase"
+  require_bound_receipt "$expected_outcome"
+  command cat -- "$(receipt_file)"
+}
+
+[ "$#" -ge 1 ] || usage
+verb="$1"
+shift
+[ "$#" -eq 8 ] || usage
+target="$1"
+sha="$2"
+ci_run="$3"
+ci_attempt="$4"
+delivery_run="$5"
+delivery_attempt="$6"
+operation="$7"
+config_sha256="$8"
+
+validate_target "$target"
+validate_context
+open_delivery_lock
+
+case "$verb" in
+  probe) probe ;;
+  status) status ;;
+  preflight) preflight ;;
+  deploy) deploy ;;
+  smoke) smoke ;;
+  rollback) rollback ;;
+  *) usage ;;
+esac

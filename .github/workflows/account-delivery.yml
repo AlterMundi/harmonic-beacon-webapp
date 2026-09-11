@@ -1,0 +1,218 @@
+name: Account delivery
+run-name: Account ${{ inputs.target || 'PR' }} ${{ inputs.sha || github.sha }}
+
+on:
+  pull_request:
+    branches: [early-birds]
+    paths:
+      - .github/workflows/account-delivery.yml
+      - ops/beacon-account/**
+      - scripts/beacon-account/**
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Exact protected Account environment
+        required: true
+        type: choice
+        options: [staging, production]
+      sha:
+        description: Current lowercase early-birds sha40
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful early-birds-fast-forward.yml run ID for this SHA
+        required: true
+        type: string
+      ci_run_attempt:
+        description: Exact successful CI attempt
+        required: true
+        type: string
+      config_contract_sha256:
+        description: Exact reviewed Account configuration-contract SHA-256
+        required: true
+        type: string
+      operation:
+        description: Delivery or synthetic staging interruption proof
+        required: true
+        type: choice
+        options: [deploy, interruption-checkpoint]
+        default: deploy
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: account-delivery-${{ inputs.target || format('pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: false
+
+env:
+  ACCOUNT_HELPER: /usr/local/sbin/hb-account-delivery
+  HB_INPUT_TARGET: ${{ inputs.target }}
+  HB_INPUT_SHA: ${{ inputs.sha }}
+  HB_INPUT_CI_RUN_ID: ${{ inputs.ci_run_id }}
+  HB_INPUT_CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+  HB_INPUT_CONFIG_CONTRACT_SHA256: ${{ inputs.config_contract_sha256 }}
+  HB_INPUT_OPERATION: ${{ inputs.operation }}
+  HB_GITHUB_REF: ${{ github.ref }}
+
+jobs:
+  validate-contract:
+    name: Account adapter validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate dispatch binding
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$HB_INPUT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$HB_INPUT_CI_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "$HB_INPUT_CI_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]]
+          [[ "$HB_INPUT_CONFIG_CONTRACT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          case "$HB_INPUT_TARGET" in staging|production) ;; *) exit 1 ;; esac
+          case "$HB_INPUT_OPERATION" in deploy|interruption-checkpoint) ;; *) exit 1 ;; esac
+          test "$HB_GITHUB_REF" = refs/heads/early-birds
+          if [ "$HB_INPUT_TARGET" = production ]; then
+            test "$HB_INPUT_OPERATION" = deploy
+          fi
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
+      - name: Test Account delivery and existing Account contracts
+        run: node --test ops/beacon-account/test/*.test.mjs
+      - name: Check scripts and receipt artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ops/beacon-account/delivery/hb-account-delivery-root
+          sh -n scripts/beacon-account/start.sh scripts/beacon-account/rollback-app.sh
+          node ops/beacon-account/delivery/validate-receipt.mjs \
+            ops/beacon-account/delivery/receipt.synthetic.json
+          python3 -m json.tool ops/beacon-account/delivery/receipt.schema.json >/dev/null
+
+  staging-delivery:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'staging'
+    needs: validate-contract
+    environment: account-staging
+    runs-on: [self-hosted, mona, account-staging]
+    steps:
+      - name: Require externally activated protected boundary
+        shell: bash
+        env:
+          HB_PROTECTED_BOUNDARY: ${{ vars.ACCOUNT_STAGING_PROTECTED_V1 }}
+        run: |
+          set -euo pipefail
+          test "$HB_PROTECTED_BOUNDARY" = protected-v1
+          test "$(id -un)" = beacon-account-runner
+          test -x "$ACCOUNT_HELPER"
+      - name: Probe exact source and Actions binding
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery probe staging
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$HB_INPUT_OPERATION"
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Back up and prove isolated restore
+        id: preflight
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery preflight staging
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$HB_INPUT_OPERATION"
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Deploy or exercise deterministic interruption
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery deploy staging
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$HB_INPUT_OPERATION"
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Verify normal delivery smoke
+        if: inputs.operation == 'deploy'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery smoke staging
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$HB_INPUT_OPERATION"
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Roll back through the bounded helper on failure
+        if: failure() && steps.preflight.outcome == 'success'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery rollback staging
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$HB_INPUT_OPERATION"
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Export sanitized receipt
+        if: always() && steps.preflight.outcome == 'success'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery status staging
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$HB_INPUT_OPERATION"
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+          > "$RUNNER_TEMP/account-delivery-receipt.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.preflight.outcome == 'success'
+        with:
+          name: account-staging-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/account-delivery-receipt.json
+          if-no-files-found: error
+
+  production-delivery:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'production' && inputs.operation == 'deploy'
+    needs: validate-contract
+    environment: account-production
+    runs-on: [self-hosted, mona, account-production]
+    steps:
+      - name: Require externally activated protected boundary
+        shell: bash
+        env:
+          HB_PROTECTED_BOUNDARY: ${{ vars.ACCOUNT_PRODUCTION_PROTECTED_V1 }}
+        run: |
+          set -euo pipefail
+          test "$HB_PROTECTED_BOUNDARY" = protected-v1
+          test "$(id -un)" = beacon-account-runner
+          test -x "$ACCOUNT_HELPER"
+      - name: Probe exact source and Actions binding
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery probe production
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Back up and prove isolated restore
+        id: preflight
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery preflight production
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Deploy through the Account lifecycle
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery deploy production
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Verify delivery smoke and issue receipt
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery smoke production
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Roll back through the bounded helper on failure
+        if: failure() && steps.preflight.outcome == 'success'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery rollback production
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+      - name: Export sanitized receipt
+        if: always() && steps.preflight.outcome == 'success'
+        run: >-
+          sudo -n /usr/local/sbin/hb-account-delivery status production
+          "$HB_INPUT_SHA" "$HB_INPUT_CI_RUN_ID" "$HB_INPUT_CI_RUN_ATTEMPT"
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" deploy
+          "$HB_INPUT_CONFIG_CONTRACT_SHA256"
+          > "$RUNNER_TEMP/account-delivery-receipt.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.preflight.outcome == 'success'
+        with:
+          name: account-production-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/account-delivery-receipt.json
+          if-no-files-found: error

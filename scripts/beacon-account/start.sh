@@ -2,18 +2,27 @@
 set -eu
 . "$(dirname -- "$0")/lib.sh"
 
-environment=${1:?usage: start.sh staging|production /secure/deploy.env}
-ACCOUNT_DEPLOY_FILE=${2:?usage: start.sh staging|production /secure/deploy.env}
+environment=${1:?usage: start.sh staging|production /secure/deploy.env [normal|interrupt-after-cutover]}
+ACCOUNT_DEPLOY_FILE=${2:?usage: start.sh staging|production /secure/deploy.env [normal|interrupt-after-cutover]}
+checkpoint=${3:-normal}
 export ACCOUNT_DEPLOY_FILE
 case "$environment" in production|staging) ;; *) account_fail 'environment must be production or staging' ;; esac
+case "$checkpoint" in normal|interrupt-after-cutover) ;; *) account_fail 'unknown deployment checkpoint' ;; esac
+if [ "$checkpoint" = interrupt-after-cutover ] && [ "$environment" != staging ]; then
+  account_fail 'the deterministic interruption checkpoint is staging-only'
+fi
 
 account_load_deploy_env "$ACCOUNT_DEPLOY_FILE"
-exec 9>"/run/lock/beacon-account-$environment.lock"
-flock -n 9 || account_fail "another $environment deployment is active"
+if [ "${HB_ACCOUNT_DELIVERY_LOCK_HELD:-0}" != 1 ]; then
+  exec 9>"/run/lock/beacon-account-$environment.lock"
+  flock -n 9 || account_fail "another $environment deployment is active"
+fi
 account_require_internal_mail_network "$environment"
 root=$(account_repo_root)
-test "$(git -C "$root" rev-parse HEAD)" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'release checkout SHA mismatch'
-test -z "$(git -C "$root" status --porcelain)" || account_fail 'release checkout is dirty'
+test -n "${HB_ACCOUNT_TRUSTED_SOURCE_SHA:-}" ||
+  account_fail 'start.sh requires a validated installed lifecycle source'
+test "$HB_ACCOUNT_TRUSTED_SOURCE_SHA" = "$BEACON_ACCOUNT_GIT_SHA" ||
+  account_fail 'trusted lifecycle source SHA mismatch'
 previous_sha=$(account_capture_previous_runtime "$environment")
 previous_worker_present=$(account_capture_previous_worker "$environment" "$previous_sha")
 cutover_started=0
@@ -49,6 +58,9 @@ if [ "$environment" = production ]; then
 else
   cutover_started=1
   account_compose up -d account-mail-worker-staging account-staging
+  if [ "$checkpoint" = interrupt-after-cutover ]; then
+    account_fail 'deterministic staging interruption checkpoint reached after cutover'
+  fi
 fi
 account_verify_running "$environment"
 "$root/scripts/beacon-account/health-smoke.sh" \

@@ -1,0 +1,86 @@
+#!/bin/sh
+set -eu
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+HOME=/root
+LC_ALL=C
+TZ=UTC
+export PATH HOME LC_ALL TZ
+unset ENV BASH_ENV CDPATH NODE_OPTIONS NODE_PATH GIT_DIR GIT_WORK_TREE GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_EXEC_PATH GIT_OPTIONAL_LOCKS DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG DOCKER_AUTH_CONFIG COMPOSE_FILE COMPOSE_ENV_FILES COMPOSE_PATH_SEPARATOR COMPOSE_PROFILES COMPOSE_PROJECT_NAME LISTENER_WITHDRAWAL_CONTAINER HTTPS_PROXY HTTP_PROXY ALL_PROXY NO_PROXY https_proxy http_proxy all_proxy no_proxy CURL_HOME CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR GIT_SSL_CAINFO XDG_CONFIG_HOME
+umask 077
+
+fail() { echo "Listen delivery adapter: $*" >&2; exit 2; }
+test "$#" -eq 8 || fail 'usage: OPERATION TARGET SOURCE_SHA RUN_ID RUN_ATTEMPT CI_RUN_ID CI_RUN_ATTEMPT deliver|interrupt'
+operation=$1
+target=$2
+source_sha=$3
+run_id=$4
+run_attempt=$5
+ci_run_id=$6
+ci_run_attempt=$7
+checkpoint_mode=$8
+case "$operation" in probe|status|preflight|deploy|smoke|rollback) ;; *) fail 'unsupported Listen delivery operation' ;; esac
+case "$target" in staging|production) ;; *) fail 'unsupported Listen delivery target' ;; esac
+printf '%s\n' "$source_sha" | grep -Eq '^[0-9a-f]{40}$' || fail 'source SHA must be an exact lowercase sha40'
+for numeric in "$run_id" "$run_attempt" "$ci_run_id" "$ci_run_attempt"; do
+  printf '%s\n' "$numeric" | grep -Eq '^[1-9][0-9]*$' || fail 'run and attempt bindings must be positive decimal integers'
+done
+case "$checkpoint_mode" in deliver|interrupt) ;; *) fail 'unsupported delivery checkpoint mode' ;; esac
+test "$target" = staging || test "$checkpoint_mode" = deliver || fail 'production interruption mode is forbidden'
+test "$operation" = deploy || test "$checkpoint_mode" = deliver || fail 'interruption mode is valid only for staging deploy'
+
+bundle_root=/usr/local/libexec/hb-listener-delivery/v1
+expected_bundle_manifest_sha256=ccc41d425c36d7a5be2f39f058458073c2ca4e0ef79c6f6722d9ff28f441c66c
+fixture_root=${LISTENER_DELIVERY_SYNTHETIC_FIXTURE_ROOT:-}
+if test -n "$fixture_root"; then
+  test "$(id -u)" -ne 0 || fail 'synthetic fixture mode is forbidden for root'
+  case "$(realpath "$fixture_root")" in /tmp/*) ;; *) fail 'synthetic fixture must be below /tmp' ;; esac
+  test -f "$fixture_root/synthetic-listener-preview.fixture.v1" || fail 'synthetic fixture marker is missing'
+  bundle_root=$(CDPATH= cd -- "$(dirname -- "$0")/libexec" && pwd)
+  lock_file="$fixture_root/listener-delivery.lock"
+else
+  test "$(id -u)" -eq 0 || fail 'run as root'
+  for ancestor in /usr /usr/local /usr/local/libexec /usr/local/libexec/hb-listener-delivery; do
+    test -d "$ancestor" && test ! -L "$ancestor" || fail 'lifecycle bundle ancestor is unsafe'
+    test -z "$(find "$ancestor" -maxdepth 0 \( ! -user root -o -perm /022 \) -print -quit)" || fail 'lifecycle bundle ancestor is writable or not root-owned'
+  done
+  test -d "$bundle_root" && test ! -L "$bundle_root" || fail 'lifecycle bundle is absent'
+  test "$(stat -c '%U:%G:%a' "$bundle_root")" = root:root:500 || fail 'lifecycle bundle must be root:root mode 0500'
+  manifest="$bundle_root/bundle.manifest.json"
+  test -f "$manifest" && test ! -L "$manifest" || fail 'lifecycle manifest is unsafe'
+  test "$(stat -c '%U:%G:%a:%h' "$manifest")" = root:root:400:1 || fail 'lifecycle manifest must be single-link root:root mode 0400'
+  test "$(sha256sum "$manifest" | cut -d ' ' -f 1)" = "$expected_bundle_manifest_sha256" || fail 'lifecycle manifest digest mismatch'
+  expected_names='bundle.manifest.json
+github-gate.mjs
+lifecycle.mjs
+proof.mjs
+receipt.mjs
+transaction.mjs'
+  actual_names=$(find "$bundle_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+  test "$actual_names" = "$expected_names" || fail 'lifecycle bundle inventory is not closed'
+  verify_bundle_file() {
+    bundle_file="$bundle_root/$1"
+    expected_digest=$2
+    test -f "$bundle_file" && test ! -L "$bundle_file" || fail 'lifecycle bundle entry is not a regular file'
+    test "$(stat -c '%U:%G:%a:%h' "$bundle_file")" = root:root:500:1 || fail 'lifecycle bundle entry must be single-link root:root mode 0500'
+    test "$(sha256sum "$bundle_file" | cut -d ' ' -f 1)" = "$expected_digest" || fail 'lifecycle bundle entry digest mismatch'
+  }
+  verify_bundle_file github-gate.mjs 262c1fa9fb40d2fda6c89216b1e4e99b9dd0b32b8eafb0c8d94d62a511cf2cfe
+  verify_bundle_file lifecycle.mjs 96902f51e5cf0d23d7437d1d98aa8ca8766c729a9ba119a60e1f618d3eadde66
+  verify_bundle_file proof.mjs d19d3593525402e852bbafae1fd22d7346ca52d10714872d4cb6ce9cb8238445
+  verify_bundle_file receipt.mjs a4b5a831f2807ad30b546cf1024b2809eecf88c17215b0fda2e30058bb52913f
+  verify_bundle_file transaction.mjs 846b291c4bb515848e896943ae516aaec7306728d1252166da766be4e6b4b5ba
+  state_root=/var/lib/harmonic-beacon/listener-delivery
+  test -d "$state_root" && test ! -L "$state_root" || fail 'root-owned delivery state is absent'
+  test "$(stat -c '%U:%G:%a' "$state_root")" = root:root:700 || fail 'delivery state must be root:root mode 0700'
+  lock_file="$state_root/operation.lock"
+  test -f "$lock_file" && test ! -L "$lock_file" || fail 'pre-provisioned operation lock is absent'
+  test "$(stat -c '%U:%G:%a:%h' "$lock_file")" = root:root:600:1 || fail 'operation lock must be single-link root:root mode 0600'
+fi
+
+exec 9>>"$lock_file"
+flock -n 9 || fail 'another Listen delivery operation is active'
+if test -n "$fixture_root" && test -f "$fixture_root/hold-seconds"; then
+  hold_seconds=$(sed -n '1p' "$fixture_root/hold-seconds")
+  case "$hold_seconds" in 1|2|3|4|5) sleep "$hold_seconds" ;; *) fail 'synthetic hold must be between one and five seconds' ;; esac
+fi
+exec /usr/bin/node "$bundle_root/lifecycle.mjs" "$operation" "$target" "$source_sha" "$run_id" "$run_attempt" "$ci_run_id" "$ci_run_attempt" "$checkpoint_mode"
