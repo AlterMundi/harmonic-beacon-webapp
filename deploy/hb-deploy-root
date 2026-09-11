@@ -811,6 +811,10 @@ artifact_rollback() {
   require_release_lane oci-production
   if transaction_finish_rolled_back "$run_id"; then return 0; fi
   transaction_require_rollback "$run_id"
+  # A rollback of an already committed release has no active marker. Publish
+  # durable rollback intent before the first side effect so every later crash
+  # can resume against the same transaction and base high-water.
+  if [ ! -e "$ACTIVE_TRANSACTION" ]; then atomic_write_active_transaction "$run_id"; fi
   artifact_compose "$run_id" stop app
   for _attempt in $(seq 1 30); do
     if artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \

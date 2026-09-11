@@ -73,7 +73,7 @@ function rewriteConfig(state, mutate) {
   rewriteManifest(state, m => { m.configProfiles.production.sha256 = `sha256:${hash(bytes)}`; });
 }
 
-function transactionHarness(body, { phase = 'prepared', stale = false, runtimeFails = false, prepare = false, old = false } = {}) {
+function transactionHarness(body, { phase = 'prepared', stale = false, runtimeFails = false, prepare = false, old = false, active = true, currentCandidate = false } = {}) {
   const root = mkdtempSync(join(process.cwd(), '.hb-b3-tx-'));
   try {
     const state = join(root, 'state');
@@ -98,9 +98,9 @@ function transactionHarness(body, { phase = 'prepared', stale = false, runtimeFa
       writeInputs(join(tx, 'candidate'), candidate, 'candidate-manifest.json');
       writeInputs(join(tx, 'prior'), prior, 'prior-manifest.json');
       put(join(tx, 'receipt.json'), JSON.stringify(receipt));
-      put(join(state, 'active-transaction'), '123\n');
+      if (active) put(join(state, 'active-transaction'), '123\n');
     }
-    const current = stale ? stateFixture('c') : prior;
+    const current = stale ? stateFixture('c') : (currentCandidate ? candidate : prior);
     if (old) current.schemaVersion = 'harmonic-beacon.current-state.v2';
     put(join(state, 'current-state.json'), JSON.stringify(current));
     put(join(root, 'lane'), 'oci-production\n');
@@ -134,15 +134,28 @@ admit_file() {
 }
 test_verifier() { cp ${quote(join(root, 'receipt.json'))} "$temp/verified.json"; }
 require_oci_transition_evidence() { :; }
-docker() { printf 'docker %s\\n' "$*" >> ${quote(join(root, 'events'))}; }
+docker() {
+  printf 'docker %s\\n' "$*" >> ${quote(join(root, 'events'))}
+  case "$*" in *State.Health.Status*) printf 'healthy\\n' ;; esac
+}
+curl() { return 0; }
+health() { printf 'healthy\\n'; }
 verify_release_runtime_state() {
   test "$2" = prior
   test -f "$(artifact_transaction "$1")/prior/prior-manifest.json"
-  test "$(transaction_phase "$1")" = prepared
+  case "$(transaction_phase "$1")" in
+    prepared | migration-attempted | migrated | replaced | committed) ;;
+    *) return 1 ;;
+  esac
   printf 'verify prior\\n' >> ${quote(join(root, 'events'))}
   ${runtimeFails ? "die 'runtime reconciliation failed'" : ':'}
 }
-artifact_compose() { printf 'compose %s\\n' "$*" >> ${quote(join(root, 'events'))}; }
+artifact_compose() {
+  [ -f "$ACTIVE_TRANSACTION" ] || die 'test observed side effect before durable active transaction'
+  printf 'compose %s\\n' "$*" >> ${quote(join(root, 'events'))}
+}
+artifact_compose_from() { printf 'compose-from %s\\n' "$*" >> ${quote(join(root, 'events'))}; }
+verify_runtime_profile() { :; }
 ${body.replaceAll('@ROOT@', root).replaceAll('@HASH@', candidate.manifestSha256).replaceAll('@CONFIG@', receipt.targetConfigSha256)}
 `;
     const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 10000 });
@@ -211,4 +224,24 @@ test('B3 prepare retry cannot reactivate before reconciling runtime', () => {
   assert.match(result.stderr, /runtime reconciliation failed/);
   assert.equal(result.active, false);
   assert.doesNotMatch(result.events, /compose/);
+});
+
+test('B3 committed rollback publishes durable intent before the first side effect', () => {
+  const result = transactionHarness('artifact_rollback 123', {
+    phase: 'committed', active: false, currentCandidate: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.current.manifestSha256, stateFixture().manifestSha256);
+  assert.equal(result.phase, 'rolled-back');
+  assert.equal(result.active, false);
+});
+
+test('B3 committed rollback resumes after prior high-water publication crash state', () => {
+  const result = transactionHarness('artifact_rollback 123', {
+    phase: 'committed', active: true, currentCandidate: false,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.current.manifestSha256, stateFixture().manifestSha256);
+  assert.equal(result.phase, 'rolled-back');
+  assert.equal(result.active, false);
 });
