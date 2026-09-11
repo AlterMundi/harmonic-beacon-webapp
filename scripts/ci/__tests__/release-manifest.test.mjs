@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 
 import {
@@ -139,6 +141,19 @@ test('accepts a canonical, qualified manifest bound to exact registry evidence',
   const result = verifyReleaseManifest(manifest, expectations(manifest));
   assert.equal(result.manifestSha256, canonicalSha256(manifest));
   assert.equal(result.imageRefs.app, `${manifest.artifacts[0].repository}@${manifest.artifacts[0].digest}`);
+});
+
+test('Draft 2020-12 release schema accepts producer output and requires evidenceRecordDigest', () => {
+  const projectRequire = createRequire(import.meta.url);
+  const prismaRequire = createRequire(projectRequire.resolve('@prisma/streams-local/package.json'));
+  const Ajv2020 = prismaRequire('ajv/dist/2020').default;
+  const schema = JSON.parse(readFileSync(new URL('../../../deploy/schemas/release-manifest.schema.json', import.meta.url)));
+  const validate = new Ajv2020({ strict: false, validateFormats: false }).compile(schema);
+  const manifest = validManifest();
+  assert.equal(validate(manifest), true, JSON.stringify(validate.errors));
+  delete manifest.artifacts[0].evidenceRecordDigest;
+  assert.equal(validate(manifest), false);
+  assert.ok(validate.errors.some(error => error.keyword === 'required' && error.params.missingProperty === 'evidenceRecordDigest'));
 });
 
 rejectMutation('rejects missing evidence record digest', (manifest) => { delete manifest.artifacts[0].evidenceRecordDigest; }, /missing evidenceRecordDigest/);

@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, writeFileSync, unlinkSync,
 } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
@@ -525,8 +525,13 @@ export function validateDeliveryInvocation(receipt, { deliveryRunId, deliveryRun
   const active = activeRunId === receipt.workflowRunId;
   const markerlessPrepared = durableResume === 'production-markerless-prepared' && activeRunId === null &&
     target === 'production' && verb === 'prepare' && receipt.target === 'production' && receipt.phase === 'prepared';
-  const shadowedCleanup = durableResume === 'shadowed-cleanup' && activeRunId === null &&
+  const shadowedSourceCleanup = durableResume === 'shadowed-cleanup' && activeRunId === null &&
     target === 'shadow' && verb === 'status' && receipt.target === 'shadow' && receipt.phase === 'shadowed';
+  const shadowedArchiveCleanup = durableResume === 'shadowed-archive-cleanup' && activeRunId === null &&
+    target === 'shadow' && verb === 'status' && receipt.target === 'shadow' && receipt.phase === 'shadowed';
+  const shadowedTerminalCleanup = durableResume === 'shadowed-terminal-cleanup' && activeRunId === null &&
+    target === 'shadow' && verb === 'status' && receipt.target === 'shadow' && receipt.phase === 'shadowed';
+  const shadowedCleanup = shadowedSourceCleanup || shadowedArchiveCleanup || shadowedTerminalCleanup;
   if (durableResume !== 'none' && !markerlessPrepared && !shadowedCleanup) fail('invalid durable resume state');
   const resume = (active && target === 'production') || (rollback && receipt.rollbackIntent === true) ||
     (verb === 'status' && receipt.phase === 'committed') || (verb === 'rollback' && receipt.phase === 'rolled-back') ||
@@ -540,6 +545,43 @@ export function validateDeliveryInvocation(receipt, { deliveryRunId, deliveryRun
 
 const TRANSITION_STAGES = ['shadow', 'rollback', 'forward-repair'];
 const TRANSITION_BINDING = ['candidateManifestSha256', 'baseManifestSha256', 'qualificationReceiptSha256', 'workflowRunId', 'workflowRunAttempt'];
+const TRANSITION_SERVICES = ['postgres', 'livekit', 'app', 'commerce-reconciler', 'tapestry', 'playlist-bot', 'analytics'];
+const RUNTIME_MEASUREMENT_OPERATIONS = [
+  'measure-runtime-inventory',
+  ...TRANSITION_SERVICES.flatMap(service => [`measure-runtime-container-${service}`, `measure-runtime-image-${service}`]),
+  ...['app', 'livekit', 'tapestry', 'analytics'].map(service => `measure-runtime-address-${service}`),
+  ...['app-health', 'app-ready', 'tapestry-health', 'analytics-ready', 'livekit'].map(endpoint => `measure-runtime-endpoint-${endpoint}`),
+  ...['database', 'media'].map(network => `measure-private-network-${network}`),
+];
+const COMPATIBILITY_OPERATIONS = [
+  'check-schema-head', 'check-browser-endpoints', 'check-synthetic-session', 'check-commerce-heartbeat', 'check-commerce-backlog',
+  ...['database', 'media'].map(network => `check-private-network-${network}`),
+  'check-runtime-inventory',
+  ...TRANSITION_SERVICES.map(service => `check-runtime-environment-${service}`),
+  'check-backup', 'check-restore-drop', 'check-restore-create', 'check-restore-apply', 'check-restore-count', 'check-restore-cleanup',
+];
+const TRANSITION_OPERATIONS = {
+  shadow: ['configure-candidate-live-staging', 'migrate-candidate-app', 'migrate-candidate-analytics', 'replace-candidate-live-staging'],
+  rollback: ['configure-candidate-production', 'replace-candidate-production', 'configure-base-production', 'replace-base-production'],
+  'forward-repair': ['configure-candidate-production', 'replace-candidate-production'],
+};
+export function transitionStageContract(stage) {
+  if (!TRANSITION_STAGES.includes(stage)) fail('invalid transition stage contract');
+  const preparation = stage === 'rollback' ? TRANSITION_OPERATIONS.rollback.slice(0, 2) : [];
+  const transition = stage === 'rollback' ? TRANSITION_OPERATIONS.rollback.slice(2) : TRANSITION_OPERATIONS[stage];
+  const operations = [...preparation, ...RUNTIME_MEASUREMENT_OPERATIONS, ...transition, ...RUNTIME_MEASUREMENT_OPERATIONS, ...COMPATIBILITY_OPERATIONS];
+  const beforeStart = preparation.length;
+  const beforeEnd = beforeStart + RUNTIME_MEASUREMENT_OPERATIONS.length;
+  const afterStart = beforeEnd + transition.length;
+  return { operations, before: [beforeStart, beforeEnd], after: [afterStart, afterStart + RUNTIME_MEASUREMENT_OPERATIONS.length] };
+}
+function operationExecutable(operation) {
+  if (operation === 'check-browser-endpoints') return 'npx';
+  if (operation.startsWith('measure-runtime-endpoint-')) return 'curl';
+  return 'docker';
+}
+export const transitionCommandTranscriptSha256 = commands => publicConfigSha256(Buffer.from(canonicalize(commands.map(({ startedAt: _startedAt, completedAt: _completedAt, ...evidence }) => evidence))));
+export const transitionOutputTranscriptSha256 = commands => publicConfigSha256(Buffer.from(canonicalize(commands.map(({ operation, exitCode, stdoutSha256, stderrSha256 }) => ({ operation, exitCode, stdoutSha256, stderrSha256 })))));
 
 function bounded(value, label, maximum, minimum = 0) {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) fail(`invalid ${label}`);
@@ -566,7 +608,7 @@ export function validateTransitionEvidence({ manifest, manifestBytes, authorizat
   if (!Buffer.from(authorizationBytes).equals(Buffer.from(canonicalize(authorization)))) fail('noncanonical transition authorization');
   exactKeys(authorization, 'transition authorization', ['schemaVersion', 'laneState', ...TRANSITION_BINDING, 'authorizedAt', 'expiresAt', 'stages']);
   checkBinding(authorization);
-  if (authorization.schemaVersion !== 'harmonic-beacon.oci-transition.v3' || authorization.laneState !== 'oci-production') fail('invalid transition authorization');
+  if (authorization.schemaVersion !== 'harmonic-beacon.oci-transition.v4' || authorization.laneState !== 'oci-production') fail('invalid transition authorization');
   const authorizedAt = +date(authorization.authorizedAt, 'authorization time');
   const expiresAt = +date(authorization.expiresAt, 'authorization expiry');
   if (!Number.isSafeInteger(now) || authorizedAt > now || expiresAt <= now || expiresAt <= authorizedAt || expiresAt - authorizedAt > 86400000 ||
@@ -574,6 +616,8 @@ export function validateTransitionEvidence({ manifest, manifestBytes, authorizat
   exactKeys(authorization.stages, 'authorized stages', TRANSITION_STAGES);
   exactKeys(stages, 'transition stages', TRANSITION_STAGES);
   const executionDigests = new Set();
+  const measurementDigests = new Set();
+  const executableDigests = new Map();
   let previousEnd = 0;
   for (const stage of TRANSITION_STAGES) {
     const { receiptBytes, executionBytes } = stages[stage];
@@ -588,7 +632,7 @@ export function validateTransitionEvidence({ manifest, manifestBytes, authorizat
     if (!Buffer.from(receiptBytes).equals(Buffer.from(canonicalize(receipt)))) fail('noncanonical transition receipt');
     exactKeys(receipt, 'transition receipt', ['schemaVersion', 'stage', ...TRANSITION_BINDING, 'executionEvidenceSha256', 'issuedAt']);
     checkBinding(receipt);
-    if (receipt.schemaVersion !== `harmonic-beacon.${stage}-receipt.v3` || receipt.stage !== stage ||
+    if (receipt.schemaVersion !== `harmonic-beacon.${stage}-receipt.v4` || receipt.stage !== stage ||
         receipt.executionEvidenceSha256 !== hashes.executionEvidenceSha256) fail('invalid transition receipt');
     const issuedAt = +date(receipt.issuedAt, 'receipt time');
     const execution = JSON.parse(executionBytes);
@@ -596,35 +640,62 @@ export function validateTransitionEvidence({ manifest, manifestBytes, authorizat
     exactKeys(execution, 'execution evidence', ['schemaVersion', 'stage', ...TRANSITION_BINDING, 'startedAt', 'completedAt', 'commands', 'runtimeBefore', 'runtimeAfter',
       ...(stage === 'shadow' ? [] : ['observedRecoveryMs', 'maxRecoveryMs'])]);
     checkBinding(execution);
-    if (execution.schemaVersion !== `harmonic-beacon.${stage}-execution.v3` || execution.stage !== stage) fail('invalid execution stage');
+    if (execution.schemaVersion !== `harmonic-beacon.${stage}-execution.v4` || execution.stage !== stage) fail('invalid execution stage');
     const start = +date(execution.startedAt, 'execution start');
     const end = +date(execution.completedAt, 'execution end');
-    if (start < previousEnd || start < authorizedAt - 86400000 || end < start || end > issuedAt || issuedAt > authorizedAt) fail('invalid execution freshness/order');
+    if ((previousEnd && start <= previousEnd) || start < authorizedAt - 86400000 || end <= start || end > issuedAt || issuedAt > authorizedAt) fail('invalid execution freshness/order');
     previousEnd = end;
-    if (!Array.isArray(execution.commands) || execution.commands.length < 1 || execution.commands.length > 128) fail('missing command results');
+    const contract = transitionStageContract(stage);
+    if (!Array.isArray(execution.commands) || execution.commands.length !== contract.operations.length || execution.commands.length > 128) fail('invalid stage command inventory');
     let commandEnd = start;
-    for (const command of execution.commands) {
-      exactKeys(command, 'command result', ['name', 'argvSha256', 'startedAt', 'completedAt', 'exitCode', 'stdoutSha256', 'stderrSha256']);
-      if (!['measure-runtime', 'migrate-candidate', 'replace-runtime', 'check-compatibility'].includes(command.name)) fail('invalid logical command name');
-      for (const key of ['argvSha256', 'stdoutSha256', 'stderrSha256']) digest(command[key], key);
+    for (let index = 0; index < execution.commands.length; index += 1) {
+      const command = execution.commands[index];
+      exactKeys(command, 'command result', ['operation', 'executableIdentity', 'executableSha256', 'argvSha256', 'environmentSha256', 'stdinSha256', 'startedAt', 'completedAt', 'exitCode', 'stdoutSha256', 'stderrSha256']);
+      if (command.operation !== contract.operations[index]) fail('invalid stage command order');
+      const expectedExecutable = operationExecutable(command.operation);
+      const expectedBasenames = expectedExecutable === 'npx' ? ['npx', 'npx-cli.js'] : [expectedExecutable];
+      if (typeof command.executableIdentity !== 'string' || !isAbsolute(command.executableIdentity) || resolve(command.executableIdentity) !== command.executableIdentity || !expectedBasenames.includes(basename(command.executableIdentity))) fail('invalid command executable identity');
+      for (const key of ['executableSha256', 'argvSha256', 'environmentSha256', 'stdinSha256', 'stdoutSha256', 'stderrSha256']) digest(command[key], key);
+      const executableBinding = `${command.executableIdentity}:${command.executableSha256}`;
+      const priorExecutableDigest = executableDigests.get(expectedExecutable);
+      if (priorExecutableDigest && priorExecutableDigest !== executableBinding) fail('executable identity or bytes changed during transition');
+      executableDigests.set(expectedExecutable, executableBinding);
       const cs = +date(command.startedAt, 'command start');
       const ce = +date(command.completedAt, 'command end');
-      if (command.exitCode !== 0 || cs < commandEnd || ce < cs || ce > end) fail('invalid command result');
+      if (command.exitCode !== 0 || cs < commandEnd || ce <= cs || ce > end) fail('invalid command result');
       commandEnd = ce;
     }
     const beforeManifest = stage === 'rollback' ? candidate : binding.baseManifestSha256;
     const afterManifest = stage === 'rollback' ? binding.baseManifestSha256 : candidate;
-    for (const [key, expected] of [['runtimeBefore', beforeManifest], ['runtimeAfter', afterManifest]]) {
+    const stageRuntimeDigests = [];
+    const stageHealthDigests = [];
+    const stagePrivateBoundaryDigests = [];
+    for (const [key, expected, range] of [['runtimeBefore', beforeManifest, contract.before], ['runtimeAfter', afterManifest, contract.after]]) {
       const runtime = execution[key];
-      exactKeys(runtime, key, ['manifestSha256', 'configSha256', 'healthSha256', 'privateBoundarySha256']);
+      exactKeys(runtime, key, ['manifestSha256', 'configSha256', 'commandStart', 'commandEnd', 'runtimeCommandTranscriptSha256', 'healthCommandTranscriptSha256', 'privateBoundaryCommandTranscriptSha256']);
       if (runtime.manifestSha256 !== expected) fail('runtime stage transition mismatch');
-      for (const field of ['configSha256', 'healthSha256', 'privateBoundarySha256']) digest(runtime[field], field);
+      for (const field of ['configSha256', 'runtimeCommandTranscriptSha256', 'healthCommandTranscriptSha256', 'privateBoundaryCommandTranscriptSha256']) digest(runtime[field], field);
       const target = stage === 'shadow' ? 'live-staging' : 'production';
       if (runtime.configSha256 !== manifest.configProfiles[target].sha256) fail('runtime config mismatch');
+      if (runtime.commandStart !== range[0] || runtime.commandEnd !== range[1]) fail('runtime command range mismatch');
+      const transcript = execution.commands.slice(...range);
+      const health = transcript.filter(command => command.operation.startsWith('measure-runtime-endpoint-'));
+      const privateBoundary = transcript.filter(command => command.operation.startsWith('measure-runtime-container-') || command.operation.startsWith('measure-private-network-'));
+      const measured = [transitionCommandTranscriptSha256(transcript), transitionOutputTranscriptSha256(health), transitionOutputTranscriptSha256(privateBoundary)];
+      if (runtime.runtimeCommandTranscriptSha256 !== measured[0] || runtime.healthCommandTranscriptSha256 !== measured[1] || runtime.privateBoundaryCommandTranscriptSha256 !== measured[2]) fail('runtime measurement transcript mismatch');
+      for (const value of measured.slice(0, 2)) {
+        if (measurementDigests.has(value)) fail('reused runtime measurement');
+        measurementDigests.add(value);
+      }
+      stageRuntimeDigests.push(runtime.runtimeCommandTranscriptSha256);
+      stageHealthDigests.push(runtime.healthCommandTranscriptSha256);
+      stagePrivateBoundaryDigests.push(runtime.privateBoundaryCommandTranscriptSha256);
     }
+    if (stageRuntimeDigests[0] === stageRuntimeDigests[1] || stageHealthDigests[0] === stageHealthDigests[1] ||
+        stagePrivateBoundaryDigests[0] === stagePrivateBoundaryDigests[1]) fail('reused before/after runtime measurement');
     if (stage !== 'shadow') {
       bounded(execution.maxRecoveryMs, 'maximum recovery', 3600000, 1);
-      bounded(execution.observedRecoveryMs, 'observed recovery', execution.maxRecoveryMs);
+      bounded(execution.observedRecoveryMs, 'observed recovery', execution.maxRecoveryMs, 1);
       if (execution.observedRecoveryMs !== end - start) fail('recovery timing mismatch');
     }
   }

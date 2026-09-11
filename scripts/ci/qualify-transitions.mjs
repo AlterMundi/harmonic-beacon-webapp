@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Hosted measurement producer only. Outputs remain unsigned until the owning workflow seals them.
 import { spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { constants, closeSync, fstatSync, openSync, readSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { accessSync, constants, closeSync, fstatSync, openSync, readSync, realpathSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { canonicalize, publicConfigSha256 as digest, validateReleaseManifest, validateQualificationReceipt, validateTransitionEvidence, verifyRuntimePublicConfig } from './release-manifest.mjs';
+import { canonicalize, publicConfigSha256 as digest, transitionCommandTranscriptSha256, transitionOutputTranscriptSha256, transitionStageContract, validateReleaseManifest, validateQualificationReceipt, validateTransitionEvidence, verifyRuntimePublicConfig } from './release-manifest.mjs';
 import { validateEvidenceStatement } from '../../deploy/hb-artifact-verify.mjs';
 import { verifyAcceptanceMatrix } from './qualify-oci.mjs';
 
@@ -45,8 +45,33 @@ export function commandRunner(file, args, options) {
   return { exitCode: result.status, timedOut: !!result.error, stdout: result.stdout ?? Buffer.alloc(0), stderr: result.stderr ?? Buffer.alloc(0) };
 }
 
+export function resolveExecutable(identity, environment) {
+  if (!/^[a-z0-9-]+$/u.test(identity)) fail('invalid executable identity');
+  let path;
+  for (const directory of String(environment.PATH ?? '').split(delimiter).filter(Boolean)) {
+    try { const candidate = join(directory, identity); accessSync(candidate, constants.X_OK); path = realpathSync(candidate); break; } catch { /* keep searching */ }
+  }
+  if (!path) fail('executable unavailable');
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = fstatSync(fd);
+    if (!before.isFile() || before.size < 1 || before.size > 256 * 1024 * 1024) fail('unsafe executable');
+    const hash = createHash('sha256');
+    const chunk = Buffer.alloc(1024 * 1024);
+    let offset = 0;
+    while (offset < before.size) {
+      const count = readSync(fd, chunk, 0, Math.min(chunk.length, before.size - offset), offset);
+      if (count < 1) fail('executable changed');
+      hash.update(chunk.subarray(0, count)); offset += count;
+    }
+    const after = fstatSync(fd);
+    if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) fail('executable changed');
+    return { path, sha256: `sha256:${hash.digest('hex')}` };
+  } finally { closeSync(fd); }
+}
+
 // Runner and time are injectable, never selectable by the hosted CLI.
-export function qualifyTransitions(options, { runner = commandRunner, clock = Date.now, random = randomBytes, projectId } = {}) {
+export function qualifyTransitions(options, { runner = commandRunner, clock = Date.now, random = randomBytes, projectId, executableResolver = resolveExecutable } = {}) {
   const project = projectId ?? `hbt-${random(16).toString('hex')}`;
   if (!/^hbt-[a-z0-9]{16,32}$/u.test(project)) fail('invalid isolated project');
   if (resolve(options.candidateDir) === resolve(options.baseDir)) fail('candidate and base must be separate');
@@ -56,7 +81,7 @@ export function qualifyTransitions(options, { runner = commandRunner, clock = Da
   // Do not inherit Compose overrides, application secrets, or alternate Docker contexts.
   const env = Object.fromEntries(['PATH', 'HOME', 'DOCKER_CONFIG'].filter(k => process.env[k]).map(k => [k, process.env[k]]));
   let commands = [];
-  let logical = 'check-compatibility';
+
   let lastTime = -1;
   let active = false;
   let cleaning = false;
@@ -75,23 +100,21 @@ export function qualifyTransitions(options, { runner = commandRunner, clock = Da
     const timeout = Math.min(TIMEOUT, deadline - start);
     if (timeout <= 0) fail('recovery timeout');
     let result;
-    try { result = runner(file, args, { env: opts.env ?? env, input: opts.input, timeout, maxBuffer: LIMIT }); }
+    const commandEnv = opts.env ?? env;
+    const executable = executableResolver(file, commandEnv);
+    try { result = runner(executable.path, args, { env: commandEnv, input: opts.input, timeout, maxBuffer: LIMIT }); }
     catch { fail('command failed'); }
     const end = now();
     const stdout = Buffer.from(result?.stdout ?? '');
     const stderr = Buffer.from(result?.stderr ?? '');
-    const invocation = {
-      file,
-      args,
-      environment: opts.env ?? env,
-      stdinSha256: opts.input === undefined ? null : digest(Buffer.from(opts.input)),
-    };
-    commands.push({ name: logical, argvSha256: digest(canonicalize(invocation)), startedAt: new Date(start).toISOString(), completedAt: new Date(end).toISOString(), exitCode: result?.exitCode ?? -1, stdoutSha256: digest(stdout), stderrSha256: digest(stderr) });
+    commands.push({ operation: opts.operation ?? 'prequalification', executableIdentity: executable.path, executableSha256: executable.sha256,
+      argvSha256: digest(canonicalize(args)), environmentSha256: digest(canonicalize(commandEnv)), stdinSha256: digest(Buffer.from(opts.input ?? '')),
+      startedAt: new Date(start).toISOString(), completedAt: new Date(end).toISOString(), exitCode: result?.exitCode ?? -1, stdoutSha256: digest(stdout), stderrSha256: digest(stderr) });
     if (!result || result.timedOut || result.exitCode !== 0 || end - start > timeout || stdout.length > LIMIT || stderr.length > LIMIT) fail('command nonzero/timeout/capture failure');
     return opts.encoding === 'utf8' ? stdout.toString('utf8') : stdout;
   };
-  const docker = args => execute('docker', args, { encoding: 'utf8' });
-  const dc = args => docker([...prefix, ...args]);
+  const docker = (args, opts = {}) => execute('docker', args, { encoding: 'utf8', ...opts });
+  const dc = (args, opts = {}) => docker([...prefix, ...args], opts);
   const snapshot = (root, relative, name) => {
     const bytes = read(join(root, relative));
     const path = join(scratch, name);
@@ -141,7 +164,7 @@ export function qualifyTransitions(options, { runner = commandRunner, clock = Da
   let target;
   let candidate;
   const profiles = {};
-  const apply = runtime => {
+  const apply = (runtime, commandOperation = 'prequalification') => {
     for (const [service, value] of Object.entries(spec.services)) value.image = refFor(runtime.refs, service);
     const profile = profiles[target];
     const publicEnv = {
@@ -154,40 +177,37 @@ export function qualifyTransitions(options, { runner = commandRunner, clock = Da
     verifyRuntimePublicConfig(profile, Buffer.from(Object.entries(publicEnv).map(([k, v]) => `${k}=${v}`).join('\n')));
     writeFileSync(compose, canonicalize(spec), { mode: 0o600 });
     // Confirm the actual Compose interpretation before every mutation.
-    const actual = JSON.parse(dc(['config', '--format', 'json']));
+    const actual = JSON.parse(dc(['config', '--format', 'json'], { operation: commandOperation }));
     for (const [service, value] of Object.entries(actual.services)) {
       if (value.image !== refFor(runtime.refs, service) || value.build || value.volumes?.length || value.network_mode || value.privileged) fail('wrong images/unsafe Compose');
       equal(value.environment ?? {}, spec.services[service].environment ?? {}, 'wrong config');
     }
     equal(Object.keys(actual.services).sort(), Object.keys(spec.services).sort(), 'Compose service contradiction');
   };
-  const up = () => dc(['up', '--detach', '--no-deps', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '180', ...APPS]);
+  const up = (commandOperation = 'prequalification') => dc(['up', '--detach', '--no-deps', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '180', ...APPS], { operation: commandOperation });
   const migrate = () => {
-    dc(['run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'migrate', 'npx', '--no-install', 'prisma', 'migrate', 'deploy']);
-    dc(['run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'analytics', 'node', 'src/migrate.mjs']);
+    dc(['run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'migrate', 'npx', '--no-install', 'prisma', 'migrate', 'deploy'], { operation: 'migrate-candidate-app' });
+    dc(['run', '--rm', '--no-deps', '--no-build', '--pull', 'never', 'analytics', 'node', 'src/migrate.mjs'], { operation: 'migrate-candidate-analytics' });
   };
   const urls = () => Object.fromEntries([['app', 3000], ['livekit', 7880], ['tapestry', 3100], ['analytics', 3300]].map(([service, port]) => {
-    const address = dc(['port', service, String(port)]).trim();
+    const address = dc(['port', service, String(port)], { operation: `measure-runtime-address-${service}` }).trim();
     if (!/^127\.0\.0\.1:[1-9][0-9]{0,4}$/u.test(address) || Number(address.split(':')[1]) > 65535) fail('unsafe published port');
     return [service, `http://${address}`];
   }));
   const seen = new Set();
   function measure(runtime) {
-    logical = 'measure-runtime';
     const offset = commands.length;
-    const privateCommands = [];
-    const rowsText = dc(['ps', '--format', 'json']).trim();
+    const rowsText = dc(['ps', '--format', 'json'], { operation: 'measure-runtime-inventory' }).trim();
     const rows = rowsText.startsWith('[') ? JSON.parse(rowsText) : rowsText.split('\n').map(JSON.parse);
     equal(rows.map(r => r.Service).sort(), [...SERVICES].sort(), 'runtime services mismatch');
     for (const service of SERVICES) {
       const row = rows.find(r => r.Service === service);
       if (row.State !== 'running' || (row.Health && row.Health !== 'healthy')) fail('runtime unhealthy');
-      const details = JSON.parse(docker(['inspect', row.ID]));
-      privateCommands.push(commands.at(-1));
+      const details = JSON.parse(docker(['inspect', row.ID], { operation: `measure-runtime-container-${service}` }));
       if (details.length !== 1) fail('container inspect mismatch');
       const d = details[0];
       if (d.Config.Labels['com.docker.compose.project'] !== project || d.Config.Labels['com.docker.compose.service'] !== service) fail('foreign container');
-      if (d.Image !== docker(['image', 'inspect', refFor(runtime.refs, service), '--format', '{{.Id}}']).trim() || !/^sha256:[a-f0-9]{64}$/u.test(d.Image)) fail('wrong images');
+      if (d.Image !== docker(['image', 'inspect', refFor(runtime.refs, service), '--format', '{{.Id}}'], { operation: `measure-runtime-image-${service}` }).trim() || !/^sha256:[a-f0-9]{64}$/u.test(d.Image)) fail('wrong images');
       const environment = Object.fromEntries(d.Config.Env.map(v => { const at = v.indexOf('='); return [v.slice(0, at), v.slice(at + 1)]; }));
       for (const [key, value] of Object.entries(spec.services[service].environment ?? {})) if (environment[key] !== String(value)) fail('wrong runtime config');
       if (service === 'app') {
@@ -198,28 +218,32 @@ export function qualifyTransitions(options, { runner = commandRunner, clock = Da
       for (const ports of Object.values(d.NetworkSettings.Ports)) for (const p of ports ?? []) if (p.HostIp !== '127.0.0.1') fail('private port exposed');
     }
     const endpoints = urls();
-    const get = (url, raw = false) => {
-      const body = execute('curl', ['--fail', '--silent', '--show-error', '--max-time', '10', url], { encoding: 'utf8' });
+    const get = (name, url, raw = false) => {
+      const body = execute('curl', ['--fail', '--silent', '--show-error', '--max-time', '10', url], { encoding: 'utf8', operation: `measure-runtime-endpoint-${name}` });
       return raw ? body : JSON.parse(body);
     };
-    const health = get(`${endpoints.app}/api/health`);
+    const health = get('app-health', `${endpoints.app}/api/health`);
     if (!Number.isFinite(health.uptime) || health.uptime <= 0 || seen.has(digest(canonicalize(health)))) fail('static/reused health measurement');
     seen.add(digest(canonicalize(health)));
     if (health.status !== 'ok' || health.gitSha !== runtime.manifest.source.gitSha || health.artifactDigest !== runtime.refs.app || health.configProfileSha256 !== candidate.manifest.configProfiles[target].sha256) fail('health provenance/config mismatch');
-    if (get(`${endpoints.app}/api/health/ready`).status !== 'ok' || get(`${endpoints.tapestry}/health`).status !== 'ok' || get(`${endpoints.analytics}/ready`).status !== 'ready') fail('behavior unhealthy');
-    get(endpoints.livekit, true);
-    const healthCommands = commands.slice(offset);
-    const privateOffset = commands.length;
-    for (const network of ['database', 'media']) if (docker(['network', 'inspect', `${project}_${network}`, '--format', '{{.Internal}}']).trim() !== 'true') fail('private network not internal');
-    // Hash independently timestamped measurement transcripts, never a constant success flag.
-    const result = { manifestSha256: runtime.hash, configSha256: candidate.manifest.configProfiles[target].sha256, healthSha256: digest(canonicalize(healthCommands)), privateBoundarySha256: digest(canonicalize([...privateCommands, ...commands.slice(privateOffset)])) };
-    for (const hash of [result.healthSha256, result.privateBoundarySha256]) { if (seen.has(hash)) fail('static/reused measurements'); seen.add(hash); }
+    if (get('app-ready', `${endpoints.app}/api/health/ready`).status !== 'ok' || get('tapestry-health', `${endpoints.tapestry}/health`).status !== 'ok' || get('analytics-ready', `${endpoints.analytics}/ready`).status !== 'ready') fail('behavior unhealthy');
+    get('livekit', endpoints.livekit, true);
+    for (const network of ['database', 'media']) if (docker(['network', 'inspect', `${project}_${network}`, '--format', '{{.Internal}}'], { operation: `measure-private-network-${network}` }).trim() !== 'true') fail('private network not internal');
+    const commandEnd = commands.length;
+    const transcript = commands.slice(offset, commandEnd);
+    const healthCommands = transcript.filter(command => command.operation.startsWith('measure-runtime-endpoint-'));
+    const privateCommands = transcript.filter(command => command.operation.startsWith('measure-runtime-container-') || command.operation.startsWith('measure-private-network-'));
+    const result = { manifestSha256: runtime.hash, configSha256: candidate.manifest.configProfiles[target].sha256, commandStart: offset, commandEnd,
+      runtimeCommandTranscriptSha256: transitionCommandTranscriptSha256(transcript), healthCommandTranscriptSha256: transitionOutputTranscriptSha256(healthCommands), privateBoundaryCommandTranscriptSha256: transitionOutputTranscriptSha256(privateCommands) };
+    for (const hash of [result.runtimeCommandTranscriptSha256, result.healthCommandTranscriptSha256]) { if (seen.has(hash)) fail('static/reused measurements'); seen.add(hash); }
     return { result, endpoints };
   }
-  function acceptance(runtime, endpoints, schema) {
-    logical = 'check-compatibility';
-    verifyAcceptanceMatrix({ compose, project, refs: runtime.refs, env, execute, baseUrl: endpoints.app,
+  function acceptance(runtime, endpoints, schema, stage) {
+    const queue = stage ? transitionStageContract(stage).operations.slice(commands.length) : [];
+    const measuredExecute = stage ? (file, args, opts = {}) => { const commandOperation = queue.shift(); if (!commandOperation?.startsWith('check-')) fail('compatibility command order'); return execute(file, args, { ...opts, operation: commandOperation }); } : execute;
+    verifyAcceptanceMatrix({ compose, project, refs: runtime.refs, env, execute: measuredExecute, baseUrl: endpoints.app,
       manifest: { ...runtime.manifest, migrationSet: schema, configProfiles: { 'live-staging': candidate.manifest.configProfiles[target] } } });
+    if (stage && queue.length) fail('missing compatibility commands');
   }
   try {
     // Authenticate BOTH final blobs for BOTH releases before interpreting either release.
@@ -263,34 +287,31 @@ export function qualifyTransitions(options, { runner = commandRunner, clock = Da
       // rehearsal rather than an unrecorded setup mutation before the stage.
       if (stage === 'rollback') {
         target = 'production';
-        logical = 'replace-runtime';
-        apply(candidate);
-        up();
+        apply(candidate, 'configure-candidate-production');
+        up('replace-candidate-production');
       }
       const before = stage === 'rollback' ? candidate : base;
       const after = stage === 'rollback' ? base : candidate;
       const runtimeBefore = measure(before).result;
-      logical = stage === 'shadow' ? 'migrate-candidate' : 'replace-runtime';
-      apply(after);
+      apply(after, stage === 'shadow' ? 'configure-candidate-live-staging' : stage === 'rollback' ? 'configure-base-production' : 'configure-candidate-production');
       if (stage === 'shadow') migrate();
-      logical = 'replace-runtime';
-      up();
+      up(stage === 'shadow' ? 'replace-candidate-live-staging' : stage === 'rollback' ? 'replace-base-production' : 'replace-candidate-production');
       const measured = measure(after);
-      acceptance(after, measured.endpoints, candidate.manifest.migrationSet);
+      acceptance(after, measured.endpoints, candidate.manifest.migrationSet, stage);
       const completedAt = iso();
       if (Date.parse(completedAt) > deadline) fail('recovery timeout');
       deadline = Infinity;
-      const execution = { schemaVersion: `harmonic-beacon.${stage}-execution.v3`, stage, ...binding, startedAt, completedAt, commands, runtimeBefore, runtimeAfter: measured.result,
+      const execution = { schemaVersion: `harmonic-beacon.${stage}-execution.v4`, stage, ...binding, startedAt, completedAt, commands, runtimeBefore, runtimeAfter: measured.result,
         ...(stage === 'shadow' ? {} : { observedRecoveryMs: Date.parse(completedAt) - Date.parse(startedAt), maxRecoveryMs: RECOVERY }) };
       const executionBytes = Buffer.from(canonicalize(execution));
-      const receiptBytes = Buffer.from(canonicalize({ schemaVersion: `harmonic-beacon.${stage}-receipt.v3`, stage, ...binding, executionEvidenceSha256: digest(executionBytes), issuedAt: iso() }));
+      const receiptBytes = Buffer.from(canonicalize({ schemaVersion: `harmonic-beacon.${stage}-receipt.v4`, stage, ...binding, executionEvidenceSha256: digest(executionBytes), issuedAt: iso() }));
       stages[stage] = { executionBytes, receiptBytes };
     }
     // Successful teardown is part of issuance. Failed teardown never produces authorization.
     dc(['down', '--remove-orphans', '--volumes']);
     active = false;
     const authorizedAt = iso();
-    const authorizationBytes = Buffer.from(canonicalize({ schemaVersion: 'harmonic-beacon.oci-transition.v3', laneState: 'oci-production', ...binding, authorizedAt,
+    const authorizationBytes = Buffer.from(canonicalize({ schemaVersion: 'harmonic-beacon.oci-transition.v4', laneState: 'oci-production', ...binding, authorizedAt,
       expiresAt: new Date(Math.min(Date.parse(authorizedAt) + 900000, Date.parse(candidate.manifest.qualification.expiresAt))).toISOString(),
       stages: Object.fromEntries(Object.entries(stages).map(([stage, value]) => [stage, { executionEvidenceSha256: digest(value.executionBytes), receiptSha256: digest(value.receiptBytes) }])) }));
     const result = { manifest: candidate.manifest, manifestBytes: candidate.bytes, qualificationBytes: candidate.qualificationBytes, authorizationBytes, stages, now: now() };

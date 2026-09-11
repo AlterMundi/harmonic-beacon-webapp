@@ -22,6 +22,7 @@ readonly ARTIFACT_STATE='/var/lib/harmonic-beacon/releases'
 readonly CURRENT_STATE="$ARTIFACT_STATE/current-state.json"
 readonly TRANSACTION_ROOT="$ARTIFACT_STATE/transactions"
 readonly ACTIVE_TRANSACTION="$ARTIFACT_STATE/active-transaction"
+readonly SHADOW_CLEANUP_ROOT="$ARTIFACT_STATE/shadow-cleanups"
 readonly TRUSTED_COMPOSE='/usr/local/libexec/harmonic-beacon/docker-compose.yml'
 readonly TRUSTED_OVERLAY='/usr/local/libexec/harmonic-beacon/oci-images.compose.yml'
 readonly REGISTRY_ENV='/etc/harmonic-beacon/registry.env'
@@ -181,6 +182,20 @@ require_secure_root_file() {
   [ -f "$path" ] && [ ! -L "$path" ] || die "root-owned file is missing or unsafe: $path"
   [ "$(stat -c '%U:%G:%a' "$path")" = "root:root:$mode" ] ||
     die "root-owned file ownership or mode is invalid: $path"
+  [ "$(stat -c '%h' "$path")" = 1 ] || die "root-owned file has multiple links: $path"
+}
+
+require_secure_shadow_receipt() {
+  require_secure_root_file "$1" 600
+  [ "$(stat -c '%h' "$1")" = 1 ] || die "shadow cleanup receipt has multiple links: $1"
+}
+
+require_secure_root_directory() {
+  local path="$1" mode="$2"
+  require_secure_root_ancestors "$path/.probe"
+  [ -d "$path" ] && [ ! -L "$path" ] || die "root-owned directory is missing or unsafe: $path"
+  [ "$(stat -c '%U:%G:%a' "$path")" = "root:root:$mode" ] ||
+    die "root-owned directory ownership or mode is invalid: $path"
 }
 
 verify_installed_implementation() {
@@ -289,24 +304,80 @@ admit_delivery_authorization() {
     "$destination/delivery-authorization.json" >/dev/null || die 'delivery authorization authentication failed'
 }
 
+shadow_cleanup_receipt() {
+  printf '%s/%s-%s-%s.json\n' "$SHADOW_CLEANUP_ROOT" "$1" "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT"
+}
+
+discover_shadow_cleanup_archive() {
+  local run_id="$1" candidate base
+  local -a candidates=()
+  shopt -s nullglob
+  candidates=("$TRANSACTION_ROOT/$run_id.shadowed."*)
+  shopt -u nullglob
+  [ "${#candidates[@]}" -le 1 ] || die 'multiple shadow cleanup archives'
+  [ "${#candidates[@]}" -eq 1 ] || return 1
+  candidate="${candidates[0]}"
+  base="${candidate##*/}"
+  [[ "$base" =~ ^${run_id}\.shadowed\.([1-9][0-9]{0,19}|${DELIVERY_RUN_ID}-${DELIVERY_RUN_ATTEMPT})$ ]] ||
+    die 'malformed shadow cleanup archive identity'
+  require_secure_root_directory "$candidate" 700
+  require_secure_shadow_receipt "$candidate/receipt.json"
+  SHADOW_CLEANUP_ARCHIVE="$candidate"
+}
+
 require_delivery_invocation() {
-  local run_id="$1" target="$2" verb="$3" active='' phase durable_resume=none
+  local run_id="$1" target="$2" verb="$3" active='' phase durable_resume=none transaction tombstone archive=''
   validate_run_id "$run_id"
   validate_target "$target"
-  require_secure_root_file "$(artifact_receipt "$run_id")" 600
+  transaction="$(artifact_transaction "$run_id")"
+  tombstone="$(shadow_cleanup_receipt "$run_id")"
+  DELIVERY_RECEIPT="$transaction/receipt.json"
+  SHADOW_CLEANUP_MODE=source
+  SHADOW_CLEANUP_ARCHIVE=''
+  if [ ! -e "$transaction" ] && [ ! -L "$transaction" ]; then
+    [ "$target" = shadow ] && [ "$verb" = status ] || die 'source transaction is missing'
+    if discover_shadow_cleanup_archive "$run_id"; then archive="$SHADOW_CLEANUP_ARCHIVE"; fi
+    if [ -n "$archive" ]; then
+      DELIVERY_RECEIPT="$archive/receipt.json"
+      SHADOW_CLEANUP_MODE=archive
+      SHADOW_CLEANUP_ARCHIVE="$archive"
+      durable_resume=shadowed-archive-cleanup
+      if [ -e "$tombstone" ] || [ -L "$tombstone" ]; then
+        require_secure_shadow_receipt "$tombstone"
+        cmp --silent "$DELIVERY_RECEIPT" "$tombstone" || die 'conflicting shadow cleanup evidence'
+      fi
+    elif [ -e "$tombstone" ] || [ -L "$tombstone" ]; then
+      require_secure_shadow_receipt "$tombstone"
+      DELIVERY_RECEIPT="$tombstone"
+      SHADOW_CLEANUP_MODE=terminal
+      durable_resume=shadowed-terminal-cleanup
+    else
+      die 'shadow cleanup evidence is missing'
+    fi
+  else
+    if [ "$target" = shadow ] && [ "$verb" = status ]; then
+      require_secure_shadow_receipt "$DELIVERY_RECEIPT"
+    else
+      require_secure_root_file "$DELIVERY_RECEIPT" 600
+    fi
+    if [ "$target" = shadow ] && [ "$verb" = status ]; then
+      if discover_shadow_cleanup_archive "$run_id"; then archive="$SHADOW_CLEANUP_ARCHIVE"; fi
+      [ -z "$archive" ] || die 'conflicting shadow cleanup evidence'
+    fi
+  fi
   if [ -e "$ACTIVE_TRANSACTION" ]; then
     require_secure_root_file "$ACTIVE_TRANSACTION" 600
     active="$(<"$ACTIVE_TRANSACTION")"
   fi
-  phase="$(transaction_phase "$run_id")"
-  if [ -z "$active" ]; then
+  phase="$(jq -er '.phase' "$DELIVERY_RECEIPT")"
+  if [ -z "$active" ] && [ "$durable_resume" = none ]; then
     if [ "$target" = production ] && [ "$verb" = prepare ] && [ "$phase" = prepared ]; then
       durable_resume=production-markerless-prepared
     elif [ "$target" = shadow ] && [ "$verb" = status ] && [ "$phase" = shadowed ]; then
       durable_resume=shadowed-cleanup
     fi
   fi
-  node "$RELEASE_MANIFEST" check-delivery --receipt "$(artifact_receipt "$run_id")" \
+  node "$RELEASE_MANIFEST" check-delivery --receipt "$DELIVERY_RECEIPT" \
     --delivery-run-id "$DELIVERY_RUN_ID" --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" \
     --target "$target" --verb "$verb" --active-run-id "${active:-none}" \
     --durable-resume "$durable_resume"
@@ -476,6 +547,41 @@ transaction_require() {
     require_release_lane legacy-shadow
     [ ! -e "$ACTIVE_TRANSACTION" ] || die 'production transaction is active during shadow verification'
   fi
+}
+
+transaction_require_shadow_cleanup() {
+  local run_id="$1" receipt="$2" root="${3:-}"
+  require_release_lane legacy-shadow
+  require_current_state
+  [ ! -e "$ACTIVE_TRANSACTION" ] || die 'production transaction is active during shadow cleanup'
+  require_secure_shadow_receipt "$receipt"
+  jq -e --arg run "$run_id" '.workflowRunId==$run and .target=="shadow" and .phase=="shadowed"' "$receipt" >/dev/null ||
+    die 'archived receipt is not the exact shadowed transaction'
+  publication_matches "$receipt" base || die 'shadow cleanup transaction no longer matches current high-water'
+  [ -z "$root" ] || require_unchanged_runtime_inputs "$root"
+}
+
+persist_shadow_cleanup_receipt() {
+  local run_id="$1" source="$2" tombstone temporary
+  tombstone="$(shadow_cleanup_receipt "$run_id")"
+  if [ -e "$SHADOW_CLEANUP_ROOT" ] || [ -L "$SHADOW_CLEANUP_ROOT" ]; then
+    require_secure_root_directory "$SHADOW_CLEANUP_ROOT" 700
+  else
+    install -d -o root -g root -m 0700 "$SHADOW_CLEANUP_ROOT"
+    sync -f "$ARTIFACT_STATE"
+  fi
+  if [ -e "$tombstone" ] || [ -L "$tombstone" ]; then
+    require_secure_shadow_receipt "$tombstone"
+    cmp --silent "$source" "$tombstone" || die 'conflicting shadow cleanup evidence'
+    return 0
+  fi
+  temporary="$(mktemp --tmpdir="$SHADOW_CLEANUP_ROOT" ".${run_id}-${DELIVERY_RUN_ID}-${DELIVERY_RUN_ATTEMPT}.XXXXXX")"
+  cp -- "$source" "$temporary"
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  sync -f "$temporary"
+  mv -- "$temporary" "$tombstone"
+  sync -f "$SHADOW_CLEANUP_ROOT"
 }
 
 transaction_require_rollback() {
@@ -973,23 +1079,40 @@ artifact_status() {
   if [ "$target" = production ]; then require_release_lane oci-production; fi
   if [ "$target" = production ] && transaction_finish_committed "$run_id"; then return 0; fi
   if [ "$target" = shadow ]; then
-    transaction_require "$run_id" "$target" prepared shadowed
-    artifact_compose "$run_id" config --quiet
-    if [ "$(transaction_phase "$run_id")" = prepared ]; then
-      transaction_set_phase "$run_id" shadowed
-      test_failpoint shadowed-phase-persisted
+    local cleanup_mode="${SHADOW_CLEANUP_MODE:-source}" receipt archive
+    receipt="${DELIVERY_RECEIPT:-$(artifact_receipt "$run_id")}"
+    if [ "$cleanup_mode" = terminal ]; then
+      transaction_require_shadow_cleanup "$run_id" "$receipt"
+      jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$receipt"
+      return 0
     fi
-    jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$(artifact_receipt "$run_id")"
-    # Shadow never mutates live state. Atomically vacate the production run-id
-    # namespace after its exact-base check so the same qualified candidate can
-    # be promoted. A crash leaves either the resumable source transaction or an
-    # irrelevant uniquely named discard directory, never a conflicting half-tree.
-    transaction="$(artifact_transaction "$run_id")"
-    archive="${transaction}.shadowed.${BASHPID}"
-    mv -- "$transaction" "$archive"
+    if [ "$cleanup_mode" = archive ]; then
+      archive="$SHADOW_CLEANUP_ARCHIVE"
+      transaction_require_shadow_cleanup "$run_id" "$receipt" "$archive"
+      persist_shadow_cleanup_receipt "$run_id" "$receipt"
+      jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$receipt"
+    else
+      transaction_require "$run_id" "$target" prepared shadowed
+      if [ "$(transaction_phase "$run_id")" = prepared ]; then
+        artifact_compose "$run_id" config --quiet
+        transaction_set_phase "$run_id" shadowed
+        test_failpoint shadowed-phase-persisted
+      fi
+      receipt="$(artifact_receipt "$run_id")"
+      persist_shadow_cleanup_receipt "$run_id" "$receipt"
+      jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$receipt"
+      transaction="$(artifact_transaction "$run_id")"
+      archive="${transaction}.shadowed.${DELIVERY_RUN_ID}-${DELIVERY_RUN_ATTEMPT}"
+      [ ! -e "$archive" ] && [ ! -L "$archive" ] || die 'shadow cleanup archive already exists'
+      mv -- "$transaction" "$archive"
+      test_failpoint shadow-cleanup-rename
+    fi
     sync -f "$TRANSACTION_ROOT"
-    rm -rf -- "$archive"
+    test_failpoint shadow-cleanup-first-parent-fsync
+    rm -rf --one-file-system -- "$archive"
+    test_failpoint shadow-cleanup-unlink
     sync -f "$TRANSACTION_ROOT"
+    test_failpoint shadow-cleanup-final-parent-fsync
     return 0
   fi
   transaction_require "$run_id" "$target" prepared replaced

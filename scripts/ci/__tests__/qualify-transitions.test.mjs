@@ -4,8 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { qualifyTransitions, parseTransitionArgs, commandRunner } from '../qualify-transitions.mjs';
-import { canonicalize, publicConfigSha256 as digest, candidateIdentitySha256, validateTransitionEvidence } from '../release-manifest.mjs';
+import { qualifyTransitions, parseTransitionArgs, commandRunner, resolveExecutable } from '../qualify-transitions.mjs';
+import { canonicalize, publicConfigSha256 as digest, candidateIdentitySha256, transitionStageContract, validateTransitionEvidence } from '../release-manifest.mjs';
 import { validManifest } from './b2-fixture.mjs';
 const { parse } = createRequire(import.meta.url)('yaml');
 const services = ['postgres', 'livekit', 'app', 'commerce-reconciler', 'tapestry', 'playlist-bot', 'analytics'];
@@ -67,7 +67,9 @@ function fake(f, mutate = () => {}) {
   let uptime = 0;
   const clock = () => ++tick;
   const runner = (file, args, options) => {
-    const call = { file, args, options };
+    const resolvedFile = file;
+    file = file.split('/').at(-1);
+    const call = { file, resolvedFile, args, options };
     calls.push(call);
     const override = mutate(call, calls);
     if (override !== undefined) return override;
@@ -119,7 +121,8 @@ function fake(f, mutate = () => {}) {
     } else assert.fail(`unexpected executable ${file}`);
     return { exitCode: 0, stdout, stderr: '', timedOut: false };
   };
-  return { runner, clock, projectId: project, calls, runtimes };
+  const executableResolver = identity => ({ path: `/usr/bin/${identity}`, sha256: digest(`executable:${identity}`) });
+  return { runner, clock, projectId: project, executableResolver, calls, runtimes };
 }
 function runCase(fn) { const f = fixture(); try { fn(f); } finally { f.close(); } }
 const downCalls = fake => fake.calls.filter(c => c.args.includes('down'));
@@ -136,14 +139,20 @@ test('stateful control measures all three exact transitions and writes validator
   for (const [stage, value] of Object.entries(result.stages)) {
     const e = JSON.parse(value.executionBytes);
     assert.ok(e.commands.length > 70 && e.commands.length <= 128);
-    assert.ok(e.commands.some(c => c.name === 'replace-runtime'));
-    assert.ok(e.commands.some(c => c.name === 'check-compatibility'));
-    if (stage === 'shadow') assert.ok(e.commands.some(c => c.name === 'migrate-candidate'));
+    assert.deepEqual(e.commands.map(c => c.operation), transitionStageContract(stage).operations);
+    assert.ok(e.commands.some(c => c.operation.startsWith('replace-')));
+    assert.ok(e.commands.some(c => c.operation === 'check-browser-endpoints'));
+    if (stage === 'shadow') assert.ok(e.commands.some(c => c.operation === 'migrate-candidate-app'));
     else assert.ok(e.observedRecoveryMs > 0 && e.observedRecoveryMs <= e.maxRecoveryMs);
-    for (const r of [e.runtimeBefore, e.runtimeAfter]) for (const k of ['healthSha256', 'privateBoundarySha256']) { assert.ok(!evidenceHashes.has(r[k])); evidenceHashes.add(r[k]); }
+    for (const command of e.commands) {
+      assert.match(command.executableIdentity, /^\/usr\/bin\/(?:docker|curl|npx)$/u);
+      for (const key of ['executableSha256', 'argvSha256', 'environmentSha256', 'stdinSha256', 'stdoutSha256', 'stderrSha256']) assert.match(command[key], /^sha256:[a-f0-9]{64}$/u);
+    }
+    for (const r of [e.runtimeBefore, e.runtimeAfter]) for (const k of ['runtimeCommandTranscriptSha256', 'healthCommandTranscriptSha256']) { assert.ok(!evidenceHashes.has(r[k])); evidenceHashes.add(r[k]); }
+    assert.notEqual(e.runtimeBefore.privateBoundaryCommandTranscriptSha256, e.runtimeAfter.privateBoundaryCommandTranscriptSha256);
     assert.equal(readFileSync(join(f.options.output, `${stage}.execution.json`), 'utf8'), value.executionBytes.toString());
   }
-  for (const c of deps.calls) { assert.ok(c.options.timeout > 0 && c.options.timeout <= 240000); assert.equal(c.options.maxBuffer, 16 * 1024 * 1024); }
+  for (const c of deps.calls) { assert.ok(c.options.timeout > 0 && c.options.timeout <= 240000); assert.equal(c.options.maxBuffer, 16 * 1024 * 1024); assert.equal(c.resolvedFile, `/usr/bin/${c.file}`); }
   assert.equal(deps.calls.filter(c => c.file === 'cosign').length, 28);
   assert.equal(deps.calls.filter(c => c.file === 'npx').length, 4);
   // The issuer stores only hashes of argv and captures, not raw synthetic or credential material.
@@ -320,6 +329,14 @@ test('real argv runner bounds timeout and captures without throwing subprocess o
   assert.equal(result.stdout.toString(), 'synthetic');
   const timeout = commandRunner(process.execPath, ['-e', 'setTimeout(()=>{},10000)'], { timeout: 10, env: {} });
   assert.equal(timeout.timedOut, true);
+});
+
+test('real executable resolver hashes and executes the same normalized absolute path', () => {
+  const executable = resolveExecutable('curl', process.env);
+  assert.equal(executable.path.startsWith('/'), true);
+  assert.equal(executable.sha256, digest(readFileSync(executable.path)));
+  const result = commandRunner(executable.path, ['--version'], { timeout: 1000, env: process.env });
+  assert.equal(result.exitCode, 0);
 });
 
 // Real fixture signatures exercise byte authentication; they are not Fulcio/OIDC proof.

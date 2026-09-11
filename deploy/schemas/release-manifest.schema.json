@@ -211,6 +211,7 @@
         "context",
         "dockerfile",
         "roles",
+        "evidenceRecordDigest",
         "sbom",
         "provenance",
         "signature"
@@ -247,6 +248,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "evidenceRecordDigest": {
+          "$ref": "#/$defs/digest"
         },
         "sbom": {
           "$ref": "#/$defs/sbom"

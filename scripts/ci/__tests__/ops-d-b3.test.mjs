@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, readdirSync, linkSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { stateFixture, hash } from './b3-fixture.mjs';
-import { candidateIdentitySha256, nextPublication } from '../release-manifest.mjs';
+import { candidateIdentitySha256, canonicalize, nextPublication, publicConfigSha256 } from '../release-manifest.mjs';
 
 const helper = readFileSync('deploy/hb-deploy-root', 'utf8').split('\nrequire_root\n')[0];
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
@@ -15,6 +15,7 @@ function unpack(state) {
     const script = helper.replace(/^readonly RELEASE_MANIFEST=.*$/m,
       `readonly RELEASE_MANIFEST=${quote(resolve('scripts/ci/release-manifest.mjs'))}`) + `
 require_secure_root_file() { :; }
+require_secure_root_directory() { :; }
 require_secure_root_ancestors() { :; }
 chown() { :; }
 install() { mkdir -p "\${@: -1}"; }
@@ -76,7 +77,7 @@ function rewriteConfig(state, mutate) {
   rewriteManifest(state, m => { m.configProfiles.production.sha256 = `sha256:${hash(bytes)}`; });
 }
 
-export function transactionHarness(body, { phase = 'prepared', stale = false, runtimeFails = false, prepare = false, old = false, active = true, currentCandidate = false, target = 'production', drift } = {}) {
+export function transactionHarness(body, { phase = 'prepared', stale = false, runtimeFails = false, prepare = false, old = false, active = true, currentCandidate = false, target = 'production', drift, authorization = 'none' } = {}) {
   const root = mkdtempSync(join(process.cwd(), '.hb-b3-tx-'));
   try {
     const state = join(root, 'state');
@@ -98,6 +99,22 @@ export function transactionHarness(body, { phase = 'prepared', stale = false, ru
       manifestSha256: candidate.manifestSha256, workflowRunId: '123', workflowRunAttempt: 1,
       sourceSha: 'b'.repeat(40), sourceTree: 'b'.repeat(40), imageRefs: { app: 'ghcr.io/example/app@sha256:' + '0'.repeat(64) },
       targetConfigSha256: `sha256:${hash(Buffer.from(candidate.publicConfigBase64, 'base64'))}` };
+    if (authorization !== 'none') {
+      const expired = authorization === 'expired';
+      const authorizedAt = new Date(Date.now() - (expired ? 700_000 : 1_000));
+      const deliveryAuthorization = {
+        schemaVersion: 'harmonic-beacon.delivery-authorization.v1', sourceSha: receipt.sourceSha,
+        sourceTree: receipt.sourceTree, candidateManifestSha256: receipt.manifestSha256,
+        baseManifestSha256: receipt.baseManifestSha256, candidateRunId: '123', candidateRunAttempt: 1,
+        deliveryRunId: '900', deliveryRunAttempt: 1, workflowPath: '.github/workflows/oci-promote.yml',
+        workflowRef: 'refs/heads/main', laneState: 'legacy-shadow', environment: 'shadow', target: 'shadow',
+        operation: 'promote', configSha256: receipt.targetConfigSha256, transitionAuthorizationSha256: null,
+        verbs: ['prepare', 'preflight', 'status'], authorizedAt: authorizedAt.toISOString(),
+        expiresAt: new Date(authorizedAt.getTime() + 600_000).toISOString(),
+      };
+      receipt.deliveryAuthorization = deliveryAuthorization;
+      receipt.deliveryAuthorizationSha256 = publicConfigSha256(Buffer.from(canonicalize(deliveryAuthorization)));
+    }
     mkdirSync(join(state, 'transactions'), { recursive: true });
     const put = (path, bytes) => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, bytes, { mode: 0o600 }); };
     const writeInputs = (path, fixture, manifestName) => {
@@ -128,6 +145,7 @@ export function transactionHarness(body, { phase = 'prepared', stale = false, ru
     }
     script += `
 require_secure_root_file() { :; }
+require_secure_root_directory() { :; }
 require_secure_root_ancestors() { :; }
 chown() { :; }
 install() {
@@ -153,11 +171,11 @@ test_verifier() { cp ${quote(join(root, 'receipt.json'))} "$temp/verified.json";
 require_oci_transition_evidence() { :; }
 DELIVERY_RUN_ID=900
 DELIVERY_RUN_ATTEMPT=1
-require_delivery_invocation() { :; }
+${authorization === 'none' ? 'require_delivery_invocation() { :; }' : ''}
 node() {
   if [ "$2" = validate-delivery ]; then
     printf '{}' > "$temp/delivery.json"
-  elif [ "$2" = check-delivery ]; then :
+  elif [ "$2" = check-delivery ] && [ ${quote(authorization)} = none ]; then :
   else command node "$@"; fi
 }
 docker() {
@@ -191,6 +209,7 @@ ${body.replaceAll('@ROOT@', root).replaceAll('@HASH@', candidate.manifestSha256)
     const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 10000 });
     return { ...result, events: existsSync(join(root, 'events')) ? readFileSync(join(root, 'events'), 'utf8') : '',
       transactions: readdirSync(join(state, 'transactions')), active: existsSync(join(state, 'active-transaction')),
+      cleanups: existsSync(join(state, 'shadow-cleanups')) ? readdirSync(join(state, 'shadow-cleanups')) : [],
       current: JSON.parse(readFileSync(join(state, 'current-state.json'))),
       phase: existsSync(join(tx, 'receipt.json')) ? JSON.parse(readFileSync(join(tx, 'receipt.json'))).phase : null };
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -247,13 +266,14 @@ ${prepareCommand}`;
   assert.equal(result.active, true);
   assert.equal(result.phase, 'prepared');
 });
-test('B3 shadow status retry resumes from a durable shadowed phase', () => {
+test('B3 shadow status retry resumes from a durable shadowed phase without Compose', () => {
   const result = transactionHarness(`${shadowPrepareCommand}\nartifact_preflight 123 shadow\nartifact_status 123 shadow`, {
     phase: 'shadowed', active: false, target: 'shadow',
   });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.transactions, []);
   assert.equal(result.active, false);
+  assert.doesNotMatch(result.events, /compose/);
 });
 test('B3 shadow crash after durable shadowed phase leaves only cleanup to resume', () => {
   const result = transactionHarness('HB_DEPLOY_TEST_FAILPOINT=shadowed-phase-persisted\nartifact_status 123 shadow', {
@@ -265,6 +285,148 @@ test('B3 shadow crash after durable shadowed phase leaves only cleanup to resume
   assert.equal(result.active, false);
   assert.equal(result.phase, 'shadowed');
 });
+
+test('B3 expired shadowed continuation performs cleanup only without Compose', () => {
+  const result = transactionHarness('require_delivery_invocation 123 shadow status\nartifact_status 123 shadow', {
+    phase: 'shadowed', active: false, target: 'shadow', authorization: 'expired',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.transactions, []);
+  assert.deepEqual(result.cleanups, ['123-900-1.json']);
+  assert.doesNotMatch(result.events, /docker|compose/);
+});
+
+test('B3 exact expired retry cleans the legacy process-id archive left by the rejected implementation', () => {
+  const result = transactionHarness(`
+mv "$TRANSACTION_ROOT/123" "$TRANSACTION_ROOT/123.shadowed.4242"
+require_delivery_invocation 123 shadow status
+artifact_status 123 shadow
+require_delivery_invocation 123 shadow status
+artifact_status 123 shadow
+`, { phase: 'shadowed', active: false, target: 'shadow', authorization: 'expired' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.transactions, []);
+  assert.deepEqual(result.cleanups, ['123-900-1.json']);
+  assert.doesNotMatch(result.events, /docker|compose/);
+});
+
+for (const authorization of ['fresh', 'expired']) {
+  for (const boundary of ['shadow-cleanup-rename', 'shadow-cleanup-first-parent-fsync',
+    'shadow-cleanup-unlink', 'shadow-cleanup-final-parent-fsync']) {
+    test(`B3 ${authorization} exact shadow cleanup retry converges after ${boundary}`, () => {
+      const result = transactionHarness(`
+test_failpoint() { [ "$1" != ${quote(boundary)} ] || exit 77; }
+set +e
+(require_delivery_invocation 123 shadow status; artifact_status 123 shadow)
+code=$?
+set -e
+[ "$code" = 77 ] || exit 92
+test_failpoint() { :; }
+: > '@ROOT@/events'
+require_delivery_invocation 123 shadow status
+artifact_status 123 shadow
+require_delivery_invocation 123 shadow status
+artifact_status 123 shadow
+`, { phase: 'shadowed', active: false, target: 'shadow', authorization });
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(result.transactions, []);
+      assert.deepEqual(result.cleanups, ['123-900-1.json']);
+      assert.equal(result.active, false);
+      assert.doesNotMatch(result.events, /docker|compose/);
+    });
+  }
+}
+
+for (const [name, setup, expected] of [
+  ['zero archive without a tombstone', 'rm -rf "$TRANSACTION_ROOT/123"', /shadow cleanup evidence is missing/],
+  ['multiple archives', 'mv "$TRANSACTION_ROOT/123" "$TRANSACTION_ROOT/123.shadowed.900-1"\ncp -a "$TRANSACTION_ROOT/123.shadowed.900-1" "$TRANSACTION_ROOT/123.shadowed.901-1"', /multiple shadow cleanup archives/],
+  ['malformed archive identity', 'mv "$TRANSACTION_ROOT/123" "$TRANSACTION_ROOT/123.shadowed.bad"', /malformed shadow cleanup archive/],
+  ['non-shadowed archive', 'mv "$TRANSACTION_ROOT/123" "$TRANSACTION_ROOT/123.shadowed.900-1"', /shadowed/],
+]) test(`B3 rejects ${name} before shadow cleanup effects`, () => {
+  const result = transactionHarness(`
+${setup}
+set +e
+(require_delivery_invocation 123 shadow status; artifact_status 123 shadow)
+code=$?
+set -e
+[ "$code" != 0 ]
+`, { phase: name === 'non-shadowed archive' ? 'prepared' : 'shadowed', active: false, target: 'shadow', authorization: 'expired' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, expected);
+  assert.doesNotMatch(result.events, /docker|compose/);
+});
+
+test('B3 rejects a conflicting archive and tombstone before shadow cleanup effects', () => {
+  const result = transactionHarness(`
+mkdir -m 0700 "$ARTIFACT_STATE/shadow-cleanups"
+cp "$TRANSACTION_ROOT/123/receipt.json" "$ARTIFACT_STATE/shadow-cleanups/123-900-1.json"
+jq '.manifestSha256="${'e'.repeat(64)}"' "$ARTIFACT_STATE/shadow-cleanups/123-900-1.json" > '@ROOT@/conflict'
+mv '@ROOT@/conflict' "$ARTIFACT_STATE/shadow-cleanups/123-900-1.json"
+mv "$TRANSACTION_ROOT/123" "$TRANSACTION_ROOT/123.shadowed.900-1"
+set +e
+(require_delivery_invocation 123 shadow status; artifact_status 123 shadow)
+code=$?
+set -e
+[ "$code" != 0 ]
+`, { phase: 'shadowed', active: false, target: 'shadow', authorization: 'expired' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /conflicting shadow cleanup evidence/);
+  assert.doesNotMatch(result.events, /docker|compose/);
+});
+
+test('B3 rejects an obsolete archived shadow cleanup before effects', () => {
+  const result = transactionHarness(`
+mv "$TRANSACTION_ROOT/123" "$TRANSACTION_ROOT/123.shadowed.900-1"
+set +e
+(require_delivery_invocation 123 shadow status; artifact_status 123 shadow)
+code=$?
+set -e
+[ "$code" != 0 ]
+`, { phase: 'shadowed', active: false, target: 'shadow', authorization: 'expired', stale: true });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /high-water/);
+  assert.doesNotMatch(result.events, /docker|compose/);
+});
+
+test('B3 archived cleanup discovery rejects symlink, FIFO, and hard-linked evidence without blocking', () => {
+  for (const kind of ['symlink', 'fifo', 'hardlink']) {
+    const root = mkdtempSync(join(process.cwd(), '.hb-shadow-special-'));
+    try {
+      const transactions = join(root, 'transactions');
+      const archive = join(transactions, '123.shadowed.900-1');
+      mkdirSync(transactions, { recursive: true });
+      if (kind === 'symlink') {
+        const real = join(transactions, 'real');
+        mkdirSync(real);
+        writeFileSync(join(real, 'receipt.json'), '{}', { mode: 0o600 });
+        symlinkSync(real, archive);
+      } else {
+        mkdirSync(archive);
+        const receipt = join(archive, 'receipt.json');
+        if (kind === 'fifo') assert.equal(spawnSync('mkfifo', [receipt]).status, 0);
+        else {
+          writeFileSync(receipt, '{}', { mode: 0o600 });
+          linkSync(receipt, join(root, 'second-link'));
+        }
+      }
+      const script = helper.replace(/^readonly ARTIFACT_STATE=.*$/m, `readonly ARTIFACT_STATE=${quote(root)}`) + `
+require_secure_root_ancestors() { :; }
+stat() {
+  if [ "$1" = -c ] && [ "$2" = '%U:%G:%a' ]; then
+    if [ -d "$3" ]; then printf 'root:root:700\\n'; else printf 'root:root:600\\n'; fi
+  else command stat "$@"; fi
+}
+DELIVERY_RUN_ID=900
+DELIVERY_RUN_ATTEMPT=1
+discover_shadow_cleanup_archive 123
+`;
+      const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 2000 });
+      assert.notEqual(result.status, 0, `${kind} was accepted`);
+      assert.notEqual(result.error?.code, 'ETIMEDOUT', `${kind} blocked discovery`);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
 test('B3 shadow preflight rejects a stale exact-base before Compose', () => {
   const result = transactionHarness('artifact_preflight 123 shadow', {
     phase: 'prepared', active: false, target: 'shadow', stale: true,

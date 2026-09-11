@@ -82,7 +82,12 @@ test('expired authority resumes only exact root-derived markerless prepare and s
  const shadowed={...transaction(),phase:'shadowed'};
  const shadowInvocation=invocation({target:'shadow',verb:'status',activeRunId:null});
  assert.throws(()=>trusted.validateDeliveryInvocation(shadowed,shadowInvocation,now+900000),/stale delivery authorization/);
- trusted.validateDeliveryInvocation(shadowed,{...shadowInvocation,durableResume:'shadowed-cleanup'},now+900000);
+ for (const durableResume of ['shadowed-cleanup','shadowed-archive-cleanup','shadowed-terminal-cleanup']) {
+  trusted.validateDeliveryInvocation(shadowed,{...shadowInvocation,durableResume},now+900000);
+  for (const changed of [
+   {activeRunId:'999'}, {target:'production'}, {verb:'preflight'}, {deliveryRunId:'35'}, {deliveryRunAttempt:3},
+  ]) assert.throws(()=>trusted.validateDeliveryInvocation(shadowed,{...shadowInvocation,durableResume,...changed},now+900000));
+ }
 
  for(const [receipt,invocationValue] of [
   [markerless,{...productionInvocation,durableResume:'production-markerless-prepared',activeRunId:'999'}],
