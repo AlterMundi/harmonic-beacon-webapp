@@ -406,13 +406,13 @@
       "ciWorkflow": {"status": "verified", "path": ".github/workflows/ci.yml"},
       "deployAdapter": {
         "status": "documented",
-        "kind": "compose-systemd",
-        "references": [".github/workflows/analytics-delivery.yml", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V1.md", "docs/analytics/RUNBOOK.md", "ops/analytics/hb-analytics-delivery-root"]
+        "kind": "github-actions-workflow",
+        "references": [".github/workflows/analytics-build.yml", ".github/workflows/analytics-delivery.yml", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V2.md", "docs/analytics/RUNBOOK.md", "ops/analytics/hb-analytics-delivery-root"]
       },
-      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics", "contracts/analytics-delivery"],
-      "workflows": [".github/workflows/ci.yml", ".github/workflows/analytics-delivery.yml"],
+      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics", "contracts/analytics-delivery/v2/receipt.schema.json"],
+      "workflows": [".github/workflows/ci.yml", ".github/workflows/analytics-build.yml", ".github/workflows/analytics-delivery.yml"],
       "branchSources": [],
-      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V1.md", "ops/analytics/restore-verify-analytics.sh"],
+      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V2.md", "ops/analytics/restore-verify-analytics.sh"],
       "deployedRevision": {"status": "unresolved", "value": null},
       "artifactFingerprint": {"status": "unresolved", "kind": "image-id-or-digest", "value": null, "references": []},
       "health": {

@@ -1,5 +1,9 @@
 # Analytics delivery and recovery contract v1
 
+> Historical contract. Superseded for all new operations by
+> [DELIVERY_RECOVERY_CONTRACT_V2.md](./DELIVERY_RECOVERY_CONTRACT_V2.md).
+> A v1 receipt is audit history only and cannot satisfy a current delivery.
+
 **Contract ID:** `hb.analytics.delivery-recovery.v1`
 **Receipt ID:** `hb.analytics.delivery-recovery-receipt.v1`
 **Owner:** Harmonic Beacon analytics (`services/analytics`, `ops/analytics`)

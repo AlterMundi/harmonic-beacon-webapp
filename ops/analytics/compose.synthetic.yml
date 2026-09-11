@@ -2,8 +2,8 @@ name: harmonic-beacon-analytics-synthetic
 
 services:
   postgres-synthetic:
-    profiles: [synthetic-staging]
-    image: postgres:16.14-alpine
+    profiles: [synthetic-restore, synthetic-drill]
+    image: postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     environment:
       POSTGRES_USER: analytics_synthetic_user
       POSTGRES_PASSWORD: ${ANALYTICS_SYNTHETIC_DATABASE_PASSWORD:?required}
@@ -17,10 +17,21 @@ services:
       test: ["CMD-SHELL", "pg_isready -U analytics_synthetic_user -d analytics_synthetic"]
       interval: 2s
       timeout: 2s
-      retries: 15
+      retries: 30
+
+  migrate-synthetic:
+    profiles: [synthetic-restore]
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
+    environment:
+      ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_synthetic_user:${ANALYTICS_SYNTHETIC_DATABASE_PASSWORD:?required}@postgres-synthetic:5432/analytics_synthetic
+    command: ["node", "src/migrate.mjs"]
+    depends_on:
+      postgres-synthetic: { condition: service_healthy }
+    networks: [synthetic-database]
+    restart: "no"
 
   collector-synthetic:
-    profiles: [synthetic-staging]
+    profiles: [synthetic-drill]
     image: ${ANALYTICS_IMAGE_REF:?exact digest required}
     environment:
       ANALYTICS_DATABASE_URL: postgresql://analytics_synthetic_user:${ANALYTICS_SYNTHETIC_DATABASE_PASSWORD:?required}@postgres-synthetic:5432/analytics_synthetic
@@ -43,7 +54,7 @@ services:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3300/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 3s
       timeout: 2s
-      retries: 10
+      retries: 20
 
 volumes:
   analytics-synthetic-db: {}

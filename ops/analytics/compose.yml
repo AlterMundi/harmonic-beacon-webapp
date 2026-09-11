@@ -27,13 +27,7 @@ services:
       options: { max-size: "20m", max-file: "3" }
 
   migrate:
-    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
-    build:
-      context: ../../services/analytics
-      args:
-        ANALYTICS_SOURCE_REVISION: ${ANALYTICS_IMAGE_TAG:?required}
-      labels:
-        org.opencontainers.image.revision: ${ANALYTICS_IMAGE_TAG:?required}
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
     environment:
       ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
     command: ["node", "src/migrate.mjs"]
@@ -43,7 +37,7 @@ services:
     restart: "no"
 
   collector:
-    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
     container_name: hb-analytics-collector
     restart: unless-stopped
     env_file: ${ANALYTICS_ENV_FILE:-/etc/harmonic-beacon/analytics.env}
@@ -76,7 +70,7 @@ services:
       options: { max-size: "20m", max-file: "3" }
 
   worker:
-    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
     container_name: hb-analytics-worker
     restart: unless-stopped
     command: ["node", "src/worker.mjs"]

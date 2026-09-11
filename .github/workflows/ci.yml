@@ -4,6 +4,8 @@ on:
   pull_request:
     branches: [main, release]
     types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [release]
   workflow_call:
     inputs:
       base_sha:
@@ -70,15 +72,15 @@ jobs:
       - name: Classify the complete trusted delta
         id: classify
         env:
-          BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha || github.sha }}
           FORCE_ALL: ${{ inputs.force_all }}
         run: |
           set -euo pipefail
           base="$BASE_SHA"
           head="$HEAD_SHA"
           [[ "$head" =~ ^[0-9a-f]{40}$ ]]
-          if [ "$FORCE_ALL" = true ]; then
+          if [ "$FORCE_ALL" = true ] || [[ "$base" =~ ^0{40}$ ]]; then
             git diff --check "${head}^" "$head"
             node scripts/hb.mjs change-impact --file .github/hosted-release-full.unknown --json > impact-plan.json
           else
@@ -218,7 +220,7 @@ jobs:
           npm test --prefix services/analytics
       - name: Validate operational artifacts
         env:
-          ANALYTICS_IMAGE_TAG: test
+          ANALYTICS_IMAGE_REF: ghcr.io/altermundi/harmonic-beacon-analytics@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           ANALYTICS_POSTGRES_PASSWORD: owner_test_password
           ANALYTICS_COLLECTOR_DATABASE_PASSWORD: collector_test_password_0123456789
           ANALYTICS_DASHBOARD_DATABASE_PASSWORD: dashboard_test_password_0123456789
@@ -227,12 +229,14 @@ jobs:
           bash -n ops/analytics/*.sh ops/analytics/hb-analytics-delivery-root
           node --check ops/analytics/notify-analytics-monitor.mjs
           node --check ops/analytics/synthetic-delivery-drill.mjs
+          node --check ops/analytics/analytics-delivery-state.mjs
+          node --check ops/analytics/durable-json-state.mjs
           node --check services/analytics/src/runtime-provenance.mjs
           node --check services/analytics/src/delivery-receipt.mjs
-          node -e "JSON.parse(require('node:fs').readFileSync('contracts/analytics-delivery/v1/receipt.schema.json'))"
+          node -e "JSON.parse(require('node:fs').readFileSync('contracts/analytics-delivery/v2/receipt.schema.json'))"
           sudo visudo -cf ops/analytics/analytics-runner.sudoers
           docker compose --env-file ops/analytics/analytics.env.example -f ops/analytics/compose.yml config --quiet
-          ANALYTICS_IMAGE_REF="harmonic-beacon/analytics@sha256:$(printf 'a%.0s' {1..64})" \
+          ANALYTICS_IMAGE_REF="ghcr.io/altermundi/harmonic-beacon-analytics@sha256:$(printf 'a%.0s' {1..64})" \
           ANALYTICS_SYNTHETIC_DATABASE_PASSWORD=synthetic \
           ANALYTICS_SYNTHETIC_HANDOFF_SECRET=synthetic \
           ANALYTICS_SYNTHETIC_SERVER_SECRET=synthetic \
@@ -242,7 +246,7 @@ jobs:
           ANALYTICS_SYNTHETIC_IMAGE_ID="sha256:$(printf 'b%.0s' {1..64})" \
           ANALYTICS_SYNTHETIC_IMAGE_DIGEST="sha256:$(printf 'a%.0s' {1..64})" \
           ANALYTICS_SYNTHETIC_CONFIG_SHA256="sha256:$(printf 'c%.0s' {1..64})" \
-            docker compose --profile synthetic-staging -f ops/analytics/compose.synthetic.yml config --quiet
+            docker compose --profile synthetic-restore -f ops/analytics/compose.synthetic.yml config --quiet
 
   commerce-contract:
     name: commerce-contract
@@ -416,7 +420,7 @@ jobs:
           DATA_RESULT: ${{ needs.data-recovery.result }}
           WORKFLOW_RESULT: ${{ needs.workflow-review.result }}
           RELEASE_RESULT: ${{ needs.release-qualification.result }}
-          SOURCE_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
+          SOURCE_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           jq -n \

@@ -5,4 +5,6 @@ After=network-online.target
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/bin/node /opt/beacon/analytics/ops/analytics/notify-analytics-monitor.mjs failure
+StateDirectory=harmonic-beacon/analytics-monitor-notification
+StateDirectoryMode=0700
+ExecStart=/usr/local/libexec/harmonic-beacon/analytics/notify-analytics-monitor.mjs failure
