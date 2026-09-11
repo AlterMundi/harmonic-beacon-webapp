@@ -77,14 +77,17 @@
       "id": "analytics",
       "name": "First-party Analytics",
       "repository": "AlterMundi/harmonic-beacon-webapp",
-      "lanes": ["main"],
-      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics"],
-      "workflows": [".github/workflows/ci.yml"],
-      "health": [],
-      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "ops/analytics/restore-verify-analytics.sh"],
-      "alerts": "Analytics source freshness, data quality, storage, backup and restore monitors",
-      "runner": "Analytics systemd/Compose path on Mona as defined by the analytics runbook",
-      "mutation": "Keep analytics migrations, runtime, dashboard and backups independent from Live deployment."
+      "lanes": ["release"],
+      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics", "contracts/analytics-delivery/v2/receipt.schema.json"],
+      "workflows": [".github/workflows/ci.yml", ".github/workflows/analytics-build.yml", ".github/workflows/analytics-delivery.yml"],
+      "health": [
+        {"name": "collector health", "url": "https://live.harmonicbeacon.com/_a/health", "expectStatus": [200], "provenanceField": "provenance.sourceRevision"},
+        {"name": "collector readiness", "url": "https://live.harmonicbeacon.com/_a/ready", "expectStatus": [200, 503], "provenanceField": "provenance.sourceRevision"}
+      ],
+      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V2.md", "ops/analytics/restore-verify-analytics.sh"],
+      "alerts": "Local analytics monitor failure/recovery posts to the existing Alertmanager route; external recipient delivery remains unproven until a drill",
+      "runner": "Externally provisioned analytics-production environment, analytics-delivery Mona runner label and root-owned hb-analytics-delivery helper",
+      "mutation": "Keep analytics Compose/systemd lifecycle independent from Live; permit only exact-digest bounded helper operations and preserve product fail-open behavior."
     },
     {
       "id": "commerce-authority",

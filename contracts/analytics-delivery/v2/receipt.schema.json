@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/analytics-delivery/v2/receipt.schema.json",
+  "title": "Harmonic Beacon analytics measured delivery and recovery receipt v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "service", "evidenceStatus", "observedAt", "target", "operation", "sourceSha", "artifact", "configSha256", "deployment", "provenance", "evidence", "rollback", "recipientDelivery"],
+  "properties": {
+    "schemaVersion": { "const": "hb.analytics.delivery-recovery-receipt.v2" },
+    "service": { "const": "analytics" },
+    "evidenceStatus": { "const": "current" },
+    "observedAt": { "$ref": "#/$defs/timestamp" },
+    "target": { "const": "analytics-production" },
+    "operation": { "enum": ["deploy", "rollback"] },
+    "sourceSha": { "$ref": "#/$defs/sourceSha" },
+    "artifact": { "$ref": "#/$defs/artifact" },
+    "configSha256": { "$ref": "#/$defs/sha256" },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previous", "current"],
+      "properties": {
+        "previous": { "$ref": "#/$defs/deploymentState" },
+        "current": { "$ref": "#/$defs/deploymentState" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ci", "build", "delivery"],
+      "properties": {
+        "ci": { "$ref": "#/$defs/ciProvenance" },
+        "build": { "$ref": "#/$defs/buildProvenance" },
+        "delivery": { "$ref": "#/$defs/deliveryProvenance" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["health", "readiness", "backup", "isolated-restore", "monitor", "notification-state"],
+      "properties": {
+        "health": { "$ref": "#/$defs/sha256" },
+        "readiness": { "$ref": "#/$defs/sha256" },
+        "backup": { "$ref": "#/$defs/sha256" },
+        "isolated-restore": { "$ref": "#/$defs/sha256" },
+        "monitor": { "$ref": "#/$defs/sha256" },
+        "notification-state": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "performed", "status", "reversedRunId", "reversedRunAttempt"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "performed": { "type": "boolean" },
+        "status": { "enum": ["not-required", "passed"] },
+        "reversedRunId": { "type": ["string", "null"], "pattern": "^[1-9][0-9]{0,19}$" },
+        "reversedRunAttempt": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "recipientDelivery": { "const": "unproven" }
+  },
+  "$defs": {
+    "sourceSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["imageId", "digest", "revision"],
+      "properties": {
+        "imageId": { "$ref": "#/$defs/sha256" },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "revision": { "$ref": "#/$defs/sourceSha" }
+      }
+    },
+    "deploymentState": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceSha", "imageId", "digest", "configSha256"],
+      "properties": {
+        "sourceSha": { "$ref": "#/$defs/sourceSha" },
+        "imageId": { "$ref": "#/$defs/sha256" },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "configSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "ciProvenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workflow", "runId", "runAttempt"],
+      "properties": {
+        "workflow": { "const": "CI" },
+        "runId": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "runAttempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "buildProvenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workflow", "runId", "runAttempt", "subjectDigest"],
+      "properties": {
+        "workflow": { "const": "Analytics OCI Build" },
+        "runId": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "runAttempt": { "type": "integer", "minimum": 1 },
+        "subjectDigest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "deliveryProvenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workflowRef", "runId", "runAttempt"],
+      "properties": {
+        "workflowRef": { "const": "AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-delivery.yml@refs/heads/release" },
+        "runId": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "runAttempt": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

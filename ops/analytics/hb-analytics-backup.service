@@ -9,4 +9,4 @@ Type=oneshot
 User=root
 EnvironmentFile=-/etc/harmonic-beacon/analytics-backup.env
 ExecStartPre=/usr/bin/mountpoint -q /mnt/beacon-data
-ExecStart=/opt/beacon/analytics/ops/analytics/backup-analytics.sh
+ExecStart=/usr/local/libexec/harmonic-beacon/analytics/backup-analytics.sh

@@ -1,0 +1,111 @@
+name: Analytics OCI Build
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [release]
+    types: [completed]
+
+concurrency:
+  group: analytics-build-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Bind exact successful release CI attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CI_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          ref_sha="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/heads/release" --jq '.object.sha')"
+          test "$ref_sha" = "$SOURCE_SHA"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}/attempts/${CI_RUN_ATTEMPT}" > ci-run.json
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const run = JSON.parse(fs.readFileSync('ci-run.json'));
+          const expected = process.env;
+          if (run.name !== 'CI' || run.path !== '.github/workflows/ci.yml') throw new Error('foreign CI workflow');
+          if (run.event !== 'push' || run.head_branch !== 'release') throw new Error('CI is outside the release push lane');
+          if (run.head_sha !== expected.SOURCE_SHA || String(run.id) !== expected.CI_RUN_ID) throw new Error('CI source/run mismatch');
+          if (Number(run.run_attempt) !== Number(expected.CI_RUN_ATTEMPT) || run.conclusion !== 'success') throw new Error('CI attempt is not successful');
+          NODE
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and publish exact analytics image
+        id: image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: services/analytics
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/altermundi/harmonic-beacon-analytics:${{ github.event.workflow_run.head_sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+          build-args: |
+            ANALYTICS_SOURCE_REVISION=${{ github.event.workflow_run.head_sha }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Attest published subject digest
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-name: ghcr.io/altermundi/harmonic-beacon-analytics
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159
+      - name: Seal attempt-specific build evidence
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -Eeuo pipefail
+          mkdir build-evidence
+          jq -n --arg sourceSha "$SOURCE_SHA" --arg digest "$IMAGE_DIGEST" \
+            --arg ciRunId "$CI_RUN_ID" --argjson ciRunAttempt "$CI_RUN_ATTEMPT" \
+            --arg buildRunId "$GITHUB_RUN_ID" --argjson buildRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion:"hb.analytics.build-provenance.v1",sourceSha:$sourceSha,subject:{repository:"ghcr.io/altermundi/harmonic-beacon-analytics",digest:$digest},ci:{workflow:"CI",runId:$ciRunId,runAttempt:$ciRunAttempt},build:{workflow:"Analytics OCI Build",workflowPath:".github/workflows/analytics-build.yml",runId:$buildRunId,runAttempt:$buildRunAttempt}}' \
+            > build-evidence/provenance.json
+          cosign sign-blob --yes --bundle build-evidence/provenance.signature.bundle.json build-evidence/provenance.json
+          cosign verify-blob --bundle build-evidence/provenance.signature.bundle.json \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity=https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-build.yml@refs/heads/main \
+            build-evidence/provenance.json >/dev/null
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: analytics-build-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-evidence/
+          if-no-files-found: error
+          retention-days: 14

@@ -3,6 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [main, release]
+  push:
+    branches: [release]
 
 concurrency:
   group: ci-${{ github.head_ref || github.run_id }}
@@ -12,12 +14,12 @@ jobs:
   lint-and-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Verify generated agent skill distributions
         run: python3 .agents/skills/scripts/render_distributions.py --check
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
           cache: 'npm'
@@ -40,9 +42,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
           cache: 'npm'
@@ -55,7 +57,7 @@ jobs:
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
       - run: npm test --prefix services/tapestry
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: coverage-report
@@ -75,8 +77,8 @@ jobs:
           --health-cmd "pg_isready -U analytics_owner -d analytics"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
           cache: npm
@@ -93,11 +95,30 @@ jobs:
           npm test --prefix services/analytics
       - name: Validate operational artifacts
         env:
-          ANALYTICS_IMAGE_TAG: test
+          ANALYTICS_IMAGE_REF: ghcr.io/altermundi/harmonic-beacon-analytics@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           ANALYTICS_POSTGRES_PASSWORD: owner_test_password
           ANALYTICS_COLLECTOR_DATABASE_PASSWORD: collector_test_password_0123456789
           ANALYTICS_DASHBOARD_DATABASE_PASSWORD: dashboard_test_password_0123456789
           ANALYTICS_ENV_FILE: analytics.env.example
         run: |
-          bash -n ops/analytics/*.sh
+          bash -n ops/analytics/*.sh ops/analytics/hb-analytics-delivery-root
+          node --check ops/analytics/notify-analytics-monitor.mjs
+          node --check ops/analytics/synthetic-delivery-drill.mjs
+          node --check ops/analytics/analytics-delivery-state.mjs
+          node --check ops/analytics/durable-json-state.mjs
+          node --check services/analytics/src/runtime-provenance.mjs
+          node --check services/analytics/src/delivery-receipt.mjs
+          node -e "JSON.parse(require('node:fs').readFileSync('contracts/analytics-delivery/v2/receipt.schema.json'))"
+          sudo visudo -cf ops/analytics/analytics-runner.sudoers
           docker compose --env-file ops/analytics/analytics.env.example -f ops/analytics/compose.yml config --quiet
+          ANALYTICS_IMAGE_REF="ghcr.io/altermundi/harmonic-beacon-analytics@sha256:$(printf 'a%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_DATABASE_PASSWORD=synthetic \
+          ANALYTICS_SYNTHETIC_HANDOFF_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_SERVER_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_NONPRODUCTION_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_NETWORK_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_SOURCE_SHA="$(printf 'a%.0s' {1..40})" \
+          ANALYTICS_SYNTHETIC_IMAGE_ID="sha256:$(printf 'b%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_IMAGE_DIGEST="sha256:$(printf 'a%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_CONFIG_SHA256="sha256:$(printf 'c%.0s' {1..64})" \
+            docker compose --profile synthetic-restore -f ops/analytics/compose.synthetic.yml config --quiet

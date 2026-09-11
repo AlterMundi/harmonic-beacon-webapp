@@ -27,11 +27,7 @@ services:
       options: { max-size: "20m", max-file: "3" }
 
   migrate:
-    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
-    build:
-      context: ../../services/analytics
-      labels:
-        org.opencontainers.image.revision: ${ANALYTICS_IMAGE_TAG:?required}
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
     environment:
       ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:${ANALYTICS_POSTGRES_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
     command: ["node", "src/migrate.mjs"]
@@ -41,7 +37,7 @@ services:
     restart: "no"
 
   collector:
-    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
     container_name: hb-analytics-collector
     restart: unless-stopped
     env_file: ${ANALYTICS_ENV_FILE:-/etc/harmonic-beacon/analytics.env}
@@ -50,6 +46,10 @@ services:
       ANALYTICS_DASHBOARD_DATABASE_URL: postgresql://hb_analytics_dashboard:${ANALYTICS_DASHBOARD_DATABASE_PASSWORD:?required}@hb-analytics-postgres:5432/analytics
       ANALYTICS_PORT: "3300"
       ANALYTICS_GEOIP_DATABASE: /data/geoip.mmdb
+      ANALYTICS_EXPECTED_SOURCE_REVISION: ${ANALYTICS_EXPECTED_SOURCE_REVISION:-unknown}
+      ANALYTICS_ARTIFACT_IMAGE_ID: ${ANALYTICS_ARTIFACT_IMAGE_ID:-unknown}
+      ANALYTICS_ARTIFACT_DIGEST: ${ANALYTICS_ARTIFACT_DIGEST:-unknown}
+      ANALYTICS_CONFIG_SHA256: ${ANALYTICS_CONFIG_SHA256:-unknown}
       NODE_ENV: production
     volumes:
       - ${ANALYTICS_GEOIP_DATABASE_PATH:-/mnt/beacon-data/listener/geoip/dbip-country-lite-2026-07.mmdb}:/data/geoip.mmdb:ro
@@ -70,7 +70,7 @@ services:
       options: { max-size: "20m", max-file: "3" }
 
   worker:
-    image: harmonic-beacon/analytics:${ANALYTICS_IMAGE_TAG:?required}
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
     container_name: hb-analytics-worker
     restart: unless-stopped
     command: ["node", "src/worker.mjs"]

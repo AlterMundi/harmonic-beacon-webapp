@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/contracts/analytics-delivery/v1/receipt.schema.json",
+  "title": "Harmonic Beacon analytics delivery and recovery receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "service", "evidenceStatus", "observedAt", "sourceSha", "artifact", "configSha256", "deployment", "health", "readiness", "backup", "isolatedRestore", "monitor", "alertRecipient", "workflow", "rollback"],
+  "properties": {
+    "schemaVersion": { "const": "hb.analytics.delivery-recovery-receipt.v1" },
+    "service": { "const": "analytics" },
+    "evidenceStatus": { "enum": ["current", "historical"] },
+    "observedAt": { "$ref": "#/$defs/timestamp" },
+    "sourceSha": { "$ref": "#/$defs/sourceSha" },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["imageId", "digest", "revision"],
+      "properties": {
+        "imageId": { "$ref": "#/$defs/sha256" },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "revision": { "$ref": "#/$defs/sourceSha" }
+      }
+    },
+    "configSha256": { "$ref": "#/$defs/sha256" },
+    "deployment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["previous", "current"],
+      "properties": {
+        "previous": { "$ref": "#/$defs/deploymentState" },
+        "current": { "$ref": "#/$defs/deploymentState" }
+      }
+    },
+    "health": { "$ref": "#/$defs/serviceEvidence" },
+    "readiness": { "$ref": "#/$defs/serviceEvidence" },
+    "backup": {
+      "type": "object", "additionalProperties": false,
+      "required": ["checksumSha256", "ageSeconds", "observedAt"],
+      "properties": {
+        "checksumSha256": { "$ref": "#/$defs/sha256" },
+        "ageSeconds": { "type": "integer", "minimum": 0, "maximum": 28800 },
+        "observedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "isolatedRestore": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "profile", "backupChecksumSha256", "proofId", "observedAt"],
+      "properties": {
+        "status": { "enum": ["passed", "unproven"] },
+        "profile": { "const": "analytics-synthetic" },
+        "backupChecksumSha256": { "$ref": "#/$defs/sha256" },
+        "proofId": { "$ref": "#/$defs/proofId" },
+        "observedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "monitor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "proofId", "observedAt"],
+      "properties": {
+        "status": { "enum": ["passed", "unproven"] },
+        "proofId": { "$ref": "#/$defs/proofId" },
+        "observedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "alertRecipient": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "route", "failureProofId", "recoveryProofId", "observedAt"],
+      "properties": {
+        "status": { "enum": ["proven", "unproven"] },
+        "route": { "const": "alertmanager" },
+        "failureProofId": { "$ref": "#/$defs/proofId" },
+        "recoveryProofId": { "$ref": "#/$defs/proofId" },
+        "observedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "workflow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "workflowRef", "runId", "runAttempt", "ciRunId"],
+      "properties": {
+        "repository": { "const": "AlterMundi/harmonic-beacon-webapp" },
+        "workflowRef": { "const": "AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-delivery.yml@refs/heads/release" },
+        "runId": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+        "runAttempt": { "type": "integer", "minimum": 1 },
+        "ciRunId": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" }
+      }
+    },
+    "rollback": {
+      "type": "object", "additionalProperties": false,
+      "required": ["required", "performed", "status", "previousDigest"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "performed": { "type": "boolean" },
+        "status": { "enum": ["not-required", "passed", "failed"] },
+        "previousDigest": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  },
+  "$defs": {
+    "sourceSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "proofId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "deploymentState": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceSha", "digest"],
+      "properties": {
+        "sourceSha": { "$ref": "#/$defs/sourceSha" },
+        "digest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "serviceEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "provenanceVerified", "observedAt"],
+      "properties": {
+        "status": { "type": "string", "enum": ["ok", "ready", "not_ready", "failed"] },
+        "provenanceVerified": { "type": "boolean" },
+        "observedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    }
+  }
+}
