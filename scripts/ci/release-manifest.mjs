@@ -516,15 +516,21 @@ function deliveryReceiptBinding(receipt) {
     target: receipt.target, environment: receipt.target, configSha256: receipt.targetConfigSha256 };
 }
 
-export function validateDeliveryInvocation(receipt, { deliveryRunId, deliveryRunAttempt, target, verb, activeRunId = null }, now = Date.now()) {
+export function validateDeliveryInvocation(receipt, { deliveryRunId, deliveryRunAttempt, target, verb, activeRunId = null, durableResume = 'none' }, now = Date.now()) {
   const rollback = receipt.rollbackDeliveryAuthorization;
   const a = rollback ?? receipt.deliveryAuthorization;
   if (!a) fail('missing persisted delivery authorization');
   const bytes = Buffer.from(canonicalize(a));
   if (publicConfigSha256(bytes) !== (rollback ? receipt.rollbackDeliveryAuthorizationSha256 : receipt.deliveryAuthorizationSha256)) fail('persisted delivery digest mismatch');
   const active = activeRunId === receipt.workflowRunId;
+  const markerlessPrepared = durableResume === 'production-markerless-prepared' && activeRunId === null &&
+    target === 'production' && verb === 'prepare' && receipt.target === 'production' && receipt.phase === 'prepared';
+  const shadowedCleanup = durableResume === 'shadowed-cleanup' && activeRunId === null &&
+    target === 'shadow' && verb === 'status' && receipt.target === 'shadow' && receipt.phase === 'shadowed';
+  if (durableResume !== 'none' && !markerlessPrepared && !shadowedCleanup) fail('invalid durable resume state');
   const resume = (active && target === 'production') || (rollback && receipt.rollbackIntent === true) ||
-    (verb === 'status' && receipt.phase === 'committed') || (verb === 'rollback' && receipt.phase === 'rolled-back');
+    (verb === 'status' && receipt.phase === 'committed') || (verb === 'rollback' && receipt.phase === 'rolled-back') ||
+    markerlessPrepared || shadowedCleanup;
   validateDeliveryAuthorization(bytes, { ...deliveryReceiptBinding(receipt), deliveryRunId, deliveryRunAttempt, target }, { now, allowExpired: Boolean(resume) });
   if (!a.verbs.includes(verb) || (a.operation === 'rollback' && verb !== 'rollback')) fail('delivery verb is not authorized');
   if (verb === 'rollback' && a.operation === 'promote' && !active && receipt.phase !== 'rolled-back') fail('fresh rollback authorization required');
@@ -724,7 +730,9 @@ export function main(argv = process.argv.slice(2)) {
   if (command === 'check-delivery') {
     validateDeliveryInvocation(JSON.parse(readFileSync(options.receipt)), {
       deliveryRunId: options['delivery-run-id'], deliveryRunAttempt: Number(options['delivery-run-attempt']),
-      target: options.target, verb: options.verb, activeRunId: options['active-run-id'] ?? null,
+      target: options.target, verb: options.verb,
+      activeRunId: options['active-run-id'] === 'none' ? null : (options['active-run-id'] ?? null),
+      durableResume: options['durable-resume'] ?? 'none',
     });
     return 0;
   }

@@ -215,6 +215,14 @@ test('B3 reconciled prepare activates the exact prepared transaction', () => {
   assert.equal(result.active, true);
   assert.equal(result.phase, 'prepared');
 });
+test('B3 prepare crash after transaction directory fsync leaves an exact markerless prepared transaction', () => {
+  const result = transactionHarness(`HB_DEPLOY_TEST_FAILPOINT=transaction-directory-fsync\n${prepareCommand}`, { prepare: true });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /injected test failure after transaction-directory-fsync/);
+  assert.deepEqual(result.transactions, ['123']);
+  assert.equal(result.active, false);
+  assert.equal(result.phase, 'prepared');
+});
 test('B3 shadow prepare, preflight, and status complete without deadlocking the lane', () => {
   const result = transactionHarness(`${shadowPrepareCommand}\nartifact_preflight 123 shadow\nartifact_status 123 shadow`, {
     prepare: true, target: 'shadow',
@@ -246,6 +254,16 @@ test('B3 shadow status retry resumes from a durable shadowed phase', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.transactions, []);
   assert.equal(result.active, false);
+});
+test('B3 shadow crash after durable shadowed phase leaves only cleanup to resume', () => {
+  const result = transactionHarness('HB_DEPLOY_TEST_FAILPOINT=shadowed-phase-persisted\nartifact_status 123 shadow', {
+    phase: 'prepared', active: false, target: 'shadow',
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /injected test failure after shadowed-phase-persisted/);
+  assert.deepEqual(result.transactions, ['123']);
+  assert.equal(result.active, false);
+  assert.equal(result.phase, 'shadowed');
 });
 test('B3 shadow preflight rejects a stale exact-base before Compose', () => {
   const result = transactionHarness('artifact_preflight 123 shadow', {
@@ -296,6 +314,13 @@ test('B3 prepare retry cannot reactivate before reconciling runtime', () => {
   const result = transactionHarness(`rm "$ACTIVE_TRANSACTION"\n${prepareCommand}`, { runtimeFails: true });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /runtime reconciliation failed/);
+  assert.equal(result.active, false);
+  assert.doesNotMatch(result.events, /compose/);
+});
+test('B3 markerless prepare retry rejects an obsolete base before restoring the active marker', () => {
+  const result = transactionHarness(`rm "$ACTIVE_TRANSACTION"\n${prepareCommand}`, { stale: true });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /high-water/);
   assert.equal(result.active, false);
   assert.doesNotMatch(result.events, /compose/);
 });

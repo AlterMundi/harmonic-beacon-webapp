@@ -72,6 +72,30 @@ test('fresh rollback permits only its exact durable intent; expired intent resum
  assert.throws(()=>trusted.validateDeliveryInvocation(r,{...i,deliveryRunId:'34'},now));
  r.rollbackIntent=false;assert.throws(()=>trusted.validateDeliveryInvocation(r,i,now));
 });
+test('expired authority resumes only exact root-derived markerless prepare and shadowed cleanup states',()=>{
+ const production={...fixture(),target:'production',environment:'production',laneState:'oci-production',verbs:['prepare','preflight','migrate','replace','status','rollback'],transitionAuthorizationSha256:digest};
+ const markerless={...transaction(production),phase:'prepared'};
+ const productionInvocation=invocation({target:'production',verb:'prepare',activeRunId:null});
+ assert.throws(()=>trusted.validateDeliveryInvocation(markerless,productionInvocation,now+900000),/stale delivery authorization/);
+ trusted.validateDeliveryInvocation(markerless,{...productionInvocation,durableResume:'production-markerless-prepared'},now+900000);
+
+ const shadowed={...transaction(),phase:'shadowed'};
+ const shadowInvocation=invocation({target:'shadow',verb:'status',activeRunId:null});
+ assert.throws(()=>trusted.validateDeliveryInvocation(shadowed,shadowInvocation,now+900000),/stale delivery authorization/);
+ trusted.validateDeliveryInvocation(shadowed,{...shadowInvocation,durableResume:'shadowed-cleanup'},now+900000);
+
+ for(const [receipt,invocationValue] of [
+  [markerless,{...productionInvocation,durableResume:'production-markerless-prepared',activeRunId:'999'}],
+  [{...markerless,phase:'migrated'},{...productionInvocation,durableResume:'production-markerless-prepared'}],
+  [markerless,{...productionInvocation,durableResume:'production-markerless-prepared',deliveryRunAttempt:3}],
+  [{...markerless,manifestSha256:'e'.repeat(64)},{...productionInvocation,durableResume:'production-markerless-prepared'}],
+  [markerless,{...productionInvocation,durableResume:'shadowed-cleanup'}],
+  [shadowed,{...shadowInvocation,durableResume:'shadowed-cleanup',activeRunId:'999'}],
+  [{...shadowed,phase:'prepared'},{...shadowInvocation,durableResume:'shadowed-cleanup'}],
+  [shadowed,{...shadowInvocation,durableResume:'shadowed-cleanup',target:'production'}],
+  [shadowed,{...shadowInvocation,durableResume:'unknown'}],
+ ]) assert.throws(()=>trusted.validateDeliveryInvocation(receipt,invocationValue,now+900000));
+});
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
