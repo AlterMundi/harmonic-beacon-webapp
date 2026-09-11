@@ -156,6 +156,12 @@ test('repair: every external action is immutable with explicit minimal workflow 
   }
 });
 
+test('repair: impact installs locked dependencies before shared operations tooling', () => {
+  const workflow = read('.github/workflows/ci.yml');
+  const impact = section(workflow, '  impact:\n', '\n  lint-and-build:\n');
+  assert.ok(impact.indexOf('- run: npm ci') < impact.indexOf('run: npm run test:ops-tooling'));
+});
+
 test('repair: prepare cleanup is EXIT-safe across registry login and pull failure', () => {
   const helper = read('deploy/hb-deploy-root');
   const prepare = section(helper, 'artifact_prepare() {', '\nartifact_preflight() {');

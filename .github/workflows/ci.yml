@@ -100,6 +100,7 @@ jobs:
           done
       - name: Verify generated agent skill distributions
         run: python3 .agents/skills/scripts/render_distributions.py --check
+      - run: npm ci
       - name: Verify shared operations tooling
         run: npm run test:ops-tooling
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
