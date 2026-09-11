@@ -250,6 +250,15 @@ describe('Main browser CI execution policy', () => {
         expect(config).toContain('process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL');
         expect(config).toContain('NODE_EXTRA_CA_CERTS: process.env.E2E_LIVEKIT_CA_CERT');
         expect(config).not.toContain("NODE_ENV: 'test'");
+
+        const activation = readFileSync('e2e/tests/audio-activation.spec.ts', 'utf8');
+        expect(activation).toContain(
+            "process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880'",
+        );
+        const qualification = readFileSync('e2e/tests/oci-qualification.spec.ts', 'utf8');
+        expect(qualification).toContain(
+            "test.skip(!hasQualificationContext, 'runs only inside the isolated OCI qualification harness')",
+        );
     });
 
     it('builds the main browser candidate once and reuses it only for later engines on a pinned runner', () => {

@@ -3,8 +3,10 @@ import { expect, test } from '@playwright/test';
 const expectedSource = process.env.HB_QUALIFICATION_SOURCE_SHA;
 const expectedArtifact = process.env.HB_QUALIFICATION_APP_REF;
 const expectedConfig = process.env.HB_QUALIFICATION_CONFIG_SHA256;
+const hasQualificationContext = Boolean(expectedSource && expectedArtifact && expectedConfig);
 
 test('exact digest serves an authenticated synthetic operator session in Chromium', async ({ page, request }) => {
+    test.skip(!hasQualificationContext, 'runs only inside the isolated OCI qualification harness');
     expect(expectedSource).toMatch(/^[0-9a-f]{40}$/);
     expect(expectedArtifact).toMatch(/@sha256:[0-9a-f]{64}$/);
     expect(expectedConfig).toMatch(/^sha256:[0-9a-f]{64}$/);
