@@ -580,7 +580,17 @@ function operationExecutable(operation) {
   if (operation.startsWith('measure-runtime-endpoint-')) return 'curl';
   return 'docker';
 }
-export const transitionCommandTranscriptSha256 = commands => publicConfigSha256(Buffer.from(canonicalize(commands.map(({ startedAt: _startedAt, completedAt: _completedAt, ...evidence }) => evidence))));
+export const transitionCommandTranscriptSha256 = commands => publicConfigSha256(Buffer.from(canonicalize(commands.map(command => ({
+  operation: command.operation,
+  executableIdentity: command.executableIdentity,
+  executableSha256: command.executableSha256,
+  argvSha256: command.argvSha256,
+  environmentSha256: command.environmentSha256,
+  stdinSha256: command.stdinSha256,
+  exitCode: command.exitCode,
+  stdoutSha256: command.stdoutSha256,
+  stderrSha256: command.stderrSha256,
+})))));
 export const transitionOutputTranscriptSha256 = commands => publicConfigSha256(Buffer.from(canonicalize(commands.map(({ operation, exitCode, stdoutSha256, stderrSha256 }) => ({ operation, exitCode, stdoutSha256, stderrSha256 })))));
 
 function bounded(value, label, maximum, minimum = 0) {
