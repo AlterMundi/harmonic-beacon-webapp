@@ -62,6 +62,9 @@ export default defineConfig({
         : [['list'], ['html', { open: 'never' }]],
     use: {
         baseURL: BASE_URL,
+        // The job-local production-mode fixture terminates WSS with an
+        // ephemeral self-signed certificate. No external origin is exempted.
+        ignoreHTTPSErrors: true,
         locale: 'es-CR',
         timezoneId: 'America/Costa_Rica',
         trace: 'retain-on-failure',
@@ -182,8 +185,13 @@ export default defineConfig({
                   // its E2E dashboard gate is disabled.
                   E2E_CLOCK_NOW: '2026-08-21T12:00:00.000Z',
                   SESSION_COOKIE_TTL_SECONDS: '604800',
-                  LIVEKIT_PUBLIC_URL: process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
-                  LIVEKIT_PUBLIC_URL_ALLOWLIST: process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+                  LIVEKIT_PUBLIC_URL:
+                      process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+                  LIVEKIT_PUBLIC_URL_ALLOWLIST:
+                      process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+                  ...(process.env.E2E_LIVEKIT_CA_CERT
+                      ? { NODE_EXTRA_CA_CERTS: process.env.E2E_LIVEKIT_CA_CERT }
+                      : {}),
                   LIVEKIT_API_KEY: process.env.E2E_LIVEKIT_API_KEY ?? 'devkey',
                   LIVEKIT_API_SECRET: process.env.E2E_LIVEKIT_API_SECRET ?? 'secret',
                   LIVEKIT_ROOM_NAME: 'beacon',

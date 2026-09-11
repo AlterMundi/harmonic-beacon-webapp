@@ -56,6 +56,9 @@ jobs:
     env:
       E2E_DATABASE_URL: postgresql://postgres:e2e@localhost:55432/beacon_test
       E2E_LIVEKIT_URL: ws://localhost:7880
+      # The production-mode application must expose secure signaling even
+      # against the job-local fixture. The load CLI keeps using plain loopback.
+      E2E_LIVEKIT_PUBLIC_URL: wss://127.0.0.1:7881
       E2E_LIVEKIT_API_KEY: devkey
       E2E_LIVEKIT_API_SECRET: secret
       NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1'
@@ -117,6 +120,33 @@ jobs:
             sleep 1
           done
           echo "LiveKit did not become ready" >&2
+          exit 1
+
+      - name: Start private TLS signaling proxy
+        run: |
+          set -euo pipefail
+          umask 077
+          cert="$BEACON_CI_ROOT/livekit.crt"
+          key="$BEACON_CI_ROOT/livekit.key"
+          log="$BEACON_CI_ROOT/logs/livekit-tls-proxy.log"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -keyout "$key" -out "$cert" -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          node e2e/fixtures/livekit-tls-proxy.mjs \
+            --cert "$cert" --key "$key" \
+            --listen-port 7881 --upstream-port 7880 >"$log" 2>&1 &
+          proxy_pid=$!
+          printf 'E2E_LIVEKIT_CA_CERT=%s\nLIVEKIT_TLS_PROXY_PID=%s\n' \
+            "$cert" "$proxy_pid" >> "$GITHUB_ENV"
+          for i in $(seq 1 50); do
+            kill -0 "$proxy_pid"
+            if curl --silent --show-error --fail --cacert "$cert" \
+              https://127.0.0.1:7881 >/dev/null; then
+              exit 0
+            fi
+            sleep 0.1
+          done
+          echo "Private LiveKit TLS proxy did not become ready" >&2
           exit 1
 
       - name: Build verified LiveKit load tester
@@ -283,6 +313,21 @@ jobs:
           path: |
             playwright-report/
             test-results/helpers/
+            ${{ env.BEACON_CI_ROOT }}/logs/livekit-tls-proxy.log
+
+      - name: Stop LiveKit fixtures
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ "${LIVEKIT_TLS_PROXY_PID:-}" =~ ^[0-9]+$ ]] && \
+             kill -0 "$LIVEKIT_TLS_PROXY_PID" 2>/dev/null; then
+            cmdline=$(tr '\0' ' ' < "/proc/$LIVEKIT_TLS_PROXY_PID/cmdline")
+            case "$cmdline" in
+              *e2e/fixtures/livekit-tls-proxy.mjs*) kill -TERM "$LIVEKIT_TLS_PROXY_PID" ;;
+              *) echo "Refusing to signal unexpected PID $LIVEKIT_TLS_PROXY_PID" >&2; exit 1 ;;
+            esac
+          fi
+          docker rm --force e2e-livekit >/dev/null 2>&1 || true
 
   account:
     # Separate runner: no attachment to the legacy Account-disabled database/app.

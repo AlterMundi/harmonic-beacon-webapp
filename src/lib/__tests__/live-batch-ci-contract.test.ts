@@ -229,6 +229,29 @@ describe('Isolated Account CI gate', () => {
 });
 
 describe('Main browser CI execution policy', () => {
+    it('keeps the production-mode LiveKit public endpoint on a private WSS proxy', () => {
+        const job = workflow().jobs.e2e;
+        expect(job.env?.E2E_LIVEKIT_URL).toBe('ws://localhost:7880');
+        expect(job.env?.E2E_LIVEKIT_PUBLIC_URL).toBe('wss://127.0.0.1:7881');
+        const proxy = job.steps.find((step) => step.name === 'Start private TLS signaling proxy');
+        expect(proxy?.run).toContain('umask 077');
+        expect(proxy?.run).toContain('e2e/fixtures/livekit-tls-proxy.mjs');
+        expect(proxy?.run).toContain('--listen-port 7881 --upstream-port 7880');
+        expect(proxy?.run).toContain('E2E_LIVEKIT_CA_CERT=');
+        expect(proxy?.run).toContain('LIVEKIT_TLS_PROXY_PID=');
+        expect(proxy?.run).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|--insecure|-k\b/);
+
+        const cleanup = job.steps.find((step) => step.name === 'Stop LiveKit fixtures');
+        expect(cleanup?.if).toBe('always()');
+        expect(cleanup?.run).toContain('/proc/$LIVEKIT_TLS_PROXY_PID/cmdline');
+        expect(cleanup?.run).toContain('docker rm --force e2e-livekit');
+
+        const config = readFileSync('playwright.config.ts', 'utf8');
+        expect(config).toContain('process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL');
+        expect(config).toContain('NODE_EXTRA_CA_CERTS: process.env.E2E_LIVEKIT_CA_CERT');
+        expect(config).not.toContain("NODE_ENV: 'test'");
+    });
+
     it('builds the main browser candidate once and reuses it only for later engines on a pinned runner', () => {
         const parsed = workflow();
         const job = parsed.jobs.e2e;
