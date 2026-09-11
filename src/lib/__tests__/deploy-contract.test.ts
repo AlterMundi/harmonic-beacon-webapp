@@ -73,7 +73,7 @@ describe('production deploy contract', () => {
   });
 
   it('restores the manifest-bound OCI service set', () => {
-    expect(rootHelper).toContain('artifact_compose_from "$run_id" prior up -d --no-deps --force-recreate --no-build --pull never');
+    expect(rootHelper).toContain('artifact_compose_service_from "$run_id" prior "$service" up -d --no-deps --force-recreate --no-build --pull never');
     expect(rootHelper).toContain('verify_release_runtime_state "$run_id" prior');
   });
 
@@ -81,8 +81,21 @@ describe('production deploy contract', () => {
     expect(rootHelper).toContain('[ "${EUID}" -eq 0 ]');
     expect(rootHelper).toContain('admit_file');
     expect(rootHelper).toContain('--file "$root/oci-images.compose.yml"');
-    expect(rootHelper).not.toMatch(/\bgit\b|\$workspace|\beval\b|\bbash -c\b|\bsh -c\b/);
-    expect(statSync(join(process.cwd(), 'deploy/hb-deploy-root')).mode & 0o111).not.toBe(0);
+    expect(rootHelper).toContain(
+      "readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'",
+    );
+    expect(rootHelper).toContain("readonly RUNNER_USER='beacon-runner'");
+    expect(rootHelper).toContain('runuser --user "$RUNNER_USER" -- env -i');
+    expect(rootHelper).toContain("[[ \"$1\" =~ ^[0-9a-f]{40}$ ]]");
+    expect(rootHelper).toContain("die 'workspace has tracked changes'");
+    expect(rootHelper).toContain("die 'workspace index has tracked changes'");
+    expect(rootHelper).toContain(
+      'args=(docker compose --file "$1" --file "$2" --project-name app --env-file "$3")',
+    );
+    expect(rootHelper).not.toMatch(/\beval\b/);
+    expect(
+      statSync(join(process.cwd(), 'deploy/hb-deploy-root')).mode & 0o111,
+    ).not.toBe(0);
   });
 
   it('grants the runner no generic sudo or direct Docker command', () => {

@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { classifyChanges, deriveRequiredJobChecks } from './change-impact.mjs';
+
 const SERVICES = new Set(['analytics', 'app', 'commerce-reconciler', 'playlist-bot', 'tapestry']);
 const ARTIFACT_FOR_SERVICE = {
   analytics: 'analytics', app: 'app', 'commerce-reconciler': 'app', 'playlist-bot': 'playlist-bot', tapestry: 'tapestry',
@@ -12,7 +14,7 @@ const ARTIFACT_FOR_SERVICE = {
 const IMAGE_REF = /^[a-z0-9./-]+@sha256:[0-9a-f]{64}$/u;
 const GIT_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
-const JOB_CHECK_ORDER = ['impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics'];
+
 
 function fail(message) {
   throw new Error(`impact recovery: ${message}`);
@@ -28,6 +30,15 @@ function exactArray(value, label) {
 export function validateImpactPlan(plan) {
   if (!plan || plan.schemaVersion !== 'harmonic-beacon.change-impact.v2') fail('unsupported impact plan');
   if (!['documentation', 'ui', 'functional', 'critical'].includes(plan.risk)) fail('invalid risk');
+  const files = exactArray(plan.files, 'files');
+  const labels = exactArray(plan.labels, 'labels');
+  const derived = classifyChanges(files, { labels });
+  for (const field of ['risk', 'domains', 'matrices', 'requiredChecks', 'requiredJobChecks']) {
+    if (JSON.stringify(plan[field]) !== JSON.stringify(derived[field])) {
+      const subject = field === 'requiredJobChecks' ? 'required job checks' : field;
+      fail(`${subject} do not match the derived impact selection from changed files`);
+    }
+  }
   const deployment = plan.deployment;
   if (!deployment || typeof deployment.deploy !== 'boolean') fail('deployment plan is missing');
   const services = exactArray(deployment.servicesToReplace, 'servicesToReplace');
@@ -45,18 +56,17 @@ export function validateImpactPlan(plan) {
   if (deployment.migration === 'never' && deployment.recovery === 'backup-restore-if-pending') fail('migration and recovery policies conflict');
   if (deployment.migration === 'verify-pending' && deployment.recovery !== 'backup-restore-if-pending') fail('pending migrations require backup/restore policy');
   const requiredJobs = exactArray(plan.requiredJobChecks, 'requiredJobChecks');
-  const functional = exactArray(plan.matrices?.functional, 'functional matrices');
-  const ui = exactArray(plan.matrices?.ui, 'ui matrices');
-  const expectedJobs = new Set(['impact']);
-  if (services.includes('app') || services.includes('commerce-reconciler') || ui.length > 0 ||
-      functional.includes('app-integration') || functional.includes('chromium-android-journey')) {
-    expectedJobs.add('lint-and-build');
-    expectedJobs.add('test');
+  for (const [name, value] of Object.entries(plan.matrices ?? {})) exactArray(value, `${name} matrices`);
+  if (!Array.isArray(plan.requiredChecks) || plan.requiredChecks.some((entry) =>
+    !entry || typeof entry.check !== 'string' || typeof entry.command !== 'string')) {
+    fail('required checks are malformed');
   }
-  if (services.includes('tapestry') || functional.includes('tapestry-integration')) expectedJobs.add('tapestry');
-  if (services.includes('playlist-bot') || functional.includes('playlist-media-integration')) expectedJobs.add('playlist');
-  if (functional.includes('analytics-contract')) expectedJobs.add('analytics');
-  const expected = JOB_CHECK_ORDER.filter((job) => expectedJobs.has(job));
+  let expected;
+  try {
+    expected = deriveRequiredJobChecks(plan.requiredChecks, plan.matrices);
+  } catch (error) {
+    fail(`required job mapping is incomplete: ${error.message}`);
+  }
   if (JSON.stringify(requiredJobs) !== JSON.stringify(expected)) fail('required job checks do not match selected services and matrices');
   return plan;
 }

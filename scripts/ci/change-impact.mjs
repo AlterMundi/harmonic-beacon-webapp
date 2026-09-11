@@ -27,7 +27,11 @@ const CONTEXT_ORDER = [
   'account',
   'frozen-audio-paths',
 ];
-const JOB_CHECK_ORDER = ['impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics'];
+const JOB_CHECK_ORDER = [
+  'impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics', 'commerce-contract',
+  'e2e', 'frozen-audio-paths', 'auth-contract', 'grant-recovery', 'data-recovery',
+  'workflow-review', 'release-qualification',
+];
 
 export const COVERAGE_MATRICES = Object.freeze({
   ui: ['component', 'chromium-android-responsive', 'affected-visual'],
@@ -51,6 +55,53 @@ export const COVERAGE_MATRICES = Object.freeze({
     'stale-candidate-cas',
     'app-worker-schema-compatibility',
   ],
+});
+
+export const HOSTED_JOB_FOR_CHECK = Object.freeze({
+  'diff-check': 'impact',
+  'agent-skill-distributions': 'impact',
+  'ops-tooling': 'impact',
+  'lint-and-build': 'lint-and-build',
+  test: 'test',
+  analytics: 'analytics',
+  tapestry: 'tapestry',
+  'commerce-contract': 'commerce-contract',
+  e2e: 'e2e',
+  'frozen-audio-paths': 'frozen-audio-paths',
+  'auth-contract': 'auth-contract',
+  'grant-recovery': 'grant-recovery',
+  'data-recovery': 'data-recovery',
+  'workflow-review': 'workflow-review',
+  'release-qualification': 'release-qualification',
+});
+
+export const HOSTED_JOB_FOR_MATRIX = Object.freeze({
+  component: 'test',
+  'chromium-android-responsive': 'e2e',
+  'affected-visual': 'e2e',
+  'app-integration': 'test',
+  'chromium-android-journey': 'e2e',
+  'tapestry-integration': 'tapestry',
+  'playlist-media-integration': 'playlist',
+  'analytics-contract': 'analytics',
+  'audio:frozen-paths': 'frozen-audio-paths',
+  'audio:media-continuity': 'e2e',
+  'audio:browser-engines': 'e2e',
+  'auth:oidc-cookie-logout': 'auth-contract',
+  'auth:account-chromium-android': 'e2e',
+  'grants:effects-integration': 'grant-recovery',
+  'grants:rollback-compatibility': 'grant-recovery',
+  'payments:commerce-sandbox': 'commerce-contract',
+  'payments:entitlement-replay': 'commerce-contract',
+  'data:migration-state': 'data-recovery',
+  'data:backup-isolated-restore': 'release-qualification',
+  'data:app-worker-schema-compatibility': 'data-recovery',
+  'infrastructure:workflow-helper-boundary': 'workflow-review',
+  'infrastructure:interrupted-stale-recovery': 'release-qualification',
+  'required-check-completeness': 'impact',
+  'interrupted-run-resume': 'release-qualification',
+  'stale-candidate-cas': 'release-qualification',
+  'app-worker-schema-compatibility': 'data-recovery',
 });
 
 const CHECKS = Object.freeze({
@@ -216,16 +267,18 @@ function requiredContextsFor(risk, domains, requiredChecks, requiredJobChecks) {
   return CONTEXT_ORDER.filter((name) => contexts.has(name));
 }
 
-function requiredJobChecksFor(services, matrices) {
+export function deriveRequiredJobChecks(requiredChecks, matrices) {
   const names = new Set(['impact']);
-  const functional = new Set(matrices.functional);
-  if (services.includes('app') || services.includes('commerce-reconciler') || matrices.ui.length > 0 ||
-      functional.has('app-integration') || functional.has('chromium-android-journey')) {
-    addAll(names, ['lint-and-build', 'test']);
+  for (const entry of requiredChecks ?? []) {
+    const job = HOSTED_JOB_FOR_CHECK[entry?.check];
+    if (!job) throw new Error(`required check has no hosted job: ${entry?.check ?? '<missing>'}`);
+    names.add(job);
   }
-  if (services.includes('tapestry') || functional.has('tapestry-integration')) names.add('tapestry');
-  if (services.includes('playlist-bot') || functional.has('playlist-media-integration')) names.add('playlist');
-  if (services.includes('analytics') || functional.has('analytics-contract')) names.add('analytics');
+  for (const matrix of Object.values(matrices ?? {}).flat()) {
+    const job = HOSTED_JOB_FOR_MATRIX[matrix];
+    if (!job) throw new Error(`coverage matrix has no hosted job: ${matrix}`);
+    names.add(job);
+  }
   return JOB_CHECK_ORDER.filter((name) => names.has(name));
 }
 
@@ -278,7 +331,7 @@ export function classifyChanges(inputFiles, options = {}) {
   const inspectMigrations = dataPathDetected || unknown.length > 0;
   const matrices = selectedMatrices(risk, sortedDomains);
   const requiredChecks = checksFor(risk, sortedDomains, pathChecks, sortedServices);
-  const requiredJobChecks = requiredJobChecksFor(classifiedServices, matrices);
+  const requiredJobChecks = deriveRequiredJobChecks(requiredChecks, matrices);
   const humanReviewRequired = (options.labels ?? []).includes('requires-human-review');
   const report = {
     schemaVersion: 'harmonic-beacon.change-impact.v2',
@@ -362,6 +415,11 @@ export function verifyRequiredCheckResults(requiredChecks, results) {
     }
     byName.set(entry.check, entry.conclusion);
   }
+  const expectedNames = [...requiredChecks];
+  const actualNames = [...byName.keys()];
+  if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
+    throw new Error('required check results do not match the exact required check set');
+  }
   for (const check of requiredChecks) {
     if (byName.get(check) !== 'success') {
       throw new Error(`required check ${check} is missing or did not succeed`);
@@ -392,7 +450,10 @@ function parseArgs(argv) {
     if (arg === '--base') options.base = argv[++index] ?? '';
     else if (arg === '--head') options.head = argv[++index] ?? '';
     else if (arg === '--repo') options.repo = resolve(argv[++index] ?? '');
-    else if (arg === '--deployed-state') options.deployedState = resolve(argv[++index] ?? '');
+    else if (arg === '--deployed-state') {
+      const value = argv[++index] ?? '';
+      options.deployedState = value === '-' ? '-' : resolve(value);
+    }
     else if (arg === '--label') options.labels.push(argv[++index] ?? '');
     else if (arg === '--file') options.files.push(argv[++index] ?? '');
     else if (arg === '--files-from') options.files.push(...readFileSync(argv[++index] ?? '', 'utf8').split(/\r?\n/u));
@@ -422,7 +483,7 @@ export function committedDiff(repo, base, head) {
 function changedFiles(options) {
   if (options.files.length) return classifyChanges(options.files, { labels: options.labels });
   if (options.deployedState) {
-    const state = JSON.parse(readFileSync(options.deployedState, 'utf8'));
+    const state = JSON.parse(readFileSync(options.deployedState === '-' ? 0 : options.deployedState, 'utf8'));
     const diffByService = Object.fromEntries(SERVICES.map((service) => [
       service, committedDiff(options.repo, state.serviceReleases?.[service]?.sourceSha ?? '', options.head),
     ]));

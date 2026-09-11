@@ -104,13 +104,33 @@ function scanStatements(input: string): ScanResult {
   return { statements, violation: null };
 }
 
+function hasTopLevelComma(input: string): boolean {
+  let quote: "'" | '"' | null = null;
+  let parentheses = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+    const next = input[index + 1];
+    if (quote) {
+      if (character === quote && next === quote) index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "'" || character === '"') quote = character;
+    else if (character === '(') parentheses += 1;
+    else if (character === ')') parentheses -= 1;
+    else if (character === ',' && parentheses === 0) return true;
+  }
+  return false;
+}
+
 function statementViolation(statement: ScannedStatement): string | null {
   const sql = statement.sql;
   const tokens = statement.tokens.toUpperCase();
   if (/\bDROP\b/u.test(tokens)) return 'DROP';
   if (/\bTRUNCATE\b/u.test(tokens)) return 'TRUNCATE';
   if (/\bDELETE\b/u.test(tokens)) return 'DELETE';
-  if (/\b(?:DO|EXECUTE|PREPARE|DEALLOCATE|CALL)\b/u.test(tokens)) return 'DYNAMIC SQL';
+  if (/\b(?:EXECUTE|PREPARE|DEALLOCATE|CALL)\b/u.test(tokens)) return 'DYNAMIC SQL';
+  if (/^ALTER\s+TABLE\b/iu.test(sql) && hasTopLevelComma(sql)) return 'ALTER TABLE';
 
   const allowed = [
     new RegExp(String.raw`^CREATE\s+TYPE\s+${IDENTIFIER}\s+AS\s+ENUM\s*\(\s*${STRING}(?:\s*,\s*${STRING})*\s*\)$`, 'iu'),

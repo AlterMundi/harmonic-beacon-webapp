@@ -10,7 +10,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  required-checks:
+    name: required-checks
+    if: github.ref == 'refs/heads/main' && vars.HB_OCI_CANDIDATES_ENABLED == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      base_sha: ${{ github.event_name == 'push' && github.event.before || github.sha }}
+      head_sha: ${{ github.sha }}
+      force_all: ${{ github.event_name == 'workflow_dispatch' || github.event.before == '0000000000000000000000000000000000000000' }}
+
   build:
+    needs: required-checks
     if: github.ref == 'refs/heads/main' && vars.HB_OCI_CANDIDATES_ENABLED == 'true'
     runs-on: ubuntu-24.04
     permissions:

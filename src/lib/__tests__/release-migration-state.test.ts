@@ -113,6 +113,9 @@ describe('release migration state', () => {
     ['DROP SCHEMA "legacy";', 'DROP'],
     ['ALTER TABLE "users" ALTER COLUMN "email" TYPE TEXT;', 'ALTER TABLE'],
     ['ALTER TABLE "users" RENAME COLUMN "email" TO "address";', 'ALTER TABLE'],
+    ['ALTER TABLE "users" ADD COLUMN "safe" TEXT, ALTER COLUMN "email" TYPE INTEGER;', 'ALTER TABLE'],
+    ['ALTER TABLE "users" ADD COLUMN "safe" TEXT, RENAME COLUMN "email" TO "address";', 'ALTER TABLE'],
+    ['ALTER TABLE "users" ADD COLUMN "safe" TEXT, SET UNLOGGED;', 'ALTER TABLE'],
     ['TRUNCATE TABLE "users";', 'TRUNCATE'],
     ['DELETE FROM "users";', 'DELETE'],
     ['-- hide a drop\nCREATE TABLE "safe" ("id" INT);', 'COMMENT'],
@@ -134,6 +137,7 @@ describe('release migration state', () => {
     'ALTER TABLE "audit_log" ADD CONSTRAINT "audit_label_key" UNIQUE ("label");',
     'ALTER TYPE "StaffRole" ADD VALUE \'FACILITATOR\';',
     'INSERT INTO "audit_log" ("id") VALUES (\'00000000-0000-0000-0000-000000000001\');',
+    'INSERT INTO "audit_log" ("id") VALUES (\'00000000-0000-0000-0000-000000000001\') ON CONFLICT ("id") DO NOTHING;',
   ])('accepts a legitimate forward addition: %s', (sql) => {
     expect(validateForwardOnlyMigration(sql)).toEqual({ safe: true, violations: [] });
   });

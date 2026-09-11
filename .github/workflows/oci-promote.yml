@@ -101,6 +101,8 @@ jobs:
           source_tree="$(git rev-parse "${source_sha}^{tree}")"
           run_attempt="$(jq -r .run_attempt <<<"$run")"
           [[ "$run_attempt" =~ ^[1-9][0-9]{0,9}$ ]]
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/attempts/${run_attempt}/jobs?per_page=100")"
+          test "$(jq '[.jobs[] | select(.name=="required-checks / required-impact-checks" and .conclusion=="success")] | length' <<<"$jobs")" = 1
           [[ "$BASE_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
           base_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASE_RUN_ID}")"
           test "$(jq -r .workflow_id <<<"$base_run")" = "$workflow_id"

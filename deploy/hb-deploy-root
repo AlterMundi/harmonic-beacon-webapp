@@ -12,7 +12,9 @@ export PATH
 readonly PRODUCTION_ENV='/etc/harmonic-beacon/production.env'
 readonly COMMERCE_ENV='/etc/harmonic-beacon/commerce.env'
 readonly ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'
-readonly CANDIDATE_PARENT='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp/.hb-artifacts'
+readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'
+readonly CANDIDATE_PARENT="$WORKSPACE/.hb-artifacts"
+readonly RUNNER_USER='beacon-runner'
 readonly PRIVATE_NETWORK='pmp_beacon_internal'
 readonly EXPECTED_NETWORK_MEMBERS=$'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
 readonly ARTIFACT_VERIFY='/usr/local/libexec/harmonic-beacon/hb-artifact-verify'
@@ -98,6 +100,48 @@ validate_schema_version() {
 
 validate_boolean() {
   [ "$1" = true ] || [ "$1" = false ] || die 'invalid boolean'
+}
+
+validate_workspace() {
+  [ "$1" = "$WORKSPACE" ] || die 'unexpected Actions workspace'
+  [ "$(realpath -e -- "$1")" = "$WORKSPACE" ] || die 'workspace must not redirect elsewhere'
+  [ -f "$WORKSPACE/docker-compose.yml" ] || die 'compose manifest is missing'
+}
+
+runner_git() {
+  local workspace="$1"
+  shift
+  validate_workspace "$workspace"
+  runuser --user "$RUNNER_USER" -- env -i \
+    HOME=/nonexistent PATH=/usr/bin:/bin LC_ALL=C \
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_NO_REPLACE_OBJECTS=1 \
+    git -c safe.directory="$workspace" -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+      -c diff.external= -c core.attributesFile=/dev/null -C "$workspace" "$@"
+}
+
+runner_change_impact() {
+  local workspace="$1"
+  shift
+  validate_workspace "$workspace"
+  runuser --user "$RUNNER_USER" -- env -i \
+    HOME=/nonexistent PATH=/usr/bin:/bin LC_ALL=C \
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_NO_REPLACE_OBJECTS=1 \
+    "$CHANGE_IMPACT" --repo "$workspace" "$@"
+}
+
+validate_checkout() {
+  local expected_sha="$1"
+  local actual_sha
+
+  validate_sha "$expected_sha"
+  actual_sha="$(runner_git "$WORKSPACE" rev-parse 'HEAD^{commit}')"
+  [ "$actual_sha" = "$expected_sha" ] || die 'workspace revision does not match requested release'
+  runner_git "$WORKSPACE" diff --quiet -- ||
+    die 'workspace has tracked changes'
+  runner_git "$WORKSPACE" diff --cached --quiet -- ||
+    die 'workspace index has tracked changes'
 }
 
 validate_container() {
@@ -961,9 +1005,11 @@ admit_signature() {
 artifact_prepare() {
   local input_root="$1" sha="$2" tree="$3" run_id="$4" manifest_sha="$5"
   local target="$6" config_sha="$7" workflow_attempt="$8"
-  local temp transaction profile artifact filename expected field ref
+  local workspace="$WORKSPACE" temp transaction profile artifact filename expected field ref
   validate_sha "$sha"
   validate_sha "$tree"
+  validate_checkout "$sha"
+  [ "$(runner_git "$workspace" rev-parse 'HEAD^{tree}')" = "$tree" ] || die 'workspace tree does not match candidate source tree'
   validate_run_id "$run_id"
   [ "$input_root" = "$CANDIDATE_PARENT/$run_id/candidate" ] || die 'unexpected candidate artifact root'
   validate_sha256 "$manifest_sha"
@@ -1058,14 +1104,13 @@ EOF
   fi
 
   require_unchanged_runtime_inputs "$temp"
-  # Root never inspects mutable repository Git state. Until a protected,
-  # authorization-bound per-service plan is admitted, expand conservatively.
-  if [ -x "$CHANGE_IMPACT" ]; then
-    "$CHANGE_IMPACT" --file .github/workflows/oci-promote.yml --json > "$temp/impact-plan.json"
-  else
-    [ "${EUID}" -ne 0 ] || die 'installed change-impact classifier is unavailable'
-    jq -n '{schemaVersion:"harmonic-beacon.change-impact.v2",risk:"critical",matrices:{ui:[],functional:[]},requiredJobChecks:["impact","lint-and-build","test","tapestry","playlist"],deployment:{deploy:true,artifactsToPull:["app","playlist-bot","tapestry"],servicesToReplace:["app","commerce-reconciler","playlist-bot","tapestry"],reusePriorImages:[],migration:"never",recovery:"image-config"}}' > "$temp/impact-plan.json"
-  fi
+  # Repository discovery remains outside root identity. Only the fixed,
+  # runner-owned checkout is read, while prior release state crosses the
+  # privilege boundary through stdin rather than a root-only path.
+  jq --slurpfile releases "$temp/prior/service-releases.json" '.serviceReleases=$releases[0]' \
+    "$temp/prior-state.json" > "$temp/deployed-state.json"
+  runner_change_impact "$workspace" --deployed-state - --head "$sha" --json \
+    < "$temp/deployed-state.json" > "$temp/impact-plan.json"
   if [ "${EUID}" -eq 0 ]; then chown root:root "$temp/impact-plan.json"; fi
   chmod 0600 "$temp/impact-plan.json"
   if [ -x "$IMPACT_RECOVERY" ]; then
@@ -1237,11 +1282,21 @@ entry_fence_acquire() {
 }
 
 entry_fence_release() {
-  local attempt="$1"
-  [ "${EUID}" -eq 0 ] || return 0
-  command -v iptables >/dev/null || return 0
-  entry_fence_rule -D "$attempt" 7880 >/dev/null 2>&1 || true
-  entry_fence_rule -D "$attempt" 3000 >/dev/null 2>&1 || true
+  local attempt="$1" port status
+  command -v iptables >/dev/null || die 'iptables is required to prove release entry-fence removal'
+  for port in 7880 3000; do
+    while true; do
+      if entry_fence_rule -C "$attempt" "$port" >/dev/null 2>&1; then
+        entry_fence_rule -D "$attempt" "$port" >/dev/null 2>&1 ||
+          die "could not remove release entry-fence rule for port $port"
+        continue
+      else
+        status=$?
+        [ "$status" -eq 1 ] || die "could not prove release entry-fence absence for port $port"
+        break
+      fi
+    done
+  done
 }
 
 restore_release_writers() {

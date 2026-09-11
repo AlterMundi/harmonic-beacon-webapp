@@ -7,6 +7,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  HOSTED_JOB_FOR_CHECK,
+  HOSTED_JOB_FOR_MATRIX,
   classifyChanges,
   classifyDeployedServiceChanges,
   committedDiff,
@@ -34,6 +36,16 @@ test('committed diff binds the complete ancestor-to-candidate commit set', () =>
     const second = git('rev-parse', 'HEAD');
     assert.deepEqual(committedDiff(repo, first, second), ['second.ts']);
     assert.throws(() => committedDiff(repo, second, first), /ancestor/u);
+    const serviceReleases = Object.fromEntries([
+      'analytics', 'app', 'commerce-reconciler', 'playlist-bot', 'tapestry',
+    ].map((service) => [service, { sourceSha: first }]));
+    const output = execFileSync(process.execPath, [
+      new URL('../../ci/change-impact.mjs', import.meta.url).pathname,
+      '--repo', repo, '--deployed-state', '-', '--head', second, '--json',
+    ], { encoding: 'utf8', input: JSON.stringify({ serviceReleases }) });
+    assert.deepEqual(JSON.parse(output).details.deployedServiceBases, Object.fromEntries(
+      Object.keys(serviceReleases).map((service) => [service, first]),
+    ));
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -179,6 +191,7 @@ test('shared dependencies affect every first-party artifact and service role', (
   ]);
   assert.deepEqual(report.requiredJobChecks, [
     'impact', 'lint-and-build', 'test', 'tapestry', 'playlist', 'analytics',
+    'e2e', 'data-recovery', 'workflow-review', 'release-qualification',
   ]);
 });
 
@@ -199,6 +212,33 @@ test('every selected service or functional matrix contributes its CI job check',
   for (const [path, job] of fixtures) {
     const report = classifyChanges([path]);
     assert.ok(report.requiredJobChecks.includes(job), `${path} must require ${job}`);
+  }
+});
+
+test('every selected logical check and matrix is backed by a required hosted job', () => {
+  for (const path of [
+    '.agents/skills/example/SKILL.md',
+    'services/tapestry/src/server.mjs',
+    'services/analytics/src/worker.mjs',
+    'src/app/globals.css',
+    'src/lib/auth.ts',
+    'src/lib/stage-grant-effects.ts',
+    'src/lib/commerce-entitlement.ts',
+    'prisma/migrations/20260910120000_example/migration.sql',
+    'deploy/hb-deploy-root',
+    'mystery/runtime.xyz',
+  ]) {
+    const report = classifyChanges([path]);
+    for (const { check } of report.requiredChecks) {
+      const job = HOSTED_JOB_FOR_CHECK[check];
+      assert.ok(job, `${path}: required check ${check} has no hosted job`);
+      assert.ok(report.requiredJobChecks.includes(job), `${path}: ${check} does not require ${job}`);
+    }
+    for (const matrix of Object.values(report.matrices).flat()) {
+      const job = HOSTED_JOB_FOR_MATRIX[matrix];
+      assert.ok(job, `${path}: matrix ${matrix} has no hosted job`);
+      assert.ok(report.requiredJobChecks.includes(job), `${path}: ${matrix} does not require ${job}`);
+    }
   }
 });
 
@@ -308,6 +348,11 @@ test('required check verification rejects missing failed cancelled and skipped r
     { check: 'diff-check', conclusion: 'success' },
     { check: 'auth-contract', conclusion: 'success' },
   ]), required);
+  assert.throws(() => verifyRequiredCheckResults(required, [
+    { check: 'diff-check', conclusion: 'success' },
+    { check: 'auth-contract', conclusion: 'success' },
+    { check: 'unselected-job', conclusion: 'success' },
+  ]), /exact required check set/u);
   for (const results of [
     [{ check: 'diff-check', conclusion: 'success' }],
     [{ check: 'diff-check', conclusion: 'success' }, { check: 'auth-contract', conclusion: 'failure' }],

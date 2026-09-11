@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import { classifyChanges } from '../change-impact.mjs';
+
 import {
   assertCurrentHighWater,
   bootstrapServiceReleases,
@@ -36,23 +38,7 @@ const REF = (name, character) => `ghcr.io/altermundi/harmonic-beacon-${name}@sha
 
 function impact(overrides = {}) {
   return {
-    schemaVersion: 'harmonic-beacon.change-impact.v2',
-    risk: 'functional',
-    files: ['services/tapestry/src/server.mjs'],
-    domains: ['tapestry'],
-    labels: [],
-    matrices: { ui: ['component'], functional: ['tapestry-integration'], critical: [], crossDomain: [] },
-    requiredChecks: [{ check: 'diff-check', command: 'git diff --check' }],
-    requiredJobChecks: ['impact', 'lint-and-build', 'test', 'tapestry'],
-    deployment: {
-      deploy: true,
-      artifactsToPull: ['tapestry'],
-      servicesToReplace: ['tapestry'],
-      migration: 'never',
-      recovery: 'image-config',
-    },
-    details: { frozenAudioPaths: [], unclassifiedPaths: [], deployedServiceBases: {} },
-    notes: [],
+    ...classifyChanges(['services/tapestry/src/server.mjs']),
     ...overrides,
   };
 }
@@ -80,6 +66,22 @@ test('impact plan rejects undeclared services and inconsistent artifact selectio
   assert.throws(() => validateImpactPlan(impact({ requiredJobChecks: ['impact'] })), /required job/u);
 });
 
+test('impact plan rejects omission of any hosted matrix or logical-check job', () => {
+  const critical = classifyChanges(['src/lib/auth.ts']);
+  assert.doesNotThrow(() => validateImpactPlan(critical));
+  for (const omitted of critical.requiredJobChecks.slice(1)) {
+    assert.throws(() => validateImpactPlan({
+      ...critical,
+      requiredJobChecks: critical.requiredJobChecks.filter((job) => job !== omitted),
+    }), /required job/u, omitted);
+  }
+  assert.throws(() => validateImpactPlan({
+    ...critical,
+    matrices: { ...critical.matrices, critical: [] },
+    requiredJobChecks: critical.requiredJobChecks.filter((job) => job !== 'auth-contract'),
+  }), /derived impact selection/u);
+});
+
 test('verified database state skips migration without quiescing when none are pending', () => {
   const state = {
     schemaVersion: 'harmonic-beacon.migration-state.v1',
@@ -101,17 +103,7 @@ test('verified database state skips migration without quiescing when none are pe
 });
 
 test('pending migrations require fresh same-run backup and isolated restore proof', () => {
-  const dataImpact = impact({
-    risk: 'critical',
-    domains: ['data'],
-    deployment: {
-      deploy: true,
-      artifactsToPull: ['app'],
-      servicesToReplace: ['app', 'commerce-reconciler'],
-      migration: 'verify-pending',
-      recovery: 'backup-restore-if-pending',
-    },
-  });
+  const dataImpact = classifyChanges(['prisma/migrations/20260910120000_example/migration.sql']);
   const state = {
     schemaVersion: 'harmonic-beacon.migration-state.v1',
     databaseStateVerified: true,
