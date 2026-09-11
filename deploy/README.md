@@ -91,10 +91,16 @@ Git state. Compose additionally must equal installed reviewed, digest-pinned
 bytes; a candidate manifest alone cannot authorize active configuration.
 
 OPS-E adds conservative impact selection without weakening these immutable
-   candidate or recovery bindings. `artifact-prepare` compares the candidate with
-   the source SHA recorded for each deployed service, including changes skipped by
-   earlier service-specific releases. It writes a root-owned impact plan; the
-   workflow records it through `artifact-impact`. Only selected artifacts are
+   candidate or recovery bindings. Before authorization, the read-only
+   `artifact-impact-state` verb exports only the current publication and exact
+   Live service releases. The unprivileged Mona job derives a plan from those
+   bases; the protected hosted authorization job independently reproduces the
+   plan from the protected-main checkout, then signs both file digests into the
+   closed delivery authorization. `artifact-prepare` descriptor-admits the two
+   inert files, requires the exported state to still equal the root-owned
+   high-water, and validates the plan's candidate and deployed-service bases.
+   Root executes neither Git nor runner-workspace code or Compose. The workflow
+   records the admitted plan through `artifact-impact`. Only selected artifacts are
    pulled. Each selected Live service records its prior container identity before
    replacement and checkpoints the resulting exact image afterward. A retry can
    distinguish an interrupted replacement from a completed one without repeating
@@ -193,17 +199,20 @@ validator before persisting all bindings and the authorization digest.
 
 Dispatch requires `operation` (`promote` or `rollback`), `target`, candidate
 and base candidate run IDs, source SHA and manifest hash. The legal tuples are
-`legacy-shadow/shadow/promote`, `oci-production/production/promote`, and `oci-production/production/rollback`. Authorization binds source
+`legacy-shadow/shadow/promote`, `oci-production/production/promote`, and `oci-production/production/rollback`. Authorization v2 binds source
 SHA/tree, candidate/base manifests, candidate and delivery runs/attempts,
 workflow path/ref, environment/target/operation, config digest, exact verbs,
-and a transition digest for production promote. Canonical UTC millisecond
+the impact-state and impact-plan digests for promote, and a transition digest
+for production promote. Canonical UTC millisecond
 times cannot be future dated and have a maximum 15-minute lifetime.
 
 Every artifact command now takes `DELIVERY_RUN_ID DELIVERY_ATTEMPT` before
 its existing arguments. Exact forms (through the reviewed workflow only):
 
 ```text
+artifact-impact-state
 artifact-prepare DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_ROOT SOURCE_SHA SOURCE_TREE CANDIDATE_RUN_ID MANIFEST_SHA256 TARGET CONFIG_SHA256 CANDIDATE_ATTEMPT
+artifact-impact DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID TARGET
 artifact-preflight DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID TARGET
 artifact-migrate DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID
 artifact-replace DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID

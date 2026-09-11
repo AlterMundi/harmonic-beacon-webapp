@@ -16,7 +16,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { admitRegularFile } from '../release-manifest.mjs';
+import { admitRegularFile, canonicalize, impactStateFromCurrent } from '../release-manifest.mjs';
 import { stateFixture } from './b3-fixture.mjs';
 
 const read = (path) => readFileSync(path, 'utf8');
@@ -178,6 +178,11 @@ test('prepare admits only fixed files before verification and never consults rep
     });
     const profileDigest = add('deploy/runtime-public-config/production.json', '{}\n');
     add('deploy/runtime-public-config/live-staging.json', '{}\n');
+    const currentState = stateFixture();
+    const impactStateBytes = canonicalize(impactStateFromCurrent(currentState));
+    const impactPlanBytes = '{}\n';
+    const impactStateDigest = add('impact-state.json', impactStateBytes);
+    const impactPlanDigest = add('impact-plan.json', impactPlanBytes);
     add('release-manifest.signature.bundle.json', '{}\n');
     add('qualification-receipt.signature.bundle.json', '{}\n');
     const receiptDigest = add('qualification-receipt.json', '{}\n');
@@ -186,10 +191,10 @@ test('prepare admits only fixed files before verification and never consults rep
       configProfiles: { production: { sha256: profileDigest }, 'live-staging': { sha256: profileDigest } } }));
     symlinkSync('/nonexistent', `${input}/ignored-link`);
     add('evidence/oci-evidence-app/ignored-script', 'exit 99');
-    writeFileSync(`${state}/current-state.json`, JSON.stringify(stateFixture()));
+    writeFileSync(`${state}/current-state.json`, JSON.stringify(currentState));
     let helper = read('deploy/hb-deploy-root').split('\nrequire_root\n')[0];
     const paths = { CANDIDATE_PARENT: `${root}/inputs`, ARTIFACT_STATE: state,
-      RELEASE_MANIFEST: `${installed}/release-manifest.mjs`, TRUSTED_COMPOSE: `${installed}/docker-compose.yml`,
+      RELEASE_MANIFEST: `${installed}/release-manifest.mjs`, IMPACT_RECOVERY: 'verify_impact', TRUSTED_COMPOSE: `${installed}/docker-compose.yml`,
       TRUSTED_OVERLAY: `${installed}/oci-images.compose.yml`, ARTIFACT_VERIFY: 'inspect_admitted' };
     for (const [name, path] of Object.entries(paths)) {
       helper = helper.replace(new RegExp(`^readonly ${name}=.*$`, 'm'), `readonly ${name}=${quote(path)}`);
@@ -198,8 +203,13 @@ test('prepare admits only fixed files before verification and never consults rep
 # Unprivileged admission harness: cryptographic verification is tested separately.
 DELIVERY_RUN_ID=900
 DELIVERY_RUN_ATTEMPT=1
-admit_delivery_authorization() { :; }
-node() { if [ "$2" = validate-delivery ]; then printf '{}' > "$temp/delivery.json"; else command node "$@"; fi; }
+admit_delivery_authorization() {
+  mkdir -p "$2"
+  printf '%s' ${quote(JSON.stringify({ impactStateSha256: impactStateDigest, impactPlanSha256: impactPlanDigest }))} > "$2/delivery-authorization.json"
+  printf '{}' > "$2/delivery-authorization.signature.bundle.json"
+}
+node() { if [ "$1" = verify_impact ]; then :; elif [ "$2" = validate-delivery ]; then printf '{}' > "$temp/delivery.json"; else command node "$@"; fi; }
+verify_impact() { :; }
 cosign() { :; }
 require_secure_root_file() { :; }
 require_release_lane() { :; }

@@ -103,12 +103,13 @@ export function transactionHarness(body, { phase = 'prepared', stale = false, ru
       const expired = authorization === 'expired';
       const authorizedAt = new Date(Date.now() - (expired ? 700_000 : 1_000));
       const deliveryAuthorization = {
-        schemaVersion: 'harmonic-beacon.delivery-authorization.v1', sourceSha: receipt.sourceSha,
+        schemaVersion: 'harmonic-beacon.delivery-authorization.v2', sourceSha: receipt.sourceSha,
         sourceTree: receipt.sourceTree, candidateManifestSha256: receipt.manifestSha256,
         baseManifestSha256: receipt.baseManifestSha256, candidateRunId: '123', candidateRunAttempt: 1,
         deliveryRunId: '900', deliveryRunAttempt: 1, workflowPath: '.github/workflows/oci-promote.yml',
         workflowRef: 'refs/heads/main', laneState: 'legacy-shadow', environment: 'shadow', target: 'shadow',
         operation: 'promote', configSha256: receipt.targetConfigSha256, transitionAuthorizationSha256: null,
+        impactStateSha256: `sha256:${'1'.repeat(64)}`, impactPlanSha256: `sha256:${'2'.repeat(64)}`,
         verbs: ['prepare', 'preflight', 'status'], authorizedAt: authorizedAt.toISOString(),
         expiresAt: new Date(authorizedAt.getTime() + 600_000).toISOString(),
       };
@@ -138,7 +139,7 @@ export function transactionHarness(body, { phase = 'prepared', stale = false, ru
     put(join(root, 'registry.env'), 'HB_REGISTRY_USERNAME=test\nHB_REGISTRY_TOKEN=test\n');
     let script = helper;
     for (const [key, path] of Object.entries({ ARTIFACT_STATE: state, RELEASE_LANE_STATE: join(root, 'lane'),
-      RELEASE_MANIFEST: resolve('scripts/ci/release-manifest.mjs'), CANDIDATE_PARENT: join(root, 'inputs'),
+      RELEASE_MANIFEST: resolve('scripts/ci/release-manifest.mjs'), IMPACT_RECOVERY: 'test_impact_recovery', CANDIDATE_PARENT: join(root, 'inputs'),
       REGISTRY_ENV: join(root, 'registry.env'), TRUSTED_COMPOSE: join(root, 'candidate/docker-compose.yml'),
       TRUSTED_OVERLAY: join(root, 'candidate/oci-images.compose.yml'), ARTIFACT_VERIFY: 'test_verifier' })) {
       script = script.replace(new RegExp(`^readonly ${key}=.*$`, 'm'), `readonly ${key}=${quote(path)}`);
@@ -164,16 +165,20 @@ admit_file() {
     */docker-compose.yml) cp "$TRUSTED_COMPOSE" "$2" ;;
     */oci-images.compose.yml) cp "$TRUSTED_OVERLAY" "$2" ;;
     */production.json|*/live-staging.json) cp ${quote(join(root, 'candidate/target-public-config.json'))} "$2" ;;
+    */impact-state.json) command node ${quote(resolve('scripts/ci/release-manifest.mjs'))} export-impact-state --state ${quote(join(state, 'current-state.json'))} --output "$2" ;;
+    */impact-plan.json) printf '{}' > "$2" ;;
     *) printf '{}' > "$2" ;;
   esac
 }
+test_impact_recovery() { :; }
 test_verifier() { cp ${quote(join(root, 'receipt.json'))} "$temp/verified.json"; }
 require_oci_transition_evidence() { :; }
 DELIVERY_RUN_ID=900
 DELIVERY_RUN_ATTEMPT=1
 ${authorization === 'none' ? 'require_delivery_invocation() { :; }' : ''}
 node() {
-  if [ "$2" = validate-delivery ]; then
+  if [ "$1" = test_impact_recovery ]; then :
+  elif [ "$2" = validate-delivery ]; then
     printf '{}' > "$temp/delivery.json"
   elif [ "$2" = check-delivery ] && [ ${quote(authorization)} = none ]; then :
   else command node "$@"; fi

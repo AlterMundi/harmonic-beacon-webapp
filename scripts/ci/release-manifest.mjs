@@ -378,6 +378,27 @@ export function validateCurrentState(state) {
   return decoded;
 }
 
+export function impactStateFromCurrent(state) {
+  const decoded = validateCurrentState(state);
+  let serviceReleases = state.serviceReleases;
+  if (!serviceReleases) {
+    const manifest = JSON.parse(decoded.manifestBase64);
+    const sourceSha = manifest.source.gitSha;
+    const ref = (artifactId) => {
+      const artifact = manifest.artifacts.find((entry) => entry.artifactId === artifactId);
+      return `${artifact.repository}@${artifact.digest}`;
+    };
+    serviceReleases = {
+      app: { sourceSha, imageRef: ref('app') },
+      'commerce-reconciler': { sourceSha, imageRef: ref('app') },
+      tapestry: { sourceSha, imageRef: ref('tapestry') },
+      'playlist-bot': { sourceSha, imageRef: ref('playlist-bot') },
+    };
+  }
+  validateServiceReleases(serviceReleases);
+  return { schemaVersion: 'harmonic-beacon.impact-state.v1', publication: state.publication, serviceReleases };
+}
+
 export function verifyReleaseManifest(manifest, expected) {
   validateReleaseManifest(manifest);
   if (!expected || typeof expected !== 'object') fail('verification expectations are required');
@@ -506,8 +527,9 @@ export function validateDeliveryAuthorization(bytes, expected = {}, { now = Date
     'candidateManifestSha256', 'baseManifestSha256', 'candidateRunId', 'candidateRunAttempt',
     'deliveryRunId', 'deliveryRunAttempt', 'workflowPath', 'workflowRef', 'laneState',
     'environment', 'target', 'operation', 'configSha256', 'transitionAuthorizationSha256',
+    'impactStateSha256', 'impactPlanSha256',
     'verbs', 'authorizedAt', 'expiresAt']);
-  if (a.schemaVersion !== 'harmonic-beacon.delivery-authorization.v1' ||
+  if (a.schemaVersion !== 'harmonic-beacon.delivery-authorization.v2' ||
       a.workflowPath !== '.github/workflows/oci-promote.yml' || a.workflowRef !== 'refs/heads/main') fail('invalid delivery workflow');
   for (const k of ['sourceSha', 'sourceTree']) string(a[k], k, /^[0-9a-f]{40}$/u);
   for (const k of ['candidateManifestSha256', 'baseManifestSha256']) string(a[k], k, /^[0-9a-f]{64}$/u);
@@ -520,6 +542,10 @@ export function validateDeliveryAuthorization(bytes, expected = {}, { now = Date
   if (JSON.stringify(a.verbs) !== JSON.stringify(verbs)) fail('invalid delivery verbs');
   if (a.target === 'production' && a.operation === 'promote') digest(a.transitionAuthorizationSha256, 'delivery transition');
   else if (a.transitionAuthorizationSha256 !== null) fail('unexpected delivery transition');
+  if (a.operation === 'promote') {
+    digest(a.impactStateSha256, 'delivery impact state');
+    digest(a.impactPlanSha256, 'delivery impact plan');
+  } else if (a.impactStateSha256 !== null || a.impactPlanSha256 !== null) fail('unexpected delivery impact binding');
   const start = +date(a.authorizedAt, 'delivery authorization time');
   const end = +date(a.expiresAt, 'delivery authorization expiry');
   if (!Number.isSafeInteger(now) || start > now || end <= start || end - start > 900000 || (!allowExpired && end <= now)) fail('stale delivery authorization');
@@ -898,8 +924,15 @@ export function main(argv = process.argv.slice(2)) {
     writeFileSync(options.output, JSON.stringify(receipt), { mode: 0o600 });
     return 0;
   }
-  if (command === 'validate-current-state' || command === 'unpack-current-state') {
-    const decoded = validateCurrentState(JSON.parse(readFileSync(resolve(options.state), 'utf8')));
+  if (command === 'validate-current-state' || command === 'unpack-current-state' || command === 'export-impact-state') {
+    const state = JSON.parse(readFileSync(resolve(options.state), 'utf8'));
+    const decoded = validateCurrentState(state);
+    if (command === 'export-impact-state') {
+      const bytes = canonicalize(impactStateFromCurrent(state));
+      if (options.output) writeFileSync(resolve(options.output), bytes, { flag: 'wx', mode: 0o600 });
+      else process.stdout.write(bytes);
+      return 0;
+    }
     if (command === 'unpack-current-state') {
       for (const [field, file] of Object.entries({ manifestBase64: 'prior-manifest.json',
         composeBase64: 'docker-compose.yml', overlayBase64: 'oci-images.compose.yml',

@@ -198,6 +198,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -255,10 +256,49 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
+  impact_plan:
+    needs: resolve
+    if: inputs.operation == 'promote'
+    runs-on: [self-hosted, mona]
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify dedicated runner identity
+        run: |
+          set -euo pipefail
+          test "$(hostname -s)" = mona
+          test "$(id -un)" = beacon-runner
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export live state and derive unprivileged impact plan
+        env:
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse 'HEAD^{commit}')" = "$SOURCE_SHA"
+          sudo /usr/local/sbin/hb-deploy artifact-impact-state > impact-state.json
+          node /usr/local/libexec/harmonic-beacon/change-impact.mjs --repo "$GITHUB_WORKSPACE" \
+            --deployed-state impact-state.json --service-scope live --head "$SOURCE_SHA" --json > impact-plan.json
+          node /usr/local/libexec/harmonic-beacon/impact-recovery.mjs validate-impact --input impact-plan.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: impact-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            impact-state.json
+            impact-plan.json
+          if-no-files-found: error
+          retention-days: 2
+
   authorize:
-    needs: [resolve, rehearse]
+    needs: [resolve, rehearse, impact_plan]
     if: >-
       always() && !cancelled() && needs.resolve.result == 'success' &&
+      ((inputs.operation == 'promote' && needs.impact_plan.result == 'success') ||
+       (inputs.operation == 'rollback' && needs.impact_plan.result == 'skipped')) &&
       ((inputs.operation == 'promote' && inputs.target == 'production' && needs.rehearse.result == 'success') ||
        ((inputs.operation != 'promote' || inputs.target != 'production') && needs.rehearse.result == 'skipped'))
     runs-on: ubuntu-24.04
@@ -271,6 +311,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -291,6 +332,11 @@ jobs:
         with:
           name: transition-${{ github.run_id }}-${{ github.run_attempt }}
           path: candidate/transition
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.operation == 'promote'
+        with:
+          name: impact-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .
       - name: Verify signed candidate and base and issue protected delivery authorization
         env:
           BASE_CANDIDATE_RUN_ATTEMPT: ${{ needs.resolve.outputs.base_run_attempt }}
@@ -310,6 +356,15 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --ignore-scripts
+          if [ "$OPERATION" = promote ]; then
+            node scripts/ci/change-impact.mjs --repo "$GITHUB_WORKSPACE" --deployed-state impact-state.json \
+              --service-scope live --head "$SOURCE_SHA" --json > hosted-impact-plan.json
+            cmp --silent impact-plan.json hosted-impact-plan.json
+            node scripts/ci/impact-recovery.mjs validate-impact --input impact-plan.json
+            cp impact-state.json impact-plan.json candidate/
+            export IMPACT_STATE_SHA256="sha256:$(sha256sum impact-state.json | cut -d' ' -f1)"
+            export IMPACT_PLAN_SHA256="sha256:$(sha256sum impact-plan.json | cut -d' ' -f1)"
+          fi
           node scripts/ci/authorize-delivery.mjs
           cosign sign-blob --yes --bundle candidate/delivery-authorization.signature.bundle.json candidate/delivery-authorization.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -338,18 +393,6 @@ jobs:
           set -euo pipefail
           test "$(hostname -s)" = mona
           test "$(id -un)" = beacon-runner
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Verify installed privileged implementation
-        run: |
-          set -euo pipefail
-          cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy
-          cmp --silent deploy/hb-artifact-verify.mjs /usr/local/libexec/harmonic-beacon/hb-artifact-verify
-          cmp --silent scripts/ci/release-manifest.mjs /usr/local/libexec/harmonic-beacon/release-manifest.mjs
-          cmp --silent scripts/ci/change-impact.mjs /usr/local/libexec/harmonic-beacon/change-impact.mjs
-          cmp --silent scripts/ci/impact-recovery.mjs /usr/local/libexec/harmonic-beacon/impact-recovery.mjs
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: authorized-promotion-${{ github.run_id }}-${{ github.run_attempt }}

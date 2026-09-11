@@ -14,6 +14,7 @@ const ARTIFACT_FOR_SERVICE = {
 const IMAGE_REF = /^[a-z0-9./-]+@sha256:[0-9a-f]{64}$/u;
 const GIT_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
+const LIVE_SERVICES = ['app', 'commerce-reconciler', 'playlist-bot', 'tapestry'];
 
 
 function fail(message) {
@@ -69,6 +70,37 @@ export function validateImpactPlan(plan) {
   }
   if (JSON.stringify(requiredJobs) !== JSON.stringify(expected)) fail('required job checks do not match selected services and matrices');
   return plan;
+}
+
+export function verifyAuthorizedImpact({ authorization, impactStateBytes, impactPlanBytes, sourceSha }) {
+  if (!authorization || authorization.sourceSha !== sourceSha || !GIT_SHA.test(sourceSha ?? '')) {
+    fail('candidate source does not match impact authorization');
+  }
+  const digestBytes = (bytes) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  if (digestBytes(impactStateBytes) !== authorization.impactStateSha256) fail('impact state digest mismatch');
+  if (digestBytes(impactPlanBytes) !== authorization.impactPlanSha256) fail('impact plan digest mismatch');
+  const state = JSON.parse(impactStateBytes);
+  if (!state || Object.keys(state).sort().join(',') !== 'publication,schemaVersion,serviceReleases' ||
+      state.schemaVersion !== 'harmonic-beacon.impact-state.v1') fail('invalid impact state');
+  const publication = state.publication;
+  if (!publication || Object.keys(publication).sort().join(',') !== 'generation,id,manifestSha256' ||
+      !Number.isSafeInteger(publication.generation) || publication.generation < 1 ||
+      !SHA256.test(publication.id ?? '') || !SHA256.test(publication.manifestSha256 ?? '')) fail('invalid impact publication');
+  if (JSON.stringify(Object.keys(state.serviceReleases ?? {}).sort()) !== JSON.stringify([...LIVE_SERVICES].sort())) {
+    fail('impact service release inventory is incomplete');
+  }
+  for (const service of LIVE_SERVICES) {
+    const release = state.serviceReleases[service];
+    if (!release || Object.keys(release).sort().join(',') !== 'imageRef,sourceSha' ||
+        !GIT_SHA.test(release.sourceSha ?? '') || !IMAGE_REF.test(release.imageRef ?? '')) fail(`invalid impact service release: ${service}`);
+  }
+  const plan = JSON.parse(impactPlanBytes);
+  validateImpactPlan(plan);
+  const expectedBases = Object.fromEntries(LIVE_SERVICES.map((service) => [service, state.serviceReleases[service].sourceSha]));
+  if (JSON.stringify(plan.details?.deployedServiceBases) !== JSON.stringify(expectedBases)) {
+    fail('impact deployed service bases do not match the authorized high-water');
+  }
+  return true;
 }
 
 export function validateMigrationState(state) {
@@ -274,7 +306,16 @@ export function main(argv = process.argv.slice(2)) {
     verifyOperationEvidence(JSON.parse(readFileSync(resolve(option(argv, '--input')), 'utf8')), option(argv, '--run-id'));
     return 0;
   }
-  fail('usage: impact-recovery.mjs {validate-impact|validate-migration-state|plan-database|verify-operation} [options]');
+  if (command === 'verify-authorized-impact') {
+    verifyAuthorizedImpact({
+      authorization: JSON.parse(readFileSync(resolve(option(argv, '--authorization')), 'utf8')),
+      impactStateBytes: readFileSync(resolve(option(argv, '--state'))),
+      impactPlanBytes: readFileSync(resolve(option(argv, '--impact'))),
+      sourceSha: option(argv, '--source-sha'),
+    });
+    return 0;
+  }
+  fail('usage: impact-recovery.mjs {validate-impact|validate-migration-state|plan-database|verify-operation|verify-authorized-impact} [options]');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

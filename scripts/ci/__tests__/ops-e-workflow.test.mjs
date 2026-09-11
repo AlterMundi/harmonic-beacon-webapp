@@ -95,15 +95,11 @@ test('the selected data recovery job executes a real isolated PostgreSQL backup 
   assert.match(dataJob, /SELECT label FROM restore_probe/u);
 });
 
-test('root helper never runs Git as root against runner-owned state', () => {
+test('root helper never reaches runner workspace Git, scripts, or Compose', () => {
   const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
-  assert.match(helper, /runner_git\(\) \{/u);
-  assert.match(helper, /runuser --user "\$RUNNER_USER" -- env -i/u);
-  assert.match(helper, /GIT_CONFIG_NOSYSTEM=1/u);
-  assert.match(helper, /GIT_CONFIG_GLOBAL=\/dev\/null/u);
-  assert.match(helper, /GIT_CONFIG_SYSTEM=\/dev\/null/u);
-  const rootReachable = helper.replace(functionSource(helper, 'runner_git'), '');
-  assert.doesNotMatch(rootReachable, /(^|[\s$(;])git\s+-/mu);
+  assert.doesNotMatch(helper, /WORKSPACE|RUNNER_USER|runner_git|runner_change_impact|validate_checkout/u);
+  assert.doesNotMatch(helper, /(^|[\s$(;])git(?:\s|$)/mu);
+  assert.doesNotMatch(helper, /GITHUB_WORKSPACE/u);
 });
 
 test('entry fence release fails closed while either exact rule remains and succeeds when both are absent', () => {
@@ -135,13 +131,24 @@ test('entry fence release fails closed while either exact rule remains and succe
   }
 });
 
-test('promotion records the root-owned deterministic impact plan before mutation', () => {
-  assert.match(promote, /ref: \$\{\{ github\.sha \}\}\n          fetch-depth: 0/u);
-  const prepare = promote.indexOf('artifact-prepare');
-  const impact = promote.indexOf('artifact-impact');
-  const preflight = promote.indexOf('artifact-preflight');
+test('protected workflow signs a hosted-reproduced plan bound to the exported live high-water', () => {
+  const plan = promote.slice(promote.indexOf('\n  impact_plan:'), promote.indexOf('\n  authorize:'));
+  const authorize = promote.slice(promote.indexOf('\n  authorize:'), promote.indexOf('\n  promote:'));
+  const promoteJob = promote.slice(promote.indexOf('\n  promote:'));
+  assert.match(plan, /runs-on: \[self-hosted, mona\]/u);
+  assert.match(plan, /sudo \/usr\/local\/sbin\/hb-deploy artifact-impact-state/u);
+  assert.match(plan, /\/usr\/local\/libexec\/harmonic-beacon\/change-impact\.mjs/u);
+  assert.match(authorize, /runs-on: ubuntu-24\.04/u);
+  assert.match(authorize, /change-impact\.mjs[^\n]+--deployed-state impact-state\.json/u);
+  assert.match(authorize, /cmp --silent impact-plan\.json hosted-impact-plan\.json/u);
+  assert.match(authorize, /IMPACT_PLAN_SHA256|IMPACT_STATE_SHA256/u);
+  assert.doesNotMatch(promoteJob, /actions\/checkout|GITHUB_WORKSPACE|git\s/u);
+  assert.match(promoteJob, /authorized-promotion-/u);
+  const prepare = promoteJob.indexOf('artifact-prepare');
+  const impact = promoteJob.indexOf('artifact-impact "');
+  const preflight = promoteJob.indexOf('artifact-preflight');
   assert.ok(prepare >= 0 && impact > prepare && preflight > impact);
-  assert.match(promote, /"\$SOURCE_SHA" "\$SOURCE_TREE" "\$CANDIDATE_RUN_ID"/u);
+  assert.match(promoteJob, /"\$SOURCE_SHA" "\$SOURCE_TREE" "\$CANDIDATE_RUN_ID"/u);
 });
 
 test('promotion checks DB and LiveKit continuity before any selected replacement', () => {

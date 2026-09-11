@@ -206,7 +206,14 @@ verified transaction and publish one atomic current-state object only after
 actual digest, health, public provenance and private-boundary readback.
 Production preparation requires authenticated measured transition evidence from
 its same-run/attempt hosted rehearsal and a protected delivery authorization
-binding the exact aggregate bytes. Root admits the fixed evidence inventory
+binding the exact aggregate bytes. For promote, a read-only root verb first
+exports the current publication and Live service-release bases; Mona computes
+an unprivileged impact plan, and the protected hosted signer independently
+reproduces it from protected main. Authorization v2 binds both inert file
+digests. Root descriptor-admits them and rejects a changed publication,
+service-release high-water, plan digest, source SHA, or deployed-base mapping;
+it never executes Git, tracked scripts, or runner-workspace Compose.
+Root admits the fixed evidence inventory
 into the new transaction before validation or effects. A manual transition-evidence
 directory cannot enable it. Every artifact invocation binds a signed protected delivery run/attempt; markerless
 committed rollback needs a fresh hosted rollback authorization and exact current

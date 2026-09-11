@@ -369,7 +369,9 @@ fs.appendFileSync(${JSON.stringify(log)}, a.at(-1)+'\\n');
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, NODE_OPTIONS: `--require=${preload}`,
     BASE_CANDIDATE_RUN_ID: f.base.expected.runId, BASE_CANDIDATE_RUN_ATTEMPT: '1', BASE_SOURCE_SHA: f.base.expected.sourceSha, BASE_SOURCE_TREE: f.base.expected.sourceTree, BASE_MANIFEST_SHA256: f.base.expected.manifestSha256,
     CANDIDATE_RUN_ID: f.candidate.expected.runId, CANDIDATE_RUN_ATTEMPT: '1', SOURCE_SHA: f.candidate.expected.sourceSha, SOURCE_TREE: f.candidate.expected.sourceTree, MANIFEST_SHA256: f.candidate.expected.manifestSha256,
-    TARGET: 'production', OPERATION: 'promote', RELEASE_LANE_STATE: 'oci-production', CONFIG_SHA256: f.candidate.m.configProfiles.production.sha256, GITHUB_RUN_ID: '987', GITHUB_RUN_ATTEMPT: '2' };
+    TARGET: 'production', OPERATION: 'promote', RELEASE_LANE_STATE: 'oci-production', CONFIG_SHA256: f.candidate.m.configProfiles.production.sha256,
+    IMPACT_STATE_SHA256: `sha256:${'1'.repeat(64)}`, IMPACT_PLAN_SHA256: `sha256:${'2'.repeat(64)}`,
+    GITHUB_RUN_ID: '987', GITHUB_RUN_ATTEMPT: '2' };
   const issue = (extra = {}) => {
     rmSync(join(f.candidate.dir, 'delivery-authorization.json'), { force: true });
     return spawnSync(process.execPath, [join(repo, 'scripts/ci/authorize-delivery.mjs')], { cwd: f.root, env: { ...env, ...extra }, encoding: 'utf8' });

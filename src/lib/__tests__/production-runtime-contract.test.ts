@@ -30,21 +30,25 @@ describe('production operational entrypoints', () => {
         expect(reconciler).not.toContain('memory: 256M');
     });
 
-    it('quiesces and preflights before any automatic application rollback', () => {
+    it('fences and fully quiesces writers around automatic application rollback', () => {
         const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
-        const rollback = helper.slice(helper.indexOf('artifact_rollback() {'), helper.indexOf('\nusage() {'));
-        const stopApp = rollback.indexOf('stop app');
-        const preflight = rollback.indexOf('stage-grant-rollback-preflight.ts');
-        const stopWorker = rollback.indexOf('docker stop beacon-commerce-reconciler');
-        const compatible = rollback.indexOf('/app/src/lib/stage-grant-effects.ts');
-        const restore = rollback.indexOf('app commerce-reconciler');
+        const rollback = helper.slice(helper.indexOf('artifact_rollback() {'), helper.indexOf('\nschedule_apply() {'));
+        const initialPreflight = rollback.indexOf('run_release_continuity_preflight');
+        const fence = rollback.indexOf('entry_fence_acquire');
+        const stopWriters = rollback.indexOf('stop app commerce-reconciler');
+        const finalPreflight = rollback.indexOf('run_release_continuity_preflight', initialPreflight + 1);
+        const durablePreflight = rollback.indexOf('stage-grant-rollback-preflight.ts');
+        const restore = rollback.indexOf('artifact_compose_service_from');
+        const release = rollback.indexOf('entry_fence_release');
 
-        expect(stopApp).toBeGreaterThan(-1);
-        expect(preflight).toBeGreaterThan(stopApp);
-        expect(stopWorker).toBeGreaterThan(preflight);
-        expect(compatible).toBeGreaterThan(stopWorker);
-        expect(restore).toBeGreaterThan(compatible);
-        expect(rollback).toContain('automatic rollback refused: previous app lacks durable grant contract');
+        expect(initialPreflight).toBeGreaterThan(-1);
+        expect(fence).toBeGreaterThan(initialPreflight);
+        expect(stopWriters).toBeGreaterThan(fence);
+        expect(finalPreflight).toBeGreaterThan(stopWriters);
+        expect(durablePreflight).toBeGreaterThan(finalPreflight);
+        expect(restore).toBeGreaterThan(durablePreflight);
+        expect(release).toBeGreaterThan(restore);
+        expect(rollback).toContain('automatic rollback refused: durable grant state did not quiesce');
         expect(rollback).toContain('transaction_require_rollback');
     });
 

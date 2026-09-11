@@ -13,6 +13,7 @@ import {
   updateServiceReleases,
   validateImpactPlan,
   validateMigrationState,
+  verifyAuthorizedImpact,
   verifyOperationEvidence,
 } from '../impact-recovery.mjs';
 
@@ -287,10 +288,37 @@ test('config-only service state advances the exact source while preserving the d
   assert.deepEqual(next.app, { sourceSha: SHA('b'), imageRef: prior.app.imageRef });
 });
 
+test('signed impact binding accepts exact plan/state bytes and rejects changed high-water, source, or plan', () => {
+  const serviceReleases = {
+    app: { sourceSha: SHA('a'), imageRef: REF('app', '1') },
+    'commerce-reconciler': { sourceSha: SHA('a'), imageRef: REF('app', '1') },
+    tapestry: { sourceSha: SHA('a'), imageRef: REF('tapestry', '2') },
+    'playlist-bot': { sourceSha: SHA('a'), imageRef: REF('playlist-bot', '3') },
+  };
+  const state = { schemaVersion: 'harmonic-beacon.impact-state.v1',
+    publication: { generation: 7, id: '9'.repeat(64), manifestSha256: '8'.repeat(64) }, serviceReleases };
+  const plan = impact({ details: { deployedServiceBases: Object.fromEntries(
+    ['app', 'commerce-reconciler', 'playlist-bot', 'tapestry'].map((service) => [service, serviceReleases[service].sourceSha]),
+  ) } });
+  const stateBytes = Buffer.from(JSON.stringify(state));
+  const planBytes = Buffer.from(JSON.stringify(plan));
+  const authorization = { sourceSha: SHA('b'), impactStateSha256: `sha256:${createHash('sha256').update(stateBytes).digest('hex')}`,
+    impactPlanSha256: `sha256:${createHash('sha256').update(planBytes).digest('hex')}` };
+  assert.doesNotThrow(() => verifyAuthorizedImpact({ authorization, impactStateBytes: stateBytes, impactPlanBytes: planBytes, sourceSha: SHA('b') }));
+  const changedState = Buffer.from(JSON.stringify({ ...state, publication: { ...state.publication, generation: 8 } }));
+  assert.throws(() => verifyAuthorizedImpact({ authorization, impactStateBytes: changedState, impactPlanBytes: planBytes, sourceSha: SHA('b') }), /state digest/u);
+  assert.throws(() => verifyAuthorizedImpact({ authorization, impactStateBytes: stateBytes, impactPlanBytes: planBytes, sourceSha: SHA('c') }), /source/u);
+  assert.throws(() => verifyAuthorizedImpact({ authorization, impactStateBytes: stateBytes, impactPlanBytes: Buffer.from(JSON.stringify({ ...plan, risk: 'critical' })), sourceSha: SHA('b') }), /plan digest/u);
+  const wrongBases = Buffer.from(JSON.stringify({ ...plan, details: { deployedServiceBases: { ...plan.details.deployedServiceBases, app: SHA('c') } } }));
+  const wrongAuthorization = { ...authorization, impactPlanSha256: `sha256:${createHash('sha256').update(wrongBases).digest('hex')}` };
+  assert.throws(() => verifyAuthorizedImpact({ authorization: wrongAuthorization, impactStateBytes: stateBytes, impactPlanBytes: wrongBases, sourceSha: SHA('b') }), /deployed service bases/u);
+});
+
 test('root helper consumes the trusted impact plan for selective pull replace migration and rollback', () => {
   const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
-  assert.match(helper, /CHANGE_IMPACT=.*change-impact\.mjs/u);
-  assert.match(helper, /impact-plan\.json/u);
+  assert.doesNotMatch(helper, /runner_change_impact|"\$CHANGE_IMPACT"\s+(?:--|validate|classify)/u);
+  assert.match(helper, /admit_file "\$input_root\/impact-plan\.json"[\s\S]+impactPlanSha256/u);
+  assert.match(helper, /verify-authorized-impact/u);
   assert.match(helper, /artifactsToPull/u);
   assert.match(helper, /servicesToReplace/u);
   assert.match(helper, /migration-state\.json/u);

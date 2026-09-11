@@ -12,9 +12,7 @@ export PATH
 readonly PRODUCTION_ENV='/etc/harmonic-beacon/production.env'
 readonly COMMERCE_ENV='/etc/harmonic-beacon/commerce.env'
 readonly ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'
-readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'
-readonly CANDIDATE_PARENT="$WORKSPACE/.hb-artifacts"
-readonly RUNNER_USER='beacon-runner'
+readonly CANDIDATE_PARENT='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp/.hb-artifacts'
 readonly PRIVATE_NETWORK='pmp_beacon_internal'
 readonly EXPECTED_NETWORK_MEMBERS=$'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
 readonly ARTIFACT_VERIFY='/usr/local/libexec/harmonic-beacon/hb-artifact-verify'
@@ -100,48 +98,6 @@ validate_schema_version() {
 
 validate_boolean() {
   [ "$1" = true ] || [ "$1" = false ] || die 'invalid boolean'
-}
-
-validate_workspace() {
-  [ "$1" = "$WORKSPACE" ] || die 'unexpected Actions workspace'
-  [ "$(realpath -e -- "$1")" = "$WORKSPACE" ] || die 'workspace must not redirect elsewhere'
-  [ -f "$WORKSPACE/docker-compose.yml" ] || die 'compose manifest is missing'
-}
-
-runner_git() {
-  local workspace="$1"
-  shift
-  validate_workspace "$workspace"
-  runuser --user "$RUNNER_USER" -- env -i \
-    HOME=/nonexistent PATH=/usr/bin:/bin LC_ALL=C \
-    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
-    GIT_NO_REPLACE_OBJECTS=1 \
-    git -c safe.directory="$workspace" -c core.fsmonitor=false -c core.hooksPath=/dev/null \
-      -c diff.external= -c core.attributesFile=/dev/null -C "$workspace" "$@"
-}
-
-runner_change_impact() {
-  local workspace="$1"
-  shift
-  validate_workspace "$workspace"
-  runuser --user "$RUNNER_USER" -- env -i \
-    HOME=/nonexistent PATH=/usr/bin:/bin LC_ALL=C \
-    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
-    GIT_NO_REPLACE_OBJECTS=1 \
-    "$CHANGE_IMPACT" --repo "$workspace" "$@"
-}
-
-validate_checkout() {
-  local expected_sha="$1"
-  local actual_sha
-
-  validate_sha "$expected_sha"
-  actual_sha="$(runner_git "$WORKSPACE" rev-parse 'HEAD^{commit}')"
-  [ "$actual_sha" = "$expected_sha" ] || die 'workspace revision does not match requested release'
-  runner_git "$WORKSPACE" diff --quiet -- ||
-    die 'workspace has tracked changes'
-  runner_git "$WORKSPACE" diff --cached --quiet -- ||
-    die 'workspace index has tracked changes'
 }
 
 validate_container() {
@@ -1002,14 +958,17 @@ admit_signature() {
   node "$RELEASE_MANIFEST" admit-signature --source "$1" --output "$2" --maximum-bytes 16777216 >/dev/null
 }
 
+artifact_impact_state() {
+  require_current_state
+  node "$RELEASE_MANIFEST" export-impact-state --state "$CURRENT_STATE"
+}
+
 artifact_prepare() {
   local input_root="$1" sha="$2" tree="$3" run_id="$4" manifest_sha="$5"
   local target="$6" config_sha="$7" workflow_attempt="$8"
-  local workspace="$WORKSPACE" temp transaction profile artifact filename expected field ref
+  local temp transaction profile artifact filename expected field ref
   validate_sha "$sha"
   validate_sha "$tree"
-  validate_checkout "$sha"
-  [ "$(runner_git "$workspace" rev-parse 'HEAD^{tree}')" = "$tree" ] || die 'workspace tree does not match candidate source tree'
   validate_run_id "$run_id"
   [ "$input_root" = "$CANDIDATE_PARENT/$run_id/candidate" ] || die 'unexpected candidate artifact root'
   validate_sha256 "$manifest_sha"
@@ -1068,6 +1027,16 @@ artifact_prepare() {
     --candidate-run-id "$run_id" --candidate-run-attempt "$workflow_attempt" \
     --delivery-run-id "$DELIVERY_RUN_ID" --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" \
     --target "$target" --config-sha256 "$config_sha" --output "$temp/delivery.json"
+  local authorization="$temp/delivery/delivery-authorization.json"
+  admit_file "$input_root/impact-state.json" "$temp/impact-state.json" \
+    "$(jq -er '.impactStateSha256' "$authorization")" 1048576
+  admit_file "$input_root/impact-plan.json" "$temp/impact-plan.json" \
+    "$(jq -er '.impactPlanSha256' "$authorization")" 4194304
+  node "$RELEASE_MANIFEST" export-impact-state --state "$CURRENT_STATE" --output "$temp/current-impact-state.json"
+  cmp --silent "$temp/impact-state.json" "$temp/current-impact-state.json" ||
+    die 'authorized impact state no longer matches current high-water'
+  node "$IMPACT_RECOVERY" verify-authorized-impact --authorization "$authorization" \
+    --state "$temp/impact-state.json" --impact "$temp/impact-plan.json" --source-sha "$sha"
   # Parse only the authenticated admitted manifest; remaining paths are fixed.
   admit_file "$input_root/qualification-receipt.json" "$temp/candidate/qualification-receipt.json" "$(jq -er '.qualification.receiptSha256' "$manifest")" 1048576
   admit_file "$input_root/docker-compose.yml" "$temp/candidate/docker-compose.yml" "$(jq -er '.deploymentInputs.composeSha256' "$manifest")" 4194304
@@ -1104,20 +1073,6 @@ EOF
   fi
 
   require_unchanged_runtime_inputs "$temp"
-  # Repository discovery remains outside root identity. Only the fixed,
-  # runner-owned checkout is read, while prior release state crosses the
-  # privilege boundary through stdin rather than a root-only path.
-  jq --slurpfile releases "$temp/prior/service-releases.json" '.serviceReleases=$releases[0]' \
-    "$temp/prior-state.json" > "$temp/deployed-state.json"
-  runner_change_impact "$workspace" --deployed-state - --head "$sha" --json \
-    < "$temp/deployed-state.json" > "$temp/impact-plan.json"
-  if [ "${EUID}" -eq 0 ]; then chown root:root "$temp/impact-plan.json"; fi
-  chmod 0600 "$temp/impact-plan.json"
-  if [ -x "$IMPACT_RECOVERY" ]; then
-    "$IMPACT_RECOVERY" validate-impact --input "$temp/impact-plan.json"
-  else
-    [ "${EUID}" -ne 0 ] || die 'installed impact/recovery validator is unavailable'
-  fi
 
   export DOCKER_CONFIG="$temp/docker"
   local verifier_args=(
@@ -1170,7 +1125,7 @@ EOF
   done < <(jq -r '.deployment.artifactsToPull[]' "$temp/impact-plan.json")
   build_next_service_releases "$temp" "$sha" "$run_id"
   unset HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME
-  rm -rf -- "$temp/docker" "$temp/prior-state.json" "$temp/deployed-state.json" "$temp/verified.json"
+  rm -rf -- "$temp/docker" "$temp/prior-state.json" "$temp/current-impact-state.json" "$temp/verified.json"
   chmod 0700 "$temp"
   sync -f "$temp/receipt.json"
   # Reuse full live verification before this disposable transaction becomes
@@ -1908,7 +1863,7 @@ schedule_apply() {
 }
 
 usage() {
-  printf '%s\n' 'usage: hb-deploy artifact-{prepare|impact|preflight|migrate|replace|status|authorize-rollback|rollback} DELIVERY_RUN_ID DELIVERY_ATTEMPT ...; hb-deploy schedule-apply REQUEST_ID; hb-deploy {health|boundary} ...' >&2
+  printf '%s\n' 'usage: hb-deploy artifact-impact-state; hb-deploy artifact-{prepare|impact|preflight|migrate|replace|status|authorize-rollback|rollback} DELIVERY_RUN_ID DELIVERY_ATTEMPT ...; hb-deploy schedule-apply REQUEST_ID; hb-deploy {health|boundary} ...' >&2
   exit 2
 }
 
@@ -1920,6 +1875,14 @@ command="$1"
 shift
 
 case "$command" in
+  artifact-impact-state)
+    unset NODE_OPTIONS NODE_PATH GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE \
+      DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME \
+      SSL_CERT_FILE SSL_CERT_DIR GITHUB_TOKEN GH_TOKEN
+    export HOME=/root
+    verify_installed_implementation
+    [ "$#" -eq 0 ] || usage
+    ;;
   artifact-*)
     unset NODE_OPTIONS NODE_PATH GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE \
       DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME \
@@ -1954,6 +1917,7 @@ flock -x 9
 case "$command" in
   health) [ "$#" -eq 1 ] || usage; health "$@" ;;
   boundary) [ "$#" -eq 0 ] || usage; boundary ;;
+  artifact-impact-state) artifact_impact_state ;;
   artifact-prepare) [ "$#" -eq 8 ] || usage; artifact_prepare "$@" ;;
   artifact-impact) [ "$#" -eq 2 ] || usage; require_delivery_invocation "$1" "$2" preflight; artifact_impact "$@" ;;
   artifact-preflight) [ "$#" -eq 2 ] || usage; require_delivery_invocation "$1" "$2" preflight; artifact_preflight "$@" ;;

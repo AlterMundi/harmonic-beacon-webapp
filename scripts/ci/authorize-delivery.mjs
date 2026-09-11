@@ -53,13 +53,15 @@ export function main(env = process.env) {
   if (env.OPERATION === 'promote' && (Date.parse(m.qualification.qualifiedAt) > now || Date.parse(m.qualification.expiresAt) <= now)) throw Error('stale qualification');
   const configSha256 = m.configProfiles[env.TARGET === 'shadow' ? 'live-staging' : 'production'].sha256;
   const a = {
-    schemaVersion: 'harmonic-beacon.delivery-authorization.v1', sourceSha: m.source.gitSha, sourceTree: m.source.gitTree,
+    schemaVersion: 'harmonic-beacon.delivery-authorization.v2', sourceSha: m.source.gitSha, sourceTree: m.source.gitTree,
     candidateManifestSha256: candidate.sha256, baseManifestSha256: base.sha256,
     candidateRunId: m.build.workflowRunId, candidateRunAttempt: m.build.workflowRunAttempt,
     deliveryRunId: env.GITHUB_RUN_ID, deliveryRunAttempt: Number(env.GITHUB_RUN_ATTEMPT),
     workflowPath: '.github/workflows/oci-promote.yml', workflowRef: 'refs/heads/main',
     laneState: env.RELEASE_LANE_STATE, environment: env.TARGET, target: env.TARGET, operation: env.OPERATION,
     configSha256, transitionAuthorizationSha256,
+    impactStateSha256: env.OPERATION === 'promote' ? env.IMPACT_STATE_SHA256 : null,
+    impactPlanSha256: env.OPERATION === 'promote' ? env.IMPACT_PLAN_SHA256 : null,
     verbs: env.OPERATION === 'rollback' ? ['rollback'] : env.TARGET === 'shadow' ? ['prepare', 'preflight', 'status'] : ['prepare', 'preflight', 'migrate', 'replace', 'status', 'rollback'],
     authorizedAt: new Date(now).toISOString(), expiresAt: new Date(now + 900000).toISOString(),
   };

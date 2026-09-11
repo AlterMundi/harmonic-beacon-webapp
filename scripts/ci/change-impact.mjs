@@ -366,10 +366,10 @@ export function classifyChanges(inputFiles, options = {}) {
   return report;
 }
 
-export function classifyDeployedServiceChanges({ diffByService, serviceReleases, labels = [] }) {
+export function classifyDeployedServiceChanges({ diffByService, serviceReleases, labels = [], services = SERVICES }) {
   const files = new Set();
   const affected = new Set();
-  for (const service of SERVICES) {
+  for (const service of services) {
     const diff = diffByService[service];
     if (!Array.isArray(diff)) throw new Error(`missing deployed diff for service: ${service}`);
     for (const rawPath of diff) {
@@ -398,7 +398,7 @@ export function classifyDeployedServiceChanges({ diffByService, serviceReleases,
   report.deployment.artifactsToPull = artifactList(selected.filter((service) => !reusePriorImages.includes(service)));
   report.deployment.recovery = !selected.length ? 'none' : report.deployment.migration === 'verify-pending'
     ? 'backup-restore-if-pending' : 'image-config';
-  report.details.deployedServiceBases = Object.fromEntries(SERVICES.map((service) => {
+  report.details.deployedServiceBases = Object.fromEntries(services.map((service) => {
     const sourceSha = serviceReleases?.[service]?.sourceSha;
     if (!/^[0-9a-f]{40}$/u.test(sourceSha ?? '')) throw new Error(`invalid deployed source for service: ${service}`);
     return [service, sourceSha];
@@ -444,7 +444,7 @@ function defaultBase(repo) {
 }
 
 function parseArgs(argv) {
-  const options = { base: null, head: 'HEAD', files: [], format: 'text', workingTree: false, labels: [], repo: REPO_ROOT };
+  const options = { base: null, head: 'HEAD', files: [], format: 'text', workingTree: false, labels: [], repo: REPO_ROOT, serviceScope: 'all' };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--base') options.base = argv[++index] ?? '';
@@ -455,6 +455,7 @@ function parseArgs(argv) {
       options.deployedState = value === '-' ? '-' : resolve(value);
     }
     else if (arg === '--label') options.labels.push(argv[++index] ?? '');
+    else if (arg === '--service-scope') options.serviceScope = argv[++index] ?? '';
     else if (arg === '--file') options.files.push(argv[++index] ?? '');
     else if (arg === '--files-from') options.files.push(...readFileSync(argv[++index] ?? '', 'utf8').split(/\r?\n/u));
     else if (arg === '--stdin') options.files.push(...readFileSync(0, 'utf8').split(/\r?\n/u));
@@ -463,11 +464,12 @@ function parseArgs(argv) {
     else if (arg === '--help' || arg === '-h') options.help = true;
     else throw new Error(`unknown change-impact argument: ${arg}`);
   }
+  if (!['all', 'live'].includes(options.serviceScope)) throw new Error('service scope must be all or live');
   return options;
 }
 
 function usage() {
-  return `Usage: scripts/hb.mjs change-impact [options]\n\n  --deployed-state PATH  compare each service from its deployed release (preferred)\n  --base REF             compare the complete base..head range\n  --head REF             comparison head (default HEAD)\n  --label NAME           add risk; labels never downgrade detected risk\n  --working-tree         include staged, unstaged and untracked paths\n  --file PATH            classify an explicit path (repeatable)\n  --json                 emit machine-readable JSON`;
+  return `Usage: scripts/hb.mjs change-impact [options]\n\n  --deployed-state PATH  compare each service from its deployed release (preferred)\n  --service-scope SCOPE  deployed services: all (default) or live\n  --base REF             compare the complete base..head range\n  --head REF             comparison head (default HEAD)\n  --label NAME           add risk; labels never downgrade detected risk\n  --working-tree         include staged, unstaged and untracked paths\n  --file PATH            classify an explicit path (repeatable)\n  --json                 emit machine-readable JSON`;
 }
 
 export function committedDiff(repo, base, head) {
@@ -484,10 +486,11 @@ function changedFiles(options) {
   if (options.files.length) return classifyChanges(options.files, { labels: options.labels });
   if (options.deployedState) {
     const state = JSON.parse(readFileSync(options.deployedState === '-' ? 0 : options.deployedState, 'utf8'));
-    const diffByService = Object.fromEntries(SERVICES.map((service) => [
+    const services = options.serviceScope === 'live' ? [...LIVE_SERVICES].sort() : SERVICES;
+    const diffByService = Object.fromEntries(services.map((service) => [
       service, committedDiff(options.repo, state.serviceReleases?.[service]?.sourceSha ?? '', options.head),
     ]));
-    return classifyDeployedServiceChanges({ diffByService, serviceReleases: state.serviceReleases, labels: options.labels });
+    return classifyDeployedServiceChanges({ diffByService, serviceReleases: state.serviceReleases, labels: options.labels, services });
   }
   const base = options.base || defaultBase(options.repo);
   const files = committedDiff(options.repo, base, options.head);
