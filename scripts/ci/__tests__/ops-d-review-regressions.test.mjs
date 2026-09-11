@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
+const ROOT = process.cwd();
 const read = (path) => readFileSync(path, 'utf8');
 
 function section(source, start, end) {
@@ -160,6 +162,24 @@ test('repair: impact installs locked dependencies before shared operations tooli
   const workflow = read('.github/workflows/ci.yml');
   const impact = section(workflow, '  impact:\n', '\n  lint-and-build:\n');
   assert.ok(impact.indexOf('- run: npm ci') < impact.indexOf('run: npm run test:ops-tooling'));
+});
+
+test('repair: hosted jobs install and address only locked dependency trees', () => {
+  const workflow = read('.github/workflows/ci.yml');
+  const release = section(workflow, '  release-qualification:\n', '\n  required-impact-checks:\n');
+  assert.ok(release.indexOf('- run: npm ci') < release.indexOf('node --test'));
+  for (const match of workflow.matchAll(/npm (?:--prefix ([^\s]+) audit|audit[^\n]*--prefix ([^\s]+))/gu)) {
+    const prefix = match[1] ?? match[2];
+    assert.ok(existsSync(resolve(ROOT, prefix, 'package-lock.json')), `missing lockfile for ${prefix}`);
+  }
+});
+
+test('repair: analytics PostgreSQL credentials match the hosted service fixture', () => {
+  const workflow = read('.github/workflows/ci.yml');
+  const analytics = section(workflow, '  analytics:\n', '\n  commerce-contract:\n');
+  assert.match(analytics, /POSTGRES_PASSWORD: analytics_test_password/u);
+  assert.match(analytics, /ANALYTICS_DATABASE_ADMIN_URL: postgresql:\/\/analytics_owner:analytics_test_password@/u);
+  assert.match(analytics, /ANALYTICS_TEST_DATABASE_URL: postgresql:\/\/analytics_owner:analytics_test_password@/u);
 });
 
 test('repair: prepare cleanup is EXIT-safe across registry login and pull failure', () => {

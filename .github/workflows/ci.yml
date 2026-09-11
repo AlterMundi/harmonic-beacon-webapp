@@ -124,8 +124,8 @@ jobs:
       - name: Reject high-severity production dependency regressions
         run: |
           npm run audit:production
-          npm --prefix services/home audit --omit=dev --audit-level=high
-          npm --prefix services/commerce-worker audit --omit=dev --audit-level=high
+          npm audit --omit=dev --prefix services/tapestry --audit-level=high
+          npm audit --omit=dev --prefix services/playlist-bot --audit-level=high
       - run: npm run lint
       - run: npm run build
         env:
@@ -214,8 +214,8 @@ jobs:
       - run: npm audit --omit=dev --prefix services/analytics --audit-level=high
       - name: Apply analytics migrations and run PostgreSQL tests
         env:
-          ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:***@127.0.0.1:55433/analytics
-          ANALYTICS_TEST_DATABASE_URL: postgresql://analytics_owner:***@127.0.0.1:55433/analytics
+          ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:analytics_test_password@127.0.0.1:55433/analytics
+          ANALYTICS_TEST_DATABASE_URL: postgresql://analytics_owner:analytics_test_password@127.0.0.1:55433/analytics
         run: |
           npm run migrate --prefix services/analytics
           npm test --prefix services/analytics
@@ -388,6 +388,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
+      - run: npm ci
       - name: Run interrupted-run, stale-candidate, and qualification regressions
         run: >-
           node --test
