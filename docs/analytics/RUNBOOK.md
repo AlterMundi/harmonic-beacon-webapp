@@ -2,17 +2,19 @@
 
 ## Canonical delivery contract
 
-[DELIVERY_RECOVERY_CONTRACT_V1.md](./DELIVERY_RECOVERY_CONTRACT_V1.md) is the
+[DELIVERY_RECOVERY_CONTRACT_V2.md](./DELIVERY_RECOVERY_CONTRACT_V2.md) is the
 versioned authority for source/artifact provenance, bounded delivery, receipts,
 alerts, synthetic isolation, and rollback. It supersedes prior mutable/manual
 analytics image-delivery instructions. Preserve older issue comments and
 receipts as history; never reuse them as current evidence.
 
 This repository does not activate the new path. Until the external Actions
-environment, dedicated runner label, exact package access, root-owned helper,
-sudoers, state directory, and a real alert recipient drill exist, continue to
-treat production delivery through the adapter as unavailable. There is no
-direct-Compose or generic-root fallback.
+environment, release-push CI/build chain, dedicated runner label, exact package
+access, approved immutable root bundle/manifest, sudoers, initial exact current
+state, and state directories exist, continue to treat production delivery
+through the adapter as unavailable. There is no direct-Compose or generic-root
+fallback. External recipient delivery is a separate hosted evidence gate and
+is never fabricated by the local receipt.
 
 ## Service and ownership
 
@@ -54,8 +56,13 @@ Analytics PostgreSQL lives at `/mnt/beacon-data/analytics/postgres`. Encrypted c
 to the root disk. Backups run every six hours, retain 14 days, reserve 10 GiB and carry SHA-256
 sidecars. One recipient is locally restorable and one is the existing off-host recipient.
 
-Run `restore-verify-analytics.sh <dump.age>` to decrypt into a new temporary database, restore all
-schemas, validate the catalog and drop the temporary database. It never overwrites production.
+The delivery state machine passes an exact selected dump, checksum, candidate
+image, run ID and attempt to the installed restore verifier. It decrypts into a
+root-private staging directory, restores all schemas into an attempt-specific
+synthetic Compose project, runs the candidate migration there, validates the
+catalog, and removes the synthetic project and volume. It never connects to or
+overwrites production. Do not invoke the installed verifier manually as a
+substitute for the locked transaction.
 RPO is six hours plus timer jitter; target RTO is two hours. A source loss is recovered by restoring
 analytics and replaying the one-day-overlap idempotent backfills. An analytics DB loss does not
 affect product availability; rebuild from source plus retained browser backups.
@@ -66,9 +73,11 @@ affect product availability; rebuild from source plus retained browser backups.
 minutes. The monitor service now sends generic failure and first-success
 resolution events to the loopback Alertmanager API through
 `notify-analytics-monitor.mjs`. Alertmanager owns the existing receiver route;
-no receiver or secret is stored here. Rendering both payloads in tests proves
-the route contract, not recipient delivery. Recipient delivery remains unproven
-until an external drill records current failure and recovery proof IDs.
+no receiver or secret is stored here. The notifier durably records pending,
+accepted, recovery-pending and healthy phases with stable Alertmanager
+timestamps so a crash can be reconciled idempotently. Rendering and local route
+acceptance prove the route contract, not recipient delivery. Recipient delivery
+remains unproven until independently observed outside this repository.
 Analytics alert failure must never block or change product traffic.
 
 ## Incidents and rollback
