@@ -84,12 +84,12 @@ jobs:
 
       - name: Restore verified LiveKit load tester cache
         id: livekit-cli-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/livekit-load-cli/lk
           key: livekit-load-cli-v1-${{ runner.os }}-${{ runner.arch }}-go-1.25.8-${{ hashFiles('scripts/install-livekit-load-cli.sh', 'scripts/patches/livekit-cli-v2.16.3-vp8-depacketizer.patch') }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         if: steps.livekit-cli-cache.outputs.cache-hit != 'true'
         with:
           go-version: '1.25.8'
@@ -137,7 +137,7 @@ jobs:
           LIVEKIT_API_KEY: ${{ env.E2E_LIVEKIT_API_KEY }}
           LIVEKIT_API_SECRET: ${{ env.E2E_LIVEKIT_API_SECRET }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: livekit-load-manifest
@@ -275,7 +275,7 @@ jobs:
         if: failure()
         run: docker logs --tail 300 e2e-livekit
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always() && github.event.repository.private == true
         with:
           name: playwright-report
@@ -356,7 +356,7 @@ jobs:
             --retries=0 --workers=1
 
       - name: Retain private Account runtime and failure receipts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         # Test credentials, session-bearing traces and logs must not become
         # public artifacts. Never upload the copied app, keys or PG data.
         # Public forks still run the gate, but do not publish these receipts.

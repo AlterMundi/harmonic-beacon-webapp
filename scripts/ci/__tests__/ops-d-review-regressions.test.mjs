@@ -133,18 +133,25 @@ test('repair: root lane and one live high-water gate legacy and OCI mutation bou
   assert.doesNotMatch(legacy, /sudo|self-hosted|actions\/checkout/u);
 });
 
-test('repair: every checkout and setup-node action is immutable with explicit minimal workflow permissions', () => {
+test('repair: every external action is immutable with explicit minimal workflow permissions', () => {
+  const readOnlyWorkflows = new Set([
+    '.github/workflows/audio-boundary.yml', '.github/workflows/ci.yml',
+    '.github/workflows/deploy.yml', '.github/workflows/e2e.yml',
+    '.github/workflows/livekit-capacity.yml',
+  ]);
   for (const file of [
-    '.github/workflows/audio-boundary.yml', '.github/workflows/ci.yml', '.github/workflows/deploy.yml',
-    '.github/workflows/e2e.yml', '.github/workflows/livekit-capacity.yml', '.github/workflows/oci-candidate.yml',
-    '.github/workflows/oci-promote.yml',
+    '.github/workflows/analytics-build.yml', '.github/workflows/analytics-delivery.yml',
+    '.github/workflows/audio-boundary.yml', '.github/workflows/ci.yml',
+    '.github/workflows/delivery-gate-dispatch.yml', '.github/workflows/delivery-gate.yml',
+    '.github/workflows/deploy.yml', '.github/workflows/e2e.yml', '.github/workflows/livekit-capacity.yml',
+    '.github/workflows/oci-candidate.yml', '.github/workflows/oci-promote.yml',
   ]) {
     const workflow = read(file);
     assert.match(workflow, /^\s{0,4}permissions:\n/mu);
     assert.match(workflow, /^\s{2,6}contents: read$/mu);
-    if (!file.endsWith('oci-candidate.yml') && !file.endsWith('oci-promote.yml')) assert.doesNotMatch(workflow, /^\s{2,6}[a-z-]+: write$/mu);
-    for (const match of workflow.matchAll(/actions\/(?:checkout|setup-node)@([^\s]+)/gu)) {
-      assert.match(match[1], /^[0-9a-f]{40}$/u, `${file}: ${match[0]}`);
+    if (readOnlyWorkflows.has(file)) assert.doesNotMatch(workflow, /^\s{2,6}[a-z-]+: write$/mu);
+    for (const match of workflow.matchAll(/^\s*-?\s*uses:\s*((?!\.\/)[^\s]+)@([^\s#]+)/gmu)) {
+      assert.match(match[2], /^[0-9a-f]{40}$/u, `${file}: ${match[1]}@${match[2]}`);
     }
   }
 });

@@ -214,7 +214,7 @@ describe('Isolated Account CI gate', () => {
         expect(gate?.run).toContain('pactl info');
         expect(gate?.run).toContain('trap');
         expect(gate?.run).not.toMatch(/sudo pulseaudio|auth-anonymous=1/);
-        const artifact = job.steps.find((step) => step.uses === 'actions/upload-artifact@v4');
+        const artifact = job.steps.find((step) => step.uses === 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02');
         expect(artifact?.if).toBe('always() && github.event.repository.private == true');
         expect(artifact?.with?.['retention-days']).toBe(3);
         expect(String(artifact?.with?.path).trim().split('\n')).toEqual([

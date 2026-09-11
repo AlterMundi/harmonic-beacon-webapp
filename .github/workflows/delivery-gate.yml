@@ -80,7 +80,7 @@ jobs:
 
       - name: Check out the exact trusted base implementation only
         if: steps.target.outputs.active == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ steps.target.outputs.base_sha }}
           persist-credentials: false
