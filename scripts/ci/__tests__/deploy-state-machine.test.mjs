@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import {
   chmodSync,
   mkdtempSync,
@@ -9,15 +8,17 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { stateFixture } from './b3-fixture.mjs';
 import test from 'node:test';
 
 const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
 const RUN_ID = '4242';
-const BASE_SHA = '1'.repeat(64);
-const CANDIDATE_MANIFEST = '{}\n';
-const CANDIDATE_SHA = createHash('sha256').update(CANDIDATE_MANIFEST).digest('hex');
+const BASE_STATE = stateFixture();
+const CANDIDATE_STATE = stateFixture('b');
+const BASE_SHA = BASE_STATE.manifestSha256;
+const CANDIDATE_MANIFEST = Buffer.from(CANDIDATE_STATE.manifestBase64, 'base64');
+const CANDIDATE_SHA = CANDIDATE_STATE.manifestSha256;
 
 function writePrivate(path, value) {
   writeFileSync(path, value, { mode: 0o600 });
@@ -34,16 +35,13 @@ function makeCommitFixture(root) {
     target: 'production', phase: 'replaced', manifestSha256: CANDIDATE_SHA,
     baseManifestSha256: BASE_SHA,
   })}\n`);
-  writePrivate(join(state, 'current-state.json'), `${JSON.stringify({
-    schemaVersion: 'harmonic-beacon.current-state.v2',
-    laneState: 'oci-production', manifestSha256: BASE_SHA,
-  })}\n`);
+  writePrivate(join(state, 'current-state.json'), JSON.stringify(BASE_STATE));
   writePrivate(join(state, 'active-transaction'), `${RUN_ID}\n`);
   writePrivate(lane, 'oci-production\n');
   writePrivate(join(candidate, 'candidate-manifest.json'), CANDIDATE_MANIFEST);
-  writePrivate(join(candidate, 'docker-compose.yml'), 'services: {}\n');
-  writePrivate(join(candidate, 'oci-images.compose.yml'), 'services: {}\n');
-  writePrivate(join(candidate, 'target-public-config.json'), '{}\n');
+  writePrivate(join(candidate, 'docker-compose.yml'), Buffer.from(CANDIDATE_STATE.composeBase64, 'base64'));
+  writePrivate(join(candidate, 'oci-images.compose.yml'), Buffer.from(CANDIDATE_STATE.overlayBase64, 'base64'));
+  writePrivate(join(candidate, 'target-public-config.json'), Buffer.from(CANDIDATE_STATE.publicConfigBase64, 'base64'));
   return { state, transaction };
 }
 
@@ -66,7 +64,10 @@ function buildHarness(root) {
     /require_secure_root_file\(\) \{[\s\S]*?\n\}/u,
     `require_secure_root_file() {\n  [ -f "$1" ] && [ ! -L "$1" ] || die "test file is missing or unsafe: $1"\n  [ "$(stat -c '%a' "$1")" = "$2" ] || die "test file mode is invalid: $1"\n}`,
   );
-  source += `\nchown() { :; }\n`;
+  source = source.replace(/^readonly RELEASE_MANIFEST=.*$/m,
+    `readonly RELEASE_MANIFEST='${resolve('scripts/ci/release-manifest.mjs')}'`);
+  source += `\nchown() { :; }\nverify_release_runtime_state() { :; }\n`;
+
   source += `resume_commit() {\n`;
   source += `  if transaction_finish_committed '${RUN_ID}'; then return 0; fi\n`;
   source += `  atomic_install_current_state '${join(root, 'releases', 'transactions', RUN_ID)}'\n`;
@@ -97,7 +98,7 @@ test('commit transition resumes idempotently after every durable state boundary'
   ];
 
   for (const failpoint of failpoints) {
-    const root = mkdtempSync(join(tmpdir(), `hb-state-${failpoint}-`));
+    const root = mkdtempSync(join(process.cwd(), `.hb-state-${failpoint}-`));
     try {
       const { state, transaction } = makeCommitFixture(root);
       const harness = buildHarness(root);

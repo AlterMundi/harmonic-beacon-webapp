@@ -28,6 +28,7 @@ function artifact(artifactId, repository, digest, roles) {
     context: '.',
     dockerfile: artifactId === 'app' ? 'Dockerfile' : `services/${artifactId}/Dockerfile`,
     roles,
+    evidenceRecordDigest: H('9'),
     sbom: { format: 'spdx-json', digest: H('1'), signatureBundleDigest: H('4') },
     provenance: {
       predicateType: 'https://slsa.dev/provenance/v1',
@@ -140,6 +141,8 @@ test('accepts a canonical, qualified manifest bound to exact registry evidence',
   assert.equal(result.imageRefs.app, `${manifest.artifacts[0].repository}@${manifest.artifacts[0].digest}`);
 });
 
+rejectMutation('rejects missing evidence record digest', (manifest) => { delete manifest.artifacts[0].evidenceRecordDigest; }, /missing evidenceRecordDigest/);
+rejectMutation('rejects malformed evidence record digest', (manifest) => { manifest.artifacts[0].evidenceRecordDigest = 'mutable'; }, /evidence record digest/);
 rejectMutation('rejects unknown manifest fields', (manifest) => { manifest.untrusted = true; }, /unknown field/);
 rejectMutation('rejects wrong source SHA', (_manifest, expected) => { expected.sourceSha = 'f'.repeat(40); }, /source SHA/);
 rejectMutation('rejects wrong source tree', (_manifest, expected) => { expected.sourceTree = 'f'.repeat(40); }, /source tree/);

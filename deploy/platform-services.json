@@ -71,7 +71,7 @@
         "runnerName": "mona",
         "labels": ["self-hosted", "Linux", "X64", "mona"]
       },
-      "mutation": "Production changes use exactly one release lane state: legacy-shadow preserves the dedicated release/Mona helper path while OCI may only shadow; oci-production authorizes only the exact qualified OCI promotion path after recovery evidence is accepted."
+      "mutation": "Production changes use exactly one release lane state: legacy-shadow permits OCI shadow preparation while the legacy release workflow fails closed on a security safety hold; oci-production authorizes only the exact qualified OCI promotion path after recovery evidence is accepted."
     },
     {
       "id": "account-listener",

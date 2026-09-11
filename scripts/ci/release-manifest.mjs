@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import {
+  closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, writeFileSync, unlinkSync,
+} from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,6 +30,51 @@ const APP_ROLES = ['app', 'commerce-reconciler', 'migrate'];
 
 function fail(message) {
   throw new Error(`release manifest: ${message}`);
+}
+
+function fileIdentity(stat) {
+  return [stat.dev, stat.ino, stat.mode, stat.nlink, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+}
+
+export function admitRegularFile(source, output, { expectedSha256, maximumBytes }) {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1 || maximumBytes > 64 * 1024 * 1024) {
+    fail('invalid admission byte limit');
+  }
+  digest(expectedSha256, 'admission source');
+  let before;
+  try { before = lstatSync(source, { bigint: true }); } catch { fail('unsafe admission source'); }
+  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n ||
+      before.size < 1n || before.size > BigInt(maximumBytes)) fail('unsafe admission source');
+  let fd;
+  try {
+    fd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const opened = fstatSync(fd, { bigint: true });
+    if (!opened.isFile() || opened.nlink !== 1n || fileIdentity(opened) !== fileIdentity(before)) {
+      fail('admission source changed while opening');
+    }
+    const buffer = Buffer.alloc(Number(opened.size) + 1);
+    const count = readSync(fd, buffer, 0, buffer.length, 0);
+    const bytes = buffer.subarray(0, count);
+    const after = fstatSync(fd, { bigint: true });
+    if (fileIdentity(after) !== fileIdentity(opened) || bytes.length !== Number(after.size)) {
+      fail('admission source changed while reading');
+    }
+    const actual = publicConfigSha256(bytes);
+    if (actual !== expectedSha256) fail('admission source digest mismatch');
+    let destination;
+    try {
+      destination = openSync(output, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      writeFileSync(destination, bytes);
+    } catch (error) {
+      if (destination !== undefined) unlinkSync(output);
+      throw error;
+    } finally {
+      if (destination !== undefined) closeSync(destination);
+    }
+    return actual;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 function object(value, label) {
@@ -151,7 +198,7 @@ function validateArtifacts(artifacts) {
   for (const entry of artifacts) {
     exactKeys(entry, 'artifact', [
       'artifactId', 'repository', 'digest', 'platform', 'context', 'dockerfile',
-      'roles', 'sbom', 'provenance', 'signature',
+      'roles', 'evidenceRecordDigest', 'sbom', 'provenance', 'signature',
     ]);
     const expectedRepository = ARTIFACTS.get(entry.artifactId);
     if (!expectedRepository || seen.has(entry.artifactId)) fail(`invalid or duplicate artifact: ${entry.artifactId}`);
@@ -165,6 +212,7 @@ function validateArtifacts(artifacts) {
     if (entry.artifactId === 'app' && JSON.stringify([...entry.roles].sort()) !== JSON.stringify(APP_ROLES)) {
       fail('app roles must bind app, migrate, and commerce-reconciler to one digest');
     }
+    digest(entry.evidenceRecordDigest, `${entry.artifactId} evidence record`);
     validateSupplyChain(entry, entry.artifactId);
   }
   for (const id of ARTIFACTS.keys()) if (!seen.has(id)) fail(`missing artifact: ${id}`);
@@ -261,6 +309,35 @@ export function validateReleaseManifest(manifest) {
   return manifest;
 }
 
+// Historical live state must remain valid after qualification expires. Admission
+// freshness is checked separately; the full qualified manifest is still closed.
+export function validateCurrentState(state) {
+  exactKeys(state, 'current state', ['schemaVersion', 'laneState', 'manifestSha256',
+    'manifestBase64', 'composeBase64', 'overlayBase64', 'publicConfigBase64']);
+  if (state.schemaVersion !== 'harmonic-beacon.current-state.v3') fail('unsupported current release state');
+  if (state.laneState !== 'oci-production') fail('invalid live high-water lane');
+  sha256(state.manifestSha256, 'current manifest');
+  const decoded = {};
+  for (const field of ['manifestBase64', 'composeBase64', 'overlayBase64', 'publicConfigBase64']) {
+    const encoded = state[field];
+    string(encoded, field, /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u);
+    const bytes = Buffer.from(encoded, 'base64');
+    if (bytes.toString('base64') !== encoded) fail(`invalid canonical base64: ${field}`);
+    decoded[field] = bytes;
+  }
+  if (publicConfigSha256(decoded.manifestBase64) !== `sha256:${state.manifestSha256}`) fail('current manifest and high-water are contradictory');
+  const manifest = validateReleaseManifest(JSON.parse(decoded.manifestBase64.toString('utf8')));
+  for (const [field, expected] of [
+    ['composeBase64', manifest.deploymentInputs.composeSha256],
+    ['overlayBase64', manifest.deploymentInputs.overlaySha256],
+    ['publicConfigBase64', manifest.configProfiles.production.sha256],
+  ]) {
+    if (publicConfigSha256(decoded[field]) !== expected) fail(`current state input mismatch: ${field}`);
+  }
+  validateRuntimePublicConfig(JSON.parse(decoded.publicConfigBase64.toString('utf8')));
+  return decoded;
+}
+
 export function verifyReleaseManifest(manifest, expected) {
   validateReleaseManifest(manifest);
   if (!expected || typeof expected !== 'object') fail('verification expectations are required');
@@ -307,6 +384,156 @@ export function verifyReleaseManifest(manifest, expected) {
   return { manifestSha256: actualManifestSha256, imageRefs };
 }
 
+const ACCEPTANCE_FIELDS = ['browser', 'syntheticSession', 'commerce', 'schema', 'isolation', 'restore'];
+export function validateQualificationEvidence(evidence) {
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence) ||
+      JSON.stringify(Object.keys(evidence).sort()) !== JSON.stringify([...ACCEPTANCE_FIELDS].sort())) {
+    fail('acceptance evidence fields are not closed');
+  }
+  for (const [key, fields] of Object.entries({
+    browser: ['engine', 'passed', 'failed', 'skipped'],
+    syntheticSession: ['created', 'authenticatedRole'],
+    commerce: ['workerHeartbeatAgeMs', 'pending', 'processing'],
+    schema: ['expectedHead', 'observedHead'],
+    isolation: ['internalNetworks', 'forbiddenSecretNamesFound'],
+    restore: ['backupSha256', 'backupBytes', 'restoredSessionCount'],
+  })) exactKeys(evidence[key], key === 'syntheticSession' ? 'synthetic session' : key, fields);
+  string(evidence.schema.expectedHead, 'schema head', /^[0-9]{14}_[a-z0-9_]+$/u);
+  if (!Array.isArray(evidence.isolation.forbiddenSecretNamesFound)) fail('invalid secret isolation');
+  if (evidence.browser?.engine !== 'chromium' || !Number.isSafeInteger(evidence.browser.passed) || evidence.browser.passed < 1 ||
+      !Number.isSafeInteger(evidence.browser.failed) || evidence.browser.failed !== 0 ||
+      !Number.isSafeInteger(evidence.browser.skipped) || evidence.browser.skipped !== 0) fail('browser acceptance did not pass without skips');
+  if (!Number.isSafeInteger(evidence.syntheticSession?.created) || evidence.syntheticSession.created < 1 ||
+      evidence.syntheticSession.authenticatedRole !== 'ADMIN') {
+    fail('synthetic session acceptance is incomplete');
+  }
+  if (!Number.isSafeInteger(evidence.commerce?.workerHeartbeatAgeMs) || evidence.commerce.workerHeartbeatAgeMs < 0 ||
+      evidence.commerce.workerHeartbeatAgeMs > 10_000 || !Number.isSafeInteger(evidence.commerce.pending) ||
+      evidence.commerce.pending < 0 || !Number.isSafeInteger(evidence.commerce.processing) || evidence.commerce.processing < 0) {
+    fail('commerce worker/backlog evidence is invalid');
+  }
+  if (!evidence.schema?.expectedHead || evidence.schema.observedHead !== evidence.schema.expectedHead) fail('schema head mismatch');
+  if (JSON.stringify(evidence.isolation?.internalNetworks) !== JSON.stringify(['database', 'media']) ||
+      evidence.isolation?.forbiddenSecretNamesFound?.length !== 0) fail('network or secret isolation failed');
+  if (!/^sha256:[0-9a-f]{64}$/u.test(evidence.restore?.backupSha256 ?? '') ||
+      !Number.isSafeInteger(evidence.restore.backupBytes) || evidence.restore.backupBytes < 1 ||
+      !Number.isSafeInteger(evidence.restore.restoredSessionCount) || evidence.restore.restoredSessionCount < 1) {
+    fail('isolated backup restore evidence is invalid');
+  }
+  return evidence;
+}
+
+export function validateQualificationReceipt(receipt, manifest) {
+  if (manifest?.qualification === undefined) validateCandidateManifest(manifest);
+  else validateReleaseManifest(manifest);
+  exactKeys(receipt, 'qualification receipt', ['schemaVersion', 'result', 'workflowRunId',
+    'workflowRunAttempt', 'candidateIdentitySha256', 'imageRefs', 'checkedServices', 'acceptance']);
+  if (receipt.schemaVersion !== 'oci-qualification.v3' || receipt.result !== 'success' ||
+      receipt.workflowRunId !== manifest.build.workflowRunId ||
+      receipt.workflowRunAttempt !== manifest.build.workflowRunAttempt ||
+      receipt.candidateIdentitySha256 !== candidateIdentitySha256(manifest)) fail('qualification candidate/run mismatch');
+  const entries = [...manifest.artifacts, ...manifest.externalImages];
+  exactKeys(receipt.imageRefs, 'qualification image refs', entries.map(e => e.artifactId ?? e.serviceId));
+  for (const entry of entries) {
+    if (receipt.imageRefs[entry.artifactId ?? entry.serviceId] !== `${entry.repository}@${entry.digest}`) fail('qualification image mismatch');
+  }
+  const services = ['postgres', 'livekit', 'app', 'commerce-reconciler', 'tapestry', 'playlist-bot', 'analytics'];
+  if (JSON.stringify(receipt.checkedServices) !== JSON.stringify(services)) fail('qualification services mismatch');
+  validateQualificationEvidence(receipt.acceptance);
+  if (receipt.acceptance.schema.expectedHead !== manifest.migrationSet.head) fail('qualification manifest schema mismatch');
+  return receipt;
+}
+
+const TRANSITION_STAGES = ['shadow', 'rollback', 'forward-repair'];
+const TRANSITION_BINDING = ['candidateManifestSha256', 'baseManifestSha256', 'qualificationReceiptSha256', 'workflowRunId', 'workflowRunAttempt'];
+
+function bounded(value, label, maximum, minimum = 0) {
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) fail(`invalid ${label}`);
+}
+
+// Inputs are exact file bytes. Authentication is mandatory at the root caller before semantics.
+export function validateTransitionEvidence({ manifest, manifestBytes, authorizationBytes, qualificationBytes, stages, now = Date.now() }) {
+  validateReleaseManifest(manifest);
+  if (canonicalize(JSON.parse(manifestBytes)) !== canonicalize(manifest)) fail('transition manifest bytes mismatch');
+  const candidate = createHash('sha256').update(manifestBytes).digest('hex');
+  const binding = {
+    candidateManifestSha256: candidate,
+    baseManifestSha256: manifest.promotion.baseManifestSha256,
+    qualificationReceiptSha256: manifest.qualification.receiptSha256,
+    workflowRunId: manifest.build.workflowRunId,
+    workflowRunAttempt: manifest.build.workflowRunAttempt,
+  };
+  const checkBinding = (value) => {
+    for (const key of TRANSITION_BINDING) if (value[key] !== binding[key]) fail(`transition ${key} mismatch`);
+  };
+  if (publicConfigSha256(qualificationBytes) !== binding.qualificationReceiptSha256) fail('transition qualification digest mismatch');
+  validateQualificationReceipt(JSON.parse(qualificationBytes), manifest);
+  const authorization = JSON.parse(authorizationBytes);
+  exactKeys(authorization, 'transition authorization', ['schemaVersion', 'laneState', ...TRANSITION_BINDING, 'authorizedAt', 'expiresAt', 'stages']);
+  checkBinding(authorization);
+  if (authorization.schemaVersion !== 'harmonic-beacon.oci-transition.v3' || authorization.laneState !== 'oci-production') fail('invalid transition authorization');
+  const authorizedAt = +date(authorization.authorizedAt, 'authorization time');
+  const expiresAt = +date(authorization.expiresAt, 'authorization expiry');
+  if (!Number.isSafeInteger(now) || authorizedAt > now || expiresAt <= now || expiresAt <= authorizedAt || expiresAt - authorizedAt > 86400000 ||
+      now >= +date(manifest.qualification.expiresAt, 'qualification expiry')) fail('stale transition authorization');
+  exactKeys(authorization.stages, 'authorized stages', TRANSITION_STAGES);
+  exactKeys(stages, 'transition stages', TRANSITION_STAGES);
+  const executionDigests = new Set();
+  let previousEnd = 0;
+  for (const stage of TRANSITION_STAGES) {
+    const { receiptBytes, executionBytes } = stages[stage];
+    const hashes = authorization.stages[stage];
+    exactKeys(hashes, 'stage digests', ['receiptSha256', 'executionEvidenceSha256']);
+    digest(hashes.receiptSha256, 'receipt');
+    digest(hashes.executionEvidenceSha256, 'execution evidence');
+    if (publicConfigSha256(receiptBytes) !== hashes.receiptSha256 || publicConfigSha256(executionBytes) !== hashes.executionEvidenceSha256 ||
+        executionDigests.has(hashes.executionEvidenceSha256)) fail('transition evidence digest mismatch or reuse');
+    executionDigests.add(hashes.executionEvidenceSha256);
+    const receipt = JSON.parse(receiptBytes);
+    exactKeys(receipt, 'transition receipt', ['schemaVersion', 'stage', ...TRANSITION_BINDING, 'executionEvidenceSha256', 'issuedAt']);
+    checkBinding(receipt);
+    if (receipt.schemaVersion !== `harmonic-beacon.${stage}-receipt.v3` || receipt.stage !== stage ||
+        receipt.executionEvidenceSha256 !== hashes.executionEvidenceSha256) fail('invalid transition receipt');
+    const issuedAt = +date(receipt.issuedAt, 'receipt time');
+    const execution = JSON.parse(executionBytes);
+    exactKeys(execution, 'execution evidence', ['schemaVersion', 'stage', ...TRANSITION_BINDING, 'startedAt', 'completedAt', 'commands', 'runtimeBefore', 'runtimeAfter',
+      ...(stage === 'shadow' ? [] : ['observedRecoveryMs', 'maxRecoveryMs'])]);
+    checkBinding(execution);
+    if (execution.schemaVersion !== `harmonic-beacon.${stage}-execution.v3` || execution.stage !== stage) fail('invalid execution stage');
+    const start = +date(execution.startedAt, 'execution start');
+    const end = +date(execution.completedAt, 'execution end');
+    if (start < previousEnd || start < authorizedAt - 86400000 || end < start || end > issuedAt || issuedAt > authorizedAt) fail('invalid execution freshness/order');
+    previousEnd = end;
+    if (!Array.isArray(execution.commands) || execution.commands.length < 1 || execution.commands.length > 128) fail('missing command results');
+    let commandEnd = start;
+    for (const command of execution.commands) {
+      exactKeys(command, 'command result', ['name', 'argvSha256', 'startedAt', 'completedAt', 'exitCode', 'stdoutSha256', 'stderrSha256']);
+      string(command.name, 'command name', /^[a-z][a-z0-9-]{0,63}$/u);
+      for (const key of ['argvSha256', 'stdoutSha256', 'stderrSha256']) digest(command[key], key);
+      const cs = +date(command.startedAt, 'command start');
+      const ce = +date(command.completedAt, 'command end');
+      if (command.exitCode !== 0 || cs < commandEnd || ce < cs || ce > end) fail('invalid command result');
+      commandEnd = ce;
+    }
+    const beforeManifest = stage === 'forward-repair' ? binding.baseManifestSha256 : candidate;
+    const afterManifest = stage === 'rollback' ? binding.baseManifestSha256 : candidate;
+    for (const [key, expected] of [['runtimeBefore', beforeManifest], ['runtimeAfter', afterManifest]]) {
+      const runtime = execution[key];
+      exactKeys(runtime, key, ['manifestSha256', 'configSha256', 'healthSha256', 'privateBoundarySha256']);
+      if (runtime.manifestSha256 !== expected) fail('runtime stage transition mismatch');
+      for (const field of ['configSha256', 'healthSha256', 'privateBoundarySha256']) digest(runtime[field], field);
+      const target = stage === 'shadow' ? 'live-staging' : 'production';
+      if (runtime.configSha256 !== manifest.configProfiles[target].sha256) fail('runtime config mismatch');
+    }
+    if (stage !== 'shadow') {
+      bounded(execution.maxRecoveryMs, 'maximum recovery', 3600000, 1);
+      bounded(execution.observedRecoveryMs, 'observed recovery', execution.maxRecoveryMs);
+      if (execution.observedRecoveryMs !== end - start) fail('recovery timing mismatch');
+    }
+  }
+  return authorization;
+}
+
 function strictBoolean(value, label) {
   if (value === 'true') return true;
   if (value === 'false') return false;
@@ -344,13 +571,20 @@ function exactWebsocketUrl(value) {
   return url.href;
 }
 
-export function verifyRuntimePublicConfig(profile, environmentBytes) {
+function validateRuntimePublicConfig(profile) {
   exactKeys(profile, 'runtime public config', ['schemaVersion', 'publicOrigin', 'livekitPublicUrl', 'featureFlags']);
   if (profile.schemaVersion !== 'harmonic-beacon.runtime-public-config.v1') fail('unsupported runtime public config');
   exactKeys(profile.featureFlags, 'runtime public config featureFlags', ['tapestryPublic', 'promoInvitations']);
   if (typeof profile.featureFlags.tapestryPublic !== 'boolean' || typeof profile.featureFlags.promoInvitations !== 'boolean') {
     fail('runtime public config flags must be boolean');
   }
+  exactPublicOrigin(profile.publicOrigin);
+  exactWebsocketUrl(profile.livekitPublicUrl);
+  return profile;
+}
+
+export function verifyRuntimePublicConfig(profile, environmentBytes) {
+  validateRuntimePublicConfig(profile);
   const env = parseEnvironment(environmentBytes);
   const publicOrigin = exactPublicOrigin(env.get('PUBLIC_ORIGIN') ?? '');
   const livekitPublicUrl = exactWebsocketUrl(env.get('LIVEKIT_PUBLIC_URL') ?? '');
@@ -381,6 +615,29 @@ function parseArgs(argv) {
 
 export function main(argv = process.argv.slice(2)) {
   const { command, options } = parseArgs(argv);
+  if (command === 'validate-current-state' || command === 'unpack-current-state') {
+    const decoded = validateCurrentState(JSON.parse(readFileSync(resolve(options.state), 'utf8')));
+    if (command === 'unpack-current-state') {
+      for (const [field, file] of Object.entries({ manifestBase64: 'prior-manifest.json',
+        composeBase64: 'docker-compose.yml', overlayBase64: 'oci-images.compose.yml',
+        publicConfigBase64: 'target-public-config.json' })) {
+        writeFileSync(resolve(options.destination, file), decoded[field], { flag: 'wx', mode: 0o600 });
+      }
+    }
+    return 0;
+  }
+  if (command === 'validate-transition') {
+    const root = resolve(options.evidence);
+    const manifestBytes = readFileSync(resolve(options.manifest));
+    const stages = Object.fromEntries(TRANSITION_STAGES.map(stage => [stage, {
+      receiptBytes: readFileSync(resolve(root, `${stage}.json`)),
+      executionBytes: readFileSync(resolve(root, `${stage}.execution.json`)),
+    }]));
+    validateTransitionEvidence({ manifest: JSON.parse(manifestBytes), manifestBytes,
+      authorizationBytes: readFileSync(resolve(root, 'authorization.json')),
+      qualificationBytes: readFileSync(resolve(root, 'qualification.json')), stages });
+    return 0;
+  }
   if (command === 'canonicalize') {
     const manifest = JSON.parse(readFileSync(resolve(options.manifest), 'utf8'));
     validateReleaseManifest(manifest);
@@ -413,7 +670,16 @@ export function main(argv = process.argv.slice(2)) {
     writeFileSync(resolve(options.output), canonicalize(manifest), { flag: 'wx', mode: 0o600 });
     return 0;
   }
-  fail('usage: release-manifest.mjs {canonicalize|candidate-hash|public-config-digest|verify-runtime-public-config|assemble} [options]');
+  if (command === 'admit-file') {
+    const maximumBytes = Number(options['maximum-bytes']);
+    const actual = admitRegularFile(
+      resolve(options.source), resolve(options.output),
+      { expectedSha256: options['expected-sha256'], maximumBytes },
+    );
+    console.log(actual);
+    return 0;
+  }
+  fail('usage: release-manifest.mjs {validate-current-state|unpack-current-state|validate-transition|canonicalize|candidate-hash|public-config-digest|verify-runtime-public-config|assemble|admit-file} [options]');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

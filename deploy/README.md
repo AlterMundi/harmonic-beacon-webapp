@@ -44,13 +44,37 @@ OPS-D adds a fail-closed artifact lane without replacing the existing release pa
    replacement rolls back from the untouched prior state only, after the same
    grant quiescence and compatibility gates.
 
-`HB_RELEASE_LANE_STATE` is the sole lane selector. `legacy-shadow` keeps the
-existing `.github/workflows/deploy.yml` Mona/helper release path enabled while
-OCI can only shadow. `oci-production` is a guarded transition state: it may be
-set only after the named shadow, rollback and forward-repair evidence has been
-reviewed and the host's root-owned current state has been initialized. There
-are no independent enable/disable booleans that can silently select both or
-neither production mutation path. Direct Docker or Compose access by the Actions user is never an authorized direct-Compose fallback.
+`HB_RELEASE_LANE_STATE` is the sole OCI lane selector. `legacy-shadow` permits
+OCI shadow preparation only. The legacy source deployment workflow is on an
+explicit fail-closed security safety hold, including when the state is absent.
+Its sudo-callable mutation verbs have been removed. `oci-production` remains a
+guarded transition requiring separately reviewed qualification and live-state
+evidence. Local remediation does not authorize production activation.
+Direct Docker or Compose access by the Actions user is never an authorized direct-Compose fallback.
+
+Production preparation verifies actual runtime against the prior high-water
+before publishing an active transaction. Candidate pulls may precede this
+readback; Compose, migrations and runtime changes may not. Reconciliation uses
+exact configured refs and actual image IDs, dependency containers, health and
+readiness, public provenance/config digest, and the private boundary. Failure
+removes the disposable prepared directory without publishing an active marker.
+Migration repeats this full prior-state check before changing phase or invoking
+Compose. Every production verb revalidates the complete v3 state, lane,
+transaction phase and high-water CAS. Forward and rollback publication use the
+same full v3 writer only after runtime verification, retaining file fsync,
+atomic rename, directory fsync and crash-recovery boundaries.
+
+The qualified artifact includes the manifest, qualification receipt, exactly six
+bound evidence files per first-party image, `docker-compose.yml`,
+`deploy/oci-images.compose.yml`, and both `deploy/runtime-public-config` profiles.
+Root accepts only the fixed `.hb-artifacts/<run-id>/candidate` artifact root.
+The installed manifest module admits a fixed inventory through held descriptors
+with byte limits, single-link checks, mutation detection and exact digests into
+a new root-owned 0700 transaction directory. Unknown input files are ignored;
+the admitted evidence inventory remains closed. All parsing, signature checks,
+pulls and runtime use consume root-owned copies. Root never inspects repository
+Git state. Compose additionally must equal installed reviewed, digest-pinned
+bytes; a candidate manifest alone cannot authorize active configuration.
 
 Owner prerequisites before any real run:
 
@@ -60,23 +84,51 @@ Owner prerequisites before any real run:
   `deploy/hb-artifact-verify.mjs` (as `hb-artifact-verify`), and
   `scripts/ci/release-manifest.mjs` at their encoded root-owned paths;
 - create `ops-d-implementation.sha256` as `0600 root:root`, containing exactly
-  the SHA-256 and absolute installed path of those three files, and provision
+  the SHA-256 and absolute installed path of those three files plus
+  `/usr/local/libexec/harmonic-beacon/docker-compose.yml` and
+  `/usr/local/libexec/harmonic-beacon/oci-images.compose.yml` (reviewed copies,
+  `0644 root:root`). All installed and transaction ancestors must be root-owned,
+  non-symlink directories without group/other write permission. Provision
   `/etc/harmonic-beacon/registry.env` as `0600 root:root`;
 - initialize `/var/lib/harmonic-beacon/releases/current-state.json` as one
-  `0600 root:root` object containing the audited current manifest plus its
-  bound Compose, overlay and selected public profile bytes. A legacy hash-only
-  marker is insufficient because it cannot safely reconstruct rollback;
+  `0600 root:root` `harmonic-beacon.current-state.v3` object: exclusively
+  `oci-production`, with the exact qualified manifest and digest-bound Compose,
+  OCI overlay and reviewed production public-config bytes. The trusted manifest
+  module recursively closes the manifest/config schema and rejects missing or
+  unknown state fields, malformed base64/digests and all byte contradictions.
+  Every v2 or legacy host is deliberately blocked before shadow or production
+  preparation. A separately reviewed root-owned reconciliation must prove an
+  exact OCI live state and install v3 first. There is no helper migration verb,
+  generic root fallback, lane/source rewrite or legacy execution shortcut;
 - independently pin `cosign`, verify production public settings against
   `deploy/runtime-public-config/production.json`, and complete a real shadow,
   rollback and forward-repair exercise before selecting `oci-production`.
-  Production prepare also requires four `0600 root:root` files under
-  `/var/lib/harmonic-beacon/releases/transition-evidence`: `shadow.json`,
-  `rollback.json`, `forward-repair.json`, and `authorization.json`. The latter
-  binds the exact current/candidate manifest hashes and SHA-256 of the three
-  closed-schema receipts; absent, stale, malformed or mismatched evidence fails
-  before any pull or runtime mutation. Root ownership and hashes make the
-  accepted evidence immutable to the runner; they do not prove the drills by
-  themselves, so the receipts still require the documented human review.
+  Production prepare requires `0600 root:root` files beneath root-owned,
+  non-writable ancestors in `/var/lib/harmonic-beacon/releases/transition-evidence`:
+  `authorization.json`, `qualification.json`, and, for each stage `shadow`,
+  `rollback`, `forward-repair`, `<stage>.json`, `<stage>.execution.json`, and
+  `<stage>.signature.bundle.json`. Root independently authenticates each receipt
+  with keyless cosign verify-blob, issuer `https://token.actions.githubusercontent.com`
+  and exact identity
+  `https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-promote.yml@refs/heads/main`.
+  The pinned `release-manifest.mjs validate-transition` command then validates
+  exact file digests and closed v3 semantics. Operator-authored verification
+  booleans and all v1/v2 transition receipts are rejected.
+
+  Authorization binds candidate/base manifest byte hashes, qualification receipt
+  digest, candidate run and attempt, and each receipt/execution digest. It has
+  canonical UTC `authorizedAt`/`expiresAt` timestamps, a maximum 24-hour lifetime,
+  and accepts only ordered evidence completed in the preceding 24 hours.
+  Stage receipts bind separate execution evidence and an `issuedAt` timestamp.
+  Execution records contain ordered successful command results (`name`,
+  `argvSha256`, start/end timestamps, `exitCode`, stdout/stderr SHA-256 digests),
+  and before/after manifest, public-config, health and private-boundary content
+  digests. Shadow measures candidate; rollback measures candidate to base;
+  forward repair measures base to candidate. Recovery uses exact elapsed integer
+  milliseconds bounded by `maxRecoveryMs` (at most one hour).
+  These schemas and authentication are admission contracts; a hosted trusted
+  workflow must actually collect the measurements and sign their receipts.
+  No hosted collector or successful drill is established by these local tests.
 
 This repository change performs none of those GitHub, registry, host, drill or
 production mutations. Until they are separately evidenced, the OCI lane is
@@ -143,11 +195,9 @@ until that restriction exists. Run the service as the dedicated
 `beacon-runner` system identity: it must not belong to `docker`, `sudo`, or an
 interactive-login group. The only sudo command available to that identity is
 the root-owned `/usr/local/sbin/hb-deploy` entrypoint. That entrypoint validates
-the exact Actions workspace, commit SHA, run id, service allowlists and every
-other argument before performing the fixed release operations. It never accepts
-an arbitrary command, path, container or environment value, and it pins Compose
-to the tracked `docker-compose.yml` so an untracked override cannot broaden the
-deployment.
+fixed artifact paths, source identity arguments, run ids and service allowlists.
+Only admitted inputs and installed reviewed Compose bytes reach OCI operations.
+It accepts no generic command or runner-workspace execution path.
 
 Install the reviewed helper and sudo policy from an exact release checkout:
 
@@ -174,13 +224,11 @@ sudo ./svc.sh install beacon-runner
 sudo ./svc.sh start
 ```
 
-Confirm both sides of the boundary: the helper preflight succeeds, while a root
+Confirm both sides of the boundary: the inert helper health command is available, while a root
 shell and direct Docker access are denied.
 
 ```bash
-sudo -u beacon-runner sudo -n /usr/local/sbin/hb-deploy preflight \
-  /opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp \
-  <exact-commit-sha>
+sudo -u beacon-runner sudo -n /usr/local/sbin/hb-deploy health beacon-app
 ! sudo -u beacon-runner sudo -n /usr/bin/id
 ! sudo -u beacon-runner sudo -n /usr/bin/docker ps
 ```
@@ -189,31 +237,13 @@ If the dedicated runner or root-owned helper is unavailable or differs from the
 tracked `deploy/hb-deploy-root`, stop. There is no authorized direct-Compose or
 generic-runner production fallback.
 
-## Existing dedicated release path during shadow
+## Legacy deployment safety hold
 
-While `HB_RELEASE_LANE_STATE=legacy-shadow` (and also if the state is absent),
-the versioned [Deploy workflow](../.github/workflows/deploy.yml) remains the
-production release path for the `release` branch; it is the shadow fallback if
-the OCI experiment is abandoned, not a generic alternate command path. It
-qualifies the same commit through the reusable E2E workflow, verifies the
-dedicated `beacon-runner` and installed helper bytes, preserves immutable
-rollback images, builds commit-tagged images, quiesces writers, applies
-migrations, replaces the approved services, waits for bounded readiness,
-verifies the public revision and private boundary, and rolls back automatically
-after a failed post-preservation step. OCI may only observe/prepare shadow in
-this state. The dedicated path can be suppressed only by the single
-`oci-production` state after its separate recovery evidence gate; it is never
-controlled by an independent boolean.
-
-Do not reproduce those mutable commands in this runbook. Follow the workflow
-steps and their logs for the current candidate. A deployment is successful only
-when the exact `release` SHA has a completed successful Deploy run and the
-public `/api/health` response reports that same `gitSha`; a green PR head or
-local health response is not a deployment receipt.
-
-For commerce rollout, also execute the synthetic ACTIVE/replay/stale/rotation/
-revoke fixtures from the PMP worker and prove public GET and PUT under
-`/api/internal` both return `404` before enabling real Ticket Tailor events.
+The [Deploy workflow](../.github/workflows/deploy.yml) fails on a hosted runner
+without checkout or privileged calls. There is no source-build shadow fallback.
+The root helper retains inert health and private-boundary checks, and the bounded
+OCI transaction verbs. Restore no legacy mutation verbs without a new reviewed
+security design. OCI rollback continues to use its admitted prior exact digest set.
 
 ## Rollback
 

@@ -32,7 +32,7 @@ describe('production operational entrypoints', () => {
 
     it('quiesces and preflights before any automatic application rollback', () => {
         const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
-        const rollback = helper.slice(helper.indexOf('rollback() {'), helper.indexOf('\nusage() {'));
+        const rollback = helper.slice(helper.indexOf('artifact_rollback() {'), helper.indexOf('\nusage() {'));
         const stopApp = rollback.indexOf('stop app');
         const preflight = rollback.indexOf('stage-grant-rollback-preflight.ts');
         const stopWorker = rollback.indexOf('docker stop beacon-commerce-reconciler');
@@ -45,24 +45,15 @@ describe('production operational entrypoints', () => {
         expect(compatible).toBeGreaterThan(stopWorker);
         expect(restore).toBeGreaterThan(compatible);
         expect(rollback).toContain('automatic rollback refused: previous app lacks durable grant contract');
-        expect(rollback).toContain('[ "$migration_attempted" = true ]');
-        expect(rollback).toContain('failures before a migration attempt never changed');
+        expect(rollback).toContain('transaction_require_rollback');
     });
 
     it('quiesces writers and drains forward grant upgrades before replacement', () => {
-        const workflow = readFileSync('.github/workflows/deploy.yml', 'utf8');
-        const quiesce = workflow.indexOf('hb-deploy quiesce');
-        const migrationAttempt = workflow.indexOf("echo 'attempted=true'");
-        const migrate = workflow.indexOf('hb-deploy migrate');
-        const replace = workflow.indexOf('hb-deploy replace');
         const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
-
-        expect(quiesce).toBeGreaterThan(-1);
-        expect(migrationAttempt).toBeGreaterThan(quiesce);
-        expect(migrate).toBeGreaterThan(migrationAttempt);
-        expect(replace).toBeGreaterThan(migrate);
-        expect(helper).toContain('scripts/release-quiesce-preflight.ts');
-        expect(helper).toContain('scripts/stage-grant-forward-drain.ts');
-        expect(workflow).toContain("always() && (failure() || cancelled())");
+        const migrate = helper.slice(helper.indexOf('artifact_migrate() {'), helper.indexOf('artifact_replace() {'));
+        expect(migrate.indexOf('migration-attempted')).toBeLessThan(migrate.indexOf('stop app'));
+        expect(migrate.indexOf('release-quiesce-preflight.ts')).toBeLessThan(migrate.indexOf('npx prisma migrate deploy'));
+        expect(migrate.indexOf('stage-grant-forward-drain.ts')).toBeGreaterThan(migrate.indexOf('npx prisma migrate deploy'));
+        expect(migrate).toContain('--no-build --pull never');
     });
 });

@@ -8,6 +8,7 @@ const evidence = ['app', 'tapestry', 'playlist-bot', 'analytics'].map((artifactI
   artifactId,
   repository: `ghcr.io/altermundi/harmonic-beacon-${artifactId}`,
   digest: digest(String.fromCharCode(97 + index)),
+  evidenceRecordDigest: digest('6'),
   sbomDigest: digest('1'),
   sbomSignatureBundleDigest: digest('4'),
   provenanceDigest: digest('2'),
@@ -38,6 +39,7 @@ function input() {
 test('creates a complete exact-digest candidate with one app digest for all app roles', () => {
   const candidate = createCandidate(input());
   assert.equal(candidate.artifacts.length, 4);
+  assert.equal(candidate.artifacts[0].evidenceRecordDigest, digest('6'));
   assert.ok(candidate.artifacts.every((entry) => entry.context === '.'));
   assert.deepEqual(candidate.rollback, { manifestSha256: 'c'.repeat(64) });
   assert.deepEqual(candidate.artifacts[0].roles, ['app', 'migrate', 'commerce-reconciler']);

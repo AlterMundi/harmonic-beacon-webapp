@@ -85,6 +85,7 @@ jobs:
           IMAGE_REF: ${{ matrix.repository }}@${{ steps.image.outputs.digest }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
           IMAGE_REPOSITORY: ${{ matrix.repository }}
+          ARTIFACT_ID: ${{ matrix.artifact }}
           DOCKERFILE: ${{ matrix.dockerfile }}
           SOURCE_TREE: ${{ steps.source.outputs.source_tree }}
           IDENTITY: https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main
@@ -123,7 +124,7 @@ jobs:
           cosign verify-blob --bundle evidence/provenance.signature.bundle.json \
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
             --certificate-identity="$IDENTITY" evidence/provenance.bundle.json >/dev/null
-          jq -n --arg artifact '${{ matrix.artifact }}' --arg repository "$IMAGE_REPOSITORY" \
+          jq -n --arg artifact "$ARTIFACT_ID" --arg repository "$IMAGE_REPOSITORY" \
             --arg digest "$IMAGE_DIGEST" --arg dockerfile "$DOCKERFILE" \
             --arg sourceSha "$GITHUB_SHA" --arg sourceTree "$SOURCE_TREE" \
             --arg workflowRunId "$GITHUB_RUN_ID" --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
@@ -205,5 +206,9 @@ jobs:
             release-manifest.sha256
             qualification-receipt.json
             evidence/
+            docker-compose.yml
+            deploy/oci-images.compose.yml
+            deploy/runtime-public-config/production.json
+            deploy/runtime-public-config/live-staging.json
           if-no-files-found: error
           retention-days: 14

@@ -47,3 +47,9 @@ test('candidate-executing pull request workflows grant read-only contents explic
 test('release qualification retains the full Vitest gate', () => {
   assert.match(deployWorkflow, /^\s+npm test$/mu);
 });
+
+test('legacy release fails closed during the security hold', () => {
+  assert.match(deployWorkflow, /safety-hold/u);
+  assert.match(deployWorkflow, /exit 1/u);
+  assert.doesNotMatch(deployWorkflow, /sudo|self-hosted/u);
+});

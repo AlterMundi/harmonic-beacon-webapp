@@ -33,6 +33,7 @@ export function createCandidate(options) {
       context,
       dockerfile: entry.artifactId === 'app' ? 'Dockerfile' : `services/${entry.artifactId}/Dockerfile`,
       roles: entry.artifactId === 'app' ? ['app', 'migrate', 'commerce-reconciler'] : [entry.artifactId],
+      evidenceRecordDigest: entry.evidenceRecordDigest,
       sbom: {
         format: 'spdx-json',
         digest: entry.sbomDigest,
@@ -115,7 +116,10 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   const evidenceRoot = resolve(argument(argv, '--evidence'));
   const output = resolve(argument(argv, '--output'));
   const evidenceFiles = filesUnder(evidenceRoot).filter((path) => path.endsWith('/evidence.json'));
-  const evidence = evidenceFiles.map((path) => JSON.parse(readFileSync(path, 'utf8')));
+  const evidence = evidenceFiles.map((path) => {
+    const bytes = readFileSync(path);
+    return { ...JSON.parse(bytes), evidenceRecordDigest: publicConfigSha256(bytes) };
+  });
   const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   const sourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
   const createdAt = new Date(execFileSync('git', ['show', '-s', '--format=%cI', 'HEAD'], { encoding: 'utf8' }).trim()).toISOString();

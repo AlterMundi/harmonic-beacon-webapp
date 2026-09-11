@@ -14,7 +14,7 @@ const manifestModuleUrl = existsSync(fileURLToPath(installedModuleUrl))
   ? installedModuleUrl
   : new URL('../scripts/ci/release-manifest.mjs', import.meta.url);
 const {
-  publicConfigSha256, validateReleaseManifest, verifyReleaseManifest,
+  publicConfigSha256, validateReleaseManifest, verifyReleaseManifest, validateQualificationReceipt,
   verifyRuntimePublicConfig,
 } = await import(manifestModuleUrl.href);
 
@@ -74,6 +74,19 @@ function exactEvidenceDirectories(root) {
   return rootEntries.map((entry) => join(root, entry.name));
 }
 
+function exactAdmittedInventory(root) {
+  const expected = [
+    'candidate-manifest.json', 'docker-compose.yml', 'evidence', 'live-staging.json',
+    'oci-images.compose.yml', 'production.json', 'qualification-receipt.json', 'target-public-config.json',
+  ].sort();
+  const entries = readdirSync(root, { withFileTypes: true });
+  if (JSON.stringify(entries.map((entry) => entry.name).sort()) !== JSON.stringify(expected) ||
+      entries.some((entry) => entry.isSymbolicLink() ||
+        (entry.name === 'evidence' ? !entry.isDirectory() : !entry.isFile()))) {
+    fail('admitted deployment inventory is not closed');
+  }
+}
+
 function subjectMatches(statement, record) {
   return Array.isArray(statement.subject) && statement.subject.length === 1 &&
     statement.subject[0]?.name === record.repository &&
@@ -123,7 +136,8 @@ function registryEvidence(root, manifest) {
         JSON.stringify(entries.map((entry) => entry.name).sort()) !== JSON.stringify(EXPECTED_EVIDENCE_FILES)) {
       fail('artifact evidence inventory is not closed');
     }
-    const record = JSON.parse(readRegular(join(folder, 'evidence.json')));
+    const recordBytes = readRegular(join(folder, 'evidence.json'));
+    const record = JSON.parse(recordBytes);
     exactKeys(record, [
       'artifactId', 'repository', 'digest', 'dockerfile', 'sourceSha', 'sourceTree',
       'workflowRunId', 'workflowRunAttempt', 'sbomDigest', 'sbomSignatureBundleDigest',
@@ -131,6 +145,8 @@ function registryEvidence(root, manifest) {
     ], 'evidence record');
     const expected = manifest.artifacts.find((entry) => entry.artifactId === record.artifactId);
     if (!expected || records[record.artifactId]) fail('invalid or duplicate registry evidence');
+    if (sha256(recordBytes) !== expected.evidenceRecordDigest) fail('evidence record digest mismatch');
+    if (basename(folder) !== `oci-evidence-${record.artifactId}`) fail('unexpected evidence directory');
     const files = {
       sbomDigest: 'sbom.bundle.json',
       sbomSignatureBundleDigest: 'sbom.signature.bundle.json',
@@ -181,6 +197,8 @@ export function main(argv = process.argv.slice(2)) {
   const expectedManifestSha256 = option(argv, '--manifest-sha256');
   const currentManifestPath = resolve(option(argv, '--current-manifest'));
   const output = resolve(option(argv, '--output'));
+  exactAdmittedInventory(dirname(manifestPath));
+  if (evidenceRoot !== join(dirname(manifestPath), 'evidence')) fail('unexpected admitted evidence root');
   const manifestBytes = readRegular(manifestPath);
   if (createHash('sha256').update(manifestBytes).digest('hex') !== expectedManifestSha256) fail('manifest byte hash mismatch');
   const manifest = JSON.parse(manifestBytes);
@@ -198,6 +216,9 @@ export function main(argv = process.argv.slice(2)) {
   verifyInputDigest(resolve(option(argv, '--compose')), manifest.deploymentInputs.composeSha256, 'Compose');
   verifyInputDigest(resolve(option(argv, '--overlay')), manifest.deploymentInputs.overlaySha256, 'OCI overlay');
   verifyInputDigest(configPath, manifest.configProfiles[targetProfile]?.sha256, 'runtime public config');
+  for (const profile of ['production', 'live-staging']) {
+    verifyInputDigest(join(dirname(manifestPath), `${profile}.json`), manifest.configProfiles[profile].sha256, `${profile} public config`);
+  }
   if (target === 'production') {
     verifyRuntimePublicConfig(JSON.parse(readRegular(configPath)), readRegular(resolve(option(argv, '--runtime-env')), 2 * 1024 * 1024));
   }
@@ -205,18 +226,7 @@ export function main(argv = process.argv.slice(2)) {
   const qualificationBytes = readRegular(join(dirname(manifestPath), 'qualification-receipt.json'));
   if (sha256(qualificationBytes) !== manifest.qualification.receiptSha256) fail('qualification receipt hash mismatch');
   const qualification = JSON.parse(qualificationBytes);
-  if (qualification.result !== 'success' ||
-      qualification.candidateIdentitySha256 !== manifest.qualification.candidateIdentitySha256 ||
-      qualification.workflowRunId !== manifest.qualification.runId ||
-      qualification.workflowRunAttempt !== manifest.qualification.runAttempt) {
-    fail('qualification receipt is not bound to this candidate run');
-  }
-  for (const entry of [...manifest.artifacts, ...manifest.externalImages]) {
-    const id = entry.artifactId ?? entry.serviceId;
-    if (qualification.imageRefs?.[id] !== `${entry.repository}@${entry.digest}`) {
-      fail(`qualification receipt image mismatch for ${id}`);
-    }
-  }
+  validateQualificationReceipt(qualification, manifest);
 
   const workflowRunId = option(argv, '--workflow-run-id');
   const workflowRunAttempt = Number(option(argv, '--workflow-run-attempt'));

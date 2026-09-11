@@ -25,44 +25,31 @@ describe('production deploy contract', () => {
     );
   });
 
-  it('builds, replaces and waits for tapestry in every release', () => {
-    const normalizedHelper = rootHelper.replace(/\\\n\s*/g, '');
-
-    expect(rootHelper).toMatch(/build app tapestry/);
-    expect(normalizedHelper).toContain(
-      'up -d --no-deps --force-recreate app commerce-reconciler tapestry',
-    );
-    expect(workflow).toContain('tapestry_health=');
-    expect(workflow).toContain('[ "$tapestry_health" = healthy ]');
+  it('holds legacy source deployment closed without scheduling Mona or executing code', () => {
+    expect(workflow).toContain('safety-hold:');
+    expect(workflow).toContain('exit 1');
+    expect(workflow).not.toMatch(/sudo|self-hosted|uses:|npm /);
+    expect(rootHelper).not.toMatch(/^(?:build|replace|preserve|migrate|quiesce|rollback|legacy_admit)\(\)/m);
   });
 
-  it('embeds and verifies the exact release provenance before success', () => {
-    expect(compose).toContain('BEACON_GIT_SHA=${BEACON_GIT_SHA:-unknown}');
-    expect(compose).toContain('BEACON_BUILD_TIME=${BEACON_BUILD_TIME:-unknown}');
-    expect(compose).toContain(
-      'BEACON_DATABASE_SCHEMA_VERSION=${BEACON_DATABASE_SCHEMA_VERSION:-unknown}',
-    );
-    expect(rootHelper).toContain('BEACON_GIT_SHA="$sha"');
-    expect(workflow).toContain('EXPECTED_GIT_SHA="$GITHUB_SHA"');
-    expect(workflow).toContain('health?.gitSha !== process.env.EXPECTED_GIT_SHA');
-    expect(workflow).toContain('https://live.harmonicbeacon.com/api/health');
+  it('verifies OCI release provenance before publication', () => {
+    expect(rootHelper).toContain('verify_public_provenance_from');
+    expect(rootHelper).toContain('.gitSha==$sha and .artifactDigest==$artifact');
+    expect(rootHelper).toContain('verify_release_runtime_state "$run_id" candidate');
   });
 
-  it('can only schedule production deploys on the verified mona runner', () => {
-    expect(workflow).toContain('runs-on: [self-hosted, mona]');
-    expect(workflow).toContain('test "$(hostname -s)" = mona');
-    expect(workflow).toContain('test "$(id -un)" = beacon-runner');
-    expect(workflow).toContain(
-      'cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy',
-    );
-    expect(workflow).not.toMatch(/runs-on:\s+self-hosted\s*$/m);
+  it('schedules OCI promotion on the verified dedicated runner', () => {
+    const promotion = readRepositoryFile('.github/workflows/oci-promote.yml');
+    expect(promotion).toContain('runs-on: [self-hosted, mona]');
+    expect(promotion).toContain('test "$(hostname -s)" = mona');
+    expect(promotion).toContain('test "$(id -un)" = beacon-runner');
+    expect(promotion).toContain('cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy');
   });
 
-  it('runs the exact release SHA through the reusable synthetic browser gate before mona', () => {
+  it('retains browser qualification while legacy release is held', () => {
     expect(e2eWorkflow).toContain('workflow_call:');
-    expect(workflow).toContain('release-e2e:');
-    expect(workflow).toContain('uses: ./.github/workflows/e2e.yml');
-    expect(workflow).toMatch(/deploy:\n\s+needs: release-e2e\n\s+runs-on: \[self-hosted, mona\]/);
+    expect(workflow).toContain('exit 1');
+    expect(readRepositoryFile('.github/workflows/oci-candidate.yml')).toContain('scripts/ci/qualify-oci.mjs');
   });
 
   it('keeps pull-request code off every self-hosted production runner', () => {
@@ -70,7 +57,7 @@ describe('production deploy contract', () => {
       expect(pullRequestWorkflow).toContain('runs-on: ubuntu-latest');
       expect(pullRequestWorkflow).not.toMatch(/runs-on:.*self-hosted/);
     }
-    expect(workflow).toContain('runs-on: [self-hosted, mona]');
+    expect(workflow).not.toContain('self-hosted');
   });
 
   it('normalizes Docker network templates before the centralized exact membership check', () => {
@@ -79,71 +66,28 @@ describe('production deploy contract', () => {
     expect(rootHelper).toContain("die 'commerce network is not internal'");
   });
 
-  it('refuses a production deploy while the passwordless E2E dashboard is enabled', () => {
-    expect(rootHelper).toContain(
-      "grep -Fxq 'E2E_DASHBOARD_ENABLED=1' \"$PRODUCTION_ENV\"",
-    );
-    expect(rootHelper).toContain(
-      "die 'production E2E dashboard must be disabled before deploy'",
-    );
-    expect(workflow).toContain(
-      'https://live.harmonicbeacon.com/api/test-login',
-    );
-    expect(workflow).toContain(
-      'Production test-login $method returned $code instead of 404',
-    );
+  it('checks the production private boundary through the root-owned helper', () => {
+    expect(rootHelper).toContain('boundary() {');
+    expect(rootHelper).toContain('E2E_DASHBOARD_ENABLED');
+    expect(rootHelper).toContain('require_exact_private_network');
   });
 
-  it('preserves and restores app and tapestry independently', () => {
-    expect(rootHelper).toContain(
-      'harmonic-beacon/app:rollback-${run_id}',
-    );
-    expect(rootHelper).toContain(
-      'harmonic-beacon/tapestry:rollback-${run_id}',
-    );
-    expect(workflow).toContain(
-      'steps.rollback.outputs.app_available == \'true\'',
-    );
-    expect(workflow).toContain(
-      'steps.rollback.outputs.tapestry_available == \'true\'',
-    );
-    expect(rootHelper).toContain('worker_expected=true');
-    expect(rootHelper).toContain('[ "$tapestry_ready" = true ]');
+  it('restores the manifest-bound OCI service set', () => {
+    expect(rootHelper).toContain('artifact_compose_from "$run_id" prior up -d --no-deps --force-recreate --no-build --pull never');
+    expect(rootHelper).toContain('verify_release_runtime_state "$run_id" prior');
   });
 
-  it('funnels every privileged workflow operation through the validated helper', () => {
-    const privilegedLines = workflow
-      .split('\n')
-      .filter((line) => line.includes('sudo -n'));
-
-    expect(privilegedLines.length).toBeGreaterThan(0);
-    expect(
-      privilegedLines.every((line) =>
-        line.includes('sudo -n /usr/local/sbin/hb-deploy'),
-      ),
-    ).toBe(true);
-    expect(workflow).not.toMatch(/sudo -n (?:env |docker |test |stat )/);
+  it('admits fixed files without privileged repository inspection or workspace execution', () => {
     expect(rootHelper).toContain('[ "${EUID}" -eq 0 ]');
-    expect(rootHelper).toContain(
-      "readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'",
-    );
-    expect(rootHelper).toContain("[[ \"$1\" =~ ^[0-9a-f]{40}$ ]]");
-    expect(rootHelper).toContain("die 'workspace has tracked changes'");
-    expect(rootHelper).toContain("die 'workspace index has tracked changes'");
-    expect(rootHelper).toMatch(
-      /docker compose --file "\$workspace\/docker-compose\.yml"/,
-    );
-    expect(rootHelper).toContain('compose "$workspace"');
+    expect(rootHelper).toContain('admit_file');
     expect(rootHelper).toContain('--file "$root/oci-images.compose.yml"');
-    expect(rootHelper).not.toMatch(/\beval\b|\bbash -c\b|\bsh -c\b/);
-    expect(
-      statSync(join(process.cwd(), 'deploy/hb-deploy-root')).mode & 0o111,
-    ).not.toBe(0);
+    expect(rootHelper).not.toMatch(/\bgit\b|\$workspace|\beval\b|\bbash -c\b|\bsh -c\b/);
+    expect(statSync(join(process.cwd(), 'deploy/hb-deploy-root')).mode & 0o111).not.toBe(0);
   });
 
   it('grants the runner no generic sudo or direct Docker command', () => {
     expect(runnerSudoers).toContain(
-      'Cmnd_Alias HARMONIC_BEACON_DEPLOY = /usr/local/sbin/hb-deploy *',
+      '/usr/local/sbin/hb-deploy artifact-prepare *',
     );
     expect(runnerSudoers).toContain(
       'beacon-runner ALL=(root) NOPASSWD:NOSETENV: HARMONIC_BEACON_DEPLOY',
@@ -153,7 +97,7 @@ describe('production deploy contract', () => {
   });
 
   it('audits the production dependencies of both deployable packages', () => {
-    for (const contents of [ciWorkflow, workflow]) {
+    for (const contents of [ciWorkflow]) {
       expect(contents).toContain('npm run audit:production');
       expect(contents).toContain(
         'npm audit --omit=dev --prefix services/tapestry --audit-level=high',

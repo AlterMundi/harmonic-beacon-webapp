@@ -12,7 +12,7 @@ export PATH
 readonly PRODUCTION_ENV='/etc/harmonic-beacon/production.env'
 readonly COMMERCE_ENV='/etc/harmonic-beacon/commerce.env'
 readonly ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'
-readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'
+readonly CANDIDATE_PARENT='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp/.hb-artifacts'
 readonly PRIVATE_NETWORK='pmp_beacon_internal'
 readonly EXPECTED_NETWORK_MEMBERS=$'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
 readonly ARTIFACT_VERIFY='/usr/local/libexec/harmonic-beacon/hb-artifact-verify'
@@ -23,7 +23,8 @@ readonly CURRENT_STATE="$ARTIFACT_STATE/current-state.json"
 readonly TRANSACTION_ROOT="$ARTIFACT_STATE/transactions"
 readonly ACTIVE_TRANSACTION="$ARTIFACT_STATE/active-transaction"
 readonly TRANSITION_EVIDENCE="$ARTIFACT_STATE/transition-evidence"
-readonly OCI_OVERLAY='deploy/oci-images.compose.yml'
+readonly TRUSTED_COMPOSE='/usr/local/libexec/harmonic-beacon/docker-compose.yml'
+readonly TRUSTED_OVERLAY='/usr/local/libexec/harmonic-beacon/oci-images.compose.yml'
 readonly REGISTRY_ENV='/etc/harmonic-beacon/registry.env'
 readonly RELEASE_LANE_STATE='/etc/harmonic-beacon/release-lane-state'
 
@@ -77,55 +78,11 @@ validate_run_id() {
   [[ "$1" =~ ^[1-9][0-9]{0,19}$ ]] || die 'invalid Actions run id'
 }
 
-validate_build_time() {
-  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
-    die 'invalid UTC build time'
-}
-
-validate_schema_version() {
-  [[ "$1" =~ ^[0-9]{14}_[a-z0-9_]+$ ]] || die 'invalid database schema version'
-}
-
-validate_boolean() {
-  [ "$1" = true ] || [ "$1" = false ] || die 'invalid boolean'
-}
-
-validate_workspace() {
-  [ "$1" = "$WORKSPACE" ] || die 'unexpected Actions workspace'
-  [ "$(realpath -e -- "$1")" = "$WORKSPACE" ] || die 'workspace must not redirect elsewhere'
-  [ -f "$WORKSPACE/docker-compose.yml" ] || die 'compose manifest is missing'
-}
-
-validate_checkout() {
-  local expected_sha="$1"
-  local actual_sha
-
-  validate_sha "$expected_sha"
-  actual_sha="$(git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" rev-parse HEAD)"
-  [ "$actual_sha" = "$expected_sha" ] || die 'workspace revision does not match requested release'
-  git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" diff --quiet -- ||
-    die 'workspace has tracked changes'
-  git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" diff --cached --quiet -- ||
-    die 'workspace index has tracked changes'
-}
-
 validate_container() {
   case "$1" in
     beacon-app | beacon-commerce-reconciler | beacon-tapestry) ;;
     *) die 'container is not in the deploy health allowlist' ;;
   esac
-}
-
-compose() {
-  local workspace="$1"
-  local image_tag="$2"
-  shift 2
-
-  (
-    cd "$workspace"
-    BEACON_IMAGE_TAG="$image_tag" docker compose --file "$workspace/docker-compose.yml" \
-      --project-name app --env-file "$PRODUCTION_ENV" "$@"
-  )
 }
 
 network_members() {
@@ -161,137 +118,9 @@ container_has_commerce_key() {
     grep -Eq '^BEACON_COMMERCE_SERVICE_KEY_'
 }
 
-preflight() {
-  local workspace="$1"
-  local sha="$2"
-
-  require_release_lane legacy-shadow
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  [ -r "$PRODUCTION_ENV" ] || die 'production environment is not readable by root'
-  [ -r "$COMMERCE_ENV" ] || die 'commerce environment is not readable by root'
-  [ "$(stat -c '%a:%U:%G' "$COMMERCE_ENV")" = '600:root:root' ] ||
-    die 'commerce environment permissions are not 600:root:root'
-  if [ -e "$ACCOUNT_ENV" ]; then
-    [ -f "$ACCOUNT_ENV" ] && [ ! -L "$ACCOUNT_ENV" ] ||
-      die 'Account environment must be a regular file'
-    [ "$(stat -c '%a:%U:%G' "$ACCOUNT_ENV")" = '600:root:root' ] ||
-      die 'Account environment permissions are not 600:root:root'
-    container_has_env_name beacon-app BEACON_ACCOUNT_ENABLED &&
-      [ "$(docker inspect beacon-app --format '{{range .Config.Env}}{{println .}}{{end}}' |
-        sed -n 's/^BEACON_ACCOUNT_ENABLED=//p' | tail -n 1)" = true ] ||
-      die 'Account bundle exists before the supervised Account activation'
-  fi
-  if grep -Fxq 'E2E_DASHBOARD_ENABLED=1' "$PRODUCTION_ENV"; then
-    die 'production E2E dashboard must be disabled before deploy'
-  fi
-  require_exact_private_network
-  compose "$workspace" "$sha" config --quiet
-}
-
-preserve() {
-  local run_id="$1"
-  local previous_app
-  local previous_tapestry
-
-  require_release_lane legacy-shadow
-  validate_run_id "$run_id"
-  previous_app="$(docker inspect beacon-app --format '{{.Image}}' 2>/dev/null || true)"
-  if [ -n "$previous_app" ]; then
-    docker tag "$previous_app" "harmonic-beacon/app:rollback-${run_id}"
-    printf 'app_available=true\n'
-  else
-    printf 'app_available=false\n'
-  fi
-
-  previous_tapestry="$(docker inspect beacon-tapestry --format '{{.Image}}' 2>/dev/null || true)"
-  if [ -n "$previous_tapestry" ]; then
-    docker tag "$previous_tapestry" "harmonic-beacon/tapestry:rollback-${run_id}"
-    printf 'tapestry_available=true\n'
-  else
-    printf 'tapestry_available=false\n'
-  fi
-}
-
-build() {
-  local workspace="$1"
-  local sha="$2"
-  local build_time="$3"
-  local schema_version="$4"
-
-  require_release_lane legacy-shadow
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  validate_build_time "$build_time"
-  validate_schema_version "$schema_version"
-  (
-    cd "$workspace"
-    BEACON_IMAGE_TAG="$sha" \
-      BEACON_GIT_SHA="$sha" \
-      BEACON_BUILD_TIME="$build_time" \
-      BEACON_DATABASE_SCHEMA_VERSION="$schema_version" \
-      docker compose --file "$workspace/docker-compose.yml" \
-      --project-name app --env-file "$PRODUCTION_ENV" \
-      build app tapestry
-  )
-}
-
-migrate() {
-  local workspace="$1"
-  local sha="$2"
-
-  require_release_lane legacy-shadow
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  compose "$workspace" "$sha" run --rm --no-deps migrate npx prisma migrate deploy
-  compose "$workspace" "$sha" run --rm --no-deps migrate \
-    npx tsx scripts/stage-grant-forward-drain.ts
-  compose "$workspace" "$sha" run --rm --no-deps migrate npx prisma migrate status
-}
-
-quiesce() {
-  local workspace="$1"
-  local sha="$2"
-
-  require_release_lane legacy-shadow
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  compose "$workspace" "$sha" run --rm --no-deps migrate \
-    npx tsx scripts/release-quiesce-preflight.ts
-  compose "$workspace" "$sha" stop app
-  # Close the check/use race: no request-serving writer exists during this
-  # second check, and migration begins only after it remains clean.
-  compose "$workspace" "$sha" run --rm --no-deps migrate \
-    npx tsx scripts/release-quiesce-preflight.ts
-}
-
-replace() {
-  local workspace="$1"
-  local sha="$2"
-
-  require_release_lane legacy-shadow
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  compose "$workspace" "$sha" up -d --no-deps --force-recreate \
-    app commerce-reconciler tapestry
-}
-
 health() {
   validate_container "$1"
   docker inspect "$1" --format '{{.State.Health.Status}}'
-}
-
-status() {
-  local workspace="$1"
-  local sha="$2"
-
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  compose "$workspace" "$sha" ps
-  for container in beacon-app beacon-commerce-reconciler beacon-tapestry; do
-    docker inspect "$container" \
-      --format 'name={{.Name}} status={{.State.Status}} health={{.State.Health.Status}} restarts={{.RestartCount}}'
-  done
 }
 
 boundary() {
@@ -327,150 +156,6 @@ boundary() {
   done
 }
 
-rollback() {
-  local workspace="$1"
-  local run_id="$2"
-  local app_available="$3"
-  local tapestry_available="$4"
-  local migration_attempted="$5"
-  local rollback_tag
-  local candidate_tag
-  local worker_expected=false
-
-  require_release_lane legacy-shadow
-  validate_workspace "$workspace"
-  validate_run_id "$run_id"
-  validate_boolean "$app_available"
-  validate_boolean "$tapestry_available"
-  validate_boolean "$migration_attempted"
-  rollback_tag="rollback-${run_id}"
-  candidate_tag="$(git -c safe.directory="$workspace" -C "$workspace" rev-parse HEAD)"
-  validate_checkout "$candidate_tag"
-
-  if [ "$app_available" = true ] && [ "$migration_attempted" = true ]; then
-    # Stop request-serving writers first. Keep the compatible candidate worker
-    # alive briefly so already-committed effects can converge, then freeze it
-    # and repeat the preflight against a stable database snapshot.
-    compose "$workspace" "$candidate_tag" stop app
-    preflight_ready=false
-    for _attempt in $(seq 1 30); do
-      if compose "$workspace" "$candidate_tag" run --rm --no-deps migrate \
-        npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null; then
-        preflight_ready=true
-        break
-      fi
-      sleep 2
-    done
-    [ "$preflight_ready" = true ] || {
-      docker stop beacon-commerce-reconciler 2>/dev/null || true
-      die 'automatic rollback refused: durable grant state did not quiesce'
-    }
-    docker stop beacon-commerce-reconciler 2>/dev/null || true
-    compose "$workspace" "$candidate_tag" run --rm --no-deps migrate \
-      npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null ||
-      die 'automatic rollback refused: stable grant preflight failed'
-
-    # Never put an outbox-unaware application back in front of the migrated
-    # database. A failed first rollout remains isolated for human forward
-    # repair instead of silently reopening legacy grant writers.
-    docker run --rm --entrypoint test \
-      "harmonic-beacon/app:${rollback_tag}" \
-      -f /app/src/lib/stage-grant-effects.ts ||
-      die 'automatic rollback refused: previous app lacks durable grant contract'
-    docker run --rm --entrypoint test \
-      "harmonic-beacon/app:${rollback_tag}" \
-      -f /app/scripts/stage-grant-rollback-preflight.ts ||
-      die 'automatic rollback refused: previous worker lacks rollback preflight'
-
-    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate \
-      app commerce-reconciler
-    worker_expected=true
-  elif [ "$app_available" = true ]; then
-    # Build/gate/quiesce failures before a migration attempt never changed the
-    # durable schema. Ensure the preserved application is serving again.
-    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate app
-    worker_expected=true
-  fi
-
-  if [ "$tapestry_available" = true ]; then
-    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate tapestry
-  fi
-
-  for _attempt in $(seq 1 60); do
-    local app_ready=true
-    local worker_ready=true
-    local tapestry_ready=true
-    if [ "$app_available" = true ]; then
-      if [ "$(health beacon-app 2>/dev/null || true)" != healthy ] || \
-        ! curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
-        app_ready=false
-      fi
-    fi
-    if [ "$worker_expected" = true ] && \
-      [ "$(health beacon-commerce-reconciler 2>/dev/null || true)" != healthy ]; then
-      worker_ready=false
-    fi
-    if [ "$tapestry_available" = true ] && \
-      [ "$(health beacon-tapestry 2>/dev/null || true)" != healthy ]; then
-      tapestry_ready=false
-    fi
-    if [ "$app_ready" = true ] && [ "$worker_ready" = true ] && \
-      [ "$tapestry_ready" = true ]; then
-      return 0
-    fi
-    sleep 2
-  done
-
-  compose "$workspace" "$rollback_tag" ps
-  die 'rollback services did not become ready'
-}
-
-atomic_install_legacy_state() {
-  local sha="$1" temporary
-  validate_sha "$sha"
-  require_release_lane legacy-shadow
-  require_secure_root_file "$CURRENT_STATE" 600
-  [ "$(jq -r '.schemaVersion' "$CURRENT_STATE")" = 'harmonic-beacon.current-state.v2' ] ||
-    die 'cannot admit legacy release without initialized unified high-water'
-  temporary="$(mktemp --tmpdir="$ARTIFACT_STATE" '.current-state.XXXXXX')"
-  jq --arg sourceSha "$sha" '.laneState="legacy-shadow" | .sourceSha=$sourceSha' \
-    "$CURRENT_STATE" > "$temporary"
-  chown root:root "$temporary"
-  chmod 0600 "$temporary"
-  sync -f "$temporary"
-  mv -f -- "$temporary" "$CURRENT_STATE"
-  sync -f "$ARTIFACT_STATE"
-}
-
-verify_legacy_container() {
-  local container="$1" expected="$2" actual expected_id
-  [ "$(docker inspect "$container" --format '{{.State.Running}}')" = true ] || die "$container is not running"
-  [ "$(docker inspect "$container" --format '{{.State.Health.Status}}')" = healthy ] || die "$container is not healthy"
-  actual="$(docker inspect "$container" --format '{{.Image}}')"
-  expected_id="$(docker image inspect "$expected" --format '{{.Id}}')"
-  [ -n "$actual" ] && [ "$actual" = "$expected_id" ] || die "$container is not running the admitted legacy image"
-}
-
-legacy_admit() {
-  local workspace="$1" sha="$2" body
-  require_release_lane legacy-shadow
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  verify_legacy_container beacon-app "harmonic-beacon/app:$sha"
-  verify_legacy_container beacon-commerce-reconciler "harmonic-beacon/app:$sha"
-  verify_legacy_container beacon-tapestry "harmonic-beacon/tapestry:$sha"
-  for url in http://127.0.0.1:3000/api/health https://live.harmonicbeacon.com/api/health; do
-    body="$(curl --fail --silent --show-error --max-time 10 "$url")"
-    jq -e --arg sha "$sha" '.status=="ok" and .gitSha==$sha' <<<"$body" >/dev/null ||
-      die "legacy public health provenance mismatch at $url"
-  done
-  boundary
-  # The lane is re-read while the global deploy lock is held, immediately
-  # before publishing the one live high-water shared with the OCI lane.
-  require_release_lane legacy-shadow
-  atomic_install_legacy_state "$sha"
-}
-
 artifact_transaction() {
   printf '%s/transactions/%s\n' "$ARTIFACT_STATE" "$1"
 }
@@ -479,15 +164,28 @@ artifact_receipt() {
   printf '%s/receipt.json\n' "$(artifact_transaction "$1")"
 }
 
+require_secure_root_ancestors() {
+  local ancestor
+  ancestor="$(dirname -- "$1")"
+  while :; do
+    [ -d "$ancestor" ] && [ ! -L "$ancestor" ] || die 'unsafe root-owned ancestor'
+    [ "$(stat -c '%u:%g' "$ancestor")" = 0:0 ] || die 'ancestor is not root-owned'
+    (( (8#$(stat -c '%a' "$ancestor") & 0022) == 0 )) || die 'ancestor is writable'
+    [ "$ancestor" != / ] || break
+    ancestor="$(dirname -- "$ancestor")"
+  done
+}
+
 require_secure_root_file() {
   local path="$1" mode="$2"
+  require_secure_root_ancestors "$path"
   [ -f "$path" ] && [ ! -L "$path" ] || die "root-owned file is missing or unsafe: $path"
   [ "$(stat -c '%U:%G:%a' "$path")" = "root:root:$mode" ] ||
     die "root-owned file ownership or mode is invalid: $path"
 }
 
 verify_installed_implementation() {
-  local digest path expected_mode helper_seen=false verifier_seen=false module_seen=false
+  local digest path expected_mode helper_seen=false verifier_seen=false module_seen=false compose_seen=false overlay_seen=false
   require_secure_root_file "$TRUSTED_IMPLEMENTATION" 600
   while read -r digest path; do
     validate_sha256 "$digest"
@@ -504,38 +202,36 @@ verify_installed_implementation() {
         [ "$module_seen" = false ] || die 'duplicate manifest-module trust entry'
         module_seen=true; expected_mode=644
         ;;
+      "$TRUSTED_COMPOSE")
+        [ "$compose_seen" = false ] || die 'duplicate Compose trust entry'
+        compose_seen=true; expected_mode=644
+        ;;
+      "$TRUSTED_OVERLAY")
+        [ "$overlay_seen" = false ] || die 'duplicate overlay trust entry'
+        overlay_seen=true; expected_mode=644
+        ;;
       *) die 'trusted implementation manifest contains an unexpected path' ;;
     esac
     require_secure_root_file "$path" "$expected_mode"
   done < "$TRUSTED_IMPLEMENTATION"
-  [ "$helper_seen:$verifier_seen:$module_seen" = true:true:true ] ||
+  [ "$helper_seen:$verifier_seen:$module_seen:$compose_seen:$overlay_seen" = true:true:true:true:true ] ||
     die 'trusted implementation manifest must bind each required file exactly once'
   sha256sum --check --strict "$TRUSTED_IMPLEMENTATION" >/dev/null ||
     die 'installed privileged implementation digest mismatch'
 }
 
+require_current_state() {
+  require_secure_root_file "$CURRENT_STATE" 600
+  node "$RELEASE_MANIFEST" validate-current-state --state "$CURRENT_STATE" ||
+    die 'invalid OCI current state; separately reviewed root-owned reconciliation is required'
+}
+
 state_unpack() {
-  local state="$1" destination="$2" encoded expected actual
+  local state="$1" destination="$2"
   require_secure_root_file "$state" 600
-  [ "$(jq -r '.schemaVersion' "$state")" = 'harmonic-beacon.current-state.v2' ] ||
-    die 'unsupported current release state'
-  case "$(jq -r '.laneState' "$state")" in legacy-shadow | oci-production) ;; *) die 'invalid live high-water lane' ;; esac
   install -d -o root -g root -m 0700 "$destination"
-  while read -r field output; do
-    encoded="$(jq -er --arg field "$field" '.[$field]' "$state")" || die "current state is missing $field"
-    printf '%s' "$encoded" | base64 --decode > "$destination/$output" || die "invalid current state $field"
-    chown root:root "$destination/$output"
-    chmod 0600 "$destination/$output"
-  done <<'EOF'
-manifestBase64 prior-manifest.json
-composeBase64 docker-compose.yml
-overlayBase64 oci-images.compose.yml
-publicConfigBase64 target-public-config.json
-EOF
-  expected="$(jq -er '.manifestSha256' "$state")"
-  validate_sha256 "$expected"
-  actual="$(sha256sum "$destination/prior-manifest.json" | cut -d' ' -f1)"
-  [ "$actual" = "$expected" ] || die 'current manifest and high-water are contradictory'
+  node "$RELEASE_MANIFEST" unpack-current-state --state "$state" --destination "$destination" ||
+    die 'invalid OCI current state; separately reviewed root-owned reconciliation is required'
 }
 
 verify_prior_state_inputs() {
@@ -559,72 +255,21 @@ require_rollback_safe_public_config() {
 }
 
 require_oci_transition_evidence() {
-  local candidate_sha="$1" base_sha="$2" qualification_sha="$3" authorization qualification shadow rollback forward expected actual
-  authorization="$TRANSITION_EVIDENCE/authorization.json"
-  qualification="$TRANSITION_EVIDENCE/qualification.json"
-  shadow="$TRANSITION_EVIDENCE/shadow.json"
-  rollback="$TRANSITION_EVIDENCE/rollback.json"
-  forward="$TRANSITION_EVIDENCE/forward-repair.json"
-  for file in "$authorization" "$qualification" "$shadow" "$rollback" "$forward"; do
-    require_secure_root_file "$file" 600
+  local manifest="$1" stage file
+  for file in authorization.json qualification.json shadow.json rollback.json forward-repair.json \
+    shadow.execution.json rollback.execution.json forward-repair.execution.json \
+    shadow.signature.bundle.json rollback.signature.bundle.json forward-repair.signature.bundle.json; do
+    require_secure_root_file "$TRANSITION_EVIDENCE/$file" 600
   done
-  jq -e --arg candidate "$candidate_sha" --arg base "$base_sha" '
-    type=="object" and (keys|sort)==(["baseManifestSha256","candidateManifestSha256","forwardRepairReceiptSha256","laneState","rollbackReceiptSha256","schemaVersion","shadowReceiptSha256"]|sort) and
-    .schemaVersion=="harmonic-beacon.oci-transition.v1" and .laneState=="oci-production" and
-    .candidateManifestSha256==$candidate and .baseManifestSha256==$base
-  ' "$authorization" >/dev/null || die 'OCI transition authorization is absent or bound to another release'
-  while read -r field file; do
-    expected="$(jq -er --arg field "$field" '.[$field]' "$authorization")"
-    validate_digest "$expected"
-    actual="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
-    [ "$actual" = "$expected" ] || die "OCI transition receipt digest mismatch: $file"
-  done <<EOF
-shadowReceiptSha256 $shadow
-rollbackReceiptSha256 $rollback
-forwardRepairReceiptSha256 $forward
-EOF
-  actual="sha256:$(sha256sum "$qualification" | cut -d' ' -f1)"
-  [ "$actual" = "$qualification_sha" ] || die 'qualification transition receipt is not the manifest-bound receipt'
-  jq -e '
-    .schemaVersion=="oci-qualification.v3" and .result=="success" and
-    (.acceptance|keys|sort)==(["browser","commerce","isolation","restore","schema","syntheticSession"]|sort) and
-    .acceptance.browser.passed>=1 and .acceptance.browser.failed==0 and .acceptance.browser.skipped==0 and
-    .acceptance.syntheticSession.created>=1 and .acceptance.commerce.workerHeartbeatAgeMs<=10000 and
-    .acceptance.schema.expectedHead==.acceptance.schema.observedHead and
-    .acceptance.isolation.forbiddenSecretNamesFound==[] and .acceptance.restore.restoredSessionCount>=1
-  ' "$qualification" >/dev/null || die 'qualification transition receipt lacks closed measured acceptance evidence'
-  jq -e --arg candidate "$candidate_sha" --arg qualificationSha "$qualification_sha" '
-    type=="object" and (keys|sort)==(["acceptanceReceiptSha256","backupRestoreVerified","browserPassed","commerceBacklogMeasured","commerceWorkerVerified","manifestSha256","networkIsolationVerified","result","schemaHeadVerified","schemaVersion","secretIsolationVerified","syntheticSessions","target"]|sort) and
-    .schemaVersion=="harmonic-beacon.shadow-receipt.v2" and .manifestSha256==$candidate and
-    .target=="shadow" and .result=="success" and
-    .acceptanceReceiptSha256==$qualificationSha and
-    (.browserPassed|type=="number" and .>=1 and floor==.) and
-    (.syntheticSessions|type=="number" and .>=1 and floor==.) and
-    .commerceWorkerVerified==true and .commerceBacklogMeasured==true and
-    .schemaHeadVerified==true and .networkIsolationVerified==true and
-    .secretIsolationVerified==true and .backupRestoreVerified==true
-  ' "$shadow" >/dev/null || die 'shadow transition receipt is invalid'
-  jq -e --arg candidate "$candidate_sha" --arg base "$base_sha" '
-    type=="object" and (keys|sort)==(["baseManifestSha256","candidateManifestSha256","compatibility","completedAt","exactStateVerified","maxRecoverySeconds","observedRecoverySeconds","privateBoundaryVerified","publicProvenanceVerified","quiescence","result","schemaVersion","startedAt"]|sort) and
-    .schemaVersion=="harmonic-beacon.rollback-drill-receipt.v2" and .baseManifestSha256==$base and
-    .candidateManifestSha256==$candidate and .result=="success" and
-    .quiescence=="verified" and .compatibility=="verified" and
-    .exactStateVerified==true and .publicProvenanceVerified==true and .privateBoundaryVerified==true and
-    ((.startedAt|fromdateiso8601) as $started | (.completedAt|fromdateiso8601) as $completed |
-      $completed >= $started and .observedRecoverySeconds==($completed-$started)) and
-    (.observedRecoverySeconds|type=="number" and .>=0) and
-    (.maxRecoverySeconds|type=="number" and .>0) and .observedRecoverySeconds<=.maxRecoverySeconds
-  ' "$rollback" >/dev/null || die 'rollback transition receipt is invalid'
-  jq -e --arg candidate "$candidate_sha" --arg base "$base_sha" '
-    type=="object" and (keys|sort)==(["baseManifestSha256","candidateManifestSha256","completedAt","exactStateVerified","maxRecoverySeconds","observedRecoverySeconds","privateBoundaryVerified","publicProvenanceVerified","result","schemaVersion","startedAt"]|sort) and
-    .schemaVersion=="harmonic-beacon.forward-repair-receipt.v2" and .baseManifestSha256==$base and
-    .candidateManifestSha256==$candidate and .result=="success" and
-    .exactStateVerified==true and .publicProvenanceVerified==true and .privateBoundaryVerified==true and
-    ((.startedAt|fromdateiso8601) as $started | (.completedAt|fromdateiso8601) as $completed |
-      $completed >= $started and .observedRecoverySeconds==($completed-$started)) and
-    (.observedRecoverySeconds|type=="number" and .>=0) and
-    (.maxRecoverySeconds|type=="number" and .>0) and .observedRecoverySeconds<=.maxRecoverySeconds
-  ' "$forward" >/dev/null || die 'forward-repair transition receipt is invalid'
+  for stage in shadow rollback forward-repair; do
+    cosign verify-blob \
+      --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+      --certificate-identity 'https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-promote.yml@refs/heads/main' \
+      --bundle "$TRANSITION_EVIDENCE/$stage.signature.bundle.json" \
+      "$TRANSITION_EVIDENCE/$stage.json" >/dev/null || die 'transition receipt authentication failed'
+  done
+  node "$RELEASE_MANIFEST" validate-transition --manifest "$manifest" --evidence "$TRANSITION_EVIDENCE" ||
+    die 'transition semantic validation failed'
 }
 
 atomic_install_release_state() {
@@ -652,8 +297,12 @@ atomic_install_release_state() {
     --arg composeBase64 "$(base64 -w0 "$root/docker-compose.yml")" \
     --arg overlayBase64 "$(base64 -w0 "$root/oci-images.compose.yml")" \
     --arg publicConfigBase64 "$(base64 -w0 "$root/target-public-config.json")" \
-    '{schemaVersion:"harmonic-beacon.current-state.v2",laneState:"oci-production",manifestSha256:$manifestSha256,manifestBase64:$manifestBase64,composeBase64:$composeBase64,overlayBase64:$overlayBase64,publicConfigBase64:$publicConfigBase64}' \
+    '{schemaVersion:"harmonic-beacon.current-state.v3",laneState:"oci-production",manifestSha256:$manifestSha256,manifestBase64:$manifestBase64,composeBase64:$composeBase64,overlayBase64:$overlayBase64,publicConfigBase64:$publicConfigBase64}' \
     > "$temporary"
+  node "$RELEASE_MANIFEST" validate-current-state --state "$temporary" || {
+    rm -f -- "$temporary"
+    die 'refusing contradictory release state publication'
+  }
   chown root:root "$temporary"
   chmod 0600 "$temporary"
   sync -f "$temporary"
@@ -713,7 +362,7 @@ transaction_require() {
   [ "$allowed" = true ] || die "transaction phase $phase does not authorize this command"
   if [ "$target" = production ]; then
     require_release_lane oci-production
-    require_secure_root_file "$CURRENT_STATE" 600
+    require_current_state
     [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
     require_secure_root_file "$ACTIVE_TRANSACTION" 600
     [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
@@ -735,7 +384,7 @@ transaction_require_rollback() {
     migration-attempted | migrated | replaced | committed) ;;
     *) die "transaction phase $phase does not authorize rollback" ;;
   esac
-  require_secure_root_file "$CURRENT_STATE" 600
+  require_current_state
   [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
   base="$(jq -er '.baseManifestSha256' "$receipt")"
   candidate="$(jq -er '.manifestSha256' "$receipt")"
@@ -764,6 +413,8 @@ transaction_clear_active() {
 transaction_resume_prepared() {
   local run_id="$1" sha="$2" tree="$3" manifest_sha="$4" config_sha="$5" workflow_attempt="$6"
   local receipt base current
+  require_release_lane oci-production
+  require_current_state
   receipt="$(artifact_receipt "$run_id")"
   require_secure_root_file "$receipt" 600
   jq -e --arg run "$run_id" --arg sha "$sha" --arg tree "$tree" --arg manifest "$manifest_sha" \
@@ -779,6 +430,7 @@ transaction_resume_prepared() {
     require_secure_root_file "$ACTIVE_TRANSACTION" 600
     [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
   else
+    verify_release_runtime_state "$run_id" prior
     atomic_write_active_transaction "$run_id"
   fi
 }
@@ -786,7 +438,8 @@ transaction_resume_prepared() {
 transaction_finish_committed() {
   local run_id="$1" receipt phase expected current
   validate_run_id "$run_id"
-  require_secure_root_file "$CURRENT_STATE" 600
+  require_release_lane oci-production
+  require_current_state
   receipt="$(artifact_receipt "$run_id")"
   require_secure_root_file "$receipt" 600
   [ "$(jq -er '.target' "$receipt")" = production ] || return 1
@@ -795,6 +448,13 @@ transaction_finish_committed() {
   expected="$(jq -er '.manifestSha256' "$receipt")"
   current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
   [ "$current" = "$expected" ] || return 1
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
+  else
+    [ "$phase" = committed ] || die 'commit transaction is no longer active'
+  fi
+  verify_release_runtime_state "$run_id" candidate || die 'committed runtime verification failed'
   if [ "$phase" = replaced ]; then transaction_set_phase "$run_id" committed; fi
   if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
   return 0
@@ -803,7 +463,8 @@ transaction_finish_committed() {
 transaction_finish_rolled_back() {
   local run_id="$1" receipt base current
   validate_run_id "$run_id"
-  require_secure_root_file "$CURRENT_STATE" 600
+  require_release_lane oci-production
+  require_current_state
   receipt="$(artifact_receipt "$run_id")"
   require_secure_root_file "$receipt" 600
   [ "$(jq -er '.target' "$receipt")" = production ] || return 1
@@ -811,6 +472,7 @@ transaction_finish_rolled_back() {
   base="$(jq -er '.baseManifestSha256' "$receipt")"
   current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
   [ "$current" = "$base" ] || die 'rolled-back transaction contradicts current high-water'
+  verify_release_runtime_state "$run_id" prior || die 'rolled-back runtime verification failed'
   if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
   return 0
 }
@@ -872,20 +534,24 @@ verify_runtime_profile() {
   local run_id="$1" source="${2:-candidate}" root expected
   root="$(artifact_transaction "$run_id")/$source"
   expected="sha256:$(sha256sum "$root/target-public-config.json" | cut -d' ' -f1)"
-  "$RELEASE_MANIFEST" verify-runtime-public-config \
+  node "$RELEASE_MANIFEST" verify-runtime-public-config \
     --profile "$root/target-public-config.json" --env "$PRODUCTION_ENV" \
-    --expected-sha256 "$expected" >/dev/null
+    --expected-sha256 "$expected" >/dev/null || die 'runtime public config verification failed'
+}
+
+admit_file() {
+  node "$RELEASE_MANIFEST" admit-file --source "$1" --output "$2" \
+    --expected-sha256 "$3" --maximum-bytes "$4" >/dev/null
 }
 
 artifact_prepare() {
-  local workspace="$1" sha="$2" tree="$3" run_id="$4" manifest_sha="$5"
+  local input_root="$1" sha="$2" tree="$3" run_id="$4" manifest_sha="$5"
   local target="$6" config_sha="$7" workflow_attempt="$8"
-  local input_root temp transaction profile docker_config
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
+  local temp transaction profile artifact filename expected field
+  validate_sha "$sha"
   validate_sha "$tree"
-  [ "$(git -c safe.directory="$workspace" -C "$workspace" rev-parse 'HEAD^{tree}')" = "$tree" ] || die 'workspace tree does not match candidate source tree'
   validate_run_id "$run_id"
+  [ "$input_root" = "$CANDIDATE_PARENT/$run_id/candidate" ] || die 'unexpected candidate artifact root'
   validate_sha256 "$manifest_sha"
   validate_target "$target"
   if [ "$target" = production ]; then
@@ -895,7 +561,7 @@ artifact_prepare() {
   fi
   validate_digest "$config_sha"
   [[ "$workflow_attempt" =~ ^[1-9][0-9]{0,9}$ ]] || die 'invalid workflow run attempt'
-  require_secure_root_file "$CURRENT_STATE" 600
+  require_current_state
   if [ "$target" = production ]; then
     [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
   fi
@@ -911,22 +577,39 @@ artifact_prepare() {
   fi
   if [ "$target" = production ] && [ -e "$ACTIVE_TRANSACTION" ]; then die 'another production transaction is active'; fi
 
-  input_root="$workspace/.hb-artifacts/$run_id/candidate"
+  temp="$(mktemp -d --tmpdir="$TRANSACTION_ROOT" '.prepare.XXXXXX')"
+  # Capture the path now: EXIT can run after function-local variables unwind.
+  trap "unset DOCKER_CONFIG HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME; rm -rf -- $(printf '%q' "$temp")" EXIT
+  install -d -o root -g root -m 0700 "$temp/candidate" "$temp/candidate/evidence" "$temp/prior" "$temp/docker"
+  admit_file "$input_root/release-manifest.json" "$temp/candidate/candidate-manifest.json" "sha256:$manifest_sha" 1048576
+  local manifest="$temp/candidate/candidate-manifest.json"
+  # Parse only the admitted manifest; every remaining pathname is fixed here.
+  admit_file "$input_root/qualification-receipt.json" "$temp/candidate/qualification-receipt.json" "$(jq -er '.qualification.receiptSha256' "$manifest")" 1048576
+  admit_file "$input_root/docker-compose.yml" "$temp/candidate/docker-compose.yml" "$(jq -er '.deploymentInputs.composeSha256' "$manifest")" 4194304
+  admit_file "$input_root/deploy/oci-images.compose.yml" "$temp/candidate/oci-images.compose.yml" "$(jq -er '.deploymentInputs.overlaySha256' "$manifest")" 4194304
+  # Compose is active configuration: require the installed reviewed bytes too.
+  cmp --silent "$TRUSTED_COMPOSE" "$temp/candidate/docker-compose.yml" || die 'unreviewed Compose input'
+  cmp --silent "$TRUSTED_OVERLAY" "$temp/candidate/oci-images.compose.yml" || die 'unreviewed OCI overlay'
+  for profile in production live-staging; do
+    admit_file "$input_root/deploy/runtime-public-config/$profile.json" "$temp/candidate/$profile.json" "$(jq -er --arg profile "$profile" '.configProfiles[$profile].sha256' "$manifest")" 1048576
+  done
   profile=production
   [ "$target" = production ] || profile=live-staging
-  temp="$(mktemp -d --tmpdir="$TRANSACTION_ROOT" '.prepare.XXXXXX')"
-  trap 'unset DOCKER_CONFIG HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME; rm -rf -- "$temp"' EXIT
-  install -d -o root -g root -m 0700 "$temp/candidate" "$temp/candidate/evidence" "$temp/prior" "$temp/docker"
-  install -o root -g root -m 0600 "$input_root/release-manifest.json" "$temp/candidate/candidate-manifest.json"
-  install -o root -g root -m 0600 "$input_root/qualification-receipt.json" "$temp/candidate/qualification-receipt.json"
-  install -o root -g root -m 0600 "$workspace/docker-compose.yml" "$temp/candidate/docker-compose.yml"
-  install -o root -g root -m 0600 "$workspace/$OCI_OVERLAY" "$temp/candidate/oci-images.compose.yml"
-  install -o root -g root -m 0600 "$workspace/deploy/runtime-public-config/${profile}.json" "$temp/candidate/target-public-config.json"
-  [ -d "$input_root/evidence" ] && [ ! -L "$input_root/evidence" ] || die 'candidate evidence root is unsafe'
-  cp -a -- "$input_root/evidence/." "$temp/candidate/evidence/"
-  chown -R root:root "$temp/candidate/evidence"
-  find "$temp/candidate/evidence" -type d -exec chmod 0700 {} +
-  find "$temp/candidate/evidence" -type f -exec chmod 0600 {} +
+  install -o root -g root -m 0600 "$temp/candidate/$profile.json" "$temp/candidate/target-public-config.json"
+  for artifact in app tapestry playlist-bot analytics; do
+    install -d -o root -g root -m 0700 "$temp/candidate/evidence/oci-evidence-$artifact"
+    while read -r filename field; do
+      expected="$(jq -er --arg id "$artifact" ".artifacts[] | select(.artifactId==\$id) | $field" "$manifest")"
+      admit_file "$input_root/evidence/oci-evidence-$artifact/$filename" "$temp/candidate/evidence/oci-evidence-$artifact/$filename" "$expected" 16777216
+    done <<'EOF'
+evidence.json .evidenceRecordDigest
+sbom.bundle.json .sbom.digest
+sbom.signature.bundle.json .sbom.signatureBundleDigest
+provenance.bundle.json .provenance.digest
+provenance.signature.bundle.json .provenance.signatureBundleDigest
+signature.bundle.json .signature.bundleDigest
+EOF
+  done
   install -o root -g root -m 0600 "$CURRENT_STATE" "$temp/prior-state.json"
   state_unpack "$temp/prior-state.json" "$temp/prior"
   verify_prior_state_inputs "$temp/prior"
@@ -949,9 +632,7 @@ artifact_prepare() {
   "$ARTIFACT_VERIFY" "${verifier_args[@]}"
   jq -e . "$temp/verified.json" >/dev/null || die 'artifact verifier emitted invalid receipt'
   if [ "$target" = production ]; then
-    require_oci_transition_evidence "$manifest_sha" \
-      "$(jq -er '.promotion.baseManifestSha256' "$temp/candidate/candidate-manifest.json")" \
-      "$(jq -er '.qualification.receiptSha256' "$temp/candidate/candidate-manifest.json")"
+    require_oci_transition_evidence "$temp/candidate/candidate-manifest.json"
   fi
   jq --arg target "$target" --arg phase prepared \
     '. + {target:$target,phase:$phase}' "$temp/verified.json" > "$temp/receipt.json"
@@ -969,6 +650,13 @@ artifact_prepare() {
   rm -rf -- "$temp/docker" "$temp/prior-state.json" "$temp/verified.json"
   chmod 0700 "$temp"
   sync -f "$temp/receipt.json"
+  if [ "$target" = production ]; then
+    # Reuse full live verification before this disposable transaction is active.
+    (
+      artifact_transaction() { printf '%s\n' "$temp"; }
+      verify_release_runtime_state "$run_id" prior
+    )
+  fi
   mv -- "$temp" "$transaction"
   sync -f "$TRANSACTION_ROOT"
   if [ "$target" = production ]; then atomic_write_active_transaction "$run_id"; fi
@@ -981,6 +669,17 @@ artifact_preflight() {
   if [ "$target" = production ]; then
     [ -r "$PRODUCTION_ENV" ] || die 'production environment is not readable by root'
     [ -r "$COMMERCE_ENV" ] || die 'commerce environment is not readable by root'
+    require_secure_root_file "$COMMERCE_ENV" 600
+    if [ -e "$ACCOUNT_ENV" ]; then
+      require_secure_root_file "$ACCOUNT_ENV" 600
+      container_has_env_name beacon-app BEACON_ACCOUNT_ENABLED &&
+        [ "$(docker inspect beacon-app --format '{{range .Config.Env}}{{println .}}{{end}}' |
+          sed -n 's/^BEACON_ACCOUNT_ENABLED=//p' | tail -n 1)" = true ] ||
+        die 'Account bundle exists before the supervised Account activation'
+    fi
+    if grep -Fxq 'E2E_DASHBOARD_ENABLED=1' "$PRODUCTION_ENV"; then
+      die 'production E2E dashboard must be disabled before deploy'
+    fi
     verify_runtime_profile "$run_id"
     require_exact_private_network
     artifact_compose "$run_id" config --quiet
@@ -992,6 +691,7 @@ artifact_preflight() {
 artifact_migrate() {
   local run_id="$1"
   transaction_require "$run_id" production prepared
+  verify_release_runtime_state "$run_id" prior
   transaction_set_phase "$run_id" migration-attempted
   artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
     npx tsx scripts/release-quiesce-preflight.ts
@@ -1160,11 +860,13 @@ artifact_rollback() {
 }
 
 usage() {
-  printf '%s\n' 'usage: hb-deploy {preflight|preserve|build|quiesce|migrate|replace|health|status|boundary|rollback|legacy-admit|artifact-prepare|artifact-preflight|artifact-migrate|artifact-replace|artifact-status|artifact-rollback} ...' >&2
+  printf '%s\n' 'usage: hb-deploy {health|boundary|artifact-prepare|artifact-preflight|artifact-migrate|artifact-replace|artifact-status|artifact-rollback} ...' >&2
   exit 2
 }
 
 require_root
+umask 077
+cd /
 [ "$#" -gt 0 ] || usage
 command="$1"
 shift
@@ -1181,22 +883,17 @@ esac
 
 # Both lanes serialize against the same lock. Root lane-state changes must take
 # this lock before replacing RELEASE_LANE_STATE.
+require_secure_root_ancestors "$ARTIFACT_STATE/.transaction.lock"
+if [ -e "$TRANSACTION_ROOT" ] || [ -L "$TRANSACTION_ROOT" ]; then
+  require_secure_root_ancestors "$TRANSACTION_ROOT/.probe"
+fi
 install -d -o root -g root -m 0700 "$ARTIFACT_STATE" "$TRANSACTION_ROOT"
 exec 9>"$ARTIFACT_STATE/.transaction.lock"
 flock -x 9
 
 case "$command" in
-  preflight) [ "$#" -eq 2 ] || usage; preflight "$@" ;;
-  preserve) [ "$#" -eq 1 ] || usage; preserve "$@" ;;
-  build) [ "$#" -eq 4 ] || usage; build "$@" ;;
-  quiesce) [ "$#" -eq 2 ] || usage; quiesce "$@" ;;
-  migrate) [ "$#" -eq 2 ] || usage; migrate "$@" ;;
-  replace) [ "$#" -eq 2 ] || usage; replace "$@" ;;
   health) [ "$#" -eq 1 ] || usage; health "$@" ;;
-  status) [ "$#" -eq 2 ] || usage; status "$@" ;;
   boundary) [ "$#" -eq 0 ] || usage; boundary ;;
-  rollback) [ "$#" -eq 5 ] || usage; rollback "$@" ;;
-  legacy-admit) [ "$#" -eq 2 ] || usage; legacy_admit "$@" ;;
   artifact-prepare) [ "$#" -eq 8 ] || usage; artifact_prepare "$@" ;;
   artifact-preflight) [ "$#" -eq 2 ] || usage; artifact_preflight "$@" ;;
   artifact-migrate) [ "$#" -eq 1 ] || usage; artifact_migrate "$@" ;;

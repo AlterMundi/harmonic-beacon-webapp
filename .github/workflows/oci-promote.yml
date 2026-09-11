@@ -145,25 +145,38 @@ jobs:
           name: promotion-input-${{ github.run_id }}
           path: .hb-artifacts/${{ inputs.candidate_run_id }}/candidate
       - name: Prepare exact digest set through the restricted root helper
+        env:
+          CANDIDATE_ROOT: ${{ github.workspace }}/.hb-artifacts/${{ inputs.candidate_run_id }}/candidate
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+          SOURCE_TREE: ${{ needs.resolve.outputs.source_tree }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          PROMOTION_TARGET: ${{ inputs.target }}
+          CONFIG_SHA256: ${{ needs.resolve.outputs.config_sha256 }}
+          CANDIDATE_RUN_ATTEMPT: ${{ needs.resolve.outputs.run_attempt }}
         run: |
           set -euo pipefail
-          sudo /usr/local/sbin/hb-deploy artifact-prepare "$GITHUB_WORKSPACE" \
-            '${{ needs.resolve.outputs.source_sha }}' '${{ needs.resolve.outputs.source_tree }}' \
-            '${{ inputs.candidate_run_id }}' '${{ inputs.manifest_sha256 }}' \
-            '${{ inputs.target }}' '${{ needs.resolve.outputs.config_sha256 }}' \
-            '${{ needs.resolve.outputs.run_attempt }}'
+          sudo /usr/local/sbin/hb-deploy artifact-prepare "$CANDIDATE_ROOT" \
+            "$SOURCE_SHA" "$SOURCE_TREE" "$CANDIDATE_RUN_ID" "$MANIFEST_SHA256" \
+            "$PROMOTION_TARGET" "$CONFIG_SHA256" "$CANDIDATE_RUN_ATTEMPT"
           sudo /usr/local/sbin/hb-deploy artifact-preflight \
-            '${{ inputs.candidate_run_id }}' '${{ inputs.target }}'
+            "$CANDIDATE_RUN_ID" "$PROMOTION_TARGET"
       - name: Record shadow status without replacing production
         if: inputs.target == 'shadow'
-        run: sudo /usr/local/sbin/hb-deploy artifact-status '${{ inputs.candidate_run_id }}' shadow
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: sudo /usr/local/sbin/hb-deploy artifact-status "$CANDIDATE_RUN_ID" shadow
       - name: Apply migration and replace from the prepared digest set
         if: inputs.target == 'production'
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
         run: |
           set -euo pipefail
-          sudo /usr/local/sbin/hb-deploy artifact-migrate '${{ inputs.candidate_run_id }}'
-          sudo /usr/local/sbin/hb-deploy artifact-replace '${{ inputs.candidate_run_id }}'
-          sudo /usr/local/sbin/hb-deploy artifact-status '${{ inputs.candidate_run_id }}' production
+          sudo /usr/local/sbin/hb-deploy artifact-migrate "$CANDIDATE_RUN_ID"
+          sudo /usr/local/sbin/hb-deploy artifact-replace "$CANDIDATE_RUN_ID"
+          sudo /usr/local/sbin/hb-deploy artifact-status "$CANDIDATE_RUN_ID" production
       - name: Restore the manifest-bound rollback digest set
         if: failure() && inputs.target == 'production'
-        run: sudo /usr/local/sbin/hb-deploy artifact-rollback '${{ inputs.candidate_run_id }}'
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: sudo /usr/local/sbin/hb-deploy artifact-rollback "$CANDIDATE_RUN_ID"

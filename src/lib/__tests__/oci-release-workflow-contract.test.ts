@@ -72,7 +72,7 @@ describe('immutable OCI candidate and promotion contract', () => {
         expect(qualification).not.toContain('/mnt/beacon-data/postgres');
     });
 
-    it('keeps the root helper typed, digest-only and no-build while preserving the legacy shadow fallback', () => {
+    it('keeps the root helper typed, digest-only and no-build while holding legacy deployment closed', () => {
         const helper = read('deploy/hb-deploy-root');
         const legacyWorkflow = read('.github/workflows/deploy.yml');
         const packageJson = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
@@ -87,8 +87,9 @@ describe('immutable OCI candidate and promotion contract', () => {
         expect(promotion).toContain('--no-build');
         expect(promotion).toContain('--pull never');
         expect(promotion).not.toMatch(/docker compose[^\n]*\bbuild\b|\bbuild\(\)/);
-        expect(legacy).toContain('build() {');
-        expect(legacyWorkflow).toContain("vars.HB_RELEASE_LANE_STATE != 'oci-production'");
+        expect(legacy).not.toContain('build() {');
+        expect(legacyWorkflow).toContain('safety-hold:');
+        expect(legacyWorkflow).toContain('exit 1');
         expect(packageJson.scripts['test:ops-tooling']).toContain('scripts/ci/__tests__');
         expect(deployReadme).toContain('shadow fallback');
         expect(deployReadme).toContain('never an authorized direct-Compose fallback');

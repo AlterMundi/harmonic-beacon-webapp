@@ -6,12 +6,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { candidateIdentitySha256, validateCandidateManifest } from './release-manifest.mjs';
+import { candidateIdentitySha256, validateCandidateManifest, validateQualificationEvidence, validateQualificationReceipt } from './release-manifest.mjs';
 
 const REF = /^[a-z0-9./-]+@sha256:[0-9a-f]{64}$/u;
 const PROJECT = /^[a-z0-9][a-z0-9_-]{0,40}$/u;
 const SERVICES = ['postgres', 'livekit', 'app', 'commerce-reconciler', 'tapestry', 'playlist-bot', 'analytics'];
-const ACCEPTANCE_FIELDS = ['browser', 'syntheticSession', 'commerce', 'schema', 'isolation', 'restore'];
+export { validateQualificationEvidence } from './release-manifest.mjs';
 
 function fail(message) {
   throw new Error(`OCI qualification: ${message}`);
@@ -34,33 +34,6 @@ export function parseQualificationArgs(argv) {
   return options;
 }
 
-export function validateQualificationEvidence(evidence) {
-  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence) ||
-      JSON.stringify(Object.keys(evidence).sort()) !== JSON.stringify([...ACCEPTANCE_FIELDS].sort())) {
-    fail('acceptance evidence fields are not closed');
-  }
-  if (evidence.browser?.engine !== 'chromium' || !Number.isInteger(evidence.browser.passed) || evidence.browser.passed < 1 ||
-      !Number.isInteger(evidence.browser.failed) || evidence.browser.failed !== 0 ||
-      !Number.isInteger(evidence.browser.skipped) || evidence.browser.skipped !== 0) fail('browser acceptance did not pass without skips');
-  if (!Number.isInteger(evidence.syntheticSession?.created) || evidence.syntheticSession.created < 1 ||
-      evidence.syntheticSession.authenticatedRole !== 'ADMIN') {
-    fail('synthetic session acceptance is incomplete');
-  }
-  if (!Number.isInteger(evidence.commerce?.workerHeartbeatAgeMs) || evidence.commerce.workerHeartbeatAgeMs < 0 ||
-      evidence.commerce.workerHeartbeatAgeMs > 10_000 || !Number.isInteger(evidence.commerce.pending) ||
-      evidence.commerce.pending < 0 || !Number.isInteger(evidence.commerce.processing) || evidence.commerce.processing < 0) {
-    fail('commerce worker/backlog evidence is invalid');
-  }
-  if (!evidence.schema?.expectedHead || evidence.schema.observedHead !== evidence.schema.expectedHead) fail('schema head mismatch');
-  if (JSON.stringify(evidence.isolation?.internalNetworks) !== JSON.stringify(['database', 'media']) ||
-      evidence.isolation?.forbiddenSecretNamesFound?.length !== 0) fail('network or secret isolation failed');
-  if (!/^sha256:[0-9a-f]{64}$/u.test(evidence.restore?.backupSha256 ?? '') ||
-      !Number.isInteger(evidence.restore.backupBytes) || evidence.restore.backupBytes < 1 ||
-      !Number.isInteger(evidence.restore.restoredSessionCount) || evidence.restore.restoredSessionCount < 1) {
-    fail('isolated backup restore evidence is invalid');
-  }
-  return evidence;
-}
 
 function validateRefs(refs) {
   for (const id of ['app', 'tapestry', 'playlist-bot', 'analytics', 'postgres', 'livekit']) {
@@ -282,6 +255,7 @@ export function main(argv = process.argv.slice(2)) {
         checkedServices: SERVICES,
         acceptance,
       };
+      validateQualificationReceipt(receipt, manifest);
       writeFileSync(resolve(options.receipt), `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
     }
     return 0;

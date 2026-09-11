@@ -22,7 +22,7 @@ test('finding 1: privileged commands use only a prepared root-owned transaction 
   assert.match(helper, /artifact_transaction\(\)/u);
   const later = section(helper, 'artifact_migrate() {', '\nusage() {');
   assert.doesNotMatch(later, /\$workspace\/docker-compose\.yml|\$workspace\/\$OCI_OVERLAY/u);
-  assert.match(helper, /\[ ! -L "\$input_root\/evidence" \]/u);
+  assert.match(helper, /admit_file/u);
   assert.match(helper, /install -d[^\n]+candidate\/evidence/u);
   assert.match(helper, /unset NODE_OPTIONS NODE_PATH/u);
   assert.match(helper, /candidate-manifest\.json/u);
@@ -107,14 +107,11 @@ test('finding 4: qualification pulls exact refs starts dependencies migrates ana
 test('repair: transition authorization requires measured rollback and forward-repair evidence', () => {
   const helper = read('deploy/hb-deploy-root');
   const evidence = section(helper, 'require_oci_transition_evidence() {', '\natomic_install_release_state() {');
-  for (const field of [
-    'acceptanceReceiptSha256', 'browserPassed', 'syntheticSessions', 'schemaHeadVerified',
-    'networkIsolationVerified', 'secretIsolationVerified', 'backupRestoreVerified',
-    'observedRecoverySeconds', 'maxRecoverySeconds', 'exactStateVerified',
-    'publicProvenanceVerified', 'privateBoundaryVerified',
-  ]) assert.match(evidence, new RegExp(field));
-  assert.match(evidence, /observedRecoverySeconds[^\n]+maxRecoverySeconds/u);
-  assert.match(evidence, /fromdateiso8601/u);
+  assert.match(evidence, /cosign verify-blob/u);
+  assert.match(evidence, /--certificate-oidc-issuer 'https:\/\/token.actions.githubusercontent.com'/u);
+  assert.match(evidence, /oci-promote.yml@refs\/heads\/main/u);
+  assert.match(evidence, /node "\$RELEASE_MANIFEST" validate-transition/u);
+  assert.doesNotMatch(evidence, /Verified|jq -e/u);
 });
 
 test('repair: root lane and one live high-water gate legacy and OCI mutation boundaries', () => {
@@ -124,21 +121,16 @@ test('repair: root lane and one live high-water gate legacy and OCI mutation bou
   assert.match(helper, /require_release_lane\(\)/u);
   assert.match(helper, /laneState/u);
   for (const name of ['preserve', 'build', 'migrate', 'quiesce', 'replace', 'rollback', 'legacy_admit']) {
-    const end = name === 'legacy_admit' ? '\nartifact_transaction() {' : `\n${({ preserve: 'build', build: 'migrate', migrate: 'quiesce', quiesce: 'replace', replace: 'health', rollback: 'atomic_install_legacy_state' })[name]}() {`;
-    const body = section(helper, `${name}() {`, end);
-    assert.match(body, /require_release_lane legacy-shadow/u);
+    assert.doesNotMatch(helper, new RegExp(`^${name}\\(\\)`, 'm'));
   }
   const transaction = section(helper, 'transaction_require() {', '\ntransaction_require_rollback() {');
   assert.match(transaction, /require_release_lane oci-production/u);
-  const legacyAtomic = section(helper, 'atomic_install_legacy_state() {', '\nverify_legacy_container() {');
   const ociAtomic = section(helper, 'atomic_install_release_state() {', '\natomic_install_current_state() {');
-  assert.match(legacyAtomic, /require_release_lane legacy-shadow/u);
   assert.match(ociAtomic, /require_release_lane oci-production/u);
-  assert.ok(legacyAtomic.indexOf('require_release_lane legacy-shadow') < legacyAtomic.indexOf('mv -f'));
   assert.ok(ociAtomic.indexOf('require_release_lane oci-production') < ociAtomic.indexOf('mv -f'));
-  const admit = section(helper, 'legacy_admit() {', '\nartifact_receipt() {');
-  assert.ok(admit.indexOf('require_release_lane') < admit.indexOf('atomic_install_legacy_state'));
-  assert.match(legacy, /legacy-admit[\s\\]+"\$GITHUB_WORKSPACE" "\$GITHUB_SHA"/u);
+  assert.match(legacy, /safety-hold/u);
+  assert.match(legacy, /exit 1/u);
+  assert.doesNotMatch(legacy, /sudo|self-hosted|actions\/checkout/u);
 });
 
 test('repair: every checkout and setup-node action is immutable with explicit minimal workflow permissions', () => {
@@ -160,10 +152,10 @@ test('repair: every checkout and setup-node action is immutable with explicit mi
 test('repair: prepare cleanup is EXIT-safe across registry login and pull failure', () => {
   const helper = read('deploy/hb-deploy-root');
   const prepare = section(helper, 'artifact_prepare() {', '\nartifact_preflight() {');
-  assert.match(prepare, /trap '[^']*unset DOCKER_CONFIG HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME; rm -rf -- "\$temp"' EXIT/u);
+  assert.match(prepare, /trap "unset DOCKER_CONFIG HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME; rm -rf -- \$\(printf '%q' "\$temp"\)" EXIT/u);
   assert.doesNotMatch(prepare, /trap [^\n]+ RETURN/u);
-  assert.ok(prepare.indexOf("trap '") < prepare.indexOf('docker login'));
-  assert.ok(prepare.indexOf("trap '") < prepare.indexOf('docker pull'));
+  assert.ok(prepare.indexOf('trap "') < prepare.indexOf('docker login'));
+  assert.ok(prepare.indexOf('trap "') < prepare.indexOf('docker pull'));
   assert.match(prepare, /trap - EXIT/u);
 });
 
