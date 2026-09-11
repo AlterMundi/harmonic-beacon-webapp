@@ -1,7 +1,7 @@
 {
   "schema_version": "listen-delivery-bundle.v1",
   "files": {
-    "github-gate.mjs": "f330032204cc97c78f933c5fd8aded2285979199ad633c7cbfac455ac0c426d0",
+    "github-gate.mjs": "262c1fa9fb40d2fda6c89216b1e4e99b9dd0b32b8eafb0c8d94d62a511cf2cfe",
     "lifecycle.mjs": "96902f51e5cf0d23d7437d1d98aa8ca8766c729a9ba119a60e1f618d3eadde66",
     "proof.mjs": "d19d3593525402e852bbafae1fd22d7346ca52d10714872d4cb6ce9cb8238445",
     "receipt.mjs": "a4b5a831f2807ad30b546cf1024b2809eecf88c17215b0fda2e30058bb52913f",

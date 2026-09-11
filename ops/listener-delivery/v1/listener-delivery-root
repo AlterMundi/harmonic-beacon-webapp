@@ -29,7 +29,7 @@ test "$target" = staging || test "$checkpoint_mode" = deliver || fail 'productio
 test "$operation" = deploy || test "$checkpoint_mode" = deliver || fail 'interruption mode is valid only for staging deploy'
 
 bundle_root=/usr/local/libexec/hb-listener-delivery/v1
-expected_bundle_manifest_sha256=0e503029bbe19efcf3a923206a9a7717693968099a951473bed4e93b73b00ba1
+expected_bundle_manifest_sha256=ccc41d425c36d7a5be2f39f058458073c2ca4e0ef79c6f6722d9ff28f441c66c
 fixture_root=${LISTENER_DELIVERY_SYNTHETIC_FIXTURE_ROOT:-}
 if test -n "$fixture_root"; then
   test "$(id -u)" -ne 0 || fail 'synthetic fixture mode is forbidden for root'
@@ -64,7 +64,7 @@ transaction.mjs'
     test "$(stat -c '%U:%G:%a:%h' "$bundle_file")" = root:root:500:1 || fail 'lifecycle bundle entry must be single-link root:root mode 0500'
     test "$(sha256sum "$bundle_file" | cut -d ' ' -f 1)" = "$expected_digest" || fail 'lifecycle bundle entry digest mismatch'
   }
-  verify_bundle_file github-gate.mjs f330032204cc97c78f933c5fd8aded2285979199ad633c7cbfac455ac0c426d0
+  verify_bundle_file github-gate.mjs 262c1fa9fb40d2fda6c89216b1e4e99b9dd0b32b8eafb0c8d94d62a511cf2cfe
   verify_bundle_file lifecycle.mjs 96902f51e5cf0d23d7437d1d98aa8ca8766c729a9ba119a60e1f618d3eadde66
   verify_bundle_file proof.mjs d19d3593525402e852bbafae1fd22d7346ca52d10714872d4cb6ce9cb8238445
   verify_bundle_file receipt.mjs a4b5a831f2807ad30b546cf1024b2809eecf88c17215b0fda2e30058bb52913f
