@@ -91,7 +91,13 @@ test('blocker 2: privileged path has no Git execution and ignores fsmonitor conf
         GIT_CONFIG_VALUE_0: monitor,
       },
     });
-    assert.equal(result.status, 0, result.stderr);
+    // Production deliberately pins /usr/bin/node; setup-node on hosted runners does not install there.
+    if (fs.existsSync('/usr/bin/node')) {
+      assert.equal(result.status, 0, result.stderr);
+    } else {
+      assert.equal(result.status, 127, result.stderr);
+      assert.match(result.stderr, /\/usr\/bin\/node: not found/);
+    }
     assert.equal(fs.existsSync(marker), false);
   } finally {
     await fsp.rm(fixture, { recursive: true, force: true });
