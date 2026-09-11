@@ -1,18 +1,85 @@
 const environments = new Set(['production', 'staging', 'development', 'test']);
 const trafficClasses = new Set(['real', 'internal', 'synthetic', 'test', 'unknown']);
+const calendarDayPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const dayMs = 86400000;
 
-export function dashboardFilters(input = {}) {
-    const end = input.end ? new Date(input.end) : new Date();
-    const start = input.start ? new Date(input.start) : new Date(end.getTime() - 30 * 86400000);
-    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end || end - start > 2 * 366 * 86400000) {
+function calendarDayParts(value) {
+    const match = calendarDayPattern.exec(value ?? '');
+    if (!match) throw new Error('invalid_date_range');
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const check = new Date(Date.UTC(year, month - 1, day));
+    if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) {
         throw new Error('invalid_date_range');
     }
+    return { year, month, day };
+}
+
+function calendarDayAt(instant, formatter) {
+    const values = Object.fromEntries(formatter.formatToParts(instant)
+        .filter(part => part.type !== 'literal')
+        .map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
+
+function shiftCalendarDay(value, amount) {
+    const { year, month, day } = calendarDayParts(value);
+    const shifted = new Date(Date.UTC(year, month - 1, day + amount));
+    return shifted.toISOString().slice(0, 10);
+}
+
+/**
+ * Return the first real instant belonging to an IANA-zone calendar day. A
+ * binary search avoids assuming a fixed UTC offset and therefore handles
+ * 23/25-hour DST days as well as zones whose offset changes at midnight.
+ */
+function zonedDayStart(value, timezone, formatter) {
+    const { year, month, day } = calendarDayParts(value);
+    const nominal = Date.UTC(year, month - 1, day);
+    let low = nominal - 36 * 60 * 60 * 1000;
+    let high = nominal + 36 * 60 * 60 * 1000;
+    while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (calendarDayAt(new Date(middle), formatter) < value) low = middle + 1;
+        else high = middle;
+    }
+    if (calendarDayAt(new Date(low), formatter) !== value) throw new Error('invalid_date_range');
+    return new Date(low);
+}
+
+export function dashboardFilters(input = {}) {
     const environment = environments.has(input.environment) ? input.environment : 'production';
     const traffic = Array.isArray(input.traffic) ? input.traffic.filter(value => trafficClasses.has(value)) : ['real'];
     if (traffic.length === 0) throw new Error('invalid_traffic_filter');
-    const timezone = typeof input.timezone === 'string' && input.timezone.length <= 64 ? input.timezone : 'UTC';
-    try { new Intl.DateTimeFormat('en', { timeZone: timezone }); } catch { throw new Error('invalid_timezone'); }
-    return { start, end, environment, traffic: [...new Set(traffic)], timezone };
+    let timezone = 'UTC';
+    if (input.timezone != null) {
+        if (typeof input.timezone !== 'string' || input.timezone.length === 0 || input.timezone.length > 64) {
+            throw new Error('invalid_timezone');
+        }
+        timezone = input.timezone;
+    }
+    let formatter;
+    try {
+        formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+        });
+    } catch { throw new Error('invalid_timezone'); }
+    const today = calendarDayAt(new Date(), formatter);
+    const startDay = input.start ?? shiftCalendarDay(today, -29);
+    const endDay = input.end ?? today;
+    const startParts = calendarDayParts(startDay);
+    const endParts = calendarDayParts(endDay);
+    const startOrdinal = Date.UTC(startParts.year, startParts.month - 1, startParts.day);
+    const endOrdinal = Date.UTC(endParts.year, endParts.month - 1, endParts.day);
+    const selectedDays = Math.round((endOrdinal - startOrdinal) / dayMs) + 1;
+    if (selectedDays < 1 || selectedDays > 2 * 366) throw new Error('invalid_date_range');
+    const start = zonedDayStart(startDay, timezone, formatter);
+    const end = zonedDayStart(shiftCalendarDay(endDay, 1), timezone, formatter);
+    return {
+        start, end, startDay, endDay, environment,
+        traffic: [...new Set(traffic)], timezone,
+    };
 }
 
 export const metricDefinitions = {
@@ -30,6 +97,7 @@ export const metricDefinitions = {
 export async function queryDashboard(pool, rawFilters = {}) {
     const filters = dashboardFilters(rawFilters);
     const params = [filters.start, filters.end, filters.environment, filters.traffic];
+    const dayParams = [filters.environment, filters.traffic, filters.startDay, filters.endDay];
     const scope = `occurred_at >= $1 and occurred_at < $2 and environment=$3 and traffic_class=any($4::text[])`;
     const [web, accounts, listen, live, commerce, acquisition, geography, devices, events, memberships, campaigns, health, quality, storage, series, cohorts, pages, listenerActivity, funnel, lifecycle] = await Promise.all([
         pool.query(`select count(distinct visitor_id)::bigint visitors,count(distinct session_id)::bigint sessions,
@@ -57,8 +125,8 @@ export async function queryDashboard(pool, rawFilters = {}) {
         pool.query(`select source,medium,campaign,first_source,first_medium,first_campaign,
             first_referrer,last_referrer,first_landing,last_landing,
             sum(visitors)::bigint visitors,sum(sessions)::bigint sessions,sum(pageviews)::bigint pageviews
-            from mart.acquisition where metric_date >= ($1 at time zone $5)::date and metric_date <= ($2 at time zone $5)::date
-              and environment=$3 and traffic_class=any($4::text[]) group by 1,2,3,4,5,6,7,8,9,10 order by visitors desc limit 100`, [...params, filters.timezone]),
+            from mart.acquisition where metric_date >= $3::date and metric_date <= $4::date
+              and environment=$1 and traffic_class=any($2::text[]) group by 1,2,3,4,5,6,7,8,9,10 order by visitors desc limit 100`, dayParams),
         pool.query(`select coalesce(country_code,'unknown') country,coalesce(region_code,'unknown') region,
             count(distinct visitor_id)::bigint visitors from ingest.raw_events where ${scope} group by 1,2 order by visitors desc limit 100`, params),
         pool.query(`select coalesce(device->>'class','unknown') class,coalesce(device->>'browser','unknown') browser,
@@ -81,8 +149,9 @@ export async function queryDashboard(pool, rawFilters = {}) {
             group by 1,2,3 order by memberships desc`, [filters.environment, filters.traffic]),
         pool.query(`select entity_type,entity_id,name,configured_status,effective_status,delivering,date_start,date_stop,
             account_currency,spend_minor,impressions,reach,frequency,clicks,ctr,cpc_minor,cpm_minor,actions
-            from mart.campaign_delivery where date_start is null or (date_start <= $2::date and date_stop >= $1::date)
-            order by delivering desc,impressions desc nulls last,name limit 500`, [filters.start, filters.end]),
+            from mart.campaign_delivery where date_start is null or
+              (date_start <= $2::date and date_stop >= $1::date)
+            order by delivering desc,impressions desc nulls last,name limit 500`, [filters.startDay, filters.endDay]),
         pool.query('select * from mart.source_health order by source'),
         pool.query(`select check_name,source,status,observed_value,expected_value,details,checked_at
             from mart.latest_quality_results order by status desc,source,check_name`),
@@ -96,15 +165,16 @@ export async function queryDashboard(pool, rawFilters = {}) {
             sum(listening_seconds)::bigint listening_seconds,sum(attendees)::bigint attendees,
             sum(attendee_seconds)::bigint attendee_seconds,sum(payments_confirmed)::bigint payments_confirmed,
             sum(revenue_minor)::bigint revenue_minor,currency from mart.daily_metrics
-            where metric_date >= ($1 at time zone $5)::date and metric_date <= ($2 at time zone $5)::date
-              and environment=$3 and traffic_class=any($4::text[]) group by metric_date,surface,currency order by metric_date,surface`, [...params, filters.timezone]),
-        pool.query(`with firsts as (select account_subject,min(started_at)::date cohort_date from mart.listening_intervals_unioned
+            where metric_date >= $3::date and metric_date <= $4::date
+              and environment=$1 and traffic_class=any($2::text[]) group by metric_date,surface,currency order by metric_date,surface`, dayParams),
+        pool.query(`with firsts as (select account_subject,min(started_at at time zone $5)::date cohort_date from mart.listening_intervals_unioned
               where environment=$3 and traffic_class=any($4::text[]) group by account_subject), activity as (
-              select distinct account_subject,started_at::date activity_date from mart.listening_intervals_unioned
+              select distinct account_subject,(started_at at time zone $5)::date activity_date from mart.listening_intervals_unioned
               where started_at < $2 and ended_at > $1 and environment=$3 and traffic_class=any($4::text[]))
             select cohort_date,(activity_date-cohort_date) day_number,count(distinct activity.account_subject)::bigint listeners
-            from firsts join activity using(account_subject) where cohort_date >= $1::date and cohort_date < $2::date
-            group by 1,2 order by 1,2`, params),
+            from firsts join activity using(account_subject)
+            where cohort_date >= ($1 at time zone $5)::date and cohort_date < ($2 at time zone $5)::date
+            group by 1,2 order by 1,2`, [...params, filters.timezone]),
         pool.query(`select surface,page->>'path' path,coalesce(page->>'landing','unknown') landing,
             coalesce(page->>'referrer','direct') referrer,count(*) filter(where event_name='page.viewed')::bigint pageviews,
             count(distinct visitor_id)::bigint visitors,count(distinct session_id)::bigint sessions

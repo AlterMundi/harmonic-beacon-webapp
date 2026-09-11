@@ -1,37 +1,156 @@
 {
   "$schema": "./schemas/platform-services.schema.json",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "services": [
     {
       "id": "home",
       "name": "Public Home",
-      "repository": "AlterMundi/harmonicbeacon.com",
-      "lanes": ["main"],
+      "owner": {"status": "verified", "name": "AlterMundi"},
+      "repository": {"status": "verified", "slug": "AlterMundi/harmonicbeacon.com"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "verified", "name": "main"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/ci.yml"},
+      "deployAdapter": {
+        "status": "verified",
+        "kind": "github-pages-branch",
+        "references": ["https://github.com/AlterMundi/harmonicbeacon.com/blob/main/docs/ops/home-delivery-contract-v1.md"]
+      },
       "localPaths": [],
       "workflows": [],
-      "health": [
-        {"name": "public-home", "url": "https://harmonicbeacon.com/", "expectStatus": [200]}
+      "branchSources": [
+        {
+          "ref": "main",
+          "paths": ["package.json"],
+          "workflows": [".github/workflows/ci.yml"],
+          "recoveryDocs": []
+        }
       ],
       "recoveryDocs": [],
-      "alerts": "Hosting provider and public HTTP health",
-      "runner": "Home repository hosting workflow; verify its current runner in GitHub",
-      "mutation": "Use the Home repository workflow; never couple it to a Live Docker release."
+      "deployedRevision": {"status": "verified", "value": "b6b6b093c55ed2269f22fb112d283c0fcb706340"},
+      "artifactFingerprint": {
+        "status": "verified",
+        "kind": "source-public-sha256",
+        "value": "c05a1be42a700e1dc2fac988a658069e35676770cfe8496ea1997f204fd276c8",
+        "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5625694911"]
+      },
+      "health": {
+        "status": "verified",
+        "endpoints": [
+          {"name": "public-home", "url": "https://harmonicbeacon.com/", "expectStatus": [200]}
+        ]
+      },
+      "alerts": {
+        "route": {"status": "unavailable", "kind": "unknown", "references": []},
+        "recipientProof": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "recovery": {
+        "target": {
+          "status": "documented",
+          "kind": "prior-git-revision",
+          "references": ["https://github.com/AlterMundi/harmonicbeacon.com/blob/main/docs/ops/home-delivery-contract-v1.md"]
+        },
+        "proof": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "staging": {
+        "status": "unavailable",
+        "environments": [],
+        "drill": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "unresolvedRequirements": [
+        {
+          "id": "home-alert-recipient",
+          "kind": "recipient-proof",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["alert-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5625694911"
+        },
+        {
+          "id": "home-staging-drill",
+          "kind": "staging-environment",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["staging-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5625694911"
+        }
+      ],
+      "mutationPolicy": "Use the Home repository main:/ GitHub Pages source; never couple it to a Live Docker release."
     },
     {
       "id": "live",
       "name": "Live and Ops",
-      "repository": "AlterMundi/harmonic-beacon-webapp",
-      "lanes": ["main", "release"],
+      "owner": {"status": "verified", "name": "AlterMundi"},
+      "repository": {"status": "verified", "slug": "AlterMundi/harmonic-beacon-webapp"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "verified", "name": "release"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/ci.yml"},
+      "deployAdapter": {
+        "status": "verified",
+        "kind": "github-actions-workflow",
+        "references": [".github/workflows/deploy.yml", "deploy/hb-deploy-root", "deploy/README.md"]
+      },
       "localPaths": ["src", "prisma", "docker-compose.yml", "Dockerfile"],
-      "workflows": [".github/workflows/ci.yml", ".github/workflows/e2e.yml", ".github/workflows/deploy.yml", ".github/workflows/audio-boundary.yml"],
-      "health": [
-        {"name": "live-health", "url": "https://live.harmonicbeacon.com/api/health", "expectStatus": [200], "provenanceField": "gitSha"},
-        {"name": "live-readiness", "url": "https://live.harmonicbeacon.com/api/health/ready", "expectStatus": [200]}
-      ],
-      "staging": ["https://live-staging.harmonicbeacon.com/"],
+      "workflows": [".github/workflows/ci.yml", ".github/workflows/e2e.yml", ".github/workflows/deploy.yml", ".github/workflows/oci-candidate.yml", ".github/workflows/oci-promote.yml", ".github/workflows/audio-boundary.yml", ".github/workflows/delivery-gate.yml"],
+      "branchSources": [],
       "recoveryDocs": ["deploy/README.md", "docs/ops/WEEKEND_EVENT_RUNBOOK.md"],
-      "alerts": "Harmonic Beacon operational alert channel and service health",
-      "runner": "GitHub Actions self-hosted labels [self-hosted, mona], identity beacon-runner, restricted hb-deploy helper",
+      "deliveryPolicy": {
+        "protectedBranches": ["main", "release"],
+        "requiredContext": "delivery-gate",
+        "requiredAppId": 15368,
+        "requirePullRequest": true,
+        "requireCodeOwnerReviews": true,
+        "requiredApprovingReviewCount": 1,
+        "dismissStaleReviews": true,
+        "requireLastPushApproval": true,
+        "requireUpToDate": true,
+        "allowForcePushes": false,
+        "allowDeletions": false
+      },
+      "deployedRevision": {"status": "unresolved", "value": null},
+      "artifactFingerprint": {
+        "status": "documented",
+        "kind": "source-revision",
+        "value": null,
+        "references": ["deploy/README.md"]
+      },
+      "health": {
+        "status": "verified",
+        "endpoints": [
+          {"name": "live-health", "url": "https://live.harmonicbeacon.com/api/health", "expectStatus": [200], "provenanceField": "gitSha"},
+          {"name": "live-readiness", "url": "https://live.harmonicbeacon.com/api/health/ready", "expectStatus": [200]}
+        ]
+      },
+      "alerts": {
+        "route": {"status": "documented", "kind": "service-monitor", "references": ["docs/ops/WEEKEND_EVENT_RUNBOOK.md"]},
+        "recipientProof": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "recovery": {
+        "target": {"status": "documented", "kind": "prior-artifact", "references": ["deploy/README.md"]},
+        "proof": {"status": "documented", "references": ["deploy/README.md"], "outcome": null}
+      },
+      "staging": {
+        "status": "verified",
+        "environments": [{"name": "live-staging", "url": "https://live-staging.harmonicbeacon.com/"}],
+        "drill": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "unresolvedRequirements": [
+        {
+          "id": "live-current-recipient-proof",
+          "kind": "recipient-proof",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["alert-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537"
+        },
+        {
+          "id": "live-staging-interruption-drill",
+          "kind": "staging-drill",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["staging-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537"
+        }
+      ],
       "runnerVerification": {
         "organization": "AlterMundi",
         "groupId": 3,
@@ -41,63 +160,402 @@
         "runnerName": "mona",
         "labels": ["self-hosted", "Linux", "X64", "mona"]
       },
-      "mutation": "Production changes only through the release workflow and restricted hb-deploy helper."
+      "mutationPolicy": "Production changes use exactly one release lane state: legacy-shadow permits OCI shadow preparation while the legacy release workflow fails closed on a security safety hold; oci-production authorizes only the exact qualified OCI promotion path after recovery evidence is accepted."
     },
     {
-      "id": "account-listener",
-      "name": "Beacon Account and Listener",
-      "repository": "AlterMundi/harmonic-beacon-webapp",
-      "lanes": ["early-birds"],
-      "localPaths": ["services/account", "services/listener", "scripts/live-production", "docs/architecture/BEACON_ACCOUNT_LIVE_RP.md"],
+      "id": "account",
+      "name": "Beacon Account",
+      "owner": {"status": "verified", "name": "AlterMundi"},
+      "repository": {"status": "verified", "slug": "AlterMundi/harmonic-beacon-webapp"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "verified", "name": "early-birds"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/early-birds-fast-forward.yml"},
+      "deployAdapter": {
+        "status": "documented",
+        "kind": "repository-script",
+        "references": [
+          "https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/ops/beacon-account/README.md",
+          "https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/scripts/beacon-account/start.sh"
+        ]
+      },
+      "localPaths": ["services/account", "ops/beacon-account", "scripts/beacon-account"],
       "workflows": [],
-      "health": [
-        {"name": "account-readiness", "url": "https://account.harmonicbeacon.com/api/account/health/ready", "expectStatus": [200], "provenanceField": "gitSha"},
-        {"name": "listener-public", "url": "https://listen.harmonicbeacon.com/", "expectStatus": [200]}
+      "branchSources": [
+        {
+          "ref": "early-birds",
+          "paths": ["src/app/account", "ops/beacon-account", "scripts/beacon-account"],
+          "workflows": [".github/workflows/early-birds-fast-forward.yml"],
+          "recoveryDocs": []
+        }
       ],
-      "staging": ["https://account-staging.harmonicbeacon.com/", "https://earlybirds-staging.harmonicbeacon.com/"],
-      "recoveryDocs": ["deploy/LIVE_ACCOUNT_PRODUCTION.md", "docs/architecture/BEACON_ACCOUNT_LIVE_RP.md"],
-      "alerts": "Account/Listener readiness and paid-listener queue alerts",
-      "runner": "Account/Listener-specific release path; do not infer the Live runner boundary",
-      "mutation": "Use the Account/Listener release scripts and verify OIDC, cookies, logout, quota, membership and Authority contracts."
+      "recoveryDocs": [],
+      "deployedRevision": {"status": "verified", "value": "38b6665ba6909555316abae55e81413c4dd65f1a"},
+      "artifactFingerprint": {"status": "unresolved", "kind": "image-id-or-digest", "value": null, "references": []},
+      "health": {
+        "status": "verified",
+        "endpoints": [
+          {"name": "account-health", "url": "https://account.harmonicbeacon.com/api/account/health", "expectStatus": [200], "provenanceField": "gitSha"},
+          {"name": "account-readiness", "url": "https://account.harmonicbeacon.com/api/account/health/ready", "expectStatus": [200], "provenanceField": "gitSha"}
+        ]
+      },
+      "alerts": {
+        "route": {"status": "unavailable", "kind": "unknown", "references": []},
+        "recipientProof": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "recovery": {
+        "target": {
+          "status": "verified",
+          "kind": "prior-artifact",
+          "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/scripts/beacon-account/start.sh"]
+        },
+        "proof": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "staging": {
+        "status": "verified",
+        "environments": [{"name": "account-staging", "url": "https://account-staging.harmonicbeacon.com/"}],
+        "drill": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "unresolvedRequirements": [
+        {
+          "id": "account-authorized-deploy-adapter",
+          "kind": "deploy-adapter",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["delivery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "account-artifact-fingerprint",
+          "kind": "artifact-fingerprint",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["delivery-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "account-alert-recipient",
+          "kind": "recipient-proof",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["alert-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "account-staging-recovery-drill",
+          "kind": "staging-drill",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["staging-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        }
+      ],
+      "mutationPolicy": "Use Account-owned scripts on the early-birds delivery lane; do not infer the Live release runner boundary."
+    },
+    {
+      "id": "listen",
+      "name": "Beacon Listen",
+      "owner": {"status": "verified", "name": "AlterMundi"},
+      "repository": {"status": "verified", "slug": "AlterMundi/harmonic-beacon-webapp"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "verified", "name": "early-birds"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/early-birds-fast-forward.yml"},
+      "deployAdapter": {
+        "status": "documented",
+        "kind": "repository-script",
+        "references": [
+          "https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/ops/listener-account-production/README.md",
+          "https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/scripts/listener-account-production/activate.sh",
+          "https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/scripts/listener-account-production/rollback.sh"
+        ]
+      },
+      "localPaths": ["services/listener", "ops/listener-account-production", "scripts/listener-account-production"],
+      "workflows": [],
+      "branchSources": [
+        {
+          "ref": "early-birds",
+          "paths": ["ops/listener-account-production", "scripts/listener-account-production"],
+          "workflows": [".github/workflows/early-birds-fast-forward.yml"],
+          "recoveryDocs": ["docs/operations/FOUNDING_LISTENER_RELEASE_CANDIDATE.md", "ops/listener-account-production/README.md"]
+        }
+      ],
+      "recoveryDocs": [],
+      "deployedRevision": {"status": "verified", "value": "38b6665ba6909555316abae55e81413c4dd65f1a"},
+      "artifactFingerprint": {"status": "unresolved", "kind": "image-id-or-digest", "value": null, "references": []},
+      "health": {
+        "status": "verified",
+        "endpoints": [
+          {"name": "listen-health", "url": "https://listen.harmonicbeacon.com/api/health", "expectStatus": [200], "provenanceField": "gitSha"},
+          {"name": "listen-readiness", "url": "https://listen.harmonicbeacon.com/api/health/ready", "expectStatus": [200], "provenanceField": "gitSha"}
+        ]
+      },
+      "alerts": {
+        "route": {
+          "status": "documented",
+          "kind": "alertmanager",
+          "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/ops/early-birds/prometheus/alertmanager.yml.tmpl"]
+        },
+        "recipientProof": {
+          "status": "documented",
+          "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/docs/ops/FOUNDING_LISTENER_RELEASE_CANDIDATE.md"], "outcome": null
+        }
+      },
+      "recovery": {
+        "target": {
+          "status": "verified",
+          "kind": "prior-artifact",
+          "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/scripts/listener-account-production/rollback.sh"]
+        },
+        "proof": {
+          "status": "documented",
+          "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/blob/early-birds/docs/ops/FOUNDING_LISTENER_RELEASE_CANDIDATE.md"], "outcome": null
+        }
+      },
+      "staging": {
+        "status": "verified",
+        "environments": [{"name": "earlybirds-staging", "url": "https://earlybirds-staging.harmonicbeacon.com/"}],
+        "drill": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "unresolvedRequirements": [
+        {
+          "id": "listen-authorized-deploy-adapter",
+          "kind": "deploy-adapter",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["delivery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "listen-artifact-fingerprint",
+          "kind": "artifact-fingerprint",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["delivery-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "listen-current-recipient-proof",
+          "kind": "recipient-proof",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["alert-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "listen-interrupted-staging-drill",
+          "kind": "staging-drill",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["staging-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        }
+      ],
+      "mutationPolicy": "Use Listen-owned preparation, preflight, activation, and rollback scripts on early-birds; do not force a merge to main."
     },
     {
       "id": "media-services",
       "name": "Tapestry, playlist and LiveKit media",
-      "repository": "AlterMundi/harmonic-beacon-webapp",
-      "lanes": ["main", "release"],
+      "owner": {"status": "verified", "name": "AlterMundi"},
+      "repository": {"status": "verified", "slug": "AlterMundi/harmonic-beacon-webapp"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "verified", "name": "release"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/e2e.yml"},
+      "deployAdapter": {
+        "status": "documented",
+        "kind": "github-actions-workflow",
+        "references": [".github/workflows/deploy.yml", "deploy/README.md"]
+      },
       "localPaths": ["services/tapestry", "services/playlist-bot", "deploy/livekit.yaml"],
       "workflows": [".github/workflows/e2e.yml", ".github/workflows/livekit-capacity.yml", ".github/workflows/audio-boundary.yml"],
-      "health": [],
+      "branchSources": [],
       "recoveryDocs": ["deploy/README.md", "docs/ops/LIVEKIT_LOAD_HARNESS.md"],
-      "alerts": "Container health, LiveKit target monitor and media-specific alerts",
-      "runner": "Live release runner for integrated production images; service-local tooling for focused diagnostics",
-      "mutation": "Build, restart and roll back only the affected media service unless a shared contract requires more."
+      "deployedRevision": {"status": "unresolved", "value": null},
+      "artifactFingerprint": {"status": "unresolved", "kind": "image-id-or-digest", "value": null, "references": []},
+      "health": {"status": "unresolved", "endpoints": []},
+      "alerts": {
+        "route": {"status": "documented", "kind": "service-monitor", "references": ["docs/ops/LIVEKIT_LOAD_HARNESS.md"]},
+        "recipientProof": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "recovery": {
+        "target": {"status": "documented", "kind": "prior-artifact", "references": ["deploy/README.md"]},
+        "proof": {"status": "documented", "references": ["deploy/README.md"], "outcome": null}
+      },
+      "staging": {
+        "status": "unavailable",
+        "environments": [],
+        "drill": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "unresolvedRequirements": [
+        {
+          "id": "media-artifact-fingerprint",
+          "kind": "artifact-fingerprint",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["delivery-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537"
+        }
+      ],
+      "mutationPolicy": "Build, restart, and recover only the affected media service unless a shared contract requires more."
     },
     {
       "id": "analytics",
       "name": "First-party Analytics",
-      "repository": "AlterMundi/harmonic-beacon-webapp",
-      "lanes": ["main"],
-      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics"],
-      "workflows": [".github/workflows/ci.yml"],
-      "health": [],
-      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "ops/analytics/restore-verify-analytics.sh"],
-      "alerts": "Analytics source freshness, data quality, storage, backup and restore monitors",
-      "runner": "Analytics systemd/Compose path on Mona as defined by the analytics runbook",
-      "mutation": "Keep analytics migrations, runtime, dashboard and backups independent from Live deployment."
+      "owner": {"status": "verified", "name": "AlterMundi"},
+      "repository": {"status": "verified", "slug": "AlterMundi/harmonic-beacon-webapp"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "documented", "name": "release"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/ci.yml"},
+      "deployAdapter": {
+        "status": "documented",
+        "kind": "github-actions-workflow",
+        "references": [".github/workflows/analytics-build.yml", ".github/workflows/analytics-delivery.yml", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V2.md", "docs/analytics/RUNBOOK.md", "ops/analytics/hb-analytics-delivery-root"]
+      },
+      "localPaths": ["services/analytics", "ops/analytics", "contracts/analytics", "contracts/analytics-delivery/v2/receipt.schema.json"],
+      "workflows": [".github/workflows/ci.yml", ".github/workflows/analytics-build.yml", ".github/workflows/analytics-delivery.yml"],
+      "branchSources": [],
+      "recoveryDocs": ["docs/analytics/RUNBOOK.md", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V2.md", "ops/analytics/restore-verify-analytics.sh"],
+      "deployedRevision": {"status": "unresolved", "value": null},
+      "artifactFingerprint": {"status": "unresolved", "kind": "image-id-or-digest", "value": null, "references": []},
+      "health": {
+        "status": "verified",
+        "endpoints": [
+          {"name": "collector health", "url": "https://live.harmonicbeacon.com/_a/health", "expectStatus": [200], "provenanceField": "provenance.sourceRevision"},
+          {"name": "collector readiness", "url": "https://live.harmonicbeacon.com/_a/ready", "expectStatus": [200, 503], "provenanceField": "provenance.sourceRevision"}
+        ]
+      },
+      "alerts": {
+        "route": {"status": "documented", "kind": "alertmanager", "references": ["docs/analytics/RUNBOOK.md", "ops/analytics/hb-analytics-monitor.service", "ops/analytics/notify-analytics-monitor.mjs"]},
+        "recipientProof": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "recovery": {
+        "target": {"status": "documented", "kind": "restore-and-roll-forward", "references": ["docs/analytics/RUNBOOK.md", "docs/analytics/DELIVERY_RECOVERY_CONTRACT_V1.md", "ops/analytics/restore-verify-analytics.sh"]},
+        "proof": {"status": "documented", "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/482"], "outcome": null}
+      },
+      "staging": {
+        "status": "unavailable",
+        "environments": [],
+        "drill": {"status": "unresolved", "references": [], "outcome": null}
+      },
+      "unresolvedRequirements": [
+        {
+          "id": "analytics-current-deployed-revision",
+          "kind": "deployment-revision",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["catalog-readback", "delivery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "analytics-artifact-fingerprint",
+          "kind": "artifact-fingerprint",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["delivery-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "analytics-alert-recipient",
+          "kind": "recipient-proof",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["alert-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        },
+        {
+          "id": "analytics-isolated-staging",
+          "kind": "staging-environment",
+          "status": "unresolved",
+          "owner": "AlterMundi",
+          "blocks": ["staging-proof", "recovery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537#issuecomment-5626021460"
+        }
+      ],
+      "mutationPolicy": "Keep analytics Compose/systemd lifecycle independent from Live; permit only exact-digest bounded helper operations and preserve product fail-open behavior."
     },
     {
       "id": "commerce-authority",
       "name": "Payments, membership Authority and PMP",
-      "repository": null,
-      "lanes": [],
+      "owner": {"status": "documented", "name": "SairaAsua"},
+      "repository": {"status": "verified", "slug": "Mar-IA-no/PMP-myth-bot"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "documented", "name": "main"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/ci.yml"},
+      "deployAdapter": {
+        "status": "verified",
+        "kind": "compose-systemd",
+        "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"]
+      },
       "localPaths": ["contracts/commerce-entitlement", "scripts/commerce-media-worker.ts"],
       "workflows": [],
-      "health": [],
-      "recoveryDocs": ["docs/architecture/COMMERCE_ENTITLEMENT_V1.md", "deploy/README.md"],
-      "alerts": "Payment provider, membership authority and durable commerce queue alerts",
-      "runner": "Unresolved until the canonical PMP/Authority owner and workflow are read back",
-      "mutation": "Resolve the canonical owner repository, deployed SHA, database and runbook before mutation; sandbox only for payment tests."
+      "branchSources": [],
+      "recoveryDocs": [
+        "docs/architecture/COMMERCE_ENTITLEMENT_V1.md",
+        "deploy/README.md",
+        "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+      ],
+      "deployedRevision": {"status": "verified", "value": "272b7ed65a45b0da5c05f6fa783066a62bcb5aa5"},
+      "artifactFingerprint": {
+        "status": "verified",
+        "kind": "image-id-or-digest",
+        "value": "sha256:cdec9ee659ed047b16f9f1eb930457f18614c4ccacea3a11368a553da3263b43",
+        "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"]
+      },
+      "health": {"status": "documented", "endpoints": []},
+      "alerts": {
+        "route": {"status": "verified", "kind": "service-monitor", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"]},
+        "recipientProof": {"status": "unresolved", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"], "outcome": null}
+      },
+      "recovery": {
+        "target": {"status": "verified", "kind": "restore-and-roll-forward", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"]},
+        "proof": {"status": "unresolved", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"], "outcome": null}
+      },
+      "staging": {
+        "status": "unavailable",
+        "environments": [],
+        "drill": {"status": "unresolved", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"], "outcome": null}
+      },
+      "unresolvedRequirements": [
+        {
+          "id": "pmp-repository-read-access",
+          "kind": "repository-access",
+          "status": "external",
+          "owner": "Mar-IA-no",
+          "blocks": ["delivery-proof", "alert-proof", "recovery-proof", "staging-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/473#issuecomment-5625961149"
+        },
+        {
+          "id": "pmp-immutable-delivery-workflow",
+          "kind": "workflow-authorization",
+          "status": "unresolved",
+          "owner": "Mar-IA-no",
+          "blocks": ["delivery-proof"],
+          "reference": "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+        },
+        {
+          "id": "pmp-alert-recipient",
+          "kind": "recipient-proof",
+          "status": "unresolved",
+          "owner": "Mar-IA-no",
+          "blocks": ["alert-proof"],
+          "reference": "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+        },
+        {
+          "id": "pmp-off-host-backup-and-recovery",
+          "kind": "recovery-proof",
+          "status": "unresolved",
+          "owner": "Mar-IA-no",
+          "blocks": ["recovery-proof"],
+          "reference": "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+        },
+        {
+          "id": "pmp-isolated-staging",
+          "kind": "staging-environment",
+          "status": "external",
+          "owner": "Mar-IA-no",
+          "blocks": ["staging-proof"],
+          "reference": "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+        }
+      ],
+      "mutationPolicy": "Read back and bind the canonical repository, exact source revision, every service image, workflow run, and recovery receipt before mutation; use sandbox fixtures only and perform no real-money acceptance action."
     }
   ]
 }

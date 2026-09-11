@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import pg from 'pg';
 
+import { queryDashboard } from '../src/dashboard.mjs';
 import { syncMetaSource } from '../src/meta-sync.mjs';
 import { runQualityAndRetention } from '../src/quality.mjs';
 import { RECLASSIFY_BROWSER_TRAFFIC_SQL } from '../src/queries.mjs';
@@ -11,6 +12,35 @@ import { createStore } from '../src/store.mjs';
 
 const connectionString = process.env.ANALYTICS_TEST_DATABASE_URL;
 const postgresTest = connectionString ? test : test.skip;
+
+postgresTest('dashboard calendar boundaries include exactly the selected zoned day', async () => {
+    const pool = new pg.Pool({ connectionString });
+    const rows = [
+        ['20000000-0000-4000-8000-000000000101', '20000000-0000-4000-8000-000000000111', '2026-03-08T04:59:59.999Z'],
+        ['20000000-0000-4000-8000-000000000102', '20000000-0000-4000-8000-000000000112', '2026-03-08T05:00:00.000Z'],
+        ['20000000-0000-4000-8000-000000000103', '20000000-0000-4000-8000-000000000113', '2026-03-09T03:59:59.999Z'],
+        ['20000000-0000-4000-8000-000000000104', '20000000-0000-4000-8000-000000000114', '2026-03-09T04:00:00.000Z'],
+    ];
+    await pool.query('delete from ingest.raw_events where event_id=any($1::uuid[])', [rows.map(row => row[0])]);
+    for (const [eventId, visitorId, occurredAt] of rows) {
+        await pool.query(`insert into ingest.raw_events
+            (event_id,schema_version,event_name,occurred_at,received_at,source,surface,environment,visitor_id,traffic_class)
+            values($1,'hb.analytics.event.v1','page.viewed',$2,$2,'browser','home','test',$3,'test')`,
+        [eventId, occurredAt, visitorId]);
+    }
+    try {
+        const dashboard = await queryDashboard(pool, {
+            start: '2026-03-08', end: '2026-03-08', timezone: 'America/New_York',
+            environment: 'test', traffic: ['test'],
+        });
+        assert.equal(Number(dashboard.summary.visitors), 2);
+        assert.equal(dashboard.filters.start, '2026-03-08T05:00:00.000Z');
+        assert.equal(dashboard.filters.end, '2026-03-09T04:00:00.000Z');
+    } finally {
+        await pool.query('delete from ingest.raw_events where event_id=any($1::uuid[])', [rows.map(row => row[0])]);
+        await pool.end();
+    }
+});
 
 postgresTest('PostgreSQL ingestion deduplicates retries by event id', async () => {
     const store = createStore(connectionString);

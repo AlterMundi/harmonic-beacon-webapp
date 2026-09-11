@@ -1,0 +1,446 @@
+name: Promote qualified OCI release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful OCI candidate workflow run id
+        required: true
+        type: string
+      base_candidate_run_id:
+        description: Exact qualified base candidate workflow run id
+        required: true
+        type: string
+      operation:
+        description: Protected delivery operation
+        required: true
+        type: choice
+        options: [promote, rollback]
+      source_sha:
+        description: Exact candidate source SHA (current main for promote; main ancestor for rollback)
+        required: true
+        type: string
+      manifest_sha256:
+        description: Exact canonical release-manifest.json SHA-256
+        required: true
+        type: string
+      target:
+        description: Shadow validation or production replacement
+        required: true
+        type: choice
+        options: [shadow, production]
+
+concurrency:
+  group: harmonic-beacon-production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  resolve:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.bind.outputs.source_sha }}
+      source_tree: ${{ steps.bind.outputs.source_tree }}
+      config_sha256: ${{ steps.bind.outputs.config_sha256 }}
+      run_attempt: ${{ steps.bind.outputs.run_attempt }}
+      base_run_attempt: ${{ steps.bind.outputs.base_run_attempt }}
+      base_source_sha: ${{ steps.bind.outputs.base_source_sha }}
+      base_source_tree: ${{ steps.bind.outputs.base_source_tree }}
+      base_manifest_sha256: ${{ steps.base.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind a trusted successful candidate run
+        id: bind
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_RUN_ID: ${{ inputs.base_candidate_run_id }}
+          RUN_ID: ${{ inputs.candidate_run_id }}
+          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+          TRUSTED_MAIN_SHA: ${{ github.sha }}
+          TARGET: ${{ inputs.target }}
+          OPERATION: ${{ inputs.operation }}
+          RELEASE_LANE_STATE: ${{ vars.HB_RELEASE_LANE_STATE }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "$REQUESTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_REF" = refs/heads/main
+          if [ "$OPERATION" = promote ]; then
+            test "$REQUESTED_SOURCE_SHA" = "$TRUSTED_MAIN_SHA"
+          else
+            git merge-base --is-ancestor "$REQUESTED_SOURCE_SHA" "$TRUSTED_MAIN_SHA"
+          fi
+          test "$(git rev-parse HEAD)" = "$TRUSTED_MAIN_SHA"
+          case "$RELEASE_LANE_STATE:$TARGET:$OPERATION" in
+            legacy-shadow:shadow:promote|oci-production:production:promote|oci-production:production:rollback) ;;
+            *) echo 'target is not authorized by the single release lane state' >&2; exit 1 ;;
+          esac
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/oci-candidate.yml")"
+          test "$(jq -r .path <<<"$workflow")" = '.github/workflows/oci-candidate.yml'
+          workflow_id="$(jq -r .id <<<"$workflow")"
+          [[ "$workflow_id" =~ ^[1-9][0-9]*$ ]]
+          test "$(jq -r .workflow_id <<<"$run")" = "$workflow_id"
+          test "$(jq -r .path <<<"$run")" = '.github/workflows/oci-candidate.yml'
+          test "$(jq -r .head_repository.full_name <<<"$run")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r .head_branch <<<"$run")" = main
+          test "$(jq -r .status <<<"$run")" = completed
+          test "$(jq -r .conclusion <<<"$run")" = success
+          event="$(jq -r .event <<<"$run")"
+          test "$event" = push -o "$event" = workflow_dispatch
+          source_sha="$(jq -r .head_sha <<<"$run")"
+          test "$source_sha" = "$REQUESTED_SOURCE_SHA"
+          source_tree="$(git rev-parse "${source_sha}^{tree}")"
+          run_attempt="$(jq -r .run_attempt <<<"$run")"
+          [[ "$run_attempt" =~ ^[1-9][0-9]{0,9}$ ]]
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/attempts/${run_attempt}/jobs?per_page=100")"
+          test "$(jq '[.jobs[] | select(.name=="required-checks / required-impact-checks" and .conclusion=="success")] | length' <<<"$jobs")" = 1
+          [[ "$BASE_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          base_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASE_RUN_ID}")"
+          test "$(jq -r .workflow_id <<<"$base_run")" = "$workflow_id"
+          test "$(jq -r .path <<<"$base_run")" = '.github/workflows/oci-candidate.yml'
+          test "$(jq -r .head_repository.full_name <<<"$base_run")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r .head_branch <<<"$base_run")" = main
+          test "$(jq -r .status <<<"$base_run")" = completed
+          test "$(jq -r .conclusion <<<"$base_run")" = success
+          base_event="$(jq -r .event <<<"$base_run")"
+          test "$base_event" = push -o "$base_event" = workflow_dispatch
+          base_source_sha="$(jq -r .head_sha <<<"$base_run")"
+          [[ "$base_source_sha" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$base_source_sha" "$TRUSTED_MAIN_SHA"
+          base_source_tree="$(git rev-parse "${base_source_sha}^{tree}")"
+          base_run_attempt="$(jq -r .run_attempt <<<"$base_run")"
+          [[ "$base_run_attempt" =~ ^[1-9][0-9]{0,9}$ ]]
+          printf 'base_source_sha=%s\nbase_source_tree=%s\nbase_run_attempt=%s\n' \
+            "$base_source_sha" "$base_source_tree" "$base_run_attempt" >> "$GITHUB_OUTPUT"
+          profile=production
+          [ "$TARGET" = production ] || profile=live-staging
+          config_sha256="$(node scripts/ci/release-manifest.mjs public-config-digest \
+            --profile "deploy/runtime-public-config/${profile}.json")"
+          printf 'source_sha=%s\nsource_tree=%s\nconfig_sha256=%s\nrun_attempt=%s\n' \
+            "$source_sha" "$source_tree" "$config_sha256" "$run_attempt" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: qualified-release-${{ inputs.candidate_run_id }}
+          path: candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify exact downloaded manifest bytes and run provenance
+        env:
+          EXPECTED: ${{ inputs.manifest_sha256 }}
+          RUN_ID: ${{ inputs.candidate_run_id }}
+          RUN_ATTEMPT: ${{ steps.bind.outputs.run_attempt }}
+          SOURCE_SHA: ${{ steps.bind.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]
+          test "$(sha256sum candidate/release-manifest.json | cut -d' ' -f1)" = "$EXPECTED"
+          test "$(cut -d' ' -f1 candidate/release-manifest.sha256)" = "$EXPECTED"
+          jq -e --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" --arg sha "$SOURCE_SHA" \
+            '.source.gitSha==$sha and .build.workflowRunId==$run and .build.workflowRunAttempt==$attempt and .qualification.runId==$run and .qualification.runAttempt==$attempt' \
+            candidate/release-manifest.json >/dev/null
+          jq -e --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" \
+            '.workflowRunId==$run and .workflowRunAttempt==$attempt and .result=="success"' \
+            candidate/qualification-receipt.json >/dev/null
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: qualified-release-${{ inputs.base_candidate_run_id }}
+          path: base-candidate
+          run-id: ${{ inputs.base_candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Bind exact base artifact bytes to independently resolved run
+        id: base
+        env:
+          RUN_ID: ${{ inputs.base_candidate_run_id }}
+          RUN_ATTEMPT: ${{ steps.bind.outputs.base_run_attempt }}
+          SOURCE_SHA: ${{ steps.bind.outputs.base_source_sha }}
+          SOURCE_TREE: ${{ steps.bind.outputs.base_source_tree }}
+        run: |
+          set -euo pipefail
+          hash="$(sha256sum base-candidate/release-manifest.json | cut -d' ' -f1)"
+          test "$(cut -d' ' -f1 base-candidate/release-manifest.sha256)" = "$hash"
+          jq -e --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" --arg sha "$SOURCE_SHA" --arg tree "$SOURCE_TREE" \
+            '.source.gitSha==$sha and .source.gitTree==$tree and .build.workflowRunId==$run and .build.workflowRunAttempt==$attempt and .qualification.runId==$run and .qualification.runAttempt==$attempt' \
+            base-candidate/release-manifest.json >/dev/null
+          printf 'manifest_sha256=%s\n' "$hash" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: promotion-base-${{ github.run_id }}-${{ github.run_attempt }}
+          path: base-candidate
+          if-no-files-found: error
+          retention-days: 2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: promotion-input-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate
+          if-no-files-found: error
+          retention-days: 2
+
+  rehearse:
+    needs: resolve
+    if: inputs.operation == 'promote' && inputs.target == 'production'
+    runs-on: ubuntu-24.04
+    environment: shadow
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159
+        with:
+          cosign-release: v2.4.3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: promotion-input-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: promotion-base-${{ github.run_id }}-${{ github.run_attempt }}
+          path: base-candidate
+      - name: Install locked qualification client
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium
+      - name: Authenticate hosted registry client
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_ACTOR" --password-stdin >/dev/null
+      - name: Measure isolated base candidate rollback and forward repair
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ needs.resolve.outputs.run_attempt }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+          SOURCE_TREE: ${{ needs.resolve.outputs.source_tree }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          BASE_RUN_ID: ${{ inputs.base_candidate_run_id }}
+          BASE_RUN_ATTEMPT: ${{ needs.resolve.outputs.base_run_attempt }}
+          BASE_SOURCE_SHA: ${{ needs.resolve.outputs.base_source_sha }}
+          BASE_SOURCE_TREE: ${{ needs.resolve.outputs.base_source_tree }}
+          BASE_MANIFEST_SHA256: ${{ needs.resolve.outputs.base_manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/qualify-transitions.mjs --candidate-dir candidate --base-dir base-candidate --output transition \
+            --candidate-manifest-sha256 "$MANIFEST_SHA256" --candidate-source-sha "$SOURCE_SHA" \
+            --candidate-source-tree "$SOURCE_TREE" --candidate-run-id "$CANDIDATE_RUN_ID" --candidate-run-attempt "$CANDIDATE_RUN_ATTEMPT" \
+            --base-manifest-sha256 "$BASE_MANIFEST_SHA256" --base-source-sha "$BASE_SOURCE_SHA" \
+            --base-source-tree "$BASE_SOURCE_TREE" --base-run-id "$BASE_RUN_ID" --base-run-attempt "$BASE_RUN_ATTEMPT"
+          node scripts/ci/release-manifest.mjs validate-transition --manifest candidate/release-manifest.json --evidence transition
+          for stage in authorization shadow rollback forward-repair; do
+            cosign sign-blob --yes --bundle "transition/$stage.signature.bundle.json" "transition/$stage.json"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: transition-${{ github.run_id }}-${{ github.run_attempt }}
+          path: transition
+          if-no-files-found: error
+          retention-days: 2
+
+  impact_plan:
+    needs: resolve
+    if: inputs.operation == 'promote'
+    runs-on: [self-hosted, mona]
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verify dedicated runner identity
+        run: |
+          set -euo pipefail
+          test "$(hostname -s)" = mona
+          test "$(id -un)" = beacon-runner
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export live state and derive unprivileged impact plan
+        env:
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse 'HEAD^{commit}')" = "$SOURCE_SHA"
+          sudo /usr/local/sbin/hb-deploy artifact-impact-state > impact-state.json
+          node /usr/local/libexec/harmonic-beacon/change-impact.mjs --repo "$GITHUB_WORKSPACE" \
+            --deployed-state impact-state.json --service-scope live --head "$SOURCE_SHA" --json > impact-plan.json
+          node /usr/local/libexec/harmonic-beacon/impact-recovery.mjs validate-impact --input impact-plan.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: impact-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            impact-state.json
+            impact-plan.json
+          if-no-files-found: error
+          retention-days: 2
+
+  authorize:
+    needs: [resolve, rehearse, impact_plan]
+    if: >-
+      always() && !cancelled() && needs.resolve.result == 'success' &&
+      ((inputs.operation == 'promote' && needs.impact_plan.result == 'success') ||
+       (inputs.operation == 'rollback' && needs.impact_plan.result == 'skipped')) &&
+      ((inputs.operation == 'promote' && inputs.target == 'production' && needs.rehearse.result == 'success') ||
+       ((inputs.operation != 'promote' || inputs.target != 'production') && needs.rehearse.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.target }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159
+        with:
+          cosign-release: v2.4.3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: promotion-input-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: promotion-base-${{ github.run_id }}-${{ github.run_attempt }}
+          path: base-candidate
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.operation == 'promote' && inputs.target == 'production'
+        with:
+          name: transition-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/transition
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.operation == 'promote'
+        with:
+          name: impact-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .
+      - name: Verify signed candidate and base and issue protected delivery authorization
+        env:
+          BASE_CANDIDATE_RUN_ATTEMPT: ${{ needs.resolve.outputs.base_run_attempt }}
+          BASE_SOURCE_SHA: ${{ needs.resolve.outputs.base_source_sha }}
+          BASE_SOURCE_TREE: ${{ needs.resolve.outputs.base_source_tree }}
+          BASE_MANIFEST_SHA256: ${{ needs.resolve.outputs.base_manifest_sha256 }}
+          BASE_CANDIDATE_RUN_ID: ${{ inputs.base_candidate_run_id }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ needs.resolve.outputs.run_attempt }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+          SOURCE_TREE: ${{ needs.resolve.outputs.source_tree }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          CONFIG_SHA256: ${{ needs.resolve.outputs.config_sha256 }}
+          TARGET: ${{ inputs.target }}
+          OPERATION: ${{ inputs.operation }}
+          RELEASE_LANE_STATE: ${{ vars.HB_RELEASE_LANE_STATE }}
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          if [ "$OPERATION" = promote ]; then
+            node scripts/ci/change-impact.mjs --repo "$GITHUB_WORKSPACE" --deployed-state impact-state.json \
+              --service-scope live --head "$SOURCE_SHA" --json > hosted-impact-plan.json
+            cmp --silent impact-plan.json hosted-impact-plan.json
+            node scripts/ci/impact-recovery.mjs validate-impact --input impact-plan.json
+            cp impact-state.json impact-plan.json candidate/
+            export IMPACT_STATE_SHA256="sha256:$(sha256sum impact-state.json | cut -d' ' -f1)"
+            export IMPACT_PLAN_SHA256="sha256:$(sha256sum impact-plan.json | cut -d' ' -f1)"
+          fi
+          node scripts/ci/authorize-delivery.mjs
+          cosign sign-blob --yes --bundle candidate/delivery-authorization.signature.bundle.json candidate/delivery-authorization.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authorized-promotion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate
+          if-no-files-found: error
+          retention-days: 2
+
+  promote:
+    needs: [resolve, authorize]
+    permissions:
+      contents: read
+      actions: read
+    if: >-
+      always() && !cancelled() && needs.resolve.result == 'success' && needs.authorize.result == 'success' &&
+      ((inputs.target == 'shadow' && vars.HB_RELEASE_LANE_STATE == 'legacy-shadow') ||
+       (inputs.target == 'production' && vars.HB_RELEASE_LANE_STATE == 'oci-production'))
+    runs-on: [self-hosted, mona]
+    env:
+      DELIVERY_RUN_ID: ${{ github.run_id }}
+      DELIVERY_RUN_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: Verify dedicated runner identity
+        run: |
+          set -euo pipefail
+          test "$(hostname -s)" = mona
+          test "$(id -un)" = beacon-runner
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authorized-promotion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .hb-artifacts/${{ inputs.candidate_run_id }}/candidate
+      - name: Prepare exact digest set through the restricted root helper
+        if: inputs.operation == 'promote'
+        env:
+          CANDIDATE_ROOT: ${{ github.workspace }}/.hb-artifacts/${{ inputs.candidate_run_id }}/candidate
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+          SOURCE_TREE: ${{ needs.resolve.outputs.source_tree }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          PROMOTION_TARGET: ${{ inputs.target }}
+          CONFIG_SHA256: ${{ needs.resolve.outputs.config_sha256 }}
+          CANDIDATE_RUN_ATTEMPT: ${{ needs.resolve.outputs.run_attempt }}
+        run: |
+          set -euo pipefail
+          sudo /usr/local/sbin/hb-deploy artifact-prepare "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_ROOT" \
+            "$SOURCE_SHA" "$SOURCE_TREE" "$CANDIDATE_RUN_ID" "$MANIFEST_SHA256" \
+            "$PROMOTION_TARGET" "$CONFIG_SHA256" "$CANDIDATE_RUN_ATTEMPT"
+          sudo /usr/local/sbin/hb-deploy artifact-impact "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" \
+            "$CANDIDATE_RUN_ID" "$PROMOTION_TARGET"
+          sudo /usr/local/sbin/hb-deploy artifact-preflight "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" \
+            "$CANDIDATE_RUN_ID" "$PROMOTION_TARGET"
+      - name: Record shadow status without replacing production
+        if: inputs.target == 'shadow' && inputs.operation == 'promote'
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: sudo /usr/local/sbin/hb-deploy artifact-status "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_RUN_ID" shadow
+      - name: Apply migration and replace from the prepared digest set
+        if: inputs.target == 'production' && inputs.operation == 'promote'
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          set -euo pipefail
+          sudo /usr/local/sbin/hb-deploy artifact-migrate "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_RUN_ID"
+          sudo /usr/local/sbin/hb-deploy artifact-replace "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_RUN_ID"
+          sudo /usr/local/sbin/hb-deploy artifact-status "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_RUN_ID" production
+      - name: Restore the manifest-bound rollback digest set
+        if: failure() && inputs.target == 'production' && inputs.operation == 'promote'
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: sudo /usr/local/sbin/hb-deploy artifact-rollback "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_RUN_ID"
+      - name: Admit fresh committed rollback intent and resume exact transaction
+        if: inputs.operation == 'rollback'
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          set -euo pipefail
+          sudo /usr/local/sbin/hb-deploy artifact-authorize-rollback "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_RUN_ID"
+          sudo /usr/local/sbin/hb-deploy artifact-rollback "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT" "$CANDIDATE_RUN_ID"

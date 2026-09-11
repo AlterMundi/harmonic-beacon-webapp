@@ -82,7 +82,7 @@ describe('AudioProvider', () => {
         roomMocks.startAudio.mockReset().mockImplementation(async () => { roomMocks.canPlaybackAudio = true; });
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: true,
-            json: async () => ({ token: 'bed-token' }),
+            json: async () => ({ token: 'bed-token', livekitUrl: 'wss://live.example.com' }),
         }));
     });
 
@@ -444,7 +444,7 @@ describe('AudioProvider', () => {
         await act(async () => {
             resolveToken({
                 ok: true,
-                json: async () => ({ token: 'obsolete-token' }),
+                json: async () => ({ token: 'obsolete-token', livekitUrl: 'wss://live.example.com' }),
             } as Response);
             await tokenResponse;
         });

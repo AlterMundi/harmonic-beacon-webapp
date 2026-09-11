@@ -1,0 +1,115 @@
+#!/bin/bash
+# Install as /usr/local/sbin/hb-analytics-delivery, root:root 0555. Install the
+# complete approved bundle under /usr/local/libexec/harmonic-beacon/analytics as
+# root:root, directories 0755 and files 0444/0555, then install its external
+# root-owned manifest as analytics-delivery-bundle.sha256 (0444). This repository
+# copy is inert; installation is a separately reviewed host operation.
+set -Eeuo pipefail
+umask 077
+readonly PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH
+unset BASH_ENV ENV CDPATH GIT_DIR GIT_WORK_TREE NODE_OPTIONS NODE_PATH DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROJECT_NAME
+
+readonly BUNDLE_ROOT='/usr/local/libexec/harmonic-beacon/analytics'
+readonly MANIFEST="$BUNDLE_ROOT/analytics-delivery-bundle.sha256"
+readonly STATE_MACHINE="$BUNDLE_ROOT/analytics-delivery-state.mjs"
+readonly STATE_DIR='/var/lib/harmonic-beacon/analytics-delivery'
+readonly LOCK_FILE="$STATE_DIR/delivery.lock"
+readonly EXPECTED_WORKFLOW='AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-delivery.yml@refs/heads/release'
+
+usage() {
+  printf '%s\n' 'usage: hb-analytics-delivery {observe|transaction} TARGET OPERATION SOURCE_SHA IMAGE_DIGEST CI_RUN_ID CI_RUN_ATTEMPT BUILD_RUN_ID BUILD_RUN_ATTEMPT WORKFLOW_REF GITHUB_REF RUN_ID RUN_ATTEMPT REVERSED_RUN_ID REVERSED_RUN_ATTEMPT' >&2
+  exit 2
+}
+die() { printf 'hb-analytics-delivery: %s\n' "$*" >&2; exit 1; }
+[[ "$EUID" -eq 0 ]] || die 'root execution required'
+[[ "$#" -eq 15 ]] || usage
+readonly VERB="$1" TARGET="$2" OPERATION="$3" SOURCE_SHA="$4" IMAGE_DIGEST="$5"
+readonly CI_RUN_ID="$6" CI_RUN_ATTEMPT="$7" BUILD_RUN_ID="$8" BUILD_RUN_ATTEMPT="$9"
+readonly WORKFLOW_REF="${10}" GITHUB_REF="${11}" RUN_ID="${12}" RUN_ATTEMPT="${13}"
+readonly REVERSED_RUN_ID="${14}" REVERSED_RUN_ATTEMPT="${15}"
+[[ "$VERB" == observe || "$VERB" == transaction ]] || usage
+[[ "$TARGET" == analytics-production ]] || die 'unknown target'
+[[ "$OPERATION" =~ ^(probe|status|deploy|rollback)$ ]] || die 'unknown operation'
+[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || die 'invalid source SHA'
+[[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die 'invalid image digest'
+[[ "$CI_RUN_ID" =~ ^[1-9][0-9]{0,19}$ && "$BUILD_RUN_ID" =~ ^[1-9][0-9]{0,19}$ && "$RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || die 'invalid run identity'
+[[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ && "$BUILD_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ && "$RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]] || die 'invalid run attempt'
+[[ "$WORKFLOW_REF" == "$EXPECTED_WORKFLOW" && "$GITHUB_REF" == refs/heads/release ]] || die 'foreign workflow identity'
+if [[ "$OPERATION" == rollback ]]; then
+  [[ "$REVERSED_RUN_ID" =~ ^[1-9][0-9]{0,19}$ && "$REVERSED_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]] || die 'invalid reversal identity'
+else
+  [[ "$REVERSED_RUN_ID:$REVERSED_RUN_ATTEMPT" == 0:0 ]] || die 'unexpected reversal identity'
+fi
+[[ "$VERB:$OPERATION" =~ ^(observe:(probe|status)|transaction:(deploy|rollback))$ ]] || die 'verb/operation mismatch'
+
+verify_ancestors() {
+  local path="$1" ancestor observed owner group mode
+  ancestor="$(dirname -- "$path")"
+  while :; do
+    [[ -d "$ancestor" && ! -L "$ancestor" ]] || die "unsafe trusted ancestor: $ancestor"
+    observed="$(stat -c '%u:%g:%a' -- "$ancestor")"
+    IFS=: read -r owner group mode <<<"$observed"
+    [[ "$owner:$group" == 0:0 ]] || die "unsafe trusted ancestor: $ancestor ($observed)"
+    (( (8#$mode & 0022) == 0 )) || die "unsafe trusted ancestor: $ancestor ($observed)"
+    [[ "$ancestor" == / ]] && break
+    ancestor="$(dirname -- "$ancestor")"
+  done
+}
+verify_directory() {
+  local path="$1" expected_mode="$2" observed
+  verify_ancestors "$path"
+  [[ -d "$path" && ! -L "$path" ]] || die "missing trusted directory: $path"
+  observed="$(stat -c '%U:%G:%a' -- "$path")"
+  [[ "$observed" == "root:root:$expected_mode" ]] || die "unsafe trusted directory: $path ($observed)"
+}
+verify_file() {
+  local path="$1" expected_mode="$2" observed
+  verify_ancestors "$path"
+  [[ -f "$path" && ! -L "$path" ]] || die "missing trusted file: $path"
+  observed="$(stat -c '%U:%G:%a:%h' -- "$path")"
+  [[ "$observed" == "root:root:$expected_mode:1" ]] || die "unsafe trusted file: $path ($observed)"
+}
+
+verify_installed_implementation() {
+  verify_directory /usr/local 755
+  verify_directory /usr/local/libexec 755
+  verify_directory /usr/local/libexec/harmonic-beacon 755
+  verify_directory "$BUNDLE_ROOT" 755
+  verify_file /usr/local/sbin/hb-analytics-delivery 555
+  verify_file "$MANIFEST" 444
+  local -a readonly_files=(compose.yml compose.synthetic.yml durable-json-state.mjs)
+  local -a executable_files=(analytics-delivery-state.mjs backup-analytics.sh monitor-analytics.sh notify-analytics-monitor.mjs restore-verify-analytics.sh synthetic-delivery-drill.mjs)
+  local file
+  for file in "${readonly_files[@]}"; do verify_file "$BUNDLE_ROOT/$file" 444; done
+  for file in "${executable_files[@]}"; do verify_file "$BUNDLE_ROOT/$file" 555; done
+  [[ "$(wc -l < "$MANIFEST")" -eq 10 ]] || die 'installed bundle manifest cardinality mismatch'
+  local expected_inventory actual_inventory
+  expected_inventory="$(printf '%s\n' \
+    /usr/local/sbin/hb-analytics-delivery \
+    "$BUNDLE_ROOT/analytics-delivery-state.mjs" \
+    "$BUNDLE_ROOT/durable-json-state.mjs" \
+    "$BUNDLE_ROOT/backup-analytics.sh" \
+    "$BUNDLE_ROOT/compose.synthetic.yml" \
+    "$BUNDLE_ROOT/compose.yml" \
+    "$BUNDLE_ROOT/monitor-analytics.sh" \
+    "$BUNDLE_ROOT/notify-analytics-monitor.mjs" \
+    "$BUNDLE_ROOT/restore-verify-analytics.sh" \
+    "$BUNDLE_ROOT/synthetic-delivery-drill.mjs" | LC_ALL=C sort)"
+  actual_inventory="$(cut -d' ' -f3- "$MANIFEST" | LC_ALL=C sort)"
+  [[ "$actual_inventory" == "$expected_inventory" ]] || die 'installed bundle manifest inventory mismatch'
+  sha256sum --check --strict --status "$MANIFEST" || die 'installed bundle hash verification failed'
+}
+
+verify_directory /var/lib/harmonic-beacon 755
+verify_directory "$STATE_DIR" 700
+verify_directory "$STATE_DIR/transactions" 700
+verify_file /etc/harmonic-beacon/analytics.env 600
+verify_installed_implementation
+
+exec 9>"$LOCK_FILE"
+flock -x 9
+/usr/bin/env -i PATH="$PATH" HOME=/root TZ=UTC \
+  /usr/bin/node "$STATE_MACHINE" "$VERB" "$TARGET" "$OPERATION" "$SOURCE_SHA" "$IMAGE_DIGEST" \
+  "$CI_RUN_ID" "$CI_RUN_ATTEMPT" "$BUILD_RUN_ID" "$BUILD_RUN_ATTEMPT" "$WORKFLOW_REF" "$GITHUB_REF" \
+  "$RUN_ID" "$RUN_ATTEMPT" "$REVERSED_RUN_ID" "$REVERSED_RUN_ATTEMPT"

@@ -12,25 +12,79 @@ export PATH
 readonly PRODUCTION_ENV='/etc/harmonic-beacon/production.env'
 readonly COMMERCE_ENV='/etc/harmonic-beacon/commerce.env'
 readonly ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'
-readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'
+readonly CANDIDATE_PARENT='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp/.hb-artifacts'
 readonly PRIVATE_NETWORK='pmp_beacon_internal'
 readonly EXPECTED_NETWORK_MEMBERS=$'beacon-app\npmp-myth-worker\npmp-myth-worker-secondary'
+readonly ARTIFACT_VERIFY='/usr/local/libexec/harmonic-beacon/hb-artifact-verify'
+readonly RELEASE_MANIFEST='/usr/local/libexec/harmonic-beacon/release-manifest.mjs'
+readonly CHANGE_IMPACT='/usr/local/libexec/harmonic-beacon/change-impact.mjs'
+readonly IMPACT_RECOVERY='/usr/local/libexec/harmonic-beacon/impact-recovery.mjs'
+readonly TRUSTED_IMPLEMENTATION='/usr/local/libexec/harmonic-beacon/ops-d-implementation.sha256'
+readonly ARTIFACT_STATE='/var/lib/harmonic-beacon/releases'
+readonly CURRENT_STATE="$ARTIFACT_STATE/current-state.json"
+readonly TRANSACTION_ROOT="$ARTIFACT_STATE/transactions"
+readonly ACTIVE_TRANSACTION="$ARTIFACT_STATE/active-transaction"
+readonly SHADOW_CLEANUP_ROOT="$ARTIFACT_STATE/shadow-cleanups"
+readonly TRUSTED_COMPOSE='/usr/local/libexec/harmonic-beacon/docker-compose.yml'
+readonly TRUSTED_OVERLAY='/usr/local/libexec/harmonic-beacon/oci-images.compose.yml'
+readonly REGISTRY_ENV='/etc/harmonic-beacon/registry.env'
+readonly RELEASE_LANE_STATE='/etc/harmonic-beacon/release-lane-state'
+readonly DATABASE_BACKUP_ROOT='/mnt/beacon-data/backups/live/postgres'
+readonly SCHEDULE_REQUEST_ROOT='/etc/harmonic-beacon/operations/schedule'
 
 die() {
   printf 'hb-deploy: %s\n' "$*" >&2
   exit 1
 }
 
+# Deterministic crash-boundary injection for the unprivileged state-machine
+# harness. Root invocations can never activate these hooks.
+test_failpoint() {
+  local boundary="$1"
+  if [ "${EUID}" -ne 0 ] && [ "${HB_DEPLOY_TEST_FAILPOINT:-}" = "$boundary" ]; then
+    die "injected test failure after $boundary"
+  fi
+}
+
 require_root() {
   [ "${EUID}" -eq 0 ] || die 'must run as root through the restricted sudo rule'
+}
+
+require_release_lane() {
+  local expected="$1" actual
+  case "$expected" in legacy-shadow | oci-production) ;; *) die 'invalid release lane' ;; esac
+  require_secure_root_file "$RELEASE_LANE_STATE" 600
+  actual="$(<"$RELEASE_LANE_STATE")"
+  [ "$actual" = "$expected" ] || die "release lane changed; refusing $expected mutation"
 }
 
 validate_sha() {
   [[ "$1" =~ ^[0-9a-f]{40}$ ]] || die 'invalid commit SHA'
 }
 
+validate_sha256() {
+  [[ "$1" =~ ^[0-9a-f]{64}$ ]] || die 'invalid SHA-256'
+}
+
+validate_digest() {
+  [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]] || die 'invalid digest'
+}
+
+validate_image_ref() {
+  [[ "$1" =~ ^[a-z0-9./-]+@sha256:[0-9a-f]{64}$ ]] || die 'invalid exact image reference'
+}
+
+validate_target() {
+  [ "$1" = shadow ] || [ "$1" = production ] || die 'invalid artifact target'
+}
+
 validate_run_id() {
   [[ "$1" =~ ^[1-9][0-9]{0,19}$ ]] || die 'invalid Actions run id'
+}
+
+validate_uuid() {
+  [[ "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] ||
+    die 'invalid operation request id'
 }
 
 validate_build_time() {
@@ -46,42 +100,11 @@ validate_boolean() {
   [ "$1" = true ] || [ "$1" = false ] || die 'invalid boolean'
 }
 
-validate_workspace() {
-  [ "$1" = "$WORKSPACE" ] || die 'unexpected Actions workspace'
-  [ "$(realpath -e -- "$1")" = "$WORKSPACE" ] || die 'workspace must not redirect elsewhere'
-  [ -f "$WORKSPACE/docker-compose.yml" ] || die 'compose manifest is missing'
-}
-
-validate_checkout() {
-  local expected_sha="$1"
-  local actual_sha
-
-  validate_sha "$expected_sha"
-  actual_sha="$(git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" rev-parse HEAD)"
-  [ "$actual_sha" = "$expected_sha" ] || die 'workspace revision does not match requested release'
-  git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" diff --quiet -- ||
-    die 'workspace has tracked changes'
-  git -c safe.directory="$WORKSPACE" -C "$WORKSPACE" diff --cached --quiet -- ||
-    die 'workspace index has tracked changes'
-}
-
 validate_container() {
   case "$1" in
     beacon-app | beacon-commerce-reconciler | beacon-tapestry) ;;
     *) die 'container is not in the deploy health allowlist' ;;
   esac
-}
-
-compose() {
-  local workspace="$1"
-  local image_tag="$2"
-  shift 2
-
-  (
-    cd "$workspace"
-    BEACON_IMAGE_TAG="$image_tag" docker compose --file "$workspace/docker-compose.yml" \
-      --project-name app --env-file "$PRODUCTION_ENV" "$@"
-  )
 }
 
 network_members() {
@@ -117,131 +140,9 @@ container_has_commerce_key() {
     grep -Eq '^BEACON_COMMERCE_SERVICE_KEY_'
 }
 
-preflight() {
-  local workspace="$1"
-  local sha="$2"
-
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  [ -r "$PRODUCTION_ENV" ] || die 'production environment is not readable by root'
-  [ -r "$COMMERCE_ENV" ] || die 'commerce environment is not readable by root'
-  [ "$(stat -c '%a:%U:%G' "$COMMERCE_ENV")" = '600:root:root' ] ||
-    die 'commerce environment permissions are not 600:root:root'
-  if [ -e "$ACCOUNT_ENV" ]; then
-    [ -f "$ACCOUNT_ENV" ] && [ ! -L "$ACCOUNT_ENV" ] ||
-      die 'Account environment must be a regular file'
-    [ "$(stat -c '%a:%U:%G' "$ACCOUNT_ENV")" = '600:root:root' ] ||
-      die 'Account environment permissions are not 600:root:root'
-    container_has_env_name beacon-app BEACON_ACCOUNT_ENABLED &&
-      [ "$(docker inspect beacon-app --format '{{range .Config.Env}}{{println .}}{{end}}' |
-        sed -n 's/^BEACON_ACCOUNT_ENABLED=//p' | tail -n 1)" = true ] ||
-      die 'Account bundle exists before the supervised Account activation'
-  fi
-  if grep -Fxq 'E2E_DASHBOARD_ENABLED=1' "$PRODUCTION_ENV"; then
-    die 'production E2E dashboard must be disabled before deploy'
-  fi
-  require_exact_private_network
-  compose "$workspace" "$sha" config --quiet
-}
-
-preserve() {
-  local run_id="$1"
-  local previous_app
-  local previous_tapestry
-
-  validate_run_id "$run_id"
-  previous_app="$(docker inspect beacon-app --format '{{.Image}}' 2>/dev/null || true)"
-  if [ -n "$previous_app" ]; then
-    docker tag "$previous_app" "harmonic-beacon/app:rollback-${run_id}"
-    printf 'app_available=true\n'
-  else
-    printf 'app_available=false\n'
-  fi
-
-  previous_tapestry="$(docker inspect beacon-tapestry --format '{{.Image}}' 2>/dev/null || true)"
-  if [ -n "$previous_tapestry" ]; then
-    docker tag "$previous_tapestry" "harmonic-beacon/tapestry:rollback-${run_id}"
-    printf 'tapestry_available=true\n'
-  else
-    printf 'tapestry_available=false\n'
-  fi
-}
-
-build() {
-  local workspace="$1"
-  local sha="$2"
-  local build_time="$3"
-  local schema_version="$4"
-
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  validate_build_time "$build_time"
-  validate_schema_version "$schema_version"
-  (
-    cd "$workspace"
-    BEACON_IMAGE_TAG="$sha" \
-      BEACON_GIT_SHA="$sha" \
-      BEACON_BUILD_TIME="$build_time" \
-      BEACON_DATABASE_SCHEMA_VERSION="$schema_version" \
-      docker compose --file "$workspace/docker-compose.yml" \
-      --project-name app --env-file "$PRODUCTION_ENV" \
-      build app tapestry
-  )
-}
-
-migrate() {
-  local workspace="$1"
-  local sha="$2"
-
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  compose "$workspace" "$sha" run --rm --no-deps migrate npx prisma migrate deploy
-  compose "$workspace" "$sha" run --rm --no-deps migrate \
-    npx tsx scripts/stage-grant-forward-drain.ts
-  compose "$workspace" "$sha" run --rm --no-deps migrate npx prisma migrate status
-}
-
-quiesce() {
-  local workspace="$1"
-  local sha="$2"
-
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  compose "$workspace" "$sha" run --rm --no-deps migrate \
-    npx tsx scripts/release-quiesce-preflight.ts
-  compose "$workspace" "$sha" stop app
-  # Close the check/use race: no request-serving writer exists during this
-  # second check, and migration begins only after it remains clean.
-  compose "$workspace" "$sha" run --rm --no-deps migrate \
-    npx tsx scripts/release-quiesce-preflight.ts
-}
-
-replace() {
-  local workspace="$1"
-  local sha="$2"
-
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  compose "$workspace" "$sha" up -d --no-deps --force-recreate \
-    app commerce-reconciler tapestry
-}
-
 health() {
   validate_container "$1"
   docker inspect "$1" --format '{{.State.Health.Status}}'
-}
-
-status() {
-  local workspace="$1"
-  local sha="$2"
-
-  validate_workspace "$workspace"
-  validate_checkout "$sha"
-  compose "$workspace" "$sha" ps
-  for container in beacon-app beacon-commerce-reconciler beacon-tapestry; do
-    docker inspect "$container" \
-      --format 'name={{.Name}} status={{.State.Status}} health={{.State.Health.Status}} restarts={{.RestartCount}}'
-  done
 }
 
 boundary() {
@@ -277,123 +178,1754 @@ boundary() {
   done
 }
 
-rollback() {
-  local workspace="$1"
-  local run_id="$2"
-  local app_available="$3"
-  local tapestry_available="$4"
-  local migration_attempted="$5"
-  local rollback_tag
-  local candidate_tag
-  local worker_expected=false
+artifact_transaction() {
+  printf '%s/transactions/%s\n' "$ARTIFACT_STATE" "$1"
+}
 
-  validate_workspace "$workspace"
+artifact_receipt() {
+  printf '%s/receipt.json\n' "$(artifact_transaction "$1")"
+}
+
+require_secure_root_ancestors() {
+  local ancestor
+  ancestor="$(dirname -- "$1")"
+  while :; do
+    [ -d "$ancestor" ] && [ ! -L "$ancestor" ] || die 'unsafe root-owned ancestor'
+    [ "$(stat -c '%u:%g' "$ancestor")" = 0:0 ] || die 'ancestor is not root-owned'
+    (( (8#$(stat -c '%a' "$ancestor") & 0022) == 0 )) || die 'ancestor is writable'
+    [ "$ancestor" != / ] || break
+    ancestor="$(dirname -- "$ancestor")"
+  done
+}
+
+require_secure_root_file() {
+  local path="$1" mode="$2"
+  require_secure_root_ancestors "$path"
+  [ -f "$path" ] && [ ! -L "$path" ] || die "root-owned file is missing or unsafe: $path"
+  [ "$(stat -c '%U:%G:%a' "$path")" = "root:root:$mode" ] ||
+    die "root-owned file ownership or mode is invalid: $path"
+  [ "$(stat -c '%h' "$path")" = 1 ] || die "root-owned file has multiple links: $path"
+}
+
+require_secure_shadow_receipt() {
+  require_secure_root_file "$1" 600
+  [ "$(stat -c '%h' "$1")" = 1 ] || die "shadow cleanup receipt has multiple links: $1"
+}
+
+require_secure_root_directory() {
+  local path="$1" mode="$2"
+  require_secure_root_ancestors "$path/.probe"
+  [ -d "$path" ] && [ ! -L "$path" ] || die "root-owned directory is missing or unsafe: $path"
+  [ "$(stat -c '%U:%G:%a' "$path")" = "root:root:$mode" ] ||
+    die "root-owned directory ownership or mode is invalid: $path"
+}
+
+verify_installed_implementation() {
+  local digest path expected_mode helper_seen=false verifier_seen=false module_seen=false
+  local compose_seen=false overlay_seen=false impact_seen=false recovery_seen=false
+  require_secure_root_file "$TRUSTED_IMPLEMENTATION" 600
+  while read -r digest path; do
+    validate_sha256 "$digest"
+    case "$path" in
+      /usr/local/sbin/hb-deploy)
+        [ "$helper_seen" = false ] || die 'duplicate helper trust entry'
+        helper_seen=true; expected_mode=755
+        ;;
+      "$ARTIFACT_VERIFY")
+        [ "$verifier_seen" = false ] || die 'duplicate verifier trust entry'
+        verifier_seen=true; expected_mode=755
+        ;;
+      "$RELEASE_MANIFEST")
+        [ "$module_seen" = false ] || die 'duplicate manifest-module trust entry'
+        module_seen=true; expected_mode=644
+        ;;
+      "$TRUSTED_COMPOSE")
+        [ "$compose_seen" = false ] || die 'duplicate Compose trust entry'
+        compose_seen=true; expected_mode=644
+        ;;
+      "$TRUSTED_OVERLAY")
+        [ "$overlay_seen" = false ] || die 'duplicate overlay trust entry'
+        overlay_seen=true; expected_mode=644
+        ;;
+      "$CHANGE_IMPACT")
+        [ "$impact_seen" = false ] || die 'duplicate impact-classifier trust entry'
+        impact_seen=true; expected_mode=644
+        ;;
+      "$IMPACT_RECOVERY")
+        [ "$recovery_seen" = false ] || die 'duplicate impact-recovery trust entry'
+        recovery_seen=true; expected_mode=644
+        ;;
+      *) die 'trusted implementation manifest contains an unexpected path' ;;
+    esac
+    require_secure_root_file "$path" "$expected_mode"
+  done < "$TRUSTED_IMPLEMENTATION"
+  [ "$helper_seen:$verifier_seen:$module_seen:$compose_seen:$overlay_seen:$impact_seen:$recovery_seen" = \
+    true:true:true:true:true:true:true ] ||
+    die 'trusted implementation manifest must bind each required file exactly once'
+  sha256sum --check --strict "$TRUSTED_IMPLEMENTATION" >/dev/null ||
+    die 'installed privileged implementation digest mismatch'
+}
+
+require_current_state() {
+  require_secure_root_file "$CURRENT_STATE" 600
+  node "$RELEASE_MANIFEST" validate-current-state --state "$CURRENT_STATE" ||
+    die 'invalid OCI current state; separately reviewed root-owned reconciliation is required'
+}
+
+state_unpack() {
+  local state="$1" destination="$2"
+  require_secure_root_file "$state" 600
+  install -d -o root -g root -m 0700 "$destination"
+  node "$RELEASE_MANIFEST" unpack-current-state --state "$state" --destination "$destination" ||
+    die 'invalid OCI current state; separately reviewed root-owned reconciliation is required'
+  if jq -e '.serviceReleases != null' "$state" >/dev/null; then
+    jq '.serviceReleases' "$state" > "$destination/service-releases.json"
+  else
+    jq -n --arg sourceSha "$(jq -er '.source.gitSha' "$destination/prior-manifest.json")" \
+      --arg app "$(manifest_ref "$destination/prior-manifest.json" artifacts app)" \
+      --arg tapestry "$(manifest_ref "$destination/prior-manifest.json" artifacts tapestry)" \
+      --arg playlist "$(manifest_ref "$destination/prior-manifest.json" artifacts playlist-bot)" \
+      '{app:{sourceSha:$sourceSha,imageRef:$app},"commerce-reconciler":{sourceSha:$sourceSha,imageRef:$app},tapestry:{sourceSha:$sourceSha,imageRef:$tapestry},"playlist-bot":{sourceSha:$sourceSha,imageRef:$playlist}}' \
+      > "$destination/service-releases.json"
+  fi
+  chown root:root "$destination/service-releases.json"
+  chmod 0600 "$destination/service-releases.json"
+}
+
+verify_prior_state_inputs() {
+  local destination="$1" expected actual
+  while read -r field file; do
+    expected="$(jq -er ".$field" "$destination/prior-manifest.json")"
+    validate_digest "$expected"
+    actual="sha256:$(sha256sum "$destination/$file" | cut -d' ' -f1)"
+    [ "$actual" = "$expected" ] || die "root-owned prior state input mismatch: $file"
+  done <<'EOF'
+deploymentInputs.composeSha256 docker-compose.yml
+deploymentInputs.overlaySha256 oci-images.compose.yml
+configProfiles.production.sha256 target-public-config.json
+EOF
+}
+
+require_unchanged_runtime_inputs() {
+  local root="$1"
+  cmp --silent "$root/candidate/docker-compose.yml" "$root/prior/docker-compose.yml" &&
+    cmp --silent "$root/candidate/oci-images.compose.yml" "$root/prior/oci-images.compose.yml" &&
+    [ "$(jq -cS '.externalImages | sort_by(.serviceId)' "$root/candidate/candidate-manifest.json")" = \
+      "$(jq -cS '.externalImages | sort_by(.serviceId)' "$root/prior/prior-manifest.json")" ] ||
+    die 'runtime configuration drift requires a separately reviewed dependency transition'
+}
+
+publication_matches() {
+  node "$RELEASE_MANIFEST" match-publication --state "$CURRENT_STATE" --receipt "$1" --kind "$2" 2>/dev/null
+}
+
+bind_rollback_publication() {
+  local receipt
+  receipt="$(artifact_receipt "$1")"
+  node "$RELEASE_MANIFEST" rollback-publication --state "$CURRENT_STATE" --receipt "$receipt" --output "$receipt.new"
+  chown root:root "$receipt.new"
+  sync -f "$receipt.new"
+  mv -f -- "$receipt.new" "$receipt"
+  sync -f "$(artifact_transaction "$1")"
+}
+
+require_rollback_safe_public_config() {
+  local candidate="$1" prior="$2"
+  cmp --silent "$candidate" "$prior" ||
+    die 'public runtime config change requires a separately reviewed transactional overlay'
+}
+
+# Admission copies through O_NOFOLLOW descriptors into this root-only directory.
+# The untrusted envelope and blob are authenticated before any JSON is parsed.
+admit_delivery_authorization() {
+  local input="$1" destination="$2"
+  install -d -o root -g root -m 0700 "$destination"
+  admit_signature "$input/delivery-authorization.json" "$destination/delivery-authorization.json"
+  admit_signature "$input/delivery-authorization.signature.bundle.json" "$destination/delivery-authorization.signature.bundle.json"
+  cosign verify-blob --bundle "$destination/delivery-authorization.signature.bundle.json" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-promote.yml@refs/heads/main \
+    "$destination/delivery-authorization.json" >/dev/null || die 'delivery authorization authentication failed'
+}
+
+shadow_cleanup_receipt() {
+  printf '%s/%s-%s-%s.json\n' "$SHADOW_CLEANUP_ROOT" "$1" "$DELIVERY_RUN_ID" "$DELIVERY_RUN_ATTEMPT"
+}
+
+discover_shadow_cleanup_archive() {
+  local run_id="$1" candidate base
+  local -a candidates=()
+  shopt -s nullglob
+  candidates=("$TRANSACTION_ROOT/$run_id.shadowed."*)
+  shopt -u nullglob
+  [ "${#candidates[@]}" -le 1 ] || die 'multiple shadow cleanup archives'
+  [ "${#candidates[@]}" -eq 1 ] || return 1
+  candidate="${candidates[0]}"
+  base="${candidate##*/}"
+  [[ "$base" =~ ^${run_id}\.shadowed\.([1-9][0-9]{0,19}|${DELIVERY_RUN_ID}-${DELIVERY_RUN_ATTEMPT})$ ]] ||
+    die 'malformed shadow cleanup archive identity'
+  require_secure_root_directory "$candidate" 700
+  require_secure_shadow_receipt "$candidate/receipt.json"
+  SHADOW_CLEANUP_ARCHIVE="$candidate"
+}
+
+require_delivery_invocation() {
+  local run_id="$1" target="$2" verb="$3" active='' phase durable_resume=none transaction tombstone archive=''
   validate_run_id "$run_id"
-  validate_boolean "$app_available"
-  validate_boolean "$tapestry_available"
-  validate_boolean "$migration_attempted"
-  rollback_tag="rollback-${run_id}"
-  candidate_tag="$(git -c safe.directory="$workspace" -C "$workspace" rev-parse HEAD)"
-  validate_checkout "$candidate_tag"
+  validate_target "$target"
+  transaction="$(artifact_transaction "$run_id")"
+  tombstone="$(shadow_cleanup_receipt "$run_id")"
+  DELIVERY_RECEIPT="$transaction/receipt.json"
+  SHADOW_CLEANUP_MODE=source
+  SHADOW_CLEANUP_ARCHIVE=''
+  if [ ! -e "$transaction" ] && [ ! -L "$transaction" ]; then
+    [ "$target" = shadow ] && [ "$verb" = status ] || die 'source transaction is missing'
+    if discover_shadow_cleanup_archive "$run_id"; then archive="$SHADOW_CLEANUP_ARCHIVE"; fi
+    if [ -n "$archive" ]; then
+      DELIVERY_RECEIPT="$archive/receipt.json"
+      SHADOW_CLEANUP_MODE=archive
+      SHADOW_CLEANUP_ARCHIVE="$archive"
+      durable_resume=shadowed-archive-cleanup
+      if [ -e "$tombstone" ] || [ -L "$tombstone" ]; then
+        require_secure_shadow_receipt "$tombstone"
+        cmp --silent "$DELIVERY_RECEIPT" "$tombstone" || die 'conflicting shadow cleanup evidence'
+      fi
+    elif [ -e "$tombstone" ] || [ -L "$tombstone" ]; then
+      require_secure_shadow_receipt "$tombstone"
+      DELIVERY_RECEIPT="$tombstone"
+      SHADOW_CLEANUP_MODE=terminal
+      durable_resume=shadowed-terminal-cleanup
+    else
+      die 'shadow cleanup evidence is missing'
+    fi
+  else
+    if [ "$target" = shadow ] && [ "$verb" = status ]; then
+      require_secure_shadow_receipt "$DELIVERY_RECEIPT"
+    else
+      require_secure_root_file "$DELIVERY_RECEIPT" 600
+    fi
+    if [ "$target" = shadow ] && [ "$verb" = status ]; then
+      if discover_shadow_cleanup_archive "$run_id"; then archive="$SHADOW_CLEANUP_ARCHIVE"; fi
+      [ -z "$archive" ] || die 'conflicting shadow cleanup evidence'
+    fi
+  fi
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    active="$(<"$ACTIVE_TRANSACTION")"
+  fi
+  phase="$(jq -er '.phase' "$DELIVERY_RECEIPT")"
+  if [ -z "$active" ] && [ "$durable_resume" = none ]; then
+    if [ "$target" = production ] && [ "$verb" = prepare ] && [ "$phase" = prepared ]; then
+      durable_resume=production-markerless-prepared
+    elif [ "$target" = shadow ] && [ "$verb" = status ] && [ "$phase" = shadowed ]; then
+      durable_resume=shadowed-cleanup
+    fi
+  fi
+  node "$RELEASE_MANIFEST" check-delivery --receipt "$DELIVERY_RECEIPT" \
+    --delivery-run-id "$DELIVERY_RUN_ID" --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" \
+    --target "$target" --verb "$verb" --active-run-id "${active:-none}" \
+    --durable-resume "$durable_resume"
+}
 
-  if [ "$app_available" = true ] && [ "$migration_attempted" = true ]; then
-    # Stop request-serving writers first. Keep the compatible candidate worker
-    # alive briefly so already-committed effects can converge, then freeze it
-    # and repeat the preflight against a stable database snapshot.
-    compose "$workspace" "$candidate_tag" stop app
-    preflight_ready=false
+artifact_authorize_rollback() {
+  local run_id="$1" transaction temp receipt
+  validate_run_id "$run_id"
+  require_release_lane oci-production
+  require_current_state
+  transaction="$(artifact_transaction "$run_id")"
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  # Exact already-persisted intent is resumable even after expiry. No effects.
+  if jq -e '.rollbackIntent==true' "$receipt" >/dev/null; then
+    require_delivery_invocation "$run_id" production rollback
+    return 0
+  fi
+  [ ! -e "$ACTIVE_TRANSACTION" ] || die 'rollback admission requires a markerless committed transaction'
+  temp="$(mktemp -d --tmpdir="$transaction" '.delivery.XXXXXX')"
+  trap "rm -rf -- $(printf '%q' "$temp")" EXIT
+  admit_delivery_authorization "$CANDIDATE_PARENT/$run_id/candidate" "$temp"
+  node "$RELEASE_MANIFEST" bind-rollback-delivery --receipt "$receipt" --state "$CURRENT_STATE" \
+    --authorization "$temp/delivery-authorization.json" --delivery-run-id "$DELIVERY_RUN_ID" \
+    --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" --output "$temp/receipt.json"
+  chown root:root "$temp/receipt.json"
+  sync -f "$temp/receipt.json"
+  mv -f -- "$temp/receipt.json" "$receipt"
+  sync -f "$transaction"
+  rm -rf -- "$temp"
+  trap - EXIT
+}
+
+admit_transition_evidence() {
+  local input="$1" destination="$2" file
+  install -d -o root -g root -m 0700 "$destination"
+  # Fixed inventory only. Copy held, bounded regular-file bytes without parsing.
+  for file in authorization.json authorization.signature.bundle.json qualification.json \
+    shadow.json rollback.json forward-repair.json \
+    shadow.execution.json rollback.execution.json forward-repair.execution.json \
+    shadow.signature.bundle.json rollback.signature.bundle.json forward-repair.signature.bundle.json; do
+    admit_signature "$input/transition/$file" "$destination/$file"
+    sync -f "$destination/$file"
+  done
+  sync -f "$destination"
+}
+
+service_releases_json_from_manifest() {
+  local manifest="$1" source_sha
+  source_sha="$(jq -er '.source.gitSha' "$manifest")"
+  jq -cn --arg sourceSha "$source_sha" \
+    --arg app "$(manifest_ref "$manifest" artifacts app)" \
+    --arg tapestry "$(manifest_ref "$manifest" artifacts tapestry)" \
+    --arg playlist "$(manifest_ref "$manifest" artifacts playlist-bot)" \
+    '{app:{sourceSha:$sourceSha,imageRef:$app},"commerce-reconciler":{sourceSha:$sourceSha,imageRef:$app},tapestry:{sourceSha:$sourceSha,imageRef:$tapestry},"playlist-bot":{sourceSha:$sourceSha,imageRef:$playlist}}'
+}
+
+ensure_prior_service_releases() {
+  local transaction="$1" path="$transaction/prior/service-releases.json"
+  [ -f "$path" ] && return 0
+  service_releases_json_from_manifest "$transaction/prior/prior-manifest.json" > "$path"
+  if [ "${EUID}" -eq 0 ]; then chown root:root "$path"; fi
+  chmod 0600 "$path"
+}
+
+require_oci_transition_evidence() {
+  local manifest="$1" evidence="$2" stage file
+  for file in authorization.json authorization.signature.bundle.json qualification.json \
+    shadow.json rollback.json forward-repair.json \
+    shadow.execution.json rollback.execution.json forward-repair.execution.json \
+    shadow.signature.bundle.json rollback.signature.bundle.json forward-repair.signature.bundle.json; do
+    require_secure_root_file "$evidence/$file" 600
+  done
+  # The aggregate is authority too: authenticate it before semantic parsing.
+  for stage in authorization shadow rollback forward-repair; do
+    cosign verify-blob \
+      --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+      --certificate-identity 'https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-promote.yml@refs/heads/main' \
+      --bundle "$evidence/$stage.signature.bundle.json" \
+      "$evidence/$stage.json" >/dev/null || die 'transition receipt authentication failed'
+  done
+  node "$RELEASE_MANIFEST" validate-transition --manifest "$manifest" --evidence "$evidence" ||
+    die 'transition semantic validation failed'
+}
+
+atomic_install_release_state() {
+  local transaction="$1" source="$2" root manifest manifest_sha expected temporary publication releases service_releases_json kind=candidate
+  require_release_lane oci-production
+  root="$transaction/$source"
+  case "$source" in
+    candidate)
+      manifest="$root/candidate-manifest.json"
+      releases="$transaction/next-service-releases.json"
+      expected="$(jq -er '.manifestSha256' "$transaction/receipt.json")"
+      ;;
+    prior)
+      kind=rollback
+      manifest="$root/prior-manifest.json"
+      releases="$root/service-releases.json"
+      expected="$(jq -er '.baseManifestSha256' "$transaction/receipt.json")"
+      verify_prior_state_inputs "$root"
+      ;;
+    *) die 'invalid release state source' ;;
+  esac
+  validate_sha256 "$expected"
+  manifest_sha="$(sha256sum "$manifest" | cut -d' ' -f1)"
+  [ "$manifest_sha" = "$expected" ] || die 'release state manifest digest mismatch'
+  if [ -f "$releases" ]; then service_releases_json="$(<"$releases")"; else service_releases_json=null; fi
+  publication="$(node "$RELEASE_MANIFEST" publication-for-write --state "$CURRENT_STATE" --receipt "$transaction/receipt.json" --kind "$kind")" || die 'invalid publication high-water'
+  temporary="$(mktemp --tmpdir="$ARTIFACT_STATE" '.current-state.XXXXXX')"
+  jq -n --argjson publication "$publication" --argjson serviceReleases "$service_releases_json" \
+    --arg manifestSha256 "$manifest_sha" \
+    --arg manifestBase64 "$(base64 -w0 "$manifest")" \
+    --arg composeBase64 "$(base64 -w0 "$root/docker-compose.yml")" \
+    --arg overlayBase64 "$(base64 -w0 "$root/oci-images.compose.yml")" \
+    --arg publicConfigBase64 "$(base64 -w0 "$root/target-public-config.json")" \
+    '{schemaVersion:"harmonic-beacon.current-state.v4",publication:$publication,laneState:"oci-production",manifestSha256:$manifestSha256,manifestBase64:$manifestBase64,composeBase64:$composeBase64,overlayBase64:$overlayBase64,publicConfigBase64:$publicConfigBase64} + (if $serviceReleases == null then {} else {serviceReleases:$serviceReleases} end)' \
+    > "$temporary"
+  node "$RELEASE_MANIFEST" validate-current-state --state "$temporary" || {
+    rm -f -- "$temporary"
+    die 'refusing contradictory release state publication'
+  }
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  sync -f "$temporary"
+  test_failpoint current-state-file-fsync
+  mv -f -- "$temporary" "$CURRENT_STATE"
+  test_failpoint current-state-rename
+  sync -f "$ARTIFACT_STATE"
+  test_failpoint current-state-directory-fsync
+}
+
+atomic_install_current_state() {
+  atomic_install_release_state "$1" candidate
+}
+
+atomic_write_active_transaction() {
+  local run_id="$1" temporary
+  validate_run_id "$run_id"
+  temporary="$(mktemp --tmpdir="$ARTIFACT_STATE" '.active-transaction.XXXXXX')"
+  printf '%s\n' "$run_id" > "$temporary"
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  sync -f "$temporary"
+  mv -f -- "$temporary" "$ACTIVE_TRANSACTION"
+  sync -f "$ARTIFACT_STATE"
+}
+
+transaction_phase() {
+  jq -er '.phase' "$(artifact_receipt "$1")"
+}
+
+transaction_set_phase() {
+  local run_id="$1" phase="$2" receipt temporary
+  receipt="$(artifact_receipt "$run_id")"
+  temporary="${receipt}.new"
+  jq --arg phase "$phase" '.phase=$phase' "$receipt" > "$temporary"
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  sync -f "$temporary"
+  test_failpoint phase-marker-file-fsync
+  mv -f -- "$temporary" "$receipt"
+  test_failpoint phase-marker-rename
+  sync -f "$(artifact_transaction "$run_id")"
+  test_failpoint phase-marker-directory-fsync
+}
+
+transaction_require() {
+  local run_id="$1" target="$2"
+  shift 2
+  local receipt phase allowed=false
+  validate_run_id "$run_id"
+  validate_target "$target"
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  [ "$(jq -er '.target' "$receipt")" = "$target" ] || die 'prepared transaction target mismatch'
+  phase="$(transaction_phase "$run_id")"
+  for expected in "$@"; do [ "$phase" = "$expected" ] && allowed=true; done
+  [ "$allowed" = true ] || die "transaction phase $phase does not authorize this command"
+  require_current_state
+  [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
+  publication_matches "$receipt" base || die 'prepared transaction no longer matches current high-water'
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+  if [ "$target" = production ]; then
+    require_release_lane oci-production
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
+  else
+    require_release_lane legacy-shadow
+    [ ! -e "$ACTIVE_TRANSACTION" ] || die 'production transaction is active during shadow verification'
+  fi
+}
+
+transaction_require_shadow_cleanup() {
+  local run_id="$1" receipt="$2" root="${3:-}"
+  require_release_lane legacy-shadow
+  require_current_state
+  [ ! -e "$ACTIVE_TRANSACTION" ] || die 'production transaction is active during shadow cleanup'
+  require_secure_shadow_receipt "$receipt"
+  jq -e --arg run "$run_id" '.workflowRunId==$run and .target=="shadow" and .phase=="shadowed"' "$receipt" >/dev/null ||
+    die 'archived receipt is not the exact shadowed transaction'
+  publication_matches "$receipt" base || die 'shadow cleanup transaction no longer matches current high-water'
+  [ -z "$root" ] || require_unchanged_runtime_inputs "$root"
+}
+
+persist_shadow_cleanup_receipt() {
+  local run_id="$1" source="$2" tombstone temporary
+  tombstone="$(shadow_cleanup_receipt "$run_id")"
+  if [ -e "$SHADOW_CLEANUP_ROOT" ] || [ -L "$SHADOW_CLEANUP_ROOT" ]; then
+    require_secure_root_directory "$SHADOW_CLEANUP_ROOT" 700
+  else
+    install -d -o root -g root -m 0700 "$SHADOW_CLEANUP_ROOT"
+    sync -f "$ARTIFACT_STATE"
+  fi
+  if [ -e "$tombstone" ] || [ -L "$tombstone" ]; then
+    require_secure_shadow_receipt "$tombstone"
+    cmp --silent "$source" "$tombstone" || die 'conflicting shadow cleanup evidence'
+    return 0
+  fi
+  temporary="$(mktemp --tmpdir="$SHADOW_CLEANUP_ROOT" ".${run_id}-${DELIVERY_RUN_ID}-${DELIVERY_RUN_ATTEMPT}.XXXXXX")"
+  cp -- "$source" "$temporary"
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  sync -f "$temporary"
+  mv -- "$temporary" "$tombstone"
+  sync -f "$SHADOW_CLEANUP_ROOT"
+}
+
+transaction_require_rollback() {
+  local run_id="$1" receipt phase
+  validate_run_id "$run_id"
+  require_release_lane oci-production
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  [ "$(jq -er '.target' "$receipt")" = production ] || die 'rollback requires a production transaction'
+  phase="$(transaction_phase "$run_id")"
+  case "$phase" in
+    migration-attempted | migrated | replaced | committed) ;;
+    *) die "transaction phase $phase does not authorize rollback" ;;
+  esac
+  require_current_state
+  [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
+  ( { [ "$phase" != committed ] && publication_matches "$receipt" base; } || publication_matches "$receipt" candidate ) ||
+    die 'rollback transaction does not match the live high-water'
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
+  else
+    [ "$phase" = committed ] && publication_matches "$receipt" candidate ||
+      die 'rollback transaction is no longer active'
+  fi
+}
+
+transaction_clear_active() {
+  local run_id="$1"
+  require_secure_root_file "$ACTIVE_TRANSACTION" 600
+  [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'active transaction mismatch'
+  rm -f -- "$ACTIVE_TRANSACTION"
+  test_failpoint active-marker-remove
+  sync -f "$ARTIFACT_STATE"
+  test_failpoint active-marker-directory-fsync
+}
+
+transaction_resume_prepared() {
+  local run_id="$1" sha="$2" tree="$3" manifest_sha="$4" config_sha="$5" workflow_attempt="$6"
+  local receipt
+  require_release_lane oci-production
+  require_current_state
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  jq -e --arg run "$run_id" --arg sha "$sha" --arg tree "$tree" --arg manifest "$manifest_sha" \
+    --arg config "$config_sha" --argjson attempt "$workflow_attempt" '
+      .target=="production" and (.phase | IN("prepared","migration-attempted","migration-skipped","migrated","replaced")) and .workflowRunId==$run and
+      .workflowRunAttempt==$attempt and .sourceSha==$sha and .sourceTree==$tree and
+      .manifestSha256==$manifest and .targetConfigSha256==$config
+    ' "$receipt" >/dev/null || die 'existing transaction does not match prepare retry'
+  publication_matches "$receipt" base || die 'prepared transaction no longer matches current high-water'
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
+  else
+    verify_release_runtime_state "$run_id" prior
+    atomic_write_active_transaction "$run_id"
+  fi
+}
+
+transaction_resume_shadow() {
+  local run_id="$1" sha="$2" tree="$3" manifest_sha="$4" config_sha="$5" workflow_attempt="$6"
+  local receipt
+  require_release_lane legacy-shadow
+  require_current_state
+  [ ! -e "$ACTIVE_TRANSACTION" ] || die 'production transaction is active during shadow verification'
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  jq -e --arg run "$run_id" --arg sha "$sha" --arg tree "$tree" --arg manifest "$manifest_sha" \
+    --arg config "$config_sha" --argjson attempt "$workflow_attempt" '
+      .target=="shadow" and (.phase=="prepared" or .phase=="shadowed") and
+      .workflowRunId==$run and .workflowRunAttempt==$attempt and .sourceSha==$sha and
+      .sourceTree==$tree and .manifestSha256==$manifest and .targetConfigSha256==$config
+    ' "$receipt" >/dev/null || die 'existing shadow transaction does not match prepare retry'
+  publication_matches "$receipt" base || die 'shadow transaction no longer matches current high-water'
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+  verify_release_runtime_state "$run_id" prior
+}
+
+transaction_finish_committed() {
+  local run_id="$1" receipt phase
+  validate_run_id "$run_id"
+  require_release_lane oci-production
+  require_current_state
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  [ "$(jq -er '.target' "$receipt")" = production ] || return 1
+  phase="$(transaction_phase "$run_id")"
+  [ "$phase" = replaced ] || [ "$phase" = committed ] || return 1
+  publication_matches "$receipt" candidate || return 1
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
+  else
+    [ "$phase" = committed ] || die 'commit transaction is no longer active'
+  fi
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+  verify_release_runtime_state "$run_id" candidate || die 'committed runtime verification failed'
+  if [ "$phase" = replaced ]; then transaction_set_phase "$run_id" committed; fi
+  if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
+  return 0
+}
+
+transaction_finish_rolled_back() {
+  local run_id="$1" receipt
+  validate_run_id "$run_id"
+  require_release_lane oci-production
+  require_current_state
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  [ "$(jq -er '.target' "$receipt")" = production ] || return 1
+  if [ "$(transaction_phase "$run_id")" != rolled-back ]; then
+    publication_matches "$receipt" rollback || return 1
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'active transaction mismatch'
+    require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+    verify_release_runtime_state "$run_id" prior || die 'rollback runtime verification failed'
+    transaction_set_phase "$run_id" rolled-back
+  fi
+  publication_matches "$receipt" rollback || die 'rolled-back transaction contradicts current high-water'
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+  verify_release_runtime_state "$run_id" prior || die 'rolled-back runtime verification failed'
+  if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
+  return 0
+}
+
+manifest_ref() {
+  local manifest="$1" section="$2" key="$3" value
+  value="$(jq -er --arg key "$key" ".${section}[] | select((.artifactId // .serviceId)==\$key) | \"\(.repository)@\(.digest)\"" "$manifest")" ||
+    die "manifest is missing ${section}.${key}"
+  validate_image_ref "$value"
+  printf '%s\n' "$value"
+}
+
+artifact_ref() {
+  artifact_ref_from "$1" candidate "$2" "$3"
+}
+
+artifact_ref_from() {
+  local run_id="$1" source="$2" section="$3" key="$4" manifest
+  if [ "$source" = candidate ]; then
+    manifest="$(artifact_transaction "$run_id")/candidate/candidate-manifest.json"
+  elif [ "$source" = prior ]; then
+    manifest="$(artifact_transaction "$run_id")/prior/prior-manifest.json"
+  else
+    die 'invalid artifact reference source'
+  fi
+  manifest_ref "$manifest" "$section" "$key"
+}
+
+candidate_service_ref() {
+  local run_id="$1" service="$2" artifact
+  case "$service" in
+    app | commerce-reconciler) artifact=app ;;
+    tapestry) artifact=tapestry ;;
+    playlist-bot) artifact=playlist-bot ;;
+    analytics) artifact=analytics ;;
+    *) die "impact plan selected an unknown service: $service" ;;
+  esac
+  artifact_ref "$run_id" artifacts "$artifact"
+}
+
+container_for_service() {
+  case "$1" in
+    app) printf '%s\n' beacon-app ;;
+    commerce-reconciler) printf '%s\n' beacon-commerce-reconciler ;;
+    tapestry) printf '%s\n' beacon-tapestry ;;
+    playlist-bot) printf '%s\n' beacon-playlist-bot ;;
+    *) die "service has no Live container: $1" ;;
+  esac
+}
+
+verify_migration_recovery_targets() {
+  local run_id="$1" transaction prior_app prior_worker ref
+  transaction="$(artifact_transaction "$run_id")"
+  prior_app="$(jq -er '.app.imageRef' "$transaction/prior/service-releases.json")"
+  prior_worker="$(jq -er '."commerce-reconciler".imageRef' "$transaction/prior/service-releases.json")"
+  for ref in "$prior_app" "$prior_worker"; do verify_pulled_image "$ref"; done
+}
+
+build_next_service_releases() {
+  local root="$1" source_sha="$2" run_id="$3" service ref temporary
+  cp -- "$root/prior/service-releases.json" "$root/next-service-releases.json"
+  while IFS= read -r service; do
+    if jq -e --arg service "$service" '.deployment.reusePriorImages | index($service)' "$root/impact-plan.json" >/dev/null; then
+      ref="$(jq -er --arg service "$service" '.[$service].imageRef' "$root/prior/service-releases.json")"
+    else
+      ref="$(manifest_ref "$root/candidate/candidate-manifest.json" artifacts "$(case "$service" in app|commerce-reconciler) printf app;; *) printf '%s' "$service";; esac)")"
+    fi
+    temporary="$root/next-service-releases.json.new"
+    jq --arg service "$service" --arg sourceSha "$source_sha" --arg imageRef "$ref"       '.[$service]={sourceSha:$sourceSha,imageRef:$imageRef}' "$root/next-service-releases.json" > "$temporary"
+    mv -f -- "$temporary" "$root/next-service-releases.json"
+  done < <(jq -r '.deployment.servicesToReplace[]' "$root/impact-plan.json")
+  chown root:root "$root/next-service-releases.json"
+  chmod 0600 "$root/next-service-releases.json"
+}
+
+artifact_compose_from() {
+  local run_id="$1" source="$2"
+  shift 2
+  local root manifest app tapestry playlist analytics postgres livekit config_sha
+  root="$(artifact_transaction "$run_id")/$source"
+  if [ "$source" = candidate ]; then
+    manifest="$root/candidate-manifest.json"
+    app="$(jq -er '.app.imageRef' "$root/../next-service-releases.json")"
+    tapestry="$(jq -er '.tapestry.imageRef' "$root/../next-service-releases.json")"
+    playlist="$(jq -er '."playlist-bot".imageRef' "$root/../next-service-releases.json")"
+    analytics="$(jq -er '.analytics.imageRef' "$root/../next-service-releases.json")"
+  else
+    manifest="$root/prior-manifest.json"
+    app="$(manifest_ref "$manifest" artifacts app)"
+    tapestry="$(manifest_ref "$manifest" artifacts tapestry)"
+    playlist="$(manifest_ref "$manifest" artifacts playlist-bot)"
+    analytics="$(manifest_ref "$manifest" artifacts analytics)"
+  fi
+  postgres="$(manifest_ref "$manifest" externalImages postgres)"
+  livekit="$(manifest_ref "$manifest" externalImages livekit)"
+  config_sha="sha256:$(sha256sum "$root/target-public-config.json" | cut -d' ' -f1)"
+  (
+    cd "$root"
+    HB_APP_IMAGE_REF="$app" HB_TAPESTRY_IMAGE_REF="$tapestry" \
+      HB_PLAYLIST_IMAGE_REF="$playlist" HB_ANALYTICS_IMAGE_REF="$analytics" \
+      HB_POSTGRES_IMAGE_REF="$postgres" HB_LIVEKIT_IMAGE_REF="$livekit" \
+      HB_CONFIG_PROFILE_SHA256="$config_sha" \
+      docker compose --file "$root/docker-compose.yml" \
+      --file "$root/oci-images.compose.yml" --project-name app \
+      --env-file "$PRODUCTION_ENV" "$@"
+  )
+}
+
+artifact_compose() {
+  artifact_compose_from "$1" candidate "${@:2}"
+}
+
+artifact_compose_service_from() {
+  local run_id="$1" source="$2" service="$3"
+  shift 3
+  local root manifest releases app tapestry playlist analytics postgres livekit config_sha command_mode=false
+  local -a compose_args=() service_command=()
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = --service-command ]; then command_mode=true; shift; service_command=("$@"); break; fi
+    compose_args+=("$1"); shift
+  done
+  root="$(artifact_transaction "$run_id")/$source"
+  if [ "$source" = candidate ]; then
+    manifest="$root/candidate-manifest.json"
+    if jq -e --arg service "$service" '.deployment.reusePriorImages | index($service)' "$root/../impact-plan.json" >/dev/null; then
+      releases="$root/../prior/service-releases.json"
+      if [ "$service" = commerce-reconciler ]; then app="$(jq -er '."commerce-reconciler".imageRef' "$releases")"; else app="$(jq -er '.app.imageRef' "$releases")"; fi
+      tapestry="$(jq -er '.tapestry.imageRef' "$releases")"
+      playlist="$(jq -er '."playlist-bot".imageRef' "$releases")"
+      analytics="$(jq -er '.analytics.imageRef' "$releases")"
+    else
+      app="$(manifest_ref "$manifest" artifacts app)"
+      tapestry="$(manifest_ref "$manifest" artifacts tapestry)"
+      playlist="$(manifest_ref "$manifest" artifacts playlist-bot)"
+      analytics="$(manifest_ref "$manifest" artifacts analytics)"
+    fi
+  else
+    manifest="$root/prior-manifest.json"
+    releases="$root/service-releases.json"
+    if [ "$service" = commerce-reconciler ]; then app="$(jq -er '."commerce-reconciler".imageRef' "$releases")"; else app="$(jq -er '.app.imageRef' "$releases")"; fi
+    tapestry="$(jq -er '.tapestry.imageRef' "$releases")"
+    playlist="$(jq -er '."playlist-bot".imageRef' "$releases")"
+    analytics="$(jq -er '.analytics.imageRef' "$releases")"
+  fi
+  postgres="$(manifest_ref "$manifest" externalImages postgres)"
+  livekit="$(manifest_ref "$manifest" externalImages livekit)"
+  config_sha="sha256:$(sha256sum "$root/target-public-config.json" | cut -d' ' -f1)"
+  (
+    cd "$root"
+    HB_APP_IMAGE_REF="$app" HB_TAPESTRY_IMAGE_REF="$tapestry" HB_PLAYLIST_IMAGE_REF="$playlist" \
+      HB_ANALYTICS_IMAGE_REF="$analytics" HB_POSTGRES_IMAGE_REF="$postgres" HB_LIVEKIT_IMAGE_REF="$livekit" \
+      HB_CONFIG_PROFILE_SHA256="$config_sha" bash -c '
+        set -euo pipefail
+        args=(docker compose --file "$1" --file "$2" --project-name app --env-file "$3")
+        shift 3
+        command_mode="$1"; shift
+        count="$1"; shift
+        compose_args=("${@:1:count}"); shift "$count"
+        service="$1"; shift
+        if [ "$command_mode" = true ]; then
+          "${args[@]}" "${compose_args[@]}" "$service" "$@"
+        else
+          "${args[@]}" "${compose_args[@]}" "$service"
+        fi
+      ' bash "$root/docker-compose.yml" "$root/oci-images.compose.yml" "$PRODUCTION_ENV" \
+        "$command_mode" "${#compose_args[@]}" "${compose_args[@]}" "$service" "${service_command[@]}"
+  )
+}
+
+verify_runtime_profile() {
+  local run_id="$1" source="${2:-candidate}" root expected
+  root="$(artifact_transaction "$run_id")/$source"
+  expected="sha256:$(sha256sum "$root/target-public-config.json" | cut -d' ' -f1)"
+  node "$RELEASE_MANIFEST" verify-runtime-public-config \
+    --profile "$root/target-public-config.json" --env "$PRODUCTION_ENV" \
+    --expected-sha256 "$expected" >/dev/null || die 'runtime public config verification failed'
+}
+
+admit_file() {
+  node "$RELEASE_MANIFEST" admit-file --source "$1" --output "$2" \
+    --expected-sha256 "$3" --maximum-bytes "$4" >/dev/null
+}
+
+admit_signature() {
+  node "$RELEASE_MANIFEST" admit-signature --source "$1" --output "$2" --maximum-bytes 16777216 >/dev/null
+}
+
+artifact_impact_state() {
+  require_current_state
+  node "$RELEASE_MANIFEST" export-impact-state --state "$CURRENT_STATE"
+}
+
+artifact_prepare() {
+  local input_root="$1" sha="$2" tree="$3" run_id="$4" manifest_sha="$5"
+  local target="$6" config_sha="$7" workflow_attempt="$8"
+  local temp transaction profile artifact filename expected field ref
+  validate_sha "$sha"
+  validate_sha "$tree"
+  validate_run_id "$run_id"
+  [ "$input_root" = "$CANDIDATE_PARENT/$run_id/candidate" ] || die 'unexpected candidate artifact root'
+  validate_sha256 "$manifest_sha"
+  validate_target "$target"
+  if [ "$target" = production ]; then
+    require_release_lane oci-production
+  else
+    require_release_lane legacy-shadow
+  fi
+  validate_digest "$config_sha"
+  [[ "$workflow_attempt" =~ ^[1-9][0-9]{0,9}$ ]] || die 'invalid workflow run attempt'
+  require_current_state
+  if [ "$target" = production ]; then
+    [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
+  fi
+  require_secure_root_file "$REGISTRY_ENV" 600
+  if [ "$target" = production ]; then require_secure_root_file "$PRODUCTION_ENV" 600; fi
+  transaction="$(artifact_transaction "$run_id")"
+  if [ -e "$transaction" ]; then
+    require_delivery_invocation "$run_id" "$target" prepare
+    if [ "$target" = production ]; then
+      if transaction_finish_committed "$run_id"; then return 0; fi
+      transaction_resume_prepared "$run_id" "$sha" "$tree" "$manifest_sha" "$config_sha" "$workflow_attempt"
+    else
+      transaction_resume_shadow "$run_id" "$sha" "$tree" "$manifest_sha" "$config_sha" "$workflow_attempt"
+    fi
+    return 0
+  fi
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    if [ "$target" = production ]; then die 'another production transaction is active'; fi
+    die 'production transaction is active during shadow verification'
+  fi
+
+  temp="$(mktemp -d --tmpdir="$TRANSACTION_ROOT" '.prepare.XXXXXX')"
+  # Capture the path now: EXIT can run after function-local variables unwind.
+  trap "unset DOCKER_CONFIG HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME; rm -rf -- $(printf '%q' "$temp")" EXIT
+  install -d -o root -g root -m 0700 "$temp/candidate" "$temp/candidate/evidence" "$temp/prior" "$temp/docker"
+  admit_file "$input_root/release-manifest.json" "$temp/candidate/candidate-manifest.json" "sha256:$manifest_sha" 1048576
+  local manifest="$temp/candidate/candidate-manifest.json"
+  # Bundles are untrusted cryptographic envelopes; descriptor-safe copy, then
+  # authenticate the exact root-owned bytes before using any manifest selector.
+  for filename in release-manifest.signature.bundle.json qualification-receipt.signature.bundle.json; do
+    admit_signature "$input_root/$filename" "$temp/candidate/$filename"
+  done
+  cosign verify-blob --bundle "$temp/candidate/release-manifest.signature.bundle.json" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main \
+    "$manifest" >/dev/null || die 'unauthenticated final manifest'
+  admit_delivery_authorization "$input_root" "$temp/delivery"
+  if [ "$target" = production ]; then
+    admit_transition_evidence "$input_root" "$temp/transition"
+    require_oci_transition_evidence "$manifest" "$temp/transition"
+  fi
+  node "$RELEASE_MANIFEST" validate-delivery --authorization "$temp/delivery/delivery-authorization.json" \
+    --manifest "$manifest" --source-sha "$sha" --source-tree "$tree" --manifest-sha256 "$manifest_sha" \
+    --candidate-run-id "$run_id" --candidate-run-attempt "$workflow_attempt" \
+    --delivery-run-id "$DELIVERY_RUN_ID" --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" \
+    --target "$target" --config-sha256 "$config_sha" --output "$temp/delivery.json"
+  local authorization="$temp/delivery/delivery-authorization.json"
+  admit_file "$input_root/impact-state.json" "$temp/impact-state.json" \
+    "$(jq -er '.impactStateSha256' "$authorization")" 1048576
+  admit_file "$input_root/impact-plan.json" "$temp/impact-plan.json" \
+    "$(jq -er '.impactPlanSha256' "$authorization")" 4194304
+  node "$RELEASE_MANIFEST" export-impact-state --state "$CURRENT_STATE" --output "$temp/current-impact-state.json"
+  cmp --silent "$temp/impact-state.json" "$temp/current-impact-state.json" ||
+    die 'authorized impact state no longer matches current high-water'
+  node "$IMPACT_RECOVERY" verify-authorized-impact --authorization "$authorization" \
+    --state "$temp/impact-state.json" --impact "$temp/impact-plan.json" --source-sha "$sha"
+  # Parse only the authenticated admitted manifest; remaining paths are fixed.
+  admit_file "$input_root/qualification-receipt.json" "$temp/candidate/qualification-receipt.json" "$(jq -er '.qualification.receiptSha256' "$manifest")" 1048576
+  admit_file "$input_root/docker-compose.yml" "$temp/candidate/docker-compose.yml" "$(jq -er '.deploymentInputs.composeSha256' "$manifest")" 4194304
+  admit_file "$input_root/deploy/oci-images.compose.yml" "$temp/candidate/oci-images.compose.yml" "$(jq -er '.deploymentInputs.overlaySha256' "$manifest")" 4194304
+  # Compose is active configuration: require the installed reviewed bytes too.
+  cmp --silent "$TRUSTED_COMPOSE" "$temp/candidate/docker-compose.yml" || die 'unreviewed Compose input'
+  cmp --silent "$TRUSTED_OVERLAY" "$temp/candidate/oci-images.compose.yml" || die 'unreviewed OCI overlay'
+  for profile in production live-staging; do
+    admit_file "$input_root/deploy/runtime-public-config/$profile.json" "$temp/candidate/$profile.json" "$(jq -er --arg profile "$profile" '.configProfiles[$profile].sha256' "$manifest")" 1048576
+  done
+  profile=production
+  [ "$target" = production ] || profile=live-staging
+  install -o root -g root -m 0600 "$temp/candidate/$profile.json" "$temp/candidate/target-public-config.json"
+  for artifact in app tapestry playlist-bot analytics; do
+    install -d -o root -g root -m 0700 "$temp/candidate/evidence/oci-evidence-$artifact"
+    while read -r filename field; do
+      expected="$(jq -er --arg id "$artifact" ".artifacts[] | select(.artifactId==\$id) | $field" "$manifest")"
+      admit_file "$input_root/evidence/oci-evidence-$artifact/$filename" "$temp/candidate/evidence/oci-evidence-$artifact/$filename" "$expected" 16777216
+    done <<'EOF'
+evidence.json .evidenceRecordDigest
+sbom.bundle.json .sbom.digest
+sbom.signature.bundle.json .sbom.signatureBundleDigest
+provenance.bundle.json .provenance.digest
+provenance.signature.bundle.json .provenance.signatureBundleDigest
+signature.bundle.json .signature.bundleDigest
+EOF
+  done
+  install -o root -g root -m 0600 "$CURRENT_STATE" "$temp/prior-state.json"
+  state_unpack "$temp/prior-state.json" "$temp/prior"
+  verify_prior_state_inputs "$temp/prior"
+  if [ "$target" = production ]; then
+    require_rollback_safe_public_config \
+      "$temp/candidate/target-public-config.json" "$temp/prior/target-public-config.json"
+  fi
+
+  require_unchanged_runtime_inputs "$temp"
+
+  export DOCKER_CONFIG="$temp/docker"
+  local verifier_args=(
+    --manifest "$temp/candidate/candidate-manifest.json" --evidence "$temp/candidate/evidence"
+    --manifest-sha256 "$manifest_sha" --source-sha "$sha" --source-tree "$tree"
+    --workflow-run-id "$run_id" --workflow-run-attempt "$workflow_attempt"
+    --target "$target" --config-sha256 "$config_sha"
+    --current-manifest "$temp/prior/prior-manifest.json"
+    --compose "$temp/candidate/docker-compose.yml" --overlay "$temp/candidate/oci-images.compose.yml"
+    --config-profile "$temp/candidate/target-public-config.json" --output "$temp/verified.json"
+  )
+  if [ "$target" = production ]; then verifier_args+=(--runtime-env "$PRODUCTION_ENV"); fi
+  "$ARTIFACT_VERIFY" "${verifier_args[@]}"
+  jq -e . "$temp/verified.json" >/dev/null || die 'artifact verifier emitted invalid receipt'
+  jq --slurpfile delivery "$temp/delivery.json" --arg target "$target" --arg phase prepared \
+    --arg impactPlanSha256 "$(sha256sum "$temp/impact-plan.json" | cut -d' ' -f1)" \
+    '. + $delivery[0] + {target:$target,phase:$phase,impactPlanSha256:$impactPlanSha256,replacedServices:[],rolledBackServices:[]}' \
+    "$temp/verified.json" > "$temp/receipt.json"
+  node "$RELEASE_MANIFEST" bind-publications --state "$CURRENT_STATE" --receipt "$temp/receipt.json" --output "$temp/receipt.new"
+  mv -- "$temp/receipt.new" "$temp/receipt.json"
+  chmod 0600 "$temp/receipt.json"
+  sync -f "$temp/receipt.json"
+  sync -f "$temp"
+
+  # Signature and registry evidence verification can take time. Recheck expiry
+  # on the persisted receipt immediately before the first registry effect.
+  node "$RELEASE_MANIFEST" check-delivery --receipt "$temp/receipt.json" \
+    --delivery-run-id "$DELIVERY_RUN_ID" --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" \
+    --target "$target" --verb prepare
+  if [ "$target" = production ]; then
+    require_oci_transition_evidence "$manifest" "$temp/transition"
+  fi
+  # Burn this exact protected run/attempt before effects, including shadow.
+  # A failed pre-publication prepare requires a fresh hosted authorization.
+  if [ -e "$ARTIFACT_STATE/delivery-used" ] || [ -L "$ARTIFACT_STATE/delivery-used" ]; then
+    require_secure_root_ancestors "$ARTIFACT_STATE/delivery-used/.probe"
+  fi
+  install -d -o root -g root -m 0700 "$ARTIFACT_STATE/delivery-used"
+  mkdir -m 0700 -- "$ARTIFACT_STATE/delivery-used/$DELIVERY_RUN_ID-$DELIVERY_RUN_ATTEMPT" ||
+    die 'delivery authorization already consumed'
+  sync -f "$ARTIFACT_STATE/delivery-used"
+  # The credential file is root-only and is never exposed to candidate code.
+  # shellcheck disable=SC1090
+  source "$REGISTRY_ENV"
+  [ -n "${HB_REGISTRY_USERNAME:-}" ] && [ -n "${HB_REGISTRY_TOKEN:-}" ] || die 'registry credentials are incomplete'
+  printf '%s' "$HB_REGISTRY_TOKEN" | docker login ghcr.io --username "$HB_REGISTRY_USERNAME" --password-stdin >/dev/null
+  while IFS= read -r artifact; do
+    ref="$(manifest_ref "$temp/candidate/candidate-manifest.json" artifacts "$artifact")"
+    docker pull "$ref" >/dev/null
+  done < <(jq -r '.deployment.artifactsToPull[]' "$temp/impact-plan.json")
+  build_next_service_releases "$temp" "$sha" "$run_id"
+  unset HB_REGISTRY_TOKEN HB_REGISTRY_USERNAME
+  rm -rf -- "$temp/docker" "$temp/prior-state.json" "$temp/current-impact-state.json" "$temp/verified.json"
+  chmod 0700 "$temp"
+  sync -f "$temp/receipt.json"
+  # Reuse full live verification before this disposable transaction becomes
+  # visible. Shadow evidence is meaningful only against the exact live base.
+  (
+    artifact_transaction() { printf '%s\n' "$temp"; }
+    verify_release_runtime_state "$run_id" prior
+  )
+  mv -- "$temp" "$transaction"
+  sync -f "$TRANSACTION_ROOT"
+  test_failpoint transaction-directory-fsync
+  if [ "$target" = production ]; then atomic_write_active_transaction "$run_id"; fi
+  trap - EXIT
+}
+
+artifact_impact() {
+  local run_id="$1" target="$2"
+  if [ "$target" = production ] && transaction_finish_committed "$run_id"; then
+    jq -c '{schemaVersion,risk,domains,matrices,requiredChecks,deployment,details}' \
+      "$(artifact_transaction "$run_id")/impact-plan.json"
+    return 0
+  fi
+  transaction_require "$run_id" "$target" prepared migration-attempted migration-skipped migrated replaced
+  jq -c '{schemaVersion,risk,domains,matrices,requiredChecks,deployment,details}'     "$(artifact_transaction "$run_id")/impact-plan.json"
+}
+
+artifact_preflight() {
+  local run_id="$1" target="$2"
+  if [ "$target" = production ] && transaction_finish_committed "$run_id"; then return 0; fi
+  if [ "$target" = shadow ]; then
+    transaction_require "$run_id" "$target" prepared shadowed
+  else
+    transaction_require "$run_id" "$target" prepared migration-attempted migration-skipped migrated replaced
+  fi
+  if [ "$target" = production ]; then
+    [ -r "$PRODUCTION_ENV" ] || die 'production environment is not readable by root'
+    [ -r "$COMMERCE_ENV" ] || die 'commerce environment is not readable by root'
+    require_secure_root_file "$COMMERCE_ENV" 600
+    if [ -e "$ACCOUNT_ENV" ]; then
+      require_secure_root_file "$ACCOUNT_ENV" 600
+      container_has_env_name beacon-app BEACON_ACCOUNT_ENABLED &&
+        [ "$(docker inspect beacon-app --format '{{range .Config.Env}}{{println .}}{{end}}' |
+          sed -n 's/^BEACON_ACCOUNT_ENABLED=//p' | tail -n 1)" = true ] ||
+        die 'Account bundle exists before the supervised Account activation'
+    fi
+    if grep -Fxq 'E2E_DASHBOARD_ENABLED=1' "$PRODUCTION_ENV"; then
+      die 'production E2E dashboard must be disabled before deploy'
+    fi
+    verify_runtime_profile "$run_id"
+    require_exact_private_network
+    artifact_compose "$run_id" config --quiet
+    verify_container_image beacon-postgres "$(artifact_ref "$run_id" externalImages postgres)"
+    verify_container_image beacon-livekit "$(artifact_ref "$run_id" externalImages livekit)"
+    while IFS= read -r service; do
+      verify_pulled_image "$(jq -er --arg service "$service" '.[$service].imageRef' \
+        "$(artifact_transaction "$run_id")/next-service-releases.json")"
+    done < <(jq -r '.deployment.servicesToReplace[]' "$(artifact_transaction "$run_id")/impact-plan.json")
+  fi
+}
+
+operation_evidence_path() {
+  printf '%s/%s-operation.json\n' "$(artifact_transaction "$1")" "$2"
+}
+
+release_operation_start() {
+  local run_id="$1" purpose="$2" selected_json="$3" attempt path
+  attempt="${run_id}-$(date -u +%s%N)-$$"
+  path="$(operation_evidence_path "$run_id" "$purpose")"
+  jq -n --arg runId "$run_id" --arg purpose "$purpose" --arg attemptId "$attempt" \
+    --argjson selectedServices "$selected_json" \
+    '{schemaVersion:"harmonic-beacon.release-operation.v1",purpose:$purpose,runId:$runId,attemptId:$attemptId,selectedServices:$selectedServices,events:[]}' > "$path"
+  chown root:root "$path"; chmod 0600 "$path"; sync -f "$path"
+  printf '%s\n' "$attempt"
+}
+
+release_operation_event() {
+  local run_id="$1" purpose="$2" event="$3" path temporary
+  case "$event" in
+    initial-continuity-verified | entry-fence-acquired | writers-quiesced | final-continuity-verified | \
+    backup-created | isolated-restore-ready | candidate-migration-applied-isolated | prior-app-health-verified | \
+    prior-worker-heartbeat-verified | prior-schema-verified | production-migration-applied | writers-restored | \
+    entry-fence-released | replacement-complete:app | replacement-complete:commerce-reconciler | \
+    replacement-complete:tapestry | replacement-complete:playlist-bot) ;;
+    *) die 'invalid release operation event' ;;
+  esac
+  path="$(operation_evidence_path "$run_id" "$purpose")"
+  require_secure_root_file "$path" 600
+  temporary="${path}.new"
+  jq --arg type "$event" '.events += [{sequence:((.events|length)+1),type:$type}]' "$path" > "$temporary"
+  chown root:root "$temporary"; chmod 0600 "$temporary"; sync -f "$temporary"
+  mv -f -- "$temporary" "$path"
+}
+
+entry_fence_rule() {
+  local action="$1" attempt="$2" port="$3"
+  iptables "$action" OUTPUT -o lo -p tcp -d 127.0.0.1 --dport "$port" \
+    -m conntrack --ctstate NEW -m comment --comment "hb-release-$attempt" -j REJECT --reject-with tcp-reset
+}
+
+entry_fence_acquire() {
+  local attempt="$1"
+  [ "${EUID}" -eq 0 ] || return 0
+  command -v iptables >/dev/null || die 'iptables is required for the release entry fence'
+  entry_fence_rule -I "$attempt" 3000
+  if ! entry_fence_rule -I "$attempt" 7880; then
+    entry_fence_rule -D "$attempt" 3000 || true
+    die 'could not establish the complete release entry fence'
+  fi
+}
+
+entry_fence_release() {
+  local attempt="$1" port status
+  command -v iptables >/dev/null || die 'iptables is required to prove release entry-fence removal'
+  for port in 7880 3000; do
+    while true; do
+      if entry_fence_rule -C "$attempt" "$port" >/dev/null 2>&1; then
+        entry_fence_rule -D "$attempt" "$port" >/dev/null 2>&1 ||
+          die "could not remove release entry-fence rule for port $port"
+        continue
+      else
+        status=$?
+        [ "$status" -eq 1 ] || die "could not prove release entry-fence absence for port $port"
+        break
+      fi
+    done
+  done
+}
+
+restore_release_writers() {
+  local container
+  for container in beacon-app beacon-commerce-reconciler; do
+    if docker inspect "$container" >/dev/null 2>&1 && \
+       [ "$(docker inspect "$container" --format '{{.State.Running}}')" != true ]; then
+      docker start "$container" >/dev/null
+    fi
+  done
+  [ "$(docker inspect beacon-app --format '{{.State.Running}}' 2>/dev/null || true)" = true ] || die 'application writer was not restored'
+  [ "$(docker inspect beacon-commerce-reconciler --format '{{.State.Running}}' 2>/dev/null || true)" = true ] || die 'worker writer was not restored'
+}
+
+release_operation_cleanup() {
+  local run_id="$1" attempt="$2" restore_db app_probe worker_probe
+  [ "${EUID}" -eq 0 ] || return 0
+  restore_db="hb_restore_${attempt//-/_}"
+  app_probe="hb-restore-app-$attempt"
+  worker_probe="hb-restore-worker-$attempt"
+  docker rm -f "$app_probe" "$worker_probe" >/dev/null 2>&1 || true
+  docker exec beacon-postgres sh -eu -c 'dropdb --if-exists --username="$POSTGRES_USER" "$1"; rm -f -- "/tmp/$1.dump"' sh "$restore_db" >/dev/null 2>&1 || true
+  restore_release_writers || true
+  entry_fence_release "$attempt"
+}
+
+release_recover_stale_attempt() {
+  local run_id="$1" purpose="$2" path attempt last
+  path="$(operation_evidence_path "$run_id" "$purpose")"
+  [ ! -f "$path" ] && return 0
+  require_secure_root_file "$path" 600
+  attempt="$(jq -er '.attemptId' "$path")"
+  last="$(jq -r '.events[-1].type // empty' "$path")"
+  if [ "$last" != entry-fence-released ]; then release_operation_cleanup "$run_id" "$attempt"; fi
+}
+
+run_release_continuity_preflight() {
+  artifact_compose "$1" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/release-quiesce-preflight.ts
+}
+
+verify_release_operation() {
+  local run_id="$1" purpose="$2"
+  "$IMPACT_RECOVERY" verify-operation --input "$(operation_evidence_path "$run_id" "$purpose")" --run-id "$run_id"
+}
+
+database_backup_restore() {
+  local run_id="$1" attempt="$2" quiescence_digest="$3" transaction dump partial container_dump restore_db proof
+  local digest restore_result post_state app_probe worker_probe candidate_ref prior_app_ref prior_worker_ref
+  local candidate_id prior_app_id prior_worker_id pre_state_digest post_state_digest migration_digest
+  transaction="$(artifact_transaction "$run_id")"
+  proof="$transaction/backup-restore.json"
+  mountpoint -q /mnt/beacon-data || die 'database backup filesystem is not mounted'
+  install -d -o root -g root -m 0700 "$DATABASE_BACKUP_ROOT"
+  dump="$DATABASE_BACKUP_ROOT/release-${attempt}.dump"
+  partial="${dump}.partial"
+  restore_db="hb_restore_${attempt//-/_}"
+  container_dump="/tmp/${restore_db}.dump"
+  restore_result="$transaction/restore-verification.json"
+  post_state="$transaction/isolated-post-migration-state.json"
+  app_probe="hb-restore-app-$attempt"
+  worker_probe="hb-restore-worker-$attempt"
+  rm -f -- "$proof" "$restore_result" "$post_state" "$partial" "$dump"
+  docker rm -f "$app_probe" "$worker_probe" >/dev/null 2>&1 || true
+
+  docker exec beacon-postgres sh -eu -c 'pg_dump --format=custom --no-owner --no-acl --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' > "$partial"
+  [ -s "$partial" ] || die 'database backup is empty'
+  chown root:root "$partial"; chmod 0600 "$partial"
+  mv -f -- "$partial" "$dump"; sync -f "$dump"
+  digest="$(sha256sum "$dump" | cut -d' ' -f1)"
+  release_operation_event "$run_id" migrate backup-created
+
+  docker cp "$dump" "beacon-postgres:$container_dump" >/dev/null
+  docker exec beacon-postgres sh -eu -c 'dropdb --if-exists --username="$POSTGRES_USER" "$1"; createdb --username="$POSTGRES_USER" "$1"; pg_restore --exit-on-error --no-owner --no-acl --username="$POSTGRES_USER" --dbname="$1" "$2"' sh "$restore_db" "$container_dump"
+  release_operation_event "$run_id" migrate isolated-restore-ready
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never \
+    -e "HB_RESTORE_DATABASE_NAME=$restore_db" migrate npx tsx scripts/release-restore-verify.ts > "$restore_result"
+  jq -e '.schemaVersion=="harmonic-beacon.restore-verification.v2" and
+    (.migrationState.schemaVersion=="harmonic-beacon.migration-state.v1") and
+    .migrationState.databaseStateVerified==true and (.migrationState.pending|length)==0 and
+    (.migrationState.failed|length)==0 and (.migrationState.unexpected|length)==0 and
+    (.migrationState.unsafe|length)==0 and (.migrationState.checksumErrors|length)==0 and
+    (.migrationState.duplicateRecords|length)==0 and (.migrationState.conflictingRecords|length)==0' \
+    "$restore_result" >/dev/null || die 'isolated restore verifier emitted an invalid migration state'
+  jq '.migrationState' "$restore_result" > "$post_state"
+  chown root:root "$restore_result" "$post_state"; chmod 0600 "$restore_result" "$post_state"
+  "$IMPACT_RECOVERY" validate-migration-state --state "$post_state"
+  release_operation_event "$run_id" migrate candidate-migration-applied-isolated
+
+  candidate_ref="$(candidate_service_ref "$run_id" app)"
+  prior_app_ref="$(jq -er '.app.imageRef' "$transaction/prior/service-releases.json")"
+  prior_worker_ref="$(jq -er '."commerce-reconciler".imageRef' "$transaction/prior/service-releases.json")"
+  candidate_id="$(docker image inspect "$candidate_ref" --format '{{.Id}}')"
+  prior_app_id="$(docker image inspect "$prior_app_ref" --format '{{.Id}}')"
+  prior_worker_id="$(docker image inspect "$prior_worker_ref" --format '{{.Id}}')"
+  validate_digest "$candidate_id"; validate_digest "$prior_app_id"; validate_digest "$prior_worker_id"
+
+  artifact_compose_service_from "$run_id" prior app run -d --name "$app_probe" --no-deps --no-build --pull never \
+    -e "HB_RESTORE_DATABASE_NAME=$restore_db" --service-command node -e \
+    'const{spawn}=require("node:child_process");const u=new URL(process.env.DATABASE_URL);u.pathname="/"+process.env.HB_RESTORE_DATABASE_NAME;process.env.DATABASE_URL=u.toString();const c=spawn("node",["server.js"],{env:process.env,stdio:"inherit"});for(const s of ["SIGTERM","SIGINT"])process.on(s,()=>c.kill(s));c.on("exit",x=>process.exit(x??1));'
+  [ "$(docker inspect "$app_probe" --format '{{.Image}}')" = "$prior_app_id" ] || die 'prior app probe did not use the exact prior image'
+  local app_ready=false
+  for _attempt in $(seq 1 60); do
+    if docker exec "$app_probe" curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3000/api/health/ready >/dev/null; then app_ready=true; break; fi
+    sleep 2
+  done
+  [ "$app_ready" = true ] || die 'exact prior app did not become healthy against the candidate-migrated restore'
+  release_operation_event "$run_id" migrate prior-app-health-verified
+
+  artifact_compose_service_from "$run_id" prior commerce-reconciler run -d --name "$worker_probe" --no-deps --no-build --pull never \
+    -e "HB_RESTORE_DATABASE_NAME=$restore_db" --service-command node -e \
+    'const{spawn}=require("node:child_process");const u=new URL(process.env.DATABASE_URL);u.pathname="/"+process.env.HB_RESTORE_DATABASE_NAME;process.env.DATABASE_URL=u.toString();process.env.LIVEKIT_INTERNAL_URL="http://127.0.0.1:9";const c=spawn("npx",["tsx","scripts/commerce-media-worker.ts"],{env:process.env,stdio:"inherit"});for(const s of ["SIGTERM","SIGINT"])process.on(s,()=>c.kill(s));c.on("exit",x=>process.exit(x??1));'
+  [ "$(docker inspect "$worker_probe" --format '{{.Image}}')" = "$prior_worker_id" ] || die 'prior worker probe did not use the exact prior image'
+  local worker_ready=false
+  for _attempt in $(seq 1 60); do
+    if docker exec "$worker_probe" node -e 'const fs=require("fs");const t=Number(fs.readFileSync("/tmp/commerce-reconciler-heartbeat","utf8"));if(!Number.isFinite(t)||Date.now()-t>30000)process.exit(1)' >/dev/null 2>&1; then worker_ready=true; break; fi
+    sleep 2
+  done
+  [ "$worker_ready" = true ] || die 'exact prior worker did not heartbeat against the candidate-migrated restore'
+  release_operation_event "$run_id" migrate prior-worker-heartbeat-verified
+
+  artifact_compose_service_from "$run_id" prior app run --rm --no-deps --no-build --pull never \
+    -e "HB_RESTORE_DATABASE_NAME=$restore_db" --service-command node -e \
+    'const{spawnSync}=require("node:child_process");const u=new URL(process.env.DATABASE_URL);u.pathname="/"+process.env.HB_RESTORE_DATABASE_NAME;const env={...process.env,DATABASE_URL:u.toString()};const r=spawnSync("npx",["tsx","scripts/stage-grant-rollback-preflight.ts"],{env,stdio:"inherit"});process.exit(r.status??1);'
+  release_operation_event "$run_id" migrate prior-schema-verified
+
+  pre_state_digest="$(sha256sum "$transaction/migration-state.json" | cut -d' ' -f1)"
+  post_state_digest="$(sha256sum "$post_state" | cut -d' ' -f1)"
+  migration_digest="$(jq -cj '.migrationChecksums' "$transaction/migration-state.json" | sha256sum | cut -d' ' -f1)"
+  jq -n --arg runId "$run_id" --arg attemptId "$attempt" --arg backupSha256 "$digest" \
+    --arg candidateImageRef "$candidate_ref" --arg priorAppImageRef "$prior_app_ref" --arg priorWorkerImageRef "$prior_worker_ref" \
+    --arg candidateImageId "$candidate_id" --arg priorAppImageId "$prior_app_id" --arg priorWorkerImageId "$prior_worker_id" \
+    --arg preMigrationStateSha256 "$pre_state_digest" --arg postMigrationStateSha256 "$post_state_digest" \
+    --arg migrationChecksumsSha256 "$migration_digest" --arg quiescenceEvidenceSha256 "$quiescence_digest" \
+    --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{schemaVersion:"harmonic-beacon.backup-restore.v2",runId:$runId,attemptId:$attemptId,result:"success",
+      isolatedRestore:"passed",hostedRuntimeDrill:"passed",backupSha256:$backupSha256,candidateImageRef:$candidateImageRef,
+      priorAppImageRef:$priorAppImageRef,priorWorkerImageRef:$priorWorkerImageRef,candidateImageId:$candidateImageId,
+      priorAppImageId:$priorAppImageId,priorWorkerImageId:$priorWorkerImageId,preMigrationStateSha256:$preMigrationStateSha256,
+      postMigrationStateSha256:$postMigrationStateSha256,migrationChecksumsSha256:$migrationChecksumsSha256,
+      quiescenceEvidenceSha256:$quiescenceEvidenceSha256,priorAppHealth:"passed",priorWorkerHeartbeat:"passed",
+      priorSchemaCheck:"passed",createdAt:$createdAt}' > "$proof"
+  chown root:root "$proof"; chmod 0600 "$proof"; sync -f "$proof"
+  docker rm -f "$app_probe" "$worker_probe" >/dev/null
+  docker exec beacon-postgres sh -eu -c 'dropdb --username="$POSTGRES_USER" "$1"; rm -f -- "$2"' sh "$restore_db" "$container_dump"
+}
+
+artifact_migrate() {
+  local run_id="$1" transaction phase migration_policy pending attempt_id operation_path quiescence_path quiescence_digest
+  local proof_sha operation_sha candidate_ref prior_app_ref prior_worker_ref pre_state_sha
+  if transaction_finish_committed "$run_id"; then return 0; fi
+  transaction_require "$run_id" production prepared migration-attempted migration-skipped migrated
+  transaction="$(artifact_transaction "$run_id")"
+  ensure_prior_service_releases "$transaction"
+  phase="$(transaction_phase "$run_id")"
+  verify_release_runtime_state "$run_id" prior
+  if [ "$phase" = migration-skipped ] || [ "$phase" = migrated ]; then return 0; fi
+  if [ -f "$transaction/impact-plan.json" ]; then
+    migration_policy="$(jq -er '.deployment.migration' "$transaction/impact-plan.json")"
+  else
+    [ "${EUID}" -ne 0 ] || die 'prepared impact plan is unavailable'
+    migration_policy=verify-pending
+  fi
+  if [ "$migration_policy" = never ]; then
+    jq -n '{schemaVersion:"harmonic-beacon.migration-state.v1",databaseStateVerified:true,applied:[],pending:[],failed:[],unexpected:[],unsafe:[],checksumErrors:[],duplicateRecords:[],conflictingRecords:[],migrationChecksums:[]}' > "$transaction/migration-state.json"
+    transaction_set_phase "$run_id" migration-skipped
+    return 0
+  fi
+
+  release_recover_stale_attempt "$run_id" migrate
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/release-migration-state.ts > "$transaction/migration-state.json"
+  chown root:root "$transaction/migration-state.json"; chmod 0600 "$transaction/migration-state.json"
+  if [ -x "$IMPACT_RECOVERY" ]; then
+    "$IMPACT_RECOVERY" validate-migration-state --state "$transaction/migration-state.json"
+  else
+    [ "${EUID}" -ne 0 ] || die 'installed impact/recovery validator is unavailable'
+  fi
+  pending="$(jq '.pending|length' "$transaction/migration-state.json")"
+  [ -n "$pending" ] || pending=0
+  if [ "$pending" -eq 0 ] && [ "$phase" = prepared ]; then
+    if [ -x "$IMPACT_RECOVERY" ]; then
+      "$IMPACT_RECOVERY" plan-database --impact "$transaction/impact-plan.json" \
+        --state "$transaction/migration-state.json" --run-id "$run_id" > "$transaction/database-action.json"
+    else
+      jq -n '{action:"skip",requiresQuiesce:false,requiresBackupRestore:false}' > "$transaction/database-action.json"
+    fi
+    transaction_set_phase "$run_id" migration-skipped
+    return 0
+  fi
+
+  verify_migration_recovery_targets "$run_id"
+  run_release_continuity_preflight "$run_id"
+  attempt_id="$(release_operation_start "$run_id" migrate '["app","commerce-reconciler"]')"
+  release_operation_event "$run_id" migrate initial-continuity-verified
+  trap "release_operation_cleanup '$run_id' '$attempt_id'" EXIT
+  entry_fence_acquire "$attempt_id"
+  release_operation_event "$run_id" migrate entry-fence-acquired
+  artifact_compose "$run_id" stop app commerce-reconciler
+  release_operation_event "$run_id" migrate writers-quiesced
+  run_release_continuity_preflight "$run_id"
+  release_operation_event "$run_id" migrate final-continuity-verified
+  operation_path="$(operation_evidence_path "$run_id" migrate)"
+  quiescence_path="$transaction/migration-quiescence-evidence.json"
+  cp -- "$operation_path" "$quiescence_path"
+  chown root:root "$quiescence_path"; chmod 0600 "$quiescence_path"; sync -f "$quiescence_path"
+  quiescence_digest="$(sha256sum "$quiescence_path" | cut -d' ' -f1)"
+
+  # Re-read the migration table after the writer/entry fence; stale pre-fence state is never reused.
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/release-migration-state.ts > "$transaction/migration-state.json"
+  chown root:root "$transaction/migration-state.json"; chmod 0600 "$transaction/migration-state.json"
+  if [ -x "$IMPACT_RECOVERY" ]; then
+    "$IMPACT_RECOVERY" validate-migration-state --state "$transaction/migration-state.json"
+  else
+    [ "${EUID}" -ne 0 ] || die 'installed impact/recovery validator is unavailable'
+  fi
+  pending="$(jq '.pending|length' "$transaction/migration-state.json")"
+  [ -n "$pending" ] || pending=0
+  if [ "$pending" -eq 0 ] && [ "$phase" != migration-attempted ]; then
+    die 'migration state changed between preflight and the quiesced boundary'
+  fi
+
+  database_backup_restore "$run_id" "$attempt_id" "$quiescence_digest"
+  candidate_ref="$(candidate_service_ref "$run_id" app)"
+  prior_app_ref="$(jq -er '.app.imageRef' "$transaction/prior/service-releases.json")"
+  prior_worker_ref="$(jq -er '."commerce-reconciler".imageRef' "$transaction/prior/service-releases.json")"
+  pre_state_sha="$(sha256sum "$transaction/migration-state.json" | cut -d' ' -f1)"
+  jq -e --arg run "$run_id" --arg attempt "$attempt_id" --arg candidate "$candidate_ref" \
+    --arg priorApp "$prior_app_ref" --arg priorWorker "$prior_worker_ref" --arg preState "$pre_state_sha" \
+    --arg quiescence "$quiescence_digest" '
+      .schemaVersion=="harmonic-beacon.backup-restore.v2" and .runId==$run and .attemptId==$attempt and
+      .candidateImageRef==$candidate and .priorAppImageRef==$priorApp and .priorWorkerImageRef==$priorWorker and
+      .preMigrationStateSha256==$preState and .quiescenceEvidenceSha256==$quiescence and
+      .isolatedRestore=="passed" and .hostedRuntimeDrill=="passed" and .priorAppHealth=="passed" and
+      .priorWorkerHeartbeat=="passed" and .priorSchemaCheck=="passed"
+    ' "$transaction/backup-restore.json" >/dev/null || die 'root backup/restore evidence binding is invalid'
+  "$IMPACT_RECOVERY" plan-database --impact "$transaction/impact-plan.json" \
+    --state "$transaction/migration-state.json" --backup-proof "$transaction/backup-restore.json" \
+    --run-id "$run_id" > "$transaction/database-action.json"
+  transaction_set_phase "$run_id" migration-attempted
+
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate npx prisma migrate deploy
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/stage-grant-forward-drain.ts
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate npx prisma migrate status
+  artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+    npx tsx scripts/release-migration-state.ts > "$transaction/production-post-migration-state.json"
+  chown root:root "$transaction/production-post-migration-state.json"; chmod 0600 "$transaction/production-post-migration-state.json"
+  "$IMPACT_RECOVERY" validate-migration-state --state "$transaction/production-post-migration-state.json"
+  [ "$(jq '.pending|length' "$transaction/production-post-migration-state.json")" -eq 0 ] ||
+    die 'production migration checksum/schema verification failed'
+  release_operation_event "$run_id" migrate production-migration-applied
+  restore_release_writers
+  release_operation_event "$run_id" migrate writers-restored
+  entry_fence_release "$attempt_id"
+  release_operation_event "$run_id" migrate entry-fence-released
+  verify_release_operation "$run_id" migrate
+  proof_sha="$(sha256sum "$transaction/backup-restore.json" | cut -d' ' -f1)"
+  operation_sha="$(sha256sum "$operation_path" | cut -d' ' -f1)"
+  jq --arg attemptId "$attempt_id" --arg backupRestoreSha256 "$proof_sha" --arg migrationOperationSha256 "$operation_sha" \
+    '.migrationEvidence={attemptId:$attemptId,backupRestoreSha256:$backupRestoreSha256,migrationOperationSha256:$migrationOperationSha256}' \
+    "$transaction/receipt.json" > "$transaction/receipt.json.new"
+  chown root:root "$transaction/receipt.json.new"; chmod 0600 "$transaction/receipt.json.new"; sync -f "$transaction/receipt.json.new"
+  mv -f -- "$transaction/receipt.json.new" "$transaction/receipt.json"
+  transaction_set_phase "$run_id" migrated
+  trap - EXIT
+}
+
+artifact_replace() {
+  local run_id="$1" transaction phase service temporary container expected prior_id current_id attempt_service
+  local attempt_id selected_json operation_sha operation_path
+  if transaction_finish_committed "$run_id"; then return 0; fi
+  transaction_require "$run_id" production migrated migration-skipped replaced
+  transaction="$(artifact_transaction "$run_id")"
+  phase="$(transaction_phase "$run_id")"
+  [ "$phase" != replaced ] || return 0
+  verify_runtime_profile "$run_id"
+  selected_json="$(jq -c '.deployment.servicesToReplace' "$transaction/impact-plan.json")"
+  if [ "$(jq 'length' <<<"$selected_json")" -eq 0 ]; then transaction_set_phase "$run_id" replaced; return 0; fi
+
+  release_recover_stale_attempt "$run_id" replace
+  run_release_continuity_preflight "$run_id"
+  attempt_id="$(release_operation_start "$run_id" replace "$selected_json")"
+  release_operation_event "$run_id" replace initial-continuity-verified
+  trap "release_operation_cleanup '$run_id' '$attempt_id'" EXIT
+  entry_fence_acquire "$attempt_id"
+  release_operation_event "$run_id" replace entry-fence-acquired
+  artifact_compose "$run_id" stop app commerce-reconciler
+  release_operation_event "$run_id" replace writers-quiesced
+  run_release_continuity_preflight "$run_id"
+  release_operation_event "$run_id" replace final-continuity-verified
+
+  while IFS= read -r service; do
+    [ "$service" != analytics ] || die 'analytics uses its dedicated deployment lane'
+    container="$(container_for_service "$service")"
+    expected="$(jq -er --arg service "$service" '.[$service].imageRef' "$transaction/next-service-releases.json")"
+    if jq -e --arg service "$service" '.replacedServices | index($service)' "$transaction/receipt.json" >/dev/null; then
+      verify_container_image_identity "$container" "$expected"
+      release_operation_event "$run_id" replace "replacement-complete:$service"
+      continue
+    fi
+    attempt_service="$(jq -r '.replacementAttempt.service // empty' "$transaction/receipt.json")"
+    if [ -n "$attempt_service" ] && [ "$attempt_service" != "$service" ]; then
+      die 'replacement checkpoint names a different service'
+    fi
+    if [ "$attempt_service" = "$service" ]; then
+      prior_id="$(jq -er '.replacementAttempt.priorContainerId' "$transaction/receipt.json")"
+      current_id="$(docker inspect "$container" --format '{{.Id}}' 2>/dev/null || true)"
+    else
+      prior_id="$(docker inspect "$container" --format '{{.Id}}')"
+      temporary="$transaction/receipt.json.new"
+      jq --arg service "$service" --arg priorContainerId "$prior_id" \
+        '.replacementAttempt={service:$service,priorContainerId:$priorContainerId}' "$transaction/receipt.json" > "$temporary"
+      chown root:root "$temporary"; chmod 0600 "$temporary"; sync -f "$temporary"
+      mv -f -- "$temporary" "$transaction/receipt.json"
+      current_id="$prior_id"
+    fi
+    if [ -z "$current_id" ] || [ "$current_id" = "$prior_id" ] || \
+      ! verify_container_image "$container" "$expected" >/dev/null 2>&1; then
+      artifact_compose_service_from "$run_id" candidate "$service" up -d --no-deps --force-recreate --no-build --pull never
+      verify_container_image "$container" "$expected"
+    fi
+    temporary="$transaction/receipt.json.new"
+    jq --arg service "$service" '.replacedServices += [$service] | del(.replacementAttempt)' "$transaction/receipt.json" > "$temporary"
+    chown root:root "$temporary"; chmod 0600 "$temporary"; sync -f "$temporary"
+    mv -f -- "$temporary" "$transaction/receipt.json"
+    release_operation_event "$run_id" replace "replacement-complete:$service"
+  done < <(jq -r '.deployment.servicesToReplace[]' "$transaction/impact-plan.json")
+
+  restore_release_writers
+  release_operation_event "$run_id" replace writers-restored
+  entry_fence_release "$attempt_id"
+  release_operation_event "$run_id" replace entry-fence-released
+  verify_release_operation "$run_id" replace
+  operation_path="$(operation_evidence_path "$run_id" replace)"
+  operation_sha="$(sha256sum "$operation_path" | cut -d' ' -f1)"
+  jq --arg attemptId "$attempt_id" --arg replacementOperationSha256 "$operation_sha" \
+    '.replacementEvidence={attemptId:$attemptId,replacementOperationSha256:$replacementOperationSha256}' \
+    "$transaction/receipt.json" > "$transaction/receipt.json.new"
+  chown root:root "$transaction/receipt.json.new"; chmod 0600 "$transaction/receipt.json.new"; sync -f "$transaction/receipt.json.new"
+  mv -f -- "$transaction/receipt.json.new" "$transaction/receipt.json"
+  transaction_set_phase "$run_id" replaced
+  trap - EXIT
+}
+
+verify_container_image_identity() {
+  local container="$1" expected="$2" configured actual expected_id
+  validate_image_ref "$expected"
+  configured="$(docker inspect "$container" --format '{{.Config.Image}}')"
+  [ "$configured" = "$expected" ] || die "$container configured image does not match the manifest"
+  actual="$(docker inspect "$container" --format '{{.Image}}')"
+  expected_id="$(docker image inspect "$expected" --format '{{.Id}}')"
+  [ -n "$actual" ] && [ "$actual" = "$expected_id" ] || die "$container actual image ID does not match the exact digest"
+}
+
+verify_container_image() {
+  local container="$1" expected="$2"
+  [ "$(docker inspect "$container" --format '{{.State.Running}}')" = true ] || die "$container is not running"
+  verify_container_image_identity "$container" "$expected"
+}
+
+verify_pulled_image() {
+  local expected="$1"
+  validate_image_ref "$expected"
+  docker image inspect "$expected" --format '{{.Id}}' | grep -Eq '^sha256:[0-9a-f]{64}$' ||
+    die 'declared exact image digest is not present locally'
+}
+
+require_container_health() {
+  local container="$1" health_value
+  health_value="$(docker inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
+  [ "$health_value" = healthy ] || die "$container is not healthy"
+}
+
+verify_public_provenance_from() {
+  local run_id="$1" source="$2" body source_sha app_ref config_sha origin root releases
+  root="$(artifact_transaction "$run_id")/$source"
+  if [ "$source" = candidate ]; then
+    releases="$(artifact_transaction "$run_id")/next-service-releases.json"
+  elif [ "$source" = prior ]; then
+    releases="$root/service-releases.json"
+  else
+    die 'invalid provenance source'
+  fi
+  source_sha="$(jq -er '.app.sourceSha' "$releases")"
+  validate_sha "$source_sha"
+  app_ref="$(jq -er '.app.imageRef' "$releases")"
+  config_sha="sha256:$(sha256sum "$root/target-public-config.json" | cut -d' ' -f1)"
+  origin="$(jq -er '.publicOrigin' "$root/target-public-config.json")"
+  for url in 'http://127.0.0.1:3000/api/health' "$origin/api/health"; do
+    body="$(curl --fail --silent --show-error --max-time 10 "$url")"
+    jq -e --arg sha "$source_sha" --arg artifact "$app_ref" --arg config "$config_sha" --arg origin "$origin" \
+      '.status=="ok" and .gitSha==$sha and .artifactDigest==$artifact and .configProfileSha256==$config and .publicOrigin==$origin' \
+      <<<"$body" >/dev/null || die "public health provenance mismatch at $url"
+  done
+}
+
+verify_public_provenance() {
+  verify_public_provenance_from "$1" candidate
+}
+
+verify_release_runtime_state() {
+  local run_id="$1" source="$2" container service releases
+  verify_runtime_profile "$run_id" "$source"
+  if [ "$source" = candidate ]; then
+    releases="$(artifact_transaction "$run_id")/next-service-releases.json"
+  else
+    releases="$(artifact_transaction "$run_id")/prior/service-releases.json"
+  fi
+  while read -r container service; do
+    verify_container_image "$container" "$(jq -er --arg service "$service" '.[$service].imageRef' "$releases")"
+  done <<'EOF'
+beacon-app app
+beacon-commerce-reconciler commerce-reconciler
+beacon-tapestry tapestry
+beacon-playlist-bot playlist-bot
+EOF
+  verify_container_image beacon-postgres "$(artifact_ref_from "$run_id" "$source" externalImages postgres)"
+  verify_container_image beacon-livekit "$(artifact_ref_from "$run_id" "$source" externalImages livekit)"
+  verify_pulled_image "$(jq -er '.analytics.imageRef' "$releases")"
+  for container in beacon-app beacon-commerce-reconciler beacon-tapestry beacon-playlist-bot beacon-postgres; do
+    require_container_health "$container"
+  done
+  curl --fail --silent --show-error --max-time 5 --output /dev/null http://127.0.0.1:7880 ||
+    die 'beacon-livekit health endpoint failed'
+  curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/api/health/ready >/dev/null ||
+    die 'application readiness endpoint failed'
+  verify_public_provenance_from "$run_id" "$source"
+  boundary
+}
+
+artifact_status() {
+  local run_id="$1" target="$2" transaction archive
+  if [ "$target" = production ]; then require_release_lane oci-production; fi
+  if [ "$target" = production ] && transaction_finish_committed "$run_id"; then return 0; fi
+  if [ "$target" = shadow ]; then
+    local cleanup_mode="${SHADOW_CLEANUP_MODE:-source}" receipt archive
+    receipt="${DELIVERY_RECEIPT:-$(artifact_receipt "$run_id")}"
+    if [ "$cleanup_mode" = terminal ]; then
+      transaction_require_shadow_cleanup "$run_id" "$receipt"
+      jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$receipt"
+      return 0
+    fi
+    if [ "$cleanup_mode" = archive ]; then
+      archive="$SHADOW_CLEANUP_ARCHIVE"
+      transaction_require_shadow_cleanup "$run_id" "$receipt" "$archive"
+      persist_shadow_cleanup_receipt "$run_id" "$receipt"
+      jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$receipt"
+    else
+      transaction_require "$run_id" "$target" prepared shadowed
+      if [ "$(transaction_phase "$run_id")" = prepared ]; then
+        artifact_compose "$run_id" config --quiet
+        transaction_set_phase "$run_id" shadowed
+        test_failpoint shadowed-phase-persisted
+      fi
+      receipt="$(artifact_receipt "$run_id")"
+      persist_shadow_cleanup_receipt "$run_id" "$receipt"
+      jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$receipt"
+      transaction="$(artifact_transaction "$run_id")"
+      archive="${transaction}.shadowed.${DELIVERY_RUN_ID}-${DELIVERY_RUN_ATTEMPT}"
+      [ ! -e "$archive" ] && [ ! -L "$archive" ] || die 'shadow cleanup archive already exists'
+      mv -- "$transaction" "$archive"
+      test_failpoint shadow-cleanup-rename
+    fi
+    sync -f "$TRANSACTION_ROOT"
+    test_failpoint shadow-cleanup-first-parent-fsync
+    rm -rf --one-file-system -- "$archive"
+    test_failpoint shadow-cleanup-unlink
+    sync -f "$TRANSACTION_ROOT"
+    test_failpoint shadow-cleanup-final-parent-fsync
+    return 0
+  fi
+  transaction_require "$run_id" "$target" prepared replaced
+  [ "$(transaction_phase "$run_id")" = replaced ] || die 'production status requires a completed replacement'
+  verify_release_runtime_state "$run_id" candidate
+  atomic_install_current_state "$(artifact_transaction "$run_id")"
+  transaction_set_phase "$run_id" committed
+  transaction_clear_active "$run_id"
+}
+
+artifact_rollback() {
+  local run_id="$1" phase transaction prior_app prior_worker preflight_ready=false migration_performed=false service temporary
+  local selected_json attempt_id expected operation_path operation_sha
+  require_release_lane oci-production
+  if transaction_finish_rolled_back "$run_id"; then return 0; fi
+  transaction_require_rollback "$run_id"
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+  bind_rollback_publication "$run_id"
+  if [ ! -e "$ACTIVE_TRANSACTION" ]; then atomic_write_active_transaction "$run_id"; fi
+  transaction="$(artifact_transaction "$run_id")"
+  ensure_prior_service_releases "$transaction"
+  phase="$(transaction_phase "$run_id")"
+  if [ "$phase" = migration-attempted ] || [ "$phase" = migrated ] || \
+     { [ -f "$transaction/migration-state.json" ] && [ "$(jq '.pending|length' "$transaction/migration-state.json")" -gt 0 ]; }; then
+    migration_performed=true
+  fi
+  selected_json="$(jq -c --argjson migration "$migration_performed" '
+    (.replacedServices + (if .replacementAttempt.service then [.replacementAttempt.service] else [] end) +
+      (if $migration then ["app","commerce-reconciler"] else [] end)) | unique
+  ' "$transaction/receipt.json")"
+  if [ "$(jq 'length' <<<"$selected_json")" -eq 0 ]; then
+    verify_release_runtime_state "$run_id" prior
+    atomic_install_release_state "$(artifact_transaction "$run_id")" prior
+    transaction_set_phase "$run_id" rolled-back
+    transaction_clear_active "$run_id"
+    return 0
+  fi
+
+  release_recover_stale_attempt "$run_id" rollback
+  run_release_continuity_preflight "$run_id"
+  attempt_id="$(release_operation_start "$run_id" rollback "$selected_json")"
+  release_operation_event "$run_id" rollback initial-continuity-verified
+  trap "release_operation_cleanup '$run_id' '$attempt_id'" EXIT
+  entry_fence_acquire "$attempt_id"
+  release_operation_event "$run_id" rollback entry-fence-acquired
+  artifact_compose "$run_id" stop app commerce-reconciler
+  release_operation_event "$run_id" rollback writers-quiesced
+  run_release_continuity_preflight "$run_id"
+  release_operation_event "$run_id" rollback final-continuity-verified
+
+  if [ "$migration_performed" = true ]; then
     for _attempt in $(seq 1 30); do
-      if compose "$workspace" "$candidate_tag" run --rm --no-deps migrate \
+      if artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
         npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null; then
         preflight_ready=true
         break
       fi
       sleep 2
     done
-    [ "$preflight_ready" = true ] || {
-      docker stop beacon-commerce-reconciler 2>/dev/null || true
-      die 'automatic rollback refused: durable grant state did not quiesce'
-    }
-    docker stop beacon-commerce-reconciler 2>/dev/null || true
-    compose "$workspace" "$candidate_tag" run --rm --no-deps migrate \
+    [ "$preflight_ready" = true ] || die 'automatic rollback refused: durable grant state did not quiesce'
+    artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
       npx tsx scripts/stage-grant-rollback-preflight.ts >/dev/null ||
       die 'automatic rollback refused: stable grant preflight failed'
-
-    # Never put an outbox-unaware application back in front of the migrated
-    # database. A failed first rollout remains isolated for human forward
-    # repair instead of silently reopening legacy grant writers.
-    docker run --rm --entrypoint test \
-      "harmonic-beacon/app:${rollback_tag}" \
-      -f /app/src/lib/stage-grant-effects.ts ||
-      die 'automatic rollback refused: previous app lacks durable grant contract'
-    docker run --rm --entrypoint test \
-      "harmonic-beacon/app:${rollback_tag}" \
-      -f /app/scripts/stage-grant-rollback-preflight.ts ||
-      die 'automatic rollback refused: previous worker lacks rollback preflight'
-
-    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate \
-      app commerce-reconciler
-    worker_expected=true
-  elif [ "$app_available" = true ]; then
-    # Build/gate/quiesce failures before a migration attempt never changed the
-    # durable schema. Ensure the preserved application is serving again.
-    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate app
-    worker_expected=true
+    prior_app="$(jq -er '.app.imageRef' "$transaction/prior/service-releases.json")"
+    prior_worker="$(jq -er '."commerce-reconciler".imageRef' "$transaction/prior/service-releases.json")"
+    jq -e --arg run "$run_id" --arg priorApp "$prior_app" --arg priorWorker "$prior_worker" '
+      .schemaVersion=="harmonic-beacon.backup-restore.v2" and .runId==$run and .result=="success" and
+      .priorAppImageRef==$priorApp and .priorWorkerImageRef==$priorWorker and .priorAppHealth=="passed" and
+      .priorWorkerHeartbeat=="passed" and .priorSchemaCheck=="passed" and .hostedRuntimeDrill=="passed"
+    ' "$transaction/backup-restore.json" >/dev/null || die 'automatic rollback refused: exact prior runtime durable grant contract proof is absent'
+    verify_pulled_image "$prior_app"
+    verify_pulled_image "$prior_worker"
   fi
+  verify_runtime_profile "$run_id" prior
+  while IFS= read -r service; do
+    [ "$service" != analytics ] || die 'analytics uses its dedicated deployment lane'
+    expected="$(jq -er --arg service "$service" '.[$service].imageRef' "$transaction/prior/service-releases.json")"
+    if jq -e --arg service "$service" '.rolledBackServices | index($service)' "$transaction/receipt.json" >/dev/null; then
+      verify_container_image_identity "$(container_for_service "$service")" "$expected"
+      release_operation_event "$run_id" rollback "replacement-complete:$service"
+      continue
+    fi
+    artifact_compose_service_from "$run_id" prior "$service" up -d --no-deps --force-recreate --no-build --pull never
+    verify_container_image "$(container_for_service "$service")" "$expected"
+    temporary="$transaction/receipt.json.new"
+    jq --arg service "$service" '.rolledBackServices += [$service] | del(.replacementAttempt)' "$transaction/receipt.json" > "$temporary"
+    chown root:root "$temporary"
+    chmod 0600 "$temporary"
+    sync -f "$temporary"
+    mv -f -- "$temporary" "$transaction/receipt.json"
+    release_operation_event "$run_id" rollback "replacement-complete:$service"
+  done < <(jq -r '.[]' <<<"$selected_json")
 
-  if [ "$tapestry_available" = true ]; then
-    compose "$workspace" "$rollback_tag" up -d --no-deps --force-recreate tapestry
-  fi
-
+  restore_release_writers
+  release_operation_event "$run_id" rollback writers-restored
   for _attempt in $(seq 1 60); do
-    local app_ready=true
-    local worker_ready=true
-    local tapestry_ready=true
-    if [ "$app_available" = true ]; then
-      if [ "$(health beacon-app 2>/dev/null || true)" != healthy ] || \
-        ! curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready >/dev/null; then
-        app_ready=false
-      fi
-    fi
-    if [ "$worker_expected" = true ] && \
-      [ "$(health beacon-commerce-reconciler 2>/dev/null || true)" != healthy ]; then
-      worker_ready=false
-    fi
-    if [ "$tapestry_available" = true ] && \
-      [ "$(health beacon-tapestry 2>/dev/null || true)" != healthy ]; then
-      tapestry_ready=false
-    fi
-    if [ "$app_ready" = true ] && [ "$worker_ready" = true ] && \
-      [ "$tapestry_ready" = true ]; then
+    if [ "$(health beacon-app 2>/dev/null || true)" = healthy ] && \
+       [ "$(health beacon-commerce-reconciler 2>/dev/null || true)" = healthy ] && \
+       [ "$(health beacon-tapestry 2>/dev/null || true)" = healthy ] && \
+       [ "$(docker inspect beacon-playlist-bot --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ] && \
+       docker exec beacon-app curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3000/api/health/ready >/dev/null; then
+      verify_release_runtime_state "$run_id" prior
+      # Publish the verified prior v4 high-water while writers remain fenced.
+      atomic_install_release_state "$(artifact_transaction "$run_id")" prior
+      entry_fence_release "$attempt_id"
+      release_operation_event "$run_id" rollback entry-fence-released
+      verify_release_operation "$run_id" rollback
+      operation_path="$(operation_evidence_path "$run_id" rollback)"
+      operation_sha="$(sha256sum "$operation_path" | cut -d' ' -f1)"
+      jq --arg attemptId "$attempt_id" --arg rollbackOperationSha256 "$operation_sha" \
+        '.rollbackEvidence={attemptId:$attemptId,rollbackOperationSha256:$rollbackOperationSha256}' \
+        "$transaction/receipt.json" > "$transaction/receipt.json.new"
+      chown root:root "$transaction/receipt.json.new"; chmod 0600 "$transaction/receipt.json.new"; sync -f "$transaction/receipt.json.new"
+      mv -f -- "$transaction/receipt.json.new" "$transaction/receipt.json"
+      transaction_set_phase "$run_id" rolled-back
+      transaction_clear_active "$run_id"
+      trap - EXIT
       return 0
     fi
     sleep 2
   done
+  die 'rollback services did not become ready; the cleanup trap will restore writer availability and release the entry fence'
+}
 
-  compose "$workspace" "$rollback_tag" ps
-  die 'rollback services did not become ready'
+schedule_apply() {
+  local request_id="$1" request expected
+  validate_uuid "$request_id"
+  request="$SCHEDULE_REQUEST_ROOT/${request_id}.json"
+  require_secure_root_file "$request" 600
+  jq -e --arg request "$request_id" '
+    type=="object" and (keys|sort)==(["actorUserId","expectedScheduledAt","reason","requestId","scheduledAt","schemaVersion","scope","sessionId"]|sort) and
+    .schemaVersion=="harmonic-beacon.schedule-operation.v1" and .scope=="synthetic-rehearsal" and .requestId==$request
+  ' "$request" >/dev/null || die 'schedule operation request is invalid'
+  require_secure_root_file "$CURRENT_STATE" 600
+  expected="$(jq -er '.serviceReleases.app.imageRef' "$CURRENT_STATE")"
+  verify_container_image beacon-app "$expected"
+  docker exec -i beacon-app npx tsx scripts/authorized-session-schedule.ts < "$request"
 }
 
 usage() {
-  printf '%s\n' 'usage: hb-deploy {preflight|preserve|build|quiesce|migrate|replace|health|status|boundary|rollback} ...' >&2
+  printf '%s\n' 'usage: hb-deploy artifact-impact-state; hb-deploy artifact-{prepare|impact|preflight|migrate|replace|status|authorize-rollback|rollback} DELIVERY_RUN_ID DELIVERY_ATTEMPT ...; hb-deploy schedule-apply REQUEST_ID; hb-deploy {health|boundary} ...' >&2
   exit 2
 }
 
 require_root
+umask 077
+cd /
 [ "$#" -gt 0 ] || usage
 command="$1"
 shift
 
 case "$command" in
-  preflight) [ "$#" -eq 2 ] || usage; preflight "$@" ;;
-  preserve) [ "$#" -eq 1 ] || usage; preserve "$@" ;;
-  build) [ "$#" -eq 4 ] || usage; build "$@" ;;
-  quiesce) [ "$#" -eq 2 ] || usage; quiesce "$@" ;;
-  migrate) [ "$#" -eq 2 ] || usage; migrate "$@" ;;
-  replace) [ "$#" -eq 2 ] || usage; replace "$@" ;;
+  artifact-impact-state)
+    unset NODE_OPTIONS NODE_PATH GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE \
+      DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME \
+      SSL_CERT_FILE SSL_CERT_DIR GITHUB_TOKEN GH_TOKEN
+    export HOME=/root
+    verify_installed_implementation
+    [ "$#" -eq 0 ] || usage
+    ;;
+  artifact-*)
+    unset NODE_OPTIONS NODE_PATH GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE \
+      DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME \
+      SSL_CERT_FILE SSL_CERT_DIR GITHUB_TOKEN GH_TOKEN
+    export HOME=/root
+    verify_installed_implementation
+    [ "$#" -ge 3 ] || usage
+    readonly DELIVERY_RUN_ID="$1" DELIVERY_RUN_ATTEMPT="$2"
+    validate_run_id "$DELIVERY_RUN_ID"
+    [[ "$DELIVERY_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]] || die 'invalid delivery attempt'
+    shift 2
+    ;;
+  schedule-apply)
+    unset NODE_OPTIONS NODE_PATH GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT GIT_DIR GIT_WORK_TREE \
+      DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME \
+      SSL_CERT_FILE SSL_CERT_DIR GITHUB_TOKEN GH_TOKEN
+    export HOME=/root
+    verify_installed_implementation
+    ;;
+esac
+
+# Both lanes serialize against the same lock. Root lane-state changes must take
+# this lock before replacing RELEASE_LANE_STATE.
+require_secure_root_ancestors "$ARTIFACT_STATE/.transaction.lock"
+if [ -e "$TRANSACTION_ROOT" ] || [ -L "$TRANSACTION_ROOT" ]; then
+  require_secure_root_ancestors "$TRANSACTION_ROOT/.probe"
+fi
+install -d -o root -g root -m 0700 "$ARTIFACT_STATE" "$TRANSACTION_ROOT"
+exec 9>"$ARTIFACT_STATE/.transaction.lock"
+flock -x 9
+
+case "$command" in
   health) [ "$#" -eq 1 ] || usage; health "$@" ;;
-  status) [ "$#" -eq 2 ] || usage; status "$@" ;;
   boundary) [ "$#" -eq 0 ] || usage; boundary ;;
-  rollback) [ "$#" -eq 5 ] || usage; rollback "$@" ;;
+  artifact-impact-state) artifact_impact_state ;;
+  artifact-prepare) [ "$#" -eq 8 ] || usage; artifact_prepare "$@" ;;
+  artifact-impact) [ "$#" -eq 2 ] || usage; require_delivery_invocation "$1" "$2" preflight; artifact_impact "$@" ;;
+  artifact-preflight) [ "$#" -eq 2 ] || usage; require_delivery_invocation "$1" "$2" preflight; artifact_preflight "$@" ;;
+  artifact-migrate) [ "$#" -eq 1 ] || usage; require_delivery_invocation "$1" production migrate; artifact_migrate "$@" ;;
+  artifact-replace) [ "$#" -eq 1 ] || usage; require_delivery_invocation "$1" production replace; artifact_replace "$@" ;;
+  artifact-status) [ "$#" -eq 2 ] || usage; require_delivery_invocation "$1" "$2" status; artifact_status "$@" ;;
+  artifact-authorize-rollback) [ "$#" -eq 1 ] || usage; artifact_authorize_rollback "$@" ;;
+  artifact-rollback) [ "$#" -eq 1 ] || usage; require_delivery_invocation "$1" production rollback; artifact_rollback "$@" ;;
+  schedule-apply) [ "$#" -eq 1 ] || usage; schedule_apply "$@" ;;
   *) usage ;;
 esac

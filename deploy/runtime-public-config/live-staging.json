@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "harmonic-beacon.runtime-public-config.v1",
+  "publicOrigin": "https://live-staging.harmonicbeacon.com",
+  "livekitPublicUrl": "wss://live-staging.harmonicbeacon.com/rtc",
+  "featureFlags": {
+    "tapestryPublic": false,
+    "promoInvitations": false
+  }
+}

@@ -22,6 +22,11 @@ const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 // pinned Playwright browser. CI leaves this unset and keeps its normal binary.
 const CHROME_EXECUTABLE = process.env.PLAYWRIGHT_CHROME_EXECUTABLE?.trim() || undefined;
 
+export function managedServerCommand(port: number, reuseNextBuild: boolean): string {
+    const start = `npx next start --port ${port}`;
+    return reuseNextBuild ? start : `npm run build && ${start}`;
+}
+
 // Resolve the fixture database URL once so both the web server and tests
 // that flip fixture state (e.g. opening doors by setting a session LIVE)
 // talk to the same throwaway database.
@@ -57,6 +62,9 @@ export default defineConfig({
         : [['list'], ['html', { open: 'never' }]],
     use: {
         baseURL: BASE_URL,
+        // The job-local production-mode fixture terminates WSS with an
+        // ephemeral self-signed certificate. No external origin is exempted.
+        ignoreHTTPSErrors: true,
         locale: 'es-CR',
         timezoneId: 'America/Costa_Rica',
         trace: 'retain-on-failure',
@@ -158,7 +166,7 @@ export default defineConfig({
         : {
               // Production build, not dev: no HMR sockets, no dev-tools
               // chrome in screenshots, and the gate exercises what ships.
-              command: `npm run build && npx next start --port ${PORT}`,
+              command: managedServerCommand(PORT, process.env.E2E_REUSE_NEXT_BUILD === '1'),
               // The landing renders (degraded) even without a database, so a
               // 200 here means "server up"; stack-dependent suites probe and
               // skip separately with a precise reason.
@@ -177,7 +185,13 @@ export default defineConfig({
                   // its E2E dashboard gate is disabled.
                   E2E_CLOCK_NOW: '2026-08-21T12:00:00.000Z',
                   SESSION_COOKIE_TTL_SECONDS: '604800',
-                  NEXT_PUBLIC_LIVEKIT_URL: process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+                  LIVEKIT_PUBLIC_URL:
+                      process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+                  LIVEKIT_PUBLIC_URL_ALLOWLIST:
+                      process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+                  ...(process.env.E2E_LIVEKIT_CA_CERT
+                      ? { NODE_EXTRA_CA_CERTS: process.env.E2E_LIVEKIT_CA_CERT }
+                      : {}),
                   LIVEKIT_API_KEY: process.env.E2E_LIVEKIT_API_KEY ?? 'devkey',
                   LIVEKIT_API_SECRET: process.env.E2E_LIVEKIT_API_SECRET ?? 'secret',
                   LIVEKIT_ROOM_NAME: 'beacon',

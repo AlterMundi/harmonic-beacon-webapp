@@ -3,10 +3,14 @@ Description=Harmonic Beacon analytics and storage monitor
 After=docker.service
 Requires=docker.service
 RequiresMountsFor=/mnt/beacon-data
+OnFailure=hb-analytics-monitor-failure@%n.service
 
 [Service]
 Type=oneshot
 User=root
 EnvironmentFile=-/etc/harmonic-beacon/analytics-backup.env
+StateDirectory=harmonic-beacon/analytics-monitor-notification
+StateDirectoryMode=0700
 ExecStartPre=/usr/bin/mountpoint -q /mnt/beacon-data
-ExecStart=/opt/beacon/analytics/ops/analytics/monitor-analytics.sh
+ExecStart=/usr/local/libexec/harmonic-beacon/analytics/monitor-analytics.sh
+ExecStartPost=/usr/local/libexec/harmonic-beacon/analytics/notify-analytics-monitor.mjs recovery

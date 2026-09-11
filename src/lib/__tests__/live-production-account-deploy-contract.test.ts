@@ -105,9 +105,11 @@ describe('Live production Account app-only contract', () => {
         expect(smoke).toContain("--proto '=https'");
         expect(smoke).toContain('/var/log/nginx/access.log');
         expect(smoke).not.toMatch(/\bnode\b/);
-        expect(deploy).toContain('run --rm --no-deps migrate npx prisma migrate deploy');
+        expect(deploy).not.toContain('run --rm --no-deps migrate npx prisma migrate deploy');
+        expect(deploy).not.toMatch(/\bgit\b/);
+        expect(deploy).not.toMatch(/^\s+preflight\)/m);
+        expect(deploy).toContain('usage: hb-deploy artifact-impact-state; hb-deploy artifact-{prepare|impact|preflight|migrate|replace|status|authorize-rollback|rollback} DELIVERY_RUN_ID DELIVERY_ATTEMPT');
         expect(deploy).toContain('Account RP secret reached unexpected container');
-        expect(deploy).toContain('Account bundle exists before the supervised Account activation');
         expect(deploy).toContain("ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'");
     });
 });

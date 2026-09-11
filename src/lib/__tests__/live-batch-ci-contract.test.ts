@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-type Step = { name?: string; run?: string; if?: string; uses?: string; with?: Record<string, unknown> };
+type Step = { name?: string; run?: string; if?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown> };
 type Job = { steps: Step[]; env?: Record<string, string>; services?: unknown; if?: string; 'runs-on'?: string };
 const workflow = () => parse(readFileSync('.github/workflows/e2e.yml', 'utf8')) as { jobs: Record<string, Job> };
 const helperConfig = 'e2e/helpers/playwright.config.ts';
@@ -185,7 +185,7 @@ describe('Isolated Account CI gate', () => {
     it('runs the Node protocol/runtime contracts explicitly before the real isolated four-project runner', () => {
         const job = workflow().jobs.account;
         expect(job, 'Account must have its own Docker-capable job').toBeDefined();
-        expect(job['runs-on']).toBe('ubuntu-latest');
+        expect(job['runs-on']).toBe('ubuntu-24.04');
         expect(job.services).toBeUndefined(); // runner creates and verifies its own PG/LiveKit
         const commands = job.steps.map((step) => step.run ?? '').join('\n');
         expect(commands).toContain('node --import tsx --test e2e/account-fixture/protocol.test.ts e2e/account-fixture/runtime-backend.test.ts');
@@ -214,7 +214,7 @@ describe('Isolated Account CI gate', () => {
         expect(gate?.run).toContain('pactl info');
         expect(gate?.run).toContain('trap');
         expect(gate?.run).not.toMatch(/sudo pulseaudio|auth-anonymous=1/);
-        const artifact = job.steps.find((step) => step.uses === 'actions/upload-artifact@v4');
+        const artifact = job.steps.find((step) => step.uses === 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02');
         expect(artifact?.if).toBe('always() && github.event.repository.private == true');
         expect(artifact?.with?.['retention-days']).toBe(3);
         expect(String(artifact?.with?.path).trim().split('\n')).toEqual([
@@ -229,6 +229,57 @@ describe('Isolated Account CI gate', () => {
 });
 
 describe('Main browser CI execution policy', () => {
+    it('keeps the production-mode LiveKit public endpoint on a private WSS proxy', () => {
+        const job = workflow().jobs.e2e;
+        expect(job.env?.E2E_LIVEKIT_URL).toBe('ws://localhost:7880');
+        expect(job.env?.E2E_LIVEKIT_PUBLIC_URL).toBe('wss://127.0.0.1:7443');
+        const proxy = job.steps.find((step) => step.name === 'Start private TLS signaling proxy');
+        expect(proxy?.run).toContain('umask 077');
+        expect(proxy?.run).toContain('e2e/fixtures/livekit-tls-proxy.mjs');
+        expect(proxy?.run).toContain('--listen-port 7443 --upstream-port 7880');
+        expect(proxy?.run).toContain('E2E_LIVEKIT_CA_CERT=');
+        expect(proxy?.run).toContain('LIVEKIT_TLS_PROXY_PID=');
+        expect(proxy?.run).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|--insecure|-k\b/);
+
+        const cleanup = job.steps.find((step) => step.name === 'Stop LiveKit fixtures');
+        expect(cleanup?.if).toBe('always()');
+        expect(cleanup?.run).toContain('/proc/$LIVEKIT_TLS_PROXY_PID/cmdline');
+        expect(cleanup?.run).toContain('docker rm --force e2e-livekit');
+
+        const config = readFileSync('playwright.config.ts', 'utf8');
+        expect(config).toContain('process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL');
+        expect(config).toContain('NODE_EXTRA_CA_CERTS: process.env.E2E_LIVEKIT_CA_CERT');
+        expect(config).not.toContain("NODE_ENV: 'test'");
+
+        const activation = readFileSync('e2e/tests/audio-activation.spec.ts', 'utf8');
+        expect(activation).toContain(
+            "process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880'",
+        );
+        const qualification = readFileSync('e2e/tests/oci-qualification.spec.ts', 'utf8');
+        expect(qualification).toContain(
+            "test.skip(!hasQualificationContext, 'runs only inside the isolated OCI qualification harness')",
+        );
+    });
+
+    it('builds the main browser candidate once and reuses it only for later engines on a pinned runner', () => {
+        const parsed = workflow();
+        const job = parsed.jobs.e2e;
+        const account = parsed.jobs.account;
+        const chromium = job.steps.find((step) => step.name === 'Run Chromium and Android gates');
+        const firefox = job.steps.find((step) => step.name === 'Run Firefox functional and accessibility gates');
+        const webkit = job.steps.find((step) => step.name === 'Run iPhone/WebKit media gate');
+
+        expect(job['runs-on']).toBe('ubuntu-24.04');
+        expect(account['runs-on']).toBe('ubuntu-24.04');
+        expect(chromium?.env?.E2E_REUSE_NEXT_BUILD).toBeUndefined();
+        expect(firefox?.env?.E2E_REUSE_NEXT_BUILD).toBe('1');
+        expect(webkit?.env?.E2E_REUSE_NEXT_BUILD).toBe('1');
+        expect(chromium?.run).toContain('--project=chromium');
+        expect(chromium?.run).toContain('--project=android-chrome');
+        expect(firefox?.run).toContain('--project=firefox');
+        expect(webkit?.run).toContain('--project=iphone-webkit');
+    });
+
     it('executes discovery contracts and prevents retry masking in every acceptance command', () => {
         const job = workflow().jobs.e2e;
         const steps = job.steps;

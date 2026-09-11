@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 2,
+  "services": [
+    {
+      "id": "fixture-service",
+      "name": "Unresolved fixture",
+      "owner": {"status": "verified", "name": "AlterMundi"},
+      "repository": {"status": "verified", "slug": "AlterMundi/harmonic-beacon-webapp"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "documented", "name": "release"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/ci.yml"},
+      "deployAdapter": {
+        "status": "documented",
+        "kind": "repository-script",
+        "references": ["docs/ops/OPERATING_CONTRACT.md"]
+      },
+      "localPaths": ["src"],
+      "deployedRevision": {"status": "unresolved", "value": null},
+      "artifactFingerprint": {
+        "status": "unresolved",
+        "kind": "oci-digest",
+        "value": null,
+        "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537"]
+      },
+      "health": {
+        "status": "verified",
+        "endpoints": [
+          {"name": "ready", "url": "https://example.com/ready", "expectStatus": [200]}
+        ]
+      },
+      "alerts": {
+        "route": {
+          "status": "documented",
+          "kind": "service-monitor",
+          "references": ["docs/ops/OPERATING_CONTRACT.md"]
+        },
+        "recipientProof": {
+          "status": "unresolved",
+          "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537"], "outcome": null
+        }
+      },
+      "recovery": {
+        "target": {
+          "status": "documented",
+          "kind": "prior-artifact",
+          "references": ["docs/ops/OPERATING_CONTRACT.md"]
+        },
+        "proof": {
+          "status": "unresolved",
+          "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537"], "outcome": null
+        }
+      },
+      "staging": {
+        "status": "unavailable",
+        "environments": [],
+        "drill": {
+          "status": "unresolved",
+          "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537"], "outcome": null
+        }
+      },
+      "unresolvedRequirements": [
+        {
+          "id": "fixture-external-access",
+          "kind": "repository-access",
+          "status": "external",
+          "owner": "external-owner",
+          "blocks": ["delivery-proof"],
+          "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/537"
+        }
+      ],
+      "mutationPolicy": "A nonempty sentence is policy, not operational evidence."
+    }
+  ]
+}

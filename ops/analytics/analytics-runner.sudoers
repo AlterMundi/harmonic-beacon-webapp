@@ -1,0 +1,4 @@
+Defaults:analytics-runner !setenv
+
+Cmnd_Alias HARMONIC_BEACON_ANALYTICS_DELIVERY = /usr/local/sbin/hb-analytics-delivery *
+analytics-runner ALL=(root) NOPASSWD: HARMONIC_BEACON_ANALYTICS_DELIVERY

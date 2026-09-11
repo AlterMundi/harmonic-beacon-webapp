@@ -44,9 +44,11 @@ npm run lint
 `tsc` was at zero as of July 2026 after a cleanup, which is what makes it usable
 as a signal. A type error introduced now is visible; a hundred are not.
 
-There is a pre-commit hook (husky + lint-staged) that runs eslint on staged files
-and the full test suite. If you need to bypass it for a work-in-progress commit,
-`--no-verify` exists, but the checks above should pass before review.
+The pre-commit hook (husky + lint-staged) runs ESLint only on staged JavaScript
+and TypeScript files. It deliberately does not repeat the full Vitest suite on
+every commit. Run the commands above before review; hosted CI still requires
+the full coverage suite, and release qualification still runs the full suite.
+`--no-verify` exists for work-in-progress commits, but it does not bypass CI.
 
 ## Conventions worth knowing
 

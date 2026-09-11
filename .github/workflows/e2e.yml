@@ -17,7 +17,7 @@ name: E2E quality gates
 on:
   pull_request:
     branches: [main, release]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
     # Documentation-only PRs cannot affect the browser/runtime contract. Keep
     # this filter scoped to pull_request: release deploys invoke workflow_call
     # and must always run the complete gate.
@@ -26,8 +26,11 @@ on:
       - '**/*.md'
   workflow_call:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: e2e-${{ github.head_ref || github.run_id }}
+  group: e2e-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -36,7 +39,7 @@ jobs:
     # ready_for_review event above runs this complete matrix before review;
     # workflow_call (release/deploy) remains unconditional.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -53,6 +56,10 @@ jobs:
     env:
       E2E_DATABASE_URL: postgresql://postgres:e2e@localhost:55432/beacon_test
       E2E_LIVEKIT_URL: ws://localhost:7880
+      # The production-mode application must expose secure signaling even
+      # against the job-local fixture. The load CLI keeps using plain loopback;
+      # 7881/7882 remain available to LiveKit's own RTC listeners.
+      E2E_LIVEKIT_PUBLIC_URL: wss://127.0.0.1:7443
       E2E_LIVEKIT_API_KEY: devkey
       E2E_LIVEKIT_API_SECRET: secret
       NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1'
@@ -72,14 +79,22 @@ jobs:
           mkdir -m 700 "$root/xdg" "$root/logs"
           printf 'BEACON_CI_ROOT=%s\nTMPDIR=%s\nXDG_RUNTIME_DIR=%s/xdg\n' "$root" "$root" "$root" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
           cache: 'npm'
 
-      - uses: actions/setup-go@v5
+      - name: Restore verified LiveKit load tester cache
+        id: livekit-cli-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/livekit-load-cli/lk
+          key: livekit-load-cli-v1-${{ runner.os }}-${{ runner.arch }}-go-1.25.8-${{ hashFiles('scripts/install-livekit-load-cli.sh', 'scripts/patches/livekit-cli-v2.16.3-vp8-depacketizer.patch') }}
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        if: steps.livekit-cli-cache.outputs.cache-hit != 'true'
         with:
           go-version: '1.25.8'
           cache: false
@@ -108,10 +123,43 @@ jobs:
           echo "LiveKit did not become ready" >&2
           exit 1
 
-      - name: Build verified LiveKit load tester
+      - name: Start private TLS signaling proxy
         run: |
-          scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/lk"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          set -euo pipefail
+          umask 077
+          cert="$BEACON_CI_ROOT/livekit.crt"
+          key="$BEACON_CI_ROOT/livekit.key"
+          log="$BEACON_CI_ROOT/logs/livekit-tls-proxy.log"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -keyout "$key" -out "$cert" -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          node e2e/fixtures/livekit-tls-proxy.mjs \
+            --cert "$cert" --key "$key" \
+            --listen-port 7443 --upstream-port 7880 >"$log" 2>&1 &
+          proxy_pid=$!
+          printf 'E2E_LIVEKIT_CA_CERT=%s\nLIVEKIT_TLS_PROXY_PID=%s\n' \
+            "$cert" "$proxy_pid" >> "$GITHUB_ENV"
+          for i in $(seq 1 50); do
+            kill -0 "$proxy_pid"
+            if curl --silent --show-error --fail --cacert "$cert" \
+              https://127.0.0.1:7443 >/dev/null; then
+              exit 0
+            fi
+            sleep 0.1
+          done
+          echo "Private LiveKit TLS proxy did not become ready" >&2
+          exit 1
+
+      - name: Build verified LiveKit load tester
+        if: steps.livekit-cli-cache.outputs.cache-hit != 'true'
+        run: scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/livekit-load-cli/lk"
+
+      - name: Verify cached or built LiveKit load tester
+        run: |
+          test -x "$RUNNER_TEMP/livekit-load-cli/lk"
+          test "$("$RUNNER_TEMP/livekit-load-cli/lk" --version)" = \
+            'lk version 2.16.3-hb-vp8.1'
+          echo "$RUNNER_TEMP/livekit-load-cli" >> "$GITHUB_PATH"
 
       - name: Run small dual-LiveKit load profile
         run: npm run load:livekit -- --profile ci --run-id "ci-${GITHUB_RUN_ID}"
@@ -120,7 +168,7 @@ jobs:
           LIVEKIT_API_KEY: ${{ env.E2E_LIVEKIT_API_KEY }}
           LIVEKIT_API_SECRET: ${{ env.E2E_LIVEKIT_API_SECRET }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: livekit-load-manifest
@@ -210,6 +258,8 @@ jobs:
 
       - name: Run Firefox functional and accessibility gates
         run: npx playwright test --retries=0 --workers=1 --project=firefox
+        env:
+          E2E_REUSE_NEXT_BUILD: '1'
 
       - name: Install WebKit after Chromium screenshot gates
         run: npx playwright install --with-deps webkit
@@ -221,6 +271,8 @@ jobs:
           e2e/tests/audio-activation.spec.ts
           e2e/tests/continuity-navigation.spec.ts
           --project=iphone-webkit
+        env:
+          E2E_REUSE_NEXT_BUILD: '1'
 
       - name: Verify grant, migration, commerce, and invitation durable outbox contracts
         # Real-PostgreSQL proof that grant revisions are serialized across two
@@ -254,7 +306,7 @@ jobs:
         if: failure()
         run: docker logs --tail 300 e2e-livekit
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always() && github.event.repository.private == true
         with:
           name: playwright-report
@@ -262,11 +314,26 @@ jobs:
           path: |
             playwright-report/
             test-results/helpers/
+            ${{ env.BEACON_CI_ROOT }}/logs/livekit-tls-proxy.log
+
+      - name: Stop LiveKit fixtures
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ "${LIVEKIT_TLS_PROXY_PID:-}" =~ ^[0-9]+$ ]] && \
+             kill -0 "$LIVEKIT_TLS_PROXY_PID" 2>/dev/null; then
+            cmdline=$(tr '\0' ' ' < "/proc/$LIVEKIT_TLS_PROXY_PID/cmdline")
+            case "$cmdline" in
+              *e2e/fixtures/livekit-tls-proxy.mjs*) kill -TERM "$LIVEKIT_TLS_PROXY_PID" ;;
+              *) echo "Refusing to signal unexpected PID $LIVEKIT_TLS_PROXY_PID" >&2; exit 1 ;;
+            esac
+          fi
+          docker rm --force e2e-livekit >/dev/null 2>&1 || true
 
   account:
     # Separate runner: no attachment to the legacy Account-disabled database/app.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read
@@ -277,9 +344,9 @@ jobs:
       - name: Prepare private Account socket and evidence root
         run: *prepare-private-socket-root
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
           cache: 'npm'
@@ -335,7 +402,7 @@ jobs:
             --retries=0 --workers=1
 
       - name: Retain private Account runtime and failure receipts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         # Test credentials, session-bearing traces and logs must not become
         # public artifacts. Never upload the copied app, keys or PG data.
         # Public forks still run the gate, but do not publish these receipts.

@@ -1,0 +1,84 @@
+name: Delivery gate dispatcher
+
+on:
+  pull_request_target:
+    branches: [main, release]
+    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled, closed]
+  workflow_run:
+    workflows: [CI, E2E quality gates, Audio boundary]
+    types: [requested, in_progress, completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to inspect in shadow mode
+        required: true
+        type: number
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: delivery-gate-dispatch-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.workflow_run.id || inputs.pr_number }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch exact-base delivery authority
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Resolve current protected PR and dispatch its exact target branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          WORKFLOW_HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          status_context=delivery-gate
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              pr_number="$INPUT_PR_NUMBER"
+              status_context=delivery-gate-shadow
+              ;;
+            pull_request_target)
+              if [ "$EVENT_ACTION" = closed ]; then exit 0; fi
+              pr_number="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
+              ;;
+            workflow_run)
+              [[ "$WORKFLOW_HEAD" =~ ^[0-9a-f]{40}$ ]] || exit 0
+              associated_prs="$(gh api --paginate --slurp \
+                -H 'Accept: application/vnd.github+json' \
+                "repos/$REPOSITORY/pulls?state=open&per_page=100")"
+              matching_prs="$(jq --arg head "$WORKFLOW_HEAD" \
+                '[.[][] | select(.head.sha == $head and (.base.ref == "main" or .base.ref == "release"))]' \
+                <<<"$associated_prs")"
+              [ "$(jq 'length' <<<"$matching_prs")" -eq 1 ] || exit 1
+              pr_number="$(jq -r '.[0].number' <<<"$matching_prs")"
+              ;;
+            *) exit 1 ;;
+          esac
+
+          pr="$(gh api "repos/$REPOSITORY/pulls/$pr_number")"
+          [ "$(jq -r '.state' <<<"$pr")" = open ] || exit 0
+          target_base="$(jq -r '.base.ref' <<<"$pr")"
+          base_sha="$(jq -r '.base.sha' <<<"$pr")"
+          head_sha="$(jq -r '.head.sha' <<<"$pr")"
+          case "$target_base" in
+            main|release) ;;
+            *) exit 1 ;;
+          esac
+          [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          if [ "$EVENT_NAME" = workflow_run ] && [ "$head_sha" != "$WORKFLOW_HEAD" ]; then exit 1; fi
+
+          gh api --method POST \
+            "repos/$REPOSITORY/actions/workflows/delivery-gate.yml/dispatches" \
+            -f ref="$target_base" \
+            -f "inputs[pr_number]=$pr_number" \
+            -f "inputs[status_context]=$status_context" >/dev/null

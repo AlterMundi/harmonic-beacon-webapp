@@ -1,0 +1,206 @@
+name: Analytics Delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Bounded analytics operation
+        required: true
+        type: choice
+        options: [probe, status, deploy, rollback]
+      target:
+        description: Fixed operation target
+        required: true
+        type: choice
+        options: [analytics-production]
+      source_sha:
+        description: Exact release commit
+        required: true
+        type: string
+      image_digest:
+        description: Exact qualified analytics OCI sha256 digest
+        required: true
+        type: string
+      ci_run_id:
+        description: Exact successful release CI run id
+        required: true
+        type: string
+      ci_run_attempt:
+        description: Exact successful release CI attempt
+        required: true
+        type: string
+      build_run_id:
+        description: Exact successful Analytics OCI Build run id
+        required: true
+        type: string
+      build_run_attempt:
+        description: Exact successful Analytics OCI Build attempt
+        required: true
+        type: string
+      reversed_run_id:
+        description: Deployment run id being reversed; 0 unless rollback
+        required: true
+        default: "0"
+        type: string
+      reversed_run_attempt:
+        description: Deployment attempt being reversed; 0 unless rollback
+        required: true
+        default: "0"
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+concurrency:
+  group: analytics-production-delivery
+  cancel-in-progress: false
+
+jobs:
+  analytics-delivery:
+    environment: analytics-production
+    runs-on: [self-hosted, mona, analytics-delivery]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159
+      - name: Bind exact release CI, build attempt, and OCI provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ inputs.operation }}
+          TARGET: ${{ inputs.target }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          BUILD_RUN_ATTEMPT: ${{ inputs.build_run_attempt }}
+          REVERSED_RUN_ID: ${{ inputs.reversed_run_id }}
+          REVERSED_RUN_ATTEMPT: ${{ inputs.reversed_run_attempt }}
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$CI_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]]
+          [[ "$BUILD_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "$BUILD_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]]
+          case "$OPERATION:$TARGET" in
+            probe:analytics-production|status:analytics-production|deploy:analytics-production|rollback:analytics-production) ;;
+            *) printf 'operation/target mismatch\n' >&2; exit 2 ;;
+          esac
+          if [[ "$OPERATION" == rollback ]]; then
+            [[ "$REVERSED_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+            [[ "$REVERSED_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]]
+          else
+            [[ "$REVERSED_RUN_ID:$REVERSED_RUN_ATTEMPT" == 0:0 ]]
+          fi
+          test "$GITHUB_REF" = refs/heads/release
+          test "$GITHUB_SHA" = "$SOURCE_SHA"
+          ref_sha="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/heads/release" --jq '.object.sha')"
+          test "$ref_sha" = "$SOURCE_SHA"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}/attempts/${CI_RUN_ATTEMPT}" > ci-run.json
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${BUILD_RUN_ID}/attempts/${BUILD_RUN_ATTEMPT}" > build-run.json
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const ci = JSON.parse(fs.readFileSync('ci-run.json'));
+          const build = JSON.parse(fs.readFileSync('build-run.json'));
+          const env = process.env;
+          if (ci.name !== 'CI' || ci.path !== '.github/workflows/ci.yml' || ci.event !== 'push' || ci.head_branch !== 'release') throw new Error('foreign CI workflow');
+          if (ci.head_sha !== env.SOURCE_SHA || String(ci.id) !== env.CI_RUN_ID || Number(ci.run_attempt) !== Number(env.CI_RUN_ATTEMPT) || ci.conclusion !== 'success') throw new Error('CI attempt mismatch');
+          if (build.name !== 'Analytics OCI Build' || build.path !== '.github/workflows/analytics-build.yml' || build.event !== 'workflow_run' || build.head_branch !== 'release') throw new Error('foreign build workflow');
+          if (build.head_sha !== env.SOURCE_SHA || String(build.id) !== env.BUILD_RUN_ID || Number(build.run_attempt) !== Number(env.BUILD_RUN_ATTEMPT) || build.conclusion !== 'success') throw new Error('build attempt mismatch');
+          NODE
+          rm -rf build-evidence
+          gh run download "$BUILD_RUN_ID" --name "analytics-build-evidence-${BUILD_RUN_ID}-${BUILD_RUN_ATTEMPT}" --dir build-evidence
+          cosign verify-blob --bundle build-evidence/provenance.signature.bundle.json \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity=https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-build.yml@refs/heads/main \
+            build-evidence/provenance.json >/dev/null
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync('build-evidence/provenance.json'));
+          const e = process.env;
+          const exact = p.schemaVersion === 'hb.analytics.build-provenance.v1' && p.sourceSha === e.SOURCE_SHA &&
+            p.subject?.repository === 'ghcr.io/altermundi/harmonic-beacon-analytics' && p.subject?.digest === e.IMAGE_DIGEST &&
+            p.ci?.workflow === 'CI' && p.ci?.runId === e.CI_RUN_ID && p.ci?.runAttempt === Number(e.CI_RUN_ATTEMPT) &&
+            p.build?.workflow === 'Analytics OCI Build' && p.build?.workflowPath === '.github/workflows/analytics-build.yml' &&
+            p.build?.runId === e.BUILD_RUN_ID && p.build?.runAttempt === Number(e.BUILD_RUN_ATTEMPT);
+          if (!exact || Object.keys(p).length !== 5) throw new Error('signed build provenance mismatch');
+          NODE
+          gh attestation verify "oci://ghcr.io/altermundi/harmonic-beacon-analytics@${IMAGE_DIGEST}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-build.yml \
+            --cert-identity https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/analytics-build.yml@refs/heads/main >/dev/null
+      - name: Execute one bounded locked operation and validate its measured receipt
+        env:
+          OPERATION: ${{ inputs.operation }}
+          TARGET: ${{ inputs.target }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          BUILD_RUN_ATTEMPT: ${{ inputs.build_run_attempt }}
+          REVERSED_RUN_ID: ${{ inputs.reversed_run_id }}
+          REVERSED_RUN_ATTEMPT: ${{ inputs.reversed_run_attempt }}
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          helper=(sudo -n /usr/local/sbin/hb-analytics-delivery)
+          args=("$TARGET" "$OPERATION" "$SOURCE_SHA" "$IMAGE_DIGEST" "$CI_RUN_ID" "$CI_RUN_ATTEMPT" "$BUILD_RUN_ID" "$BUILD_RUN_ATTEMPT" "$GITHUB_WORKFLOW_REF" "$GITHUB_REF" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$REVERSED_RUN_ID" "$REVERSED_RUN_ATTEMPT")
+          case "$OPERATION" in
+            probe|status) "${helper[@]}" observe "${args[@]}" ;;
+            deploy|rollback)
+              helper_status=1
+              for helper_attempt in 1 2; do
+                rm -f receipt-bundle.json.new
+                if "${helper[@]}" transaction "${args[@]}" > receipt-bundle.json.new; then
+                  mv receipt-bundle.json.new receipt-bundle.json
+                  helper_status=0
+                  break
+                else
+                  helper_status=$?
+                fi
+              done
+              test "$helper_status" -eq 0
+              node - <<'NODE'
+          const fs = require('node:fs');
+          const bundle = JSON.parse(fs.readFileSync('receipt-bundle.json'));
+          const e = process.env;
+          const expected = {
+            sourceSha: e.SOURCE_SHA,
+            artifactImageId: bundle.receipt.artifact.imageId,
+            artifactDigest: e.IMAGE_DIGEST,
+            configSha256: bundle.receipt.configSha256,
+            target: e.TARGET,
+            operation: e.OPERATION,
+            ciRunId: e.CI_RUN_ID,
+            ciRunAttempt: Number(e.CI_RUN_ATTEMPT),
+            buildRunId: e.BUILD_RUN_ID,
+            buildRunAttempt: Number(e.BUILD_RUN_ATTEMPT),
+            runId: e.GITHUB_RUN_ID,
+            runAttempt: Number(e.GITHUB_RUN_ATTEMPT),
+            now: new Date().toISOString(),
+            maxEvidenceAgeSeconds: 1800,
+          };
+          fs.writeFileSync('receipt-expected.json', `${JSON.stringify(expected)}\n`, { mode: 0o600 });
+          NODE
+              ANALYTICS_RECEIPT_EXPECTED_FILE=receipt-expected.json node services/analytics/src/delivery-receipt.mjs validate < receipt-bundle.json > receipt.json
+              ;;
+            *) exit 2 ;;
+          esac
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() && (inputs.operation == 'deploy' || inputs.operation == 'rollback') }}
+        with:
+          name: analytics-delivery-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            receipt.json
+            receipt-bundle.json
+          if-no-files-found: error
+          retention-days: 30

@@ -23,6 +23,8 @@ vi.mock('@/lib/room-token-issue', () => ({
 describe('GET /api/livekit/token', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        process.env.LIVEKIT_PUBLIC_URL = 'wss://live.example.com';
+        process.env.LIVEKIT_PUBLIC_URL_ALLOWLIST = 'wss://live.example.com';
         finalizeRoomTokenIssue.mockResolvedValue(true);
     });
 
@@ -86,6 +88,7 @@ describe('GET /api/livekit/token', () => {
         expect(createBedToken).toHaveBeenCalledWith('beacon', 'bed-opaque', '14400s');
         expect(body).toEqual({
             token: 'bed-jwt',
+            livekitUrl: 'wss://live.example.com/',
             identity: 'bed-opaque',
             room: 'beacon',
             canPublish: false,

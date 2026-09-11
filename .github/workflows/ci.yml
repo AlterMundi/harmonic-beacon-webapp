@@ -3,28 +3,123 @@ name: CI
 on:
   pull_request:
     branches: [main, release]
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [release]
+  workflow_call:
+    inputs:
+      base_sha:
+        description: Exact trusted base SHA for a release-candidate run
+        required: false
+        type: string
+      head_sha:
+        description: Exact candidate source SHA
+        required: false
+        type: string
+      force_all:
+        description: Select every matrix when no meaningful base exists
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
-  lint-and-build:
+  diff-check:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reject whitespace errors in the complete candidate diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
 
-      - name: Verify generated agent skill distributions
-        run: python3 .agents/skills/scripts/render_distributions.py --check
-
-      - uses: actions/setup-node@v4
+  impact:
+    name: impact
+    runs-on: ubuntu-latest
+    outputs:
+      lint_and_build: ${{ steps.classify.outputs.lint_and_build }}
+      test: ${{ steps.classify.outputs.test }}
+      analytics: ${{ steps.classify.outputs.analytics }}
+      tapestry: ${{ steps.classify.outputs.tapestry }}
+      playlist: ${{ steps.classify.outputs.playlist }}
+      commerce_contract: ${{ steps.classify.outputs.commerce_contract }}
+      e2e: ${{ steps.classify.outputs.e2e }}
+      frozen_audio_paths: ${{ steps.classify.outputs.frozen_audio_paths }}
+      auth_contract: ${{ steps.classify.outputs.auth_contract }}
+      grant_recovery: ${{ steps.classify.outputs.grant_recovery }}
+      data_recovery: ${{ steps.classify.outputs.data_recovery }}
+      workflow_review: ${{ steps.classify.outputs.workflow_review }}
+      release_qualification: ${{ steps.classify.outputs.release_qualification }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
-          cache: 'npm'
-
+      - name: Classify the complete trusted delta
+        id: classify
+        env:
+          BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha || github.sha }}
+          FORCE_ALL: ${{ inputs.force_all }}
+        run: |
+          set -euo pipefail
+          base="$BASE_SHA"
+          head="$HEAD_SHA"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$FORCE_ALL" = true ] || [[ "$base" =~ ^0{40}$ ]]; then
+            git diff --check "${head}^" "$head"
+            node scripts/hb.mjs change-impact --file .github/hosted-release-full.unknown --json > impact-plan.json
+          else
+            [[ "$base" =~ ^[0-9a-f]{40}$ ]]
+            git diff --check "$base" "$head"
+            node scripts/hb.mjs change-impact --base "$base" --head "$head" --json > impact-plan.json
+          fi
+          node scripts/ci/impact-recovery.mjs validate-impact --input impact-plan.json
+          for pair in \
+            lint_and_build:lint-and-build test:test analytics:analytics tapestry:tapestry playlist:playlist \
+            commerce_contract:commerce-contract e2e:e2e frozen_audio_paths:frozen-audio-paths \
+            auth_contract:auth-contract grant_recovery:grant-recovery data_recovery:data-recovery \
+            workflow_review:workflow-review release_qualification:release-qualification; do
+            output="${pair%%:*}"
+            job="${pair#*:}"
+            printf '%s=%s\n' "$output" "$(jq -r --arg job "$job" '.requiredJobChecks | index($job) != null' impact-plan.json)" >> "$GITHUB_OUTPUT"
+          done
+      - name: Verify generated agent skill distributions
+        run: python3 .agents/skills/scripts/render_distributions.py --check
+      - run: npm ci
       - name: Verify shared operations tooling
         run: npm run test:ops-tooling
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: change-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          path: impact-plan.json
+          if-no-files-found: error
 
+  lint-and-build:
+    name: lint-and-build
+    needs: impact
+    if: needs.impact.outputs.lint_and_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
       - run: npm ci
       - name: Reject high-severity production dependency regressions
         run: |
@@ -34,34 +129,68 @@ jobs:
       - run: npm run lint
       - run: npm run build
         env:
-          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+          DATABASE_URL: postgresql://dummy:***@localhost:5432/dummy
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
 
   test:
+    name: test
+    needs: impact
+    if: needs.impact.outputs.test == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
-          cache: 'npm'
-
+          cache: npm
       - run: npm ci
-      - run: npm ci --prefix services/tapestry
       - run: npm run test:coverage
         env:
-          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+          DATABASE_URL: postgresql://dummy:***@localhost:5432/dummy
           NEXT_PUBLIC_LIVEKIT_URL: https://placeholder.livekit.cloud
-      - run: npm test --prefix services/tapestry
-
-      - uses: actions/upload-artifact@v4
+      - run: npm run contract:commerce:verify
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: coverage-report
+          name: coverage-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: coverage/
 
+  tapestry:
+    name: tapestry
+    needs: impact
+    if: needs.impact.outputs.tapestry == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+          cache-dependency-path: services/tapestry/package-lock.json
+      - run: npm ci --prefix services/tapestry
+      - run: npm audit --omit=dev --prefix services/tapestry --audit-level=high
+      - run: npm test --prefix services/tapestry
+
+  playlist:
+    name: playlist
+    needs: impact
+    if: needs.impact.outputs.playlist == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+          cache-dependency-path: services/playlist-bot/package-lock.json
+      - run: npm ci --prefix services/playlist-bot
+      - run: npm audit --omit=dev --prefix services/playlist-bot --audit-level=high
+      - run: npm test --prefix services/playlist-bot
+
   analytics:
+    name: analytics
+    needs: impact
+    if: needs.impact.outputs.analytics == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -75,15 +204,14 @@ jobs:
           --health-cmd "pg_isready -U analytics_owner -d analytics"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.22'
           cache: npm
           cache-dependency-path: services/analytics/package-lock.json
       - run: npm ci --prefix services/analytics
-      - name: Reject analytics production dependency vulnerabilities
-        run: npm audit --omit=dev --prefix services/analytics --audit-level=high
+      - run: npm audit --omit=dev --prefix services/analytics --audit-level=high
       - name: Apply analytics migrations and run PostgreSQL tests
         env:
           ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_owner:analytics_test_password@127.0.0.1:55433/analytics
@@ -93,11 +221,237 @@ jobs:
           npm test --prefix services/analytics
       - name: Validate operational artifacts
         env:
-          ANALYTICS_IMAGE_TAG: test
+          ANALYTICS_IMAGE_REF: ghcr.io/altermundi/harmonic-beacon-analytics@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           ANALYTICS_POSTGRES_PASSWORD: owner_test_password
           ANALYTICS_COLLECTOR_DATABASE_PASSWORD: collector_test_password_0123456789
           ANALYTICS_DASHBOARD_DATABASE_PASSWORD: dashboard_test_password_0123456789
           ANALYTICS_ENV_FILE: analytics.env.example
         run: |
-          bash -n ops/analytics/*.sh
+          bash -n ops/analytics/*.sh ops/analytics/hb-analytics-delivery-root
+          node --check ops/analytics/notify-analytics-monitor.mjs
+          node --check ops/analytics/synthetic-delivery-drill.mjs
+          node --check ops/analytics/analytics-delivery-state.mjs
+          node --check ops/analytics/durable-json-state.mjs
+          node --check services/analytics/src/runtime-provenance.mjs
+          node --check services/analytics/src/delivery-receipt.mjs
+          node -e "JSON.parse(require('node:fs').readFileSync('contracts/analytics-delivery/v2/receipt.schema.json'))"
+          sudo visudo -cf ops/analytics/analytics-runner.sudoers
           docker compose --env-file ops/analytics/analytics.env.example -f ops/analytics/compose.yml config --quiet
+          ANALYTICS_IMAGE_REF="ghcr.io/altermundi/harmonic-beacon-analytics@sha256:$(printf 'a%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_DATABASE_PASSWORD=synthetic \
+          ANALYTICS_SYNTHETIC_HANDOFF_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_SERVER_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_NONPRODUCTION_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_NETWORK_SECRET=synthetic \
+          ANALYTICS_SYNTHETIC_SOURCE_SHA="$(printf 'a%.0s' {1..40})" \
+          ANALYTICS_SYNTHETIC_IMAGE_ID="sha256:$(printf 'b%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_IMAGE_DIGEST="sha256:$(printf 'a%.0s' {1..64})" \
+          ANALYTICS_SYNTHETIC_CONFIG_SHA256="sha256:$(printf 'c%.0s' {1..64})" \
+            docker compose --profile synthetic-restore -f ops/analytics/compose.synthetic.yml config --quiet
+
+  commerce-contract:
+    name: commerce-contract
+    needs: impact
+    if: needs.impact.outputs.commerce_contract == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: npm run contract:commerce:verify
+
+  e2e:
+    name: e2e
+    needs: impact
+    if: needs.impact.outputs.e2e == 'true'
+    uses: ./.github/workflows/e2e.yml
+
+  frozen-audio-paths:
+    name: frozen-audio-paths
+    needs: impact
+    if: needs.impact.outputs.frozen_audio_paths == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+      - run: npm ci
+      - name: Run frozen audio contract regressions
+        run: >-
+          npx vitest run --no-file-parallelism
+          src/lib/__tests__/room-audio-playback.test.ts
+          src/lib/__tests__/facilitator-audio-quality.test.ts
+          src/lib/__tests__/e2e-audio-backend.test.ts
+          src/lib/__tests__/audio-transport-fixture.test.tsx
+          src/lib/__tests__/audio-readiness-fixture.test.ts
+
+  auth-contract:
+    name: auth-contract
+    needs: impact
+    if: needs.impact.outputs.auth_contract == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+      - run: npm ci
+      - name: Run authentication and Account contract regressions
+        run: >-
+          npx vitest run --no-file-parallelism
+          src/lib/__tests__/auth.test.ts
+          src/lib/__tests__/session-auth.test.ts
+          src/lib/__tests__/ops-auth.test.ts
+          src/lib/__tests__/commerce-service-auth.test.ts
+          src/lib/__tests__/authorized-schedule-operation.test.ts
+
+  grant-recovery:
+    name: grant-recovery
+    needs: impact
+    if: needs.impact.outputs.grant_recovery == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+      - run: npm ci
+      - name: Run grant effect and rollback compatibility regressions
+        run: >-
+          npx vitest run --no-file-parallelism
+          src/lib/__tests__/stage-grant-effects.test.ts
+          src/lib/__tests__/stage-grant-writer-contract.test.ts
+
+  data-recovery:
+    name: data-recovery
+    needs: impact
+    if: needs.impact.outputs.data_recovery == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: impact
+          POSTGRES_DB: impact_test
+        ports:
+          - 55434:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d impact_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+      - run: npm ci
+      - name: Run migration-state and app-worker schema compatibility regressions
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/release-migration-state.test.ts
+      - name: Prove an isolated PostgreSQL backup and restore
+        run: |
+          set -euo pipefail
+          pg_client() {
+            docker run --rm -i --network host -e PGPASSWORD=impact postgres:16-alpine "$@"
+          }
+          pg_client psql -h 127.0.0.1 -p 55434 -U postgres -d impact_test -v ON_ERROR_STOP=1 \
+            -c 'CREATE TABLE restore_probe (id integer PRIMARY KEY, label text NOT NULL)' \
+            -c "INSERT INTO restore_probe VALUES (1, 'qualified')"
+          pg_client pg_dump -h 127.0.0.1 -p 55434 -U postgres -d impact_test --format=custom > impact-backup.dump
+          pg_client createdb -h 127.0.0.1 -p 55434 -U postgres impact_restore_test
+          pg_client pg_restore -h 127.0.0.1 -p 55434 -U postgres -d impact_restore_test < impact-backup.dump
+          test "$(pg_client psql -h 127.0.0.1 -p 55434 -U postgres -d impact_restore_test -Atqc 'SELECT label FROM restore_probe WHERE id=1')" = qualified
+
+  workflow-review:
+    name: workflow-review
+    needs: impact
+    if: needs.impact.outputs.workflow_review == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+      - name: Run workflow and helper boundary regressions
+        run: node --test scripts/ci/__tests__/ops-e-workflow.test.mjs scripts/ci/__tests__/ops-d-review-regressions.test.mjs
+
+  release-qualification:
+    name: release-qualification
+    needs: impact
+    if: needs.impact.outputs.release_qualification == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+      - run: npm ci
+      - name: Run interrupted-run, stale-candidate, and qualification regressions
+        run: >-
+          node --test
+          scripts/ci/__tests__/impact-recovery.test.mjs
+          scripts/ci/__tests__/release-manifest.test.mjs
+          scripts/ci/__tests__/qualify-oci.test.mjs
+
+  required-impact-checks:
+    name: required-impact-checks
+    needs: [impact, lint-and-build, test, tapestry, playlist, analytics, commerce-contract, e2e, frozen-audio-paths, auth-contract, grant-recovery, data-recovery, workflow-review, release-qualification]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: change-impact-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Reject a result set other than the exact derived hosted jobs
+        env:
+          IMPACT_RESULT: ${{ needs.impact.result }}
+          LINT_RESULT: ${{ needs.lint-and-build.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          TAPESTRY_RESULT: ${{ needs.tapestry.result }}
+          PLAYLIST_RESULT: ${{ needs.playlist.result }}
+          ANALYTICS_RESULT: ${{ needs.analytics.result }}
+          COMMERCE_RESULT: ${{ needs.commerce-contract.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          AUDIO_RESULT: ${{ needs.frozen-audio-paths.result }}
+          AUTH_RESULT: ${{ needs.auth-contract.result }}
+          GRANT_RESULT: ${{ needs.grant-recovery.result }}
+          DATA_RESULT: ${{ needs.data-recovery.result }}
+          WORKFLOW_RESULT: ${{ needs.workflow-review.result }}
+          RELEASE_RESULT: ${{ needs.release-qualification.result }}
+          SOURCE_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg impact "$IMPACT_RESULT" --arg lint "$LINT_RESULT" --arg test "$TEST_RESULT" \
+            --arg tapestry "$TAPESTRY_RESULT" --arg playlist "$PLAYLIST_RESULT" --arg analytics "$ANALYTICS_RESULT" \
+            --arg commerce "$COMMERCE_RESULT" --arg e2e "$E2E_RESULT" --arg audio "$AUDIO_RESULT" \
+            --arg auth "$AUTH_RESULT" --arg grant "$GRANT_RESULT" --arg data "$DATA_RESULT" \
+            --arg workflow "$WORKFLOW_RESULT" --arg release "$RELEASE_RESULT" \
+            '[{check:"impact",conclusion:$impact},{check:"lint-and-build",conclusion:$lint},
+              {check:"test",conclusion:$test},{check:"tapestry",conclusion:$tapestry},
+              {check:"playlist",conclusion:$playlist},{check:"analytics",conclusion:$analytics},
+              {check:"commerce-contract",conclusion:$commerce},{check:"e2e",conclusion:$e2e},
+              {check:"frozen-audio-paths",conclusion:$audio},{check:"auth-contract",conclusion:$auth},
+              {check:"grant-recovery",conclusion:$grant},{check:"data-recovery",conclusion:$data},
+              {check:"workflow-review",conclusion:$workflow},{check:"release-qualification",conclusion:$release}]' \
+            > all-impact-results.json
+          jq --slurpfile impact impact-plan.json \
+            'map(select(.check as $check | $impact[0].requiredJobChecks | index($check)))' \
+            all-impact-results.json > impact-results.json
+          node scripts/ci/impact-recovery.mjs validate-impact --input impact-plan.json
+          node scripts/hb.mjs change-impact verify-results --impact impact-plan.json --results impact-results.json
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          jq -n --arg sourceSha "$SOURCE_SHA" --arg runId "$GITHUB_RUN_ID" \
+            --argjson runAttempt "$GITHUB_RUN_ATTEMPT" --slurpfile impact impact-plan.json \
+            --slurpfile results impact-results.json \
+            '{schemaVersion:"harmonic-beacon.impact-qualification.v1",sourceSha:$sourceSha,workflowRunId:$runId,workflowRunAttempt:$runAttempt,result:"success",requiredJobChecks:$impact[0].requiredJobChecks,results:$results[0]}' \
+            > impact-qualification.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: impact-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: impact-qualification.json
+          if-no-files-found: error

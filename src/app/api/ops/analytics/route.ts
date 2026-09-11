@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { effectiveAnalyticsRole, fetchAnalyticsDashboard } from '@/lib/analytics-access';
+import {
+    previousCalendarRange, validateAnalyticsCalendarSelection, validateAnalyticsTimezone,
+} from '@/lib/analytics-calendar-range';
 import { analyticsCsv } from '@/lib/analytics-csv';
 import { resolveStaffSession } from '@/lib/ops-auth';
 
@@ -27,6 +30,23 @@ export async function GET(request: NextRequest) {
     if (exporting && role === 'ANALYTICS_VIEWER') return NextResponse.json({ error: 'export_forbidden' }, { status: 403 });
     try {
         const currentFilters = filters(request);
+        let comparison: { start: string; end: string } | null = null;
+        try {
+            validateAnalyticsTimezone(currentFilters.timezone);
+        } catch {
+            return NextResponse.json({ error: 'invalid_date_range' }, { status: 400 });
+        }
+        if (currentFilters.start || currentFilters.end) {
+            if (!currentFilters.start || !currentFilters.end) {
+                return NextResponse.json({ error: 'invalid_date_range' }, { status: 400 });
+            }
+            try {
+                validateAnalyticsCalendarSelection(currentFilters.start, currentFilters.end, currentFilters.timezone);
+                comparison = previousCalendarRange(currentFilters.start, currentFilters.end);
+            } catch {
+                return NextResponse.json({ error: 'invalid_date_range' }, { status: 400 });
+            }
+        }
         const current = await fetchAnalyticsDashboard({ staff, role, filters: currentFilters, export: exporting });
         if (dataset) {
             const rows = current[dataset];
@@ -40,12 +60,9 @@ export async function GET(request: NextRequest) {
             });
         }
         let previous: Record<string, unknown> | null = null;
-        if (request.nextUrl.searchParams.get('compare') === 'previous' && currentFilters.start && currentFilters.end) {
-            const start = new Date(currentFilters.start);
-            const end = new Date(currentFilters.end);
-            const duration = end.getTime() - start.getTime();
+        if (request.nextUrl.searchParams.get('compare') === 'previous' && comparison) {
             previous = await fetchAnalyticsDashboard({
-                staff, role, filters: { ...currentFilters, start: new Date(start.getTime() - duration), end: start },
+                staff, role, filters: { ...currentFilters, ...comparison },
             });
         }
         return NextResponse.json({ current, previous }, { headers: { 'cache-control': 'private, no-store' } });

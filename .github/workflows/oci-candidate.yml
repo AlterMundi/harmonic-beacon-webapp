@@ -1,0 +1,232 @@
+name: OCI release candidate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: oci-candidate-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  required-checks:
+    name: required-checks
+    if: github.ref == 'refs/heads/main' && vars.HB_OCI_CANDIDATES_ENABLED == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      base_sha: ${{ github.event_name == 'push' && github.event.before || github.sha }}
+      head_sha: ${{ github.sha }}
+      force_all: ${{ github.event_name == 'workflow_dispatch' || github.event.before == '0000000000000000000000000000000000000000' }}
+
+  build:
+    needs: required-checks
+    if: github.ref == 'refs/heads/main' && vars.HB_OCI_CANDIDATES_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - artifact: app
+            repository: ghcr.io/altermundi/harmonic-beacon-app
+            context: .
+            dockerfile: Dockerfile
+          - artifact: tapestry
+            repository: ghcr.io/altermundi/harmonic-beacon-tapestry
+            context: .
+            dockerfile: services/tapestry/Dockerfile
+          - artifact: playlist-bot
+            repository: ghcr.io/altermundi/harmonic-beacon-playlist-bot
+            context: .
+            dockerfile: services/playlist-bot/Dockerfile
+          - artifact: analytics
+            repository: ghcr.io/altermundi/harmonic-beacon-analytics
+            context: .
+            dockerfile: services/analytics/Dockerfile
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Bind trusted integrated source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          created_at="$(date -u -d "$(git show -s --format=%cI HEAD)" +%Y-%m-%dT%H:%M:%SZ)"
+          printf 'created_at=%s\n' "$created_at" >> "$GITHUB_OUTPUT"
+          printf 'source_tree=%s\n' "$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          printf 'schema=%s\n' "$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | LC_ALL=C sort | tail -n 1)" >> "$GITHUB_OUTPUT"
+        id: source
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build once and publish immutable candidate
+        id: image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ matrix.repository }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.source.outputs.created_at }}
+          build-args: |
+            BEACON_GIT_SHA=${{ github.sha }}
+            BEACON_BUILD_TIME=${{ steps.source.outputs.created_at }}
+            BEACON_DATABASE_SCHEMA_VERSION=${{ steps.source.outputs.schema }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159
+      - name: Sign and verify supply-chain evidence
+        env:
+          IMAGE_REF: ${{ matrix.repository }}@${{ steps.image.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_REPOSITORY: ${{ matrix.repository }}
+          ARTIFACT_ID: ${{ matrix.artifact }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          SOURCE_TREE: ${{ steps.source.outputs.source_tree }}
+          IDENTITY: https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main
+        run: |
+          set -euo pipefail
+          mkdir evidence
+          cosign sign --yes --bundle evidence/signature.bundle.json "$IMAGE_REF"
+          cosign verify --bundle evidence/signature.bundle.json \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity="$IDENTITY" "$IMAGE_REF" >/dev/null
+
+          docker buildx imagetools inspect --format '{{ json .SBOM }}' "$IMAGE_REF" > sbom.raw.json
+          docker buildx imagetools inspect --format '{{ json .Provenance }}' "$IMAGE_REF" > provenance.raw.json
+          jq -e 'if .spdxVersion then . elif .SPDX then .SPDX elif .["linux/amd64"].SPDX then .["linux/amd64"].SPDX else empty end' \
+            sbom.raw.json > sbom.document.json
+          jq -e 'if .predicate or .buildType then . elif .SLSA then .SLSA elif .["linux/amd64"].SLSA then .["linux/amd64"].SLSA else empty end' \
+            provenance.raw.json > provenance.document.json
+          jq -e '.spdxVersion=="SPDX-2.3" and .SPDXID=="SPDXRef-DOCUMENT" and (.packages|type=="array" and length>0)' sbom.document.json >/dev/null
+          jq -e 'type=="object" and length>0' provenance.document.json >/dev/null
+          jq -n --arg repository "$IMAGE_REPOSITORY" --arg digest "${IMAGE_DIGEST#sha256:}" \
+            --slurpfile predicate sbom.document.json \
+            '{_type:"https://in-toto.io/Statement/v1",subject:[{name:$repository,digest:{sha256:$digest}}],predicateType:"https://spdx.dev/Document",predicate:$predicate[0]}' \
+            > evidence/sbom.bundle.json
+          jq -n --arg repository "$IMAGE_REPOSITORY" --arg digest "${IMAGE_DIGEST#sha256:}" \
+            --arg sourceSha "$GITHUB_SHA" --arg sourceTree "$SOURCE_TREE" \
+            --arg dockerfile "$DOCKERFILE" --arg runId "$GITHUB_RUN_ID" \
+            --argjson runAttempt "$GITHUB_RUN_ATTEMPT" --arg builder "$IDENTITY" \
+            --slurpfile buildkit provenance.document.json \
+            '{_type:"https://in-toto.io/Statement/v1",subject:[{name:$repository,digest:{sha256:$digest}}],predicateType:"https://slsa.dev/provenance/v1",predicate:{buildDefinition:{buildType:"https://github.com/docker/build-push-action",externalParameters:{source:{repository:"AlterMundi/harmonic-beacon-webapp",ref:"refs/heads/main",gitSha:$sourceSha,gitTree:$sourceTree},context:".",dockerfile:$dockerfile,platform:"linux/amd64"}},runDetails:{builder:{id:$builder},metadata:{workflowRunId:$runId,workflowRunAttempt:$runAttempt,buildkitProvenance:$buildkit[0]}}}}' \
+            > evidence/provenance.bundle.json
+          cosign sign-blob --yes --bundle evidence/sbom.signature.bundle.json evidence/sbom.bundle.json
+          cosign sign-blob --yes --bundle evidence/provenance.signature.bundle.json evidence/provenance.bundle.json
+          cosign verify-blob --bundle evidence/sbom.signature.bundle.json \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity="$IDENTITY" evidence/sbom.bundle.json >/dev/null
+          cosign verify-blob --bundle evidence/provenance.signature.bundle.json \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity="$IDENTITY" evidence/provenance.bundle.json >/dev/null
+          jq -n --arg artifact "$ARTIFACT_ID" --arg repository "$IMAGE_REPOSITORY" \
+            --arg digest "$IMAGE_DIGEST" --arg dockerfile "$DOCKERFILE" \
+            --arg sourceSha "$GITHUB_SHA" --arg sourceTree "$SOURCE_TREE" \
+            --arg workflowRunId "$GITHUB_RUN_ID" --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg sbom "sha256:$(sha256sum evidence/sbom.bundle.json | cut -d' ' -f1)" \
+            --arg sbomSignature "sha256:$(sha256sum evidence/sbom.signature.bundle.json | cut -d' ' -f1)" \
+            --arg provenance "sha256:$(sha256sum evidence/provenance.bundle.json | cut -d' ' -f1)" \
+            --arg provenanceSignature "sha256:$(sha256sum evidence/provenance.signature.bundle.json | cut -d' ' -f1)" \
+            --arg signature "sha256:$(sha256sum evidence/signature.bundle.json | cut -d' ' -f1)" \
+            '{artifactId:$artifact,repository:$repository,digest:$digest,dockerfile:$dockerfile,sourceSha:$sourceSha,sourceTree:$sourceTree,workflowRunId:$workflowRunId,workflowRunAttempt:$workflowRunAttempt,sbomDigest:$sbom,sbomSignatureBundleDigest:$sbomSignature,provenanceDigest:$provenance,provenanceSignatureBundleDigest:$provenanceSignature,signatureBundleDigest:$signature}' \
+            > evidence/evidence.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: oci-evidence-${{ matrix.artifact }}
+          path: evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  qualify:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22'
+          cache: npm
+      - name: Install qualification client dependencies
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: oci-evidence-*
+          path: evidence
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Assemble candidate inputs
+        env:
+          HB_POSTGRES_IMAGE_REF: ${{ vars.HB_POSTGRES_IMAGE_REF }}
+          HB_LIVEKIT_IMAGE_REF: ${{ vars.HB_LIVEKIT_IMAGE_REF }}
+          HB_RELEASE_BASE_MANIFEST_SHA256: ${{ vars.HB_RELEASE_BASE_MANIFEST_SHA256 }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/create-candidate.mjs --evidence evidence --output candidate.json
+          node scripts/ci/release-manifest.mjs candidate-hash --manifest candidate.json > candidate.sha256
+      - name: Qualify the exact published digest set
+        run: |
+          set -euo pipefail
+          node scripts/ci/qualify-oci.mjs --manifest candidate.json \
+            --compose deploy/qualification.compose.yml --receipt qualification-receipt.json --no-build
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159
+      - name: Seal canonical release manifest
+        run: |
+          set -euo pipefail
+          QUALIFIED_AT="$(node -p "JSON.parse(require('fs').readFileSync('qualification-receipt.json')).issuedAt")"
+          EXPIRES_AT="$(node -p "new Date(Date.parse(JSON.parse(require('fs').readFileSync('qualification-receipt.json')).issuedAt)+86400000).toISOString()")"
+          jq -n --arg runId "$GITHUB_RUN_ID" --argjson runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg qualifiedAt "$QUALIFIED_AT" \
+            --arg expiresAt "$EXPIRES_AT" --arg candidateIdentitySha256 "$(cat candidate.sha256)" \
+            --arg receiptSha256 "sha256:$(sha256sum qualification-receipt.json | cut -d' ' -f1)" \
+            '{runId:$runId,runAttempt:$runAttempt,result:"success",qualifiedAt:$qualifiedAt,expiresAt:$expiresAt,candidateIdentitySha256:$candidateIdentitySha256,receiptSha256:$receiptSha256}' \
+            > qualification.json
+          node scripts/ci/release-manifest.mjs assemble --candidate candidate.json \
+            --qualification qualification.json --output release-manifest.json
+          cosign sign-blob --yes --bundle release-manifest.signature.bundle.json release-manifest.json
+          cosign sign-blob --yes --bundle qualification-receipt.signature.bundle.json qualification-receipt.json
+          sha256sum release-manifest.json > release-manifest.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qualified-release-${{ github.run_id }}
+          path: |
+            release-manifest.json
+            release-manifest.sha256
+            release-manifest.signature.bundle.json
+            qualification-receipt.signature.bundle.json
+            qualification-receipt.json
+            evidence/
+            docker-compose.yml
+            deploy/oci-images.compose.yml
+            deploy/runtime-public-config/production.json
+            deploy/runtime-public-config/live-staging.json
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,64 @@
+name: harmonic-beacon-analytics-synthetic
+
+services:
+  postgres-synthetic:
+    profiles: [synthetic-restore, synthetic-drill]
+    image: postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    environment:
+      POSTGRES_USER: analytics_synthetic_user
+      POSTGRES_PASSWORD: ${ANALYTICS_SYNTHETIC_DATABASE_PASSWORD:?required}
+      POSTGRES_DB: analytics_synthetic
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - analytics-synthetic-db:/var/lib/postgresql/data
+    networks: [synthetic-database]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics_synthetic_user -d analytics_synthetic"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  migrate-synthetic:
+    profiles: [synthetic-restore]
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
+    environment:
+      ANALYTICS_DATABASE_ADMIN_URL: postgresql://analytics_synthetic_user:${ANALYTICS_SYNTHETIC_DATABASE_PASSWORD:?required}@postgres-synthetic:5432/analytics_synthetic
+    command: ["node", "src/migrate.mjs"]
+    depends_on:
+      postgres-synthetic: { condition: service_healthy }
+    networks: [synthetic-database]
+    restart: "no"
+
+  collector-synthetic:
+    profiles: [synthetic-drill]
+    image: ${ANALYTICS_IMAGE_REF:?exact digest required}
+    environment:
+      ANALYTICS_DATABASE_URL: postgresql://analytics_synthetic_user:${ANALYTICS_SYNTHETIC_DATABASE_PASSWORD:?required}@postgres-synthetic:5432/analytics_synthetic
+      ANALYTICS_DASHBOARD_DATABASE_URL: postgresql://analytics_synthetic_user:${ANALYTICS_SYNTHETIC_DATABASE_PASSWORD:?required}@postgres-synthetic:5432/analytics_synthetic
+      ANALYTICS_HANDOFF_SECRET: ${ANALYTICS_SYNTHETIC_HANDOFF_SECRET:?required}
+      ANALYTICS_SERVER_EVENT_SECRET: ${ANALYTICS_SYNTHETIC_SERVER_SECRET:?required}
+      ANALYTICS_NONPRODUCTION_SERVER_EVENT_SECRET: ${ANALYTICS_SYNTHETIC_NONPRODUCTION_SECRET:?required}
+      ANALYTICS_NETWORK_DIGEST_SECRET: ${ANALYTICS_SYNTHETIC_NETWORK_SECRET:?required}
+      ANALYTICS_EXPECTED_SOURCE_REVISION: ${ANALYTICS_SYNTHETIC_SOURCE_SHA:?required}
+      ANALYTICS_ARTIFACT_IMAGE_ID: ${ANALYTICS_SYNTHETIC_IMAGE_ID:?required}
+      ANALYTICS_ARTIFACT_DIGEST: ${ANALYTICS_SYNTHETIC_IMAGE_DIGEST:?required}
+      ANALYTICS_CONFIG_SHA256: ${ANALYTICS_SYNTHETIC_CONFIG_SHA256:?required}
+      ANALYTICS_PORT: "3300"
+      NODE_ENV: test
+    ports: ["127.0.0.1:0:3300"]
+    depends_on:
+      postgres-synthetic: { condition: service_healthy }
+    networks: [synthetic-database]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3300/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  analytics-synthetic-db: {}
+
+networks:
+  synthetic-database:
+    internal: true

@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: ${HB_POSTGRES_IMAGE_REF:?exact postgres digest required}
+
+  livekit:
+    image: ${HB_LIVEKIT_IMAGE_REF:?exact livekit digest required}
+
+  migrate:
+    image: ${HB_APP_IMAGE_REF:?exact app digest required}
+
+  app:
+    image: ${HB_APP_IMAGE_REF:?exact app digest required}
+    environment:
+      - BEACON_ARTIFACT_DIGEST=${HB_APP_IMAGE_REF:?exact app digest required}
+      - BEACON_CONFIG_PROFILE_SHA256=${HB_CONFIG_PROFILE_SHA256:?exact config profile hash required}
+
+  commerce-reconciler:
+    image: ${HB_APP_IMAGE_REF:?exact app digest required}
+
+  tapestry:
+    image: ${HB_TAPESTRY_IMAGE_REF:?exact tapestry digest required}
+
+  playlist-bot:
+    image: ${HB_PLAYLIST_IMAGE_REF:?exact playlist digest required}
+
+  analytics:
+    image: ${HB_ANALYTICS_IMAGE_REF:?exact analytics digest required}
+    profiles: [analytics]
