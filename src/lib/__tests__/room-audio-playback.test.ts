@@ -14,6 +14,36 @@ function fixture() {
 }
 
 describe('room audio playback observation', () => {
+    it('rejects a queued playing callback from the replaced source generation', () => {
+        const { playback, onChange } = fixture();
+        const audio = document.createElement('audio');
+        const sourceA = {};
+        const sourceB = {};
+        vi.spyOn(audio, 'paused', 'get').mockReturnValue(false);
+        Object.defineProperty(audio, 'srcObject', { value: sourceA, configurable: true });
+        const addEventListener = vi.spyOn(audio, 'addEventListener');
+        playback.add(audio);
+        const generationAPlaying = addEventListener.mock.calls.find(
+            ([type]) => type === 'playing',
+        )?.[1] as EventListener;
+
+        audio.dispatchEvent(new Event('playing'));
+        expect(onChange).toHaveBeenLastCalledWith(true);
+
+        Object.defineProperty(audio, 'srcObject', { value: sourceB, configurable: true });
+        expect(playback.sync()).toBe(false);
+        expect(onChange).toHaveBeenLastCalledWith(false);
+
+        generationAPlaying.call(audio, new Event('playing'));
+        expect(playback.sync()).toBe(false);
+        expect(onChange).toHaveBeenLastCalledWith(false);
+
+        audio.dispatchEvent(new Event('playing'));
+        expect(playback.sync()).toBe(true);
+        expect(onChange).toHaveBeenLastCalledWith(true);
+        playback.dispose();
+    });
+
     it('gates the native output, not the unused suspended context in a default SDK Room', async () => {
         // Real Room/startAudio/default options; only the unavailable jsdom
         // platform context and media engine are doubled. No private SDK fields.
