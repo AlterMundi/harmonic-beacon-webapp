@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
+import { decodeJwt } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const databaseURL = process.env.LISTENER_TEST_DATABASE_URL;
@@ -55,7 +56,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
             create: {
                 id: randomUUID(), clientId, clientSecret: hashAccountClientSecret(clientSecret),
                 disabled: false, skipConsent: true, enableEndSession: true,
-                subjectType: 'public', scopes: ['openid', 'profile'], contacts: [],
+                subjectType: 'public', scopes: ['openid', 'profile', 'email'], contacts: [],
                 redirectUris: ['https://listen.harmonicbeacon.com/api/account/callback'],
                 postLogoutRedirectUris: ['https://listen.harmonicbeacon.com/api/account/frontchannel-logout'],
                 tokenEndpointAuthMethod: 'client_secret_basic', grantTypes: ['authorization_code'],
@@ -78,8 +79,9 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         authorizeURL.search = new URLSearchParams({
             client_id: clientId,
             redirect_uri: 'https://listen.harmonicbeacon.com/api/account/callback',
-            response_type: 'code', scope: 'openid profile',
+            response_type: 'code', scope: 'openid profile email',
             state: 'state-for-handler-regression', nonce: 'nonce-for-handler-regression',
+            prompt: 'login',
             code_challenge: challenge, code_challenge_method: 'S256',
         }).toString();
         const preLoginAuthorize = await handler(new Request(authorizeURL, {
@@ -90,6 +92,7 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         expect(accountLogin.origin + accountLogin.pathname)
             .toBe('https://account.harmonicbeacon.com/account');
         expect(accountLogin.searchParams.get('sig')).toBeTruthy();
+        expect(accountLogin.searchParams.get('prompt')).toBe('login');
 
         const signIn = await accountRoutePOST(jsonRequest('/api/account/auth/sign-in/email', {
             email,
@@ -135,6 +138,8 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         const tokens = await token.json() as { access_token: string; id_token: string };
         expect(tokens.access_token).toMatch(/^hb_acct_p_at_/);
         expect(tokens.id_token.split('.')).toHaveLength(3);
+        expect(decodeJwt(tokens.id_token)).not.toHaveProperty('email');
+        expect(decodeJwt(tokens.id_token)).not.toHaveProperty('email_verified');
 
         const introspection = await handler(new Request(`${issuer}/api/account/auth/oauth2/introspect`, {
             method: 'POST', headers: {
@@ -144,5 +149,19 @@ postgres('pinned OAuth Provider 1.6.30 confidential-client lifecycle', () => {
         }));
         expect(introspection.status).toBe(200);
         expect(await introspection.json()).toMatchObject({ active: true, client_id: clientId, sub: accountId });
+
+        const userInfo = await handler(new Request(`${issuer}/api/account/auth/oauth2/userinfo`, {
+            headers: {
+                host: 'account.harmonicbeacon.com',
+                authorization: `Bearer ${tokens.access_token}`,
+            },
+        }));
+        expect(userInfo.status).toBe(200);
+        expect(await userInfo.json()).toMatchObject({
+            sub: accountId,
+            email,
+            email_verified: true,
+            auth_method: 'email',
+        });
     });
 });

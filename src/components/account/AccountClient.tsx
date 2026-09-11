@@ -51,11 +51,13 @@ export default function AccountClient({
     providers,
     locale,
     returnTo,
+    requiredProvider,
 }: {
     initialSession: AccountSession | null;
     providers: { google: boolean; apple: boolean };
     locale: 'es' | 'en';
     returnTo: string | null;
+    requiredProvider?: 'google' | null;
 }) {
     const es = locale === 'es';
     const passwordHint = es
@@ -253,11 +255,11 @@ export default function AccountClient({
         const result = await response.json().catch(() => null) as { frontchannel?: string[] } | null;
         if (response.ok) {
             await completeFrontchannelLogout(result?.frontchannel ?? []);
-            window.location.replace(callbackURL);
+            window.location.replace(requiredProvider ? window.location.href : callbackURL);
             return;
         }
         if (response.status === 401) {
-            window.location.replace(callbackURL);
+            window.location.replace(requiredProvider ? window.location.href : callbackURL);
             return;
         }
         setMessage(es
@@ -281,6 +283,23 @@ export default function AccountClient({
             <button className="account-primary" type="button" onClick={returnToSignIn}>
                 {es ? 'Ir al ingreso' : 'Go to sign in'}
             </button>
+        </div>
+    );
+
+    if (!session && requiredProvider === 'google') return (
+        <div className="account-card">
+            <p className="account-eyebrow">{es ? 'Acceso al evento' : 'Event access'}</p>
+            <h2>{es ? 'Continuá con Google' : 'Continue with Google'}</h2>
+            <p className="account-muted">
+                {es
+                    ? 'El evento es gratuito, pero necesitamos una cuenta Google para identificar tu presencia y tus créditos de ampliación.'
+                    : 'The event is free, but a Google account is required to identify your attendance and amplification credits.'}
+            </p>
+            <div className="account-providers">
+                {providers.google
+                    ? <button disabled={busy} onClick={() => social('google')}>{es ? 'Continuar con Google' : 'Continue with Google'}</button>
+                    : <p className="account-message" role="alert">{es ? 'Google no está disponible en este momento.' : 'Google is unavailable right now.'}</p>}
+            </div>
         </div>
     );
 
@@ -344,6 +363,45 @@ export default function AccountClient({
             <button className="account-link" type="button" onClick={() => selectMode(mode === 'forgot' ? 'signin' : 'forgot')}>
                 {mode === 'forgot' ? (es ? 'Volver al ingreso' : 'Back to sign in') : (es ? '¿Olvidaste tu contraseña?' : 'Forgot password?')}
             </button>
+        </div>
+    );
+
+    if (session && requiredProvider === 'google' && session.user.accessMethod !== 'google') return (
+        <div className="account-card">
+            <p className="account-eyebrow">{es ? 'Acceso al evento' : 'Event access'}</p>
+            <h2>{es ? 'Se necesita una cuenta Google' : 'A Google account is required'}</h2>
+            <p className="account-muted">
+                {es
+                    ? 'Cerrá esta sesión y volvé a ingresar con Continuar con Google.'
+                    : 'Sign out of this session and sign in again with Continue with Google.'}
+            </p>
+            <button className="account-primary" onClick={() => logout('/api/account/logout/current')}>
+                {es ? 'Cerrar sesión y continuar' : 'Sign out and continue'}
+            </button>
+            {message && <p className="account-message" role="status">{message}</p>}
+        </div>
+    );
+
+    if (session && requiredProvider === 'google') return (
+        <div className="account-card">
+            <p className="account-eyebrow">{es ? 'Acceso al evento' : 'Event access'}</p>
+            <h2>{es ? 'Confirmá tu cuenta Google' : 'Confirm your Google account'}</h2>
+            <p className="account-muted">
+                {es
+                    ? 'Continuá con Google para volver al evento con esta identidad verificada.'
+                    : 'Continue with Google to return to the event with this verified identity.'}
+            </p>
+            <button
+                className="account-primary"
+                disabled={busy || !providers.google}
+                onClick={() => social('google')}
+            >
+                {es ? 'Continuar con Google' : 'Continue with Google'}
+            </button>
+            {!providers.google && <p className="account-message" role="alert">
+                {es ? 'Google no está disponible en este momento.' : 'Google is unavailable right now.'}
+            </p>}
+            {message && <p className="account-message" role="status">{message}</p>}
         </div>
     );
 

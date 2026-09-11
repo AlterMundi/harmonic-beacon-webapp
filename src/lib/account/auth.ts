@@ -28,6 +28,19 @@ import {
 import { hashAccountPassword, verifyAccountPassword } from '@/lib/session-auth';
 import { normalizeBeaconDisplayName } from '@/lib/account/profile';
 
+export type AccountAccessMethod = 'email' | 'google' | 'apple';
+
+export function accountAccessMethodFromProviderIds(
+    providerIds: readonly string[],
+): AccountAccessMethod | null {
+    const providers = [...new Set(providerIds)];
+    if (providers.length !== 1) return null;
+    if (providers[0] === 'credential') return 'email';
+    return providers[0] === 'google' || providers[0] === 'apple'
+        ? providers[0]
+        : null;
+}
+
 function normalizedDisplayName(value: unknown): string {
     return normalizeBeaconDisplayName(value) ?? 'Beacon Listener';
 }
@@ -200,7 +213,7 @@ function buildAccountAuth() {
             oauthProvider({
                 loginPage: '/account',
                 consentPage: '/account/consent',
-                scopes: ['openid', 'profile'],
+                scopes: ['openid', 'profile', 'email'],
                 grantTypes: ['authorization_code'],
                 codeExpiresIn: 5 * 60,
                 accessTokenExpiresIn: 15 * 60,
@@ -210,24 +223,40 @@ function buildAccountAuth() {
                 cachedTrustedClients: new Set(activeAccountStaticClients().map(({ clientId }) => clientId)),
                 prefix: accountTokenPrefixes(),
                 advertisedMetadata: {
-                    scopes_supported: ['openid', 'profile'],
-                    claims_supported: ['iss', 'sub', 'aud', 'exp', 'iat', 'nonce', 'sid'],
+                    scopes_supported: ['openid', 'profile', 'email'],
+                    claims_supported: [
+                        'iss', 'sub', 'aud', 'exp', 'iat', 'nonce', 'sid',
+                        'name', 'profile_revision', 'email', 'email_verified', 'auth_method',
+                    ],
                 },
                 customIdTokenClaims: async () => ({
                     name: undefined,
                     picture: undefined,
                     given_name: undefined,
                     family_name: undefined,
+                    email: undefined,
+                    email_verified: undefined,
                     auth_time: undefined,
                     acr: undefined,
                 }),
-                customUserInfoClaims: async ({ user }) => {
-                    const profile = await prisma.beaconProfile.findUnique({
-                        where: { accountId: user.id }, select: { displayName: true, revision: true },
+                customUserInfoClaims: async ({ user, scopes }) => {
+                    const account = await prisma.earlyBirdUser.findUnique({
+                        where: { id: user.id },
+                        select: {
+                            beaconProfile: { select: { displayName: true, revision: true } },
+                            identities: { select: { providerId: true }, take: 2 },
+                        },
                     });
+                    const accessMethod = accountAccessMethodFromProviderIds(
+                        account?.identities.map(({ providerId }) => providerId) ?? [],
+                    );
+                    if (!account || !accessMethod) {
+                        throw new Error('Beacon Account has no unambiguous access method');
+                    }
                     return {
-                        name: profile?.displayName ?? 'Beacon Listener',
-                        profile_revision: profile?.revision ?? 1,
+                        name: account.beaconProfile?.displayName ?? 'Beacon Listener',
+                        profile_revision: account.beaconProfile?.revision ?? 1,
+                        auth_method: scopes.includes('profile') ? accessMethod : undefined,
                         picture: undefined,
                         given_name: undefined,
                         family_name: undefined,
@@ -359,9 +388,10 @@ export async function currentAccountSession(headers?: Headers): Promise<CurrentA
     });
     if (!authority || authority.securityRevision !== authority.user.securityRevision ||
         authority.authorityEnvironment !== accountEnvironment()) return null;
-    const providers = [...new Set(authority.user.identities.map(({ providerId }) => providerId))];
-    if (providers.length !== 1 || !['credential', 'google', 'apple'].includes(providers[0])) return null;
-    const accessMethod = providers[0] === 'credential' ? 'email' : providers[0] as 'google' | 'apple';
+    const accessMethod = accountAccessMethodFromProviderIds(
+        authority.user.identities.map(({ providerId }) => providerId),
+    );
+    if (!accessMethod) return null;
     const deliverableEmail = result.user.email.endsWith('@identity.invalid') ? null : result.user.email;
     return {
         user: {

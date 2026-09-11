@@ -2,6 +2,7 @@ import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 
 import AccountClient from '@/components/account/AccountClient';
+import { requiredProviderFromSignedQuery } from '@/lib/account/required-provider';
 import { currentAccountSession } from '@/lib/account/auth';
 import { ACCOUNT_NAV_RETURN_TO, accountSocialProviderConfiguration, isAccountHost } from '@/lib/account/config';
 import { requestBrowserLocale } from '@/lib/i18n-server';
@@ -19,6 +20,7 @@ export default async function AccountPage({ searchParams }: {
         ? requestedLang : await requestBrowserLocale(incoming);
     const rawReturnTo = Array.isArray(query.return_to) ? query.return_to[0] : query.return_to;
     const returnTo = rawReturnTo && ACCOUNT_NAV_RETURN_TO.has(rawReturnTo) ? rawReturnTo : null;
+    const requiredProvider = requiredProviderFromSignedQuery(query);
     const session = await currentAccountSession(new Headers(incoming));
     const providers = accountSocialProviderConfiguration();
     return (
@@ -36,6 +38,7 @@ export default async function AccountPage({ searchParams }: {
                 providers={{ google: Boolean(providers.google), apple: Boolean(providers.apple) }}
                 locale={locale}
                 returnTo={returnTo}
+                requiredProvider={requiredProvider}
             />
         </main>
     );
