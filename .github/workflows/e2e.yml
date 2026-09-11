@@ -57,8 +57,9 @@ jobs:
       E2E_DATABASE_URL: postgresql://postgres:e2e@localhost:55432/beacon_test
       E2E_LIVEKIT_URL: ws://localhost:7880
       # The production-mode application must expose secure signaling even
-      # against the job-local fixture. The load CLI keeps using plain loopback.
-      E2E_LIVEKIT_PUBLIC_URL: wss://127.0.0.1:7881
+      # against the job-local fixture. The load CLI keeps using plain loopback;
+      # 7881/7882 remain available to LiveKit's own RTC listeners.
+      E2E_LIVEKIT_PUBLIC_URL: wss://127.0.0.1:7443
       E2E_LIVEKIT_API_KEY: devkey
       E2E_LIVEKIT_API_SECRET: secret
       NEXT_PUBLIC_E2E_CONTINUITY_OBSERVER: '1'
@@ -134,14 +135,14 @@ jobs:
             -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
           node e2e/fixtures/livekit-tls-proxy.mjs \
             --cert "$cert" --key "$key" \
-            --listen-port 7881 --upstream-port 7880 >"$log" 2>&1 &
+            --listen-port 7443 --upstream-port 7880 >"$log" 2>&1 &
           proxy_pid=$!
           printf 'E2E_LIVEKIT_CA_CERT=%s\nLIVEKIT_TLS_PROXY_PID=%s\n' \
             "$cert" "$proxy_pid" >> "$GITHUB_ENV"
           for i in $(seq 1 50); do
             kill -0 "$proxy_pid"
             if curl --silent --show-error --fail --cacert "$cert" \
-              https://127.0.0.1:7881 >/dev/null; then
+              https://127.0.0.1:7443 >/dev/null; then
               exit 0
             fi
             sleep 0.1

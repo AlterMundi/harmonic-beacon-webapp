@@ -232,11 +232,11 @@ describe('Main browser CI execution policy', () => {
     it('keeps the production-mode LiveKit public endpoint on a private WSS proxy', () => {
         const job = workflow().jobs.e2e;
         expect(job.env?.E2E_LIVEKIT_URL).toBe('ws://localhost:7880');
-        expect(job.env?.E2E_LIVEKIT_PUBLIC_URL).toBe('wss://127.0.0.1:7881');
+        expect(job.env?.E2E_LIVEKIT_PUBLIC_URL).toBe('wss://127.0.0.1:7443');
         const proxy = job.steps.find((step) => step.name === 'Start private TLS signaling proxy');
         expect(proxy?.run).toContain('umask 077');
         expect(proxy?.run).toContain('e2e/fixtures/livekit-tls-proxy.mjs');
-        expect(proxy?.run).toContain('--listen-port 7881 --upstream-port 7880');
+        expect(proxy?.run).toContain('--listen-port 7443 --upstream-port 7880');
         expect(proxy?.run).toContain('E2E_LIVEKIT_CA_CERT=');
         expect(proxy?.run).toContain('LIVEKIT_TLS_PROXY_PID=');
         expect(proxy?.run).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|--insecure|-k\b/);
