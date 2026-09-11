@@ -33,6 +33,15 @@ test('blocker 1: root helper executes only an externally installed immutable lif
     assert.equal(sha256(await fsp.readFile(absolute)), digest, relative);
     assert.equal(fs.lstatSync(absolute).isFile(), true);
   }
+  const compiledEntries = Object.fromEntries(
+    [...source.matchAll(/^\s*verify_bundle_file ([a-z0-9][a-z0-9.-]*\.(?:mjs|json)) ([0-9a-f]{64})$/gmu)]
+      .map(([, relative, digest]) => [relative, digest]),
+  );
+  assert.deepEqual(Object.keys(compiledEntries).sort(), Object.keys(manifest.files).sort());
+  for (const [relative, digest] of Object.entries(compiledEntries)) {
+    assert.equal(digest, manifest.files[relative], `${relative} compiled digest`);
+    assert.equal(sha256(await fsp.readFile(path.join(bundleRoot, relative))), digest, `${relative} actual digest`);
+  }
   const expected = source.match(/expected_bundle_manifest_sha256=([0-9a-f]{64})/)[1];
   assert.equal(sha256(await fsp.readFile(manifestPath)), expected);
 
