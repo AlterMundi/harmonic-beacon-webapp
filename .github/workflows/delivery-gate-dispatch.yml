@@ -6,7 +6,7 @@ on:
     types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled, closed]
   workflow_run:
     workflows: [CI, E2E quality gates, Audio boundary]
-    types: [requested, completed]
+    types: [requested, in_progress, completed]
   workflow_dispatch:
     inputs:
       pr_number:

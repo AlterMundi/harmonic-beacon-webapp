@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -613,6 +614,89 @@ test('default-branch lifecycle code can dispatch but cannot write the required s
   const firstStatusWrite = authority.indexOf('post_status pending');
   assert.ok(exactBaseCheck >= 0 && firstStatusWrite > exactBaseCheck,
     'exact dispatched workflow SHA must be verified before the first status write');
+});
+
+test('rerun attempt two posts pending over attempt-one aggregate success at rerun start', () => {
+  const dispatcher = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate-dispatch.yml'), 'utf8');
+  const authority = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const workflowRunBlock = dispatcher.match(/^ {2}workflow_run:\n((?: {4}.*\n)+)/m)?.[1];
+  const subscribed = workflowRunBlock?.match(/^ {4}types: \[([^\]]+)\]/m)?.[1]
+    .split(',').map((action) => action.trim());
+  assert.deepEqual(subscribed, ['requested', 'in_progress', 'completed']);
+
+  const lifecycle = [
+    { action: 'in_progress', run_attempt: 2 },
+    { action: 'completed', run_attempt: 2 },
+  ];
+  const firstWake = lifecycle.findIndex(({ action }) => subscribed.includes(action));
+  assert.equal(firstWake, 0, 'a rerun must wake the dispatcher when attempt two starts');
+
+  const temp = mkdtempSync(join(tmpdir(), 'delivery-gate-rerun-'));
+  const ghLog = join(temp, 'gh.log');
+  const fakeGh = join(temp, 'gh');
+  writeFileSync(fakeGh, `#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *"pulls?state=open"*)
+    printf '%s\\n' '[[{"number":534,"state":"open","head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${BASE}"}}]]'
+    ;;
+  *"pulls/534"*)
+    printf '%s\\n' '{"number":534,"state":"open","head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${BASE}"}}'
+    ;;
+  *) printf '%s\\n' "$*" >> "$GH_LOG" ;;
+esac
+`);
+  chmodSync(fakeGh, 0o755);
+
+  try {
+    const dispatcherStart = dispatcher.indexOf('          set -euo pipefail');
+    assert.ok(dispatcherStart >= 0, 'dispatcher shell must be present');
+    const dispatcherScript = dispatcher.slice(dispatcherStart)
+      .split('\n').map((line) => line.replace(/^ {10}/, '')).join('\n');
+    const dispatch = spawnSync('bash', ['-c', dispatcherScript], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${temp}:${process.env.PATH}`,
+        GH_LOG: ghLog,
+        REPOSITORY: 'AlterMundi/harmonic-beacon-webapp',
+        EVENT_NAME: 'workflow_run',
+        EVENT_ACTION: lifecycle[firstWake].action,
+        INPUT_PR_NUMBER: '',
+        WORKFLOW_HEAD: HEAD,
+      },
+    });
+    assert.equal(dispatch.status, 0, dispatch.stderr);
+    assert.match(readFileSync(ghLog, 'utf8'),
+      /--method POST repos\/AlterMundi\/harmonic-beacon-webapp\/actions\/workflows\/delivery-gate\.yml\/dispatches -f ref=main -f inputs\[pr_number\]=534 -f inputs\[status_context\]=delivery-gate/);
+
+    const statusStart = authority.indexOf('          post_status() {');
+    const statusEnd = authority.indexOf('\n          initial_pr=', statusStart);
+    assert.ok(statusStart >= 0 && statusEnd > statusStart, 'initial authority status transition must be present');
+    const initialStatusScript = authority.slice(statusStart, statusEnd)
+      .split('\n').map((line) => line.replace(/^ {10}/, '')).join('\n');
+    const pending = spawnSync('bash', ['-c', initialStatusScript], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${temp}:${process.env.PATH}`,
+        GH_LOG: ghLog,
+        REPOSITORY: 'AlterMundi/harmonic-beacon-webapp',
+        RUN_URL: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9002',
+        context: 'delivery-gate',
+        current_merge: MERGE,
+      },
+    });
+    assert.equal(pending.status, 0, pending.stderr);
+    const statusPosts = readFileSync(ghLog, 'utf8').split('\n')
+      .filter((line) => line.includes(`/statuses/${MERGE}`));
+    assert.equal(statusPosts.length, 1);
+    assert.match(statusPosts[0], /-f state=pending -f context=delivery-gate/);
+    assert.deepEqual(['success', ...statusPosts.map((line) => line.match(/-f state=([^ ]+)/)?.[1])],
+      ['success', 'pending']);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
 });
 
 test('delivery evidence binds each check to an exact attempt job and refetches the full snapshot', () => {
