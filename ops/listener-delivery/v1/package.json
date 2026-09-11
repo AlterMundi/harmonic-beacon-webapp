@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check ../../../scripts/listener-delivery/validate-request.mjs && node --check ../../../scripts/listener-delivery/receipt.mjs && sh -n listener-delivery-root ../../../scripts/listener-delivery/staging-preview.sh && node ../../../scripts/listener-delivery/receipt.mjs validate receipt.synthetic.example.json bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "test": "node --test test/delivery.test.mjs"
+    "check": "node --check libexec/github-gate.mjs && node --check libexec/lifecycle.mjs && node --check libexec/proof.mjs && node --check libexec/receipt.mjs && node --check libexec/transaction.mjs && node --check ../../../scripts/listener-delivery/validate-request.mjs && node --check ../../../scripts/listener-delivery/receipt.mjs && sh -n listener-delivery-root ../../../scripts/listener-delivery/staging-preview.sh && node ../../../scripts/listener-delivery/receipt.mjs validate receipt.synthetic.example.json bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "test": "node --test test/*.test.mjs"
   }
 }

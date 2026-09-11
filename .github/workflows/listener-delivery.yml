@@ -58,8 +58,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d8b243d3c42e24b1b0d3259c689
         with:
           node-version: '22.22'
       - name: Validate the Listen adapter only
@@ -81,7 +81,7 @@ jobs:
       CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -118,8 +118,9 @@ jobs:
       CI_RUN_ID: ${{ inputs.ci_run_id }}
       CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
       CHECKPOINT_MODE: ${{ inputs.interruption_drill && 'interrupt' || 'deliver' }}
+      LISTENER_DELIVERY_BUNDLE_MANIFEST_SHA256: ${{ vars.LISTENER_DELIVERY_BUNDLE_MANIFEST_SHA256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -129,21 +130,74 @@ jobs:
           set -euo pipefail
           test -x /usr/local/sbin/hb-listener-delivery
           test "$(stat -c '%U:%G:%a' /usr/local/sbin/hb-listener-delivery)" = root:root:755
-          cmp --silent ops/listener-delivery/v1/listener-delivery-root /usr/local/sbin/hb-listener-delivery
-      - name: Run only the bounded Listen staging adapter
+          [[ "$LISTENER_DELIVERY_BUNDLE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(sha256sum /usr/local/libexec/hb-listener-delivery/v1/bundle.manifest.json | cut -d ' ' -f 1)" = "$LISTENER_DELIVERY_BUNDLE_MANIFEST_SHA256"
+      - name: Probe staging adapter
+        if: inputs.operation == 'probe'
         shell: bash
         run: |
           set -euo pipefail
-          if test "$CHECKPOINT_MODE" = interrupt; then
-            test "$OPERATION" = deploy
-          fi
           sudo -n /usr/local/sbin/hb-listener-delivery \
-            "$OPERATION" staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
-            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" "$CHECKPOINT_MODE" \
+            probe staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Show staging status
+        if: inputs.operation == 'status'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            status staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Preflight staging delivery
+        if: inputs.operation == 'preflight'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            preflight staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Deploy staging Listener
+        if: inputs.operation == 'deploy' && !inputs.interruption_drill
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            deploy staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Run rollback rehearsal checkpoint with cleanup proof
+        if: inputs.operation == 'deploy' && inputs.interruption_drill
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            deploy staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" interrupt \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Smoke staging Listener
+        if: inputs.operation == 'smoke'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            smoke staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Roll back staging Listener
+        if: inputs.operation == 'rollback'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            rollback staging "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
             > "$RUNNER_TEMP/listen-receipt.json"
       - name: Upload non-secret delivery or recovery receipt
         if: inputs.operation == 'deploy' || inputs.operation == 'rollback'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: listen-staging-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/listen-receipt.json
@@ -161,13 +215,15 @@ jobs:
       SOURCE_SHA: ${{ inputs.source_sha }}
       CI_RUN_ID: ${{ inputs.ci_run_id }}
       CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+      INTERRUPTION_DRILL: ${{ inputs.interruption_drill }}
+      LISTENER_DELIVERY_BUNDLE_MANIFEST_SHA256: ${{ vars.LISTENER_DELIVERY_BUNDLE_MANIFEST_SHA256 }}
     steps:
       - name: Require external protected-environment provisioning
         shell: bash
         env:
           PROTECTED_ENVIRONMENT_MARKER: ${{ vars.LISTENER_DELIVERY_PROTECTED_ENVIRONMENT }}
         run: test "$PROTECTED_ENVIRONMENT_MARKER" = listener-production-v1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -177,19 +233,68 @@ jobs:
           set -euo pipefail
           test -x /usr/local/sbin/hb-listener-delivery
           test "$(stat -c '%U:%G:%a' /usr/local/sbin/hb-listener-delivery)" = root:root:755
-          cmp --silent ops/listener-delivery/v1/listener-delivery-root /usr/local/sbin/hb-listener-delivery
-      - name: Run only the bounded Listen production adapter
+          [[ "$LISTENER_DELIVERY_BUNDLE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(sha256sum /usr/local/libexec/hb-listener-delivery/v1/bundle.manifest.json | cut -d ' ' -f 1)" = "$LISTENER_DELIVERY_BUNDLE_MANIFEST_SHA256"
+      - name: Reject production interruption drill
+        shell: bash
+        run: test "$INTERRUPTION_DRILL" = false
+      - name: Probe production adapter
+        if: inputs.operation == 'probe'
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ inputs.interruption_drill }}" = false
           sudo -n /usr/local/sbin/hb-listener-delivery \
-            "$OPERATION" production "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            probe production "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Show production status
+        if: inputs.operation == 'status'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            status production "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Preflight production delivery
+        if: inputs.operation == 'preflight'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            preflight production "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Deploy production Listener
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            deploy production "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Smoke production Listener
+        if: inputs.operation == 'smoke'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            smoke production "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
+            > "$RUNNER_TEMP/listen-receipt.json"
+      - name: Roll back production Listener
+        if: inputs.operation == 'rollback'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/sbin/hb-listener-delivery \
+            rollback production "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
             "$CI_RUN_ID" "$CI_RUN_ATTEMPT" deliver \
             > "$RUNNER_TEMP/listen-receipt.json"
       - name: Upload non-secret delivery or recovery receipt
         if: inputs.operation == 'deploy' || inputs.operation == 'rollback'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: listen-production-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/listen-receipt.json

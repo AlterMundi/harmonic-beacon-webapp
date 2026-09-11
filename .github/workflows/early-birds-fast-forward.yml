@@ -40,6 +40,8 @@ on:
       - docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md
       - docs/operations/LISTENER_LAUNCH_NOW.md
       - docs/operations/LISTENER_PRIVATE_LIVE_WORKBENCH.md
+      - ops/listener-delivery/**
+      - scripts/listener-delivery/**
       - .github/workflows/early-birds-fast-forward.yml
   push:
     branches: [early-birds, "feat/early-birds-*"]
@@ -81,6 +83,8 @@ on:
       - docs/operations/FOUNDING_LISTENER_COMMERCIAL_LAUNCH.md
       - docs/operations/LISTENER_LAUNCH_NOW.md
       - docs/operations/LISTENER_PRIVATE_LIVE_WORKBENCH.md
+      - ops/listener-delivery/**
+      - scripts/listener-delivery/**
       - .github/workflows/early-birds-fast-forward.yml
 
 permissions:
@@ -106,8 +110,8 @@ jobs:
       DATABASE_URL: postgresql://postgres:listener_test@localhost:55433/listener_test
       LISTENER_TEST_DATABASE_URL: postgresql://postgres:listener_test@localhost:55433/listener_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d8b243d3c42e24b1b0d3259c689
         with:
           node-version: '22.22'
           cache: 'npm'
@@ -121,8 +125,8 @@ jobs:
       run:
         working-directory: services/beacon-stream
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d8b243d3c42e24b1b0d3259c689
         with: { node-version: 22 }
       - run: npm test
       - run: npm run check
@@ -133,10 +137,10 @@ jobs:
       run:
         working-directory: ops/early-birds
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d8b243d3c42e24b1b0d3259c689
         with: { node-version: 22 }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
         with: { python-version: '3.13' }
       - run: npm test
       - run: npm run check
@@ -147,8 +151,8 @@ jobs:
   staging-preview:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d8b243d3c42e24b1b0d3259c689
         with: { node-version: 22 }
       - run: npm --prefix ops/early-birds-preview run check
       - run: npm --prefix ops/early-birds-preview test
@@ -178,8 +182,8 @@ jobs:
       E2E_DATABASE_URL: postgresql://postgres:e2e@localhost:55432/beacon_test
       E2E_LISTENER_ACCOUNT_SWITCH_GATE: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d8b243d3c42e24b1b0d3259c689
         with:
           node-version: '22.22'
           cache: 'npm'
@@ -217,8 +221,8 @@ jobs:
     env:
       E2E_LISTENER_NETWORK_GATE: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@1e60f620b9541d8b243d3c42e24b1b0d3259c689
         with:
           node-version: '22.22'
           cache: 'npm'

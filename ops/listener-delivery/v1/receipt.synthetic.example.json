@@ -12,7 +12,10 @@
     "digest": null,
     "digest_status": "unavailable_local_build"
   },
-  "configuration": { "contract_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+  "configuration": {
+    "requested_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "current_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
   "runtime": {
     "previous": {
       "image": "harmonic-beacon/earlybirds-preview-listener:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -26,6 +29,7 @@
   "probes": { "health": "passed", "readiness": "passed" },
   "authority": {
     "membership_contract_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "proof_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     "status": "matched"
   },
   "alert_recipient": {

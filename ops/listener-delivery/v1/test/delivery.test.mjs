@@ -51,13 +51,13 @@ const validReceipt = () => ({
     digest: null,
     digest_status: 'unavailable_local_build',
   },
-  configuration: { contract_sha256: configHash },
+  configuration: { requested_sha256: configHash, current_sha256: configHash },
   runtime: {
     previous: { image: `harmonic-beacon/earlybirds-preview-listener:${'e'.repeat(40)}`, mode: 'account-off' },
     current: { image: `harmonic-beacon/earlybirds-preview-listener:${sha}`, mode: 'account-on' },
   },
   probes: { health: 'passed', readiness: 'passed' },
-  authority: { membership_contract_sha256: authorityHash, status: 'matched' },
+  authority: { membership_contract_sha256: authorityHash, proof_sha256: 'e'.repeat(64), status: 'matched' },
   alert_recipient: { status: 'verified', proof_sha256: 'f'.repeat(64) },
   github: {
     repository: 'AlterMundi/harmonic-beacon-webapp',
@@ -144,8 +144,9 @@ test('receipt validation rejects a mismatched Authority membership contract', as
 test('receipt validation fails closed on missing artifact, config, recipient, or recovery evidence', async (t) => {
   const cases = [
     ['artifact', (value) => { delete value.artifact.image_id; delete value.artifact.digest; }],
-    ['configuration', (value) => { delete value.configuration.contract_sha256; }],
+    ['configuration', (value) => { delete value.configuration.current_sha256; }],
     ['alert recipient', (value) => { delete value.alert_recipient.proof_sha256; }],
+    ['Authority', (value) => { delete value.authority.proof_sha256; }],
     ['recovery', (value) => { delete value.recovery.evidence_status; }],
   ];
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'listen-receipt-evidence-'));
@@ -211,26 +212,29 @@ test('privileged helper fixes its interpreter and clears caller-controlled tool 
   assert.match(helperSource, /unset .*NODE_OPTIONS.*GIT_DIR.*DOCKER_HOST.*LISTENER_WITHDRAWAL_CONTAINER.*HTTPS_PROXY.*CURL_CA_BUNDLE.*SSL_CERT_FILE/);
 });
 
-test('privileged helper validates checkout ownership before executing tracked code', async () => {
+test('privileged helper validates the installed bundle before executing reviewed code', async () => {
   const helperSource = await fsp.readFile(helper, 'utf8');
-  const ownershipCheck = helperSource.indexOf('unsafe_checkout_entry=$(find');
-  const trackedExecution = helperSource.indexOf('node "$validator"');
-  assert.ok(ownershipCheck >= 0 && trackedExecution > ownershipCheck);
+  const ownershipCheck = helperSource.indexOf('lifecycle bundle ancestor is writable or not root-owned');
+  const installedExecution = helperSource.indexOf('exec /usr/bin/node "$bundle_root/lifecycle.mjs"');
+  assert.ok(ownershipCheck >= 0 && installedExecution > ownershipCheck);
+  assert.doesNotMatch(helperSource, /\/srv\/harmonic-beacon|scripts\/listener-delivery|docker compose|\bgit -C/);
 });
 
-test('privileged helper rejects a non-root-owned or writable checkout tree', async () => {
+test('privileged helper rejects unsafe bundle ancestors, entries, and durable state', async () => {
   const helperSource = await fsp.readFile(helper, 'utf8');
-  assert.match(helperSource, /unsafe_checkout_entry=.*find "\$repository" -xdev .*\.claude.*-prune.* ! -user root .* -perm \/022/);
-  assert.match(helperSource, /untrusted_checkout_symlink=.*find "\$repository" -xdev .*\.claude.*-prune.*-type l/);
+  assert.match(helperSource, /find "\$ancestor" -maxdepth 0 .* ! -user root -o -perm \/022/);
+  assert.match(helperSource, /test -f "\$bundle_file" && test ! -L "\$bundle_file"/);
+  assert.match(helperSource, /root:root:500:1/);
+  assert.match(helperSource, /stat -c '%U:%G:%a' "\$state_root"\)" = root:root:700/);
+  assert.doesNotMatch(helperSource, /stat -c '%U:%G:%a:%h' "\$bundle_root"\)" = root:root:500:1/);
 });
 
 test('deploy rejects missing artifact evidence before preparing host state', async () => {
-  const helperSource = await fsp.readFile(helper, 'utf8');
-  const deployBlock = helperSource.slice(helperSource.indexOf('  deploy)'), helperSource.indexOf('  rollback)'));
-  const artifactCheck = deployBlock.indexOf('docker image inspect "$image"');
-  const prepare = deployBlock.indexOf('scripts/listener-account-production/prepare.sh');
-  assert.ok(artifactCheck >= 0, 'deploy lacks a candidate artifact check');
-  assert.ok(prepare < 0 || artifactCheck < prepare, 'artifact check occurs after prepare');
+  const lifecycle = await fsp.readFile(path.join(contractRoot, 'libexec/lifecycle.mjs'), 'utf8');
+  const resultValidation = lifecycle.indexOf('validateOperationResult(invoke(');
+  const receiptCommit = lifecycle.indexOf('return commitReceipt(stateRoot');
+  assert.ok(resultValidation >= 0 && receiptCommit > resultValidation, 'measured operation evidence must precede the receipt CAS');
+  assert.match(lifecycle, /artifact: observed\.artifact/);
 });
 
 test('workflow and sudoers contract expose only the service-specific least-privilege lane', async () => {
@@ -248,9 +252,9 @@ test('workflow and sudoers contract expose only the service-specific least-privi
   assert.match(workflow, /contents: read/);
   assert.doesNotMatch(workflow, /docker compose|docker-compose/);
   assert.match(workflow, /\/usr\/local\/sbin\/hb-listener-delivery/);
-  assert.match(helperSource, /write_receipt deploy interrupted .* succeeded proved/);
-  assert.match(helperSource, /authority_hash=.*early-bird-membership\/v2\/SHA256SUMS/);
-  assert.match(helperSource, /runtime_config_hash=.*sha256sum/);
+  assert.match(helperSource, /bundle_root=\/usr\/local\/libexec\/hb-listener-delivery\/v1/);
+  assert.match(helperSource, /expected_bundle_manifest_sha256=[0-9a-f]{64}/);
+  assert.match(helperSource, /verify_bundle_file lifecycle\.mjs [0-9a-f]{64}/);
   assert.match(sudoers, /sha256:[0-9a-f]{64} \/usr\/local\/sbin\/hb-listener-delivery/);
   const helperDigest = createHash('sha256').update(await fsp.readFile(helper)).digest('hex');
   assert.match(sudoers, new RegExp(`sha256:${helperDigest} /usr/local/sbin/hb-listener-delivery`));
