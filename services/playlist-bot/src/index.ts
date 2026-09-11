@@ -12,7 +12,10 @@ import {
 import { AccessToken } from 'livekit-server-sdk';
 import { spawn, execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
-import { hasAvailableBeaconAudio } from './beaconAvailability.js';
+import {
+  hasAvailableBeaconAudio,
+  reconcileBeaconAudioAvailability,
+} from './beaconAvailability.js';
 import {
   BYTES_PER_FRAME,
   decoderArgs,
@@ -245,7 +248,9 @@ class PlaylistBot {
     this.room.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
       log('INFO', `Participant left: ${p.identity}`);
       if (p.identity === BEACON_IDENTITY) {
-        this.setBeaconAudioAvailable(false);
+        // Rebuild from LiveKit's current snapshot: a stale disconnect from a
+        // replaced beacon01 must not fade the playlist in over its successor.
+        this.refreshBeaconAudioAvailability();
       }
     });
 
@@ -275,7 +280,17 @@ class PlaylistBot {
   }
 
   private refreshBeaconAudioAvailability(): void {
-    this.setBeaconAudioAvailable(this.isBeaconAudioAvailable());
+    if (!this.room) {
+      this.setBeaconAudioAvailable(false);
+      return;
+    }
+    const next = reconcileBeaconAudioAvailability(
+      this.beaconAudioAvailable,
+      this.room.remoteParticipants.values(),
+      BEACON_IDENTITY,
+    );
+    if (next.transition === null) return;
+    this.setBeaconAudioAvailable(next.available);
   }
 
   private setBeaconAudioAvailable(available: boolean): void {
