@@ -475,42 +475,87 @@
       "id": "commerce-authority",
       "name": "Payments, membership Authority and PMP",
       "owner": {"status": "documented", "name": "SairaAsua"},
-      "repository": {"status": "external", "slug": "SairaAsua/proyecciones-mito"},
-      "integrationLane": {"status": "external", "name": null},
-      "deliveryLane": {"status": "external", "name": null},
-      "ciWorkflow": {"status": "external", "path": null},
-      "deployAdapter": {"status": "external", "kind": "unknown", "references": []},
+      "repository": {"status": "verified", "slug": "Mar-IA-no/PMP-myth-bot"},
+      "integrationLane": {"status": "verified", "name": "main"},
+      "deliveryLane": {"status": "documented", "name": "main"},
+      "ciWorkflow": {"status": "verified", "path": ".github/workflows/ci.yml"},
+      "deployAdapter": {
+        "status": "verified",
+        "kind": "compose-systemd",
+        "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"]
+      },
       "localPaths": ["contracts/commerce-entitlement", "scripts/commerce-media-worker.ts"],
       "workflows": [],
       "branchSources": [],
-      "recoveryDocs": ["docs/architecture/COMMERCE_ENTITLEMENT_V1.md", "deploy/README.md"],
-      "deployedRevision": {"status": "external", "value": null},
-      "artifactFingerprint": {"status": "external", "kind": "unknown", "value": null, "references": []},
+      "recoveryDocs": [
+        "docs/architecture/COMMERCE_ENTITLEMENT_V1.md",
+        "deploy/README.md",
+        "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+      ],
+      "deployedRevision": {"status": "verified", "value": "272b7ed65a45b0da5c05f6fa783066a62bcb5aa5"},
+      "artifactFingerprint": {
+        "status": "verified",
+        "kind": "image-id-or-digest",
+        "value": "sha256:cdec9ee659ed047b16f9f1eb930457f18614c4ccacea3a11368a553da3263b43",
+        "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"]
+      },
       "health": {"status": "documented", "endpoints": []},
       "alerts": {
-        "route": {"status": "documented", "kind": "alertmanager", "references": ["docs/architecture/COMMERCE_ENTITLEMENT_V1.md"]},
-        "recipientProof": {"status": "documented", "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/482"], "outcome": null}
+        "route": {"status": "verified", "kind": "service-monitor", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"]},
+        "recipientProof": {"status": "unresolved", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"], "outcome": null}
       },
       "recovery": {
-        "target": {"status": "documented", "kind": "forward-repair", "references": ["docs/architecture/COMMERCE_ENTITLEMENT_V1.md"]},
-        "proof": {"status": "documented", "references": ["https://github.com/AlterMundi/harmonic-beacon-webapp/issues/482#issuecomment-5520801327"], "outcome": null}
+        "target": {"status": "verified", "kind": "restore-and-roll-forward", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"]},
+        "proof": {"status": "unresolved", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"], "outcome": null}
       },
       "staging": {
-        "status": "documented",
+        "status": "unavailable",
         "environments": [],
-        "drill": {"status": "external", "references": [], "outcome": null}
+        "drill": {"status": "unresolved", "references": ["docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"], "outcome": null}
       },
       "unresolvedRequirements": [
         {
           "id": "pmp-repository-read-access",
           "kind": "repository-access",
           "status": "external",
-          "owner": "SairaAsua",
-          "blocks": ["catalog-readback", "delivery-proof", "alert-proof", "recovery-proof", "staging-proof"],
+          "owner": "Mar-IA-no",
+          "blocks": ["delivery-proof", "alert-proof", "recovery-proof", "staging-proof"],
           "reference": "https://github.com/AlterMundi/harmonic-beacon-webapp/issues/473#issuecomment-5625961149"
+        },
+        {
+          "id": "pmp-immutable-delivery-workflow",
+          "kind": "workflow-authorization",
+          "status": "unresolved",
+          "owner": "Mar-IA-no",
+          "blocks": ["delivery-proof"],
+          "reference": "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+        },
+        {
+          "id": "pmp-alert-recipient",
+          "kind": "recipient-proof",
+          "status": "unresolved",
+          "owner": "Mar-IA-no",
+          "blocks": ["alert-proof"],
+          "reference": "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+        },
+        {
+          "id": "pmp-off-host-backup-and-recovery",
+          "kind": "recovery-proof",
+          "status": "unresolved",
+          "owner": "Mar-IA-no",
+          "blocks": ["recovery-proof"],
+          "reference": "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
+        },
+        {
+          "id": "pmp-isolated-staging",
+          "kind": "staging-environment",
+          "status": "external",
+          "owner": "Mar-IA-no",
+          "blocks": ["staging-proof"],
+          "reference": "docs/ops/OPS_F_AUTHORITY_PMP_READBACK.md"
         }
       ],
-      "mutationPolicy": "Read back the owner repository, lane, workflow, artifact, and runbook before mutation; use sandbox fixtures only and perform no real-money acceptance action."
+      "mutationPolicy": "Read back and bind the canonical repository, exact source revision, every service image, workflow run, and recovery receipt before mutation; use sandbox fixtures only and perform no real-money acceptance action."
     }
   ]
 }
