@@ -161,13 +161,21 @@ test('repair: every external action is immutable with explicit minimal workflow 
 test('repair: impact installs locked dependencies before shared operations tooling', () => {
   const workflow = read('.github/workflows/ci.yml');
   const impact = section(workflow, '  impact:\n', '\n  lint-and-build:\n');
-  assert.ok(impact.indexOf('- run: npm ci') < impact.indexOf('run: npm run test:ops-tooling'));
+  const installIndex = impact.indexOf('- run: npm ci');
+  const testIndex = impact.indexOf('run: npm run test:ops-tooling');
+  assert.notEqual(installIndex, -1, 'impact npm ci is missing');
+  assert.notEqual(testIndex, -1, 'impact operations-tooling test is missing');
+  assert.ok(installIndex < testIndex);
 });
 
 test('repair: hosted jobs install and address only locked dependency trees', () => {
   const workflow = read('.github/workflows/ci.yml');
   const release = section(workflow, '  release-qualification:\n', '\n  required-impact-checks:\n');
-  assert.ok(release.indexOf('- run: npm ci') < release.indexOf('node --test'));
+  const installIndex = release.indexOf('- run: npm ci');
+  const testIndex = release.indexOf('node --test');
+  assert.notEqual(installIndex, -1, 'release-qualification npm ci is missing');
+  assert.notEqual(testIndex, -1, 'release-qualification node test is missing');
+  assert.ok(installIndex < testIndex);
   for (const match of workflow.matchAll(/npm (?:--prefix ([^\s]+) audit|audit[^\n]*--prefix ([^\s]+))/gu)) {
     const prefix = match[1] ?? match[2];
     assert.ok(existsSync(resolve(ROOT, prefix, 'package-lock.json')), `missing lockfile for ${prefix}`);
@@ -178,8 +186,8 @@ test('repair: analytics PostgreSQL credentials match the hosted service fixture'
   const workflow = read('.github/workflows/ci.yml');
   const analytics = section(workflow, '  analytics:\n', '\n  commerce-contract:\n');
   assert.match(analytics, /POSTGRES_PASSWORD: analytics_test_password/u);
-  assert.match(analytics, /ANALYTICS_DATABASE_ADMIN_URL: postgresql:\/\/analytics_owner:analytics_test_password@/u);
-  assert.match(analytics, /ANALYTICS_TEST_DATABASE_URL: postgresql:\/\/analytics_owner:analytics_test_password@/u);
+  assert.match(analytics, /ANALYTICS_DATABASE_ADMIN_URL: postgresql:\/\/analytics_owner:analytics_test_password@127\.0\.0\.1:55433\/analytics$/mu);
+  assert.match(analytics, /ANALYTICS_TEST_DATABASE_URL: postgresql:\/\/analytics_owner:analytics_test_password@127\.0\.0\.1:55433\/analytics$/mu);
 });
 
 test('repair: prepare cleanup is EXIT-safe across registry login and pull failure', () => {
