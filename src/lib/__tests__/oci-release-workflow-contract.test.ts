@@ -37,7 +37,8 @@ describe('immutable OCI candidate and promotion contract', () => {
         expect(workflow).toContain('manifest_sha256:');
         expect(workflow).toContain('target:');
         expect(workflow).toContain('actions: read');
-        expect(workflow).not.toContain('packages: read');
+        expect(workflow.slice(workflow.indexOf('  rehearse:'), workflow.indexOf('  authorize:'))).toContain('packages: read');
+        expect(workflow.slice(workflow.indexOf('  promote:'))).not.toContain('packages:');
         expect(workflow).not.toContain('packages: write');
         expect(workflow).toContain('runs-on: [self-hosted, mona]');
         expect(workflow).toContain('test "$(hostname -s)" = mona');
@@ -47,7 +48,14 @@ describe('immutable OCI candidate and promotion contract', () => {
         expect(workflow).toContain('hb-deploy artifact-prepare');
         expect(workflow).toContain('hb-deploy artifact-preflight');
         expect(workflow).toContain('hb-deploy artifact-status');
-        expect(workflow).not.toMatch(/\b(?:docker|buildx)\s+build\b|docker\s+compose\s+build|npm\s+(?:ci|test|run\s+build|run\s+lint)/);
+        expect(workflow).not.toMatch(/\b(?:docker|buildx)\s+build\b|docker\s+compose\s+build/);
+        const hosted = workflow.slice(workflow.indexOf('  authorize:'), workflow.indexOf('  promote:'));
+        const mona = workflow.slice(workflow.indexOf('  promote:'));
+        expect(hosted).toContain('npm ci --ignore-scripts');
+        expect(hosted).toContain('environment: ${{ inputs.target }}');
+        expect(hosted).toContain('id-token: write');
+        expect(mona).not.toContain('id-token:');
+        expect(mona).not.toMatch(/npm\s+(?:ci|test|run\s+build|run\s+lint)/);
         expect(workflow).not.toContain('pull_request_target');
     });
 

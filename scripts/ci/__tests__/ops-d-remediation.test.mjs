@@ -178,8 +178,10 @@ test('prepare admits only fixed files before verification and never consults rep
     });
     const profileDigest = add('deploy/runtime-public-config/production.json', '{}\n');
     add('deploy/runtime-public-config/live-staging.json', '{}\n');
+    add('release-manifest.signature.bundle.json', '{}\n');
+    add('qualification-receipt.signature.bundle.json', '{}\n');
     const receiptDigest = add('qualification-receipt.json', '{}\n');
-    const manifestDigest = add('release-manifest.json', JSON.stringify({ artifacts,
+    const manifestDigest = add('release-manifest.json', JSON.stringify({ artifacts, externalImages: [],
       qualification: { receiptSha256: receiptDigest }, deploymentInputs: { composeSha256: composeDigest, overlaySha256: overlayDigest },
       configProfiles: { production: { sha256: profileDigest }, 'live-staging': { sha256: profileDigest } } }));
     symlinkSync('/nonexistent', `${input}/ignored-link`);
@@ -193,10 +195,19 @@ test('prepare admits only fixed files before verification and never consults rep
       helper = helper.replace(new RegExp(`^readonly ${name}=.*$`, 'm'), `readonly ${name}=${quote(path)}`);
     }
     helper += `
-# Unprivileged harness: no host services, credentials, or ownership changes.
+# Unprivileged admission harness: cryptographic verification is tested separately.
+DELIVERY_RUN_ID=900
+DELIVERY_RUN_ATTEMPT=1
+admit_delivery_authorization() { :; }
+node() { if [ "$2" = validate-delivery ]; then printf '{}' > "$temp/delivery.json"; else command node "$@"; fi; }
+cosign() { :; }
 require_secure_root_file() { :; }
 require_release_lane() { :; }
-state_unpack() { :; }
+state_unpack() {
+  cp "$temp/candidate/docker-compose.yml" "$2/docker-compose.yml"
+  cp "$temp/candidate/oci-images.compose.yml" "$2/oci-images.compose.yml"
+  cp "$temp/candidate/candidate-manifest.json" "$2/prior-manifest.json"
+}
 verify_prior_state_inputs() { :; }
 install() {
   local args=()
@@ -210,7 +221,7 @@ docker() { touch ${quote(`${root}/executed`)}; return 99; }
 inspect_admitted() {
   local admitted="$temp/candidate"
   test "$(find "$admitted/evidence" -type f | wc -l)" = 24
-  test "$(find "$admitted" -type f | wc -l)" = 31
+  test "$(find "$admitted" -type f | wc -l)" = 33
   test ! -e "$admitted/evidence/oci-evidence-app/ignored-script"
   printf 'replaced' > ${quote(`${input}/docker-compose.yml`)}
   cmp --silent "$admitted/docker-compose.yml" "$TRUSTED_COMPOSE"

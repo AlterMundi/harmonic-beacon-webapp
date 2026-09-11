@@ -118,7 +118,7 @@ authority are recorded without guessing in
 fails or warns when those mechanical contracts are absent.
 
 During the main/release transition, `HB_RELEASE_LANE_STATE=legacy-shadow`
-permits only OCI shadow preparation on an already reconciled OCI v3 host. The dedicated `release` workflow is on
+permits only OCI shadow preparation on an already reconciled OCI v4 host. The dedicated `release` workflow is on
 a fail-closed security safety hold; legacy source-build mutation is disabled.
 See `.github/workflows/deploy.yml` and `deploy/README.md`. Only the single `oci-production` state, set after accepted
 shadow/rollback/forward-repair evidence and root-state reconciliation, changes
@@ -126,11 +126,18 @@ that routing. The restricted `/usr/local/sbin/hb-deploy` path remains the
 production mutation boundary. OCI artifact operations are rooted in one
 verified transaction and publish one atomic current-state object only after
 actual digest, health, public provenance and private-boundary readback.
-The sole current-state schema is `harmonic-beacon.current-state.v3`, a closed
+Production preparation requires authenticated measured transition evidence from
+its same-run/attempt hosted rehearsal and a protected delivery authorization
+binding the exact aggregate bytes. Root admits the fixed evidence inventory
+into the new transaction before validation or effects. A manual transition-evidence
+directory cannot enable it. Every artifact invocation binds a signed protected delivery run/attempt; markerless
+committed rollback needs a fresh hosted rollback authorization and exact current
+publication match. See `deploy/README.md` for the command argument contract.
+The sole current-state schema is `harmonic-beacon.current-state.v4`, a closed
 OCI-production manifest plus exact digest-bound Compose, overlay and reviewed
-production public-config bytes. Existing legacy/v2 hosts deliberately block
+production public-config bytes. Existing legacy/v2/v3 hosts deliberately block
 both shadow and production preparation until a separately reviewed root-owned
-reconciliation proves the exact OCI live runtime and installs v3. No generic
+reconciliation proves the exact OCI live runtime and installs v4. No generic
 root fallback or helper migration shortcut exists. Preparation verifies that
 runtime against the high-water before activation, and migration repeats the
 verification before its phase change or first Compose/runtime mutation. The

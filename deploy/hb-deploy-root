@@ -22,7 +22,6 @@ readonly ARTIFACT_STATE='/var/lib/harmonic-beacon/releases'
 readonly CURRENT_STATE="$ARTIFACT_STATE/current-state.json"
 readonly TRANSACTION_ROOT="$ARTIFACT_STATE/transactions"
 readonly ACTIVE_TRANSACTION="$ARTIFACT_STATE/active-transaction"
-readonly TRANSITION_EVIDENCE="$ARTIFACT_STATE/transition-evidence"
 readonly TRUSTED_COMPOSE='/usr/local/libexec/harmonic-beacon/docker-compose.yml'
 readonly TRUSTED_OVERLAY='/usr/local/libexec/harmonic-beacon/oci-images.compose.yml'
 readonly REGISTRY_ENV='/etc/harmonic-beacon/registry.env'
@@ -248,32 +247,126 @@ configProfiles.production.sha256 target-public-config.json
 EOF
 }
 
+require_unchanged_runtime_inputs() {
+  local root="$1"
+  cmp --silent "$root/candidate/docker-compose.yml" "$root/prior/docker-compose.yml" &&
+    cmp --silent "$root/candidate/oci-images.compose.yml" "$root/prior/oci-images.compose.yml" &&
+    [ "$(jq -cS '.externalImages | sort_by(.serviceId)' "$root/candidate/candidate-manifest.json")" = \
+      "$(jq -cS '.externalImages | sort_by(.serviceId)' "$root/prior/prior-manifest.json")" ] ||
+    die 'runtime configuration drift requires a separately reviewed dependency transition'
+}
+
+publication_matches() {
+  node "$RELEASE_MANIFEST" match-publication --state "$CURRENT_STATE" --receipt "$1" --kind "$2" 2>/dev/null
+}
+
+bind_rollback_publication() {
+  local receipt
+  receipt="$(artifact_receipt "$1")"
+  node "$RELEASE_MANIFEST" rollback-publication --state "$CURRENT_STATE" --receipt "$receipt" --output "$receipt.new"
+  chown root:root "$receipt.new"
+  sync -f "$receipt.new"
+  mv -f -- "$receipt.new" "$receipt"
+  sync -f "$(artifact_transaction "$1")"
+}
+
 require_rollback_safe_public_config() {
   local candidate="$1" prior="$2"
   cmp --silent "$candidate" "$prior" ||
     die 'public runtime config change requires a separately reviewed transactional overlay'
 }
 
-require_oci_transition_evidence() {
-  local manifest="$1" stage file
-  for file in authorization.json qualification.json shadow.json rollback.json forward-repair.json \
+# Admission copies through O_NOFOLLOW descriptors into this root-only directory.
+# The untrusted envelope and blob are authenticated before any JSON is parsed.
+admit_delivery_authorization() {
+  local input="$1" destination="$2"
+  install -d -o root -g root -m 0700 "$destination"
+  admit_signature "$input/delivery-authorization.json" "$destination/delivery-authorization.json"
+  admit_signature "$input/delivery-authorization.signature.bundle.json" "$destination/delivery-authorization.signature.bundle.json"
+  cosign verify-blob --bundle "$destination/delivery-authorization.signature.bundle.json" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-promote.yml@refs/heads/main \
+    "$destination/delivery-authorization.json" >/dev/null || die 'delivery authorization authentication failed'
+}
+
+require_delivery_invocation() {
+  local run_id="$1" target="$2" verb="$3" active=''
+  validate_run_id "$run_id"
+  validate_target "$target"
+  require_secure_root_file "$(artifact_receipt "$run_id")" 600
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    active="$(<"$ACTIVE_TRANSACTION")"
+  fi
+  node "$RELEASE_MANIFEST" check-delivery --receipt "$(artifact_receipt "$run_id")" \
+    --delivery-run-id "$DELIVERY_RUN_ID" --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" \
+    --target "$target" --verb "$verb" --active-run-id "${active:-none}"
+}
+
+artifact_authorize_rollback() {
+  local run_id="$1" transaction temp receipt
+  validate_run_id "$run_id"
+  require_release_lane oci-production
+  require_current_state
+  transaction="$(artifact_transaction "$run_id")"
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  # Exact already-persisted intent is resumable even after expiry. No effects.
+  if jq -e '.rollbackIntent==true' "$receipt" >/dev/null; then
+    require_delivery_invocation "$run_id" production rollback
+    return 0
+  fi
+  [ ! -e "$ACTIVE_TRANSACTION" ] || die 'rollback admission requires a markerless committed transaction'
+  temp="$(mktemp -d --tmpdir="$transaction" '.delivery.XXXXXX')"
+  trap "rm -rf -- $(printf '%q' "$temp")" EXIT
+  admit_delivery_authorization "$CANDIDATE_PARENT/$run_id/candidate" "$temp"
+  node "$RELEASE_MANIFEST" bind-rollback-delivery --receipt "$receipt" --state "$CURRENT_STATE" \
+    --authorization "$temp/delivery-authorization.json" --delivery-run-id "$DELIVERY_RUN_ID" \
+    --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" --output "$temp/receipt.json"
+  chown root:root "$temp/receipt.json"
+  sync -f "$temp/receipt.json"
+  mv -f -- "$temp/receipt.json" "$receipt"
+  sync -f "$transaction"
+  rm -rf -- "$temp"
+  trap - EXIT
+}
+
+admit_transition_evidence() {
+  local input="$1" destination="$2" file
+  install -d -o root -g root -m 0700 "$destination"
+  # Fixed inventory only. Copy held, bounded regular-file bytes without parsing.
+  for file in authorization.json authorization.signature.bundle.json qualification.json \
+    shadow.json rollback.json forward-repair.json \
     shadow.execution.json rollback.execution.json forward-repair.execution.json \
     shadow.signature.bundle.json rollback.signature.bundle.json forward-repair.signature.bundle.json; do
-    require_secure_root_file "$TRANSITION_EVIDENCE/$file" 600
+    admit_signature "$input/transition/$file" "$destination/$file"
+    sync -f "$destination/$file"
   done
-  for stage in shadow rollback forward-repair; do
+  sync -f "$destination"
+}
+
+require_oci_transition_evidence() {
+  local manifest="$1" evidence="$2" stage file
+  for file in authorization.json authorization.signature.bundle.json qualification.json \
+    shadow.json rollback.json forward-repair.json \
+    shadow.execution.json rollback.execution.json forward-repair.execution.json \
+    shadow.signature.bundle.json rollback.signature.bundle.json forward-repair.signature.bundle.json; do
+    require_secure_root_file "$evidence/$file" 600
+  done
+  # The aggregate is authority too: authenticate it before semantic parsing.
+  for stage in authorization shadow rollback forward-repair; do
     cosign verify-blob \
       --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
       --certificate-identity 'https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-promote.yml@refs/heads/main' \
-      --bundle "$TRANSITION_EVIDENCE/$stage.signature.bundle.json" \
-      "$TRANSITION_EVIDENCE/$stage.json" >/dev/null || die 'transition receipt authentication failed'
+      --bundle "$evidence/$stage.signature.bundle.json" \
+      "$evidence/$stage.json" >/dev/null || die 'transition receipt authentication failed'
   done
-  node "$RELEASE_MANIFEST" validate-transition --manifest "$manifest" --evidence "$TRANSITION_EVIDENCE" ||
+  node "$RELEASE_MANIFEST" validate-transition --manifest "$manifest" --evidence "$evidence" ||
     die 'transition semantic validation failed'
 }
 
 atomic_install_release_state() {
-  local transaction="$1" source="$2" root manifest manifest_sha expected temporary
+  local transaction="$1" source="$2" root manifest manifest_sha expected temporary publication kind=candidate
   require_release_lane oci-production
   root="$transaction/$source"
   case "$source" in
@@ -282,6 +375,7 @@ atomic_install_release_state() {
       expected="$(jq -er '.manifestSha256' "$transaction/receipt.json")"
       ;;
     prior)
+      kind=rollback
       manifest="$root/prior-manifest.json"
       expected="$(jq -er '.baseManifestSha256' "$transaction/receipt.json")"
       verify_prior_state_inputs "$root"
@@ -291,13 +385,14 @@ atomic_install_release_state() {
   validate_sha256 "$expected"
   manifest_sha="$(sha256sum "$manifest" | cut -d' ' -f1)"
   [ "$manifest_sha" = "$expected" ] || die 'release state manifest digest mismatch'
+  publication="$(node "$RELEASE_MANIFEST" publication-for-write --state "$CURRENT_STATE" --receipt "$transaction/receipt.json" --kind "$kind")" || die 'invalid publication high-water'
   temporary="$(mktemp --tmpdir="$ARTIFACT_STATE" '.current-state.XXXXXX')"
-  jq -n --arg manifestSha256 "$manifest_sha" \
+  jq -n --argjson publication "$publication" --arg manifestSha256 "$manifest_sha" \
     --arg manifestBase64 "$(base64 -w0 "$manifest")" \
     --arg composeBase64 "$(base64 -w0 "$root/docker-compose.yml")" \
     --arg overlayBase64 "$(base64 -w0 "$root/oci-images.compose.yml")" \
     --arg publicConfigBase64 "$(base64 -w0 "$root/target-public-config.json")" \
-    '{schemaVersion:"harmonic-beacon.current-state.v3",laneState:"oci-production",manifestSha256:$manifestSha256,manifestBase64:$manifestBase64,composeBase64:$composeBase64,overlayBase64:$overlayBase64,publicConfigBase64:$publicConfigBase64}' \
+    '{schemaVersion:"harmonic-beacon.current-state.v4",publication:$publication,laneState:"oci-production",manifestSha256:$manifestSha256,manifestBase64:$manifestBase64,composeBase64:$composeBase64,overlayBase64:$overlayBase64,publicConfigBase64:$publicConfigBase64}' \
     > "$temporary"
   node "$RELEASE_MANIFEST" validate-current-state --state "$temporary" || {
     rm -f -- "$temporary"
@@ -351,7 +446,7 @@ transaction_set_phase() {
 transaction_require() {
   local run_id="$1" target="$2"
   shift 2
-  local receipt phase allowed=false base current
+  local receipt phase allowed=false
   validate_run_id "$run_id"
   validate_target "$target"
   receipt="$(artifact_receipt "$run_id")"
@@ -362,9 +457,8 @@ transaction_require() {
   [ "$allowed" = true ] || die "transaction phase $phase does not authorize this command"
   require_current_state
   [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
-  base="$(jq -er '.baseManifestSha256' "$receipt")"
-  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
-  [ "$base" = "$current" ] || die 'prepared transaction no longer matches current high-water'
+  publication_matches "$receipt" base || die 'prepared transaction no longer matches current high-water'
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
   if [ "$target" = production ]; then
     require_release_lane oci-production
     require_secure_root_file "$ACTIVE_TRANSACTION" 600
@@ -376,7 +470,7 @@ transaction_require() {
 }
 
 transaction_require_rollback() {
-  local run_id="$1" receipt phase base candidate current
+  local run_id="$1" receipt phase
   validate_run_id "$run_id"
   require_release_lane oci-production
   receipt="$(artifact_receipt "$run_id")"
@@ -389,16 +483,13 @@ transaction_require_rollback() {
   esac
   require_current_state
   [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
-  base="$(jq -er '.baseManifestSha256' "$receipt")"
-  candidate="$(jq -er '.manifestSha256' "$receipt")"
-  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
-  [ "$current" = "$base" ] || [ "$current" = "$candidate" ] ||
+  ( { [ "$phase" != committed ] && publication_matches "$receipt" base; } || publication_matches "$receipt" candidate ) ||
     die 'rollback transaction does not match the live high-water'
   if [ -e "$ACTIVE_TRANSACTION" ]; then
     require_secure_root_file "$ACTIVE_TRANSACTION" 600
     [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
   else
-    [ "$phase" = committed ] && [ "$current" = "$candidate" ] ||
+    [ "$phase" = committed ] && publication_matches "$receipt" candidate ||
       die 'rollback transaction is no longer active'
   fi
 }
@@ -415,7 +506,7 @@ transaction_clear_active() {
 
 transaction_resume_prepared() {
   local run_id="$1" sha="$2" tree="$3" manifest_sha="$4" config_sha="$5" workflow_attempt="$6"
-  local receipt base current
+  local receipt
   require_release_lane oci-production
   require_current_state
   receipt="$(artifact_receipt "$run_id")"
@@ -426,9 +517,8 @@ transaction_resume_prepared() {
       .workflowRunAttempt==$attempt and .sourceSha==$sha and .sourceTree==$tree and
       .manifestSha256==$manifest and .targetConfigSha256==$config
     ' "$receipt" >/dev/null || die 'existing transaction does not match prepare retry'
-  base="$(jq -er '.baseManifestSha256' "$receipt")"
-  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
-  [ "$base" = "$current" ] || die 'prepared transaction no longer matches current high-water'
+  publication_matches "$receipt" base || die 'prepared transaction no longer matches current high-water'
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
   if [ -e "$ACTIVE_TRANSACTION" ]; then
     require_secure_root_file "$ACTIVE_TRANSACTION" 600
     [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
@@ -440,7 +530,7 @@ transaction_resume_prepared() {
 
 transaction_resume_shadow() {
   local run_id="$1" sha="$2" tree="$3" manifest_sha="$4" config_sha="$5" workflow_attempt="$6"
-  local receipt base current
+  local receipt
   require_release_lane legacy-shadow
   require_current_state
   [ ! -e "$ACTIVE_TRANSACTION" ] || die 'production transaction is active during shadow verification'
@@ -452,14 +542,13 @@ transaction_resume_shadow() {
       .workflowRunId==$run and .workflowRunAttempt==$attempt and .sourceSha==$sha and
       .sourceTree==$tree and .manifestSha256==$manifest and .targetConfigSha256==$config
     ' "$receipt" >/dev/null || die 'existing shadow transaction does not match prepare retry'
-  base="$(jq -er '.baseManifestSha256' "$receipt")"
-  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
-  [ "$base" = "$current" ] || die 'shadow transaction no longer matches current high-water'
+  publication_matches "$receipt" base || die 'shadow transaction no longer matches current high-water'
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
   verify_release_runtime_state "$run_id" prior
 }
 
 transaction_finish_committed() {
-  local run_id="$1" receipt phase expected current
+  local run_id="$1" receipt phase
   validate_run_id "$run_id"
   require_release_lane oci-production
   require_current_state
@@ -468,15 +557,14 @@ transaction_finish_committed() {
   [ "$(jq -er '.target' "$receipt")" = production ] || return 1
   phase="$(transaction_phase "$run_id")"
   [ "$phase" = replaced ] || [ "$phase" = committed ] || return 1
-  expected="$(jq -er '.manifestSha256' "$receipt")"
-  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
-  [ "$current" = "$expected" ] || return 1
+  publication_matches "$receipt" candidate || return 1
   if [ -e "$ACTIVE_TRANSACTION" ]; then
     require_secure_root_file "$ACTIVE_TRANSACTION" 600
     [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
   else
     [ "$phase" = committed ] || die 'commit transaction is no longer active'
   fi
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
   verify_release_runtime_state "$run_id" candidate || die 'committed runtime verification failed'
   if [ "$phase" = replaced ]; then transaction_set_phase "$run_id" committed; fi
   if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
@@ -484,17 +572,23 @@ transaction_finish_committed() {
 }
 
 transaction_finish_rolled_back() {
-  local run_id="$1" receipt base current
+  local run_id="$1" receipt
   validate_run_id "$run_id"
   require_release_lane oci-production
   require_current_state
   receipt="$(artifact_receipt "$run_id")"
   require_secure_root_file "$receipt" 600
   [ "$(jq -er '.target' "$receipt")" = production ] || return 1
-  [ "$(transaction_phase "$run_id")" = rolled-back ] || return 1
-  base="$(jq -er '.baseManifestSha256' "$receipt")"
-  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
-  [ "$current" = "$base" ] || die 'rolled-back transaction contradicts current high-water'
+  if [ "$(transaction_phase "$run_id")" != rolled-back ]; then
+    publication_matches "$receipt" rollback || return 1
+    require_secure_root_file "$ACTIVE_TRANSACTION" 600
+    [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'active transaction mismatch'
+    require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+    verify_release_runtime_state "$run_id" prior || die 'rollback runtime verification failed'
+    transaction_set_phase "$run_id" rolled-back
+  fi
+  publication_matches "$receipt" rollback || die 'rolled-back transaction contradicts current high-water'
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
   verify_release_runtime_state "$run_id" prior || die 'rolled-back runtime verification failed'
   if [ -e "$ACTIVE_TRANSACTION" ]; then transaction_clear_active "$run_id"; fi
   return 0
@@ -567,6 +661,10 @@ admit_file() {
     --expected-sha256 "$3" --maximum-bytes "$4" >/dev/null
 }
 
+admit_signature() {
+  node "$RELEASE_MANIFEST" admit-signature --source "$1" --output "$2" --maximum-bytes 16777216 >/dev/null
+}
+
 artifact_prepare() {
   local input_root="$1" sha="$2" tree="$3" run_id="$4" manifest_sha="$5"
   local target="$6" config_sha="$7" workflow_attempt="$8"
@@ -592,6 +690,7 @@ artifact_prepare() {
   if [ "$target" = production ]; then require_secure_root_file "$PRODUCTION_ENV" 600; fi
   transaction="$(artifact_transaction "$run_id")"
   if [ -e "$transaction" ]; then
+    require_delivery_invocation "$run_id" "$target" prepare
     if [ "$target" = production ]; then
       transaction_resume_prepared "$run_id" "$sha" "$tree" "$manifest_sha" "$config_sha" "$workflow_attempt"
     else
@@ -610,7 +709,26 @@ artifact_prepare() {
   install -d -o root -g root -m 0700 "$temp/candidate" "$temp/candidate/evidence" "$temp/prior" "$temp/docker"
   admit_file "$input_root/release-manifest.json" "$temp/candidate/candidate-manifest.json" "sha256:$manifest_sha" 1048576
   local manifest="$temp/candidate/candidate-manifest.json"
-  # Parse only the admitted manifest; every remaining pathname is fixed here.
+  # Bundles are untrusted cryptographic envelopes; descriptor-safe copy, then
+  # authenticate the exact root-owned bytes before using any manifest selector.
+  for filename in release-manifest.signature.bundle.json qualification-receipt.signature.bundle.json; do
+    admit_signature "$input_root/$filename" "$temp/candidate/$filename"
+  done
+  cosign verify-blob --bundle "$temp/candidate/release-manifest.signature.bundle.json" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-candidate.yml@refs/heads/main \
+    "$manifest" >/dev/null || die 'unauthenticated final manifest'
+  admit_delivery_authorization "$input_root" "$temp/delivery"
+  if [ "$target" = production ]; then
+    admit_transition_evidence "$input_root" "$temp/transition"
+    require_oci_transition_evidence "$manifest" "$temp/transition"
+  fi
+  node "$RELEASE_MANIFEST" validate-delivery --authorization "$temp/delivery/delivery-authorization.json" \
+    --manifest "$manifest" --source-sha "$sha" --source-tree "$tree" --manifest-sha256 "$manifest_sha" \
+    --candidate-run-id "$run_id" --candidate-run-attempt "$workflow_attempt" \
+    --delivery-run-id "$DELIVERY_RUN_ID" --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" \
+    --target "$target" --config-sha256 "$config_sha" --output "$temp/delivery.json"
+  # Parse only the authenticated admitted manifest; remaining paths are fixed.
   admit_file "$input_root/qualification-receipt.json" "$temp/candidate/qualification-receipt.json" "$(jq -er '.qualification.receiptSha256' "$manifest")" 1048576
   admit_file "$input_root/docker-compose.yml" "$temp/candidate/docker-compose.yml" "$(jq -er '.deploymentInputs.composeSha256' "$manifest")" 4194304
   admit_file "$input_root/deploy/oci-images.compose.yml" "$temp/candidate/oci-images.compose.yml" "$(jq -er '.deploymentInputs.overlaySha256' "$manifest")" 4194304
@@ -645,6 +763,8 @@ EOF
       "$temp/candidate/target-public-config.json" "$temp/prior/target-public-config.json"
   fi
 
+  require_unchanged_runtime_inputs "$temp"
+
   export DOCKER_CONFIG="$temp/docker"
   local verifier_args=(
     --manifest "$temp/candidate/candidate-manifest.json" --evidence "$temp/candidate/evidence"
@@ -658,13 +778,31 @@ EOF
   if [ "$target" = production ]; then verifier_args+=(--runtime-env "$PRODUCTION_ENV"); fi
   "$ARTIFACT_VERIFY" "${verifier_args[@]}"
   jq -e . "$temp/verified.json" >/dev/null || die 'artifact verifier emitted invalid receipt'
-  if [ "$target" = production ]; then
-    require_oci_transition_evidence "$temp/candidate/candidate-manifest.json"
-  fi
-  jq --arg target "$target" --arg phase prepared \
-    '. + {target:$target,phase:$phase}' "$temp/verified.json" > "$temp/receipt.json"
+  jq --slurpfile delivery "$temp/delivery.json" --arg target "$target" --arg phase prepared \
+    '. + $delivery[0] + {target:$target,phase:$phase}' "$temp/verified.json" > "$temp/receipt.json"
+  node "$RELEASE_MANIFEST" bind-publications --state "$CURRENT_STATE" --receipt "$temp/receipt.json" --output "$temp/receipt.new"
+  mv -- "$temp/receipt.new" "$temp/receipt.json"
   chmod 0600 "$temp/receipt.json"
+  sync -f "$temp/receipt.json"
+  sync -f "$temp"
 
+  # Signature and registry evidence verification can take time. Recheck expiry
+  # on the persisted receipt immediately before the first registry effect.
+  node "$RELEASE_MANIFEST" check-delivery --receipt "$temp/receipt.json" \
+    --delivery-run-id "$DELIVERY_RUN_ID" --delivery-run-attempt "$DELIVERY_RUN_ATTEMPT" \
+    --target "$target" --verb prepare
+  if [ "$target" = production ]; then
+    require_oci_transition_evidence "$manifest" "$temp/transition"
+  fi
+  # Burn this exact protected run/attempt before effects, including shadow.
+  # A failed pre-publication prepare requires a fresh hosted authorization.
+  if [ -e "$ARTIFACT_STATE/delivery-used" ] || [ -L "$ARTIFACT_STATE/delivery-used" ]; then
+    require_secure_root_ancestors "$ARTIFACT_STATE/delivery-used/.probe"
+  fi
+  install -d -o root -g root -m 0700 "$ARTIFACT_STATE/delivery-used"
+  mkdir -m 0700 -- "$ARTIFACT_STATE/delivery-used/$DELIVERY_RUN_ID-$DELIVERY_RUN_ATTEMPT" ||
+    die 'delivery authorization already consumed'
+  sync -f "$ARTIFACT_STATE/delivery-used"
   # The credential file is root-only and is never exposed to candidate code.
   # shellcheck disable=SC1090
   source "$REGISTRY_ENV"
@@ -856,9 +994,11 @@ artifact_rollback() {
   require_release_lane oci-production
   if transaction_finish_rolled_back "$run_id"; then return 0; fi
   transaction_require_rollback "$run_id"
+  require_unchanged_runtime_inputs "$(artifact_transaction "$run_id")"
+  bind_rollback_publication "$run_id"
   # A rollback of an already committed release has no active marker. Publish
   # durable rollback intent before the first side effect so every later crash
-  # can resume against the same transaction and base high-water.
+  # can resume against the exact bound candidate or rollback publication.
   if [ ! -e "$ACTIVE_TRANSACTION" ]; then atomic_write_active_transaction "$run_id"; fi
   artifact_compose "$run_id" stop app
   for _attempt in $(seq 1 30); do
@@ -909,7 +1049,7 @@ artifact_rollback() {
 }
 
 usage() {
-  printf '%s\n' 'usage: hb-deploy {health|boundary|artifact-prepare|artifact-preflight|artifact-migrate|artifact-replace|artifact-status|artifact-rollback} ...' >&2
+  printf '%s\n' 'usage: hb-deploy artifact-{prepare|preflight|migrate|replace|status|authorize-rollback|rollback} DELIVERY_RUN_ID DELIVERY_ATTEMPT ...; hb-deploy {health|boundary} ...' >&2
   exit 2
 }
 
@@ -927,6 +1067,11 @@ case "$command" in
       SSL_CERT_FILE SSL_CERT_DIR GITHUB_TOKEN GH_TOKEN
     export HOME=/root
     verify_installed_implementation
+    [ "$#" -ge 3 ] || usage
+    readonly DELIVERY_RUN_ID="$1" DELIVERY_RUN_ATTEMPT="$2"
+    validate_run_id "$DELIVERY_RUN_ID"
+    [[ "$DELIVERY_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]] || die 'invalid delivery attempt'
+    shift 2
     ;;
 esac
 
@@ -944,10 +1089,11 @@ case "$command" in
   health) [ "$#" -eq 1 ] || usage; health "$@" ;;
   boundary) [ "$#" -eq 0 ] || usage; boundary ;;
   artifact-prepare) [ "$#" -eq 8 ] || usage; artifact_prepare "$@" ;;
-  artifact-preflight) [ "$#" -eq 2 ] || usage; artifact_preflight "$@" ;;
-  artifact-migrate) [ "$#" -eq 1 ] || usage; artifact_migrate "$@" ;;
-  artifact-replace) [ "$#" -eq 1 ] || usage; artifact_replace "$@" ;;
-  artifact-status) [ "$#" -eq 2 ] || usage; artifact_status "$@" ;;
-  artifact-rollback) [ "$#" -eq 1 ] || usage; artifact_rollback "$@" ;;
+  artifact-preflight) [ "$#" -eq 2 ] || usage; require_delivery_invocation "$1" "$2" preflight; artifact_preflight "$@" ;;
+  artifact-migrate) [ "$#" -eq 1 ] || usage; require_delivery_invocation "$1" production migrate; artifact_migrate "$@" ;;
+  artifact-replace) [ "$#" -eq 1 ] || usage; require_delivery_invocation "$1" production replace; artifact_replace "$@" ;;
+  artifact-status) [ "$#" -eq 2 ] || usage; require_delivery_invocation "$1" "$2" status; artifact_status "$@" ;;
+  artifact-authorize-rollback) [ "$#" -eq 1 ] || usage; artifact_authorize_rollback "$@" ;;
+  artifact-rollback) [ "$#" -eq 1 ] || usage; require_delivery_invocation "$1" production rollback; artifact_rollback "$@" ;;
   *) usage ;;
 esac

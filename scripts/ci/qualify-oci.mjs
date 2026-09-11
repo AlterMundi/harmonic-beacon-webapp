@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { candidateIdentitySha256, validateCandidateManifest, validateQualificationEvidence, validateQualificationReceipt } from './release-manifest.mjs';
+import { canonicalize, candidateIdentitySha256, validateCandidateManifest, validateQualificationEvidence, validateQualificationReceipt } from './release-manifest.mjs';
 
 const REF = /^[a-z0-9./-]+@sha256:[0-9a-f]{64}$/u;
 const PROJECT = /^[a-z0-9][a-z0-9_-]{0,40}$/u;
@@ -63,8 +63,8 @@ function refsFromManifest(manifest) {
   return refs;
 }
 
-function composeOutput(args, env) {
-  return execFileSync('docker', args, { encoding: 'utf8', env });
+function composeOutput(args, env, execute = execFileSync) {
+  return execute('docker', args, { encoding: 'utf8', env });
 }
 
 function parseComposePs(output) {
@@ -126,14 +126,14 @@ function composePrefix(compose, project) {
   return ['compose', '--file', compose, '--project-name', project, '--profile', 'analytics'];
 }
 
-function composeExec({ compose, project, env }, service, args, { input, binary = false } = {}) {
-  return execFileSync('docker', [...composePrefix(compose, project), 'exec', '-T', service, ...args], {
+function composeExec({ compose, project, env, execute = execFileSync }, service, args, { input, binary = false } = {}) {
+  return execute('docker', [...composePrefix(compose, project), 'exec', '-T', service, ...args], {
     ...(binary ? {} : { encoding: 'utf8' }), env, input,
   });
 }
 
-export function verifyAcceptanceMatrix({ compose, project, refs, env, manifest }) {
-  const context = { compose, project, env };
+export function verifyAcceptanceMatrix({ compose, project, refs, env, manifest, execute = execFileSync, baseUrl = 'http://127.0.0.1:3210' }) {
+  const context = { compose, project, env, execute };
   const expectedHead = manifest.migrationSet.head;
   const observedHead = composeExec(context, 'postgres', [
     'psql', '-At', '-U', 'beacon_qualification', '-d', 'beacon_qualification', '-c',
@@ -141,13 +141,13 @@ export function verifyAcceptanceMatrix({ compose, project, refs, env, manifest }
   ]).trim();
   if (observedHead !== expectedHead) fail('schema head mismatch');
 
-  const browserReport = JSON.parse(execFileSync('npx', [
+  const browserReport = JSON.parse(execute('npx', [
     'playwright', 'test', 'e2e/tests/oci-qualification.spec.ts', '--project=chromium',
     '--retries=0', '--workers=1', '--reporter=json',
   ], {
     encoding: 'utf8',
     env: {
-      ...env, CI: '1', E2E_BASE_URL: 'http://127.0.0.1:3210',
+      ...env, CI: '1', E2E_BASE_URL: baseUrl,
       HB_QUALIFICATION_SOURCE_SHA: manifest.source.gitSha,
       HB_QUALIFICATION_APP_REF: refs.app,
       HB_QUALIFICATION_CONFIG_SHA256: manifest.configProfiles['live-staging'].sha256,
@@ -174,14 +174,14 @@ export function verifyAcceptanceMatrix({ compose, project, refs, env, manifest }
 
   const internalNetworks = ['database', 'media'];
   for (const network of internalNetworks) {
-    if (composeOutput(['network', 'inspect', `${project}_${network}`, '--format', '{{.Internal}}'], env).trim() !== 'true') {
+    if (composeOutput(['network', 'inspect', `${project}_${network}`, '--format', '{{.Internal}}'], env, execute).trim() !== 'true') {
       fail(`${network} qualification network is not internal`);
     }
   }
   const forbidden = ['HB_REGISTRY_TOKEN', 'HB_REGISTRY_USERNAME', 'GITHUB_TOKEN', 'GH_TOKEN', 'BEACON_ACCOUNT_CLIENT_SECRET', 'BEACON_COMMERCE_SERVICE_KEY_CURRENT'];
   const forbiddenSecretNamesFound = [];
-  for (const row of parseComposePs(composeOutput([...composePrefix(compose, project), 'ps', '--format', 'json'], env))) {
-    const names = composeOutput(['inspect', row.Name, '--format', '{{range .Config.Env}}{{println .}}{{end}}'], env)
+  for (const row of parseComposePs(composeOutput([...composePrefix(compose, project), 'ps', '--format', 'json'], env, execute))) {
+    const names = composeOutput(['inspect', row.Name, '--format', '{{range .Config.Env}}{{println .}}{{end}}'], env, execute)
       .split('\n').map((line) => line.split('=')[0]);
     for (const name of forbidden) if (names.includes(name)) forbiddenSecretNamesFound.push(`${row.Service}:${name}`);
   }
@@ -217,6 +217,7 @@ export function verifyAcceptanceMatrix({ compose, project, refs, env, manifest }
 }
 
 export function main(argv = process.argv.slice(2)) {
+  const measurementStartedAt = new Date().toISOString();
   const options = parseQualificationArgs(argv);
   const manifest = JSON.parse(readFileSync(resolve(options.manifest), 'utf8'));
   validateCandidateManifest(manifest);
@@ -247,6 +248,8 @@ export function main(argv = process.argv.slice(2)) {
     if (options.receipt) {
       const receipt = {
         schemaVersion: 'oci-qualification.v3',
+        qualificationJob: 'qualify', measurementStartedAt,
+        measurementCompletedAt: new Date().toISOString(), issuedAt: new Date().toISOString(),
         result: 'success',
         workflowRunId: manifest.build.workflowRunId,
         workflowRunAttempt: manifest.build.workflowRunAttempt,
@@ -256,7 +259,7 @@ export function main(argv = process.argv.slice(2)) {
         acceptance,
       };
       validateQualificationReceipt(receipt, manifest);
-      writeFileSync(resolve(options.receipt), `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+      writeFileSync(resolve(options.receipt), canonicalize(receipt), { flag: 'wx', mode: 0o600 });
     }
     return 0;
   } finally {

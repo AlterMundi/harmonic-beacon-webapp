@@ -14,7 +14,7 @@ const manifestModuleUrl = existsSync(fileURLToPath(installedModuleUrl))
   ? installedModuleUrl
   : new URL('../scripts/ci/release-manifest.mjs', import.meta.url);
 const {
-  publicConfigSha256, validateReleaseManifest, verifyReleaseManifest, validateQualificationReceipt,
+  canonicalize, publicConfigSha256, validateReleaseManifest, verifyReleaseManifest, validateQualificationReceipt,
   verifyRuntimePublicConfig,
 } = await import(manifestModuleUrl.href);
 
@@ -76,7 +76,8 @@ function exactEvidenceDirectories(root) {
 
 function exactAdmittedInventory(root) {
   const expected = [
-    'candidate-manifest.json', 'docker-compose.yml', 'evidence', 'live-staging.json',
+    'candidate-manifest.json', 'release-manifest.signature.bundle.json',
+    'qualification-receipt.signature.bundle.json', 'docker-compose.yml', 'evidence', 'live-staging.json',
     'oci-images.compose.yml', 'production.json', 'qualification-receipt.json', 'target-public-config.json',
   ].sort();
   const entries = readdirSync(root, { withFileTypes: true });
@@ -126,6 +127,17 @@ function verifyCosignBlob(path, bundle) {
     'verify-blob', '--bundle', bundle, '--certificate-oidc-issuer', ISSUER,
     '--certificate-identity', IDENTITY, path,
   ], { stdio: ['ignore', 'ignore', 'inherit'] });
+}
+
+export function verifyFinalCandidateBlobs(root, verify = verifyCosignBlob) {
+  for (const [blob, bundle] of [
+    ['candidate-manifest.json', 'release-manifest.signature.bundle.json'],
+    ['qualification-receipt.json', 'qualification-receipt.signature.bundle.json'],
+  ]) {
+    readRegular(join(root, blob));
+    readRegular(join(root, bundle), 16 * 1024 * 1024);
+    verify(join(root, blob), join(root, bundle));
+  }
 }
 
 function registryEvidence(root, manifest) {
@@ -201,7 +213,9 @@ export function main(argv = process.argv.slice(2)) {
   if (evidenceRoot !== join(dirname(manifestPath), 'evidence')) fail('unexpected admitted evidence root');
   const manifestBytes = readRegular(manifestPath);
   if (createHash('sha256').update(manifestBytes).digest('hex') !== expectedManifestSha256) fail('manifest byte hash mismatch');
+  verifyFinalCandidateBlobs(dirname(manifestPath));
   const manifest = JSON.parse(manifestBytes);
+  if (!manifestBytes.equals(Buffer.from(canonicalize(manifest)))) fail('noncanonical final manifest');
   validateReleaseManifest(manifest);
 
   const currentBytes = readRegular(currentManifestPath);
@@ -226,6 +240,7 @@ export function main(argv = process.argv.slice(2)) {
   const qualificationBytes = readRegular(join(dirname(manifestPath), 'qualification-receipt.json'));
   if (sha256(qualificationBytes) !== manifest.qualification.receiptSha256) fail('qualification receipt hash mismatch');
   const qualification = JSON.parse(qualificationBytes);
+  if (!qualificationBytes.equals(Buffer.from(canonicalize(qualification)))) fail('noncanonical qualification receipt');
   validateQualificationReceipt(qualification, manifest);
 
   const workflowRunId = option(argv, '--workflow-run-id');

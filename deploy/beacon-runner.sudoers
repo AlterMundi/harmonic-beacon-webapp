@@ -3,5 +3,5 @@ Defaults:beacon-runner !setenv
 Defaults!/usr/local/sbin/hb-deploy env_reset
 Defaults!/usr/local/sbin/hb-deploy env_delete += "BASH_ENV ENV NODE_OPTIONS NODE_PATH GIT_CONFIG_* GIT_DIR GIT_WORK_TREE DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME SSL_CERT_FILE SSL_CERT_DIR GITHUB_TOKEN GH_TOKEN"
 
-Cmnd_Alias HARMONIC_BEACON_DEPLOY = /usr/local/sbin/hb-deploy health *, /usr/local/sbin/hb-deploy boundary, /usr/local/sbin/hb-deploy artifact-prepare *, /usr/local/sbin/hb-deploy artifact-preflight *, /usr/local/sbin/hb-deploy artifact-migrate *, /usr/local/sbin/hb-deploy artifact-replace *, /usr/local/sbin/hb-deploy artifact-status *, /usr/local/sbin/hb-deploy artifact-rollback *
+Cmnd_Alias HARMONIC_BEACON_DEPLOY = /usr/local/sbin/hb-deploy health *, /usr/local/sbin/hb-deploy boundary, /usr/local/sbin/hb-deploy artifact-prepare *, /usr/local/sbin/hb-deploy artifact-preflight *, /usr/local/sbin/hb-deploy artifact-migrate *, /usr/local/sbin/hb-deploy artifact-replace *, /usr/local/sbin/hb-deploy artifact-status *, /usr/local/sbin/hb-deploy artifact-rollback *, /usr/local/sbin/hb-deploy artifact-authorize-rollback *
 beacon-runner ALL=(root) NOPASSWD:NOSETENV: HARMONIC_BEACON_DEPLOY

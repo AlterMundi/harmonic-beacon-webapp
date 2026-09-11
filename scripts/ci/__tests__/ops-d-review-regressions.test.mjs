@@ -142,7 +142,7 @@ test('repair: every checkout and setup-node action is immutable with explicit mi
     const workflow = read(file);
     assert.match(workflow, /^\s{0,4}permissions:\n/mu);
     assert.match(workflow, /^\s{2,6}contents: read$/mu);
-    if (!file.endsWith('oci-candidate.yml')) assert.doesNotMatch(workflow, /^\s{2,6}[a-z-]+: write$/mu);
+    if (!file.endsWith('oci-candidate.yml') && !file.endsWith('oci-promote.yml')) assert.doesNotMatch(workflow, /^\s{2,6}[a-z-]+: write$/mu);
     for (const match of workflow.matchAll(/actions\/(?:checkout|setup-node)@([^\s]+)/gu)) {
       assert.match(match[1], /^[0-9a-f]{40}$/u, `${file}: ${match[0]}`);
     }

@@ -33,7 +33,7 @@ function makeCommitFixture(root) {
   mkdirSync(candidate, { recursive: true, mode: 0o700 });
   writePrivate(join(transaction, 'receipt.json'), `${JSON.stringify({
     target: 'production', phase: 'replaced', manifestSha256: CANDIDATE_SHA,
-    baseManifestSha256: BASE_SHA,
+    baseManifestSha256: BASE_SHA, basePublication: BASE_STATE.publication, candidatePublication: CANDIDATE_STATE.publication,
   })}\n`);
   writePrivate(join(state, 'current-state.json'), JSON.stringify(BASE_STATE));
   writePrivate(join(state, 'active-transaction'), `${RUN_ID}\n`);
@@ -42,6 +42,11 @@ function makeCommitFixture(root) {
   writePrivate(join(candidate, 'docker-compose.yml'), Buffer.from(CANDIDATE_STATE.composeBase64, 'base64'));
   writePrivate(join(candidate, 'oci-images.compose.yml'), Buffer.from(CANDIDATE_STATE.overlayBase64, 'base64'));
   writePrivate(join(candidate, 'target-public-config.json'), Buffer.from(CANDIDATE_STATE.publicConfigBase64, 'base64'));
+  const prior = join(transaction, 'prior');
+  mkdirSync(prior, { mode: 0o700 });
+  for (const [field, name] of Object.entries({ manifestBase64: 'prior-manifest.json', composeBase64: 'docker-compose.yml', overlayBase64: 'oci-images.compose.yml', publicConfigBase64: 'target-public-config.json' })) {
+    writePrivate(join(prior, name), Buffer.from(BASE_STATE[field], 'base64'));
+  }
   return { state, transaction };
 }
 

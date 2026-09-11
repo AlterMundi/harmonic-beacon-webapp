@@ -108,7 +108,7 @@ describe('Live production Account app-only contract', () => {
         expect(deploy).not.toContain('run --rm --no-deps migrate npx prisma migrate deploy');
         expect(deploy).not.toMatch(/\bgit\b/);
         expect(deploy).not.toMatch(/^\s+preflight\)/m);
-        expect(deploy).toContain('usage: hb-deploy {health|boundary|artifact-prepare');
+        expect(deploy).toContain('usage: hb-deploy artifact-{prepare|preflight|migrate|replace|status|authorize-rollback|rollback} DELIVERY_RUN_ID DELIVERY_ATTEMPT');
         expect(deploy).toContain('Account RP secret reached unexpected container');
         expect(deploy).toContain("ACCOUNT_ENV='/etc/harmonic-beacon/live-production-secrets/account.env'");
     });

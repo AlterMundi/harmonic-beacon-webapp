@@ -26,7 +26,7 @@ OPS-D adds a fail-closed artifact lane without replacing the existing release pa
    manifest hash. Rollback references are never accepted from candidate data;
    they are derived from the root-owned prior current state.
 3. `.github/workflows/oci-promote.yml` pins the exact candidate workflow path
-   and repository workflow ID, exact current-main checkout/SHA/tree, candidate
+   and repository workflow ID, trusted main checkout and exact source SHA/tree, candidate
    run and attempt, manifest byte hash, and target profile digest. Candidate
    files are parsed only as data and never executed with Mona credentials.
 4. The root-owned `hb-deploy` route remains mandatory. Every `artifact-*`
@@ -48,21 +48,35 @@ OPS-D adds a fail-closed artifact lane without replacing the existing release pa
 OCI shadow preparation only. The legacy source deployment workflow is on an
 explicit fail-closed security safety hold, including when the state is absent.
 Its sudo-callable mutation verbs have been removed. `oci-production` remains a
-guarded transition requiring separately reviewed qualification and live-state
-evidence. Local remediation does not authorize production activation.
+guarded transition requiring authenticated hosted measurements and protected
+delivery authorization. Local remediation does not authorize production activation.
 Direct Docker or Compose access by the Actions user is never an authorized direct-Compose fallback.
 
-Production preparation verifies actual runtime against the prior high-water
+The underlying preparation implementation verifies actual runtime against the prior high-water
 before publishing an active transaction. Candidate pulls may precede this
 readback; Compose, migrations and runtime changes may not. Reconciliation uses
 exact configured refs and actual image IDs, dependency containers, health and
 readiness, public provenance/config digest, and the private boundary. Failure
 removes the disposable prepared directory without publishing an active marker.
 Migration repeats this full prior-state check before changing phase or invoking
-Compose. Every production verb revalidates the complete v3 state, lane,
+Compose. Every production verb revalidates the complete v4 state, lane,
 transaction phase and high-water CAS. Forward and rollback publication use the
-same full v3 writer only after runtime verification, retaining file fsync,
-atomic rename, directory fsync and crash-recovery boundaries.
+same full v4 writer only after runtime verification, retaining file fsync,
+atomic rename, directory fsync and crash-recovery boundaries. The closed v4
+publication object binds a positive safe-integer generation, a random 256-bit
+identity and the exact manifest digest. Preparation durably records base and
+candidate publications before Docker access. Rollback binds a new publication
+before runtime changes; restoring identical content never restores its old
+publication identity. Retries match the exact publication, including after a
+crash between rollback state publication and the rolled-back phase marker.
+Legacy publication remains disabled by the safety hold; no legacy/v3 state
+migration is provided.
+
+This lane recreates only app-role services. Before Docker access, candidate
+Compose and OCI-overlay bytes must equal the prior state, and external image
+refs must remain unchanged. This measures exact stored bytes and refs, not a
+`docker compose config` hash. Dependency transitions need a separate reviewed
+implementation.
 
 The qualified artifact includes the manifest, qualification receipt, exactly six
 bound evidence files per first-party image, `docker-compose.yml`,
@@ -91,44 +105,71 @@ Owner prerequisites before any real run:
   non-symlink directories without group/other write permission. Provision
   `/etc/harmonic-beacon/registry.env` as `0600 root:root`;
 - initialize `/var/lib/harmonic-beacon/releases/current-state.json` as one
-  `0600 root:root` `harmonic-beacon.current-state.v3` object: exclusively
+  `0600 root:root` `harmonic-beacon.current-state.v4` object: exclusively
   `oci-production`, with the exact qualified manifest and digest-bound Compose,
   OCI overlay and reviewed production public-config bytes. The trusted manifest
   module recursively closes the manifest/config schema and rejects missing or
   unknown state fields, malformed base64/digests and all byte contradictions.
-  Every v2 or legacy host is deliberately blocked before shadow or production
+  Every v3, v2 or legacy host is deliberately blocked before shadow or production
   preparation. A separately reviewed root-owned reconciliation must prove an
-  exact OCI live state and install v3 first. There is no helper migration verb,
+  exact OCI live state and install v4 first. There is no helper migration verb,
   generic root fallback, lane/source rewrite or legacy execution shortcut;
 - independently pin `cosign`, verify production public settings against
   `deploy/runtime-public-config/production.json`, and complete a real shadow,
   rollback and forward-repair exercise before selecting `oci-production`.
-  Production prepare requires `0600 root:root` files beneath root-owned,
-  non-writable ancestors in `/var/lib/harmonic-beacon/releases/transition-evidence`:
-  `authorization.json`, `qualification.json`, and, for each stage `shadow`,
-  `rollback`, `forward-repair`, `<stage>.json`, `<stage>.execution.json`, and
-  `<stage>.signature.bundle.json`. Root independently authenticates each receipt
-  with keyless cosign verify-blob, issuer `https://token.actions.githubusercontent.com`
-  and exact identity
-  `https://github.com/AlterMundi/harmonic-beacon-webapp/.github/workflows/oci-promote.yml@refs/heads/main`.
-  The pinned `release-manifest.mjs validate-transition` command then validates
-  exact file digests and closed v3 semantics. Operator-authored verification
-  booleans and all v1/v2 transition receipts are rejected.
+  Production promote requires the hosted `rehearse` job in the protected shadow
+  environment to measure base → candidate → base → candidate, validate the
+  output, and sign the aggregate and three stage receipts. There is no mutable
+  `transition-evidence` directory or operator-authored evidence fallback.
+  Root admits the fixed transition inventory from the authorized artifact,
+  authenticates all four signatures before parsing, validates digest-bound
+  execution bytes, and binds the aggregate hash to delivery authority.
 
-  Authorization binds candidate/base manifest byte hashes, qualification receipt
-  digest, candidate run and attempt, and each receipt/execution digest. It has
-  canonical UTC `authorizedAt`/`expiresAt` timestamps, a maximum 24-hour lifetime,
-  and accepts only ordered evidence completed in the preceding 24 hours.
-  Stage receipts bind separate execution evidence and an `issuedAt` timestamp.
-  Execution records contain ordered successful command results (`name`,
-  `argvSha256`, start/end timestamps, `exitCode`, stdout/stderr SHA-256 digests),
-  and before/after manifest, public-config, health and private-boundary content
-  digests. Shadow measures candidate; rollback measures candidate to base;
-  forward repair measures base to candidate. Recovery uses exact elapsed integer
-  milliseconds bounded by `maxRecoveryMs` (at most one hour).
-  These schemas and authentication are admission contracts; a hosted trusted
-  workflow must actually collect the measurements and sign their receipts.
-  No hosted collector or successful drill is established by these local tests.
+The hosted `authorize` job uses the selected protected environment. Only hosted
+`rehearse` and `authorize` have `id-token: write`; Mona has none. Authorization
+verifies the signed canonical candidate and independently resolved exact base
+artifact, then signs `delivery-authorization.json`. Production promote also
+requires the same delivery run/attempt transition artifact. Shadow promote and
+fresh committed rollback do not require a new rehearsal.
+The `authorized-promotion-<delivery-run>-<attempt>` artifact includes that file
+and `delivery-authorization.signature.bundle.json`, the candidate, and (for
+production promote) the 12-file `transition/` inventory. Mona has no OIDC permission.
+The root helper descriptor-admits these bytes from the fixed candidate root,
+verifies the exact promotion workflow identity, and uses the installed closed
+validator before persisting all bindings and the authorization digest.
+
+Dispatch requires `operation` (`promote` or `rollback`), `target`, candidate
+and base candidate run IDs, source SHA and manifest hash. The legal tuples are
+`legacy-shadow/shadow/promote`, `oci-production/production/promote`, and `oci-production/production/rollback`. Authorization binds source
+SHA/tree, candidate/base manifests, candidate and delivery runs/attempts,
+workflow path/ref, environment/target/operation, config digest, exact verbs,
+and a transition digest for production promote. Canonical UTC millisecond
+times cannot be future dated and have a maximum 15-minute lifetime.
+
+Every artifact command now takes `DELIVERY_RUN_ID DELIVERY_ATTEMPT` before
+its existing arguments. Exact forms (through the reviewed workflow only):
+
+```text
+artifact-prepare DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_ROOT SOURCE_SHA SOURCE_TREE CANDIDATE_RUN_ID MANIFEST_SHA256 TARGET CONFIG_SHA256 CANDIDATE_ATTEMPT
+artifact-preflight DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID TARGET
+artifact-migrate DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID
+artifact-replace DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID
+artifact-status DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID TARGET
+artifact-authorize-rollback DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID
+artifact-rollback DELIVERY_RUN_ID DELIVERY_ATTEMPT CANDIDATE_RUN_ID
+```
+
+A prepare consumes its protected run/attempt durably before registry effects;
+shadow completion retains this replay tombstone. A failure before transaction
+publication requires a fresh hosted authorization. After transaction activation,
+exact active failure rollback can resume using its original promote authority,
+including after expiry. A markerless committed rollback requires a new hosted
+`operation=rollback` authorization via `artifact-authorize-rollback`. Admission
+requires the exact current candidate publication, persists rollback intent
+before effects, and allows only that rollback to resume after expiry. Completed
+or obsolete transactions cannot start another rollback. Existing receipts
+without delivery bindings cannot use ordinary artifact verbs; no implicit
+migration or self-attestation path is provided.
 
 This repository change performs none of those GitHub, registry, host, drill or
 production mutations. Until they are separately evidenced, the OCI lane is

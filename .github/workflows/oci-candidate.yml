@@ -149,6 +149,7 @@ jobs:
       contents: read
       packages: read
       actions: read
+      id-token: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -184,11 +185,12 @@ jobs:
           set -euo pipefail
           node scripts/ci/qualify-oci.mjs --manifest candidate.json \
             --compose deploy/qualification.compose.yml --receipt qualification-receipt.json --no-build
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159
       - name: Seal canonical release manifest
         run: |
           set -euo pipefail
-          QUALIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          EXPIRES_AT="$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)"
+          QUALIFIED_AT="$(node -p "JSON.parse(require('fs').readFileSync('qualification-receipt.json')).issuedAt")"
+          EXPIRES_AT="$(node -p "new Date(Date.parse(JSON.parse(require('fs').readFileSync('qualification-receipt.json')).issuedAt)+86400000).toISOString()")"
           jq -n --arg runId "$GITHUB_RUN_ID" --argjson runAttempt "$GITHUB_RUN_ATTEMPT" \
             --arg qualifiedAt "$QUALIFIED_AT" \
             --arg expiresAt "$EXPIRES_AT" --arg candidateIdentitySha256 "$(cat candidate.sha256)" \
@@ -197,6 +199,8 @@ jobs:
             > qualification.json
           node scripts/ci/release-manifest.mjs assemble --candidate candidate.json \
             --qualification qualification.json --output release-manifest.json
+          cosign sign-blob --yes --bundle release-manifest.signature.bundle.json release-manifest.json
+          cosign sign-blob --yes --bundle qualification-receipt.signature.bundle.json qualification-receipt.json
           sha256sum release-manifest.json > release-manifest.sha256
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -204,6 +208,8 @@ jobs:
           path: |
             release-manifest.json
             release-manifest.sha256
+            release-manifest.signature.bundle.json
+            qualification-receipt.signature.bundle.json
             qualification-receipt.json
             evidence/
             docker-compose.yml

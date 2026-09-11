@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, writeFileSync, unlinkSync,
 } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
@@ -36,11 +36,11 @@ function fileIdentity(stat) {
   return [stat.dev, stat.ino, stat.mode, stat.nlink, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
 }
 
-export function admitRegularFile(source, output, { expectedSha256, maximumBytes }) {
+export function admitRegularFile(source, output, { expectedSha256, maximumBytes, signatureBundle = false }) {
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1 || maximumBytes > 64 * 1024 * 1024) {
     fail('invalid admission byte limit');
   }
-  digest(expectedSha256, 'admission source');
+  if (!signatureBundle) digest(expectedSha256, 'admission source');
   let before;
   try { before = lstatSync(source, { bigint: true }); } catch { fail('unsafe admission source'); }
   if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n ||
@@ -60,7 +60,7 @@ export function admitRegularFile(source, output, { expectedSha256, maximumBytes 
       fail('admission source changed while reading');
     }
     const actual = publicConfigSha256(bytes);
-    if (actual !== expectedSha256) fail('admission source digest mismatch');
+    if (!signatureBundle && actual !== expectedSha256) fail('admission source digest mismatch');
     let destination;
     try {
       destination = openSync(output, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
@@ -297,6 +297,8 @@ export function validateReleaseManifest(manifest) {
   const qualifiedAt = date(manifest.qualification.qualifiedAt, 'qualification time');
   const expiresAt = date(manifest.qualification.expiresAt, 'qualification expiry');
   if (expiresAt <= qualifiedAt) fail('qualification expiry must follow qualification time');
+  // Qualification is a daily admission credential, never a renewable release lease.
+  if (expiresAt - qualifiedAt > 86_400_000) fail('qualification lifetime exceeds 24 hours');
   sha256(manifest.qualification.candidateIdentitySha256, 'candidate identity');
   digest(manifest.qualification.receiptSha256, 'qualification receipt');
   if (manifest.qualification.runId !== manifest.build.workflowRunId ||
@@ -309,14 +311,32 @@ export function validateReleaseManifest(manifest) {
   return manifest;
 }
 
+export function validatePublication(value) {
+  exactKeys(value, 'publication', ['generation', 'id', 'manifestSha256']);
+  if (!Number.isSafeInteger(value.generation) || value.generation < 1) fail('invalid publication generation');
+  sha256(value.id, 'publication identity');
+  sha256(value.manifestSha256, 'publication manifest');
+  return value;
+}
+export function nextPublication(current, manifestSha256) {
+  validatePublication(current);
+  return validatePublication({ generation: current.generation + 1, id: randomBytes(32).toString('hex'), manifestSha256 });
+}
+function samePublication(a, b) {
+  validatePublication(a); validatePublication(b);
+  return a.generation === b.generation && a.id === b.id && a.manifestSha256 === b.manifestSha256;
+}
+
 // Historical live state must remain valid after qualification expires. Admission
 // freshness is checked separately; the full qualified manifest is still closed.
 export function validateCurrentState(state) {
   exactKeys(state, 'current state', ['schemaVersion', 'laneState', 'manifestSha256',
-    'manifestBase64', 'composeBase64', 'overlayBase64', 'publicConfigBase64']);
-  if (state.schemaVersion !== 'harmonic-beacon.current-state.v3') fail('unsupported current release state');
+    'manifestBase64', 'composeBase64', 'overlayBase64', 'publicConfigBase64', 'publication']);
+  if (state.schemaVersion !== 'harmonic-beacon.current-state.v4') fail('unsupported current release state');
   if (state.laneState !== 'oci-production') fail('invalid live high-water lane');
   sha256(state.manifestSha256, 'current manifest');
+  validatePublication(state.publication);
+  if (state.publication.manifestSha256 !== state.manifestSha256) fail('publication manifest mismatch');
   const decoded = {};
   for (const field of ['manifestBase64', 'composeBase64', 'overlayBase64', 'publicConfigBase64']) {
     const encoded = state[field];
@@ -355,7 +375,11 @@ export function verifyReleaseManifest(manifest, expected) {
   if (!['live-staging', 'production'].includes(target)) fail('invalid promotion target');
   if (manifest.configProfiles[target].sha256 !== expected.targetConfigSha256) fail('config profile mismatch');
   if (manifest.promotion.baseManifestSha256 !== expected.currentBaseManifestSha256) fail('stale candidate base manifest');
-  if (new Date(expected.now ?? Date.now()) >= new Date(manifest.qualification.expiresAt)) fail('qualification has expired');
+  const now = new Date(expected.now ?? Date.now()).getTime();
+  const qualifiedAt = Date.parse(manifest.qualification.qualifiedAt);
+  if (!Number.isFinite(now)) fail('invalid verification time');
+  if (qualifiedAt > now) fail('qualification is in the future');
+  if (now - qualifiedAt > 86_400_000 || now >= Date.parse(manifest.qualification.expiresAt)) fail('qualification has expired');
 
   const evidence = object(expected.registryEvidence, 'registry evidence');
   const imageRefs = {};
@@ -400,24 +424,26 @@ export function validateQualificationEvidence(evidence) {
   })) exactKeys(evidence[key], key === 'syntheticSession' ? 'synthetic session' : key, fields);
   string(evidence.schema.expectedHead, 'schema head', /^[0-9]{14}_[a-z0-9_]+$/u);
   if (!Array.isArray(evidence.isolation.forbiddenSecretNamesFound)) fail('invalid secret isolation');
-  if (evidence.browser?.engine !== 'chromium' || !Number.isSafeInteger(evidence.browser.passed) || evidence.browser.passed < 1 ||
+  // Isolated qualification has at most 10,000 tests/sessions/queue rows and
+  // a 1 GiB logical backup; exceeding these budgets invalidates the drill.
+  if (evidence.browser?.engine !== 'chromium' || !Number.isSafeInteger(evidence.browser.passed) || evidence.browser.passed > 10000 || evidence.browser.passed < 1 ||
       !Number.isSafeInteger(evidence.browser.failed) || evidence.browser.failed !== 0 ||
       !Number.isSafeInteger(evidence.browser.skipped) || evidence.browser.skipped !== 0) fail('browser acceptance did not pass without skips');
-  if (!Number.isSafeInteger(evidence.syntheticSession?.created) || evidence.syntheticSession.created < 1 ||
+  if (!Number.isSafeInteger(evidence.syntheticSession?.created) || evidence.syntheticSession.created > 10000 || evidence.syntheticSession.created < 1 ||
       evidence.syntheticSession.authenticatedRole !== 'ADMIN') {
     fail('synthetic session acceptance is incomplete');
   }
   if (!Number.isSafeInteger(evidence.commerce?.workerHeartbeatAgeMs) || evidence.commerce.workerHeartbeatAgeMs < 0 ||
       evidence.commerce.workerHeartbeatAgeMs > 10_000 || !Number.isSafeInteger(evidence.commerce.pending) ||
-      evidence.commerce.pending < 0 || !Number.isSafeInteger(evidence.commerce.processing) || evidence.commerce.processing < 0) {
+      evidence.commerce.pending > 10000 || evidence.commerce.pending < 0 || !Number.isSafeInteger(evidence.commerce.processing) || evidence.commerce.processing > 10000 || evidence.commerce.processing < 0) {
     fail('commerce worker/backlog evidence is invalid');
   }
   if (!evidence.schema?.expectedHead || evidence.schema.observedHead !== evidence.schema.expectedHead) fail('schema head mismatch');
   if (JSON.stringify(evidence.isolation?.internalNetworks) !== JSON.stringify(['database', 'media']) ||
       evidence.isolation?.forbiddenSecretNamesFound?.length !== 0) fail('network or secret isolation failed');
   if (!/^sha256:[0-9a-f]{64}$/u.test(evidence.restore?.backupSha256 ?? '') ||
-      !Number.isSafeInteger(evidence.restore.backupBytes) || evidence.restore.backupBytes < 1 ||
-      !Number.isSafeInteger(evidence.restore.restoredSessionCount) || evidence.restore.restoredSessionCount < 1) {
+      !Number.isSafeInteger(evidence.restore.backupBytes) || evidence.restore.backupBytes > 1073741824 || evidence.restore.backupBytes < 1 ||
+      !Number.isSafeInteger(evidence.restore.restoredSessionCount) || evidence.restore.restoredSessionCount > 10000 || evidence.restore.restoredSessionCount < 1) {
     fail('isolated backup restore evidence is invalid');
   }
   return evidence;
@@ -427,11 +453,19 @@ export function validateQualificationReceipt(receipt, manifest) {
   if (manifest?.qualification === undefined) validateCandidateManifest(manifest);
   else validateReleaseManifest(manifest);
   exactKeys(receipt, 'qualification receipt', ['schemaVersion', 'result', 'workflowRunId',
-    'workflowRunAttempt', 'candidateIdentitySha256', 'imageRefs', 'checkedServices', 'acceptance']);
+    'workflowRunAttempt', 'candidateIdentitySha256', 'imageRefs', 'checkedServices', 'acceptance',
+    'qualificationJob', 'measurementStartedAt', 'measurementCompletedAt', 'issuedAt']);
   if (receipt.schemaVersion !== 'oci-qualification.v3' || receipt.result !== 'success' ||
       receipt.workflowRunId !== manifest.build.workflowRunId ||
       receipt.workflowRunAttempt !== manifest.build.workflowRunAttempt ||
       receipt.candidateIdentitySha256 !== candidateIdentitySha256(manifest)) fail('qualification candidate/run mismatch');
+  if (receipt.qualificationJob !== 'qualify') fail('qualification job mismatch');
+  const started = date(receipt.measurementStartedAt, 'measurement start');
+  const completed = date(receipt.measurementCompletedAt, 'measurement completion');
+  const issued = date(receipt.issuedAt, 'receipt issuance');
+  if (started < Date.parse(manifest.build.createdAt) || completed <= started || issued < completed ||
+      issued - started > 3_600_000) fail('qualification measurement time mismatch');
+  if (manifest.qualification && (Date.parse(manifest.qualification.qualifiedAt) !== issued.getTime())) fail('qualification issuance mismatch');
   const entries = [...manifest.artifacts, ...manifest.externalImages];
   exactKeys(receipt.imageRefs, 'qualification image refs', entries.map(e => e.artifactId ?? e.serviceId));
   for (const entry of entries) {
@@ -442,6 +476,60 @@ export function validateQualificationReceipt(receipt, manifest) {
   validateQualificationEvidence(receipt.acceptance);
   if (receipt.acceptance.schema.expectedHead !== manifest.migrationSet.head) fail('qualification manifest schema mismatch');
   return receipt;
+}
+
+// These bytes are authenticated by the privileged caller before this parser runs.
+export function validateDeliveryAuthorization(bytes, expected = {}, { now = Date.now(), allowExpired = false } = {}) {
+  const a = JSON.parse(bytes);
+  if (!Buffer.from(bytes).equals(Buffer.from(canonicalize(a)))) fail('noncanonical delivery authorization');
+  exactKeys(a, 'delivery authorization', ['schemaVersion', 'sourceSha', 'sourceTree',
+    'candidateManifestSha256', 'baseManifestSha256', 'candidateRunId', 'candidateRunAttempt',
+    'deliveryRunId', 'deliveryRunAttempt', 'workflowPath', 'workflowRef', 'laneState',
+    'environment', 'target', 'operation', 'configSha256', 'transitionAuthorizationSha256',
+    'verbs', 'authorizedAt', 'expiresAt']);
+  if (a.schemaVersion !== 'harmonic-beacon.delivery-authorization.v1' ||
+      a.workflowPath !== '.github/workflows/oci-promote.yml' || a.workflowRef !== 'refs/heads/main') fail('invalid delivery workflow');
+  for (const k of ['sourceSha', 'sourceTree']) string(a[k], k, /^[0-9a-f]{40}$/u);
+  for (const k of ['candidateManifestSha256', 'baseManifestSha256']) string(a[k], k, /^[0-9a-f]{64}$/u);
+  for (const k of ['candidateRunId', 'deliveryRunId']) string(a[k], k, /^[1-9][0-9]{0,19}$/u);
+  for (const k of ['candidateRunAttempt', 'deliveryRunAttempt']) bounded(a[k], k, 9999999999, 1);
+  digest(a.configSha256, 'delivery config');
+  if (!['legacy-shadow:shadow:promote', 'oci-production:production:promote', 'oci-production:production:rollback']
+    .includes(`${a.laneState}:${a.target}:${a.operation}`) || a.environment !== a.target) fail('invalid delivery target/operation');
+  const verbs = a.operation === 'rollback' ? ['rollback'] : a.target === 'shadow' ? ['prepare', 'preflight', 'status'] : ['prepare', 'preflight', 'migrate', 'replace', 'status', 'rollback'];
+  if (JSON.stringify(a.verbs) !== JSON.stringify(verbs)) fail('invalid delivery verbs');
+  if (a.target === 'production' && a.operation === 'promote') digest(a.transitionAuthorizationSha256, 'delivery transition');
+  else if (a.transitionAuthorizationSha256 !== null) fail('unexpected delivery transition');
+  const start = +date(a.authorizedAt, 'delivery authorization time');
+  const end = +date(a.expiresAt, 'delivery authorization expiry');
+  if (!Number.isSafeInteger(now) || start > now || end <= start || end - start > 900000 || (!allowExpired && end <= now)) fail('stale delivery authorization');
+  for (const [key, value] of Object.entries(expected)) {
+    if (!(key in a) || canonicalize(a[key]) !== canonicalize(value)) fail(`delivery ${key} mismatch`);
+  }
+  return a;
+}
+
+function deliveryReceiptBinding(receipt) {
+  return { sourceSha: receipt.sourceSha, sourceTree: receipt.sourceTree,
+    candidateManifestSha256: receipt.manifestSha256, baseManifestSha256: receipt.baseManifestSha256,
+    candidateRunId: receipt.workflowRunId, candidateRunAttempt: receipt.workflowRunAttempt,
+    target: receipt.target, environment: receipt.target, configSha256: receipt.targetConfigSha256 };
+}
+
+export function validateDeliveryInvocation(receipt, { deliveryRunId, deliveryRunAttempt, target, verb, activeRunId = null }, now = Date.now()) {
+  const rollback = receipt.rollbackDeliveryAuthorization;
+  const a = rollback ?? receipt.deliveryAuthorization;
+  if (!a) fail('missing persisted delivery authorization');
+  const bytes = Buffer.from(canonicalize(a));
+  if (publicConfigSha256(bytes) !== (rollback ? receipt.rollbackDeliveryAuthorizationSha256 : receipt.deliveryAuthorizationSha256)) fail('persisted delivery digest mismatch');
+  const active = activeRunId === receipt.workflowRunId;
+  const resume = (active && target === 'production') || (rollback && receipt.rollbackIntent === true) ||
+    (verb === 'status' && receipt.phase === 'committed') || (verb === 'rollback' && receipt.phase === 'rolled-back');
+  validateDeliveryAuthorization(bytes, { ...deliveryReceiptBinding(receipt), deliveryRunId, deliveryRunAttempt, target }, { now, allowExpired: Boolean(resume) });
+  if (!a.verbs.includes(verb) || (a.operation === 'rollback' && verb !== 'rollback')) fail('delivery verb is not authorized');
+  if (verb === 'rollback' && a.operation === 'promote' && !active && receipt.phase !== 'rolled-back') fail('fresh rollback authorization required');
+  if (a.operation === 'rollback' && receipt.rollbackIntent !== true) fail('missing durable rollback intent');
+  return a;
 }
 
 const TRANSITION_STAGES = ['shadow', 'rollback', 'forward-repair'];
@@ -469,6 +557,7 @@ export function validateTransitionEvidence({ manifest, manifestBytes, authorizat
   if (publicConfigSha256(qualificationBytes) !== binding.qualificationReceiptSha256) fail('transition qualification digest mismatch');
   validateQualificationReceipt(JSON.parse(qualificationBytes), manifest);
   const authorization = JSON.parse(authorizationBytes);
+  if (!Buffer.from(authorizationBytes).equals(Buffer.from(canonicalize(authorization)))) fail('noncanonical transition authorization');
   exactKeys(authorization, 'transition authorization', ['schemaVersion', 'laneState', ...TRANSITION_BINDING, 'authorizedAt', 'expiresAt', 'stages']);
   checkBinding(authorization);
   if (authorization.schemaVersion !== 'harmonic-beacon.oci-transition.v3' || authorization.laneState !== 'oci-production') fail('invalid transition authorization');
@@ -490,12 +579,14 @@ export function validateTransitionEvidence({ manifest, manifestBytes, authorizat
         executionDigests.has(hashes.executionEvidenceSha256)) fail('transition evidence digest mismatch or reuse');
     executionDigests.add(hashes.executionEvidenceSha256);
     const receipt = JSON.parse(receiptBytes);
+    if (!Buffer.from(receiptBytes).equals(Buffer.from(canonicalize(receipt)))) fail('noncanonical transition receipt');
     exactKeys(receipt, 'transition receipt', ['schemaVersion', 'stage', ...TRANSITION_BINDING, 'executionEvidenceSha256', 'issuedAt']);
     checkBinding(receipt);
     if (receipt.schemaVersion !== `harmonic-beacon.${stage}-receipt.v3` || receipt.stage !== stage ||
         receipt.executionEvidenceSha256 !== hashes.executionEvidenceSha256) fail('invalid transition receipt');
     const issuedAt = +date(receipt.issuedAt, 'receipt time');
     const execution = JSON.parse(executionBytes);
+    if (!Buffer.from(executionBytes).equals(Buffer.from(canonicalize(execution)))) fail('noncanonical transition execution');
     exactKeys(execution, 'execution evidence', ['schemaVersion', 'stage', ...TRANSITION_BINDING, 'startedAt', 'completedAt', 'commands', 'runtimeBefore', 'runtimeAfter',
       ...(stage === 'shadow' ? [] : ['observedRecoveryMs', 'maxRecoveryMs'])]);
     checkBinding(execution);
@@ -508,14 +599,14 @@ export function validateTransitionEvidence({ manifest, manifestBytes, authorizat
     let commandEnd = start;
     for (const command of execution.commands) {
       exactKeys(command, 'command result', ['name', 'argvSha256', 'startedAt', 'completedAt', 'exitCode', 'stdoutSha256', 'stderrSha256']);
-      string(command.name, 'command name', /^[a-z][a-z0-9-]{0,63}$/u);
+      if (!['measure-runtime', 'migrate-candidate', 'replace-runtime', 'check-compatibility'].includes(command.name)) fail('invalid logical command name');
       for (const key of ['argvSha256', 'stdoutSha256', 'stderrSha256']) digest(command[key], key);
       const cs = +date(command.startedAt, 'command start');
       const ce = +date(command.completedAt, 'command end');
       if (command.exitCode !== 0 || cs < commandEnd || ce < cs || ce > end) fail('invalid command result');
       commandEnd = ce;
     }
-    const beforeManifest = stage === 'forward-repair' ? binding.baseManifestSha256 : candidate;
+    const beforeManifest = stage === 'rollback' ? candidate : binding.baseManifestSha256;
     const afterManifest = stage === 'rollback' ? binding.baseManifestSha256 : candidate;
     for (const [key, expected] of [['runtimeBefore', beforeManifest], ['runtimeAfter', afterManifest]]) {
       const runtime = execution[key];
@@ -615,6 +706,89 @@ function parseArgs(argv) {
 
 export function main(argv = process.argv.slice(2)) {
   const { command, options } = parseArgs(argv);
+  if (command === 'validate-delivery') {
+    const manifest = JSON.parse(readFileSync(options.manifest));
+    validateReleaseManifest(manifest);
+    const a = validateDeliveryAuthorization(readFileSync(options.authorization), {
+      sourceSha: options['source-sha'], sourceTree: options['source-tree'],
+      candidateManifestSha256: options['manifest-sha256'], baseManifestSha256: manifest.promotion.baseManifestSha256,
+      candidateRunId: options['candidate-run-id'], candidateRunAttempt: Number(options['candidate-run-attempt']),
+      deliveryRunId: options['delivery-run-id'], deliveryRunAttempt: Number(options['delivery-run-attempt']),
+      target: options.target, environment: options.target, operation: 'promote', configSha256: options['config-sha256'],
+      transitionAuthorizationSha256: options.target === 'production' ? publicConfigSha256(readFileSync(resolve(dirname(options.authorization), '../transition/authorization.json'))) : null,
+    });
+    writeFileSync(options.output, canonicalize({ deliveryAuthorization: a,
+      deliveryAuthorizationSha256: publicConfigSha256(readFileSync(options.authorization)) }), { flag: 'wx', mode: 0o600 });
+    return 0;
+  }
+  if (command === 'check-delivery') {
+    validateDeliveryInvocation(JSON.parse(readFileSync(options.receipt)), {
+      deliveryRunId: options['delivery-run-id'], deliveryRunAttempt: Number(options['delivery-run-attempt']),
+      target: options.target, verb: options.verb, activeRunId: options['active-run-id'] ?? null,
+    });
+    return 0;
+  }
+  if (command === 'bind-rollback-delivery') {
+    const receipt = JSON.parse(readFileSync(options.receipt));
+    const state = JSON.parse(readFileSync(options.state));
+    validateCurrentState(state);
+    if (receipt.phase !== 'committed' || receipt.rollbackIntent || receipt.rollbackPublication ||
+        !samePublication(state.publication, receipt.candidatePublication)) fail('obsolete or replayed rollback');
+    const bytes = readFileSync(options.authorization);
+    const a = validateDeliveryAuthorization(bytes, { ...deliveryReceiptBinding(receipt),
+      operation: 'rollback', target: 'production', deliveryRunId: options['delivery-run-id'],
+      deliveryRunAttempt: Number(options['delivery-run-attempt']) });
+    if (a.deliveryRunId === receipt.deliveryAuthorization?.deliveryRunId) fail('rollback requires a new protected delivery run');
+    receipt.rollbackDeliveryAuthorization = a;
+    receipt.rollbackDeliveryAuthorizationSha256 = publicConfigSha256(bytes);
+    receipt.rollbackIntent = true;
+    writeFileSync(options.output, JSON.stringify(receipt), { flag: 'wx', mode: 0o600 });
+    return 0;
+  }
+  if (['bind-publications', 'match-publication', 'rollback-publication', 'publication-for-write'].includes(command)) {
+    const state = JSON.parse(readFileSync(options.state, 'utf8'));
+    validateCurrentState(state);
+    const receipt = JSON.parse(readFileSync(options.receipt, 'utf8'));
+    if (command === 'bind-publications') {
+      if (receipt.baseManifestSha256 !== state.manifestSha256) fail('base publication high-water mismatch');
+      receipt.basePublication = state.publication;
+      receipt.candidatePublication = nextPublication(state.publication, receipt.manifestSha256);
+    } else {
+      validatePublication(receipt.basePublication);
+      validatePublication(receipt.candidatePublication);
+      if (receipt.basePublication.manifestSha256 !== receipt.baseManifestSha256 ||
+          receipt.candidatePublication.manifestSha256 !== receipt.manifestSha256 ||
+          receipt.candidatePublication.generation !== receipt.basePublication.generation + 1 ||
+          receipt.candidatePublication.id === receipt.basePublication.id) fail('invalid transaction publications');
+      if (receipt.rollbackPublication) {
+        validatePublication(receipt.rollbackPublication);
+        const r = receipt.rollbackPublication;
+        if (r.manifestSha256 !== receipt.baseManifestSha256 ||
+            ![receipt.basePublication.generation + 1, receipt.candidatePublication.generation + 1].includes(r.generation) ||
+            [receipt.basePublication.id, receipt.candidatePublication.id].includes(r.id)) fail('invalid rollback publication');
+      }
+      if (command === 'match-publication') {
+        if (!receipt[options.kind + 'Publication'] || !samePublication(state.publication, receipt[options.kind + 'Publication'])) fail('publication high-water mismatch');
+        return 0;
+      }
+      if (command === 'rollback-publication') {
+        if (!samePublication(state.publication, receipt.basePublication) && !samePublication(state.publication, receipt.candidatePublication)) fail('rollback high-water mismatch');
+        receipt.rollbackPublication ??= nextPublication(state.publication, receipt.baseManifestSha256);
+      } else {
+        const publication = receipt[options.kind + 'Publication'];
+        validatePublication(publication);
+        if (!samePublication(state.publication, publication)) {
+          if (publication.generation !== state.publication.generation + 1 || publication.id === state.publication.id ||
+              !(samePublication(state.publication, receipt.basePublication) ||
+                (options.kind === 'rollback' && samePublication(state.publication, receipt.candidatePublication)))) fail('publication high-water mismatch');
+        }
+        process.stdout.write(JSON.stringify(publication));
+        return 0;
+      }
+    }
+    writeFileSync(options.output, JSON.stringify(receipt), { mode: 0o600 });
+    return 0;
+  }
   if (command === 'validate-current-state' || command === 'unpack-current-state') {
     const decoded = validateCurrentState(JSON.parse(readFileSync(resolve(options.state), 'utf8')));
     if (command === 'unpack-current-state') {
@@ -670,11 +844,11 @@ export function main(argv = process.argv.slice(2)) {
     writeFileSync(resolve(options.output), canonicalize(manifest), { flag: 'wx', mode: 0o600 });
     return 0;
   }
-  if (command === 'admit-file') {
+  if (command === 'admit-file' || command === 'admit-signature') {
     const maximumBytes = Number(options['maximum-bytes']);
     const actual = admitRegularFile(
       resolve(options.source), resolve(options.output),
-      { expectedSha256: options['expected-sha256'], maximumBytes },
+      { expectedSha256: options['expected-sha256'], maximumBytes, signatureBundle: command === 'admit-signature' },
     );
     console.log(actual);
     return 0;
