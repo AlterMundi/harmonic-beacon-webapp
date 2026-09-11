@@ -17,10 +17,17 @@ There is no direct Compose, generic-runner, SSH, or manual production fallback.
 
 Pull requests are validated by `.github/workflows/account-delivery.yml` on
 GitHub-hosted capacity. Manual staging/production dispatch is inert until the
-protected environments, dedicated runner labels, exact installed helper,
-sudoers policy, state directories, and target-specific activation markers in
+protected environments, dedicated runner labels, exact independently installed
+root-owned lifecycle source/manifest and matching helper, sudoers policy, state
+directories, and target-specific activation markers in
 the v1 contract are externally provisioned. This repository change does not
 perform that activation.
+
+Each dispatch names the exact source SHA, prerequisite CI run and attempt,
+delivery run and attempt, operation, target, and reviewed configuration-contract
+SHA-256. Privileged jobs do not check out repository bytes; the helper executes
+only the independently installed root-owned bundle and publishes immutable,
+state-bound receipts through create-or-compare CAS.
 
 ## Production boundary retained
 

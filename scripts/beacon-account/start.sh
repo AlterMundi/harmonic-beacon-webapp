@@ -13,12 +13,16 @@ if [ "$checkpoint" = interrupt-after-cutover ] && [ "$environment" != staging ];
 fi
 
 account_load_deploy_env "$ACCOUNT_DEPLOY_FILE"
-exec 9>"/run/lock/beacon-account-$environment.lock"
-flock -n 9 || account_fail "another $environment deployment is active"
+if [ "${HB_ACCOUNT_DELIVERY_LOCK_HELD:-0}" != 1 ]; then
+  exec 9>"/run/lock/beacon-account-$environment.lock"
+  flock -n 9 || account_fail "another $environment deployment is active"
+fi
 account_require_internal_mail_network "$environment"
 root=$(account_repo_root)
-test "$(git -C "$root" rev-parse HEAD)" = "$BEACON_ACCOUNT_GIT_SHA" || account_fail 'release checkout SHA mismatch'
-test -z "$(git -C "$root" status --porcelain)" || account_fail 'release checkout is dirty'
+test -n "${HB_ACCOUNT_TRUSTED_SOURCE_SHA:-}" ||
+  account_fail 'start.sh requires a validated installed lifecycle source'
+test "$HB_ACCOUNT_TRUSTED_SOURCE_SHA" = "$BEACON_ACCOUNT_GIT_SHA" ||
+  account_fail 'trusted lifecycle source SHA mismatch'
 previous_sha=$(account_capture_previous_runtime "$environment")
 previous_worker_present=$(account_capture_previous_worker "$environment" "$previous_sha")
 cutover_started=0
