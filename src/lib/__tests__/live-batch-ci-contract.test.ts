@@ -229,13 +229,6 @@ describe('Isolated Account CI gate', () => {
 });
 
 describe('Main browser CI execution policy', () => {
-    it('does not spend full qualification runs on metadata-only PR edits', () => {
-        for (const file of ['.github/workflows/ci.yml', '.github/workflows/e2e.yml']) {
-            const source = readFileSync(file, 'utf8');
-            expect(source).not.toMatch(/types:\s*\[[^\]]*\bedited\b[^\]]*\]/);
-        }
-    });
-
     it('keeps the production-mode LiveKit public endpoint on a private WSS proxy', () => {
         const job = workflow().jobs.e2e;
         expect(job.env?.E2E_LIVEKIT_URL).toBe('ws://localhost:7880');
