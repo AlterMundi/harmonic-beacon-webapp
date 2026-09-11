@@ -360,15 +360,18 @@ transaction_require() {
   phase="$(transaction_phase "$run_id")"
   for expected in "$@"; do [ "$phase" = "$expected" ] && allowed=true; done
   [ "$allowed" = true ] || die "transaction phase $phase does not authorize this command"
+  require_current_state
+  [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
+  base="$(jq -er '.baseManifestSha256' "$receipt")"
+  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
+  [ "$base" = "$current" ] || die 'prepared transaction no longer matches current high-water'
   if [ "$target" = production ]; then
     require_release_lane oci-production
-    require_current_state
-    [ "$(jq -er '.laneState' "$CURRENT_STATE")" = oci-production ] || die 'live high-water is not OCI production'
     require_secure_root_file "$ACTIVE_TRANSACTION" 600
     [ "$(<"$ACTIVE_TRANSACTION")" = "$run_id" ] || die 'a different production transaction is active'
-    base="$(jq -er '.baseManifestSha256' "$receipt")"
-    current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
-    [ "$base" = "$current" ] || die 'prepared transaction no longer matches current high-water'
+  else
+    require_release_lane legacy-shadow
+    [ ! -e "$ACTIVE_TRANSACTION" ] || die 'production transaction is active during shadow verification'
   fi
 }
 
@@ -433,6 +436,26 @@ transaction_resume_prepared() {
     verify_release_runtime_state "$run_id" prior
     atomic_write_active_transaction "$run_id"
   fi
+}
+
+transaction_resume_shadow() {
+  local run_id="$1" sha="$2" tree="$3" manifest_sha="$4" config_sha="$5" workflow_attempt="$6"
+  local receipt base current
+  require_release_lane legacy-shadow
+  require_current_state
+  [ ! -e "$ACTIVE_TRANSACTION" ] || die 'production transaction is active during shadow verification'
+  receipt="$(artifact_receipt "$run_id")"
+  require_secure_root_file "$receipt" 600
+  jq -e --arg run "$run_id" --arg sha "$sha" --arg tree "$tree" --arg manifest "$manifest_sha" \
+    --arg config "$config_sha" --argjson attempt "$workflow_attempt" '
+      .target=="shadow" and (.phase=="prepared" or .phase=="shadowed") and
+      .workflowRunId==$run and .workflowRunAttempt==$attempt and .sourceSha==$sha and
+      .sourceTree==$tree and .manifestSha256==$manifest and .targetConfigSha256==$config
+    ' "$receipt" >/dev/null || die 'existing shadow transaction does not match prepare retry'
+  base="$(jq -er '.baseManifestSha256' "$receipt")"
+  current="$(jq -er '.manifestSha256' "$CURRENT_STATE")"
+  [ "$base" = "$current" ] || die 'shadow transaction no longer matches current high-water'
+  verify_release_runtime_state "$run_id" prior
 }
 
 transaction_finish_committed() {
@@ -571,11 +594,15 @@ artifact_prepare() {
   if [ -e "$transaction" ]; then
     if [ "$target" = production ]; then
       transaction_resume_prepared "$run_id" "$sha" "$tree" "$manifest_sha" "$config_sha" "$workflow_attempt"
-      return 0
+    else
+      transaction_resume_shadow "$run_id" "$sha" "$tree" "$manifest_sha" "$config_sha" "$workflow_attempt"
     fi
-    die 'transaction run id was already prepared'
+    return 0
   fi
-  if [ "$target" = production ] && [ -e "$ACTIVE_TRANSACTION" ]; then die 'another production transaction is active'; fi
+  if [ -e "$ACTIVE_TRANSACTION" ]; then
+    if [ "$target" = production ]; then die 'another production transaction is active'; fi
+    die 'production transaction is active during shadow verification'
+  fi
 
   temp="$(mktemp -d --tmpdir="$TRANSACTION_ROOT" '.prepare.XXXXXX')"
   # Capture the path now: EXIT can run after function-local variables unwind.
@@ -650,13 +677,12 @@ EOF
   rm -rf -- "$temp/docker" "$temp/prior-state.json" "$temp/verified.json"
   chmod 0700 "$temp"
   sync -f "$temp/receipt.json"
-  if [ "$target" = production ]; then
-    # Reuse full live verification before this disposable transaction is active.
-    (
-      artifact_transaction() { printf '%s\n' "$temp"; }
-      verify_release_runtime_state "$run_id" prior
-    )
-  fi
+  # Reuse full live verification before this disposable transaction becomes
+  # visible. Shadow evidence is meaningful only against the exact live base.
+  (
+    artifact_transaction() { printf '%s\n' "$temp"; }
+    verify_release_runtime_state "$run_id" prior
+  )
   mv -- "$temp" "$transaction"
   sync -f "$TRANSACTION_ROOT"
   if [ "$target" = production ]; then atomic_write_active_transaction "$run_id"; fi
@@ -665,7 +691,11 @@ EOF
 
 artifact_preflight() {
   local run_id="$1" target="$2"
-  transaction_require "$run_id" "$target" prepared
+  if [ "$target" = shadow ]; then
+    transaction_require "$run_id" "$target" prepared shadowed
+  else
+    transaction_require "$run_id" "$target" prepared
+  fi
   if [ "$target" = production ]; then
     [ -r "$PRODUCTION_ENV" ] || die 'production environment is not readable by root'
     [ -r "$COMMERCE_ENV" ] || die 'commerce environment is not readable by root'
@@ -791,14 +821,29 @@ EOF
 }
 
 artifact_status() {
-  local run_id="$1" target="$2"
+  local run_id="$1" target="$2" transaction archive
   if [ "$target" = production ]; then require_release_lane oci-production; fi
   if [ "$target" = production ] && transaction_finish_committed "$run_id"; then return 0; fi
-  transaction_require "$run_id" "$target" prepared replaced
   if [ "$target" = shadow ]; then
+    transaction_require "$run_id" "$target" prepared shadowed
+    artifact_compose "$run_id" config --quiet
+    if [ "$(transaction_phase "$run_id")" = prepared ]; then
+      transaction_set_phase "$run_id" shadowed
+    fi
     jq -r '.imageRefs | to_entries[] | "artifact=\(.key) ref=\(.value)"' "$(artifact_receipt "$run_id")"
+    # Shadow never mutates live state. Atomically vacate the production run-id
+    # namespace after its exact-base check so the same qualified candidate can
+    # be promoted. A crash leaves either the resumable source transaction or an
+    # irrelevant uniquely named discard directory, never a conflicting half-tree.
+    transaction="$(artifact_transaction "$run_id")"
+    archive="${transaction}.shadowed.${BASHPID}"
+    mv -- "$transaction" "$archive"
+    sync -f "$TRANSACTION_ROOT"
+    rm -rf -- "$archive"
+    sync -f "$TRANSACTION_ROOT"
     return 0
   fi
+  transaction_require "$run_id" "$target" prepared replaced
   [ "$(transaction_phase "$run_id")" = replaced ] || die 'production status requires a completed replacement'
   verify_release_runtime_state "$run_id" candidate
   atomic_install_current_state "$(artifact_transaction "$run_id")"

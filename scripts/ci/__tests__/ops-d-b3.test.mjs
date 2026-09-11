@@ -73,16 +73,21 @@ function rewriteConfig(state, mutate) {
   rewriteManifest(state, m => { m.configProfiles.production.sha256 = `sha256:${hash(bytes)}`; });
 }
 
-function transactionHarness(body, { phase = 'prepared', stale = false, runtimeFails = false, prepare = false, old = false, active = true, currentCandidate = false } = {}) {
+function transactionHarness(body, { phase = 'prepared', stale = false, runtimeFails = false, prepare = false, old = false, active = true, currentCandidate = false, target = 'production' } = {}) {
   const root = mkdtempSync(join(process.cwd(), '.hb-b3-tx-'));
   try {
     const state = join(root, 'state');
     const tx = join(state, 'transactions/123');
     const prior = stateFixture();
     const candidate = stateFixture('b');
-    const receipt = { target: 'production', phase, baseManifestSha256: prior.manifestSha256,
+    if (target === 'shadow') {
+      rewriteManifest(candidate, manifest => {
+        manifest.configProfiles['live-staging'].sha256 = `sha256:${hash(Buffer.from(candidate.publicConfigBase64, 'base64'))}`;
+      });
+    }
+    const receipt = { target, phase, baseManifestSha256: prior.manifestSha256,
       manifestSha256: candidate.manifestSha256, workflowRunId: '123', workflowRunAttempt: 1,
-      sourceSha: 'b'.repeat(40), sourceTree: 'b'.repeat(40),
+      sourceSha: 'b'.repeat(40), sourceTree: 'b'.repeat(40), imageRefs: { app: 'ghcr.io/example/app@sha256:' + '0'.repeat(64) },
       targetConfigSha256: `sha256:${hash(Buffer.from(candidate.publicConfigBase64, 'base64'))}` };
     mkdirSync(join(state, 'transactions'), { recursive: true });
     const put = (path, bytes) => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, bytes, { mode: 0o600 }); };
@@ -103,7 +108,7 @@ function transactionHarness(body, { phase = 'prepared', stale = false, runtimeFa
     const current = stale ? stateFixture('c') : (currentCandidate ? candidate : prior);
     if (old) current.schemaVersion = 'harmonic-beacon.current-state.v2';
     put(join(state, 'current-state.json'), JSON.stringify(current));
-    put(join(root, 'lane'), 'oci-production\n');
+    put(join(root, 'lane'), `${target === 'shadow' ? 'legacy-shadow' : 'oci-production'}\n`);
     put(join(root, 'registry.env'), 'HB_REGISTRY_USERNAME=test\nHB_REGISTRY_TOKEN=test\n');
     let script = helper;
     for (const [key, path] of Object.entries({ ARTIFACT_STATE: state, RELEASE_LANE_STATE: join(root, 'lane'),
@@ -144,14 +149,18 @@ verify_release_runtime_state() {
   test "$2" = prior
   test -f "$(artifact_transaction "$1")/prior/prior-manifest.json"
   case "$(transaction_phase "$1")" in
-    prepared | migration-attempted | migrated | replaced | committed) ;;
+    prepared | shadowed | migration-attempted | migrated | replaced | committed) ;;
     *) return 1 ;;
   esac
   printf 'verify prior\\n' >> ${quote(join(root, 'events'))}
   ${runtimeFails ? "die 'runtime reconciliation failed'" : ':'}
 }
 artifact_compose() {
-  [ -f "$ACTIVE_TRANSACTION" ] || die 'test observed side effect before durable active transaction'
+  if grep -Fxq oci-production ${quote(join(root, 'lane'))}; then
+    [ -f "$ACTIVE_TRANSACTION" ] || die 'test observed side effect before durable active transaction'
+  else
+    [ ! -e "$ACTIVE_TRANSACTION" ] || die 'test observed shadow operation during active production transaction'
+  fi
   printf 'compose %s\\n' "$*" >> ${quote(join(root, 'events'))}
 }
 artifact_compose_from() { printf 'compose-from %s\\n' "$*" >> ${quote(join(root, 'events'))}; }
@@ -166,6 +175,7 @@ ${body.replaceAll('@ROOT@', root).replaceAll('@HASH@', candidate.manifestSha256)
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 const prepareCommand = `artifact_prepare '@ROOT@/inputs/123/candidate' ${'b'.repeat(40)} ${'b'.repeat(40)} 123 @HASH@ production @CONFIG@ 1`;
+const shadowPrepareCommand = `artifact_prepare '@ROOT@/inputs/123/candidate' ${'b'.repeat(40)} ${'b'.repeat(40)} 123 @HASH@ shadow @CONFIG@ 1`;
 test('B3 prepare runtime failure leaves no transaction or active marker', () => {
   const result = transactionHarness(prepareCommand, { prepare: true, runtimeFails: true });
   assert.notEqual(result.status, 0);
@@ -183,6 +193,45 @@ test('B3 reconciled prepare activates the exact prepared transaction', () => {
   assert.deepEqual(result.transactions, ['123']);
   assert.equal(result.active, true);
   assert.equal(result.phase, 'prepared');
+});
+test('B3 shadow prepare, preflight, and status complete without deadlocking the lane', () => {
+  const result = transactionHarness(`${shadowPrepareCommand}\nartifact_preflight 123 shadow\nartifact_status 123 shadow`, {
+    prepare: true, target: 'shadow',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.transactions, []);
+  assert.equal(result.active, false);
+  assert.equal(result.phase, null);
+});
+test('B3 shadow completion frees the same qualified run for production prepare', () => {
+  const body = `${shadowPrepareCommand}
+artifact_preflight 123 shadow
+artifact_status 123 shadow
+jq '.target="production"' '@ROOT@/receipt.json' > '@ROOT@/receipt.new'
+mv '@ROOT@/receipt.new' '@ROOT@/receipt.json'
+printf 'oci-production\\n' > '@ROOT@/lane'
+${prepareCommand}`;
+  const result = transactionHarness(body, { prepare: true, target: 'shadow' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.transactions, ['123']);
+  assert.equal(result.active, true);
+  assert.equal(result.phase, 'prepared');
+});
+test('B3 shadow status retry resumes from a durable shadowed phase', () => {
+  const result = transactionHarness(`${shadowPrepareCommand}\nartifact_preflight 123 shadow\nartifact_status 123 shadow`, {
+    phase: 'shadowed', active: false, target: 'shadow',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.transactions, []);
+  assert.equal(result.active, false);
+});
+test('B3 shadow preflight rejects a stale exact-base before Compose', () => {
+  const result = transactionHarness('artifact_preflight 123 shadow', {
+    phase: 'prepared', active: false, target: 'shadow', stale: true,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /high-water/);
+  assert.doesNotMatch(result.events, /compose/);
 });
 for (const [verb, phase] of [['artifact_preflight 123 production', 'prepared'], ['artifact_migrate 123', 'prepared'],
   ['artifact_replace 123', 'migrated'], ['artifact_status 123 production', 'replaced'], ['artifact_rollback 123', 'migrated']]) {
