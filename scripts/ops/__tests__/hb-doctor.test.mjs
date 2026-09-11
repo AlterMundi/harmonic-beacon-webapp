@@ -251,6 +251,8 @@ test('schema and runtime reject reordered structural duplicates and ambiguous UR
       value.services[0].staging.environments.push({ url: 'https://example.com/', name: 'staging' });
     }],
     ['invalid IPv4 hostname', (value) => { value.services[0].health.endpoints[0].url = 'https://999.999.999.999/ready'; }],
+    ['hexadecimal IPv4 number', (value) => { value.services[0].health.endpoints[0].url = 'https://0x7f000001/ready'; }],
+    ['mixed hexadecimal IPv4 number', (value) => { value.services[0].health.endpoints[0].url = 'https://0x7f.1/ready'; }],
     ['invalid percent escape', (value) => { value.services[0].health.endpoints[0].url = 'https://example.com/%zz'; }],
     ['backslash normalization', (value) => { value.services[0].health.endpoints[0].url = 'https://example.com\\evil/ready'; }],
     ['percent-encoded control', (value) => { value.services[0].health.endpoints[0].url = 'https://example.com/%0Aready'; }],
@@ -269,6 +271,14 @@ test('schema and runtime reject reordered structural duplicates and ambiguous UR
       try { validateCatalog(value); return mutations[index][0]; } catch { return null; }
     }).filter(Boolean);
   assert.deepEqual({ schemaAccepted, runtimeAccepted }, { schemaAccepted: [], runtimeAccepted: [] });
+
+  const controls = ['https://127.0.0.1/ready', 'https://example.com/ready'].map((url) => {
+    const value = structuredClone(valid);
+    value.services[0].health.endpoints[0].url = url;
+    return value;
+  });
+  assert.deepEqual(schemaValidity(controls), [true, true]);
+  for (const value of controls) assert.equal(validateCatalog(value), value);
 });
 
 test('Draft 2020-12 schema and runtime reject the permanent malformed mutation corpus', () => {

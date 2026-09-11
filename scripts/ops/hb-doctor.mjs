@@ -51,8 +51,9 @@ const UTC_TIMESTAMP_PATTERN = /^\d{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12]
 const UNSAFE_STRING_PATTERN = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 const UNSAFE_STRING_GLOBAL_PATTERN = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu;
 const IPV4_OCTET_SOURCE = '(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])';
+const IPV4_NUMBER_SOURCE = '(?:0x[0-9a-f]*|0[0-7]*|[1-9][0-9]*)';
 const DNS_LABEL_SOURCE = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
-const HTTPS_HOST_SOURCE = `(?:(?:${IPV4_OCTET_SOURCE}\\.){3}${IPV4_OCTET_SOURCE}|(?=[a-z0-9.-]*[a-z])${DNS_LABEL_SOURCE}(?:\\.${DNS_LABEL_SOURCE})*)`;
+const HTTPS_HOST_SOURCE = `(?:(?:${IPV4_OCTET_SOURCE}\\.){3}${IPV4_OCTET_SOURCE}|(?!(?:${IPV4_NUMBER_SOURCE}\\.){0,3}${IPV4_NUMBER_SOURCE}(?:\\/|[?#]|$))(?=[a-z0-9.-]*[a-z])${DNS_LABEL_SOURCE}(?:\\.${DNS_LABEL_SOURCE})*)`;
 const STRICT_URL_PREFIX_SOURCE = '^(?!.*\\\\)(?!.*%(?![0-9A-F]{2}))(?!.*%(?:0[0-9A-F]|1[0-9A-F]|7F|8[0-9A-F]|9[0-9A-F]|2E|2F|5C|23|3F))(?!.*\\/\\.\\.?(?:\\/|[?#]|$))https:\\/\\/';
 const STRICT_URL_TAIL_SOURCE = '(?:\\/[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069\\\\#]*)?(?:\\?[^\\s\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069\\\\#]*)?';
 export const STRICT_HTTPS_URL_PATTERN_SOURCE = `${STRICT_URL_PREFIX_SOURCE}${HTTPS_HOST_SOURCE}${STRICT_URL_TAIL_SOURCE}$`;
@@ -172,7 +173,9 @@ function isHttpsUrl(value, { allowFragment = true } = {}) {
   if (!syntax.test(value)) return false;
   try {
     const parsed = new URL(value);
+    const rawHostname = value.slice('https://'.length).split(/[/?#]/u, 1)[0];
     return parsed.protocol === 'https:'
+      && parsed.hostname === rawHostname
       && parsed.hostname.length > 0
       && parsed.username === ''
       && parsed.password === ''
