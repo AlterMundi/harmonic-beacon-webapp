@@ -167,7 +167,7 @@ test('the privileged adapter rejects a concurrent run', async (t) => {
   t.after(() => fsp.rm(fixture, { recursive: true, force: true }));
   await fsp.writeFile(path.join(fixture, 'synthetic-listener-preview.fixture.v1'), 'synthetic\n');
   await fsp.writeFile(path.join(fixture, 'hold-seconds'), '2\n');
-  const current = git(repositoryRoot, 'rev-parse', 'refs/remotes/origin/early-birds');
+  const current = git(repositoryRoot, 'rev-parse', 'HEAD');
   const env = { ...process.env, LISTENER_DELIVERY_SYNTHETIC_FIXTURE_ROOT: fixture };
   const first = spawn(helper, ['probe', 'staging', current, '101', '1', '99', '1', 'deliver'], {
     cwd: repositoryRoot,
