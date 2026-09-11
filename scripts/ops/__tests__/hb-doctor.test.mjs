@@ -769,17 +769,24 @@ test('analytics records release delivery drift and unknown current deployment pr
   ]);
 });
 
-test('Authority and PMP remain explicit external requirements rather than invented truth', () => {
+test('Authority and PMP record production readback without inventing missing delivery proof', () => {
   const authority = validateCatalog(catalog()).services.find(({ id }) => id === 'commerce-authority');
   assert.deepEqual(authority.owner, { status: 'documented', name: 'SairaAsua' });
-  assert.deepEqual(authority.repository, { status: 'external', slug: 'SairaAsua/proyecciones-mito' });
-  assert.deepEqual(authority.integrationLane, { status: 'external', name: null });
-  assert.deepEqual(authority.deliveryLane, { status: 'external', name: null });
+  assert.deepEqual(authority.repository, { status: 'verified', slug: 'Mar-IA-no/PMP-myth-bot' });
+  assert.deepEqual(authority.integrationLane, { status: 'verified', name: 'main' });
+  assert.deepEqual(authority.deliveryLane, { status: 'documented', name: 'main' });
+  assert.deepEqual(authority.ciWorkflow, { status: 'verified', path: '.github/workflows/ci.yml' });
+  assert.equal(authority.deployAdapter.kind, 'compose-systemd');
+  assert.equal(authority.deployedRevision.value, '272b7ed65a45b0da5c05f6fa783066a62bcb5aa5');
+  assert.equal(authority.artifactFingerprint.value, 'sha256:cdec9ee659ed047b16f9f1eb930457f18614c4ccacea3a11368a553da3263b43');
   assert.ok(authority.unresolvedRequirements.some((item) => (
     item.kind === 'repository-access'
     && item.status === 'external'
     && item.reference.endsWith('#issuecomment-5625961149')
   )));
+  for (const kind of ['workflow-authorization', 'recipient-proof', 'recovery-proof', 'staging-environment']) {
+    assert.ok(authority.unresolvedRequirements.some((item) => item.kind === kind));
+  }
 });
 
 test('Home keeps the delivered Pages contract while exposing absent staging and recipient proof', () => {

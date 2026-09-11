@@ -43,7 +43,9 @@ describe('production deploy contract', () => {
     expect(promotion).toContain('runs-on: [self-hosted, mona]');
     expect(promotion).toContain('test "$(hostname -s)" = mona');
     expect(promotion).toContain('test "$(id -un)" = beacon-runner');
-    expect(promotion).toContain('cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy');
+    expect(promotion).toContain('sudo /usr/local/sbin/hb-deploy artifact-impact-state > impact-state.json');
+    expect(promotion).toContain('cmp --silent impact-plan.json hosted-impact-plan.json');
+    expect(promotion).not.toContain('cmp --silent deploy/hb-deploy-root /usr/local/sbin/hb-deploy');
   });
 
   it('retains browser qualification while legacy release is held', () => {
@@ -82,13 +84,12 @@ describe('production deploy contract', () => {
     expect(rootHelper).toContain('admit_file');
     expect(rootHelper).toContain('--file "$root/oci-images.compose.yml"');
     expect(rootHelper).toContain(
-      "readonly WORKSPACE='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp'",
+      "readonly CANDIDATE_PARENT='/opt/actions-runner/_work/harmonic-beacon-webapp/harmonic-beacon-webapp/.hb-artifacts'",
     );
-    expect(rootHelper).toContain("readonly RUNNER_USER='beacon-runner'");
-    expect(rootHelper).toContain('runuser --user "$RUNNER_USER" -- env -i');
-    expect(rootHelper).toContain("[[ \"$1\" =~ ^[0-9a-f]{40}$ ]]");
-    expect(rootHelper).toContain("die 'workspace has tracked changes'");
-    expect(rootHelper).toContain("die 'workspace index has tracked changes'");
+    expect(rootHelper).toContain('artifact_impact_state() {');
+    expect(rootHelper).not.toMatch(/\b(?:git|runuser)\b/);
+    expect(rootHelper).not.toContain('readonly WORKSPACE=');
+    expect(rootHelper).not.toContain('readonly RUNNER_USER=');
     expect(rootHelper).toContain(
       'args=(docker compose --file "$1" --file "$2" --project-name app --env-file "$3")',
     );
