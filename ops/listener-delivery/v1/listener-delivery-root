@@ -29,7 +29,7 @@ test "$target" = staging || test "$checkpoint_mode" = deliver || fail 'productio
 test "$operation" = deploy || test "$checkpoint_mode" = deliver || fail 'interruption mode is valid only for staging deploy'
 
 bundle_root=/usr/local/libexec/hb-listener-delivery/v1
-expected_bundle_manifest_sha256=c83539a01130e42dec1c6ef1b9167b1cb888f678befce8a60e403b18456aff0f
+expected_bundle_manifest_sha256=42f40c119451f9a3455b78bc0baffc404a0cde8ab072af7b66f4b59776bce405
 fixture_root=${LISTENER_DELIVERY_SYNTHETIC_FIXTURE_ROOT:-}
 if test -n "$fixture_root"; then
   test "$(id -u)" -ne 0 || fail 'synthetic fixture mode is forbidden for root'

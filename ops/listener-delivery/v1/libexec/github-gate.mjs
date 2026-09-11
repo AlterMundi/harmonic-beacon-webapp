@@ -42,11 +42,17 @@ export function validateDeliveryRun(run, binding) {
 export function validateDeliveryEvidence(run, jobsResponse, binding) {
   validateDeliveryRun(run, binding);
   const jobs = jobsResponse?.jobs;
-  if (!Array.isArray(jobs) || jobsResponse.total_count !== jobs.length || jobs.length !== 2 ||
-      jobs.map((job) => job.name).sort().join(',') !== 'production,staging') reject('delivery job set is incomplete');
+  if (!Array.isArray(jobs) || jobsResponse.total_count !== jobs.length || jobs.length !== 4 ||
+      jobs.map((job) => job.name).sort().join(',') !== 'bind-dispatch,contract,production,staging') reject('delivery job set is incomplete');
+  const bindingJob = jobs.find((job) => job.name === 'bind-dispatch');
+  if (!bindingJob || bindingJob.run_id !== run.id || bindingJob.run_attempt !== run.run_attempt ||
+      bindingJob.status !== 'completed' || bindingJob.conclusion !== 'success') reject('delivery binding job is not successful');
+  const contractJob = jobs.find((job) => job.name === 'contract');
+  if (!contractJob || contractJob.run_id !== run.id || contractJob.run_attempt !== run.run_attempt ||
+      contractJob.status !== 'completed' || contractJob.conclusion !== 'skipped') reject('pull-request contract job is not skipped');
   const targetJob = jobs.find((job) => job.name === binding.target);
   if (!targetJob || targetJob.run_id !== run.id || targetJob.run_attempt !== run.run_attempt || targetJob.status !== 'in_progress' || targetJob.conclusion !== null) reject('delivery target job is not current');
-  const otherJob = jobs.find((job) => job.name !== binding.target);
+  const otherJob = jobs.find((job) => ['staging', 'production'].includes(job.name) && job.name !== binding.target);
   if (!otherJob || otherJob.run_id !== run.id || otherJob.run_attempt !== run.run_attempt || otherJob.status !== 'completed' || otherJob.conclusion !== 'skipped') reject('non-target delivery job is not skipped');
   const expectedStep = binding.operation === 'deploy' && binding.checkpoint_mode === 'interrupt'
     ? 'Run rollback rehearsal checkpoint with cleanup proof'

@@ -309,13 +309,22 @@ test('blocker 7: reviewed delivery workflow binds target and operation to the cu
     delivery_run_id: '501', delivery_run_attempt: '3', ci_run_id: '1', ci_run_attempt: '1', configuration_sha256: 'b'.repeat(64),
   };
   const run = { id: 501, run_attempt: 3, head_sha: binding.source_sha, head_branch: 'early-birds', event: 'workflow_dispatch', path: '.github/workflows/listener-delivery.yml', status: 'in_progress' };
-  const jobs = { total_count: 2, jobs: [
+  const jobs = { total_count: 4, jobs: [
+    { name: 'contract', run_id: 501, run_attempt: 3, status: 'completed', conclusion: 'skipped', steps: [] },
+    { name: 'bind-dispatch', run_id: 501, run_attempt: 3, status: 'completed', conclusion: 'success', steps: [] },
     { name: 'staging', run_id: 501, run_attempt: 3, status: 'in_progress', conclusion: null, steps: [{ name: 'Deploy staging Listener', status: 'in_progress', conclusion: null }] },
     { name: 'production', run_id: 501, run_attempt: 3, status: 'completed', conclusion: 'skipped', steps: [] },
   ] };
   assert.doesNotThrow(() => gate.validateDeliveryEvidence(run, jobs, binding));
+  const missingBinding = structuredClone(jobs);
+  missingBinding.jobs.splice(missingBinding.jobs.findIndex((job) => job.name === 'bind-dispatch'), 1);
+  missingBinding.total_count -= 1;
+  assert.throws(() => gate.validateDeliveryEvidence(run, missingBinding, binding), /job set/);
+  const failedBinding = structuredClone(jobs);
+  failedBinding.jobs.find((job) => job.name === 'bind-dispatch').conclusion = 'failure';
+  assert.throws(() => gate.validateDeliveryEvidence(run, failedBinding, binding), /binding job/);
   const wrongStep = structuredClone(jobs);
-  wrongStep.jobs[0].steps[0].name = 'Smoke staging Listener';
+  wrongStep.jobs.find((job) => job.name === 'staging').steps[0].name = 'Smoke staging Listener';
   assert.throws(() => gate.validateDeliveryEvidence(run, wrongStep, binding), /step/);
   assert.throws(() => gate.validateDeliveryEvidence(run, jobs, { ...binding, target: 'production' }), /job/);
   assert.match(gate.REVIEWED_WORKFLOW_SHA256.delivery, /^[0-9a-f]{64}$/);
