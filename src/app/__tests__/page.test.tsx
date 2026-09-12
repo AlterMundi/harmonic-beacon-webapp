@@ -106,7 +106,7 @@ describe('landing page', () => {
         expect(screen.queryByText('PAGO → PRESENCIA')).toBeNull();
     });
 
-    it('asks only for sessions an attendee could still join', async () => {
+    it('keeps a scheduled session discoverable for the bounded post-start waiting window', async () => {
         const findMany = mountDb(vi.fn().mockResolvedValue([]));
         await renderPage();
 
@@ -116,7 +116,10 @@ describe('landing page', () => {
                     isTest: false,
                     endedAt: null,
                     OR: [
-                        { status: 'SCHEDULED', scheduledAt: { gte: NOW } },
+                        {
+                            status: 'SCHEDULED',
+                            scheduledAt: { gte: new Date('2026-08-04T12:00:00.000Z') },
+                        },
                         {
                             status: 'LIVE',
                             startedAt: { gte: new Date('2026-08-04T12:00:00.000Z') },
@@ -142,7 +145,7 @@ describe('landing page', () => {
 
         expect(findMany.mock.calls[0][0].where.OR[0]).toEqual({
             status: 'SCHEDULED',
-            scheduledAt: { gte: pinned },
+            scheduledAt: { gte: new Date('2026-08-20T12:00:00.000Z') },
         });
     });
 
@@ -155,7 +158,7 @@ describe('landing page', () => {
 
         expect(findMany.mock.calls[0][0].where.OR[0]).toEqual({
             status: 'SCHEDULED',
-            scheduledAt: { gte: NOW },
+            scheduledAt: { gte: new Date('2026-08-04T12:00:00.000Z') },
         });
     });
 
