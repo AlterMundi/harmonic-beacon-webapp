@@ -31,11 +31,11 @@ type WeekendEvent = {
 };
 
 const INTERNAL_NEXT = /^\/session(\/[A-Za-z0-9_-]+)*$/;
-// A missed lifecycle transition must not leave an old LIVE row advertising the
-// current checkout indefinitely. Weekend sessions last hours, not days; 24
-// hours keeps a delayed/extended live room discoverable while failing closed
-// before a stale row can be presented as the next paid event.
-const PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// Keep a delayed session discoverable while it is still waiting for Staff to
+// open the doors. The same bounded window prevents missed lifecycle
+// transitions from advertising either SCHEDULED or LIVE rows indefinitely.
+// Weekend sessions last hours, not days.
+const PUBLIC_SESSION_DISCOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function publicScheduleNow(): Date {
     const pinned = process.env.E2E_DASHBOARD_ENABLED === '1'
@@ -61,15 +61,15 @@ async function weekendEvents(): Promise<WeekendEvent[] | null> {
         // time cannot change the fixture landing halfway through CI. The pin is
         // ignored unless the already test-only dashboard gate is enabled.
         const now = publicScheduleNow();
-        const liveStartedAfter = new Date(now.getTime() - PUBLIC_LIVE_DISCOVERY_MAX_AGE_MS);
+        const discoverableAfter = new Date(now.getTime() - PUBLIC_SESSION_DISCOVERY_MAX_AGE_MS);
 
         return await prisma.scheduledSession.findMany({
             where: {
                 isTest: false,
                 endedAt: null,
                 OR: [
-                    { status: "SCHEDULED", scheduledAt: { gte: now } },
-                    { status: "LIVE", startedAt: { gte: liveStartedAfter } },
+                    { status: "SCHEDULED", scheduledAt: { gte: discoverableAfter } },
+                    { status: "LIVE", startedAt: { gte: discoverableAfter } },
                 ],
             },
             orderBy: { scheduledAt: "asc" },
