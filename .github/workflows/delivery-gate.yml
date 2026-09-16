@@ -144,7 +144,7 @@ jobs:
             while IFS= read -r suite_id; do
               suite="$(gh api -H 'Accept: application/vnd.github+json' \
                 "repos/$REPOSITORY/check-suites/$suite_id")"
-              check_suites="$(jq --argjson suite "$suite" '. + [$suite]' <<<"$check_suites")"
+              check_suites="$(jq --rawfile suite <(printf '%s\n' "$suite") '. + [($suite | fromjson)]' <<<"$check_suites")"
             done < <(jq -r '.[]' <<<"$check_suite_ids")
 
             workflow_jobs='[]'
@@ -158,21 +158,22 @@ jobs:
               workflow_jobs="$(jq \
                 --argjson run_id "$run_id" \
                 --argjson run_attempt "$run_attempt" \
-                --argjson run "$run_attempt_record" \
-                --argjson pages "$job_pages" \
-                '. + [{run_id:$run_id,run_attempt:$run_attempt,run:$run,pages:$pages}]' \
+                --rawfile run <(printf '%s\n' "$run_attempt_record") \
+                --rawfile pages <(printf '%s\n' "$job_pages") \
+                '. + [{run_id:$run_id,run_attempt:$run_attempt,run:($run | fromjson),pages:($pages | fromjson)}]' \
                 <<<"$workflow_jobs")"
             done < <(jq -r \
               '[.[]?.workflow_runs[]? | select((.id | type) == "number" and (.run_attempt | type) == "number")]
                 | unique_by([.id, .run_attempt])[] | [.id, .run_attempt] | @tsv' \
               <<<"$workflow_pages")
 
+            # Keep unbounded JSON off argv; fromjson still requires one complete JSON value.
             jq -n \
-              --argjson checks "$check_pages" \
-              --argjson workflows "$workflow_pages" \
-              --argjson suites "$check_suites" \
-              --argjson jobs "$workflow_jobs" \
-              '{checks:$checks,workflows:$workflows,suites:$suites,jobs:$jobs}'
+              --rawfile checks <(printf '%s\n' "$check_pages") \
+              --rawfile workflows <(printf '%s\n' "$workflow_pages") \
+              --rawfile suites <(printf '%s\n' "$check_suites") \
+              --rawfile jobs <(printf '%s\n' "$workflow_jobs") \
+              '{checks:($checks | fromjson),workflows:($workflows | fromjson),suites:($suites | fromjson),jobs:($jobs | fromjson)}'
           }
           canonical_evidence_snapshot() {
             jq -S -c '{

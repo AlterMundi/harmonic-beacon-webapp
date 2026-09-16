@@ -134,6 +134,115 @@ function runEvidenceSnapshotFunction(name, raw) {
   });
 }
 
+// Execute the checked-in fetch function; only the GitHub API boundary is stubbed.
+// Fixtures travel via files, never argv/environment (which share exec size limits).
+function fetchEvidenceSnapshot(raw, overrides = {}, afterFetch = '') {
+  const workflow = readFileSync(resolve(ROOT, '.github/workflows/delivery-gate.yml'), 'utf8');
+  const start = workflow.indexOf('          fetch_evidence_snapshot()');
+  const end = workflow.indexOf('\n          for attempt', start);
+  assert.ok(start >= 0 && end > start, 'production evidence functions must be present');
+  const functions = workflow.slice(start, end).split('\n')
+    .map((line) => line.replace(/^ {10}/, '')).join('\n');
+  const temp = mkdtempSync(join(tmpdir(), 'delivery-evidence-'));
+  const responses = {
+    checks: raw.checks, workflows: raw.workflows, suite: raw.suites[0],
+    run: raw.jobs[0].run, pages: raw.jobs[0].pages,
+  };
+  try {
+    for (const [name, value] of Object.entries(responses)) {
+      writeFileSync(join(temp, `${name}.json`), overrides[name] ?? JSON.stringify(value));
+    }
+    return spawnSync('bash', ['-e', '-o', 'pipefail'], {
+      encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, FIXTURE_DIR: temp },
+      input: `set -u
+REPOSITORY=AlterMundi/harmonic-beacon-webapp
+event_head=${HEAD}
+payload_dir="$FIXTURE_DIR"
+gh() {
+  local endpoint="\${!#}" file
+  case "$endpoint" in
+    "repos/$REPOSITORY/commits/$event_head/check-runs?per_page=100&filter=all") file=checks ;;
+    "repos/$REPOSITORY/actions/runs?head_sha=$event_head&event=pull_request&per_page=100") file=workflows ;;
+    "repos/$REPOSITORY/check-suites/1011") file=suite ;;
+    "repos/$REPOSITORY/actions/runs/2011/attempts/2") file=run ;;
+    "repos/$REPOSITORY/actions/runs/2011/attempts/2/jobs?per_page=100") file=pages ;;
+    *) printf 'unexpected API request: %s\\n' "$endpoint" >&2; return 1 ;;
+  esac
+  cat "$FIXTURE_DIR/$file.json"
+}
+${functions}
+evidence="$(fetch_evidence_snapshot)"
+printf '%s\\n' "$evidence"
+${afterFetch}
+`,
+    });
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+function fetchFixture() {
+  const current = checkRun('diff-check', {
+    id: 11, completed_at: '2026-09-10T00:01:30.000Z',
+    workflow_run: workflowIdentity('diff-check', 11, { run_attempt: 2 }),
+  });
+  const { workflow_run: run, workflow_job: job, ...check } = current;
+  return {
+    checks: [{ total_count: 1, check_runs: [check] }],
+    workflows: [{ total_count: 1, workflow_runs: [structuredClone(run)] }],
+    suites: [structuredClone(check.check_suite)],
+    jobs: [{ run_id: run.id, run_attempt: run.run_attempt, run, pages: [{ total_count: 1, jobs: [{
+      ...job,
+      check_run_url: `https://api.github.com/repos/AlterMundi/harmonic-beacon-webapp/check-runs/${check.id}`,
+    }] }] }],
+  };
+}
+
+for (const largePart of ['checks', 'workflows', 'suite', 'run', 'pages']) {
+  test(`fetch preserves complete evidence above 128 KiB: ${largePart}`, () => {
+    const raw = fetchFixture();
+    const targets = {
+      checks: raw.checks[0].check_runs[0], workflows: raw.workflows[0].workflow_runs[0],
+      suite: raw.suites[0], run: raw.jobs[0].run, pages: raw.jobs[0].pages[0].jobs[0],
+    };
+    targets[largePart].extra = { text: 'quotes " slash \\ newline\n Ω '.repeat(8192), nested: [null, false, 7] };
+    assert.ok(Buffer.byteLength(JSON.stringify(targets[largePart])) > 128 * 1024);
+    const result = fetchEvidenceSnapshot(raw, {}, `
+evidence_snapshot_complete <<<"$evidence"
+second="$(fetch_evidence_snapshot)"
+[ "$(canonical_evidence_snapshot <<<"$evidence")" = "$(canonical_evidence_snapshot <<<"$second")" ]
+drifted="$(jq '.jobs[0].run.run_attempt = 1' <<<"$second")"
+if evidence_snapshot_complete <<<"$drifted"; then exit 1; fi
+[ "$(canonical_evidence_snapshot <<<"$evidence")" != "$(canonical_evidence_snapshot <<<"$drifted")" ]
+`);
+    assert.equal(result.status, 0, result.stderr);
+    const fetched = JSON.parse(result.stdout);
+    assert.deepEqual(fetched, raw, 'no evidence fields may be dropped or reinterpreted');
+    const mapped = mapEvidence(fetched);
+    assert.equal(mapped[0].workflow_run.run_attempt, 2);
+    assert.equal(mapped[0].workflow_job.check_run_id, 11);
+    assertState(evaluateRequiredChecks(input({ checkRuns: mapped })), 'success');
+  });
+}
+
+for (const part of ['checks', 'workflows', 'suite', 'run', 'pages']) {
+  for (const [label, malformed] of Object.entries({
+    truncated: '{"broken":',
+    oversized: `{"broken":"${'x'.repeat(256 * 1024)}`,
+    empty: '',
+    multiple: '{} {}',
+  })) {
+    test(`fetch rejects malformed JSON evidence: ${part} (${label})`, () => {
+      const result = fetchEvidenceSnapshot(fetchFixture(), { [part]: malformed });
+      assert.notEqual(result.status, 0, 'malformed evidence must fail closed');
+      assert.equal(result.stdout, '', 'no snapshot may be emitted after parse failure');
+      assert.match(result.stderr, /parse|JSON/i);
+      assert.doesNotMatch(result.stderr, /Argument list too long/);
+    });
+  }
+}
+
 test('succeeds when every required context passed on the exact current head', () => {
   assert.deepEqual(evaluateRequiredChecks(input()), {
     schemaVersion: 1,
