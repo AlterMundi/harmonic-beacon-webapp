@@ -20,6 +20,7 @@ export interface StageLayoutProps {
     /** Future shared state only; this component offers no browser-local pin. */
     protagonistIdentity?: string | null;
     audioOnly?: boolean;
+    maxPublishers?: 6 | 9 | 12;
 }
 
 export default function StageLayout({
@@ -27,11 +28,13 @@ export default function StageLayout({
     activeSpeakerIdentity,
     protagonistIdentity,
     audioOnly = false,
+    maxPublishers = 6,
 }: StageLayoutProps) {
     const { copy } = useLocale();
     const composition = composeStageScene(publishers, {
         protagonistIdentity,
         activeSpeakerIdentity,
+        maxPublishers,
     });
 
     return (
@@ -40,6 +43,7 @@ export default function StageLayout({
             data-testid="stage-layout"
             data-scene={composition.kind}
             data-overflow={composition.overflow.length || undefined}
+            data-capacity={maxPublishers}
             className="stage-canvas"
         >
             {audioOnly && (

@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
+    assertSeedFacilitatorGrantCapacity,
+    buildProductionSessionSeedData,
     WEEKEND_ATTENDEE_CAP,
     WEEKEND_MAX_PUBLISHERS,
     loadSeedContract,
@@ -44,6 +46,49 @@ function validEnvironment(): NodeJS.ProcessEnv {
 }
 
 describe('weekend seed contract', () => {
+    it('preserves an existing configured scene capacity while defaulting new sessions to six', () => {
+        const event = loadSeedContract(validEnvironment()).events[0];
+        const data = buildProductionSessionSeedData(event, 'facilitator-id');
+
+        expect(data.update).not.toHaveProperty('maxPublishers');
+        expect(data.create).toMatchObject({ maxPublishers: 6, facilitatorId: 'facilitator-id' });
+    });
+
+    it('fails closed instead of adding a seventh active facilitator grant', () => {
+        const participants: Array<{
+            id: string;
+            publishGrantedAt: Date | null;
+            publishRevokedAt: Date | null;
+        }> = Array.from({ length: 6 }, (_, index) => ({
+            id: `publisher-${index}`,
+            publishGrantedAt: new Date('2026-09-16T00:00:00.000Z'),
+            publishRevokedAt: null,
+        }));
+        participants.push({ id: 'facilitator', publishGrantedAt: null, publishRevokedAt: null });
+
+        expect(() => assertSeedFacilitatorGrantCapacity(6, participants, 'facilitator')).toThrow(
+            'Seed refused: session already has 6 active publisher grants for capacity 6',
+        );
+    });
+
+    it('allows a facilitator grant below an existing configured capacity without resetting it', () => {
+        const participants: Array<{
+            id: string;
+            publishGrantedAt: Date | null;
+            publishRevokedAt: Date | null;
+        }> = Array.from({ length: 8 }, (_, index) => ({
+            id: `publisher-${index}`,
+            publishGrantedAt: new Date('2026-09-16T00:00:00.000Z'),
+            publishRevokedAt: null,
+        }));
+        participants.push({ id: 'facilitator', publishGrantedAt: null, publishRevokedAt: null });
+
+        expect(assertSeedFacilitatorGrantCapacity(12, participants, 'facilitator')).toEqual({
+            activePublisherGrants: 8,
+            shouldGrant: true,
+        });
+    });
+
     it('defines exactly four staff and the two pinned event languages', () => {
         const contract = loadSeedContract(validEnvironment());
 

@@ -16,6 +16,7 @@ const integration = process.env.ROOM_ENTITLEMENT_INTEGRATION_TEST === '1'
 const NOW = new Date('2026-08-05T12:00:00.000Z');
 const SESSION_ID = '91000000-0000-4000-8000-000000000156';
 const FACILITATOR_ID = '92000000-0000-4000-8000-000000000156';
+const ADMIN_ID = '92000000-0000-4000-8000-000000000157';
 const TICKET_ID = '93000000-0000-4000-8000-000000000156';
 const TICKET_COOKIE = 'room-entitlement-race-ticket';
 const STAFF_COOKIE = 'room-entitlement-race-staff';
@@ -49,7 +50,7 @@ integration('room entitlement PostgreSQL concurrency', () => {
         await prisma.sessionParticipant.deleteMany({ where: { scheduledSessionId: SESSION_ID } });
         await prisma.ticketEntitlement.deleteMany({ where: { id: TICKET_ID } });
         await prisma.scheduledSession.deleteMany({ where: { id: SESSION_ID } });
-        await prisma.user.deleteMany({ where: { id: FACILITATOR_ID } });
+        await prisma.user.deleteMany({ where: { id: { in: [FACILITATOR_ID, ADMIN_ID] } } });
 
         await prisma.user.create({
             data: {
@@ -57,6 +58,15 @@ integration('room entitlement PostgreSQL concurrency', () => {
                 email: 'room-race-facilitator@integration.invalid',
                 name: 'Race facilitator',
                 role: 'FACILITATOR',
+                passwordDigest: 'not-used',
+            },
+        });
+        await prisma.user.create({
+            data: {
+                id: ADMIN_ID,
+                email: 'room-race-admin@integration.invalid',
+                name: 'Race administrator',
+                role: 'ADMIN',
                 passwordDigest: 'not-used',
             },
         });
@@ -140,6 +150,10 @@ integration('room entitlement PostgreSQL concurrency', () => {
 
     beforeEach(async () => {
         await prisma.sessionParticipant.deleteMany({ where: { scheduledSessionId: SESSION_ID } });
+        await prisma.scheduledSession.update({
+            where: { id: SESSION_ID },
+            data: { maxPublishers: 6 },
+        });
         await prisma.$executeRawUnsafe(
             'ALTER SEQUENCE room_entitlement_race_sequence RESTART WITH 1',
         );
@@ -164,7 +178,7 @@ integration('room entitlement PostgreSQL concurrency', () => {
         await prisma.sessionParticipant.deleteMany({ where: { scheduledSessionId: SESSION_ID } });
         await prisma.ticketEntitlement.deleteMany({ where: { id: TICKET_ID } });
         await prisma.scheduledSession.deleteMany({ where: { id: SESSION_ID } });
-        await prisma.user.deleteMany({ where: { id: FACILITATOR_ID } });
+        await prisma.user.deleteMany({ where: { id: { in: [FACILITATOR_ID, ADMIN_ID] } } });
         await prisma.$disconnect();
     });
 
@@ -196,4 +210,64 @@ integration('room entitlement PostgreSQL concurrency', () => {
             });
         },
     );
+
+    it('serializes facilitator first join against capacity reduction without a seventh grant', async () => {
+        await prisma.scheduledSession.update({
+            where: { id: SESSION_ID },
+            data: { maxPublishers: 9 },
+        });
+        await prisma.sessionParticipant.createMany({
+            data: Array.from({ length: 6 }, (_, index) => ({
+                scheduledSessionId: SESSION_ID,
+                participantIdentity: `capacity-race-attendee-${index}`,
+                publishGrantedAt: NOW,
+                grantVersion: 1,
+                grantReason: 'integration fixture',
+            })),
+        });
+
+        const [{ resolveRoomPrincipal }, { setSessionSceneCapacity }] = await Promise.all([
+            import('../room-entitlement'),
+            import('../session-capacity'),
+        ]);
+        const [join, reduction] = await Promise.allSettled([
+            resolveRoomPrincipal(request(STAFF_COOKIE), SESSION_ID, NOW),
+            setSessionSceneCapacity({
+                scheduledSessionId: SESSION_ID,
+                actorUserId: ADMIN_ID,
+                actorRole: 'ADMIN',
+                maxPublishers: 6,
+                now: NOW,
+            }),
+        ]);
+
+        expect(join.status).toBe('fulfilled');
+        const [session, activePublisherGrants, facilitator] = await Promise.all([
+            prisma.scheduledSession.findUniqueOrThrow({
+                where: { id: SESSION_ID },
+                select: { maxPublishers: true },
+            }),
+            prisma.sessionParticipant.count({
+                where: {
+                    scheduledSessionId: SESSION_ID,
+                    publishGrantedAt: { not: null },
+                    publishRevokedAt: null,
+                },
+            }),
+            prisma.sessionParticipant.findFirstOrThrow({
+                where: { scheduledSessionId: SESSION_ID, staffUserId: FACILITATOR_ID },
+            }),
+        ]);
+        expect(activePublisherGrants).toBeLessThanOrEqual(session.maxPublishers);
+        if (session.maxPublishers === 6) {
+            expect(reduction.status).toBe('fulfilled');
+            expect(facilitator.publishGrantedAt).toBeNull();
+            expect(activePublisherGrants).toBe(6);
+        } else {
+            expect(session.maxPublishers).toBe(9);
+            expect(reduction.status).toBe('rejected');
+            expect(facilitator.publishGrantedAt).toEqual(NOW);
+            expect(activePublisherGrants).toBe(7);
+        }
+    });
 });

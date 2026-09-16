@@ -1039,6 +1039,10 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.stage-scene--chorus:is([data-member-count="9"], [data-member-count="10"], [data-member-count="11"], [data-member-count="12"]) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .stage-tile {
   position: relative;
   min-width: 0;
@@ -1144,6 +1148,10 @@ body {
 
   .stage-scene {
     gap: 14px;
+  }
+
+  .stage-scene--chorus:is([data-member-count="9"], [data-member-count="10"], [data-member-count="11"], [data-member-count="12"]) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .stage-scene--solo > .stage-tile {

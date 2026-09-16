@@ -1796,6 +1796,42 @@ artifact_rollback() {
     verify_pulled_image "$prior_app"
     verify_pulled_image "$prior_worker"
   fi
+  # The additive scene_capacity column survives application rollback. Every app
+  # rollback still runs a conservative read-only barrier while app/reconciler
+  # writers remain quiesced: old binaries continue reading fixed-six
+  # max_publishers, and no session may have more than six active grants.
+  if jq -e 'index("app") != null' <<<"$selected_json" >/dev/null; then
+    local scene_capacity_evidence="$transaction/scene-capacity-rollback.json"
+    if ! artifact_compose "$run_id" run --rm --no-deps --no-build --pull never migrate \
+      npx tsx scripts/scene-capacity-rollback-preflight.ts >"$scene_capacity_evidence"; then
+      rm -f "$scene_capacity_evidence"
+      die 'automatic rollback refused: scene capacity is not rollback-safe'
+    fi
+    if ! jq -e '
+      type == "object" and
+      (keys | sort) == (["eligibleForOldBinaryRollback","inspectedAt","inspectedSessions","legacyMaxPublishersVerified","nonSixConfiguredSessions","procedure","schemaVersion","verifiedUnsafeSessions"] | sort) and
+      .schemaVersion == "harmonic-beacon.scene-capacity-rollback-preflight.v2" and
+      .procedure == "scene-capacity-rollback-read-only-v2" and
+      .eligibleForOldBinaryRollback == true and
+      (.inspectedSessions | type) == "number" and .inspectedSessions >= 0 and
+      .verifiedUnsafeSessions == 0 and
+      .legacyMaxPublishersVerified == true and
+      (.nonSixConfiguredSessions | type) == "array" and
+      (.nonSixConfiguredSessions | all(
+        type == "object" and
+        (keys | sort) == (["activePublisherGrants","id","sceneCapacity"] | sort) and
+        (.id | type) == "string" and
+        (.sceneCapacity == 9 or .sceneCapacity == 12) and
+        (.activePublisherGrants | type) == "number" and .activePublisherGrants >= 0 and .activePublisherGrants <= 6
+      )) and
+      (.inspectedAt | type) == "string"
+    ' "$scene_capacity_evidence" >/dev/null; then
+      rm -f "$scene_capacity_evidence"
+      die 'automatic rollback refused: scene capacity is not rollback-safe'
+    fi
+    chmod 0440 "$scene_capacity_evidence"
+    chown root:"$DEPLOY_GROUP" "$scene_capacity_evidence"
+  fi
   verify_runtime_profile "$run_id" prior
   while IFS= read -r service; do
     [ "$service" != analytics ] || die 'analytics uses its dedicated deployment lane'

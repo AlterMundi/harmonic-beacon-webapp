@@ -168,6 +168,24 @@ jobs:
           LIVEKIT_API_KEY: ${{ env.E2E_LIVEKIT_API_KEY }}
           LIVEKIT_API_SECRET: ${{ env.E2E_LIVEKIT_API_SECRET }}
 
+      - name: Qualify bounded Stage-only 6/9/12 paired audio and video
+        run: |
+          set -euo pipefail
+          for capacity in 6 9 12; do
+            npm run load:scene-capacity -- \
+              --profile "scene-${capacity}" \
+              --run-id "ci-${GITHUB_RUN_ID}-${capacity}" \
+              --duration 20 \
+              --ramp-per-second 3 \
+              --lk-bin "$RUNNER_TEMP/livekit-load-cli/lk" \
+              --manifest "artifacts/load-test/scene-${capacity}.json"
+          done
+        env:
+          LIVEKIT_URL: ${{ env.E2E_LIVEKIT_URL }}
+          LIVEKIT_INTERNAL_URL: http://localhost:7880
+          LIVEKIT_API_KEY: ${{ env.E2E_LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ env.E2E_LIVEKIT_API_SECRET }}
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -221,6 +239,18 @@ jobs:
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
           ROOM_TOKEN_ISSUE_INTEGRATION_TEST: '1'
+
+      - name: Verify facilitator grant and capacity serialization in PostgreSQL
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/room-entitlement.integration.test.ts
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          ROOM_ENTITLEMENT_INTEGRATION_TEST: '1'
+
+      - name: Verify old-binary scene-capacity rollback compatibility in PostgreSQL
+        run: npx vitest run --no-file-parallelism src/lib/__tests__/scene-capacity-rollback.integration.test.ts
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          SCENE_CAPACITY_ROLLBACK_INTEGRATION_TEST: '1'
 
       - name: Run Chromium and Android gates
         run: >-

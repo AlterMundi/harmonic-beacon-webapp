@@ -134,6 +134,40 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
         });
     });
 
+    it('does not reserve a slot for an assigned facilitator without an active grant', async () => {
+        sessionFindUnique.mockResolvedValue({
+            id: 'event-1',
+            roomName: 'event-stage',
+            facilitatorId: 'facilitator-op-1',
+            maxPublishers: 6,
+            participants: [{
+                id: 'conductor',
+                participantIdentity: 'opaque-conductor',
+                joinedAt: new Date('2026-08-01T15:00:00Z'),
+                leftAt: null,
+                raisedAt: null,
+                publishGrantedAt: null,
+                publishRevokedAt: null,
+                grantVersion: 0,
+                grantReconcileNeeded: false,
+                staffUser: {
+                    id: 'facilitator-op-1',
+                    name: 'Julián',
+                    role: 'FACILITATOR_OP',
+                },
+            }],
+        });
+        listParticipants.mockResolvedValue([]);
+
+        const { GET } = await import('../route');
+        const { body } = await parseResponse(await GET(
+            createRequest('/api/ops/sessions/event-1/participants'),
+            mockParams({ id: 'event-1' }),
+        ));
+
+        expect(body).toMatchObject({ grantedPublishers: 0 });
+    });
+
     it('rejects an attendee before reading participant state', async () => {
         requireStaff.mockResolvedValue([
             null,
@@ -182,7 +216,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
             sessionId: 'event-1',
             maxPublishers: 6,
             activePublishers: 1,
-            grantedPublishers: 2,
+            grantedPublishers: 1,
             participants: [
                 {
                     id: 'publisher',
@@ -294,7 +328,7 @@ describe('GET /api/ops/sessions/[id]/participants', () => {
 
         expect(body).toMatchObject({
             activePublishers: 0,
-            grantedPublishers: 2,
+            grantedPublishers: 1,
         });
         const snapshot = body as { participants: Array<{ id: string }> };
         expect(snapshot.participants.find((participant) => participant.id === 'publisher'))

@@ -18,7 +18,7 @@ function makeReport(overrides: Partial<OperatorHealthReport> = {}): OperatorHeal
     return {
         status: 'green',
         checkedAt: '2026-07-30T12:00:00.000Z',
-        session: { id: 'session-1', title: 'Saturday EN session', status: 'LIVE' },
+        session: { id: 'session-1', title: 'Saturday EN session', status: 'LIVE', maxPublishers: 6 },
         checks: {
             postgres: { status: 'green', detail: 'PostgreSQL answered SELECT 1', latencyMs: 4 },
             livekit: { status: 'green', detail: 'LiveKit API answered (2 room(s))', latencyMs: 12 },

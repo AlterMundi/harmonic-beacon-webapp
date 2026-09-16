@@ -353,6 +353,9 @@ export type Messages = {
             livekitFailure: string;
             stageSummary: string;
             slotsReserved: string;
+            capacityLabel: string;
+            capacityOption: string;
+            capacityChanged: string;
             handsRaised: string;
             reconcile: string;
             handQueue: string;
@@ -926,6 +929,9 @@ export const messages: Record<UiLocale, Messages> = {
                 livekitFailure: '{message}. Se revocó el permiso guardado; usá Reconciliar para volver a intentar en LiveKit.',
                 stageSummary: 'Escena: {active}/{max} publicando',
                 slotsReserved: '{granted}/{max} lugares reservados',
+                capacityLabel: 'Capacidad de escena',
+                capacityOption: '{count} publicadores',
+                capacityChanged: 'La capacidad de escena cambió a {count} publicadores',
                 handsRaised: '{count} manos levantadas',
                 reconcile: 'Reconciliar permisos',
                 handQueue: 'Fila de manos',
@@ -1540,6 +1546,9 @@ export const messages: Record<UiLocale, Messages> = {
                 livekitFailure: '{message}. The durable grant was revoked; press Reconcile to retry the LiveKit update.',
                 stageSummary: 'Stage: {active}/{max} publishing',
                 slotsReserved: '{granted}/{max} slots reserved',
+                capacityLabel: 'Scene capacity',
+                capacityOption: '{count} publishers',
+                capacityChanged: 'Scene capacity changed to {count} publishers',
                 handsRaised: '{count} hands raised',
                 reconcile: 'Reconcile grants',
                 handQueue: 'Hand queue',

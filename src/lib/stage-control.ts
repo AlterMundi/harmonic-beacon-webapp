@@ -304,20 +304,9 @@ export async function promoteParticipant(
             );
         }
 
-        if (
-            !hasActiveGrant(target) &&
-            target.staffUserId !== scheduledSession.facilitatorId
-        ) {
-            // Julián owns one slot even before preflight creates his participant
-            // row. Excluding his row here avoids counting that reserved slot
-            // twice once he has joined.
-            const activeNonFacilitators = participants.filter(
-                (participant) =>
-                    participant.staffUserId !== scheduledSession.facilitatorId &&
-                    hasActiveGrant(participant),
-            ).length;
-            const occupiedPublishers = 1 + activeNonFacilitators;
-            if (occupiedPublishers >= scheduledSession.maxPublishers) {
+        if (!hasActiveGrant(target)) {
+            const activePublishers = participants.filter(hasActiveGrant).length;
+            if (activePublishers >= scheduledSession.maxPublishers) {
                 throw new StageControlError(
                     'stage_full',
                     409,

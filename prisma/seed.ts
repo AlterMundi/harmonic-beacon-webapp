@@ -25,8 +25,8 @@ import {
 } from '../src/lib/stage-grant-locks';
 
 import {
-    WEEKEND_ATTENDEE_CAP,
-    WEEKEND_MAX_PUBLISHERS,
+    assertSeedFacilitatorGrantCapacity,
+    buildProductionSessionSeedData,
     loadSeedContract,
 } from './seed-contract';
 
@@ -92,59 +92,69 @@ export async function seedProductionData() {
         });
 
         for (const event of events) {
-            // The event row is materialized before the grant transaction so
-            // the latter can always acquire the canonical lock order.
+            // Existing sessions keep their operator-configured capacity. Only
+            // newly materialized sessions receive the six-publisher default.
+            const sessionSeedData = buildProductionSessionSeedData(event, facilitator.id);
             await prisma.scheduledSession.upsert({
                 where: { id: event.id },
-                update: {
-                    title: event.title,
-                    description: event.description,
-                    roomName: event.roomName,
-                    language: event.language,
-                    scheduledAt: event.scheduledAt,
-                    isTest: event.isTest,
-                    paidMode: true,
-                    attendeeCap: WEEKEND_ATTENDEE_CAP,
-                    maxPublishers: WEEKEND_MAX_PUBLISHERS,
-                    facilitatorId: facilitator.id,
-                },
-                create: {
-                    ...event,
-                    paidMode: true,
-                    attendeeCap: WEEKEND_ATTENDEE_CAP,
-                    maxPublishers: WEEKEND_MAX_PUBLISHERS,
-                    facilitatorId: facilitator.id,
-                },
+                ...sessionSeedData,
             });
 
             await prisma.$transaction(async (tx) => {
                 await lockGrantSession(tx, event.id);
                 await lockGrantStaff(tx, [facilitator.id]);
-                const existingFacilitator = await tx.sessionParticipant.findFirst({
-                    where: {
-                        scheduledSessionId: event.id,
-                        staffUserId: facilitator.id,
-                    },
-                    select: { id: true, publishGrantedAt: true, publishRevokedAt: true },
-                });
 
-                const facilitatorParticipant = existingFacilitator ??
+                // Discover immutable participant IDs, then lock the complete
+                // participant scope in the canonical session -> staff ->
+                // participant order before rereading capacity or grant state.
+                const discoveredParticipants = await tx.sessionParticipant.findMany({
+                    where: { scheduledSessionId: event.id },
+                    select: {
+                        id: true,
+                        staffUserId: true,
+                    },
+                });
+                await lockGrantParticipants(tx, discoveredParticipants.map(({ id }) => id));
+
+                const existingFacilitator = discoveredParticipants.find(
+                    ({ staffUserId }) => staffUserId === facilitator.id,
+                );
+                const facilitatorParticipantId = existingFacilitator?.id ?? (
                     await tx.sessionParticipant.create({
                         data: {
                             scheduledSessionId: event.id,
                             staffUserId: facilitator.id,
                             participantIdentity: randomUUID(),
                         },
-                        select: { id: true, publishGrantedAt: true, publishRevokedAt: true },
-                    });
-                await lockGrantParticipants(tx, [facilitatorParticipant.id]);
-                if (
-                    facilitatorParticipant.publishGrantedAt === null ||
-                    facilitatorParticipant.publishRevokedAt !== null
-                ) {
+                        select: { id: true },
+                    })
+                ).id;
+                if (!existingFacilitator) {
+                    await lockGrantParticipants(tx, [facilitatorParticipantId]);
+                }
+
+                const lockedSession = await tx.scheduledSession.findUniqueOrThrow({
+                    where: { id: event.id },
+                    select: { maxPublishers: true },
+                });
+                const lockedParticipants = await tx.sessionParticipant.findMany({
+                    where: { scheduledSessionId: event.id },
+                    orderBy: { id: 'asc' },
+                    select: {
+                        id: true,
+                        publishGrantedAt: true,
+                        publishRevokedAt: true,
+                    },
+                });
+                const grant = assertSeedFacilitatorGrantCapacity(
+                    lockedSession.maxPublishers,
+                    lockedParticipants,
+                    facilitatorParticipantId,
+                );
+                if (grant.shouldGrant) {
                     await transitionParticipantGrant(tx, {
                         scheduledSessionId: event.id,
-                        participantId: facilitatorParticipant.id,
+                        participantId: facilitatorParticipantId,
                         canPublish: true,
                         now: new Date(),
                         actorUserId: facilitator.id,

@@ -206,6 +206,7 @@ const TOKEN_RESPONSE = {
         status: 'LIVE',
         startedAt: null,
         isRecording: false,
+        maxPublishers: 6,
     },
     canPublish: false,
     token: 'test-token',
@@ -278,6 +279,48 @@ function renderPage(locale: UiLocale = 'en') {
         </LocaleProvider>,
     );
 }
+
+it('applies authoritative 6→9→12 capacity heartbeats without reconnecting or replacing the room', async () => {
+    const pendingPresence: Array<(capacity: 9 | 12) => void> = [];
+    const intervalSpy = vi.spyOn(global, 'setInterval');
+    vi.mocked(global.fetch).mockImplementation((url: string | URL | Request) => {
+        const target = String(url);
+        if (target.includes('/entry')) {
+            return Promise.resolve({ ok: true, json: async () => ENTRY_RESPONSE } as Response);
+        }
+        if (target.includes('/token')) {
+            return Promise.resolve({ ok: true, json: async () => TOKEN_RESPONSE } as Response);
+        }
+        if (target.includes('/presence')) {
+            return new Promise<Response>((resolve) => {
+                pendingPresence.push((capacity) => resolve({
+                    ok: true,
+                    json: async () => ({ accepted: true, maxPublishers: capacity }),
+                } as Response));
+            });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+    });
+
+    await renderConnected();
+    const room = currentRoom();
+    expect(screen.getByTestId('stage-layout')).toHaveAttribute('data-capacity', '6');
+    expect(pendingPresence).toHaveLength(1);
+
+    await act(async () => pendingPresence.shift()!(9));
+    await waitFor(() => expect(screen.getByTestId('stage-layout')).toHaveAttribute('data-capacity', '9'));
+
+    const heartbeat = intervalSpy.mock.calls.find((call) => call[1] === 20_000)?.[0];
+    expect(heartbeat).toBeTypeOf('function');
+    await act(async () => { (heartbeat as () => void)(); });
+    await waitFor(() => expect(pendingPresence).toHaveLength(1));
+    await act(async () => pendingPresence.shift()!(12));
+    await waitFor(() => expect(screen.getByTestId('stage-layout')).toHaveAttribute('data-capacity', '12'));
+
+    expect(vi.mocked(Room)).toHaveBeenCalledOnce();
+    expect(currentRoom()).toBe(room);
+    expect(room.disconnect).not.toHaveBeenCalled();
+});
 
 it('keeps stage connected on cancellable unload and retires it once on committed pagehide', async () => {
     const view = renderPage();

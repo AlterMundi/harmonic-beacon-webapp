@@ -36,5 +36,8 @@ export async function POST(
     } else {
         await observeLivePresence({ scheduledSessionId: id, participantIdentity: principal.identity, reconnect });
     }
-    return NextResponse.json({ accepted: true }, { status: 202, headers: PRIVATE_NO_STORE });
+    return NextResponse.json(
+        { accepted: true, maxPublishers: principal.session.maxPublishers },
+        { status: 202, headers: PRIVATE_NO_STORE },
+    );
 }

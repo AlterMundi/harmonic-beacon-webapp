@@ -9,6 +9,7 @@ describe('production operational entrypoints', () => {
         expect(dockerfile).toContain('/app/scripts/commerce-media-worker.ts');
         expect(dockerfile).toContain('/app/scripts/weekend-stabilize.ts');
         expect(dockerfile).toContain('/app/scripts/stage-grant-rollback-preflight.ts');
+        expect(dockerfile).toContain('/app/scripts/scene-capacity-rollback-preflight.ts');
         expect(dockerfile).toContain('/app/scripts/release-quiesce-preflight.ts');
         expect(dockerfile).toContain('/app/scripts/stage-grant-forward-drain.ts');
     });
@@ -38,6 +39,9 @@ describe('production operational entrypoints', () => {
         const stopWriters = rollback.indexOf('stop app commerce-reconciler');
         const finalPreflight = rollback.indexOf('run_release_continuity_preflight', initialPreflight + 1);
         const durablePreflight = rollback.indexOf('stage-grant-rollback-preflight.ts');
+        const migrationOnlyBarrier = rollback.indexOf('if [ "$migration_performed" = true ]; then');
+        const appRollbackBarrier = rollback.indexOf("if jq -e 'index(\"app\") != null'");
+        const sceneCapacityPreflight = rollback.indexOf('scene-capacity-rollback-preflight.ts');
         const restore = rollback.indexOf('artifact_compose_service_from');
         const release = rollback.indexOf('entry_fence_release');
 
@@ -46,10 +50,25 @@ describe('production operational entrypoints', () => {
         expect(stopWriters).toBeGreaterThan(fence);
         expect(finalPreflight).toBeGreaterThan(stopWriters);
         expect(durablePreflight).toBeGreaterThan(finalPreflight);
-        expect(restore).toBeGreaterThan(durablePreflight);
+        expect(appRollbackBarrier).toBeGreaterThan(migrationOnlyBarrier);
+        expect(sceneCapacityPreflight).toBeGreaterThan(durablePreflight);
+        expect(sceneCapacityPreflight).toBeGreaterThan(appRollbackBarrier);
+        expect(restore).toBeGreaterThan(sceneCapacityPreflight);
         expect(release).toBeGreaterThan(restore);
         expect(rollback).toContain('automatic rollback refused: durable grant state did not quiesce');
+        expect(rollback).toContain('automatic rollback refused: scene capacity is not rollback-safe');
+        expect(rollback).toContain('scene-capacity-rollback.json');
         expect(rollback).toContain('transaction_require_rollback');
+    });
+
+    it('publishes the exact fail-closed read-only scene-capacity rollback command', () => {
+        const packageJson = readFileSync('package.json', 'utf8');
+        const runbook = readFileSync('docs/ops/SCENE_CAPACITY_ROLLBACK.md', 'utf8');
+        expect(packageJson).toContain('"scene-capacity:rollback-preflight"');
+        expect(runbook).toContain('npm run scene-capacity:rollback-preflight');
+        expect(runbook).toContain('Stop both the app and commerce reconciler');
+        expect(runbook).toContain('The procedure performs no session update');
+        expect(runbook).toContain('demotion, revocation, or disconnection');
     });
 
     it('quiesces writers and drains forward grant upgrades before replacement', () => {

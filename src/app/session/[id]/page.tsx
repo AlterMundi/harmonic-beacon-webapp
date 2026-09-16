@@ -34,6 +34,7 @@ import type { StageConnectionQuality } from "@/lib/stage-layout";
 import { redactErrorDetail } from "@/lib/redact";
 import { isLocalizedStaffRole, localeForEventLanguage, staffRolePresentation } from "@/lib/i18n";
 import { parseLiveKitTokenResponse } from "@/lib/livekit-token-response";
+import { isSceneCapacity } from "@/lib/scene-capacity";
 
 function stageRoomOptions(isAssignedFacilitator: boolean): RoomOptions {
     return {
@@ -142,6 +143,7 @@ interface SessionInfo {
     title: string;
     status: string;
     startedAt: string | null;
+    maxPublishers: 6 | 9 | 12;
 }
 
 interface ViewerInfo {
@@ -681,6 +683,14 @@ function SessionRoom() {
             )) return;
             void fetch(`/api/scheduled-sessions/${id}/presence`, {
                 method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true,
+            }).then(async (response) => {
+                if (!response.ok || cancelled || state !== 'connected') return;
+                const result = await response.json() as { maxPublishers?: unknown };
+                const maxPublishers = result.maxPublishers;
+                if (!isSceneCapacity(maxPublishers) || cancelled) return;
+                setSessionInfo((current) => current
+                    ? { ...current, maxPublishers }
+                    : current);
             }).catch(() => {});
         };
 
@@ -1280,6 +1290,7 @@ function SessionRoom() {
                         publishers={stagePublishers}
                         activeSpeakerIdentity={activeSpeakerIdentity}
                         audioOnly={audioOnly}
+                        maxPublishers={sessionInfo?.maxPublishers ?? 6}
                     />
 
                     {(!isBeaconPlaying || !isStageAudioPlaying) && (

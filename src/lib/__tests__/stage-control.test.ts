@@ -102,6 +102,17 @@ function attendee(
     };
 }
 
+function facilitator(active = false): Participant {
+    return {
+        ...attendee('facilitator', active),
+        participantIdentity: 'opaque-facilitator',
+        staffUserId: event.facilitatorId,
+        staffUser: { role: 'FACILITATOR', disabledAt: null },
+        ticketEntitlementId: null,
+        ticketEntitlement: null,
+    };
+}
+
 function applyUpdate(id: string, data: Record<string, unknown>) {
     const participant = participants.find((item) => item.id === id);
     if (!participant) {
@@ -408,11 +419,50 @@ describe('stage control', () => {
         expect(mocks.transitionGrant).not.toHaveBeenCalled();
     });
 
-    it('serializes concurrent promotions across slots five, six, and seven', async () => {
+    it('allows the sixth active attendee when the facilitator is not publishing', async () => {
         participants = [
             attendee('active-1', true),
             attendee('active-2', true),
             attendee('active-3', true),
+            attendee('active-4', true),
+            attendee('active-5', true),
+            facilitator(false),
+            attendee('target'),
+        ];
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        })).resolves.toMatchObject({ canPublish: true });
+    });
+
+    it('counts a publishing facilitator when enforcing total active grants', async () => {
+        participants = [
+            facilitator(true),
+            attendee('active-1', true),
+            attendee('active-2', true),
+            attendee('active-3', true),
+            attendee('active-4', true),
+            attendee('active-5', true),
+            attendee('target'),
+        ];
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        })).rejects.toMatchObject({ code: 'stage_full', status: 409 });
+    });
+
+    it('serializes concurrent promotions against the total active grant count', async () => {
+        participants = [
+            attendee('active-1', true),
+            attendee('active-2', true),
+            attendee('active-3', true),
+            attendee('active-4', true),
             attendee('first', false, new Date('2026-08-01T15:10:00Z')),
             attendee('second', false, new Date('2026-08-01T15:11:00Z')),
             attendee('third', false, new Date('2026-08-01T15:12:00Z')),
@@ -452,7 +502,7 @@ describe('stage control', () => {
             participants.filter((participant) =>
                 participant.publishGrantedAt && !participant.publishRevokedAt)
                 .length,
-        ).toBe(5);
+        ).toBe(6);
         expect(mocks.updateParticipant).toHaveBeenCalledTimes(2);
     });
 

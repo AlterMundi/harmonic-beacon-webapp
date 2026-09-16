@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -49,6 +50,15 @@ describe('release migration state', () => {
     const raw = Buffer.from('CREATE TABLE "raw" ("id" INT);\r\n');
     expect(migrationChecksum(raw)).toBe(createHash('sha256').update(raw).digest('hex'));
     expect(migrationChecksum(raw)).not.toBe(migrationChecksum(Buffer.from(raw.toString('utf8').replaceAll('\r\n', '\n'))));
+  });
+
+  it('accepts the exact configurable scene-capacity migration bytes as forward-only', () => {
+    const migration = readFileSync(new URL(
+      '../../../prisma/migrations/20260916010000_configurable_scene_capacity/migration.sql',
+      import.meta.url,
+    ));
+
+    expect(validateForwardOnlyMigration(migration)).toEqual({ safe: true, violations: [] });
   });
 
   it('fails closed on missing, mismatched, duplicate, and conflicting applied records', () => {
