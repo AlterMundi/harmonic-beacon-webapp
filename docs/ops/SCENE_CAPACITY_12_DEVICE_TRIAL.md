@@ -25,7 +25,8 @@ npm run load:scene-capacity -- \
   --manifest artifacts/load-test/scene-12-plan.json
 ```
 
-Run against a remote rehearsal target only with the explicit test-room confirmation printed by the first refused invocation:
+Run against a remote rehearsal target only with a fresh explicit ownership nonce
+and a confirmation bound to the resulting nonce-suffixed room:
 
 ```bash
 LIVEKIT_URL=wss://rehearsal.example.invalid \
@@ -35,11 +36,18 @@ LIVEKIT_API_SECRET=... \
 npm run load:scene-capacity -- \
   --profile scene-12 \
   --run-id scene-12-QUALIFIER \
+  --ownership-nonce 11111111-1111-4111-8111-111111111111 \
   --duration 90 \
   --allow-remote \
-  --confirm-test-room 'LOADTEST:PUBLIC=rehearsal.example.invalid:INTERNAL=rehearsal.example.invalid:ROOM=hb-load-scene-scene-12-qualifier-12' \
+  --confirm-test-room 'LOADTEST:rehearsal.example.invalid:rehearsal.example.invalid:hb-load-scene-scene-12-qualifier-12-11111111111141118111111111111111' \
   --manifest artifacts/load-test/scene-12-qualifier.json
 ```
+
+Generate a new UUID for every real run; the fixed UUID above is documentation
+only. The harness configures the owned room with 60-second LiveKit empty and
+departure timeouts. It never calls LiveKit's name-only `deleteRoom`: after the
+load exits, the now-empty room is retained for bounded server-side expiration,
+so a same-name replacement cannot be deleted by a cleanup race.
 
 A valid manifest must report:
 
@@ -48,8 +56,9 @@ A valid manifest must report:
   `hbscene-12_pub_0` through `hbscene-12_pub_11`, with exactly one microphone
   track and one camera track on every identity;
 - `qualification.failures: []`;
-- bounded cleanup attempted only after the run created and verified ownership
-  of the exact `hb-load-scene-*` room.
+- `cleanup.strategy: livekit-automatic-expiration`, with no explicit deletion,
+  only after the run created and verified ownership of the exact
+  `hb-load-scene-*` room.
 
 Both `LIVEKIT_URL` and `LIVEKIT_INTERNAL_URL` are independently validated. If
 either endpoint is remote, the confirmation binds both endpoint hosts and the

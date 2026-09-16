@@ -316,6 +316,30 @@ describe('stage control', () => {
         expect(participants[0].publishRevokedAt).toBeNull();
     });
 
+    it('rejects promotion when the connected identity becomes stale before canonical locks', async () => {
+        participants = [attendee('target')];
+        mocks.listParticipants.mockImplementationOnce(() => {
+            const observed = [{ identity: participants[0].participantIdentity }];
+            participants[0].participantIdentity = 'opaque-target-rotated';
+            participants[0].grantVersion += 1;
+            return observed;
+        });
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+        })).rejects.toMatchObject({
+            code: 'stale_grant_version',
+            status: 409,
+        });
+
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+        expect(mocks.processGrant).not.toHaveBeenCalled();
+        expect(mocks.updateParticipant).not.toHaveBeenCalled();
+    });
+
     it('rejects a disconnected participant without changing durable grant state', async () => {
         participants = [attendee('target')];
         mocks.listParticipants.mockResolvedValue([]);

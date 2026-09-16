@@ -103,7 +103,14 @@ type MuteInput = {
     muted: boolean;
 };
 
-async function requireConnectedParticipant(input: GrantInput): Promise<void> {
+type ConnectedParticipantSnapshot = {
+    participantIdentity: string;
+    grantVersion: number;
+};
+
+async function requireConnectedParticipant(
+    input: GrantInput,
+): Promise<ConnectedParticipantSnapshot> {
     const participant = await prisma.sessionParticipant.findFirst({
         where: {
             id: input.participantId,
@@ -111,6 +118,7 @@ async function requireConnectedParticipant(input: GrantInput): Promise<void> {
         },
         select: {
             participantIdentity: true,
+            grantVersion: true,
             scheduledSession: { select: { roomName: true } },
         },
     });
@@ -142,6 +150,10 @@ async function requireConnectedParticipant(input: GrantInput): Promise<void> {
             'This participant is not connected. Wait for them to rejoin before giving the floor.',
         );
     }
+    return {
+        participantIdentity: participant.participantIdentity,
+        grantVersion: participant.grantVersion,
+    };
 }
 
 /**
@@ -196,7 +208,7 @@ export async function promoteParticipant(
     // Updating permissions for a disconnected LiveKit identity always fails.
     // Reject before reserving a durable slot so a stale hand cannot create a
     // false reconciliation incident or occupy the stage after a long absence.
-    await requireConnectedParticipant(input);
+    const connectedParticipant = await requireConnectedParticipant(input);
     const now = input.now ?? new Date();
     const reservation = await prisma.$transaction(async (transaction) => {
         await lockGrantSession(transaction, input.scheduledSessionId);
@@ -246,6 +258,7 @@ export async function promoteParticipant(
                 participantIdentity: true,
                 publishGrantedAt: true,
                 publishRevokedAt: true,
+                grantVersion: true,
                 raisedAt: true,
                 staffUserId: true,
                 staffUser: { select: { role: true, disabledAt: true } },
@@ -273,6 +286,16 @@ export async function promoteParticipant(
                 'participant_not_found',
                 404,
                 'Participant not found',
+            );
+        }
+        if (
+            target.participantIdentity !== connectedParticipant.participantIdentity ||
+            target.grantVersion !== connectedParticipant.grantVersion
+        ) {
+            throw new StageControlError(
+                'stale_grant_version',
+                409,
+                'The participant connection changed; refresh before trying again',
             );
         }
         const ticket = target.ticketEntitlement;

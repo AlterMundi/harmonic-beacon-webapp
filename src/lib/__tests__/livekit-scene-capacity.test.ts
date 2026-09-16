@@ -96,11 +96,22 @@ describe('LiveKit scene-capacity qualification', () => {
         expect(findSceneCapacityQualification([...observations, simultaneous], 6)).toEqual(simultaneous);
     });
 
+    it('rejects reusable base names as remote mutation targets even with matching confirmation', () => {
+        expect(() => validateSceneCapacityTargets({
+            publicUrl: 'wss://edge.example.invalid/rtc',
+            internalUrl: 'https://api.example.invalid',
+            roomName: 'hb-load-scene-review-12',
+            allowRemote: true,
+            confirmation: 'LOADTEST:edge.example.invalid:api.example.invalid:hb-load-scene-review-12',
+        })).toThrow(/ownership nonce/);
+    });
+
     it('authorizes both endpoint hosts and binds remote confirmation to both plus the room', () => {
+        const roomName = 'hb-load-scene-review-12-11111111111141118111111111111111';
         expect(() => validateSceneCapacityTargets({
             publicUrl: 'ws://localhost:7880',
             internalUrl: 'https://live.example.invalid',
-            roomName: 'hb-load-scene-review-12',
+            roomName,
             allowRemote: false,
             confirmation: '',
         })).toThrow(/live\.example\.invalid/);
@@ -108,9 +119,9 @@ describe('LiveKit scene-capacity qualification', () => {
         const authorized = validateSceneCapacityTargets({
             publicUrl: 'wss://edge.example.invalid/rtc',
             internalUrl: 'https://api.example.invalid',
-            roomName: 'hb-load-scene-review-12',
+            roomName,
             allowRemote: true,
-            confirmation: 'LOADTEST:edge.example.invalid:api.example.invalid:hb-load-scene-review-12',
+            confirmation: `LOADTEST:edge.example.invalid:api.example.invalid:${roomName}`,
         });
         expect(authorized).toMatchObject({
             publicHost: 'edge.example.invalid',
@@ -143,51 +154,118 @@ describe('LiveKit scene-capacity qualification', () => {
         )).toThrow(/credential/);
     });
 
-    it('deletes only a room whose exact ownership nonce was established by this run', async () => {
+    it('configures owned rooms for bounded automatic expiration without explicit deletion', async () => {
+        const baseRoomName = 'hb-load-scene-owned-6';
+        const ownershipNonce = '11111111-1111-4111-8111-111111111111';
+        const roomName = `${baseRoomName}-11111111111141118111111111111111`;
         const metadata = JSON.stringify({
             schemaVersion: 1,
             kind: 'harmonic-beacon-scene-capacity-owner',
-            roomName: 'hb-load-scene-owned-6',
+            roomName,
             runId: 'owned',
-            ownershipNonce: 'nonce-1',
+            ownershipNonce,
         });
         const service = {
-            listRooms: vi.fn()
-                .mockResolvedValueOnce([])
-                .mockResolvedValueOnce([{ name: 'hb-load-scene-owned-6', metadata }]),
+            listRooms: vi.fn().mockResolvedValueOnce([]),
             createRoom: vi.fn().mockResolvedValue({
-                name: 'hb-load-scene-owned-6',
+                name: roomName,
                 metadata,
+                emptyTimeout: 60,
+                departureTimeout: 60,
             }),
-            deleteRoom: vi.fn().mockResolvedValue(undefined),
+            deleteRoom: vi.fn(),
         };
         const ownership = await establishSceneCapacityRoomOwnership(service, {
-            roomName: 'hb-load-scene-owned-6',
+            roomName: baseRoomName,
             runId: 'owned',
-            ownershipNonce: 'nonce-1',
+            ownershipNonce,
         });
-        await expect(cleanupSceneCapacityRoom(service, 'hb-load-scene-owned-6', ownership))
-            .resolves.toMatchObject({ attempted: true, deleted: true, ownedByRun: true });
-        expect(service.deleteRoom).toHaveBeenCalledWith('hb-load-scene-owned-6');
+        expect(service.createRoom).toHaveBeenCalledWith({
+            name: roomName,
+            metadata,
+            emptyTimeout: 60,
+            departureTimeout: 60,
+        });
+        await expect(cleanupSceneCapacityRoom(service, roomName, ownership))
+            .resolves.toEqual({
+                attempted: false,
+                deleted: false,
+                ownedByRun: true,
+                strategy: 'livekit-automatic-expiration',
+                emptyTimeoutSeconds: 60,
+                departureTimeoutSeconds: 60,
+            });
+        expect(service.deleteRoom).not.toHaveBeenCalled();
 
-        service.deleteRoom.mockClear();
-        await expect(cleanupSceneCapacityRoom(service, 'hb-load-scene-owned-6', null))
-            .resolves.toMatchObject({ attempted: false, deleted: false, ownedByRun: false });
+        await expect(cleanupSceneCapacityRoom(service, roomName, null))
+            .resolves.toEqual({
+                attempted: false,
+                deleted: false,
+                ownedByRun: false,
+                strategy: 'none',
+            });
         expect(service.deleteRoom).not.toHaveBeenCalled();
     });
 
-    it('refuses cleanup if the owned room was replaced before deletion', async () => {
+    it('fails closed when LiveKit does not confirm bounded automatic expiration', async () => {
+        const roomName = 'hb-load-scene-timeout-6-11111111111141118111111111111111';
         const service = {
-            listRooms: vi.fn().mockResolvedValue([{
-                name: 'hb-load-scene-owned-6',
+            listRooms: vi.fn().mockResolvedValue([]),
+            createRoom: vi.fn().mockResolvedValue({
+                name: roomName,
                 metadata: JSON.stringify({
                     schemaVersion: 1,
                     kind: 'harmonic-beacon-scene-capacity-owner',
-                    roomName: 'hb-load-scene-owned-6',
-                    runId: 'other-run',
-                    ownershipNonce: 'replacement-nonce',
+                    roomName,
+                    runId: 'timeout',
+                    ownershipNonce: '11111111-1111-4111-8111-111111111111',
                 }),
-            }]),
+                emptyTimeout: 0,
+                departureTimeout: 0,
+            }),
+        };
+
+        await expect(establishSceneCapacityRoomOwnership(service, {
+            roomName: 'hb-load-scene-timeout-6',
+            runId: 'timeout',
+            ownershipNonce: '11111111-1111-4111-8111-111111111111',
+        })).rejects.toThrow(/bounded automatic expiration/);
+    });
+
+    it('derives distinct owned room names from the ownership nonce even when base names are reused', async () => {
+        const service = {
+            listRooms: vi.fn().mockResolvedValue([]),
+            createRoom: vi.fn(({
+                name,
+                metadata,
+                emptyTimeout,
+                departureTimeout,
+            }: {
+                name: string;
+                metadata: string;
+                emptyTimeout: number;
+                departureTimeout: number;
+            }) => ({ name, metadata, emptyTimeout, departureTimeout })),
+        };
+        const first = await establishSceneCapacityRoomOwnership(service, {
+            roomName: 'hb-load-scene-reusable-6',
+            runId: 'first',
+            ownershipNonce: '11111111-1111-4111-8111-111111111111',
+        });
+        const replacement = await establishSceneCapacityRoomOwnership(service, {
+            roomName: 'hb-load-scene-reusable-6',
+            runId: 'replacement',
+            ownershipNonce: '22222222-2222-4222-8222-222222222222',
+        });
+
+        expect(first.roomName).not.toBe(replacement.roomName);
+        expect(first.roomName).toContain('11111111111141118111111111111111');
+        expect(replacement.roomName).toContain('22222222222242228222222222222222');
+    });
+
+    it('fails closed if automatic-expiration ownership evidence is incomplete', async () => {
+        const service = {
+            listRooms: vi.fn(),
             deleteRoom: vi.fn(),
         };
 
@@ -196,7 +274,42 @@ describe('LiveKit scene-capacity qualification', () => {
             roomName: 'hb-load-scene-owned-6',
             ownershipNonce: 'nonce-1',
             metadata: 'original-metadata',
-        })).resolves.toEqual({ attempted: false, deleted: false, ownedByRun: false });
+        })).resolves.toEqual({
+            attempted: false,
+            deleted: false,
+            ownedByRun: false,
+            strategy: 'none',
+        });
+        expect(service.listRooms).not.toHaveBeenCalled();
         expect(service.deleteRoom).not.toHaveBeenCalled();
+    });
+
+    it('never name-deletes a same-name replacement after the ownership snapshot', async () => {
+        const roomName = 'hb-load-scene-owned-6-11111111111141118111111111111111';
+        const original = { name: roomName, metadata: 'original-metadata' };
+        const replacement = { name: roomName, metadata: 'replacement-metadata' };
+        let currentRoom: typeof original | null = original;
+        const service = {
+            listRooms: vi.fn(async () => [{ ...original }]),
+            deleteRoom: vi.fn(async () => {
+                currentRoom = null;
+            }),
+        };
+
+        queueMicrotask(() => {
+            currentRoom = replacement;
+        });
+        await cleanupSceneCapacityRoom(service, roomName, {
+            established: true,
+            roomName,
+            ownershipNonce: '11111111-1111-4111-8111-111111111111',
+            metadata: original.metadata,
+            emptyTimeoutSeconds: 60,
+            departureTimeoutSeconds: 60,
+        });
+
+        expect(service.listRooms).not.toHaveBeenCalled();
+        expect(service.deleteRoom).not.toHaveBeenCalled();
+        expect(currentRoom).toBe(replacement);
     });
 });

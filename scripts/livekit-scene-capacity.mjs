@@ -13,6 +13,8 @@ import {
     establishSceneCapacityRoomOwnership,
     findSceneCapacityQualification,
     redactSceneCapacityOutput,
+    SCENE_CAPACITY_ROOM_TTL_SECONDS,
+    sceneCapacityOwnedRoomName,
     serializeSceneCapacityEvidence,
     validateSceneCapacityObservation,
     validateSceneCapacityTargets,
@@ -62,7 +64,8 @@ async function run() {
     if (hasFlag('--help')) {
         process.stdout.write(
             'Usage: npm run load:scene-capacity -- --profile scene-12 [options]\n' +
-            '  --run-id ID\n  --duration SECONDS\n  --ramp-per-second N\n' +
+            '  --run-id ID\n  --room SAFE_BASE_ROOM\n  --ownership-nonce UUID\n' +
+            '  --duration SECONDS\n  --ramp-per-second N\n' +
             '  --url URL\n  --lk-bin PATH\n  --manifest PATH\n  --dry-run\n' +
             '  --allow-remote --confirm-test-room LOADTEST:<public-host>:<internal-host>:<room>\n',
         );
@@ -74,7 +77,9 @@ async function run() {
     const runId = safeRunId(option('--run-id', new Date().toISOString().replace(/\D/g, '').slice(0, 14)));
     const durationSeconds = Number(option('--duration', '90'));
     const rampPerSecond = Number(option('--ramp-per-second', '3'));
-    const roomName = `hb-load-scene-${runId}-${publishers}`;
+    const ownershipNonce = option('--ownership-nonce', randomUUID());
+    const baseRoomName = option('--room', `hb-load-scene-${runId}-${publishers}`);
+    const roomName = sceneCapacityOwnedRoomName(baseRoomName, ownershipNonce);
     const url = option('--url', process.env.LIVEKIT_URL ?? 'ws://localhost:7880');
     const apiUrl = process.env.LIVEKIT_INTERNAL_URL ?? url;
     const lkBinary = option('--lk-bin', 'lk');
@@ -109,7 +114,15 @@ async function run() {
         requiresDistinctPairedMediaIdentities: true,
         targetPublicHost: targets.publicHost,
         targetInternalHost: targets.internalHost,
+        expectedRemoteConfirmation: targets.expectedConfirmation,
         command: [lkBinary, ...args],
+        roomOwnership: {
+            established: false,
+            roomName,
+            ownershipNonce,
+            emptyTimeoutSeconds: SCENE_CAPACITY_ROOM_TTL_SECONDS,
+            departureTimeoutSeconds: SCENE_CAPACITY_ROOM_TTL_SECONDS,
+        },
         startedAt: new Date().toISOString(),
         observations: [],
     };
@@ -134,13 +147,21 @@ async function run() {
     process.once('SIGTERM', stop);
 
     try {
-        const ownershipNonce = randomUUID();
         roomOwnership = await establishSceneCapacityRoomOwnership(roomService, {
-            roomName,
+            roomName: baseRoomName,
             runId,
             ownershipNonce,
         });
-        manifest.roomOwnership = { established: true, ownershipNonce };
+        if (roomOwnership.roomName !== roomName) {
+            throw new Error('owned room name differs from the confirmed mutation target');
+        }
+        manifest.roomOwnership = {
+            established: true,
+            roomName,
+            ownershipNonce,
+            emptyTimeoutSeconds: roomOwnership.emptyTimeoutSeconds,
+            departureTimeoutSeconds: roomOwnership.departureTimeoutSeconds,
+        };
 
         child = spawn(lkBinary, args, {
             cwd: repositoryRoot,

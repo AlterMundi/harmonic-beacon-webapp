@@ -1,6 +1,9 @@
 const ALLOWED_CAPACITIES = new Set([6, 9, 12]);
 const SAFE_ROOM = /^hb-load-scene-[a-z0-9-]+$/;
+const OWNERSHIP_NONCE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_ROOM_NAME_LENGTH = 128;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+export const SCENE_CAPACITY_ROOM_TTL_SECONDS = 60;
 
 function requireCapacity(capacity) {
     if (!ALLOWED_CAPACITIES.has(capacity)) {
@@ -144,6 +147,9 @@ export function validateSceneCapacityTargets({
     const remoteHosts = [publicEndpoint, internalEndpoint]
         .filter((endpoint) => !LOCAL_HOSTS.has(endpoint.hostname))
         .map((endpoint) => endpoint.host);
+    if (remoteHosts.length > 0 && !/-[0-9a-f]{32}$/.test(roomName)) {
+        throw new Error('remote scene capacity room must include the generated ownership nonce');
+    }
     if (remoteHosts.length > 0 && (!allowRemote || confirmation !== expectedConfirmation)) {
         throw new Error(
             `remote target(s) ${remoteHosts.join(', ')} require --allow-remote and ` +
@@ -176,49 +182,85 @@ export function serializeSceneCapacityEvidence(evidence, credentials) {
     return serialized;
 }
 
+export function sceneCapacityOwnedRoomName(roomName, ownershipNonce) {
+    if (!SAFE_ROOM.test(roomName)) {
+        throw new Error('scene capacity room must use the hb-load-scene- prefix');
+    }
+    if (!OWNERSHIP_NONCE.test(ownershipNonce)) {
+        throw new Error('scene capacity ownership nonce must be a UUID');
+    }
+    const compactNonce = ownershipNonce.replaceAll('-', '').toLowerCase();
+    const boundedBase = roomName
+        .slice(0, MAX_ROOM_NAME_LENGTH - compactNonce.length - 1)
+        .replace(/-+$/g, '');
+    return `${boundedBase}-${compactNonce}`;
+}
+
 export async function establishSceneCapacityRoomOwnership(roomService, {
     roomName,
     runId,
     ownershipNonce,
 }) {
-    const existingRooms = await roomService.listRooms([roomName]);
+    const ownedRoomName = sceneCapacityOwnedRoomName(roomName, ownershipNonce);
+    const existingRooms = await roomService.listRooms([ownedRoomName]);
     if (existingRooms.length > 0) {
         throw new Error('refusing to use a scene-capacity room that already exists');
     }
     const metadata = JSON.stringify({
         schemaVersion: 1,
         kind: 'harmonic-beacon-scene-capacity-owner',
-        roomName,
+        roomName: ownedRoomName,
         runId,
         ownershipNonce,
     });
-    const createdRoom = await roomService.createRoom({ name: roomName, metadata });
-    if (createdRoom.name !== roomName || createdRoom.metadata !== metadata) {
+    const createdRoom = await roomService.createRoom({
+        name: ownedRoomName,
+        metadata,
+        emptyTimeout: SCENE_CAPACITY_ROOM_TTL_SECONDS,
+        departureTimeout: SCENE_CAPACITY_ROOM_TTL_SECONDS,
+    });
+    if (createdRoom.name !== ownedRoomName || createdRoom.metadata !== metadata) {
         throw new Error('LiveKit did not confirm ownership of the newly created test room');
     }
-    return { established: true, roomName, ownershipNonce, metadata };
+    if (
+        createdRoom.emptyTimeout !== SCENE_CAPACITY_ROOM_TTL_SECONDS ||
+        createdRoom.departureTimeout !== SCENE_CAPACITY_ROOM_TTL_SECONDS
+    ) {
+        throw new Error('LiveKit did not confirm bounded automatic expiration for the test room');
+    }
+    return {
+        established: true,
+        roomName: ownedRoomName,
+        ownershipNonce,
+        metadata,
+        emptyTimeoutSeconds: SCENE_CAPACITY_ROOM_TTL_SECONDS,
+        departureTimeoutSeconds: SCENE_CAPACITY_ROOM_TTL_SECONDS,
+    };
 }
 
-export async function cleanupSceneCapacityRoom(roomService, roomName, ownership) {
+export async function cleanupSceneCapacityRoom(_roomService, roomName, ownership) {
+    // LiveKit deletes by mutable room name only. Never check then delete: the name
+    // can be rebound between those calls, so bounded server expiry is the cleanup.
     if (
         !ownership?.established ||
         ownership.roomName !== roomName ||
-        typeof ownership.metadata !== 'string'
+        typeof ownership.metadata !== 'string' ||
+        ownership.emptyTimeoutSeconds !== SCENE_CAPACITY_ROOM_TTL_SECONDS ||
+        ownership.departureTimeoutSeconds !== SCENE_CAPACITY_ROOM_TTL_SECONDS
     ) {
-        return { attempted: false, deleted: false, ownedByRun: false };
+        return {
+            attempted: false,
+            deleted: false,
+            ownedByRun: false,
+            strategy: 'none',
+        };
     }
-    try {
-        const rooms = await roomService.listRooms([roomName]);
-        const current = rooms.length === 1 ? rooms[0] : null;
-        if (
-            current?.name !== roomName ||
-            current.metadata !== ownership.metadata
-        ) {
-            return { attempted: false, deleted: false, ownedByRun: false };
-        }
-        await roomService.deleteRoom(roomName);
-        return { attempted: true, deleted: true, ownedByRun: true };
-    } catch {
-        return { attempted: true, deleted: false, ownedByRun: true };
-    }
+    return {
+        attempted: false,
+        deleted: false,
+        ownedByRun: true,
+        strategy: 'livekit-automatic-expiration',
+        emptyTimeoutSeconds: ownership.emptyTimeoutSeconds,
+        departureTimeoutSeconds: ownership.departureTimeoutSeconds,
+    };
 }

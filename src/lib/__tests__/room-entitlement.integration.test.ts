@@ -18,14 +18,42 @@ const SESSION_ID = '91000000-0000-4000-8000-000000000156';
 const FACILITATOR_ID = '92000000-0000-4000-8000-000000000156';
 const ADMIN_ID = '92000000-0000-4000-8000-000000000157';
 const TICKET_ID = '93000000-0000-4000-8000-000000000156';
+const CAPACITY_TICKET_IDS = Array.from(
+    { length: 6 },
+    (_, index) => `93000000-0000-4000-8000-${String(200 + index).padStart(12, '0')}`,
+);
 const TICKET_COOKIE = 'room-entitlement-race-ticket';
 const STAFF_COOKIE = 'room-entitlement-race-staff';
+
+function capacityRaceParticipants() {
+    return Array.from({ length: 6 }, (_, index) => ({
+        scheduledSessionId: SESSION_ID,
+        participantIdentity: `capacity-race-attendee-${index}`,
+        ticketEntitlementId: CAPACITY_TICKET_IDS[index],
+        publishGrantedAt: NOW,
+        grantVersion: 1,
+        grantReason: 'integration fixture',
+    }));
+}
 
 function request(cookie: string) {
     return createRequest(`/api/scheduled-sessions/${SESSION_ID}/token`, {
         headers: { cookie: `hb_session=${cookie}` },
     });
 }
+
+describe('room entitlement integration fixture contract', () => {
+    it('gives every seeded active grant exactly one durable principal', () => {
+        for (const participant of capacityRaceParticipants()) {
+            const fixture = participant as {
+                ticketEntitlementId?: string | null;
+                staffUserId?: string | null;
+            };
+            expect(Number(Boolean(fixture.ticketEntitlementId)) + Number(Boolean(fixture.staffUserId)))
+                .toBe(1);
+        }
+    });
+});
 
 integration('room entitlement PostgreSQL concurrency', () => {
     beforeAll(async () => {
@@ -48,7 +76,9 @@ integration('room entitlement PostgreSQL concurrency', () => {
             ] } },
         });
         await prisma.sessionParticipant.deleteMany({ where: { scheduledSessionId: SESSION_ID } });
-        await prisma.ticketEntitlement.deleteMany({ where: { id: TICKET_ID } });
+        await prisma.ticketEntitlement.deleteMany({
+            where: { id: { in: [TICKET_ID, ...CAPACITY_TICKET_IDS] } },
+        });
         await prisma.scheduledSession.deleteMany({ where: { id: SESSION_ID } });
         await prisma.user.deleteMany({ where: { id: { in: [FACILITATOR_ID, ADMIN_ID] } } });
 
@@ -95,6 +125,17 @@ integration('room entitlement PostgreSQL concurrency', () => {
                 boundAt: NOW,
                 expiresAt: new Date('2026-08-06T12:00:00.000Z'),
             },
+        });
+        await prisma.ticketEntitlement.createMany({
+            data: CAPACITY_TICKET_IDS.map((id, index) => ({
+                id,
+                scheduledSessionId: SESSION_ID,
+                codeDigest: String(index + 1).repeat(64),
+                codeLastFour: `C20${index}`,
+                tier: 'GLOBAL_SOUTH' as const,
+                state: 'ISSUED' as const,
+                expiresAt: new Date('2026-08-06T12:00:00.000Z'),
+            })),
         });
         await prisma.webSession.createMany({
             data: [
@@ -176,7 +217,9 @@ integration('room entitlement PostgreSQL concurrency', () => {
             ] } },
         });
         await prisma.sessionParticipant.deleteMany({ where: { scheduledSessionId: SESSION_ID } });
-        await prisma.ticketEntitlement.deleteMany({ where: { id: TICKET_ID } });
+        await prisma.ticketEntitlement.deleteMany({
+            where: { id: { in: [TICKET_ID, ...CAPACITY_TICKET_IDS] } },
+        });
         await prisma.scheduledSession.deleteMany({ where: { id: SESSION_ID } });
         await prisma.user.deleteMany({ where: { id: { in: [FACILITATOR_ID, ADMIN_ID] } } });
         await prisma.$disconnect();
@@ -216,15 +259,7 @@ integration('room entitlement PostgreSQL concurrency', () => {
             where: { id: SESSION_ID },
             data: { maxPublishers: 9 },
         });
-        await prisma.sessionParticipant.createMany({
-            data: Array.from({ length: 6 }, (_, index) => ({
-                scheduledSessionId: SESSION_ID,
-                participantIdentity: `capacity-race-attendee-${index}`,
-                publishGrantedAt: NOW,
-                grantVersion: 1,
-                grantReason: 'integration fixture',
-            })),
-        });
+        await prisma.sessionParticipant.createMany({ data: capacityRaceParticipants() });
 
         const [{ resolveRoomPrincipal }, { setSessionSceneCapacity }] = await Promise.all([
             import('../room-entitlement'),

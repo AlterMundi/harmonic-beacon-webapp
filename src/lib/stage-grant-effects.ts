@@ -309,7 +309,7 @@ async function applyGrantEffect(
         return { complete: false, grantApplied: false, errorCode: 'LIVEKIT_EFFECT_INCOMPLETE' };
     }
 
-    let grantApplied = !stagePresent;
+    let grantApplied = !stagePresent && !job.canPublish;
     if (stagePresent) {
         if (job.canPublish) {
             grantApplied = await applyPermission(job);

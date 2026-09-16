@@ -208,6 +208,28 @@ describe('durable stage grant effects', () => {
         expect(mocks.participantUpdateMany).not.toHaveBeenCalled();
     });
 
+    it('keeps a connected-only promotion pending when the checked identity is absent', async () => {
+        mocks.outboxUpdate.mockResolvedValue(claimedJob({
+            canPublish: true,
+            participantIdentity: 'checked-connected-identity',
+            resultingParticipantIdentity: 'checked-connected-identity',
+        }));
+        mocks.listParticipants.mockResolvedValue([]);
+        const { processNextStageGrantEffect } = await import('../stage-grant-effects');
+
+        await expect(processNextStageGrantEffect(NOW)).resolves.toBe(true);
+
+        expect(mocks.updateParticipant).not.toHaveBeenCalled();
+        expect(mocks.outboxUpdateMany).toHaveBeenLastCalledWith({
+            where: expect.objectContaining({ claimToken: expect.any(String) }),
+            data: expect.objectContaining({
+                status: 'PENDING',
+                lastErrorCode: 'LIVEKIT_EFFECT_INCOMPLETE',
+            }),
+        });
+        expect(mocks.participantUpdateMany).not.toHaveBeenCalled();
+    });
+
     it('treats an absent participant as converged without a remote grant write', async () => {
         mocks.listParticipants.mockResolvedValue([]);
         const { processNextStageGrantEffect } = await import('../stage-grant-effects');

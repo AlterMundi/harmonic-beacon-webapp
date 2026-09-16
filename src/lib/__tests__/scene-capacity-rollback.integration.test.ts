@@ -19,6 +19,35 @@ const FACILITATOR_ID = '95000000-0000-4000-8000-000000000001';
 const ALL_SESSION_IDS = Object.values(SESSION_IDS);
 const NOW = new Date('2026-09-16T03:00:00.000Z');
 
+function activeGrantTicketId(sessionId: string, index: number) {
+    const suffix = `${sessionId.slice(-3)}${String(index).padStart(9, '0')}`;
+    return `96000000-0000-4000-8000-${suffix}`;
+}
+
+function activeGrantFixtures(sessionId: string, count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+        scheduledSessionId: sessionId,
+        participantIdentity: `${sessionId}-publisher-${index}`,
+        ticketEntitlementId: activeGrantTicketId(sessionId, index),
+        publishGrantedAt: NOW,
+        grantVersion: 1,
+        grantReason: 'rollback integration fixture',
+    }));
+}
+
+describe('scene capacity rollback integration fixture contract', () => {
+    it('gives every active grant exactly one durable principal', () => {
+        for (const participant of activeGrantFixtures(SESSION_IDS[12], 7)) {
+            const fixture = participant as {
+                ticketEntitlementId?: string | null;
+                staffUserId?: string | null;
+            };
+            expect(Number(Boolean(fixture.ticketEntitlementId)) + Number(Boolean(fixture.staffUserId)))
+                .toBe(1);
+        }
+    });
+});
+
 async function createSession(sceneCapacity: 6 | 9 | 12) {
     const id = SESSION_IDS[sceneCapacity];
     await prisma.scheduledSession.create({
@@ -39,14 +68,22 @@ async function createSession(sceneCapacity: 6 | 9 | 12) {
 }
 
 async function createActiveGrants(sessionId: string, count: number) {
+    await prisma.ticketEntitlement.createMany({
+        data: Array.from({ length: count }, (_, index) => {
+            const id = activeGrantTicketId(sessionId, index);
+            return {
+                id,
+                scheduledSessionId: sessionId,
+                codeDigest: id.replaceAll('-', '').padEnd(64, '0'),
+                codeLastFour: id.slice(-4),
+                tier: 'COMP' as const,
+                state: 'ISSUED' as const,
+                expiresAt: new Date(NOW.getTime() + 24 * 60 * 60 * 1_000),
+            };
+        }),
+    });
     await prisma.sessionParticipant.createMany({
-        data: Array.from({ length: count }, (_, index) => ({
-            scheduledSessionId: sessionId,
-            participantIdentity: `${sessionId}-publisher-${index}`,
-            publishGrantedAt: NOW,
-            grantVersion: 1,
-            grantReason: 'rollback integration fixture',
-        })),
+        data: activeGrantFixtures(sessionId, count),
     });
 }
 
