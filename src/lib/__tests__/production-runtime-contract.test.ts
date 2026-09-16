@@ -73,10 +73,17 @@ describe('production operational entrypoints', () => {
 
     it('quiesces writers and drains forward grant upgrades before replacement', () => {
         const helper = readFileSync('deploy/hb-deploy-root', 'utf8');
+        const workflow = readFileSync('.github/workflows/e2e.yml', 'utf8');
+        const drain = readFileSync('scripts/stage-grant-forward-drain.ts', 'utf8');
         const migrate = helper.slice(helper.indexOf('artifact_migrate() {'), helper.indexOf('artifact_replace() {'));
         expect(migrate.indexOf('migration-attempted')).toBeLessThan(migrate.indexOf('stop app'));
         expect(migrate.indexOf('release-quiesce-preflight.ts')).toBeLessThan(migrate.indexOf('npx prisma migrate deploy'));
         expect(migrate.indexOf('stage-grant-forward-drain.ts')).toBeGreaterThan(migrate.indexOf('npx prisma migrate deploy'));
         expect(migrate).toContain('--no-build --pull never');
+        expect(workflow.indexOf('stage-grants:forward-drain')).toBeGreaterThan(
+            workflow.indexOf('npx prisma migrate deploy'),
+        );
+        expect(drain).toContain('await assessStageGrantForwardDrain()');
+        expect(drain).not.toContain('sessionParticipant.count');
     });
 });

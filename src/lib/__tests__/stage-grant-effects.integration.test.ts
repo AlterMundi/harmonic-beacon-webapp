@@ -53,6 +53,7 @@ vi.mock('@/lib/livekit-server', () => ({
 
 import { prisma } from '@/lib/db';
 import {
+    assessStageGrantForwardDrain,
     processNextStageGrantEffect,
     repairNextUncoveredGrantEffect,
     transitionParticipantGrant,
@@ -483,7 +484,7 @@ suite('stage grant outbox PostgreSQL contract', () => {
         });
     });
 
-    it('fences a legacy active publisher before restoring its grant on a fresh identity', async () => {
+    it('finishes forward drain with an exact disconnected positive tail durably pending', async () => {
         const horizon = new Date(NOW.getTime() + 4 * 60 * 60 * 1000);
         await prisma.sessionParticipant.update({
             where: { id: participantId },
@@ -539,8 +540,130 @@ suite('stage grant outbox PostgreSQL contract', () => {
         await expect(processNextStageGrantEffect(NOW, participantId)).resolves.toBe(true);
         await expect(prisma.sessionParticipant.findUniqueOrThrow({
             where: { id: participantId },
-        })).resolves.toMatchObject({ grantReconcileNeeded: false });
+        })).resolves.toMatchObject({ grantReconcileNeeded: true });
+        await expect(prisma.stageGrantEffectOutbox.findMany({
+            where: { participantId },
+            orderBy: { grantVersion: 'asc' },
+            select: {
+                canPublish: true,
+                status: true,
+                grantAppliedAt: true,
+                lastErrorCode: true,
+            },
+        })).resolves.toEqual([
+            {
+                canPublish: false,
+                status: 'PENDING',
+                grantAppliedAt: NOW,
+                lastErrorCode: 'TOKEN_HORIZON_ACTIVE',
+            },
+            {
+                canPublish: true,
+                status: 'PENDING',
+                grantAppliedAt: null,
+                lastErrorCode: 'LIVEKIT_TARGET_ABSENT',
+            },
+        ]);
+        await expect(assessStageGrantForwardDrain(participantId)).resolves.toEqual({
+            safe: true,
+            markerCount: 1,
+            coveredMarkerCount: 1,
+            deferredPositiveEffectCount: 1,
+            unsafeUnappliedNegativeEffectCount: 0,
+            unsafeUnappliedPositiveEffectCount: 0,
+        });
         expect(live.rooms.get(`grant-room-${sessionId}`)).not.toContain(participantIdentity);
+    });
+
+    it('rejects an uncovered reconciliation marker during forward drain', async () => {
+        await prisma.sessionParticipant.update({
+            where: { id: participantId },
+            data: { grantReconcileNeeded: true },
+        });
+
+        await expect(assessStageGrantForwardDrain(participantId)).resolves.toEqual({
+            safe: false,
+            markerCount: 1,
+            coveredMarkerCount: 0,
+            deferredPositiveEffectCount: 0,
+            unsafeUnappliedNegativeEffectCount: 0,
+            unsafeUnappliedPositiveEffectCount: 0,
+        });
+    });
+
+    it('rejects an unapplied negative effect during forward drain', async () => {
+        await prisma.$transaction((tx) => transitionParticipantGrant(tx, {
+            scheduledSessionId: sessionId,
+            participantId,
+            canPublish: false,
+            now: NOW,
+            actorUserId: userId,
+            reason: 'Synthetic unapplied drain fence',
+        }));
+
+        await expect(assessStageGrantForwardDrain(participantId)).resolves.toEqual({
+            safe: false,
+            markerCount: 1,
+            coveredMarkerCount: 1,
+            deferredPositiveEffectCount: 0,
+            unsafeUnappliedNegativeEffectCount: 1,
+            unsafeUnappliedPositiveEffectCount: 0,
+        });
+    });
+
+    it('rejects a disconnected positive effect that no longer matches durable state', async () => {
+        live.rooms.get(`grant-room-${sessionId}`)?.delete(participantIdentity);
+        await prisma.$transaction((tx) => transitionParticipantGrant(tx, {
+            scheduledSessionId: sessionId,
+            participantId,
+            canPublish: true,
+            now: NOW,
+            actorUserId: userId,
+            reason: 'Synthetic disconnected promotion',
+        }));
+        await expect(processNextStageGrantEffect(NOW, participantId)).resolves.toBe(true);
+        await prisma.sessionParticipant.update({
+            where: { id: participantId },
+            data: { participantIdentity: `mismatched-${participantId}` },
+        });
+
+        await expect(assessStageGrantForwardDrain(participantId)).resolves.toEqual({
+            safe: false,
+            markerCount: 1,
+            coveredMarkerCount: 0,
+            deferredPositiveEffectCount: 0,
+            unsafeUnappliedNegativeEffectCount: 0,
+            unsafeUnappliedPositiveEffectCount: 1,
+        });
+    });
+
+    it('rejects a present positive target whose permission update failed', async () => {
+        live.permissionFailures = 1;
+        await prisma.$transaction((tx) => transitionParticipantGrant(tx, {
+            scheduledSessionId: sessionId,
+            participantId,
+            canPublish: true,
+            now: NOW,
+            actorUserId: userId,
+            reason: 'Synthetic failed promotion update',
+        }));
+        await expect(processNextStageGrantEffect(NOW, participantId)).resolves.toBe(true);
+        await expect(prisma.stageGrantEffectOutbox.findFirstOrThrow({
+            where: { participantId },
+        })).resolves.toMatchObject({
+            status: 'PENDING',
+            grantAppliedAt: null,
+            lastErrorCode: 'LIVEKIT_EFFECT_INCOMPLETE',
+        });
+
+        await expect(assessStageGrantForwardDrain(participantId)).resolves.toEqual({
+            safe: false,
+            markerCount: 1,
+            coveredMarkerCount: 1,
+            deferredPositiveEffectCount: 0,
+            unsafeUnappliedNegativeEffectCount: 0,
+            unsafeUnappliedPositiveEffectCount: 1,
+        });
     });
 
     it('does not reinterpret a reconciled first facilitator materialization as debt', async () => {

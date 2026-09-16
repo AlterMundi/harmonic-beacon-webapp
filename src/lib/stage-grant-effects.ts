@@ -295,7 +295,11 @@ async function removeIfPresent(roomName: string, identity: string): Promise<bool
 type GrantEffectOutcome = {
     complete: boolean;
     grantApplied: boolean;
-    errorCode: 'LIVEKIT_EFFECT_INCOMPLETE' | 'TOKEN_HORIZON_ACTIVE' | null;
+    errorCode:
+        | 'LIVEKIT_EFFECT_INCOMPLETE'
+        | 'LIVEKIT_TARGET_ABSENT'
+        | 'TOKEN_HORIZON_ACTIVE'
+        | null;
 };
 
 async function applyGrantEffect(
@@ -326,7 +330,11 @@ async function applyGrantEffect(
         return {
             complete: grantApplied,
             grantApplied,
-            errorCode: grantApplied ? null : 'LIVEKIT_EFFECT_INCOMPLETE',
+            errorCode: grantApplied
+                ? null
+                : (!stagePresent && job.canPublish
+                    ? 'LIVEKIT_TARGET_ABSENT'
+                    : 'LIVEKIT_EFFECT_INCOMPLETE'),
         };
     }
     if (!job.bedRoomName || !job.bedIdentity || !job.tokenHorizonAt) {
@@ -441,6 +449,172 @@ export async function processParticipantGrantEffects(
         },
     });
     return { processed, pending };
+}
+
+export type StageGrantForwardDrainAssessment = {
+    safe: boolean;
+    markerCount: number;
+    coveredMarkerCount: number;
+    deferredPositiveEffectCount: number;
+    unsafeUnappliedNegativeEffectCount: number;
+    unsafeUnappliedPositiveEffectCount: number;
+};
+
+type StageGrantForwardDrainAssessmentRow = {
+    marker_count: bigint;
+    covered_marker_count: bigint;
+    deferred_positive_effect_count: bigint;
+    unsafe_unapplied_negative_effect_count: bigint;
+    unsafe_unapplied_positive_effect_count: bigint;
+};
+
+function grantDrainCount(value: bigint, field: string): number {
+    const count = Number(value);
+    if (!Number.isSafeInteger(count) || count < 0) {
+        throw new Error(`Invalid stage grant drain assessment count: ${field}`);
+    }
+    return count;
+}
+
+/**
+ * Assesses the quiesced forward-migration boundary without clearing durable
+ * reconciliation state. An absent active publisher may remain pending only
+ * after a real LiveKit presence check recorded LIVEKIT_TARGET_ABSENT. Generic
+ * lookup or permission failures, every unapplied negative effect, and every
+ * uncovered/mismatched marker remain release blockers.
+ */
+export async function assessStageGrantForwardDrain(
+    participantId?: string,
+): Promise<StageGrantForwardDrainAssessment> {
+    const rows = await prisma.$queryRaw<StageGrantForwardDrainAssessmentRow[]>(Prisma.sql`
+        WITH participant_state AS (
+            SELECT
+                participant."id",
+                participant."scheduled_session_id",
+                participant."participant_identity",
+                participant."grant_version",
+                participant."grant_reconcile_needed",
+                session."room_name" AS "current_room_name",
+                (
+                    participant."publish_granted_at" IS NOT NULL
+                    AND participant."publish_revoked_at" IS NULL
+                ) AS "desired_can_publish",
+                tail."id" AS "tail_id",
+                tail."grant_version" AS "tail_grant_version",
+                tail."can_publish" AS "tail_can_publish",
+                tail."resulting_participant_identity" AS "tail_resulting_participant_identity"
+            FROM "session_participants" participant
+            INNER JOIN "scheduled_sessions" session
+                ON session."id" = participant."scheduled_session_id"
+            LEFT JOIN LATERAL (
+                SELECT effect."id", effect."grant_version", effect."can_publish",
+                       effect."resulting_participant_identity"
+                FROM "stage_grant_effect_outbox" effect
+                WHERE effect."participant_id" = participant."id"
+                ORDER BY effect."grant_version" DESC
+                LIMIT 1
+            ) tail ON true
+            WHERE (${participantId ?? null}::text IS NULL OR participant."id"::text = ${participantId ?? null})
+        ),
+        safe_deferred_positive AS (
+            SELECT effect."id", effect."participant_id"
+            FROM "stage_grant_effect_outbox" effect
+            INNER JOIN participant_state participant
+                ON participant."id" = effect."participant_id"
+            WHERE effect."status" = 'PENDING'
+              AND effect."grant_applied_at" IS NULL
+              AND effect."can_publish" = true
+              AND effect."disconnect_participant" = false
+              AND effect."bed_room_name" IS NULL
+              AND effect."bed_identity" IS NULL
+              AND effect."token_horizon_at" IS NULL
+              AND effect."claim_token" IS NULL
+              AND effect."lease_expires_at" IS NULL
+              AND effect."completed_at" IS NULL
+              AND effect."last_error_code" = 'LIVEKIT_TARGET_ABSENT'
+              AND effect."attempts" > 0
+              AND effect."claimed_at" IS NOT NULL
+              AND participant."grant_reconcile_needed" = true
+              AND participant."desired_can_publish" = true
+              AND participant."tail_id" = effect."id"
+              AND effect."scheduled_session_id" = participant."scheduled_session_id"
+              AND effect."room_name" = participant."current_room_name"
+              AND effect."grant_version" = participant."grant_version"
+              AND effect."participant_identity" = participant."participant_identity"
+              AND effect."resulting_participant_identity" = participant."participant_identity"
+        )
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM participant_state participant
+                WHERE participant."grant_reconcile_needed" = true
+            ) AS "marker_count",
+            (
+                SELECT COUNT(*)
+                FROM participant_state participant
+                WHERE participant."grant_reconcile_needed" = true
+                  AND participant."tail_grant_version" = participant."grant_version"
+                  AND participant."tail_can_publish" = participant."desired_can_publish"
+                  AND participant."tail_resulting_participant_identity" = participant."participant_identity"
+            ) AS "covered_marker_count",
+            (
+                SELECT COUNT(*)
+                FROM safe_deferred_positive
+            ) AS "deferred_positive_effect_count",
+            (
+                SELECT COUNT(*)
+                FROM "stage_grant_effect_outbox" effect
+                INNER JOIN participant_state participant
+                    ON participant."id" = effect."participant_id"
+                WHERE effect."status" <> 'SUPERSEDED'
+                  AND effect."grant_applied_at" IS NULL
+                  AND effect."can_publish" = false
+            ) AS "unsafe_unapplied_negative_effect_count",
+            (
+                SELECT COUNT(*)
+                FROM "stage_grant_effect_outbox" effect
+                INNER JOIN participant_state participant
+                    ON participant."id" = effect."participant_id"
+                WHERE effect."status" <> 'SUPERSEDED'
+                  AND effect."grant_applied_at" IS NULL
+                  AND effect."can_publish" = true
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM safe_deferred_positive safe
+                      WHERE safe."id" = effect."id"
+                  )
+            ) AS "unsafe_unapplied_positive_effect_count"
+    `);
+    const row = rows[0];
+    if (!row) throw new Error('Stage grant drain assessment returned no row');
+    const markerCount = grantDrainCount(row.marker_count, 'marker_count');
+    const coveredMarkerCount = grantDrainCount(
+        row.covered_marker_count,
+        'covered_marker_count',
+    );
+    const deferredPositiveEffectCount = grantDrainCount(
+        row.deferred_positive_effect_count,
+        'deferred_positive_effect_count',
+    );
+    const unsafeUnappliedNegativeEffectCount = grantDrainCount(
+        row.unsafe_unapplied_negative_effect_count,
+        'unsafe_unapplied_negative_effect_count',
+    );
+    const unsafeUnappliedPositiveEffectCount = grantDrainCount(
+        row.unsafe_unapplied_positive_effect_count,
+        'unsafe_unapplied_positive_effect_count',
+    );
+    return {
+        safe: coveredMarkerCount === markerCount &&
+            deferredPositiveEffectCount === markerCount &&
+            unsafeUnappliedNegativeEffectCount === 0 &&
+            unsafeUnappliedPositiveEffectCount === 0,
+        markerCount,
+        coveredMarkerCount,
+        deferredPositiveEffectCount,
+        unsafeUnappliedNegativeEffectCount,
+        unsafeUnappliedPositiveEffectCount,
+    };
 }
 
 /**
