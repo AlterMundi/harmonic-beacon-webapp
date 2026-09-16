@@ -288,16 +288,6 @@ export async function promoteParticipant(
                 'Participant not found',
             );
         }
-        if (
-            target.participantIdentity !== connectedParticipant.participantIdentity ||
-            target.grantVersion !== connectedParticipant.grantVersion
-        ) {
-            throw new StageControlError(
-                'stale_grant_version',
-                409,
-                'The participant connection changed; refresh before trying again',
-            );
-        }
         const ticket = target.ticketEntitlement;
         const hasActiveEntitlement = target.ticketEntitlementId !== null &&
             target.ticketEntitlementId !== undefined &&
@@ -324,6 +314,20 @@ export async function promoteParticipant(
                 'entitlement_inactive',
                 409,
                 'This attendee no longer has active event access',
+            );
+        }
+        // Revocation is authoritative even when it also advances the grant
+        // version. Report the revoked entitlement before rejecting a stale
+        // connection snapshot; active entitlements still require an exact
+        // identity and grant-version match before any durable mutation.
+        if (
+            target.participantIdentity !== connectedParticipant.participantIdentity ||
+            target.grantVersion !== connectedParticipant.grantVersion
+        ) {
+            throw new StageControlError(
+                'stale_grant_version',
+                409,
+                'The participant connection changed; refresh before trying again',
             );
         }
 

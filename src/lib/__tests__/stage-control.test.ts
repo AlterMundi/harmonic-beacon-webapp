@@ -340,6 +340,33 @@ describe('stage control', () => {
         expect(mocks.updateParticipant).not.toHaveBeenCalled();
     });
 
+    it('returns revoked entitlement after a concurrent revocation changed the grant version', async () => {
+        participants = [attendee('target')];
+        mocks.listParticipants.mockImplementationOnce(() => {
+            const observed = [{ identity: participants[0].participantIdentity }];
+            participants[0].grantVersion += 1;
+            participants[0].ticketEntitlement!.state = 'REVOKED';
+            participants[0].ticketEntitlement!.revokedAt =
+                new Date('2026-09-05T05:00:00Z');
+            return observed;
+        });
+        const { promoteParticipant } = await import('../stage-control');
+
+        await expect(promoteParticipant({
+            scheduledSessionId: event.id,
+            participantId: 'target',
+            actorUserId: 'operator-1',
+            now: new Date('2026-09-05T06:00:00Z'),
+        })).rejects.toMatchObject({
+            code: 'entitlement_inactive',
+            status: 409,
+        });
+
+        expect(mocks.transitionGrant).not.toHaveBeenCalled();
+        expect(mocks.processGrant).not.toHaveBeenCalled();
+        expect(mocks.updateParticipant).not.toHaveBeenCalled();
+    });
+
     it('rejects a disconnected participant without changing durable grant state', async () => {
         participants = [attendee('target')];
         mocks.listParticipants.mockResolvedValue([]);
