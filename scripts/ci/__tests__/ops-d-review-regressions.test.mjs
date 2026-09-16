@@ -217,7 +217,9 @@ test('finding 6: status checks running health actual image IDs public provenance
   const runtime = section(helper, 'verify_release_runtime_state() {', '\nartifact_status() {');
   assert.match(runtime + helper, /\.State\.Running/u);
   assert.match(runtime + helper, /docker image inspect/u);
-  for (const service of ['beacon-app', 'beacon-commerce-reconciler', 'beacon-tapestry', 'beacon-playlist-bot', 'beacon-postgres', 'beacon-livekit', 'analytics']) {
+  // Analytics qualification is required, but its runtime belongs to another lane.
+  // The executable inventory/negative controls live in live-runtime-inventory.test.mjs.
+  for (const service of ['beacon-app', 'beacon-commerce-reconciler', 'beacon-tapestry', 'beacon-playlist-bot', 'beacon-postgres', 'beacon-livekit']) {
     assert.match(runtime, new RegExp(service));
   }
   assert.match(runtime, /api\/health/u);
