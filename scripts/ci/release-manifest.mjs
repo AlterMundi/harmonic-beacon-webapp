@@ -243,7 +243,8 @@ export function validateReleaseManifest(manifest) {
     'schemaVersion', 'source', 'build', 'artifacts', 'externalImages', 'migrationSet',
     'publicConfig', 'configProfiles', 'deploymentInputs', 'promotion', 'rollback', 'qualification',
   ]);
-  if (manifest.schemaVersion !== 'harmonic-beacon.release.v1') fail('unsupported schemaVersion');
+  const genesis = manifest.schemaVersion === 'harmonic-beacon.release.genesis.v1';
+  if (!genesis && manifest.schemaVersion !== 'harmonic-beacon.release.v1') fail('unsupported schemaVersion');
 
   exactKeys(manifest.source, 'source', ['repository', 'gitSha', 'gitTree']);
   if (manifest.source.repository !== SOURCE_REPOSITORY) fail('source repository is not allowlisted');
@@ -286,9 +287,15 @@ export function validateReleaseManifest(manifest) {
   digest(manifest.deploymentInputs.overlaySha256, 'OCI overlay input');
 
   exactKeys(manifest.promotion, 'promotion', ['baseManifestSha256']);
-  sha256(manifest.promotion.baseManifestSha256, 'promotion base manifest');
   exactKeys(manifest.rollback, 'rollback', ['manifestSha256']);
-  sha256(manifest.rollback.manifestSha256, 'rollback manifest');
+  if (genesis) {
+    if (manifest.promotion.baseManifestSha256 !== null || manifest.rollback.manifestSha256 !== null) {
+      fail('genesis ancestry must be exactly null');
+    }
+  } else {
+    sha256(manifest.promotion.baseManifestSha256, 'promotion base manifest');
+    sha256(manifest.rollback.manifestSha256, 'rollback manifest');
+  }
   if (manifest.rollback.manifestSha256 !== manifest.promotion.baseManifestSha256) {
     fail('rollback manifest must equal promotion base manifest');
   }
@@ -401,6 +408,10 @@ export function impactStateFromCurrent(state) {
 
 export function verifyReleaseManifest(manifest, expected) {
   validateReleaseManifest(manifest);
+  // Structural decoding also serves historical genesis state; ordinary admission does not.
+  if (manifest.schemaVersion === 'harmonic-beacon.release.genesis.v1') {
+    fail('genesis cannot be admitted as an ordinary release transaction');
+  }
   if (!expected || typeof expected !== 'object') fail('verification expectations are required');
   if (manifest.source.repository !== expected.sourceRepository) fail('source repository mismatch');
   if (manifest.source.gitSha !== expected.sourceSha) fail('source SHA mismatch');

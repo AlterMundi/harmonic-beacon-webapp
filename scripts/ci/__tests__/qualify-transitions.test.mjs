@@ -16,7 +16,7 @@ const refs = m => Object.fromEntries([...m.artifacts, ...m.externalImages].map(a
 function acceptance(head) {
   return { browser: { engine: 'chromium', passed: 1, failed: 0, skipped: 0 }, syntheticSession: { created: 1, authenticatedRole: 'ADMIN' }, commerce: { workerHeartbeatAgeMs: 1, pending: 0, processing: 0 }, schema: { expectedHead: head, observedHead: head }, isolation: { internalNetworks: ['database', 'media'], forbiddenSecretNamesFound: [] }, restore: { backupSha256: digest('dump'), backupBytes: 4, restoredSessionCount: 1 } };
 }
-function fixture() {
+function fixture({ genesisBase = false, genesisCandidate = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'transition-test-'));
   function release(label, baseHash) {
     const dir = join(root, label);
@@ -27,6 +27,10 @@ function fixture() {
       m.source.gitSha = 'c'.repeat(40); m.source.gitTree = 'd'.repeat(40); m.build.workflowRunId = '34310000001';
       m.promotion.baseManifestSha256 = baseHash; m.rollback.manifestSha256 = baseHash;
       for (const a of m.artifacts) a.digest = digest(`candidate-${a.artifactId}`);
+    }
+    if ((label === 'base' && genesisBase) || (label === 'candidate' && genesisCandidate)) {
+      m.schemaVersion = 'harmonic-beacon.release.genesis.v1';
+      m.promotion.baseManifestSha256 = null; m.rollback.manifestSha256 = null;
     }
     m.deploymentInputs.composeSha256 = put('docker-compose.yml', readFileSync('docker-compose.yml'));
     m.deploymentInputs.overlaySha256 = put('deploy/oci-images.compose.yml', readFileSync('deploy/oci-images.compose.yml'));
@@ -124,8 +128,57 @@ function fake(f, mutate = () => {}) {
   const executableResolver = identity => ({ path: `/usr/bin/${identity}`, sha256: digest(`executable:${identity}`) });
   return { runner, clock, projectId: project, executableResolver, calls, runtimes };
 }
-function runCase(fn) { const f = fixture(); try { fn(f); } finally { f.close(); } }
+function runCase(fn, options) { const f = fixture(options); try { fn(f); } finally { f.close(); } }
 const downCalls = fake => fake.calls.filter(c => c.args.includes('down'));
+
+test('authenticated sealed genesis is a real successor base and ordinary C-to-G rollback prior', () => runCase(f => {
+  const deps = fake(f);
+  const genesisHash = digest(readFileSync(join(f.base.dir, 'release-manifest.json'))).slice(7);
+  assert.equal(f.candidate.m.promotion.baseManifestSha256, genesisHash);
+  assert.equal(f.candidate.m.rollback.manifestSha256, genesisHash);
+  const result = qualifyTransitions(f.options, deps);
+  validateTransitionEvidence(result);
+  for (const [stage, before, after] of [
+    ['shadow', genesisHash, f.candidate.expected.manifestSha256],
+    ['rollback', f.candidate.expected.manifestSha256, genesisHash],
+    ['forward-repair', genesisHash, f.candidate.expected.manifestSha256],
+  ]) {
+    const measured = JSON.parse(result.stages[stage].executionBytes);
+    assert.equal(measured.runtimeBefore.manifestSha256, before);
+    assert.equal(measured.runtimeAfter.manifestSha256, after);
+  }
+  assert.equal(deps.calls.filter(c => c.file === 'cosign').length, 28, 'both complete inventories authenticated through boundary doubles');
+}, { genesisBase: true }));
+
+test('genesis cannot be the candidate of an ordinary transition', () => runCase(f => {
+  const deps = fake(f);
+  assert.throws(() => qualifyTransitions(f.options, deps), /base hash mismatch/u);
+  assert.ok(deps.calls.every(c => c.file === 'cosign'));
+  assert.equal(existsSync(f.options.output), false);
+}, { genesisBase: true, genesisCandidate: true }));
+
+for (const mode of ['base-bytes', 'resealed-base', 'signature', 'identity', 'sourceSha', 'sourceTree', 'runId', 'runAttempt', 'receipt']) {
+  test(`genesis base ${mode} contradiction rejects before Docker or output`, () => runCase(f => {
+    if (mode === 'base-bytes') writeFileSync(join(f.base.dir, 'release-manifest.json'), Buffer.concat([readFileSync(join(f.base.dir, 'release-manifest.json')), Buffer.from(' ')]));
+    if (mode === 'resealed-base') {
+      f.base.m.build.dependencyLockSha256 = digest('changed lock');
+      reseal(f, 'base');
+      assert.notEqual(f.options.base.manifestSha256, f.candidate.m.promotion.baseManifestSha256);
+    }
+    if (mode === 'receipt') writeFileSync(join(f.base.dir, 'qualification-receipt.json'), '{}');
+    if (['sourceSha', 'sourceTree', 'runId', 'runAttempt'].includes(mode)) f.options.base[mode] = mode === 'runAttempt' ? 2 : '1'.repeat(40);
+    if (mode === 'identity') {
+      f.base.m.artifacts[0].signature.identity = 'untrusted';
+      f.base.m.qualification.candidateIdentitySha256 = candidateIdentitySha256(f.base.m);
+      writeFileSync(join(f.base.dir, 'release-manifest.json'), bytes(f.base.m));
+      f.options.base.manifestSha256 = digest(bytes(f.base.m)).slice(7);
+    }
+    const deps = fake(f, c => mode === 'signature' && c.file === 'cosign' && c.args.some(a => a.endsWith('/base-manifest.json')) ? { exitCode: 1, stdout: '', stderr: '' } : undefined);
+    assert.throws(() => qualifyTransitions(f.options, deps), /noncanonical|nonzero|not trusted|contradiction|hash mismatch/u);
+    assert.ok(deps.calls.every(c => c.file === 'cosign'));
+    assert.equal(existsSync(f.options.output), false);
+  }, { genesisBase: true }));
+}
 
 test('stateful control measures all three exact transitions and writes validator CLI inventory', () => runCase(f => {
   const deps = fake(f);
@@ -184,15 +237,15 @@ for (const relative of ['docker-compose.yml', 'deploy/oci-images.compose.yml', '
     assert.ok(!existsSync(f.options.output));
   }));
 }
-function reseal(f) {
-  const m = f.candidate.m;
-  const q = JSON.parse(readFileSync(join(f.candidate.dir, 'qualification-receipt.json')));
+function reseal(f, label = 'candidate') {
+  const m = f[label].m;
+  const q = JSON.parse(readFileSync(join(f[label].dir, 'qualification-receipt.json')));
   q.candidateIdentitySha256 = m.qualification.candidateIdentitySha256 = candidateIdentitySha256(m);
   q.imageRefs = refs(m);
-  writeFileSync(join(f.candidate.dir, 'qualification-receipt.json'), bytes(q));
+  writeFileSync(join(f[label].dir, 'qualification-receipt.json'), bytes(q));
   m.qualification.receiptSha256 = digest(bytes(q));
-  writeFileSync(join(f.candidate.dir, 'release-manifest.json'), bytes(m));
-  f.options.candidate.manifestSha256 = digest(bytes(m)).slice(7);
+  writeFileSync(join(f[label].dir, 'release-manifest.json'), bytes(m));
+  f.options[label].manifestSha256 = digest(bytes(m)).slice(7);
 }
 for (const mode of ['base-hash', 'shared-dependency', 'compose-change', 'overlay-change']) {
   test(`authenticated semantic ${mode} contradiction rejects`, () => runCase(f => {
