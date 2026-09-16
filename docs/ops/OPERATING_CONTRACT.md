@@ -161,7 +161,10 @@ rejects any event, evaluator, constituent suite, workflow run, workflow attempt,
 job, or check identity bound to another PR head, base ref, or base SHA. Required
 checks must come from the exact GitHub Actions App and expected workflow path on
 the pull-request event. Check, suite, workflow-run-attempt, and exact-attempt job
-pages are fetched as one complete stable evidence snapshot. The mapping in
+pages are fetched as one complete stable evidence snapshot. Evidence JSON travels
+through stdin/file descriptors rather than command-line arguments, without
+truncation; file-backed values are parsed as complete JSON, not accepted as a
+prefix or silently replaced with empty evidence. The mapping in
 [`scripts/ci/check-evidence.jq`](../../scripts/ci/check-evidence.jq) binds each
 accepted check ID to the one job whose `check_run_url` identifies it, then binds
 that job to the exact run ID and attempt record. Checks or jobs timestamped
