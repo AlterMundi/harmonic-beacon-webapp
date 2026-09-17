@@ -1,4 +1,11 @@
-# Dual-LiveKit load harness
+# LiveKit Load Harness
+
+For the bounded small-group `6 / 9 / 12` Stage qualification, including the
+paired microphone+camera synthetic harness and the non-substitutable physical
+12-device checklist, use
+[`SCENE_CAPACITY_12_DEVICE_TRIAL.md`](./SCENE_CAPACITY_12_DEVICE_TRIAL.md).
+That profile creates no mass audience and must not be used as evidence for
+broadcast-scale viewer capacity.
 
 This is the reproducible protocol-load layer for #99 and the capacity input
 to #24. It launches the official LiveKit CLI load tester against two synthetic

@@ -98,6 +98,19 @@ describe('StageLayout — responsive scene grammar', () => {
         expect(eight[7].videoPublication?.setVideoDimensions).not.toHaveBeenCalled();
     });
 
+    it('renders twelve simultaneous publishers when the session capacity is twelve', () => {
+        const publishers = Array.from({ length: 12 }, (_, index) =>
+            publisher(`Person ${index + 1}`, { grantOrder: index }),
+        );
+        render(<StageLayout publishers={publishers} maxPublishers={12} />);
+
+        expect(screen.getAllByTestId('stage-tile')).toHaveLength(12);
+        expect(screen.getAllByTestId('stage-tile-video')).toHaveLength(12);
+        expect(screen.getByTestId('stage-layout')).toHaveAttribute('data-capacity', '12');
+        expect(screen.getByRole('list')).toHaveAttribute('data-member-count', '12');
+        expect(screen.getByTestId('stage-layout')).not.toHaveAttribute('data-overflow');
+    });
+
     it('marks the dyad as protagonist then facilitator with equal layout classes', () => {
         render(<StageLayout publishers={fullStage().slice(0, 2)} />);
 

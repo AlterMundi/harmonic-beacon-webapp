@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -49,6 +50,39 @@ describe('release migration state', () => {
     const raw = Buffer.from('CREATE TABLE "raw" ("id" INT);\r\n');
     expect(migrationChecksum(raw)).toBe(createHash('sha256').update(raw).digest('hex'));
     expect(migrationChecksum(raw)).not.toBe(migrationChecksum(Buffer.from(raw.toString('utf8').replaceAll('\r\n', '\n'))));
+  });
+
+  it('accepts the exact configurable scene-capacity migration bytes as forward-only', () => {
+    const migration = readFileSync(new URL(
+      '../../../prisma/migrations/20260916010000_configurable_scene_capacity/migration.sql',
+      import.meta.url,
+    ));
+
+    expect(validateForwardOnlyMigration(migration)).toEqual({ safe: true, violations: [] });
+  });
+
+  it('accepts only the exact future-row scene-capacity default migration', () => {
+    const migration = readFileSync(new URL(
+      '../../../prisma/migrations/20260917211500_default_scene_capacity_12/migration.sql',
+      import.meta.url,
+    ));
+
+    expect(validateForwardOnlyMigration(migration)).toEqual({ safe: true, violations: [] });
+  });
+
+  it.each([
+    'ALTER TABLE "other_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 12;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "other_capacity" SET DEFAULT 12;',
+    'ALTER TABLE "SCHEDULED_SESSIONS" ALTER COLUMN "scene_capacity" SET DEFAULT 12;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "SCENE_CAPACITY" SET DEFAULT 12;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 6;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 12 + 0;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 12, DROP COLUMN "title";',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 12; UPDATE "scheduled_sessions" SET "scene_capacity" = 12;',
+  ])('rejects adjacent mutations outside the default-12 migration boundary: %s', (sql) => {
+    expect(validateForwardOnlyMigration(sql)).toEqual(expect.objectContaining({
+      safe: false,
+    }));
   });
 
   it('fails closed on missing, mismatched, duplicate, and conflicting applied records', () => {
