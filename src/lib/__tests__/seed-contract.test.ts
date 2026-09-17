@@ -46,12 +46,12 @@ function validEnvironment(): NodeJS.ProcessEnv {
 }
 
 describe('weekend seed contract', () => {
-    it('preserves an existing configured scene capacity while defaulting new sessions to six', () => {
+    it('preserves an existing configured scene capacity while defaulting new sessions to twelve', () => {
         const event = loadSeedContract(validEnvironment()).events[0];
         const data = buildProductionSessionSeedData(event, 'facilitator-id');
 
         expect(data.update).not.toHaveProperty('maxPublishers');
-        expect(data.create).toMatchObject({ maxPublishers: 6, facilitatorId: 'facilitator-id' });
+        expect(data.create).toMatchObject({ maxPublishers: 12, facilitatorId: 'facilitator-id' });
     });
 
     it('fails closed instead of adding a seventh active facilitator grant', () => {
@@ -101,7 +101,7 @@ describe('weekend seed contract', () => {
         expect(contract.staff[0].email).toBe('facilitator@example.invalid');
         expect(contract.events.map(({ language }) => language)).toEqual(['SPANISH', 'ENGLISH']);
         expect(WEEKEND_ATTENDEE_CAP).toBe(150);
-        expect(WEEKEND_MAX_PUBLISHERS).toBe(6);
+        expect(WEEKEND_MAX_PUBLISHERS).toBe(12);
         expect(contract.events[0]).not.toHaveProperty('maxPublishers');
     });
 

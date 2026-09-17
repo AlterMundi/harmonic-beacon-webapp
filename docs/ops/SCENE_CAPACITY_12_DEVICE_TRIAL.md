@@ -5,7 +5,7 @@ This runbook qualifies the **small-group Stage scene** only. It does not qualify
 ## Product contract
 
 - A scheduled session persists one scene capacity: `6`, `9`, or `12`.
-- Existing sessions and new sessions default to `6` until an authorized system administrator changes them.
+- Existing sessions preserve their configured value; new sessions default to `12`. Authorized system administrators may still select `6`, `9`, or `12`.
 - Every active publication grant counts, including the assigned facilitator when the facilitator publishes.
 - A reduction below active grants fails with HTTP `409`; nobody is disconnected and no grant is revoked implicitly.
 - Each qualifying device must publish both microphone audio and camera video.

@@ -93,7 +93,7 @@ export async function seedProductionData() {
 
         for (const event of events) {
             // Existing sessions keep their operator-configured capacity. Only
-            // newly materialized sessions receive the six-publisher default.
+            // newly materialized sessions receive the twelve-publisher default.
             const sessionSeedData = buildProductionSessionSeedData(event, facilitator.id);
             await prisma.scheduledSession.upsert({
                 where: { id: event.id },

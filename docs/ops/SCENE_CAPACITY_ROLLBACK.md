@@ -12,7 +12,9 @@ The forward migration is additive:
   binaries continue to read capacity `6`.
 - `scheduled_sessions.scene_capacity` is the application source of truth. The
   Prisma field `ScheduledSession.maxPublishers` maps to this column, which is
-  `NOT NULL`, defaults to `6`, and accepts only `6`, `9`, or `12`.
+  `NOT NULL`, defaults to `12` for future rows, and accepts only `6`, `9`, or
+  `12`. The original additive migration backfilled existing rows with `6`; the
+  later default-only migration does not rewrite them.
 - Application rollback never drops or rewrites `scene_capacity`. Configured
   `9` and `12` values remain available for a later roll-forward.
 

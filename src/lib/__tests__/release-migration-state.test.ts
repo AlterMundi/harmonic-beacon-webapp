@@ -61,6 +61,30 @@ describe('release migration state', () => {
     expect(validateForwardOnlyMigration(migration)).toEqual({ safe: true, violations: [] });
   });
 
+  it('accepts only the exact future-row scene-capacity default migration', () => {
+    const migration = readFileSync(new URL(
+      '../../../prisma/migrations/20260917211500_default_scene_capacity_12/migration.sql',
+      import.meta.url,
+    ));
+
+    expect(validateForwardOnlyMigration(migration)).toEqual({ safe: true, violations: [] });
+  });
+
+  it.each([
+    'ALTER TABLE "other_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 12;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "other_capacity" SET DEFAULT 12;',
+    'ALTER TABLE "SCHEDULED_SESSIONS" ALTER COLUMN "scene_capacity" SET DEFAULT 12;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "SCENE_CAPACITY" SET DEFAULT 12;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 6;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 12 + 0;',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 12, DROP COLUMN "title";',
+    'ALTER TABLE "scheduled_sessions" ALTER COLUMN "scene_capacity" SET DEFAULT 12; UPDATE "scheduled_sessions" SET "scene_capacity" = 12;',
+  ])('rejects adjacent mutations outside the default-12 migration boundary: %s', (sql) => {
+    expect(validateForwardOnlyMigration(sql)).toEqual(expect.objectContaining({
+      safe: false,
+    }));
+  });
+
   it('fails closed on missing, mismatched, duplicate, and conflicting applied records', () => {
     const name = '20260909000000_first';
     const exact = checksum(firstSql);

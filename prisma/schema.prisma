@@ -148,7 +148,7 @@ model ScheduledSession {
   paidMode      Boolean                @default(true) @map("paid_mode")
   publicAccess  Boolean                @default(false) @map("public_access")
   attendeeCap   Int                    @default(150) @map("attendee_cap")
-  maxPublishers Int                    @default(6) @map("scene_capacity")
+  maxPublishers Int                    @default(12) @map("scene_capacity")
   facilitatorId String                 @map("facilitator_id") @db.Uuid
   facilitator   User                   @relation("SessionFacilitator", fields: [facilitatorId], references: [id], onDelete: Restrict)
   createdAt     DateTime               @default(now()) @map("created_at")

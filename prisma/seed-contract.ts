@@ -1,5 +1,5 @@
 export const WEEKEND_ATTENDEE_CAP = 150;
-export const WEEKEND_MAX_PUBLISHERS = 6;
+export const WEEKEND_MAX_PUBLISHERS = 12;
 export const WEEKEND_SESSION_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export type WeekendLanguage = 'ENGLISH' | 'SPANISH';

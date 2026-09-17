@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,9 +9,9 @@ import {
 } from '../scene-capacity';
 
 describe('scene capacity contract', () => {
-    it('supports only 6, 9, and 12 with six as the compatibility default', () => {
+    it('supports only 6, 9, and 12 with twelve as the default for new sessions', () => {
         expect(SCENE_CAPACITIES).toEqual([6, 9, 12]);
-        expect(DEFAULT_SCENE_CAPACITY).toBe(6);
+        expect(DEFAULT_SCENE_CAPACITY).toBe(12);
         for (const value of [6, 9, 12]) expect(isSceneCapacity(value)).toBe(true);
         for (const value of [0, 5, 7, 10, 13, '12', null]) {
             expect(isSceneCapacity(value)).toBe(false);
@@ -36,6 +36,28 @@ describe('scene capacity contract', () => {
         expect(migration).toContain('ADD COLUMN "scene_capacity" INTEGER NOT NULL DEFAULT 6');
         expect(migration).toContain('CHECK ("scene_capacity" IN (6, 9, 12))');
         expect(migration).not.toMatch(/\b(?:COMMENT|DROP|UPDATE|DELETE)\b/i);
+        expect(migration).not.toContain('"max_publishers"');
+    });
+
+    it('changes only the future database default to twelve and preserves existing rows', () => {
+        const schema = readFileSync(
+            new URL('../../../prisma/schema.prisma', import.meta.url),
+            'utf8',
+        );
+        const migrationUrl = new URL(
+            '../../../prisma/migrations/20260917211500_default_scene_capacity_12/migration.sql',
+            import.meta.url,
+        );
+
+        expect(schema).toContain('maxPublishers Int                    @default(12) @map("scene_capacity")');
+        expect(existsSync(migrationUrl)).toBe(true);
+        if (!existsSync(migrationUrl)) return;
+
+        const migration = readFileSync(migrationUrl, 'utf8');
+        expect(migration).toContain(
+            'ALTER COLUMN "scene_capacity" SET DEFAULT 12',
+        );
+        expect(migration).not.toMatch(/\b(?:UPDATE|DELETE|DROP COLUMN)\b/i);
         expect(migration).not.toContain('"max_publishers"');
     });
 });
