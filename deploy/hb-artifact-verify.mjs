@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
-  closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync,
+  closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, readdirSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -29,7 +29,7 @@ function fail(message) {
   throw new Error(`hb-artifact-verify: ${message}`);
 }
 
-function readRegular(path, maximum = 1024 * 1024) {
+export function readRegular(path, maximum = 1024 * 1024) {
   const before = lstatSync(path);
   if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size > maximum) fail(`unsafe input file: ${basename(path)}`);
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -38,7 +38,12 @@ function readRegular(path, maximum = 1024 * 1024) {
     if (!after.isFile() || after.nlink !== 1 || after.dev !== before.dev || after.ino !== before.ino || after.size > maximum) {
       fail(`input changed while opening: ${basename(path)}`);
     }
-    return readFileSync(fd);
+    const buffer = Buffer.alloc(after.size + 1);
+    const count = readSync(fd, buffer, 0, buffer.length, 0);
+    const final = fstatSync(fd);
+    if (count !== after.size || final.size !== after.size || final.nlink !== 1 ||
+        final.mtimeMs !== after.mtimeMs || final.ctimeMs !== after.ctimeMs) fail(`input changed while reading: ${basename(path)}`);
+    return buffer.subarray(0, count);
   } finally {
     closeSync(fd);
   }
@@ -140,7 +145,7 @@ export function verifyFinalCandidateBlobs(root, verify = verifyCosignBlob) {
   }
 }
 
-function registryEvidence(root, manifest) {
+export function registryEvidence(root, manifest) {
   const records = {};
   for (const folder of exactEvidenceDirectories(root)) {
     const entries = readdirSync(folder, { withFileTypes: true });

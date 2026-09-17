@@ -412,6 +412,23 @@ export function verifyReleaseManifest(manifest, expected) {
   if (manifest.schemaVersion === 'harmonic-beacon.release.genesis.v1') {
     fail('genesis cannot be admitted as an ordinary release transaction');
   }
+  const result = verifyManifestContent(manifest, expected);
+  if (manifest.promotion.baseManifestSha256 !== expected.currentBaseManifestSha256) fail('stale candidate base manifest');
+  return result;
+}
+
+// Separate admission, shared supply-chain/content checks; ordinary ancestry remains mandatory.
+export function verifyGenesisReleaseManifest(manifest, expected) {
+  validateReleaseManifest(manifest);
+  if (manifest.schemaVersion !== 'harmonic-beacon.release.genesis.v1') fail('genesis release required');
+  if (!['genesis', 'genesis-recover', 'genesis-forward-repair'].includes(expected?.operation)) fail('genesis operation required');
+  // Historical G may be authenticated for committed recovery only. This returns
+  // content verification, NOT recovery authority: the separate authorization and
+  // root ledger must bind its exact extant publication and refuse successors.
+  return verifyManifestContent(manifest, expected, expected.operation !== 'genesis-recover');
+}
+
+function verifyManifestContent(manifest, expected, freshQualification = true) {
   if (!expected || typeof expected !== 'object') fail('verification expectations are required');
   if (manifest.source.repository !== expected.sourceRepository) fail('source repository mismatch');
   if (manifest.source.gitSha !== expected.sourceSha) fail('source SHA mismatch');
@@ -426,12 +443,11 @@ export function verifyReleaseManifest(manifest, expected) {
   const target = expected.target === 'shadow' ? 'live-staging' : expected.target;
   if (!['live-staging', 'production'].includes(target)) fail('invalid promotion target');
   if (manifest.configProfiles[target].sha256 !== expected.targetConfigSha256) fail('config profile mismatch');
-  if (manifest.promotion.baseManifestSha256 !== expected.currentBaseManifestSha256) fail('stale candidate base manifest');
   const now = new Date(expected.now ?? Date.now()).getTime();
   const qualifiedAt = Date.parse(manifest.qualification.qualifiedAt);
   if (!Number.isFinite(now)) fail('invalid verification time');
   if (qualifiedAt > now) fail('qualification is in the future');
-  if (now - qualifiedAt > 86_400_000 || now >= Date.parse(manifest.qualification.expiresAt)) fail('qualification has expired');
+  if (freshQualification && (now - qualifiedAt > 86_400_000 || now >= Date.parse(manifest.qualification.expiresAt))) fail('qualification has expired');
 
   const evidence = object(expected.registryEvidence, 'registry evidence');
   const imageRefs = {};
