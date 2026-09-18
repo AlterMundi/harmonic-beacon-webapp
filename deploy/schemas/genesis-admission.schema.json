@@ -1,0 +1,902 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harmonicbeacon.com/schemas/genesis-admission.schema.json",
+  "title": "Closed genesis admission contracts (not host attestation)",
+  "$comment": "Canonical UTF-8 <= 1048576 bytes. Runtime additionally enforces timestamp ordering/freshness, <=15-minute authorization TTL, dependency image-ID equality, exact rehearsal/admission expectations, and recovery publication manifest equality. Initial absence is reported, never proved by this schema. Rehearsal receipt hashes commit to retained measured records; no records or measurements are manufactured by this validator.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/observation"
+    },
+    {
+      "$ref": "#/$defs/authorization"
+    },
+    {
+      "$ref": "#/$defs/rehearsal"
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "git": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "run": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999999999
+    },
+    "date": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "id",
+        "manifestSha256"
+      ],
+      "properties": {
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "id": {
+          "$ref": "#/$defs/hex"
+        },
+        "manifestSha256": {
+          "$ref": "#/$defs/hex"
+        }
+      }
+    },
+    "gateState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "genesisId",
+        "permitSha256",
+        "ledgerSha256",
+        "publication"
+      ],
+      "properties": {
+        "genesisId": {
+          "$ref": "#/$defs/hex"
+        },
+        "permitSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "ledgerSha256": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/digest"
+            }
+          ]
+        },
+        "publication": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/publication"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "ledgerSha256": {
+              "type": "null"
+            },
+            "publication": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "ledgerSha256": {
+              "$ref": "#/$defs/digest"
+            },
+            "publication": {
+              "$ref": "#/$defs/publication"
+            }
+          }
+        }
+      ]
+    },
+    "firstPartyService": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containerId",
+        "configuredImage",
+        "imageId",
+        "platform",
+        "composeProject",
+        "effectiveConfigSha256",
+        "sourceIdentity",
+        "dependencyResolution"
+      ],
+      "properties": {
+        "containerId": {
+          "$ref": "#/$defs/hex"
+        },
+        "configuredImage": {
+          "type": "string",
+          "pattern": "^(?:sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9._/-]{0,190}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|@sha256:[0-9a-f]{64})?)$"
+        },
+        "imageId": {
+          "$ref": "#/$defs/digest"
+        },
+        "platform": {
+          "const": "linux/amd64"
+        },
+        "composeProject": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+        },
+        "effectiveConfigSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sourceIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            }
+          }
+        },
+        "dependencyResolution": {
+          "type": "null"
+        }
+      }
+    },
+    "postgresService": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containerId",
+        "configuredImage",
+        "imageId",
+        "platform",
+        "composeProject",
+        "effectiveConfigSha256",
+        "sourceIdentity",
+        "dependencyResolution"
+      ],
+      "properties": {
+        "containerId": {
+          "$ref": "#/$defs/hex"
+        },
+        "configuredImage": {
+          "type": "string",
+          "pattern": "^(?:sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9._/-]{0,190}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|@sha256:[0-9a-f]{64})?)$"
+        },
+        "imageId": {
+          "$ref": "#/$defs/digest"
+        },
+        "platform": {
+          "const": "linux/amd64"
+        },
+        "composeProject": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+        },
+        "effectiveConfigSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sourceIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            }
+          }
+        },
+        "dependencyResolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "indexRef",
+            "platformManifestDigest",
+            "imageId"
+          ],
+          "properties": {
+            "indexRef": {
+              "type": "string",
+              "pattern": "^docker\\.io/library/postgres@sha256:[0-9a-f]{64}$"
+            },
+            "platformManifestDigest": {
+              "$ref": "#/$defs/digest"
+            },
+            "imageId": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        }
+      }
+    },
+    "livekitService": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containerId",
+        "configuredImage",
+        "imageId",
+        "platform",
+        "composeProject",
+        "effectiveConfigSha256",
+        "sourceIdentity",
+        "dependencyResolution"
+      ],
+      "properties": {
+        "containerId": {
+          "$ref": "#/$defs/hex"
+        },
+        "configuredImage": {
+          "type": "string",
+          "pattern": "^(?:sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9._/-]{0,190}(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|@sha256:[0-9a-f]{64})?)$"
+        },
+        "imageId": {
+          "$ref": "#/$defs/digest"
+        },
+        "platform": {
+          "const": "linux/amd64"
+        },
+        "composeProject": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+        },
+        "effectiveConfigSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sourceIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            }
+          }
+        },
+        "dependencyResolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "indexRef",
+            "platformManifestDigest",
+            "imageId"
+          ],
+          "properties": {
+            "indexRef": {
+              "type": "string",
+              "pattern": "^docker\\.io/livekit/livekit-server@sha256:[0-9a-f]{64}$"
+            },
+            "platformManifestDigest": {
+              "$ref": "#/$defs/digest"
+            },
+            "imageId": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "host",
+        "observedAt",
+        "implementationSha256",
+        "profileSha256",
+        "gateState",
+        "services",
+        "configCommitment",
+        "boundary",
+        "reportedAppGitSha"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "harmonic-beacon.legacy-observation.v1"
+        },
+        "host": {
+          "const": "mona"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/date"
+        },
+        "implementationSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "profileSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "gateState": {
+          "$ref": "#/$defs/gateState"
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "app",
+            "commerce-reconciler",
+            "tapestry",
+            "playlist-bot",
+            "postgres",
+            "livekit"
+          ],
+          "properties": {
+            "app": {
+              "$ref": "#/$defs/firstPartyService"
+            },
+            "commerce-reconciler": {
+              "$ref": "#/$defs/firstPartyService"
+            },
+            "tapestry": {
+              "$ref": "#/$defs/firstPartyService"
+            },
+            "playlist-bot": {
+              "$ref": "#/$defs/firstPartyService"
+            },
+            "postgres": {
+              "$ref": "#/$defs/postgresService"
+            },
+            "livekit": {
+              "$ref": "#/$defs/livekitService"
+            }
+          }
+        },
+        "configCommitment": {
+          "$ref": "#/$defs/digest"
+        },
+        "boundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "readiness",
+            "privateBoundary",
+            "liveDatabaseSessions",
+            "realLivekitParticipants",
+            "publishedUserAudioTracks"
+          ],
+          "properties": {
+            "readiness": {
+              "const": "passed"
+            },
+            "privateBoundary": {
+              "const": "passed"
+            },
+            "liveDatabaseSessions": {
+              "const": 0
+            },
+            "realLivekitParticipants": {
+              "const": 0
+            },
+            "publishedUserAudioTracks": {
+              "const": 0
+            }
+          }
+        },
+        "reportedAppGitSha": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/git"
+            }
+          ]
+        }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "host",
+        "genesisId",
+        "operation",
+        "target",
+        "environment",
+        "workflowPath",
+        "workflowRef",
+        "deliveryRunId",
+        "deliveryRunAttempt",
+        "candidateRunId",
+        "candidateRunAttempt",
+        "sourceSha",
+        "sourceTree",
+        "manifestSha256",
+        "profileSha256",
+        "implementationSha256",
+        "configSha256",
+        "legacyObservationSha256",
+        "legacyRuntimeSha256",
+        "hostedRehearsalSha256",
+        "expectedPublication",
+        "expectedLedgerSha256",
+        "permitSha256",
+        "verbs",
+        "authorizedAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "harmonic-beacon.genesis-authorization.v1"
+        },
+        "host": {
+          "const": "mona"
+        },
+        "genesisId": {
+          "$ref": "#/$defs/hex"
+        },
+        "operation": {
+          "enum": [
+            "genesis",
+            "genesis-recover",
+            "genesis-forward-repair"
+          ]
+        },
+        "target": {
+          "const": "production"
+        },
+        "environment": {
+          "const": "production"
+        },
+        "workflowPath": {
+          "const": ".github/workflows/oci-promote.yml"
+        },
+        "workflowRef": {
+          "const": "refs/heads/main"
+        },
+        "deliveryRunId": {
+          "$ref": "#/$defs/run"
+        },
+        "deliveryRunAttempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "candidateRunId": {
+          "$ref": "#/$defs/run"
+        },
+        "candidateRunAttempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "sourceSha": {
+          "$ref": "#/$defs/git"
+        },
+        "sourceTree": {
+          "$ref": "#/$defs/git"
+        },
+        "manifestSha256": {
+          "$ref": "#/$defs/hex"
+        },
+        "profileSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "implementationSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "configSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "legacyObservationSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "legacyRuntimeSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "hostedRehearsalSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "expectedPublication": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/publication"
+            }
+          ]
+        },
+        "expectedLedgerSha256": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/digest"
+            }
+          ]
+        },
+        "permitSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "verbs": {
+          "type": "array"
+        },
+        "authorizedAt": {
+          "$ref": "#/$defs/date"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/date"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "operation": {
+              "const": "genesis"
+            },
+            "expectedPublication": {
+              "type": "null"
+            },
+            "expectedLedgerSha256": {
+              "type": "null"
+            },
+            "verbs": {
+              "const": [
+                "prepare",
+                "apply",
+                "status",
+                "recover"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "genesis-recover"
+            },
+            "expectedPublication": {
+              "$ref": "#/$defs/publication"
+            },
+            "expectedLedgerSha256": {
+              "$ref": "#/$defs/digest"
+            },
+            "verbs": {
+              "const": [
+                "prepare",
+                "recover",
+                "status"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "genesis-forward-repair"
+            },
+            "expectedPublication": {
+              "$ref": "#/$defs/publication"
+            },
+            "expectedLedgerSha256": {
+              "$ref": "#/$defs/digest"
+            },
+            "verbs": {
+              "const": [
+                "prepare",
+                "apply",
+                "status",
+                "recover"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "rehearsal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "scope",
+        "environment",
+        "workflowPath",
+        "workflowRef",
+        "deliveryRunId",
+        "deliveryRunAttempt",
+        "candidateRunId",
+        "candidateRunAttempt",
+        "sourceSha",
+        "sourceTree",
+        "manifestSha256",
+        "profileSha256",
+        "implementationSha256",
+        "harnessSha256",
+        "fixtureIdentity",
+        "stages",
+        "failureRecovery",
+        "startedAt",
+        "completedAt",
+        "issuedAt",
+        "result"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "harmonic-beacon.genesis-rehearsal.v1"
+        },
+        "scope": {
+          "const": "hosted-mechanics"
+        },
+        "environment": {
+          "const": "shadow"
+        },
+        "workflowPath": {
+          "const": ".github/workflows/oci-promote.yml"
+        },
+        "workflowRef": {
+          "const": "refs/heads/main"
+        },
+        "deliveryRunId": {
+          "$ref": "#/$defs/run"
+        },
+        "deliveryRunAttempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "candidateRunId": {
+          "$ref": "#/$defs/run"
+        },
+        "candidateRunAttempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "sourceSha": {
+          "$ref": "#/$defs/git"
+        },
+        "sourceTree": {
+          "$ref": "#/$defs/git"
+        },
+        "manifestSha256": {
+          "$ref": "#/$defs/hex"
+        },
+        "profileSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "implementationSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "harnessSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "fixtureIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "synthetic-six-service"
+            },
+            "id": {
+              "$ref": "#/$defs/hex"
+            }
+          }
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "stage",
+                "from",
+                "to",
+                "commandReceiptSha256",
+                "outputReceiptSha256",
+                "runtimeReceiptSha256",
+                "startedAt",
+                "completedAt",
+                "result"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "adopt"
+                },
+                "from": {
+                  "const": "legacy-shaped"
+                },
+                "to": {
+                  "const": "genesis"
+                },
+                "commandReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "outputReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "runtimeReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "startedAt": {
+                  "$ref": "#/$defs/date"
+                },
+                "completedAt": {
+                  "$ref": "#/$defs/date"
+                },
+                "result": {
+                  "const": "success"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "stage",
+                "from",
+                "to",
+                "commandReceiptSha256",
+                "outputReceiptSha256",
+                "runtimeReceiptSha256",
+                "startedAt",
+                "completedAt",
+                "result"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "recover"
+                },
+                "from": {
+                  "const": "genesis"
+                },
+                "to": {
+                  "const": "legacy-shaped"
+                },
+                "commandReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "outputReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "runtimeReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "startedAt": {
+                  "$ref": "#/$defs/date"
+                },
+                "completedAt": {
+                  "$ref": "#/$defs/date"
+                },
+                "result": {
+                  "const": "success"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "stage",
+                "from",
+                "to",
+                "commandReceiptSha256",
+                "outputReceiptSha256",
+                "runtimeReceiptSha256",
+                "startedAt",
+                "completedAt",
+                "result"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "forward-repair"
+                },
+                "from": {
+                  "const": "legacy-shaped"
+                },
+                "to": {
+                  "const": "genesis"
+                },
+                "commandReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "outputReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "runtimeReceiptSha256": {
+                  "$ref": "#/$defs/digest"
+                },
+                "startedAt": {
+                  "$ref": "#/$defs/date"
+                },
+                "completedAt": {
+                  "$ref": "#/$defs/date"
+                },
+                "result": {
+                  "const": "success"
+                }
+              }
+            }
+          ],
+          "items": false
+        },
+        "failureRecovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scenario",
+            "commandReceiptSha256",
+            "outputReceiptSha256",
+            "runtimeReceiptSha256",
+            "startedAt",
+            "completedAt",
+            "result"
+          ],
+          "properties": {
+            "scenario": {
+              "const": "interrupted-adoption"
+            },
+            "commandReceiptSha256": {
+              "$ref": "#/$defs/digest"
+            },
+            "outputReceiptSha256": {
+              "$ref": "#/$defs/digest"
+            },
+            "runtimeReceiptSha256": {
+              "$ref": "#/$defs/digest"
+            },
+            "startedAt": {
+              "$ref": "#/$defs/date"
+            },
+            "completedAt": {
+              "$ref": "#/$defs/date"
+            },
+            "result": {
+              "const": "success"
+            }
+          }
+        },
+        "startedAt": {
+          "$ref": "#/$defs/date"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/date"
+        },
+        "issuedAt": {
+          "$ref": "#/$defs/date"
+        },
+        "result": {
+          "const": "success"
+        }
+      }
+    }
+  }
+}
