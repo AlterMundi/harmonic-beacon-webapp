@@ -13,7 +13,9 @@ const mockReplace = vi.fn();
 const mockRouter = { push: mockPush, replace: mockReplace };
 const navigationMocks = vi.hoisted(() => ({ surface: null as string | null }));
 const audioMocks = vi.hoisted(() => ({
+    isConnected: true,
     isPlaying: false,
+    audioError: null as string | null,
     setBeaconVolume: vi.fn(),
     startBeaconAudio: vi.fn().mockResolvedValue(true),
 }));
@@ -29,7 +31,8 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/context/AudioContext', () => ({
     AudioProvider: ({ children }: { children: React.ReactNode }) => children,
     useAudio: () => ({
-        audioError: null,
+        audioError: audioMocks.audioError,
+        isConnected: audioMocks.isConnected,
         isPlaying: audioMocks.isPlaying,
         setVolume: audioMocks.setBeaconVolume,
         startAudio: audioMocks.startBeaconAudio,
@@ -232,7 +235,9 @@ const ENTRY_RESPONSE = {
 beforeEach(() => {
     vi.mocked(Room).mockClear();
     navigationMocks.surface = null;
+    audioMocks.isConnected = true;
     audioMocks.isPlaying = false;
+    audioMocks.audioError = null;
     liveKitBehavior.connectFailuresRemaining = 0;
     window.sessionStorage.clear();
     window.localStorage.clear();
@@ -1511,6 +1516,36 @@ describe('SessionRoomPage - two-room crossfader', () => {
 });
 
 describe('SessionRoomPage - audio activation', () => {
+    it('waits for the initial Beacon connection before accepting the activation gesture', async () => {
+        audioMocks.isConnected = false;
+        const view = renderPage();
+        const button = await screen.findByRole('button', { name: 'Start audio' });
+        expect(button).toBeDisabled();
+        fireEvent.click(button);
+        expect(audioMocks.startBeaconAudio).not.toHaveBeenCalled();
+
+        audioMocks.isConnected = true;
+        view.rerender(
+            <LocaleProvider initialLocale="en">
+                <RoomExitProvider>
+                    <a href="/away" onClick={() => mockPush("/away")}>Global exit</a>
+                    <SessionRoomPage />
+                </RoomExitProvider>
+            </LocaleProvider>,
+        );
+        expect(screen.getByRole('button', { name: 'Start audio' })).toBeEnabled();
+    });
+
+    it('keeps activation retry enabled after a Beacon connection failure', async () => {
+        audioMocks.isConnected = false;
+        audioMocks.audioError = 'Beacon audio could not connect.';
+        renderPage();
+        const button = await screen.findByRole('button', { name: 'Start audio' });
+        expect(button).toBeEnabled();
+        fireEvent.click(button);
+        expect(audioMocks.startBeaconAudio).toHaveBeenCalledOnce();
+    });
+
     it('preserves intentional native stage mute and zero gain during activation', async () => {
         audioMocks.isPlaying = true;
         await renderConnected();

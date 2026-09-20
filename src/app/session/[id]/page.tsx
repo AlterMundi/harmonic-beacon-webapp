@@ -1298,7 +1298,11 @@ function SessionRoom() {
                             <p className="mb-3 text-sm text-[var(--text-secondary)]">
                                 {copy.session.audioPrompt}
                             </p>
-                            <button onClick={startListening} className="event-button event-button--primary w-full">
+                            <button
+                                onClick={startListening}
+                                disabled={!beaconConnected && !beaconAudioError}
+                                className="event-button event-button--primary w-full"
+                            >
                                 {copy.session.startAudio}
                             </button>
                             {(audioActivationError || beaconAudioError) && (
