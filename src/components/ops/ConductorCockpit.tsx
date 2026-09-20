@@ -8,6 +8,7 @@ import type { StaffRole } from '@prisma/client';
 import OpsHealthClient from '@/app/ops/health/OpsHealthClient';
 import type { Messages } from '@/lib/i18n';
 import type { UiLocale } from '@/lib/i18n';
+import { advanceLifecycleStatus, type LifecycleStatus } from '@/lib/lifecycle-status';
 import type { HealthLevel } from '@/lib/ops-health';
 
 import AdmissionConsole from './AdmissionConsole';
@@ -17,7 +18,6 @@ import SessionLifecycleControl from './SessionLifecycleControl';
 import SpotlightConsole, { type SpotlightSummary } from './SpotlightConsole';
 import TapestryArrange from './TapestryArrange';
 
-type EventStatus = 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
 type Drawer = 'doors' | 'scene' | 'tapestry' | 'admission' | 'health' | 'contributions';
 
 type AdmissionEvent = {
@@ -32,7 +32,7 @@ type Props = {
     session: {
         id: string;
         title: string;
-        status: EventStatus;
+        status: LifecycleStatus;
         scheduledAt: string;
     };
     role: StaffRole;
@@ -78,7 +78,7 @@ export default function ConductorCockpit({
         opsTapestry: opsTapestryCopy } = messages.ops;
     const staffRoleLabels = messages.staffRoles;
     const [drawer, setDrawer] = useState<Drawer | null>(null);
-    const [status, setStatus] = useState<EventStatus>(session.status);
+    const [status, setStatus] = useState<LifecycleStatus>(session.status);
     const roomFrameRef = useRef<HTMLIFrameElement>(null);
     useStaffRoomExitBridge(roomFrameRef, session.id, status === 'LIVE');
     const [stage, setStage] = useState<SpotlightSummary>(EMPTY_STAGE);
@@ -128,7 +128,10 @@ export default function ConductorCockpit({
 
     const onStageSummary = useCallback((next: SpotlightSummary) => {
         setStage(next);
-        if (next.sessionStatus) setStatus(next.sessionStatus);
+        const observedStatus = next.sessionStatus;
+        if (observedStatus) {
+            setStatus((current) => advanceLifecycleStatus(current, observedStatus));
+        }
         setStageLoaded(true);
     }, []);
     const onHealthChange = useCallback((next: HealthLevel) => setHealth(next), []);

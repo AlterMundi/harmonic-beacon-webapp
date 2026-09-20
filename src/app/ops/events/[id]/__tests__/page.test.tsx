@@ -19,9 +19,15 @@ vi.mock('@/lib/db', () => ({ prisma: { scheduledSession: { findUnique: mocks.fin
 vi.mock('@/lib/ops-auth', () => ({ resolveStaffByToken: mocks.resolveStaffByToken }));
 vi.mock('@/lib/staff-navigation', () => ({ resolveStaffLanding: mocks.resolveStaffLanding }));
 vi.mock('@/lib/i18n-server', () => ({ requestLocale: vi.fn().mockResolvedValue('en') }));
-vi.mock('@/components/ops/ConductorCockpit', () => ({
-    default: ({ session }: { session: { id: string } }) => <div data-testid="cockpit">{session.id}</div>,
-}));
+vi.mock('@/components/ops/ConductorCockpit', async () => {
+    const { useState } = await import('react');
+    return {
+        default: function MockConductorCockpit({ session }: { session: { id: string } }) {
+            const [mountedSessionId] = useState(session.id);
+            return <div data-testid="cockpit" data-mounted-session={mountedSessionId}>{session.id}</div>;
+        },
+    };
+});
 
 import EventPage from '../page';
 import { LocaleProvider } from '@/context/LocaleContext';
@@ -50,6 +56,42 @@ describe('canonical staff event page', () => {
         expect(screen.getByRole('heading', { name: 'The living scene' })).toBeInTheDocument();
         expect(screen.queryByRole('link', { name: /Enter the room/ })).toBeNull();
         expect(screen.getByTestId('cockpit')).toHaveTextContent('event-1');
+    });
+
+    it('remounts the conductor cockpit when the route changes event identity', async () => {
+        mocks.findUnique.mockResolvedValue({
+            id: 'event-1',
+            title: 'First event',
+            language: 'ENGLISH',
+            status: 'LIVE',
+            scheduledAt: new Date('2026-08-01T18:00:00.000Z'),
+            facilitatorId: 'fac-1',
+            attendeeCap: 12,
+        });
+        const { rerender } = render(
+            <LocaleProvider initialLocale="en">
+                {await EventPage({ params: Promise.resolve({ id: 'event-1' }) })}
+            </LocaleProvider>,
+        );
+        expect(screen.getByTestId('cockpit')).toHaveAttribute('data-mounted-session', 'event-1');
+
+        mocks.findUnique.mockResolvedValue({
+            id: 'event-2',
+            title: 'Second event',
+            language: 'ENGLISH',
+            status: 'SCHEDULED',
+            scheduledAt: new Date('2026-08-08T18:00:00.000Z'),
+            facilitatorId: 'fac-1',
+            attendeeCap: 12,
+        });
+        rerender(
+            <LocaleProvider initialLocale="en">
+                {await EventPage({ params: Promise.resolve({ id: 'event-2' }) })}
+            </LocaleProvider>,
+        );
+
+        expect(screen.getByTestId('cockpit')).toHaveTextContent('event-2');
+        expect(screen.getByTestId('cockpit')).toHaveAttribute('data-mounted-session', 'event-2');
     });
 
     it('recovers from inaccessible IDs without leaking their title or facilitator', async () => {
