@@ -16,7 +16,7 @@ import { denyNativePlayback } from '../helpers/native-playback-denial';
 // separately fixes stackTest's automatic CI gate). Real DB,
 // entitlement/token routes, signaling, WebRTC and browser playback are required.
 const test = base.extend<{ liveAudio: void }>({
-    liveAudio: [async ({ request, browser }, runFixture) => {
+    liveAudio: [async ({ request }, runFixture) => {
         const db = process.env.E2E_DATABASE_URL;
         assertSafeFixtureDatabaseUrl(db ?? '');
         expect(await probeStack(request), 'required fixture database/app not ready').toBe('ok');
@@ -24,8 +24,13 @@ const test = base.extend<{ liveAudio: void }>({
         const response = await fetch(livekit.replace(/^ws/, 'http'), { signal: AbortSignal.timeout(3000) });
         expect(response.ok, 'required isolated LiveKit server not ready').toBe(true);
         await withSessionStatus(db!, SESSION_ES.id, 'LIVE', async () => {
-            const closePublishers = await startAudioPublishers(browser);
-            try { await runFixture(); } finally { await closePublishers(); }
+            const closePublishers = await startAudioPublishers();
+            try {
+                expect(closePublishers.engine).toBe('chromium');
+                await runFixture();
+            } finally {
+                await closePublishers();
+            }
         });
     }, { auto: true }],
 });

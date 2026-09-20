@@ -157,7 +157,7 @@ stackTest.describe('session contributions chat (#141)', () => {
         );
         stackTest.slow();
         const db = requireDirectDb(testInfo);
-        const stopAudioPublishers = await startAudioPublishers(browser);
+        const stopAudioPublishers = await startAudioPublishers();
         try {
             await withoutContributions(db, SESSION_ES.id, () =>
                 withSessionStatus(db, SESSION_ES.id, 'LIVE', async () => {
