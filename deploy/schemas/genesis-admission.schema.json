@@ -439,6 +439,8 @@
         "candidateRunAttempt",
         "sourceSha",
         "sourceTree",
+        "authorizerSourceSha",
+        "authorizerSourceTree",
         "manifestSha256",
         "profileSha256",
         "implementationSha256",
@@ -498,6 +500,12 @@
           "$ref": "#/$defs/git"
         },
         "sourceTree": {
+          "$ref": "#/$defs/git"
+        },
+        "authorizerSourceSha": {
+          "$ref": "#/$defs/git"
+        },
+        "authorizerSourceTree": {
           "$ref": "#/$defs/git"
         },
         "manifestSha256": {
@@ -634,6 +642,8 @@
         "candidateRunAttempt",
         "sourceSha",
         "sourceTree",
+        "authorizerSourceSha",
+        "authorizerSourceTree",
         "manifestSha256",
         "profileSha256",
         "implementationSha256",
@@ -678,6 +688,12 @@
           "$ref": "#/$defs/git"
         },
         "sourceTree": {
+          "$ref": "#/$defs/git"
+        },
+        "authorizerSourceSha": {
+          "$ref": "#/$defs/git"
+        },
+        "authorizerSourceTree": {
           "$ref": "#/$defs/git"
         },
         "manifestSha256": {

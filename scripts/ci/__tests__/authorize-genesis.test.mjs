@@ -58,7 +58,9 @@ function fixture(t) {
   seal('release-manifest.json'); seal('qualification-receipt.json');
   const o = observation();
   for (const d of m.externalImages) o.services[d.serviceId].dependencyResolution.indexRef = `${d.repository}@${d.digest}`;
-  const r = { ...rehearsal(), manifestSha256, sourceSha: m.source.gitSha, sourceTree: m.source.gitTree, candidateRunId: m.build.workflowRunId, candidateRunAttempt: m.build.workflowRunAttempt };
+  const r = { ...rehearsal(), manifestSha256, sourceSha: m.source.gitSha, sourceTree: m.source.gitTree,
+    authorizerSourceSha: m.source.gitSha, authorizerSourceTree: m.source.gitTree,
+    candidateRunId: m.build.workflowRunId, candidateRunAttempt: m.build.workflowRunAttempt };
   put('genesis/observation.json', bytes(o)); put('genesis/rehearsal.json', bytes(r)); seal('genesis/rehearsal.json', 'promote');
   const bin = join(root, 'bin'); mkdirSync(bin);
   const log = join(root, 'verification.log');
@@ -73,6 +75,7 @@ if(!['verify','verify-blob'].includes(a[0]) || b.issuer!==a[a.indexOf('--certifi
   const preload = join(root, 'clock.cjs'); writeFileSync(preload, `Date.now=()=>${NOW};`);
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, NODE_OPTIONS: `--require=${preload}`,
     GITHUB_REPOSITORY: m.source.repository, GITHUB_REF: 'refs/heads/main', GITHUB_WORKFLOW_REF: `${m.source.repository}/.github/workflows/oci-promote.yml@refs/heads/main`, GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_SHA: m.source.gitSha,
+    AUTHORIZER_SOURCE_SHA: m.source.gitSha, AUTHORIZER_SOURCE_TREE: m.source.gitTree,
     GITHUB_RUN_ID: r.deliveryRunId, GITHUB_RUN_ATTEMPT: String(r.deliveryRunAttempt),
     CANDIDATE_RUN_ID: m.build.workflowRunId, CANDIDATE_RUN_ATTEMPT: String(m.build.workflowRunAttempt), SOURCE_SHA: m.source.gitSha, SOURCE_TREE: m.source.gitTree,
     MANIFEST_SHA256: manifestSha256, CONFIG_SHA256: m.configProfiles.production.sha256, TARGET: 'production', ENVIRONMENT: 'production', OPERATION: 'genesis',
@@ -123,6 +126,8 @@ test('actual hosted CLI authenticates complete real-shaped genesis inventory usi
   assert.equal(a.legacyRuntimeSha256, f.o.configCommitment);
   assert.equal(a.legacyObservationSha256, digest(bytes(f.o)));
   assert.equal(a.hostedRehearsalSha256, digest(bytes(f.r)));
+  assert.equal(a.authorizerSourceSha, f.env.AUTHORIZER_SOURCE_SHA);
+  assert.equal(a.authorizerSourceTree, f.env.AUTHORIZER_SOURCE_TREE);
   assert.equal(a.expectedPublication, null); assert.equal(a.expectedLedgerSha256, null);
   assert.equal(a.permitSha256, f.o.gateState.permitSha256);
   assert.equal(Date.parse(a.expiresAt) - Date.parse(a.authorizedAt), 900000);
@@ -153,6 +158,7 @@ for (const [key, wrong] of Object.entries({
   SOURCE_SHA: 'c'.repeat(40), SOURCE_TREE: 'd'.repeat(40), CANDIDATE_RUN_ID: '345', CANDIDATE_RUN_ATTEMPT: '2',
   GITHUB_RUN_ID: '765', GITHUB_RUN_ATTEMPT: '3', GITHUB_REPOSITORY: 'evil/repo', GITHUB_REF: 'refs/heads/evil',
   GITHUB_WORKFLOW_REF: 'evil/workflow@refs/heads/main', GITHUB_EVENT_NAME: 'push', GITHUB_SHA: 'e'.repeat(40),
+  AUTHORIZER_SOURCE_SHA: 'e'.repeat(40), AUTHORIZER_SOURCE_TREE: 'f'.repeat(40),
   TARGET: 'shadow', ENVIRONMENT: 'shadow', OPERATION: 'promote', MANIFEST_SHA256: 'f'.repeat(64), CONFIG_SHA256: H('wrong'),
   GENESIS_ID: 'f'.repeat(64), PERMIT_SHA256: H('wrong'), PROFILE_SHA256: H('wrong'), IMPLEMENTATION_SHA256: H('wrong'), HARNESS_SHA256: H('wrong'),
   LEGACY_OBSERVATION_SHA256: H('wrong'), HOSTED_REHEARSAL_SHA256: H('wrong'),
@@ -251,4 +257,33 @@ for (const operation of ['genesis-recover', 'genesis-forward-repair']) test(`CLI
   assert.equal(a.operation, operation);
   rmSync(f.output); f.o.gateState.publication.manifestSha256 = H('later-successor').slice(7); refreshReported(f);
   assert.notEqual(f.issue({ OPERATION: operation }).status, 0); assert.equal(existsSync(f.output), false);
+});
+
+for (const operation of ['genesis-recover', 'genesis-forward-repair']) test(`CLI binds exact protected authorizer source for ${operation}`, t => {
+  const f = fixture(t);
+  f.o.gateState.ledgerSha256 = H('ledger');
+  f.o.gateState.publication = { generation: 2, id: H('publication').slice(7), manifestSha256: f.env.MANIFEST_SHA256 };
+  refreshReported(f);
+  const currentSha = 'c'.repeat(40), currentTree = 'd'.repeat(40);
+  f.r.authorizerSourceSha = currentSha;
+  f.r.authorizerSourceTree = currentTree;
+  refreshReported(f);
+  const exact = { OPERATION: operation, GITHUB_SHA: currentSha, AUTHORIZER_SOURCE_SHA: currentSha, AUTHORIZER_SOURCE_TREE: currentTree };
+  const result = f.issue(exact);
+  assert.equal(result.status, 0, result.stderr);
+  const a = validateGenesisAuthorization(readFileSync(f.output), {}, { now: NOW });
+  assert.equal(a.sourceSha, f.m.source.gitSha, 'historical G remains distinct');
+  assert.equal(a.authorizerSourceSha, currentSha);
+  assert.equal(a.authorizerSourceTree, currentTree);
+  for (const extra of [
+    { AUTHORIZER_SOURCE_SHA: '' },
+    { AUTHORIZER_SOURCE_TREE: '' },
+    { AUTHORIZER_SOURCE_SHA: 'e'.repeat(40) },
+    { GITHUB_SHA: 'e'.repeat(40) },
+  ]) {
+    rmSync(f.output, { force: true });
+    const rejected = f.issue({ ...exact, ...extra });
+    assert.notEqual(rejected.status, 0, JSON.stringify(extra));
+    assert.equal(existsSync(f.output), false);
+  }
 });

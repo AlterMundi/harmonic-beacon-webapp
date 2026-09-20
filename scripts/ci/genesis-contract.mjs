@@ -83,7 +83,7 @@ function runBinding(value) {
   for (const key of ['candidateRunAttempt', 'deliveryRunAttempt']) {
     if (!Number.isSafeInteger(value[key]) || value[key] < 1 || value[key] > 9999999999) fail(key);
   }
-  for (const key of ['sourceSha', 'sourceTree']) text(value[key], GIT, key);
+  for (const key of ['sourceSha', 'sourceTree', 'authorizerSourceSha', 'authorizerSourceTree']) text(value[key], GIT, key);
   text(value.manifestSha256, HEX, 'manifestSha256');
   if (value.workflowPath !== '.github/workflows/oci-promote.yml' || value.workflowRef !== 'refs/heads/main') fail('workflow identity');
 }
@@ -98,7 +98,8 @@ function expectations(value, expected) {
 export function validateGenesisAuthorization(bytes, expected = {}, { now = Date.now() } = {}) {
   const a = decode(bytes);
   closed(a, ['schemaVersion', 'host', 'genesisId', 'operation', 'target', 'workflowPath', 'workflowRef', 'environment',
-    'deliveryRunId', 'deliveryRunAttempt', 'candidateRunId', 'candidateRunAttempt', 'sourceSha', 'sourceTree', 'manifestSha256', 'configSha256',
+    'deliveryRunId', 'deliveryRunAttempt', 'candidateRunId', 'candidateRunAttempt', 'sourceSha', 'sourceTree',
+    'authorizerSourceSha', 'authorizerSourceTree', 'manifestSha256', 'configSha256',
     'legacyObservationSha256', 'legacyRuntimeSha256', 'profileSha256', 'implementationSha256', 'hostedRehearsalSha256',
     'expectedPublication', 'expectedLedgerSha256', 'permitSha256', 'verbs', 'authorizedAt', 'expiresAt'], 'authorization');
   if (a.schemaVersion !== 'harmonic-beacon.genesis-authorization.v1' || a.host !== 'mona' || a.target !== 'production' || a.environment !== 'production') fail('authorization identity');
@@ -107,6 +108,7 @@ export function validateGenesisAuthorization(bytes, expected = {}, { now = Date.
   text(a.genesisId, HEX, 'genesisId');
   for (const key of ['configSha256', 'legacyObservationSha256', 'legacyRuntimeSha256', 'profileSha256', 'implementationSha256', 'hostedRehearsalSha256', 'permitSha256']) text(a[key], DIGEST, key);
   if (a.operation === 'genesis') {
+    if (a.sourceSha !== a.authorizerSourceSha || a.sourceTree !== a.authorizerSourceTree) fail('genesis authorizer source');
     if (a.expectedPublication !== null || a.expectedLedgerSha256 !== null) fail('genesis requires absent publication AND ledger');
   } else {
     publication(a.expectedPublication);
@@ -124,6 +126,7 @@ export function validateGenesisAuthorization(bytes, expected = {}, { now = Date.
 export function validateGenesisRehearsal(bytes, expected = {}, { now = Date.now() } = {}) {
   const r = decode(bytes);
   closed(r, ['schemaVersion', 'scope', 'environment', 'workflowPath', 'workflowRef', 'manifestSha256', 'sourceSha', 'sourceTree',
+    'authorizerSourceSha', 'authorizerSourceTree',
     'candidateRunId', 'candidateRunAttempt', 'deliveryRunId', 'deliveryRunAttempt', 'implementationSha256', 'profileSha256', 'harnessSha256',
     'fixtureIdentity', 'stages', 'failureRecovery', 'startedAt', 'completedAt', 'issuedAt', 'result'], 'rehearsal');
   if (r.schemaVersion !== 'harmonic-beacon.genesis-rehearsal.v1' || r.scope !== 'hosted-mechanics' || r.environment !== 'shadow' || r.result !== 'success') fail('rehearsal scope/result');

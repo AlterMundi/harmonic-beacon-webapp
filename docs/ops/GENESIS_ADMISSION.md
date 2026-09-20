@@ -54,7 +54,8 @@ Required trusted job environment:
 
 - `GITHUB_REPOSITORY`, `GITHUB_REF`, `GITHUB_WORKFLOW_REF`, `GITHUB_EVENT_NAME`,
   `GITHUB_SHA`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`
-- `SOURCE_SHA`, `SOURCE_TREE`, `CANDIDATE_RUN_ID`, `CANDIDATE_RUN_ATTEMPT`,
+- `SOURCE_SHA`, `SOURCE_TREE`, `AUTHORIZER_SOURCE_SHA`,
+  `AUTHORIZER_SOURCE_TREE`, `CANDIDATE_RUN_ID`, `CANDIDATE_RUN_ATTEMPT`,
   `MANIFEST_SHA256`, `CONFIG_SHA256`
 - `TARGET=production`, `ENVIRONMENT=production`,
   `OPERATION=genesis|genesis-recover|genesis-forward-repair`
@@ -63,9 +64,14 @@ Required trusted job environment:
 
 The workflow identity is fixed, repository is
 `AlterMundi/harmonic-beacon-webapp`, ref is `refs/heads/main`, event is
-`workflow_dispatch`. Initial adoption additionally requires candidate source SHA
-to equal `GITHUB_SHA`. No attempt spelling is silently normalized (`01` and `1e0`
-reject). Source/tree/run/attempt/config and all commitment expectations are exact.
+`workflow_dispatch`. `GITHUB_SHA` must equal the separately resolved and bound
+`AUTHORIZER_SOURCE_SHA` for every operation. The corresponding protected-main
+tree is bound as `AUTHORIZER_SOURCE_TREE`; these fields identify the exact
+authorizer implementation and remain distinct from historical G's
+`SOURCE_SHA`/`SOURCE_TREE`. Initial adoption additionally requires G's source SHA
+and tree to equal the authorizer source SHA and tree. No attempt spelling is silently normalized (`01` and `1e0`
+reject). Candidate source/tree, authorizer source/tree, run/attempt/config and all
+commitment expectations are exact.
 
 ## Wire contracts
 
@@ -111,8 +117,9 @@ report does not turn it into host attestation.**
 ### `harmonic-beacon.genesis-rehearsal.v1`
 
 Scope is only `hosted-mechanics`, environment `shadow`, fixture kind
-`synthetic-six-service`. Exact G source/tree/manifest/candidate run/attempt and
-same delivery run/attempt are required, as are reviewed implementation/profile/
+`synthetic-six-service`. Exact G source/tree/manifest/candidate run/attempt,
+exact protected authorizer source/tree and same delivery run/attempt are required,
+as are reviewed implementation/profile/
 harness commitments. Ordered stages are `adopt` (legacy-shaped → genesis),
 `recover` (genesis → legacy-shaped), `forward-repair` (legacy-shaped → genesis),
 then successful `interrupted-adoption` failure recovery. Each records ordered
@@ -131,6 +138,7 @@ contract data, never measured qualification receipts.
 ### `harmonic-beacon.genesis-authorization.v1`
 
 Contains **all** plan §3.3 fields, without additional ambient context. It binds
+G's source/tree separately from the exact protected authorizer source/tree, plus
 the complete observation hash, stable private runtime commitment, installed
 permit epoch/commitment, profile/implementation and signed rehearsal hash.
 `genesis` requires null expected publication/ledger. Recovery and forward repair

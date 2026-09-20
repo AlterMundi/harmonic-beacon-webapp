@@ -73,7 +73,7 @@ test('genesis authorization separates initial absence from exact recovery and fo
   assert.equal(typeof contract.validateGenesisAuthorization, 'function', 'authorization validator is missing');
   for (const operation of ['genesis', 'genesis-recover', 'genesis-forward-repair']) {
     const a = authorization(operation);
-    assert.deepEqual(contract.validateGenesisAuthorization(bytes(a), { operation, sourceSha: a.sourceSha }, { now: NOW }), a);
+    assert.deepEqual(contract.validateGenesisAuthorization(bytes(a), { operation, sourceSha: a.sourceSha, authorizerSourceSha: a.authorizerSourceSha }, { now: NOW }), a);
     const reject = mutate => { const changed = structuredClone(a); mutate(changed); assert.throws(() => contract.validateGenesisAuthorization(bytes(changed), {}, { now: NOW })); };
     for (const key of Object.keys(a)) reject(v => { delete v[key]; });
     reject(v => { v.expectedPublication = operation === 'genesis' ? authorization('genesis-recover').expectedPublication : null; });
@@ -82,6 +82,8 @@ test('genesis authorization separates initial absence from exact recovery and fo
     reject(v => { v.verbs.reverse(); });
     reject(v => { v.environment = 'shadow'; });
     reject(v => { v.workflowRef = 'refs/heads/evil'; });
+    reject(v => { v.authorizerSourceSha = 'short'; });
+    reject(v => { v.authorizerSourceTree = 'short'; });
     reject(v => { v.candidateRunAttempt = '1'; });
     reject(v => { v.deliveryRunId = '01'; });
     reject(v => { v.authorizedAt = new Date(NOW + 1).toISOString(); });
@@ -89,6 +91,15 @@ test('genesis authorization separates initial absence from exact recovery and fo
     reject(v => { v.expiresAt = v.authorizedAt; });
     reject(v => { v.path = '/tmp/root-shell'; });
     reject(v => { v.manifestSha256 = H('prefixed-wrong-domain'); });
+    if (operation === 'genesis') {
+      reject(v => { v.authorizerSourceSha = 'c'.repeat(40); });
+      reject(v => { v.authorizerSourceTree = 'd'.repeat(40); });
+    } else {
+      const historical = structuredClone(a);
+      historical.authorizerSourceSha = 'c'.repeat(40);
+      historical.authorizerSourceTree = 'd'.repeat(40);
+      assert.deepEqual(contract.validateGenesisAuthorization(bytes(historical), {}, { now: NOW }), historical);
+    }
     if (operation !== 'genesis') reject(v => { v.expectedPublication.manifestSha256 = H('successor').slice(7); });
     assert.throws(() => contract.validateGenesisAuthorization(bytes(a), { deliveryRunAttempt: 3 }, { now: NOW }));
     assert.throws(() => contract.validateGenesisAuthorization(bytes(a), {}, { now: NOW + 900000 }));
@@ -104,6 +115,8 @@ test('hosted rehearsal binds exact delivery/candidate attempts and only syntheti
   const reject = mutate => { const v = structuredClone(r); mutate(v); assert.throws(() => contract.validateGenesisRehearsal(bytes(v), {}, { now: NOW })); };
   for (const key of Object.keys(r)) reject(v => { delete v[key]; });
   reject(v => { v.scope = 'mona-isolated-exact'; });
+  reject(v => { v.authorizerSourceSha = 'short'; });
+  reject(v => { v.authorizerSourceTree = 'short'; });
   reject(v => { v.fixtureIdentity.kind = 'mona-historical-images'; });
   reject(v => { v.stages.reverse(); });
   reject(v => { v.stages[1].to = 'genesis'; });

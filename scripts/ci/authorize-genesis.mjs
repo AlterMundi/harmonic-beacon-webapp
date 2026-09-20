@@ -15,6 +15,7 @@ const REPO = 'AlterMundi/harmonic-beacon-webapp';
 const WORKFLOW = '.github/workflows/oci-promote.yml';
 const REF = 'refs/heads/main';
 const IDENTITY = `https://github.com/${REPO}/${WORKFLOW}@${REF}`;
+const GIT = /^[0-9a-f]{40}$/u;
 const fail = () => { throw Error('genesis admission rejected'); };
 const equal = (a, b) => { if (canonicalize(a) !== canonicalize(b)) fail(); };
 function json(bytes) {
@@ -62,6 +63,7 @@ export function main(env = process.env) {
     if (typeof env[key] !== 'string' || !/^[1-9][0-9]{0,9}$/u.test(env[key])) fail();
   }
   if (env.GITHUB_REPOSITORY !== REPO || env.GITHUB_REF !== REF || env.GITHUB_WORKFLOW_REF !== `${REPO}/${WORKFLOW}@${REF}` || env.GITHUB_EVENT_NAME !== 'workflow_dispatch' || env.TARGET !== 'production' || env.ENVIRONMENT !== 'production') fail();
+  if (!GIT.test(env.GITHUB_SHA) || !GIT.test(env.AUTHORIZER_SOURCE_SHA) || !GIT.test(env.AUTHORIZER_SOURCE_TREE) || env.GITHUB_SHA !== env.AUTHORIZER_SOURCE_SHA) fail();
   const scratch = mkdtempSync(join(tmpdir(), 'hb-genesis-admission-'));
   try {
     const input = snapshot(scratch);
@@ -83,7 +85,10 @@ export function main(env = process.env) {
       registryEvidence: evidence });
     for (const [name, hash] of [['docker-compose.yml', m.deploymentInputs.composeSha256], ['deploy/oci-images.compose.yml', m.deploymentInputs.overlaySha256],
       ...Object.entries(m.configProfiles).map(([p, v]) => [`deploy/runtime-public-config/${p}.json`, v.sha256])]) equal(digest(input.inputs[name]), hash);
-    if (env.OPERATION === 'genesis') equal(env.GITHUB_SHA, m.source.gitSha);
+    if (env.OPERATION === 'genesis') {
+      equal(env.GITHUB_SHA, m.source.gitSha);
+      equal(env.AUTHORIZER_SOURCE_TREE, m.source.gitTree);
+    }
     const o = validateLegacyObservation(input.observationBytes, { now });
     equal(digest(input.observationBytes), env.LEGACY_OBSERVATION_SHA256);
     equal(digest(input.rehearsalBytes), env.HOSTED_REHEARSAL_SHA256);
@@ -91,7 +96,9 @@ export function main(env = process.env) {
     equal(o.profileSha256, env.PROFILE_SHA256); equal(o.implementationSha256, env.IMPLEMENTATION_SHA256);
     // Same reported dependency content, never an upgrade disguised as adoption.
     for (const d of m.externalImages) equal(o.services[d.serviceId].dependencyResolution.indexRef, `${d.repository}@${d.digest}`);
-    const binding = { sourceSha: m.source.gitSha, sourceTree: m.source.gitTree, manifestSha256: env.MANIFEST_SHA256,
+    const binding = { sourceSha: m.source.gitSha, sourceTree: m.source.gitTree,
+      authorizerSourceSha: env.AUTHORIZER_SOURCE_SHA, authorizerSourceTree: env.AUTHORIZER_SOURCE_TREE,
+      manifestSha256: env.MANIFEST_SHA256,
       candidateRunId: m.build.workflowRunId, candidateRunAttempt: m.build.workflowRunAttempt,
       deliveryRunId: env.GITHUB_RUN_ID, deliveryRunAttempt: Number(env.GITHUB_RUN_ATTEMPT),
       implementationSha256: o.implementationSha256, profileSha256: o.profileSha256 };
