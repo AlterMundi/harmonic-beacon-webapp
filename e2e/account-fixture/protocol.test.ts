@@ -13,9 +13,15 @@ test('external identity simulation rejects incorrect credentials, enforces PKCE 
         assert.equal(discovery.issuer, service.issuer);
         const verifier = 'fixture-verifier-with-at-least-forty-three-characters';
         const url = new URL(discovery.authorization_endpoint);
-        url.search = new URLSearchParams({ response_type: 'code', scope: 'openid profile', client_id: service.clientId,
+        url.search = new URLSearchParams({ response_type: 'code', scope: 'openid profile email', client_id: service.clientId,
             redirect_uri: 'https://localhost:3410/api/account/callback', nonce: 'test-nonce', state: 'test-state',
             code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url') }).toString();
+        const invalidScope = new URL(url);
+        invalidScope.searchParams.set('scope', 'openid profile email admin');
+        assert.equal((await fetch(invalidScope)).status, 400);
+        const legacyScope = new URL(url);
+        legacyScope.searchParams.set('scope', 'openid profile');
+        assert.equal((await fetch(legacyScope)).status, 200);
         const start = await fetch(url);
         const html = await start.text();
         const request = /name="request" value="([^"]+)"/.exec(html)![1];

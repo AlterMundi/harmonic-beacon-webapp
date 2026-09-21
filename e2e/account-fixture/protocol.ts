@@ -47,7 +47,7 @@ export async function startAccountFixture(options: { port: number; liveOrigin: s
             if (req.method === 'GET' && url.pathname === '/jwks') return json(res, { keys: [jwk] });
             if (req.method === 'GET' && url.pathname === '/authorize') {
                 const q = url.searchParams;
-                if (q.get('client_id') !== FIXTURE_CLIENT_ID || q.get('redirect_uri') !== `${live.origin}/api/account/callback` || q.get('response_type') !== 'code' || q.get('scope') !== 'openid profile' || q.get('code_challenge_method') !== 'S256' || !/^[\w-]{43}$/.test(q.get('code_challenge') ?? '') || !q.get('state') || !q.get('nonce')) return json(res, { error: 'invalid_request' }, 400);
+                if (q.get('client_id') !== FIXTURE_CLIENT_ID || q.get('redirect_uri') !== `${live.origin}/api/account/callback` || q.get('response_type') !== 'code' || !['openid profile', 'openid profile email'].includes(q.get('scope') ?? '') || q.get('code_challenge_method') !== 'S256' || !/^[\w-]{43}$/.test(q.get('code_challenge') ?? '') || !q.get('state') || !q.get('nonce')) return json(res, { error: 'invalid_request' }, 400);
                 const request = opaque();
                 attempts.set(request, { redirect: q.get('redirect_uri')!, nonce: q.get('nonce')!, state: q.get('state')!, challenge: q.get('code_challenge')!, expires: Date.now() + 120_000 });
                 return html(res, `<form method="post" action="/authorize"><input type="hidden" name="request" value="${request}"><label>Fixture username<input name="username"></label><label>Fixture password<input name="password" type="password"></label><button>Sign in to simulation</button></form>`);
