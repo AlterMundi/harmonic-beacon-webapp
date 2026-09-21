@@ -558,6 +558,7 @@ model BeaconProfile {
   accountId   String        @id @map("account_id")
   account     EarlyBirdUser @relation(fields: [accountId], references: [id], onDelete: Cascade)
   displayName String        @map("display_name") @db.VarChar(60)
+  realName    String?       @map("real_name") @db.VarChar(120)
   revision    Int           @default(1)
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")

@@ -53,7 +53,8 @@ export async function GET(request: Request): Promise<Response> {
                 row.requirePKCE === true && row.tokenEndpointAuthMethod === 'client_secret_basic' &&
                 row.grantTypes.length === 1 && row.grantTypes[0] === 'authorization_code' &&
                 row.responseTypes.length === 1 && row.responseTypes[0] === 'code' &&
-                row.scopes.length === 2 && row.scopes[0] === 'openid' && row.scopes[1] === 'profile' &&
+                row.scopes.length === 3 && row.scopes[0] === 'openid' &&
+                row.scopes[1] === 'profile' && row.scopes[2] === 'email' &&
                 row.redirectUris.length === 1 && row.redirectUris[0] === client.redirectUri &&
                 row.postLogoutRedirectUris.length === 1 &&
                 row.postLogoutRedirectUris[0] === client.postLogoutRedirectUri);

@@ -11,7 +11,7 @@ import { AccountPasswordField } from './AccountPasswordField';
 
 type AccountSession = {
     user: { email: string | null; emailVerified: boolean; accessMethod: 'email' | 'google' | 'apple' };
-    profile: { displayName: string; revision: number };
+    profile: { displayName: string; realName?: string | null; revision: number };
 };
 
 async function post(path: string, locale: 'es' | 'en', body?: unknown) {
@@ -156,7 +156,10 @@ export default function AccountClient({
             const response = await post(endpoint, locale, {
                 email,
                 password,
-                ...(mode === 'signup' ? { name: String(form.get('displayName') ?? '') } : {}),
+                ...(mode === 'signup' ? {
+                    name: String(form.get('displayName') ?? ''),
+                    realName: String(form.get('realName') ?? ''),
+                } : {}),
                 callbackURL,
                 oauth_query: oauthQuery(),
             });
@@ -205,12 +208,30 @@ export default function AccountClient({
         event.preventDefault();
         if (!session) return;
         const displayName = String(new FormData(event.currentTarget).get('displayName') ?? '');
+        const realName = String(new FormData(event.currentTarget).get('realName') ?? '');
         const response = await post('/api/account/profile', locale, {
-            displayName, revision: session.profile.revision,
+            displayName, realName, revision: session.profile.revision,
         });
         const result = await response.json().catch(() => null) as AccountSession['profile'] | null;
         if (response.ok && result) {
             setSession({ ...session, profile: result });
+            const pendingOAuth = oauthQuery();
+            if (pendingOAuth) {
+                const continued = await post('/api/account/auth/oauth2/continue', locale, {
+                    postLogin: true, oauth_query: pendingOAuth,
+                });
+                const continuation = await continued.json().catch(() => null) as {
+                    redirect?: string; status?: string;
+                } | null;
+                if (continued.ok && continuation?.status === 'continued' && continuation.redirect) {
+                    window.location.replace(continuation.redirect);
+                    return;
+                }
+                setMessage(es
+                    ? 'Perfil actualizado. Volvé a intentar continuar.'
+                    : 'Profile updated. Try continuing again.');
+                return;
+            }
             setMessage(es ? 'Perfil actualizado.' : 'Profile updated.');
         } else setMessage(response.status === 409 ? (es ? 'El perfil cambió en otro lugar. Recargá y reintentá.' : 'Profile changed elsewhere. Reload and retry.') : (es ? 'No se pudo actualizar el perfil.' : 'Profile could not be updated.'));
     }
@@ -304,7 +325,10 @@ export default function AccountClient({
                     input.focus();
                 }
             }}>
-                {mode === 'signup' && <label>{es ? 'Nombre visible' : 'Display name'}<input name="displayName" required minLength={1} maxLength={60} autoComplete="nickname" /></label>}
+                {mode === 'signup' && <>
+                    <label>{es ? 'Nombre real (privado)' : 'Real name (private)'}<input name="realName" required minLength={1} maxLength={120} autoComplete="name" /></label>
+                    <label>{es ? 'Nombre preferido' : 'Preferred name'}<input name="displayName" required minLength={1} maxLength={60} autoComplete="nickname" /></label>
+                </>}
                 <label>{es ? 'Correo' : 'Email'}<input
                     ref={mode === 'signin' ? signInEmailRef : undefined}
                     name="email"
@@ -354,7 +378,8 @@ export default function AccountClient({
                 <h2>{session.profile.displayName}</h2>
                 <p className="account-muted">{es ? 'Método de acceso' : 'Access method'}: {session.user.accessMethod === 'email' ? session.user.email : session.user.accessMethod}</p>
                 <form onSubmit={saveProfile} className="account-form">
-                    <label>{es ? 'Nombre visible' : 'Display name'}<input name="displayName" defaultValue={session.profile.displayName} required maxLength={60} /></label>
+                    <label>{es ? 'Nombre real (privado)' : 'Real name (private)'}<input name="realName" defaultValue={session.profile.realName ?? ''} required maxLength={120} autoComplete="name" /></label>
+                    <label>{es ? 'Nombre preferido' : 'Preferred name'}<input name="displayName" defaultValue={session.profile.displayName} required maxLength={60} autoComplete="nickname" /></label>
                     <button>{es ? 'Guardar perfil' : 'Save profile'}</button>
                 </form>
             </section>

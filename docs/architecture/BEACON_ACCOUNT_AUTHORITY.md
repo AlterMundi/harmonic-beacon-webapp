@@ -1,6 +1,6 @@
 # Beacon Account authority v1
 
-Status: frozen pre-public implementation contract.
+Status: authority contract; profile completion extension tracked in #567.
 
 ## Boundary
 
@@ -35,6 +35,17 @@ Its `display_name` is 1–60 trimmed characters and rejects Cc/Cf, bidi and
 zero-width controls in application and database layers. Updates use optimistic
 `revision`; the DB trigger guarantees every inserted account gets a sane
 profile even if an application hook fails.
+
+`display_name` is the public preferred name. `real_name` is a private,
+self-declared name (1–120 characters); both may coincide and single-word and
+international names are accepted. Existing rows remain NULL until the owner
+declares their real name. No alias/provider-name backfill supplies that value.
+Email signup commits both names with the generated account ID. Profile edits
+require both names and the current revision, without changing account identity.
+
+Live clients require complete profiles through the signed OAuth `postLogin`
+continuation, preserving the authenticated session and original destination.
+Listener clients retain their existing entry behavior. Apple remains disabled.
 
 `early_bird_users.security_revision` is the account-wide revocation epoch;
 sessions snapshot it and are valid only while both match. Password/email
@@ -72,7 +83,7 @@ heartbeat path. The mode-0600 heartbeat is:
 Better Auth and `@better-auth/oauth-provider` are pinned to `1.6.30`. Dynamic
 registration is disabled. Static clients are confidential server-side clients,
 `client_secret_basic` only, authorization code only, PKCE S256 required,
-scopes exactly `openid profile`, public=false, subject type public, consent
+allowed scopes exactly `openid profile email`, public=false, subject type public, consent
 skipped and end-session enabled:
 
 | client | redirect | signed front-channel |
@@ -84,7 +95,7 @@ skipped and end-session enabled:
 
 Discovery is `/.well-known/openid-configuration`; JWKS is
 `/.well-known/jwks.json`. Allowed provider endpoints are exact GET authorize,
-GET UserInfo, GET end-session and POST token/introspect/revoke. The auth
+GET UserInfo, GET end-session and POST token/introspect/revoke/continue. The auth
 catch-all also permits only email/social starts and Google/Apple callbacks;
 Better Auth profile/link/session/password/email alternatives are 404.
 
@@ -93,6 +104,21 @@ nonce/state/PKCE and exact redirect, introspect once, discard Account/provider
 tokens and retain only issuer/sub/sid in a host-only local session. Private
 `POST /api/account/session-status` uses client-secret Basic and exact
 form-encoding; active responses contain only `active,iss,sub,sid`.
+
+Scoped UserInfo adds `preferred_name`, `profile_revision`, `profile_complete`
+and authentic `email`/`email_verified`. It never includes `real_name`.
+Private `POST /api/account/admin-profile` accepts a JSON `sub` and authenticates
+only an enabled Live client with Basic credentials. It returns the exact
+subject's preferred name, private real name and email state with no-store.
+Live must enforce ADMIN authorization before invoking this backchannel; it is
+not a browser/public profile API. Missing provider email stays unknown.
+
+The #567 migration adds a nullable column, defers profile fallback until commit
+and permits the email scope; it does not invalidate sessions. Deploy Account
+before its Live consumer. Application rollback must retain this additive schema
+and use a candidate compatible with the expanded OAuth client scopes; readiness
+from older code may expect the former exact scope inventory. Do not blindly
+restore the old scope constraint or delete declared profile data.
 
 Current-device logout revokes its central session and OAuth tokens, then emits
 signed two-minute front-channel URLs to every RP for that environment.

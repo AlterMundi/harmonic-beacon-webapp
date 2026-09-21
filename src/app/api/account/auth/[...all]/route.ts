@@ -19,6 +19,9 @@ import {
     ensureVerificationMailQueued,
     processVerificationMailOutbox,
 } from '@/lib/account/mail-outbox';
+import { normalizeBeaconDisplayName, normalizeBeaconRealName } from '@/lib/account/profile';
+import { withAccountEmailSignupProfile } from '@/lib/account/signup-profile';
+import { withAccountOAuthClient } from '@/lib/account/oauth-context';
 
 async function safeRPRedirect(response: Response): Promise<string | null> {
     const body = await response.clone().json().catch(() => null) as {
@@ -124,11 +127,22 @@ async function credentialSignInRevisionStillValid(input: {
 async function handler(request: Request): Promise<Response> {
     const startedAt = Date.now();
     const path = new URL(request.url).pathname;
+    const requestBody = request.method === 'POST' &&
+        request.headers.get('content-type')?.toLowerCase().startsWith('application/json')
+        ? await request.clone().json().catch(() => null) as Record<string, unknown> | null
+        : null;
     const credentialRequest = request.method === 'POST' &&
         (path === '/api/account/auth/sign-up/email' || path === '/api/account/auth/sign-in/email');
     const credentialBody = credentialRequest
-        ? await request.clone().json().catch(() => null) as { email?: unknown } | null
+        ? requestBody as {
+            email?: unknown; name?: unknown; realName?: unknown;
+        } | null
         : null;
+    const signedOAuthQuery = typeof requestBody?.oauth_query === 'string'
+        ? new URLSearchParams(requestBody.oauth_query) : null;
+    const oauthClientId = path === '/api/account/auth/oauth2/authorize'
+        ? new URL(request.url).searchParams.get('client_id')
+        : signedOAuthQuery?.get('client_id') ?? null;
     if (!await accountAuthorityDatabaseReady()) {
         return Response.json({ error: 'service_unavailable' }, {
             status: 503, headers: { 'Cache-Control': 'no-store' },
@@ -165,7 +179,23 @@ async function handler(request: Request): Promise<Response> {
             });
         }
     }
-    let response = await accountAuth().handler(request);
+    const signupProfile = path === '/api/account/auth/sign-up/email'
+        ? {
+            displayName: normalizeBeaconDisplayName(credentialBody?.name),
+            realName: normalizeBeaconRealName(credentialBody?.realName),
+        }
+        : null;
+    if (signupProfile && (!signupProfile.displayName || !signupProfile.realName)) {
+        await enforceAccountCredentialFloor(startedAt);
+        return Response.json({ error: 'invalid_request' }, {
+            status: 400, headers: { 'Cache-Control': 'private, no-store' },
+        });
+    }
+    let response = await withAccountOAuthClient(oauthClientId, () => signupProfile
+        ? withAccountEmailSignupProfile({
+            displayName: signupProfile.displayName!, realName: signupProfile.realName!,
+        }, () => accountAuth().handler(request))
+        : accountAuth().handler(request));
     if (path === '/api/account/auth/oauth2/end-session') {
         const admitted = accountEndSessionRequest(request);
         if (!admitted || response.status < 200 || response.status >= 400) return response;
@@ -196,6 +226,17 @@ async function handler(request: Request): Promise<Response> {
                 'Cache-Control': 'private, no-store',
                 'Referrer-Policy': 'no-referrer',
             },
+        });
+    }
+    if (path === '/api/account/auth/oauth2/continue') {
+        const redirect = response.status >= 200 && response.status < 400
+            ? await safeRPRedirect(response) : null;
+        return Response.json({
+            status: redirect ? 'continued' : 'unavailable',
+            ...(redirect ? { redirect } : {}),
+        }, {
+            status: redirect ? 200 : 400,
+            headers: { 'Cache-Control': 'private, no-store' },
         });
     }
     if (!credentialRequest) return response;

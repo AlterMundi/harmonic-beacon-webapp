@@ -10,9 +10,13 @@ const sessionDeleteMany = vi.hoisted(() => vi.fn());
 const ensureVerificationMailQueued = vi.hoisted(() => vi.fn());
 const processVerificationMailOutbox = vi.hoisted(() => vi.fn());
 const after = vi.hoisted(() => vi.fn());
+const withSignupProfile = vi.hoisted(() => vi.fn());
 vi.mock('next/server', () => ({ after }));
 vi.mock('@/lib/account/auth', () => ({
     accountAuth: () => ({ handler: authHandler, api: { getSession } }),
+}));
+vi.mock('@/lib/account/signup-profile', () => ({
+    withAccountEmailSignupProfile: withSignupProfile,
 }));
 vi.mock('@/lib/account/authority-db', () => ({ accountAuthorityDatabaseReady: () => true }));
 vi.mock('@/lib/account/revocation', () => ({ revokeAccountSession }));
@@ -61,6 +65,7 @@ describe('Account catch-all route confidential OAuth boundary', () => {
         sessionDeleteMany.mockResolvedValue({ count: 0 });
         ensureVerificationMailQueued.mockResolvedValue(undefined);
         processVerificationMailOutbox.mockResolvedValue(undefined);
+        withSignupProfile.mockImplementation(async (_profile, operation) => operation());
     });
     afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
@@ -178,7 +183,8 @@ describe('Account catch-all route confidential OAuth boundary', () => {
                 'x-hb-locale': 'es',
             },
             body: JSON.stringify({
-                name: 'Test Listener', email: 'listener@example.invalid', password: '12345678',
+                name: 'Test Listener', realName: 'Test Person',
+                email: 'listener@example.invalid', password: '12345678',
             }),
         }));
 
@@ -188,6 +194,52 @@ describe('Account catch-all route confidential OAuth boundary', () => {
         expect(response.headers.getSetCookie()).toEqual([]);
         expect(ensureVerificationMailQueued).toHaveBeenCalledWith('listener@example.invalid', 'es');
         expect(after).toHaveBeenCalledOnce();
+        expect(withSignupProfile).toHaveBeenCalledWith({
+            displayName: 'Test Listener', realName: 'Test Person',
+        }, expect.any(Function));
+    });
+
+    it.each([
+        [{ name: 'Preferred', realName: '' }, 'missing private name'],
+        [{ name: '', realName: 'Private' }, 'missing preferred name'],
+        [{ name: 'x\u202ey', realName: 'Private' }, 'unsafe preferred name'],
+    ])('rejects signup with %s before Better Auth creates an account (%s)', async (names) => {
+        const response = await POST(new Request(`${origin}/api/account/auth/sign-up/email`, {
+            method: 'POST',
+            headers: {
+                host: 'account.harmonicbeacon.com', origin,
+                'sec-fetch-site': 'same-origin', 'content-type': 'application/json',
+            },
+            body: JSON.stringify({ ...names, email: 'listener@example.invalid', password: '12345678' }),
+        }));
+        expect(response.status).toBe(400);
+        expect(authHandler).not.toHaveBeenCalled();
+        expect(withSignupProfile).not.toHaveBeenCalled();
+        expect(ensureVerificationMailQueued).not.toHaveBeenCalled();
+    });
+
+    it('returns only an allowlisted RP redirect when profile completion continues OAuth', async () => {
+        authHandler.mockResolvedValueOnce(new Response(null, {
+            status: 302,
+            headers: { Location: 'https://live.harmonicbeacon.com/api/account/callback?code=opaque&state=state' },
+        }));
+        const oauthQuery = new URLSearchParams({
+            client_id: 'hb-live', exp: '9999999999', sig: 'signed-query',
+        }).toString();
+        const response = await POST(new Request(`${origin}/api/account/auth/oauth2/continue`, {
+            method: 'POST',
+            headers: {
+                host: 'account.harmonicbeacon.com', origin,
+                'sec-fetch-site': 'same-origin', 'content-type': 'application/json',
+            },
+            body: JSON.stringify({ postLogin: true, oauth_query: oauthQuery }),
+        }));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+            status: 'continued',
+            redirect: 'https://live.harmonicbeacon.com/api/account/callback?code=opaque&state=state',
+        });
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
     });
 
     it('rejects an unforwardable successful sign-in and removes only its exact new session token', async () => {
