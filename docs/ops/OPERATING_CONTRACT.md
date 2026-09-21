@@ -130,10 +130,12 @@ claimed by this repository change.
 3. At the integrated boundary, run the profile selected by change impact plus
    contract-specific checks. Failed gates block promotion but do not end
    authorized diagnosis and repair.
-4. Review the integrated diff once. Security boundaries, payments,
-   permissions, migrations, privileged helpers, frozen audio paths, and
-   rollback compatibility receive independent review when their contract
-   requires it.
+4. The task owner reviews the integrated diff once and proceeds autonomously.
+   External/GitHub approval is not required. Use an adversarial subagent only
+   for a concrete risk or unresolved uncertainty that warrants it, especially
+   around permissions, payments, migrations or recovery. Do not automatically
+   request a reviewer for every change or create reviewer chains. Resolve
+   substantive findings before delivery; applicable automated checks remain.
 5. Promote the exact reviewed candidate through its configured workflow. Do
    not develop directly on a production lane or substitute a direct host
    command for an available reviewed path.
@@ -185,9 +187,11 @@ required context. A direct invocation of the internal exact-base authority is
 not a bypass: the same live PR/base binding and complete check evaluation still
 apply.
 
-`main` and `release` must require pull requests, at least one code-owner
-approval, stale-review dismissal, approval of the current push by someone other
-than its pusher, an up-to-date head, and `delivery-gate` bound to GitHub Actions
+`main` and `release` require pull requests but zero approving reviews, no
+mandatory CODEOWNER review and no last-push approval. This owner-authorized
+policy supersedes older approval requirements; CODEOWNERS remains an ownership
+map, not a mandatory external handoff. They retain an up-to-date head and
+`delivery-gate` bound to GitHub Actions
 App ID `15368`, with force pushes and deletion disabled. `release`
 remains the promotion branch and [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)
 plus [`deploy/hb-deploy-root`](../../deploy/hb-deploy-root) remain the reviewed
