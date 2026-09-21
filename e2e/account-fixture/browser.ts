@@ -16,7 +16,7 @@ export function requireAccountFixture() {
 }
 
 /** Actual RP browser flow. No WebSession/validatedAt/cookie synthesis. */
-export async function loginViaAccountFixture(page: Page, role: 'ATTENDEE' | 'OPERATOR' | 'FACILITATOR' | 'ADMIN', name: string, landing: string) {
+export async function authorizeViaAccountFixture(page: Page, role: 'ATTENDEE' | 'OPERATOR' | 'FACILITATOR' | 'ADMIN') {
     requireAccountFixture();
     const flow = role === 'ATTENDEE' ? 'attendee' : 'staff';
     await page.goto(`/api/account/login?${new URLSearchParams({ flow, next: '/' })}`);
@@ -27,6 +27,11 @@ export async function loginViaAccountFixture(page: Page, role: 'ATTENDEE' | 'OPE
     await page.getByRole('button', { name: 'Sign in to simulation', exact: true }).click();
     expect((await callback).status()).toBe(303);
     await expect(page).toHaveURL(new URL(flow === 'staff' ? '/ops/events' : '/', process.env.E2E_BASE_URL!).href);
+}
+
+/** Actual RP browser flow plus the ordinary attendee alias confirmation. */
+export async function loginViaAccountFixture(page: Page, role: 'ATTENDEE' | 'OPERATOR' | 'FACILITATOR' | 'ADMIN', name: string, landing: string) {
+    await authorizeViaAccountFixture(page, role);
     if (role === 'ATTENDEE') {
         // Production entry resolves the account-owned public entitlement; the
         // name-confirmation endpoint, not direct database writes, binds alias.
