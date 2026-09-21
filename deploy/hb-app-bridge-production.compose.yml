@@ -1,0 +1,71 @@
+services:
+  app:
+    image: ${HB_APP_BRIDGE_IMAGE:?immutable app image id required}
+    container_name: beacon-app
+    restart: unless-stopped
+    env_file:
+      - path: /etc/harmonic-beacon/production.env
+        required: true
+      - path: /etc/harmonic-beacon/live-production-secrets/account.env
+        required: false
+      - path: /etc/harmonic-beacon/commerce.env
+        required: true
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+      LIVEKIT_INTERNAL_URL: http://beacon-livekit:7880
+      BEACON_REFERENCE_AUDIO_PATH: /data/beacon-records/luz_de_manana.ogg
+    volumes:
+      - /mnt/beacon-data/beacon-records:/data/beacon-records:ro
+    ports:
+      - 127.0.0.1:3000:3000
+    networks:
+      - beacon
+      - pmp_beacon_internal
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:3000/api/health/ready]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          cpus: "1"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "3"
+
+  # This fixed command is read-only. It refuses while a Live session or a
+  # durable effect blocks an interruption; the bridge never runs migrations.
+  preflight:
+    image: ${HB_APP_BRIDGE_IMAGE:?immutable app image id required}
+    command: [npx, tsx, scripts/release-quiesce-preflight.ts]
+    restart: "no"
+    env_file:
+      - path: /etc/harmonic-beacon/production.env
+        required: true
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-beacon}
+    networks:
+      - beacon
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
+networks:
+  beacon:
+    external: true
+    name: app_beacon
+  pmp_beacon_internal:
+    external: true
+    name: pmp_beacon_internal
