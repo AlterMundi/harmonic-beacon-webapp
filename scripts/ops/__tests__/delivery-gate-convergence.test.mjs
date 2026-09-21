@@ -27,7 +27,7 @@ function authorityScript(baseSha) {
     .replaceAll('${{ steps.target.outputs.base_sha }}', baseSha);
 }
 
-function evaluateAuthority({ state, drift = false, partial = false }) {
+function evaluateAuthority({ state, drift = false, partial = false, compareFailure = false }) {
   const temp = mkdtempSync(join(tmpdir(), 'delivery-gate-authority-'));
   const fakeGh = join(temp, 'gh');
   const fakeNode = join(temp, 'node');
@@ -59,7 +59,10 @@ case "$*" in
     printf '%s\\n' '[{"total_count":0,"check_runs":[]}]'
     ;;
   *"actions/runs?head_sha=${HEAD}"*) printf '%s\\n' '[{"total_count":0,"workflow_runs":[]}]' ;;
-  *"compare/${base}...${HEAD}"*) printf '%s\\n' 'ahead' ;;
+  *"compare/${base}...${HEAD}"*)
+    if [ "${compareFailure ? 'yes' : 'no'}" = yes ]; then exit 1; fi
+    printf '%s\\n' 'ahead'
+    ;;
   *) printf 'unexpected gh invocation: %s\\n' "$*" >&2; exit 1 ;;
 esac
 `);
@@ -97,10 +100,18 @@ esac
 function reconcile({
   gateCreated = '', gateState = 'success', gateRunState = 'completed',
   workflowUpdated = '2026-09-20T12:00:00Z', workflowStatus = 'completed', trustedGate = true,
+  gateStatuses,
 } = {}) {
   const temp = mkdtempSync(join(tmpdir(), 'delivery-gate-reconcile-'));
   const fakeGh = join(temp, 'gh');
   const log = join(temp, 'gh.log');
+  const defaultGate = gateCreated ? [{
+    id: 9001,
+    context: 'delivery-gate', state: gateState, created_at: gateCreated,
+    creator: { login: trustedGate ? 'github-actions[bot]' : 'untrusted' },
+    target_url: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9001',
+  }] : [];
+  const statusPages = JSON.stringify([gateStatuses ?? defaultGate]);
   writeFileSync(fakeGh, `#!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
@@ -111,7 +122,7 @@ case "$*" in
     printf '%s\\n' '{"number":534,"state":"open","merge_commit_sha":"${MERGE}","head":{"sha":"${HEAD}"},"base":{"ref":"main","sha":"${BASE}"}}'
     ;;
   *"commits/${MERGE}/statuses"*)
-    printf '%s\\n' '[[${gateCreated ? `{"context":"delivery-gate","state":"${gateState}","created_at":"${gateCreated}","creator":{"login":"${trustedGate ? 'github-actions[bot]' : 'untrusted'}"},"target_url":"https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9001"}` : ''}]]'
+    printf '%s\\n' '${statusPages}'
     ;;
   *"actions/runs?head_sha=${HEAD}"*)
     printf '%s\\n' '[{"total_count":1,"workflow_runs":[{"path":".github/workflows/ci.yml","status":"${workflowStatus}","updated_at":"${workflowUpdated}"}]}]'
@@ -200,6 +211,13 @@ test('partial API evidence leaves pending and cannot publish success', () => {
   assert.match(statuses[0], /state=pending/);
 });
 
+test('compare API exhaustion leaves pending instead of publishing obsolete-base failure', () => {
+  const { result, statuses } = evaluateAuthority({ state: 'success', compareFailure: true });
+  assert.notEqual(result.status, 0);
+  assert.equal(statuses.length, 1);
+  assert.match(statuses[0], /state=pending/);
+});
+
 test('every result is rebound to the live PR identity before its status write', () => {
   const workflow = readFileSync(AUTHORITY_PATH, 'utf8');
   assert.match(workflow, /post_status pending[^\n]+\$current_merge[\s\S]+initial_merge=.*\.merge_commit_sha[\s\S]+\[ "\$initial_merge" = "\$current_merge" \]/);
@@ -214,6 +232,7 @@ test('rerun starts, completions, and PR identity changes all wake the bounded ev
   assert.match(dispatcher, /schedule:\n\s+- cron:/);
   assert.match(dispatcher, /group: delivery-gate-dispatch-[^\n]+workflow_run\.id/);
   assert.match(dispatcher, /cancel-in-progress: false/);
+  assert.match(dispatcher, /name: Dispatch exact-base delivery authority\n\s+runs-on: ubuntu-24\.04\n\s+timeout-minutes: 10/);
   assert.doesNotMatch(dispatcher, /statuses: write|repos\/\$REPOSITORY\/statuses/);
   assert.match(dispatcher, /creator\.login == "github-actions\[bot\]"/);
   assert.match(dispatcher, /actions\/runs\/"/);
@@ -236,6 +255,21 @@ test('reconciliation dispatches when constituent evidence is newer than the aggr
 test('reconciliation leaves a current aggregate alone', () => {
   const { result, calls } = reconcile({
     gateCreated: '2026-09-20T13:00:00Z',
+    workflowUpdated: '2026-09-20T12:00:00Z',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(calls, []);
+});
+
+test('reconciliation selects the greatest status id when transitions share one timestamp', () => {
+  const timestamp = '2026-09-20T13:00:00Z';
+  const status = (id, state) => ({
+    id, context: 'delivery-gate', state, created_at: timestamp,
+    creator: { login: 'github-actions[bot]' },
+    target_url: 'https://github.com/AlterMundi/harmonic-beacon-webapp/actions/runs/9001',
+  });
+  const { result, calls } = reconcile({
+    gateStatuses: [status(9002, 'success'), status(9001, 'pending')],
     workflowUpdated: '2026-09-20T12:00:00Z',
   });
   assert.equal(result.status, 0, result.stderr);

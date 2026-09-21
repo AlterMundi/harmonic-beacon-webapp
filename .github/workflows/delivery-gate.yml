@@ -318,7 +318,7 @@ jobs:
             printf '%s\n' "$changed_files" > "$payload_dir/changed-files.json"
             printf '%s\n' "$check_runs" > "$payload_dir/check-runs.json"
 
-            compare_status="$(api "repos/$REPOSITORY/compare/$current_base...$event_head" --jq '.status' 2>/dev/null || true)"
+            compare_status="$(api "repos/$REPOSITORY/compare/$current_base...$event_head" --jq '.status')"
             if [ "$compare_status" = ahead ] || [ "$compare_status" = identical ]; then
               base_is_ancestor=true
             else

@@ -32,6 +32,7 @@ jobs:
   dispatch:
     name: Dispatch exact-base delivery authority
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Resolve current protected PR and dispatch its exact target branch
         shell: bash
@@ -111,10 +112,11 @@ jobs:
             gate="$(jq -c \
               --arg prefix "https://github.com/$REPOSITORY/actions/runs/" \
               '[.[][] | select(.context == "delivery-gate"
+                and (.id | type) == "number"
                 and .creator.login == "github-actions[bot]"
                 and ((.target_url // "") | startswith($prefix))
                 and ((.target_url // "") | ltrimstr($prefix) | test("^[0-9]+$")))
-                | {created_at,state,target_url}] | sort_by(.created_at) | last // null' \
+                | {id,created_at,state,target_url}] | sort_by(.id) | last // null' \
               <<<"$gate_pages")" || return 1
             gate_created="$(jq -r '.created_at // ""' <<<"$gate")" || return 1
             gate_state="$(jq -r '.state // ""' <<<"$gate")" || return 1
