@@ -59,7 +59,8 @@ else
   cutover_started=1
   account_compose up -d account-mail-worker-staging account-staging
   if [ "$checkpoint" = interrupt-after-cutover ]; then
-    account_fail 'deterministic staging interruption checkpoint reached after cutover'
+    echo 'beacon-account: deterministic staging interruption checkpoint reached after cutover' >&2
+    exit 86
   fi
 fi
 account_verify_running "$environment"

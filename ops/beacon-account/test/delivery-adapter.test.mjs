@@ -19,6 +19,20 @@ const VALIDATOR = path.join(DELIVERY, 'validate-receipt.mjs');
 const START = path.join(REPOSITORY, 'scripts/beacon-account/start.sh');
 const SHA = 'b'.repeat(40);
 
+test('real sourced image probes preserve the caller candidate identity', () => {
+  const result = run('/bin/sh', ['-c', `
+set -eu
+. "$1"
+docker() { printf 'BEACON_ACCOUNT_NAV_ASSET=1\\n'; }
+sha=candidate
+account_image_supports_mail_worker previous
+test "$sha" = candidate
+account_image_supports_navigation_asset previous
+test "$sha" = candidate
+`, 'probe', path.join(REPOSITORY, 'scripts/beacon-account/lib.sh')]);
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test('production uses the existing canonical Account deployment file', () => {
   const helper = fs.readFileSync(HELPER, 'utf8');
   assert.ok(helper.includes("readonly DEPLOY_ENV='/etc/harmonic-beacon/beacon-account-deploy.env'"));
@@ -191,7 +205,7 @@ printf 'health-verified\\n' >> "$HB_TEST_HEALTH_LOG"
 set -eu
 directory="\${HB_TEST_RUNTIME_RESTORED%/*}"
 printf 'start-called\\n' >> "$directory/start.log"
-[ "\${3:-normal}" = interrupt-after-cutover ] && exit 99
+[ "\${3:-normal}" = interrupt-after-cutover ] && exit 86
 exit 0
 `);
   fs.writeFileSync(path.join(workspace, 'marker'), 'first\n');
@@ -799,6 +813,40 @@ test('interruption receipt recovery advances state without repeating the cutover
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.equal(JSON.parse(read(stateFile)).phase, 'interruption-verified');
   assert.equal(read(path.join(fixture.root, 'start.log')).trim().split('\n').length, 1);
+});
+
+test('failure before checkpoint cannot claim a successful drill but can record runtime rollback', (t) => {
+  const fixture = helperFixture(t);
+  fixture.writeRuns({ delivery: { display_title: deliveryDisplayTitle({
+    target: 'staging', sha: fixture.currentSha, ciRun: fixture.ciRun,
+    ciAttempt: fixture.ciAttempt, configSha: fixture.configSha, operation: 'interruption-checkpoint',
+  }) } });
+  const stateFile = path.join(fixture.state, `staging-${fixture.deliveryRun}-${fixture.deliveryAttempt}.json`);
+  fs.writeFileSync(stateFile, JSON.stringify({
+    phase: 'preflight', target: 'staging', operation: 'interruption-checkpoint', sha: fixture.currentSha,
+    ci_run: fixture.ciRun, ci_attempt: Number(fixture.ciAttempt),
+    delivery_run: fixture.deliveryRun, delivery_attempt: Number(fixture.deliveryAttempt),
+    previous_sha: 'd'.repeat(40), previous_worker: false, backup_path: '/test/unused',
+    backup_hash: 'e'.repeat(64), config_hash: fixture.configSha,
+    restore: { status: 'verified', mode: 'isolated-ephemeral-postgres', cleanup: 'verified' },
+  }), { mode: 0o600 });
+  fs.writeFileSync(path.join(fixture.state, 'staging-synthetic-fixture'), 'synthetic-non-product-v1\n', { mode: 0o600 });
+  fs.writeFileSync(fixture.env.HB_TEST_RUNTIME_RESTORED, 'prior-running\n');
+  writeExecutable(path.join(fixture.bundle, 'source/scripts/beacon-account/start.sh'), '#!/bin/sh\nexit 1\n');
+  writeBundleManifest(fixture.bundle);
+  const failed = fixture.invoke('deploy', fixture.currentSha, 'interruption-checkpoint');
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /before the deterministic interruption checkpoint/);
+  assert.equal(JSON.parse(read(stateFile)).phase, 'preflight');
+  const recovered = fixture.invoke('rollback', fixture.currentSha, 'interruption-checkpoint');
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.equal(JSON.parse(read(stateFile)).phase, 'rolled-back');
+  const status = fixture.invoke('status', fixture.currentSha, 'interruption-checkpoint');
+  assert.equal(status.status, 0, status.stderr);
+  const receipt = JSON.parse(status.stdout);
+  assert.equal(receipt.outcome, 'rolled-back');
+  assert.equal(receipt.evidence_scope, 'runtime');
+  assert.equal(receipt.interruption, null);
 });
 
 test('rollback claim is single-use and crash recovery verifies restoration without repeating rollback', (t) => {

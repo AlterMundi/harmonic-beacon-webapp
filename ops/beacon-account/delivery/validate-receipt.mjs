@@ -115,7 +115,8 @@ if (receipt.outcome === 'deployed') {
   requireValue(receipt.interruption === null, 'deployed interruption');
 } else if (receipt.outcome === 'rolled-back') {
   requireValue(receipt.evidence_scope === 'runtime', 'rollback evidence_scope');
-  requireValue(receipt.operation === 'deploy', 'rollback operation');
+  requireValue(receipt.operation === 'deploy' ||
+    (receipt.operation === 'interruption-checkpoint' && receipt.target === 'staging'), 'rollback operation');
   requireValue(sha40.test(receipt.revisions.previous ?? ''), 'rollback previous revision');
   requireValue(receipt.revisions.current.kind === 'restored', 'rollback restored identity');
   requireValue(receipt.artifact.source_sha === receipt.revisions.previous, 'rollback artifact source binding');

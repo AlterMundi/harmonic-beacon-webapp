@@ -97,7 +97,12 @@ synthetic interruption/restoration.
 `interruption-checkpoint` is accepted only for staging and only when the
 root-owned staging fixture marker says `synthetic-non-product-v1`. The checkpoint
 fires after candidate app/worker cutover and before readiness, forcing the
-existing trap to restore the captured previous SHA. The helper then proves the
+existing trap to restore the captured previous SHA. Only the dedicated exit
+code 86 proves that checkpoint was reached; an earlier failure cannot yield
+synthetic-interruption evidence. Recovery of a failed staging drill may instead
+emit a runtime `rolled-back` receipt with null interruption evidence. Image
+capability probes isolate their variables and never replace the candidate SHA.
+The helper then proves the
 previous app SHA, readiness, exact worker presence/SHA, smoke result, and removal
 of isolated-restore resources before issuing a synthetic-interruption receipt.
 Production rejects this operation.
@@ -112,7 +117,10 @@ Activation is external to this change. An administrator/operator must:
 2. from an independently reviewed exact commit, create a hook/filter-free
    source archive, omit symlinks, generate the complete sorted SHA-256 manifest,
    and install the source, `source.sha`, and manifest beneath the root:root
-   non-writable `/usr/local/libexec/hb-account-delivery/current` ancestor chain;
+   non-writable `/usr/local/libexec/hb-account-delivery/current` ancestor chain.
+   Keep private bundle ancestors `0700`, but source files runtime-readable
+   (`0644`, executables/directories `0755`, never group/other writable): Docker
+   copies those modes into the image, whose root validator drops all capabilities;
 3. install the matching reviewed helper root:root `0755`, sudoers root:root
    `0440`, and validate the latter with `visudo -cf`; a repository checkout or
    commit cannot perform either installation;
@@ -124,7 +132,10 @@ Activation is external to this change. An administrator/operator must:
    protection is verified; and
 6. for a staging drill, separately install root:root `0600`
    `/etc/harmonic-beacon/account-staging-synthetic-fixture` containing exactly
-   `synthetic-non-product-v1` after confirming no product input is used.
+   `synthetic-non-product-v1` after confirming no product input is used;
+7. verify `node` is installed in the helper's fixed system PATH and execute the
+   receipt validator against the synthetic fixture in that clean environment
+   before dispatch. A runner's bundled Node is not a host dependency installation.
 
 Until all applicable gates exist, the helper fails closed. This commit performs
 no installation, dispatch, staging drill, or production operation.

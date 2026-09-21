@@ -132,9 +132,13 @@
     },
     {
       "title": "verified rollback",
+      "anyOf": [
+        { "properties": { "operation": { "const": "deploy" } } },
+        { "properties": { "operation": { "const": "interruption-checkpoint" }, "target": { "const": "staging" } } }
+      ],
       "properties": {
         "evidence_scope": { "const": "runtime" },
-        "operation": { "const": "deploy" },
+        "operation": { "enum": ["deploy", "interruption-checkpoint"] },
         "outcome": { "const": "rolled-back" },
         "revisions": {
           "properties": { "current": { "$ref": "#/$defs/currentRestored" } }
