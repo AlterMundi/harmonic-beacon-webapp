@@ -18,7 +18,7 @@ export default defineConfig({
     use: { baseURL: process.env.E2E_BASE_URL, ignoreHTTPSErrors: true, trace: 'retain-on-failure', screenshot: 'only-on-failure',
         locale: 'es-CR', timezoneId: 'America/Costa_Rica' },
     // Only the tagged native Staff drawer case is desktop-only. Mobile Account,
-    // same-document, locale and media coverage remains mandatory (70 memberships).
+    // same-document, locale and media coverage remains mandatory. Firefox is opt-in.
     projects: [
         { name: 'chromium-account', use: { ...devices['Desktop Chrome'], launchOptions: chromiumLaunch } },
         { name: 'android-chrome-account', grepInvert: /@desktop-native-staff$/, use: { ...devices['Pixel 7'], launchOptions: chromiumLaunch } },
@@ -26,5 +26,5 @@ export default defineConfig({
             'media.navigator.streams.fake': true, 'media.navigator.permission.disabled': true,
         } } } },
         { name: 'iphone-webkit-account', grepInvert: /@desktop-native-staff$/, use: { ...devices['iPhone 13'], launchOptions: { args: [] } } },
-    ],
+    ].filter(project => project.name !== 'firefox-account' || process.env.E2E_INCLUDE_FIREFOX === '1'),
 });

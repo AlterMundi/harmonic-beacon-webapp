@@ -103,16 +103,40 @@ describe('distributed LiveKit capacity workflow contract', () => {
         expect(installer).toContain('git -C "$SOURCE_ROOT" apply --check "$PATCH_FILE"');
         expect(livekitPatch).toContain('dpkt = &codecs.VP8Packet{}');
         expect(livekitPatch).toContain('Version = "2.16.3-hb-vp8.1"');
-        expect(workflow.match(/install-livekit-load-cli\.sh/g)).toHaveLength(1);
-        expect(workflow).toContain('actions/upload-artifact@v4');
-        expect(workflow).toContain('actions/download-artifact@v4');
+        expect(workflow.match(/run: scripts\/install-livekit-load-cli\.sh/g)).toHaveLength(1);
+        expect(workflow).toContain('actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02');
+        expect(workflow).toContain('actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093');
         expect(workflow).toContain('livekit-load-cli-${{ github.run_id }}');
-        expect(e2eWorkflow).toContain('install-livekit-load-cli.sh "$RUNNER_TEMP/lk"');
+        expect(e2eWorkflow).toContain('run: scripts/install-livekit-load-cli.sh "$RUNNER_TEMP/livekit-load-cli/lk"');
         expect(workflow).not.toContain('releases/download/v2.16.3/');
         expect(assertLiveKitCliMeasurementCompatibility({
             stageVideoCodec: 'vp8',
             livekitCliVersion: 'lk version 2.16.3-hb-vp8.1',
         })).toMatchObject({ verified: true });
+    });
+
+    it('caches the verified load tester only by exact platform, toolchain, installer and patch inputs', () => {
+        const exactKey = "livekit-load-cli-v1-${{ runner.os }}-${{ runner.arch }}-go-1.25.8-${{ hashFiles('scripts/install-livekit-load-cli.sh', 'scripts/patches/livekit-cli-v2.16.3-vp8-depacketizer.patch') }}";
+
+        for (const source of [workflow, e2eWorkflow]) {
+            expect(source).toContain('id: livekit-cli-cache');
+            expect(source).toContain('uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+            expect(source).toContain('path: ${{ runner.temp }}/livekit-load-cli/lk');
+            expect(source).toContain(`key: ${exactKey}`);
+            expect(source).not.toContain('restore-keys:');
+            expect(source).toMatch(
+                /uses: actions\/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff\n\s+if: steps\.livekit-cli-cache\.outputs\.cache-hit != 'true'/,
+            );
+            expect(source).toMatch(
+                /name: Build verified LiveKit load tester(?: once)?\n\s+if: steps\.livekit-cli-cache\.outputs\.cache-hit != 'true'/,
+            );
+            expect(source).toContain('test -x "$RUNNER_TEMP/livekit-load-cli/lk"');
+            expect(source).toContain("'lk version 2.16.3-hb-vp8.1'");
+        }
+
+        expect(e2eWorkflow).toContain('npm run load:livekit -- --profile ci');
+        expect(workflow).toContain('actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02');
+        expect(workflow).toContain('actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093');
     });
 
     it('offers a bounded full-topology VP8 diagnostic without weakening rehearsal profiles', () => {

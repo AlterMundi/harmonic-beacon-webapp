@@ -11,6 +11,7 @@ import {
 } from '@/lib/room-token-issue';
 import { redactError } from '@/lib/redact';
 import { SESSION_COOKIE_NAME } from '@/lib/session-auth';
+import { resolveLiveKitPublicUrl } from '@/lib/livekit-public-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,7 @@ export async function GET(
 
     const { principal } = entitlement;
     try {
+        const livekitUrl = resolveLiveKitPublicUrl();
         const ttlSeconds = principal.ticketEntitlementId
             ? TICKET_LIVEKIT_TOKEN_TTL_SECONDS
             : STAFF_LIVEKIT_TOKEN_TTL_SECONDS;
@@ -76,6 +78,7 @@ export async function GET(
 
         return tokenResponse({
             token,
+            livekitUrl,
             identity: principal.identity,
             room: principal.session.roomName,
             canPublish: principal.canPublish,

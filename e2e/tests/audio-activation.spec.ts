@@ -224,7 +224,10 @@ test.describe('live continuity without capture', () => {
 
     test('transport recovery resamples both rooms without duplicate native sources', async ({ page }, testInfo) => {
         test.slow();
-        await page.addInitScript(retainSignalingSockets, process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880');
+        await page.addInitScript(
+            retainSignalingSockets,
+            process.env.E2E_LIVEKIT_PUBLIC_URL ?? process.env.E2E_LIVEKIT_URL ?? 'ws://localhost:7880',
+        );
         await join(page);
         await ready(page);
         const before = await receipt(page, testInfo, 'before-transport-loss');

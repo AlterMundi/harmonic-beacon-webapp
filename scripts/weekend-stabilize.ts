@@ -140,10 +140,10 @@ async function assertRoomsEmpty(): Promise<Record<string, number>> {
     const apiKey = process.env.LIVEKIT_API_KEY?.trim();
     const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
     const configuredUrl = process.env.LIVEKIT_INTERNAL_URL?.trim()
-        || process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim();
+        || process.env.LIVEKIT_PUBLIC_URL?.trim();
     if (!apiKey || !apiSecret || !configuredUrl) {
         throw new Error(
-            'LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_INTERNAL_URL or NEXT_PUBLIC_LIVEKIT_URL are required',
+            'LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_INTERNAL_URL or LIVEKIT_PUBLIC_URL are required',
         );
     }
     const httpUrl = configuredUrl.replace('wss://', 'https://').replace('ws://', 'http://');

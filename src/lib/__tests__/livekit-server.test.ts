@@ -30,7 +30,8 @@ describe('livekit-server', () => {
         process.env.LIVEKIT_API_KEY = 'key';
         process.env.LIVEKIT_API_SECRET = 'secret-long-enough';
         delete process.env.LIVEKIT_INTERNAL_URL;
-        delete process.env.NEXT_PUBLIC_LIVEKIT_URL;
+        process.env.LIVEKIT_PUBLIC_URL = 'wss://live.example.com';
+        process.env.LIVEKIT_PUBLIC_URL_ALLOWLIST = 'wss://live.example.com';
     });
 
     it('creates a stable event identity and a distinct stable bed identity', async () => {
@@ -128,13 +129,14 @@ describe('livekit-server', () => {
         );
     });
 
-    it('converts the public wss signaling URL when no internal URL is set', async () => {
-        process.env.NEXT_PUBLIC_LIVEKIT_URL = 'wss://live.example.com';
+    it('converts the allowlisted runtime wss signaling URL when no internal URL is set', async () => {
+        process.env.LIVEKIT_PUBLIC_URL = 'wss://other.example.com/rtc';
+        process.env.LIVEKIT_PUBLIC_URL_ALLOWLIST = 'wss://other.example.com/rtc';
         const { getRoomService } = await import('../livekit-server');
         getRoomService();
 
         expect(RoomServiceClient).toHaveBeenCalledWith(
-            'https://live.example.com',
+            'https://other.example.com/rtc',
             'key',
             'secret-long-enough',
         );

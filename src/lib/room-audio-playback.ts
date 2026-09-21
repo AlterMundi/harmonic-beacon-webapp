@@ -9,8 +9,18 @@ import { RoomEvent, type Room } from 'livekit-client';
  * rather than silently qualifying that route with native-only observations.
  */
 export function observeRoomAudioPlayback(room: Room, onChange: (enabled: boolean) => void) {
-    const elements = new Set<HTMLMediaElement>();
+    type Source = MediaProvider | string;
+    type Evidence = {
+        source: Source | null;
+        generation: number;
+        generationReady: boolean;
+        onEvent: (event: Event) => void;
+    };
+
+    const elements = new Map<HTMLMediaElement, Evidence>();
     let disposed = false;
+    const currentSource = (element: HTMLMediaElement): Source | null =>
+        element.srcObject ?? (element.currentSrc || null);
     const sync = () => {
         // connect() can finish acquiring an unused suspended SDK context AFTER
         // native playback succeeds and overwrite canPlaybackAudio with false.
@@ -18,7 +28,12 @@ export function observeRoomAudioPlayback(room: Room, onChange: (enabled: boolean
         // SDK flag is only the fallback when no output exists yet. Never latch
         // success: a later blocked/ended/errored source still invalidates it.
         const nativeReady = elements.size > 0 ? [...elements].every(
-            (element) => !element.paused && !element.ended && !element.error,
+            ([element, evidence]) => {
+                const source = currentSource(element);
+                if (source !== evidence.source) bindSourceGeneration(element, evidence, source, false);
+                return evidence.generationReady &&
+                    !element.paused && !element.ended && !element.error;
+            },
         ) : room.canPlaybackAudio;
         const enabled = room.options.webAudioMix === false &&
             room.state === 'connected' && nativeReady;
@@ -26,14 +41,58 @@ export function observeRoomAudioPlayback(room: Room, onChange: (enabled: boolean
         return !disposed && enabled;
     };
     const events = ['playing', 'pause', 'ended', 'error', 'emptied'] as const;
+    function bindSourceGeneration(
+        element: HTMLMediaElement,
+        evidence: Evidence,
+        source: Source | null,
+        generationReady: boolean,
+    ) {
+        events.forEach((event) => element.removeEventListener(event, evidence.onEvent));
+        evidence.source = source;
+        evidence.generation += 1;
+        evidence.generationReady = generationReady;
+        const generation = evidence.generation;
+        const onEvent = (event: Event) => {
+            const eventSource = currentSource(element);
+            if (eventSource !== evidence.source) {
+                bindSourceGeneration(element, evidence, eventSource, false);
+                sync();
+                return;
+            }
+            // Removing a listener cannot cancel a callback already queued by the
+            // browser. Only the callback bound to this source generation may add
+            // readiness evidence for it.
+            if (generation !== evidence.generation) {
+                sync();
+                return;
+            }
+            if (event.type === 'playing') evidence.generationReady = true;
+            sync();
+        };
+        evidence.onEvent = onEvent;
+        events.forEach((event) => element.addEventListener(event, onEvent));
+    }
     const add = (element: HTMLMediaElement) => {
-        elements.add(element);
-        events.forEach((event) => element.addEventListener(event, sync));
+        if (elements.has(element)) {
+            sync();
+            return;
+        }
+        const evidence: Evidence = {
+            source: null,
+            generation: 0,
+            generationReady: true,
+            onEvent: () => undefined,
+        };
+        elements.set(element, evidence);
+        bindSourceGeneration(element, evidence, currentSource(element), true);
         sync();
     };
     const remove = (element: HTMLMediaElement) => {
-        events.forEach((event) => element.removeEventListener(event, sync));
-        elements.delete(element);
+        const evidence = elements.get(element);
+        if (evidence) {
+            events.forEach((event) => element.removeEventListener(event, evidence.onEvent));
+            elements.delete(element);
+        }
         sync();
     };
     room.on(RoomEvent.AudioPlaybackStatusChanged, sync);
@@ -48,7 +107,7 @@ export function observeRoomAudioPlayback(room: Room, onChange: (enabled: boolean
             room.off(RoomEvent.AudioPlaybackStatusChanged, sync);
             room.off(RoomEvent.Reconnected, sync);
             room.off(RoomEvent.ConnectionStateChanged, sync);
-            elements.forEach(remove);
+            elements.forEach((_evidence, element) => remove(element));
         },
     };
 }

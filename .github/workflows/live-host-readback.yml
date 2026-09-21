@@ -1,0 +1,90 @@
+name: Live host readback
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: harmonic-beacon-live-host-readback
+  cancel-in-progress: false
+
+jobs:
+  readback:
+    if: github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: [self-hosted, mona]
+    timeout-minutes: 5
+    steps:
+      - name: Bind protected main and dedicated runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_REF_PROTECTED" = true
+          test "$(hostname -s)" = mona
+          test "$(id -un)" = beacon-runner
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          test "$GITHUB_SHA" = "$main_sha"
+      - name: Read sanitized installed host state
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          sudo /usr/local/sbin/hb-deploy host-readback > host-readback.json
+          jq -e '
+            def exact($allowed): (keys | sort) == ($allowed | sort);
+            def sha256: test("^sha256:[0-9a-f]{64}$");
+            def sha: test("^[0-9a-f]{40}$");
+            exact(["schemaVersion", "scope", "observedAt", "host", "result",
+              "implementation", "lane", "currentState", "activeTransaction"]) and
+            .schemaVersion == "harmonic-beacon.host-readback.v1" and
+            .scope == "configuration-only" and .host == "mona" and
+            (.observedAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+            (.result | IN("verified", "unavailable", "invalid")) and
+            (.implementation | exact(["status", "manifestSha256", "helperSha256"])) and
+            (.implementation.status | IN("verified", "unavailable", "invalid")) and
+            (if .implementation.status == "verified" then
+              (.implementation.manifestSha256 | sha256) and (.implementation.helperSha256 | sha256)
+             else .implementation.manifestSha256 == null and .implementation.helperSha256 == null end) and
+            (.lane | exact(["status", "state"])) and
+            (.lane.status | IN("verified", "unavailable", "invalid")) and
+            (if .lane.status == "verified" then (.lane.state | IN("legacy-shadow", "oci-production"))
+             else .lane.state == "unknown" end) and
+            (.currentState | exact(["status", "evidence"])) and
+            (.currentState.status | IN("verified", "unavailable", "invalid")) and
+            (if .currentState.status == "verified" then
+              (.currentState.evidence | exact(["schemaVersion", "manifestSha256", "publication", "serviceReleases"])) and
+              .currentState.evidence.schemaVersion == "harmonic-beacon.current-state.v4" and
+              (.currentState.evidence.manifestSha256 | test("^[0-9a-f]{64}$")) and
+              (.currentState.evidence.publication | exact(["generation", "id", "manifestSha256"])) and
+              (.currentState.evidence.publication.generation | type == "number") and
+              (.currentState.evidence.publication.id | test("^[0-9a-f]{64}$")) and
+              .currentState.evidence.publication.manifestSha256 == .currentState.evidence.manifestSha256 and
+              ([.currentState.evidence.serviceReleases[].service] | sort) ==
+                ["app", "commerce-reconciler", "playlist-bot", "tapestry"] and
+              all(.currentState.evidence.serviceReleases[];
+                exact(["service", "sourceSha", "imageDigest"]) and
+                (.sourceSha | sha) and (.imageDigest | sha256))
+             else .currentState.evidence == null end) and
+            (.activeTransaction | exact(["status", "id"])) and
+            (.activeTransaction.status | IN("none", "verified", "unavailable", "invalid")) and
+            (if .activeTransaction.status == "verified" then
+              (.activeTransaction.id | test("^[1-9][0-9]{0,19}$"))
+             else .activeTransaction.id == null end) and
+            (if .result == "verified" then
+               .implementation.status == "verified" and .lane.status == "verified" and
+               .currentState.status == "verified" and
+               (.activeTransaction.status | IN("none", "verified"))
+             elif .result == "invalid" then
+               any([.implementation.status, .lane.status, .currentState.status,
+                 .activeTransaction.status][]; . == "invalid")
+             else true end)
+          ' host-readback.json >/dev/null
+          jq . host-readback.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: live-host-readback-${{ github.run_id }}-${{ github.run_attempt }}
+          path: host-readback.json
+          if-no-files-found: error
+          retention-days: 7

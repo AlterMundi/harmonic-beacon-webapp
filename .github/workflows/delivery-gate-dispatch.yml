@@ -1,0 +1,203 @@
+name: Delivery gate dispatcher
+
+on:
+  pull_request_target:
+    branches: [main, release]
+    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled, closed]
+  workflow_run:
+    workflows: [CI, E2E quality gates, Audio boundary]
+    types: [requested, in_progress, completed]
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to inspect in shadow mode
+        required: true
+        type: number
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+  statuses: read
+
+concurrency:
+  # GitHub keeps at most one pending member of a concurrency group. A burst of
+  # lifecycle callbacks is therefore reduced without cancelling the short run
+  # that is already reading current state.
+  group: delivery-gate-dispatch-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.workflow_run.id || inputs.pr_number || 'reconcile' }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch exact-base delivery authority
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Resolve current protected PR and dispatch its exact target branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          WORKFLOW_HEAD: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          api() {
+            local attempt delay=1 response
+            for attempt in 1 2 3; do
+              response="$(mktemp)" || return 1
+              if gh api "$@" >"$response"; then
+                cat "$response"
+                rm -f -- "$response"
+                return 0
+              fi
+              rm -f -- "$response"
+              if [ "$attempt" -eq 3 ]; then break; fi
+              echo "GitHub API request failed; bounded retry $attempt/3" >&2
+              sleep "$delay"
+              delay=$((delay * 2))
+            done
+            return 1
+          }
+
+          dispatch_pr() {
+            local pr_number="$1" status_context="$2" pr target_base base_sha head_sha
+            pr="$(api "repos/$REPOSITORY/pulls/$pr_number")" || return 1
+            [ "$(jq -r '.state' <<<"$pr")" = open ] || return 0
+            target_base="$(jq -r '.base.ref' <<<"$pr")"
+            base_sha="$(jq -r '.base.sha' <<<"$pr")"
+            head_sha="$(jq -r '.head.sha' <<<"$pr")"
+            case "$target_base" in
+              main|release) ;;
+              *) return 1 ;;
+            esac
+            [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+            [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+            if [ "$EVENT_NAME" = workflow_run ] && [ "$head_sha" != "$WORKFLOW_HEAD" ]; then return 1; fi
+
+            api --method POST \
+              "repos/$REPOSITORY/actions/workflows/delivery-gate.yml/dispatches" \
+              -f ref="$target_base" \
+              -f "inputs[pr_number]=$pr_number" \
+              -f "inputs[status_context]=$status_context" >/dev/null || return 1
+            printf 'dispatched pr=%s head=%s base=%s trigger=%s run=%s attempt=%s\n' \
+              "$pr_number" "${head_sha:0:12}" "${base_sha:0:12}" "$EVENT_NAME/$EVENT_ACTION" \
+              "${WORKFLOW_RUN_ID:-none}" "${WORKFLOW_RUN_ATTEMPT:-none}"
+          }
+
+          reconcile_pr() {
+            local pr_number="$1" pr base_ref head_sha gate_context gate_pages workflow_pages
+            local gate gate_created gate_state gate_run_id gate_run_state
+            local latest_workflow_update active_workflow_count
+            pr="$(api "repos/$REPOSITORY/pulls/$pr_number")" || return 1
+            [ "$(jq -r '.state' <<<"$pr")" = open ] || return 0
+            base_ref="$(jq -r '.base.ref' <<<"$pr")"
+            case "$base_ref" in main|release) ;; *) return 0 ;; esac
+            head_sha="$(jq -r '.head.sha' <<<"$pr")"
+            [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+            gate_context="delivery-gate-$base_ref"
+
+            gate_pages="$(api --paginate --slurp \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/$REPOSITORY/commits/$head_sha/statuses?per_page=100")" || return 1
+            workflow_pages="$(api --paginate --slurp \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/$REPOSITORY/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100")" || return 1
+            gate="$(jq -c \
+              --arg prefix "https://github.com/$REPOSITORY/actions/runs/" \
+              --arg context "$gate_context" \
+              '[.[][] | select(.context == $context
+                and (.id | type) == "number"
+                and .creator.login == "github-actions[bot]"
+                and ((.target_url // "") | startswith($prefix))
+                and ((.target_url // "") | ltrimstr($prefix) | test("^[0-9]+$")))
+                | {id,created_at,state,target_url}] | sort_by(.id) | last // null' \
+              <<<"$gate_pages")" || return 1
+            gate_created="$(jq -r '.created_at // ""' <<<"$gate")" || return 1
+            gate_state="$(jq -r '.state // ""' <<<"$gate")" || return 1
+            latest_workflow_update="$(jq -r \
+              '[.[]?.workflow_runs[]? | select(.path == ".github/workflows/ci.yml"
+                or .path == ".github/workflows/e2e.yml"
+                or .path == ".github/workflows/audio-boundary.yml") | .updated_at] | max // ""' \
+              <<<"$workflow_pages")" || return 1
+            active_workflow_count="$(jq \
+              '[.[]?.workflow_runs[]? | select(
+                (.path == ".github/workflows/ci.yml"
+                  or .path == ".github/workflows/e2e.yml"
+                  or .path == ".github/workflows/audio-boundary.yml")
+                and (.status != "completed"))] | length' <<<"$workflow_pages")" || return 1
+
+            gate_run_state=unknown
+            if [ "$gate_state" = pending ]; then
+              gate_run_id="$(jq -r --arg prefix "https://github.com/$REPOSITORY/actions/runs/" \
+                '.target_url | ltrimstr($prefix)' <<<"$gate")" || return 1
+              gate_run_state="$(api "repos/$REPOSITORY/actions/runs/$gate_run_id" --jq '.status' \
+                || printf unavailable)"
+            fi
+
+            # A missing branch-qualified head status or constituent evidence
+            # newer than the aggregate needs one fresh exact-base read.
+            # A completed evaluator that left pending after every constituent
+            # stopped is also stale (including a crash after its first write).
+            if [ -z "$gate_created" ] \
+                || { [ -n "$latest_workflow_update" ] && [[ "$latest_workflow_update" > "$gate_created" ]]; } \
+                || { [ "$gate_state" = pending ] \
+                  && { [ "$gate_run_state" = completed ] || [ "$gate_run_state" = unavailable ]; } \
+                  && [ "$active_workflow_count" -eq 0 ]; }; then
+              dispatch_pr "$pr_number" delivery-gate || return 1
+            fi
+          }
+
+          status_context=delivery-gate
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              pr_number="$INPUT_PR_NUMBER"
+              status_context=delivery-gate-shadow
+              ;;
+            pull_request_target)
+              if [ "$EVENT_ACTION" = closed ]; then exit 0; fi
+              pr_number="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
+              ;;
+            workflow_run)
+              [[ "$WORKFLOW_HEAD" =~ ^[0-9a-f]{40}$ ]] || exit 0
+              if [ -n "${WORKFLOW_RUN_ID:-}" ]; then
+                [[ "$WORKFLOW_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+              fi
+              if [ -n "${WORKFLOW_RUN_ATTEMPT:-}" ]; then
+                [[ "$WORKFLOW_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
+              fi
+              associated_prs="$(api --paginate --slurp \
+                -H 'Accept: application/vnd.github+json' \
+                "repos/$REPOSITORY/pulls?state=open&per_page=100")"
+              matching_prs="$(jq --arg head "$WORKFLOW_HEAD" \
+                '[.[][] | select(.head.sha == $head and (.base.ref == "main" or .base.ref == "release"))]' \
+                <<<"$associated_prs")"
+              [ "$(jq 'length' <<<"$matching_prs")" -eq 1 ] || exit 1
+              pr_number="$(jq -r '.[0].number' <<<"$matching_prs")"
+              ;;
+            schedule)
+              reconcile_failures=0
+              open_prs="$(api --paginate --slurp \
+                -H 'Accept: application/vnd.github+json' \
+                "repos/$REPOSITORY/pulls?state=open&per_page=100")"
+              while IFS= read -r pr_number; do
+                if ! reconcile_pr "$pr_number"; then
+                  printf 'reconciliation failed for pr=%s\n' "$pr_number" >&2
+                  reconcile_failures=$((reconcile_failures + 1))
+                fi
+              done < <(jq -r '.[][] | select(.base.ref == "main" or .base.ref == "release") | .number' \
+                <<<"$open_prs")
+              [ "$reconcile_failures" -eq 0 ]
+              exit
+              ;;
+            *) exit 1 ;;
+          esac
+
+          dispatch_pr "$pr_number" "$status_context"

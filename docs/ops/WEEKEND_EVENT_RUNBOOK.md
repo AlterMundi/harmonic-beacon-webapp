@@ -13,6 +13,13 @@ This runbook assumes the architecture in
 (postgres, livekit, app, playlist-bot, tapestry on one host, "mona", behind
 nginx).
 
+**OPS-E supersession:** every older instruction below that says to run Docker
+Compose directly, restart a container directly, edit schedule data with SQL, or
+rerun the one-time stabilization script is obsolete and not authorization.
+Production mutation uses the reviewed workflow and root-owned `hb-deploy`
+command for the owning operation. If the required closed command does not
+exist, contain/escalate; do not substitute broad sudo, Docker or SQL.
+
 Print this or keep it open next to `/ops/health` during the active session.
 
 ## Event doors and lifecycle
@@ -78,13 +85,9 @@ Red invariants, in priority order:
    issuance fail (§5.8).
 4. **Tapestry is never red.** It is yellow and cuttable (§5.11).
 
-Host-level checks (SSH into mona; the app has **no Docker socket**, so all
-container inspection happens here):
-
-```sh
-docker compose ps
-docker compose logs --tail=100 app livekit playlist-bot tapestry postgres
-```
+Host-level container state is read only through the reviewed helper/status
+surface. The app has no Docker socket. Direct Compose inspection in older
+copies of this runbook is superseded by the OPS-E rule above.
 
 ## 3. Pre-event checklist
 
@@ -94,7 +97,8 @@ docker compose logs --tail=100 app livekit playlist-bot tapestry postgres
   Stage room from the public catalog and the matching Spotlight console. Stop
   if they disagree; never substitute a date or room from this document.
 - `/ops/health` fully green on production.
-- `docker compose ps` shows all five services healthy; bot heartbeat fresh.
+- The reviewed release/status receipt shows all five services healthy; bot
+  heartbeat fresh. Do not substitute direct Compose output.
 - Backups taken (Postgres dump) per deploy README.
 - TURN path re-verified from a restrictive network (join with UDP blocked).
 - Raincheck link confirmed live (§5.12) — click it, do not just read it.
@@ -119,10 +123,20 @@ It is not part of recurring event setup and must never be reused for a new
 weekend, even as a dry run. Git history and the
 `event.preflight_stabilization` audit entry preserve the original procedure.
 
-Create or change a future session only through the reviewed catalog, migration
-and cross-repository contract for that event. Verify the resulting session in
-the public catalog and its exact Spotlight console. Never compensate for a
-mismatch with ad-hoc SQL.
+The OPS-E low-risk schedule rehearsal uses a
+root-owned `0600` closed request at
+`/etc/harmonic-beacon/operations/schedule/<request-id>.json` with exactly:
+`schemaVersion`, `scope` exactly `synthetic-rehearsal`, UUID `requestId`, UUID
+`sessionId`, enabled Admin
+`actorUserId`, exact UTC `expectedScheduledAt`, exact UTC `scheduledAt`, and a
+bounded non-sensitive `reason`. The IC applies only that request with
+`hb-deploy schedule-apply <request-id>`. The target must be non-public,
+`isTest=true`, `SCHEDULED`, and use an `ops-e-rehearsal-*` room. The operation
+compare-and-sets current state, writes one audit row, and a retry is a no-op. It
+accepts neither SQL nor an arbitrary file path and does not authorize changing a
+real attendee session. The local automated rehearsal uses only a synthetic
+adapter and is not evidence of a production exercise. Real schedule changes and
+new sessions still require their separately reviewed owning contract.
 
 ---
 
@@ -164,8 +178,9 @@ mismatch with ad-hoc SQL.
 ### 5.3 Playlist bot loss → local bed fallback
 
 - **Owner:** Stream/Support Operator.
-- **Detection:** `/ops/health` bed publisher check red ("playlist-bot not in room beacon"); bot container unhealthy in `docker compose ps`.
-- **First action:** `docker compose restart playlist-bot` on mona. The bot reconnects and republishes on its own; watch the board turn green.
+- **Detection:** `/ops/health` bed publisher check red ("playlist-bot not in room beacon"); the reviewed status receipt shows the bot unhealthy.
+- **First action:** invoke the reviewed playlist-bot recovery action if it is
+  provisioned; otherwise contain/escalate. Direct Compose restart is obsolete.
 - **Fallback (rehearsable):** If the bot does not recover within 3 minutes, the Stream/Support Operator opens the **local bed fallback**: a staff browser playing the bed audio files locally, published into the bed room from the operator's machine (the exact browser page and steps are rehearsed on Friday, WS5-03). Bed audio continues while the bot is repaired.
 - **Abort threshold:** Never alone. Bed loss degrades the experience (no music under Julián, no crossfade); the stage still works. Abort only per §5.12.
 - **Attendee message (only if the gap is audible, >5 min):**
@@ -205,7 +220,8 @@ mismatch with ad-hoc SQL.
 - **First action:**
   - Grant invariant: Spotlight Operator demotes the most recent grant(s) until the board shows ≤ 6, then IC files it as a rehearsal-blocking bug.
   - Attendee cap: stop issuing/rebinding codes for new arrivals; waitlist via support channel.
-  - Host saturation: cut the tapestry first (§5.11), then reduce non-stage load.
+  - Host saturation: confirm it through the approved host-monitoring surface,
+    cut the tapestry first (§5.11), then reduce non-stage load.
 - **Fallback/abort threshold:** If stage egress stays saturated after the tapestry cut and attendees report degraded audio, the IC moves the event to audio-only announcement (attendees toggle audio-only) before considering §5.12.
 - **Attendee message (saturation only):**
   - EN: "To protect audio quality under heavy load, please switch to audio-only mode using the toggle in the player. The session continues without interruption."
@@ -215,8 +231,10 @@ mismatch with ad-hoc SQL.
 ### 5.7 App outage (Next.js container down or crash-looping)
 
 - **Owner:** Incident Commander.
-- **Detection:** `/ops/health` page itself unreachable; nginx 502s; `docker compose ps` shows app restarting. Liveness (`/api/health`) answers when the process is up at all — if even liveness fails, the process is down.
-- **First action:** `docker compose logs --tail=200 app`, then `docker compose restart app`. If the current image is broken, roll back to the previous tagged image per the deploy README (target: restored within 10 minutes, no database rollback).
+- **Detection:** `/ops/health` page itself unreachable; nginx 502s; the reviewed status receipt shows the app restarting. Liveness (`/api/health`) answers when the process is up at all — if even liveness fails, the process is down.
+- **First action:** use the reviewed app status/recovery action. If the current
+  image is broken, use the transaction-bound rollback in `deploy/README.md`;
+  never restore a guessed tag or run Compose directly.
 - **Fallback/abort threshold:** App down > 15 minutes during a session → IC invokes the raincheck (§5.12). Attendees already in the LiveKit room keep media until their token needs renewal; tell them not to refresh.
 - **Attendee message:**
   - EN: "Our event platform is restarting. If you are already in the room, do not refresh — your audio continues. If you're locked out, hold on; next update in 5 minutes."
@@ -227,7 +245,9 @@ mismatch with ad-hoc SQL.
 
 - **Owner:** Incident Commander.
 - **Detection:** `/ops/health` Postgres check red; `/api/health/ready` returns 503 while `/api/health` stays green (the process is alive, the dependency is not).
-- **First action:** `docker compose logs --tail=100 postgres`; `docker compose restart postgres`; confirm the data volume mount is intact. Then verify readiness returns 200 and the board goes green.
+- **First action:** use the reviewed PostgreSQL status/recovery action and
+  confirm the data mount through that boundary. If it is unavailable,
+  contain/escalate; do not improvise a restart or restore.
 - **Impact while down:** New logins, token issuance, and grant changes all fail (entitlement cannot be verified). Attendees already in the room keep their LiveKit connection.
 - **Fallback/abort threshold:** DB down > 15 minutes during a session → raincheck (§5.12). Data corruption → restore from the T-2h backup before deciding anything else; that decision is the IC's.
 - **Attendee message:**
@@ -239,7 +259,9 @@ mismatch with ad-hoc SQL.
 
 - **Owner:** Incident Commander.
 - **Detection:** `/ops/health` LiveKit API check red; stage room check red while the session is LIVE; bed publisher check red alongside (all three share the LiveKit dependency).
-- **First action:** `docker compose logs --tail=100 livekit`; `docker compose restart livekit`. Everyone (Julián, bot, attendees) reconnects automatically when the SFU returns — LiveKit clients retry.
+- **First action:** use the reviewed LiveKit status/recovery action. Everyone
+  reconnects automatically when the SFU returns. Direct Compose restart is
+  obsolete; contain/escalate if the closed action is unavailable.
 - **Fallback/abort threshold:** LiveKit down > 10 minutes during a session → IC invokes the raincheck (§5.12). A TURN-only failure (restrictive networks can't connect) is not an abort: affected attendees are support cases (§5.1 channel), pre-verified at T-2h.
 - **Attendee message:**
   - EN: "We've lost our streaming server briefly. Stay on the page — it will reconnect by itself. If it doesn't within 5 minutes, we'll post the backup session link here."
@@ -265,7 +287,9 @@ mismatch with ad-hoc SQL.
 
 - **Owner:** Stream/Support Operator.
 - **Detection:** `/ops/health` tapestry check yellow; composite frames stop updating.
-- **First action:** `docker compose restart tapestry`. If it does not recover in 5 minutes, cut it per the roadmap cut-lines: staff-only first, then removed entirely. The paid stage and all audio are unaffected, so this is never an incident.
+- **First action:** use the reviewed tapestry recovery action. If no closed
+  action is provisioned or it does not recover in 5 minutes, cut it per the
+  roadmap cut-lines. Never restart unrelated services.
 - **Abort threshold:** Never.
 - **Attendee message:** None — attendees are not told about internal feature cuts.
 - **Raincheck decision owner:** IC — never refundable.
